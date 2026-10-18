@@ -13,11 +13,13 @@ import time
 from typing import Any
 
 from ..observability import METRICS
+from ..sanitization import ReferenceMarkerRegistry
 from .authority import BUILD_TIMEOUT_SECONDS
 from .models import (
     DependencyObligation,
     DependencyIndexSnapshot,
     DynamicReference,
+    bind_sanitizer_registry,
     dynamic_reference_fingerprint,
     obligation_fingerprint,
     snapshot_fingerprint,
@@ -409,6 +411,20 @@ class DependencyIndex:
     async def _build_snapshot(
         self, build_started: float, require_current: Callable[[], None] | None
     ) -> DependencyIndexSnapshot:
+        # HAMCP-191 D4: one identity record per build, bound for the scan and
+        # published with the snapshot it produced.
+        registry = ReferenceMarkerRegistry()
+        with bind_sanitizer_registry(registry):
+            return await self._build_bound_snapshot(
+                build_started, require_current, registry
+            )
+
+    async def _build_bound_snapshot(
+        self,
+        build_started: float,
+        require_current: Callable[[], None] | None,
+        registry: ReferenceMarkerRegistry,
+    ) -> DependencyIndexSnapshot:
         # The epoch is captured immediately before the source read, so a
         # fence opened after this point is provably not covered by it.
         source_epoch = self._source_epoch
@@ -616,6 +632,7 @@ class DependencyIndex:
             source_epoch=source_epoch,
             semantic_evidence=scan.semantic_evidence,
             script_diagnostics=(scan.script_diagnostics.visible() if scan.script_diagnostics is not None else None),
+            sanitizer_registry=registry,
         )
         # Revalidate after the last read and all parsing, before publishing.
         # The synchronous publication keeps the existing invalidation/fence

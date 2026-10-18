@@ -1,0 +1,1275 @@
+{
+  "baseline": {
+    "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/baseline.log",
+    "modules": [
+      "tests.test_hamcp191_compatibility",
+      "tests.test_hamcp191_families",
+      "tests.test_hamcp191_shared_sanitizer"
+    ],
+    "returncode": 0,
+    "seconds": 12.5,
+    "summary": "OK"
+  },
+  "mutation_count": 52,
+  "killed": 51,
+  "survived": [],
+  "survived_equivalent": [
+    "M5-dedup-by-text"
+  ],
+  "python": "3.12.14",
+  "results": [
+    {
+      "id": "U1-trust-marker-by-text",
+      "design_item": "brief: trust a marker by text",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        if self.registry is not None and self.registry.output(value, self.known_secrets):\n            return self._truncate(value)\n",
+          "        if REDACTION_MARKER.fullmatch(value):\n            return value\n        if self.registry is not None and self.registry.output(value, self.known_secrets):\n            return self._truncate(value)\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/U1-trust-marker-by-text.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_the_default_pass_is_strict (tests.test_hamcp191_shared_sanitizer.CoverageTests.test_the_default_pass_is_strict)"
+      ],
+      "seconds": 5.6
+    },
+    {
+      "id": "U2-skip-identity-check",
+      "design_item": "brief: skip the identity check (keep a string whose text was recorded)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        if self.registry is not None and self.registry.output(value, self.known_secrets):\n",
+          "        if self.registry is not None and any(\n            value == kept for kept, _secrets in self.registry._outputs.values()\n        ):\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/U2-skip-identity-check.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_a_byte_identical_upstream_copy_collides (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_a_byte_identical_upstream_copy_collides)"
+      ],
+      "seconds": 7.1
+    },
+    {
+      "id": "U3-M3-collision-before-rules",
+      "design_item": "brief: collision decided before the rules; design M3",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        categories: set[str] = set()\n        pieces: list[Any] = [value]\n",
+          "        categories: set[str] = set()\n        if marker_like_text(value):\n            return MARKER_COLLISION, frozenset({MARKER_COLLISION_CATEGORY}), True\n        pieces: list[Any] = [value]\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/U3-M3-collision-before-rules.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_matrix_cell (tests.test_hamcp191_shared_sanitizer.UnitMatrixTests.test_every_matrix_cell)"
+      ],
+      "seconds": 10.8
+    },
+    {
+      "id": "U4a-M10-raw-key-written-back",
+      "design_item": "brief: the raw-key branch writes the key back; design M10 (S8)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "                    if safe_key is None:\n                        safe_key = self._own(SANITIZATION_FAILURE_MARKER)\n",
+          "                    safe_key = str(raw_key)\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/U4a-M10-raw-key-written-back.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_a_key_that_never_finished_its_scan_is_withheld (tests.test_hamcp191_shared_sanitizer.FailureBranchTests.test_a_key_that_never_finished_its_scan_is_withheld)"
+      ],
+      "seconds": 7.1
+    },
+    {
+      "id": "U4b-unscanned-key-written-back",
+      "design_item": "brief: the raw-key branch writes an unscanned key back",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "                        safe_key = self._own(SANITIZATION_FAILURE_MARKER)\n",
+          "                        safe_key = str(raw_key)\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/U4b-unscanned-key-written-back.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_a_key_that_never_finished_its_scan_is_withheld (tests.test_hamcp191_shared_sanitizer.FailureBranchTests.test_a_key_that_never_finished_its_scan_is_withheld)"
+      ],
+      "seconds": 7.5
+    },
+    {
+      "id": "U5a-gateway-complete-despite-redaction",
+      "design_item": "brief: \"complete\" despite redaction (generic upstream read)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+          "                    or upstream_partial\n                    or redaction is not None\n",
+          "                    or upstream_partial\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/U5a-gateway-complete-despite-redaction.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_generic_read_collides_and_reports_partial (tests.test_hamcp191_families.DelegatedFamilyTests.test_generic_read_collides_and_reports_partial)"
+      ],
+      "seconds": 12.2
+    },
+    {
+      "id": "U5b-canary-complete-despite-redaction",
+      "design_item": "brief: \"complete\" despite redaction (held-read canary)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+          "                if truncated or upstream_partial or redacted\n",
+          "                if truncated or upstream_partial\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/U5b-canary-complete-despite-redaction.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_held_read_canary_reports_redaction_as_partial (tests.test_hamcp191_families.DelegatedFamilyTests.test_held_read_canary_reports_redaction_as_partial)"
+      ],
+      "seconds": 12.4
+    },
+    {
+      "id": "U5c-dashboard-list-complete-despite-redaction",
+      "design_item": "brief: \"complete\" despite redaction (dashboard list)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+          "                if truncated or malformed or redactions.applied\n",
+          "                if truncated or malformed\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/U5c-dashboard-list-complete-despite-redaction.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_list_metadata (tests.test_hamcp191_families.DashboardFamilyTests.test_list_metadata)"
+      ],
+      "seconds": 11.9
+    },
+    {
+      "id": "U5d-dashboard-get-complete-despite-redaction",
+      "design_item": "brief: \"complete\" despite redaction (dashboard get)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+          "                or sanitation.truncated_field_count\n                or redaction is not None\n",
+          "                or sanitation.truncated_field_count\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/U5d-dashboard-get-complete-despite-redaction.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_get_configuration (tests.test_hamcp191_families.DashboardFamilyTests.test_get_configuration)"
+      ],
+      "seconds": 12.1
+    },
+    {
+      "id": "U6-matrix-cell-removed",
+      "design_item": "brief: a matrix cell removed",
+      "replacements": [
+        [
+          "tests/test_hamcp191_shared_sanitizer.py",
+          "        if position != \"sensitive_key_text\" or wrapper == \"folded\"\n    ]\n",
+          "        if position != \"sensitive_key_text\" or wrapper == \"folded\"\n    ][1:]\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/U6-matrix-cell-removed.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_matrix_cell_count_is_rules_by_wrappers_by_positions (tests.test_hamcp191_shared_sanitizer.RuleDerivationTests.test_matrix_cell_count_is_rules_by_wrappers_by_positions)"
+      ],
+      "seconds": 7.7
+    },
+    {
+      "id": "M1-marker-split-restored",
+      "design_item": "M1: restore the marker-split branch in the string path",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        pieces: list[Any] = [value]\n",
+          "        pieces: list[Any] = [\n            _Emitted(part) if REDACTION_MARKER.fullmatch(part) else part\n            for part in re.split(\"(\" + REDACTION_MARKER.pattern + \")\", value)\n            if part\n        ]\n"
+        ],
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        if marker_like_text(value):\n            categories.add(",
+          "        if marker_like_text(REDACTION_MARKER.sub(\"\", value)):\n            categories.add("
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M1-marker-split-restored.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_the_default_pass_is_strict (tests.test_hamcp191_shared_sanitizer.CoverageTests.test_the_default_pass_is_strict)"
+      ],
+      "seconds": 6.0
+    },
+    {
+      "id": "M2a-identity-false-accepted",
+      "design_item": "M2: allow identity_markers_only=False again",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "    if not identity_markers_only:\n",
+          "    if False:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M2a-identity-false-accepted.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_identity_markers_only_false_raises_and_appears_nowhere (tests.test_hamcp191_shared_sanitizer.CoverageTests.test_identity_markers_only_false_raises_and_appears_nowhere)"
+      ],
+      "seconds": 4.5
+    },
+    {
+      "id": "M2b-identity-default-false",
+      "design_item": "M2: default identity_markers_only to False",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "    identity_markers_only: bool = True,\n    segment_memo: SegmentMemo | None = None,\n    registry:",
+          "    identity_markers_only: bool = False,\n    segment_memo: SegmentMemo | None = None,\n    registry:"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M2b-identity-default-false.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "ERROR test_the_default_pass_is_strict (tests.test_hamcp191_shared_sanitizer.CoverageTests.test_the_default_pass_is_strict)"
+      ],
+      "seconds": 6.0
+    },
+    {
+      "id": "M4a-rule-dropped-from-list",
+      "design_item": "M4: drop one entry from the strict rule list",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "    (_WEBHOOK_PROSE, \"webhook_identifier\", \"prefix\"),\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M4a-rule-dropped-from-list.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_matrix_cell_count_is_rules_by_wrappers_by_positions (tests.test_hamcp191_shared_sanitizer.RuleDerivationTests.test_matrix_cell_count_is_rules_by_wrappers_by_positions)"
+      ],
+      "seconds": 7.9
+    },
+    {
+      "id": "M4b-rule-skipped-by-pass",
+      "design_item": "M4: the strict pass skips one rule of the list",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        rules = [*_SEGMENT_RULES, *(",
+          "        rules = [*_SEGMENT_RULES[:-1], *("
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M4b-rule-skipped-by-pass.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_matrix_cell (tests.test_hamcp191_shared_sanitizer.UnitMatrixTests.test_every_matrix_cell)"
+      ],
+      "seconds": 11.3
+    },
+    {
+      "id": "M5-dedup-by-text",
+      "design_item": "M5: dedup by text instead of by type",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "            if type(piece) is _Emitted:\n",
+          "            if type(piece) is _Emitted or (type(piece) is str and REDACTION_MARKER.fullmatch(piece)):\n                piece = piece if type(piece) is _Emitted else _Emitted(piece)\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "equivalent": "A str piece equal to marker text exists only when the original string held marker text; marker_like_text then returns the collision before deduplication runs.",
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M5-dedup-by-text.log",
+      "returncode": 0,
+      "killed": false,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [],
+      "seconds": 15.4
+    },
+    {
+      "id": "M5b-dedup-merges-different-markers",
+      "design_item": "M5: dedup merges markers of different types",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "                if last is not None and last.text == piece.text and not \"\".join(gap).strip():\n",
+          "                if last is not None and not \"\".join(gap).strip():\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M5b-dedup-merges-different-markers.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_emitted_markers_deduplicate_by_type (tests.test_hamcp191_shared_sanitizer.UnitMatrixTests.test_emitted_markers_deduplicate_by_type)"
+      ],
+      "seconds": 10.9
+    },
+    {
+      "id": "M6a-record-accepts-equal-text",
+      "design_item": "M6: identity record accepts equal text",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        entry = self._outputs.get(id(value))\n        if entry is None or entry[0] is not value:\n",
+          "        entry = next((item for item in self._outputs.values() if item[0] == value), None)\n        if entry is None:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M6a-record-accepts-equal-text.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_a_byte_identical_upstream_copy_collides (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_a_byte_identical_upstream_copy_collides)"
+      ],
+      "seconds": 7.4
+    },
+    {
+      "id": "M6b-record-skips-secret-check",
+      "design_item": "M6/D4: identity skips a secret the producing pass lacked",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        return not any(\n            secret and secret not in entry[1]",
+          "        return True or not any(\n            secret and secret not in entry[1]"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M6b-record-skips-secret-check.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_identity_never_skips_a_secret_the_producing_pass_lacked (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_identity_never_skips_a_secret_the_producing_pass_lacked)"
+      ],
+      "seconds": 7.5
+    },
+    {
+      "id": "M7-record-accepts-any-str",
+      "design_item": "M7: identity record accepts any str",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        if type(value) is not str:\n            return False\n        entry = self._outputs.get(id(value))\n",
+          "        if type(value) is str:\n            return True\n        entry = self._outputs.get(id(value))\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M7-record-accepts-any-str.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_a_byte_identical_upstream_copy_collides (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_a_byte_identical_upstream_copy_collides)"
+      ],
+      "seconds": 7.5
+    },
+    {
+      "id": "M7b-inherited-record-grows",
+      "design_item": "M7/D4: a request writes into the inherited snapshot record",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        self._outputs[id(value)] = (\n",
+          "        if self._inherits is not None:\n            self._inherits.register_output(value, known_secrets)\n        self._outputs[id(value)] = (\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M7b-inherited-record-grows.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_an_inherited_record_is_read_only (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_an_inherited_record_is_read_only)"
+      ],
+      "seconds": 7.7
+    },
+    {
+      "id": "M8-record-shared-across-requests",
+      "design_item": "M8: identity record stored globally across requests",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/request_context.py",
+          "        default_factory=ReferenceMarkerRegistry,\n",
+          "        default_factory=lambda _shared=ReferenceMarkerRegistry(): _shared,\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M8-record-shared-across-requests.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_request_gets_its_own_record (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_each_request_gets_its_own_record)"
+      ],
+      "seconds": 7.5
+    },
+    {
+      "id": "M9-sensitive-key-text-unscanned",
+      "design_item": "M9: sensitive-key text not scanned (S9)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "                    safe_key = self._key_text(raw_key)\n",
+          "                    safe_key = str(raw_key) if key_category else self._key_text(raw_key)\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M9-sensitive-key-text-unscanned.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_matrix_cell (tests.test_hamcp191_shared_sanitizer.UnitMatrixTests.test_every_matrix_cell)"
+      ],
+      "seconds": 11.5
+    },
+    {
+      "id": "M11-truncation-outside-record",
+      "design_item": "M11: truncation suffix appended outside the identity record",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        return self._own(value[: self.max_string] + TRUNCATION_SUFFIX)\n",
+          "        return value[: self.max_string] + TRUNCATION_SUFFIX\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M11-truncation-outside-record.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_truncation_suffix_joins_the_record (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_truncation_suffix_joins_the_record)"
+      ],
+      "seconds": 7.7
+    },
+    {
+      "id": "M12-post-pass-slice",
+      "design_item": "M12: a post-pass slice instead of the bounded truncation",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        if self.registry is not None and self.registry.output(value, self.known_secrets):\n            return self._truncate(value)\n",
+          "        if self.registry is not None and self.registry.output(value, self.known_secrets):\n            return value[: self.max_string] if self.max_string else value\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M12-post-pass-slice.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_truncation_suffix_joins_the_record (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_truncation_suffix_joins_the_record)"
+      ],
+      "seconds": 7.5
+    },
+    {
+      "id": "M13-x2-marker-text",
+      "design_item": "M13: X2 emits marker text again",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/incident/normalization.py",
+          "        AUTHORIZATION_WITHHELD,\n        text,\n",
+          "        \"[REDACTED:header]\",\n        text,\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M13-x2-marker-text.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_authorization_text_becomes_a_non_marker_constant (tests.test_hamcp191_shared_sanitizer.IncidentHeaderTests.test_authorization_text_becomes_a_non_marker_constant)"
+      ],
+      "seconds": 7.4
+    },
+    {
+      "id": "M14-gate-ignores-collision",
+      "design_item": "M14: the persistence gate ignores the collision category",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
+          "    if sanitized.failed_closed or sanitized.redaction_applied:\n",
+          "    if sanitized.failed_closed or (\n        sanitized.redaction_applied and not sanitized.marker_collision_count\n    ):\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M14-gate-ignores-collision.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_only_the_stored_plan_check_keeps_marker_tolerance (tests.test_hamcp191_families.GovernanceFamilyTests.test_only_the_stored_plan_check_keeps_marker_tolerance)"
+      ],
+      "seconds": 12.8
+    },
+    {
+      "id": "M15a-site-removed-from-table",
+      "design_item": "M15: remove a site from SANITIZER_SITES",
+      "replacements": [
+        [
+          "tests/test_hamcp191_shared_sanitizer.py",
+          "    (\"clients/logbook.py\", \"project\", \"sanitize_untrusted_data\"): (1, \"logbook\"),\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M15a-site-removed-from-table.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_sanitizer_call_site_is_in_the_committed_table (tests.test_hamcp191_shared_sanitizer.CoverageTests.test_every_sanitizer_call_site_is_in_the_committed_table)"
+      ],
+      "seconds": 2.7
+    },
+    {
+      "id": "M15b-unlisted-call-added",
+      "design_item": "M15: add an unlisted sanitizer call",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/clients/logbook.py",
+          "def _json(value):\n",
+          "def _unlisted(value):\n    return sanitize_untrusted_data(value).value\n\n\ndef _json(value):\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M15b-unlisted-call-added.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_sanitizer_call_site_is_in_the_committed_table (tests.test_hamcp191_shared_sanitizer.CoverageTests.test_every_sanitizer_call_site_is_in_the_committed_table)"
+      ],
+      "seconds": 2.6
+    },
+    {
+      "id": "M16a-family-injector-removed",
+      "design_item": "M16: remove a family injector",
+      "replacements": [
+        [
+          "tests/test_hamcp191_families.py",
+          "    FAMILY = \"logbook\"\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M16a-family-injector-removed.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_site_maps_to_a_ranked_family_with_an_injector (tests.test_hamcp191_shared_sanitizer.CoverageTests.test_every_site_maps_to_a_ranked_family_with_an_injector)"
+      ],
+      "seconds": 3.1
+    },
+    {
+      "id": "M16b-position-removed",
+      "design_item": "M16: remove a position",
+      "replacements": [
+        [
+          "tests/test_hamcp191_shared_sanitizer.py",
+          "POSITIONS = (\"value\", \"list_item\", \"key\", \"sensitive_key_text\", \"repr\", \"failure_key\", \"top_level\")\n",
+          "POSITIONS = (\"value\", \"list_item\", \"key\", \"sensitive_key_text\", \"failure_key\", \"top_level\")\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M16b-position-removed.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_matrix_cell_count_is_rules_by_wrappers_by_positions (tests.test_hamcp191_shared_sanitizer.RuleDerivationTests.test_matrix_cell_count_is_rules_by_wrappers_by_positions)"
+      ],
+      "seconds": 7.5
+    },
+    {
+      "id": "M17a-decode-rounds-weakened",
+      "design_item": "M17: weaken the decode rounds",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "MAX_MARKER_DECODE_ROUNDS = 4\n",
+          "MAX_MARKER_DECODE_ROUNDS = 1\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M17a-decode-rounds-weakened.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_five_decode_rounds_fail_closed (tests.test_hamcp191_shared_sanitizer.UnitMatrixTests.test_five_decode_rounds_fail_closed)"
+      ],
+      "seconds": 11.3
+    },
+    {
+      "id": "M17b-fold-without-casefold",
+      "design_item": "M17: weaken the fold (no casefold)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "    return folded.translate(_MARKER_FOLD).casefold().translate(_MARKER_FOLD)\n",
+          "    return folded.translate(_MARKER_FOLD).translate(_MARKER_FOLD)\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M17b-fold-without-casefold.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_no_ascii_payload_can_sit_in_a_key_scoped_key (tests.test_hamcp191_shared_sanitizer.RuleDerivationTests.test_no_ascii_payload_can_sit_in_a_key_scoped_key)"
+      ],
+      "seconds": 7.9
+    },
+    {
+      "id": "M17c-ascii-fast-path-case-sensitive",
+      "design_item": "M17: weaken the ASCII fast path (no lowercase)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        return text.lower()\n",
+          "        return text\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M17c-ascii-fast-path-case-sensitive.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_the_default_pass_is_strict (tests.test_hamcp191_shared_sanitizer.CoverageTests.test_the_default_pass_is_strict)"
+      ],
+      "seconds": 5.9
+    },
+    {
+      "id": "M17d-fold-table-row-removed",
+      "design_item": "M17: weaken the fold (one letter row removed)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        **dict.fromkeys(\"\\u0430\\u03b1\\u0251\\u13aa\\u1d00\", \"a\"),\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M17d-fold-table-row-removed.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_no_ascii_payload_can_sit_in_a_key_scoped_key (tests.test_hamcp191_shared_sanitizer.RuleDerivationTests.test_no_ascii_payload_can_sit_in_a_key_scoped_key)"
+      ],
+      "seconds": 7.9
+    },
+    {
+      "id": "M17e-undecoded-text-trusted",
+      "design_item": "M17: text still changing after the rounds is trusted",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        value = decoded\n    return True\n",
+          "        value = decoded\n    return False\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M17e-undecoded-text-trusted.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_five_decode_rounds_fail_closed (tests.test_hamcp191_shared_sanitizer.UnitMatrixTests.test_five_decode_rounds_fail_closed)"
+      ],
+      "seconds": 11.3
+    },
+    {
+      "id": "M17f-opener-dropped",
+      "design_item": "M17: weaken the opener set",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "_MARKER_OPENERS = frozenset(\"[(<{\")\n",
+          "_MARKER_OPENERS = frozenset(\"[<{\")\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M17f-opener-dropped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_no_ascii_payload_can_sit_in_a_key_scoped_key (tests.test_hamcp191_shared_sanitizer.RuleDerivationTests.test_no_ascii_payload_can_sit_in_a_key_scoped_key)"
+      ],
+      "seconds": 8.0
+    },
+    {
+      "id": "M17g-fold-without-nfkc",
+      "design_item": "M17: weaken the fold (no NFKC)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "unicodedata.normalize(\"NFD\", unicodedata.normalize(\"NFKC\", folded))",
+          "unicodedata.normalize(\"NFD\", folded)"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M17g-fold-without-nfkc.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_no_ascii_payload_can_sit_in_a_key_scoped_key (tests.test_hamcp191_shared_sanitizer.RuleDerivationTests.test_no_ascii_payload_can_sit_in_a_key_scoped_key)"
+      ],
+      "seconds": 8.2
+    },
+    {
+      "id": "M18a-dispatch-metric-text-search",
+      "design_item": "M18: X1 metric back to text search (dispatcher)",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/providers/dispatch.py",
+          "            if truncated:\n                METRICS.record_evidence_truncation()\n",
+          "            if \"... [truncated at \" in rendered:\n                METRICS.record_evidence_truncation()\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M18a-dispatch-metric-text-search.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_dispatcher_uses_the_structural_flag (tests.test_hamcp191_shared_sanitizer.StructuralTruncationTests.test_dispatcher_uses_the_structural_flag)"
+      ],
+      "seconds": 11.0
+    },
+    {
+      "id": "M18b-helper-flag-text-search",
+      "design_item": "M18: X1 helper flag from the rendered text",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/models/responses.py",
+          "    if len(output) <= limit:\n        return output, False\n",
+          "    if len(output) <= limit:\n        return output, \"... [truncated at \" in output\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/M18b-helper-flag-text-search.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_flag_comes_from_the_bound_not_the_text (tests.test_hamcp191_shared_sanitizer.StructuralTruncationTests.test_flag_comes_from_the_bound_not_the_text)"
+      ],
+      "seconds": 11.1
+    },
+    {
+      "id": "D11a-allow-list-widened",
+      "design_item": "D11: a new caller of the stored-plan re-scan",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/clients/logbook.py",
+          "from ..sanitization import sanitize_untrusted_data\n",
+          "from ..sanitization import rescan_stored_plan, sanitize_untrusted_data\n"
+        ],
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/clients/logbook.py",
+          "        sanitized = sanitize_untrusted_data(record, known_secrets=secrets)\n",
+          "        sanitized = rescan_stored_plan(record, known_secrets=secrets)\n"
+        ],
+        [
+          "tests/test_hamcp191_shared_sanitizer.py",
+          "    (\"clients/logbook.py\", \"project\", \"sanitize_untrusted_data\"): (1, \"logbook\"),\n",
+          "    (\"clients/logbook.py\", \"project\", \"rescan_stored_plan\"): (1, \"logbook\"),\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/D11a-allow-list-widened.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_only_the_allow_listed_sites_call_the_stored_plan_rescan (tests.test_hamcp191_shared_sanitizer.StoredPlanExceptionTests.test_only_the_allow_listed_sites_call_the_stored_plan_rescan)"
+      ],
+      "seconds": 9.6
+    },
+    {
+      "id": "D11b-stored-plan-strict",
+      "design_item": "D11: the stored-plan re-scan loses its tolerance",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "    return _result(\n        _StoredPlanSanitizer(\n",
+          "    return _result(\n        _Sanitizer(\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/D11b-stored-plan-strict.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_canonical_markers_alone_are_not_counted (tests.test_hamcp191_shared_sanitizer.StoredPlanExceptionTests.test_canonical_markers_alone_are_not_counted)"
+      ],
+      "seconds": 8.0
+    },
+    {
+      "id": "D11c-write-time-tolerant",
+      "design_item": "D11: write-time input takes the stored-plan tolerance",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
+          "    if stored_plan:\n",
+          "    if True:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/D11c-write-time-tolerant.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_only_the_stored_plan_check_keeps_marker_tolerance (tests.test_hamcp191_families.GovernanceFamilyTests.test_only_the_stored_plan_check_keeps_marker_tolerance)"
+      ],
+      "seconds": 12.8
+    },
+    {
+      "id": "D11d-stored-flag-ignored",
+      "design_item": "D11: the persisted-plan check ignores stored_plan",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
+          "    if stored_plan:\n",
+          "    if False:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/D11d-stored-flag-ignored.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_only_the_stored_plan_check_keeps_marker_tolerance (tests.test_hamcp191_families.GovernanceFamilyTests.test_only_the_stored_plan_check_keeps_marker_tolerance)"
+      ],
+      "seconds": 12.8
+    },
+    {
+      "id": "C1-collision-counter-frozen",
+      "design_item": "D3: the collision health counter does not move",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "            _COUNTERS[\"marker_collisions\"] += sanitizer.marker_collision_count\n",
+          "            _COUNTERS[\"marker_collisions\"] += 0\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/C1-collision-counter-frozen.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_collisions_and_refusals_are_counted (tests.test_hamcp191_shared_sanitizer.MarkerCollisionHealthTests.test_collisions_and_refusals_are_counted)"
+      ],
+      "seconds": 8.1
+    },
+    {
+      "id": "C2-refusal-counter-frozen",
+      "design_item": "D3: the refusal health counter does not move",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "            _COUNTERS[\"marker_collision_refusals\"] += 1\n",
+          "            _COUNTERS[\"marker_collision_refusals\"] += 0\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/C2-refusal-counter-frozen.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_collisions_and_refusals_are_counted (tests.test_hamcp191_shared_sanitizer.MarkerCollisionHealthTests.test_collisions_and_refusals_are_counted)"
+      ],
+      "seconds": 8.0
+    },
+    {
+      "id": "C3-gate-does-not-record-refusal",
+      "design_item": "D3: the persistence gate does not record its refusal",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
+          "        record_marker_collision_refusal(sanitized)\n        errors.append(",
+          "        errors.append("
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/C3-gate-does-not-record-refusal.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_persistence_refuses_forged_markers_and_counts_the_refusal (tests.test_hamcp191_families.GovernanceFamilyTests.test_persistence_refuses_forged_markers_and_counts_the_refusal)"
+      ],
+      "seconds": 12.9
+    },
+    {
+      "id": "C4-collision-not-counted",
+      "design_item": "D3: a string collision is not counted",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "            self.marker_collision_count += 1\n            return self._own(MARKER_COLLISION)\n        if emitted:\n",
+          "            return self._own(MARKER_COLLISION)\n        if emitted:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/C4-collision-not-counted.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_a_byte_identical_upstream_copy_collides (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_a_byte_identical_upstream_copy_collides)"
+      ],
+      "seconds": 7.5
+    },
+    {
+      "id": "C5-tally-drops-collisions",
+      "design_item": "Finding 11: the redaction summary drops collision counts",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+          "        self.marker_collision_count += result.marker_collision_count\n        return result\n",
+          "        return result\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/C5-tally-drops-collisions.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_summary_is_bounded_and_truthful (tests.test_hamcp191_shared_sanitizer.RedactionEvidenceTests.test_summary_is_bounded_and_truthful)"
+      ],
+      "seconds": 7.8
+    },
+    {
+      "id": "C6-gateway-redaction-metadata-dropped",
+      "design_item": "Finding 11: no redaction metadata on the generic read",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+          "            if redaction is not None:\n                metadata[\"redaction\"] = redaction\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/C6-gateway-redaction-metadata-dropped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "ERROR test_generic_read_collides_and_reports_partial (tests.test_hamcp191_families.DelegatedFamilyTests.test_generic_read_collides_and_reports_partial)"
+      ],
+      "seconds": 12.0
+    },
+    {
+      "id": "W1-audit-ignores-registry",
+      "design_item": "D4: the audit sink drops the request's identity record",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/audit.py",
+          "            registry=registry,\n        )\n        encoded = json.dumps",
+          "            registry=None,\n        )\n        encoded = json.dumps"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/W1-audit-ignores-registry.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_audit_sink_keeps_only_the_requests_own_markers (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_audit_sink_keeps_only_the_requests_own_markers)"
+      ],
+      "seconds": 7.3
+    },
+    {
+      "id": "W2-withheld-evidence-unregistered",
+      "design_item": "D4: the gateway's withheld-evidence constant is not recorded",
+      "replacements": [
+        [
+          "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+          "    if telemetry is not None:\n        telemetry.sanitizer_registry.register_output(_REDACTED_EVIDENCE)\n    return _REDACTED_EVIDENCE\n",
+          "    return _REDACTED_EVIDENCE\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp191_shared_sanitizer",
+        "tests.test_hamcp191_families",
+        "tests.test_hamcp191_compatibility"
+      ],
+      "log_path": "/home/josh/.cache/hamcp191-mut/mutation-logs/W2-withheld-evidence-unregistered.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_gateway_withheld_evidence_joins_the_active_request_record (tests.test_hamcp191_shared_sanitizer.IdentityRecordTests.test_gateway_withheld_evidence_joins_the_active_request_record)"
+      ],
+      "seconds": 7.1
+    }
+  ]
+}

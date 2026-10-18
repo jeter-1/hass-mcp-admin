@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .observability import METRICS
+from .sanitization import marker_collision_health
 from .capabilities import (
     BETA_NATIVE_CAPABILITIES,
     CAPABILITIES,
@@ -122,6 +123,9 @@ class HealthRegistry:
                 "level": self.settings.log_level if self.settings else "unknown",
                 "redaction_filter": True,
             },
+            # HAMCP-191 D3: how often look-alike marker text was replaced or
+            # blocked a governed path, since process start. Counts only.
+            "sanitization": {"strict_marker_mode": True, **marker_collision_health()},
             "recent_error_counts": metrics["recent_error_counts"],
             "domain_outcome_counts": metrics["domain_outcome_counts"],
             "provider_routing": {

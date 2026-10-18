@@ -37,7 +37,13 @@ from ..request_context import (
     current_caller_id,
     current_request_id,
 )
-from ..sanitization import SegmentMemo, sanitize_untrusted_data
+from ..sanitization import (
+    ReferenceMarkerRegistry,
+    SegmentMemo,
+    record_marker_collision_refusal,
+    rescan_stored_plan,
+    sanitize_untrusted_data,
+)
 from ..f3_dashboard.approval_projection import (
     build_dashboard_approval_projection,
     validate_dashboard_approval_projection,
@@ -48,6 +54,7 @@ from ..f3_dashboard.errors import (
     ProviderAuthorityUnavailableError,
 )
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
+from ..f3_dashboard.semantic_diff import REDACTED_PREVIEW
 from ..f3_dashboard.serialization import public_proposal_projection
 from .historical_policy import (
     HISTORICAL_POLICY_PROJECTION_MODEL,
@@ -2969,7 +2976,8 @@ class ChangeGovernanceService:
                 == "f3_child_sequence"
             ):
                 self._project_f3_operational_block(value, task, facts)
-            sanitized = sanitize_untrusted_data(
+            # Stored-plan re-scan: D11 exception (HAMCP-207).
+            sanitized = rescan_stored_plan(
                 value,
                 known_secrets=self.sensitive_values,
             )
@@ -2978,6 +2986,7 @@ class ChangeGovernanceService:
                 or sanitized.redaction_applied
                 or not isinstance(sanitized.value, dict)
             ):
+                record_marker_collision_refusal(sanitized)
                 raise GovernanceError(
                     ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
                     details={
@@ -4319,10 +4328,15 @@ class ChangeGovernanceService:
                 details=exc.diagnostic_details(),
             ) from None
         public_projection = public_proposal_projection(proposal)
+        # HAMCP-191 D4: the semantic diff's withheld-value preview is
+        # Engineering's own marker, kept by object identity only.
+        review_registry = ReferenceMarkerRegistry()
+        review_registry.register_output(REDACTED_PREVIEW)
         sanitation = sanitize_untrusted_data(
             public_projection,
             known_secrets=self.sensitive_values,
             max_string=512,
+            registry=review_registry,
         )
         if sanitation.failed_closed:
             raise GovernanceError(
@@ -5263,7 +5277,8 @@ class ChangeGovernanceService:
                 operation.pop("dry_run_results", None)
         if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
             return value
-        sanitized = sanitize_untrusted_data(
+        # Stored-plan re-scan: D11 exception (HAMCP-207).
+        sanitized = rescan_stored_plan(
             value,
             known_secrets=self.sensitive_values,
         )
@@ -5272,6 +5287,7 @@ class ChangeGovernanceService:
             or sanitized.redaction_applied
             or not isinstance(sanitized.value, dict)
         ):
+            record_marker_collision_refusal(sanitized)
             raise GovernanceError(
                 ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
                 details={
@@ -6799,7 +6815,8 @@ class ChangeGovernanceService:
         for item in plan.dry_run_results.get("changed_fields", [])[:50]:
             if not isinstance(item, dict):
                 continue
-            sanitized = sanitize_untrusted_data(
+            # Stored-plan re-scan: D11 exception (HAMCP-207).
+            sanitized = rescan_stored_plan(
                 item,
                 known_secrets=self.sensitive_values,
                 max_string=500,
@@ -6861,7 +6878,8 @@ class ChangeGovernanceService:
                 in plan.policy_decision.required_acknowledgements
             ),
             "request_note": str(
-                sanitize_untrusted_data(
+                # Stored-plan re-scan: D11 exception (HAMCP-207).
+                rescan_stored_plan(
                     plan.approval.request_note or "",
                     known_secrets=self.sensitive_values,
                     max_string=500,
@@ -7041,7 +7059,8 @@ class ChangeGovernanceService:
                 "Operations execute in order and stop on first failure; "
                 "successful earlier operations are not automatically rolled back."
             )
-        sanitized = sanitize_untrusted_data(
+        # Stored-plan re-scan: D11 exception (HAMCP-207).
+        sanitized = rescan_stored_plan(
             summary,
             known_secrets=self.sensitive_values,
         ).value
@@ -14389,8 +14408,12 @@ def _require_safe_persisted_plan(
     if plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
         return
     try:
+        # Stored-plan re-scan: D11 exception (HAMCP-207).
         unsafe = bool(persistence_safety_errors(
-            plan.to_dict(), sensitive_values, segment_memo=segment_memo
+            plan.to_dict(),
+            sensitive_values,
+            segment_memo=segment_memo,
+            stored_plan=True,
         ))
     except Exception:
         unsafe = True

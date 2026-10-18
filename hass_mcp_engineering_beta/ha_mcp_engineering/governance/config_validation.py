@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import ReferenceMarkerRegistry, sanitize_untrusted_data
 
 
 def normalize_configuration_validation(
     result: Any,
     *,
     known_secrets: Iterable[str] = (),
+    registry: ReferenceMarkerRegistry | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Return a strict status and bounded evidence without changing HA output."""
+    """Return a strict status and bounded evidence without changing HA output.
+
+    ``registry`` (HAMCP-191 D4) is the caller's identity record, for a caller
+    that bounds the returned evidence again in the same request.
+    """
 
     is_object = isinstance(result, dict)
     result_present = is_object and "result" in result
@@ -23,11 +28,13 @@ def normalize_configuration_validation(
         raw_result,
         known_secrets=known_secrets,
         max_string=2048,
+        registry=registry,
     ).value
     safe_errors = sanitize_untrusted_data(
         raw_errors,
         known_secrets=known_secrets,
         max_string=2048,
+        registry=registry,
     ).value
 
     if not is_object:

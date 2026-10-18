@@ -37,6 +37,7 @@ from ha_mcp_engineering.governance.storage import ChangePlanRepository  # noqa: 
 from ha_mcp_engineering.health import HealthRegistry  # noqa: E402
 from ha_mcp_engineering.sanitization import (  # noqa: E402
     SegmentMemo,
+    rescan_stored_plan,
     sanitize_untrusted_data,
 )
 from tests.test_dev14_configuration_plans import (  # noqa: E402
@@ -531,16 +532,31 @@ class SegmentMemoTests(unittest.TestCase):
         # Over-limit text is computed every time and never retained.
         self.assertNotIn("x" * 5000, memo._results)
 
-    def test_memo_bound_to_other_secrets_or_strict_pass_is_refused(self):
+    def test_memo_bound_to_other_secrets_or_another_pass_is_refused(self):
         with self.assertRaises(TypeError):
             sanitize_untrusted_data(
                 "text", known_secrets=self.SECRETS,
                 segment_memo=SegmentMemo(("different-secret",)),
             )
+        # HAMCP-191: the strict pass is the only general pass, so it takes a
+        # memo; a memo bound to it never serves the D11 stored-plan re-scan,
+        # and the reverse.
+        strict_memo = SegmentMemo(self.SECRETS)
+        sanitize_untrusted_data(
+            "text", known_secrets=self.SECRETS, identity_markers_only=True,
+            segment_memo=strict_memo,
+        )
+        with self.assertRaises(TypeError):
+            rescan_stored_plan(
+                "text", known_secrets=self.SECRETS, segment_memo=strict_memo,
+            )
+        stored_memo = SegmentMemo(self.SECRETS)
+        rescan_stored_plan(
+            "text", known_secrets=self.SECRETS, segment_memo=stored_memo,
+        )
         with self.assertRaises(TypeError):
             sanitize_untrusted_data(
-                "text", known_secrets=self.SECRETS, identity_markers_only=True,
-                segment_memo=SegmentMemo(self.SECRETS),
+                "text", known_secrets=self.SECRETS, segment_memo=stored_memo,
             )
         with self.assertRaises(TypeError):
             sanitize_untrusted_data(

@@ -10,7 +10,11 @@ from dataclasses import replace
 import re
 from typing import Any
 
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import (
+    SanitizationResult,
+    record_marker_collision_refusal,
+    sanitize_untrusted_data,
+)
 from .models import DependencyFinding, evidence_id
 
 MAX_ACTION_NODES = 10_000
@@ -23,6 +27,14 @@ _ENTITY = re.compile(r"script\.[a-z0-9_]{1,121}\Z", re.ASCII)
 _BUILTINS = frozenset({"turn_on", "turn_off", "toggle", "reload"})
 
 
+def _refused(result: SanitizationResult) -> bool:
+    """X7 gate: a redacted identity is a gap; a marker collision counts (D3)."""
+    if result.redaction_applied:
+        record_marker_collision_refusal(result)
+        return True
+    return False
+
+
 def extract_script_calls(
     config: dict, *, source_type: str, source_id: str,
     source_entity_id: str | None, identities: dict[str, str], secret: str,
@@ -30,7 +42,7 @@ def extract_script_calls(
     """Walk only action bodies. Unknown selectors remain gaps, never guessed edges."""
     calls: list[DependencyFinding] = []
     gaps: Counter = Counter()
-    if sanitize_untrusted_data([source_id, source_entity_id], known_secrets=(secret,)).redaction_applied:
+    if _refused(sanitize_untrusted_data([source_id, source_entity_id], known_secrets=(secret,))):
         return calls, Counter({"script_call_source_identity_redacted": 1})
     by_key = {key: entity for entity, key in identities.items()}
     visited = 0
@@ -40,7 +52,7 @@ def extract_script_calls(
         if len(calls) >= MAX_CALLS:
             gaps["script_call_edge_limit_exceeded"] += 1
             return
-        if sanitize_untrusted_data(target, known_secrets=(secret,)).redaction_applied:
+        if _refused(sanitize_untrusted_data(target, known_secrets=(secret,))):
             gaps["script_call_target_redacted"] += 1
             return
         calls.append(DependencyFinding(

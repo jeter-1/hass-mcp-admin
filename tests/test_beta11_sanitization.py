@@ -10,7 +10,9 @@ BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
 
 from ha_mcp_engineering.sanitization import (  # noqa: E402
+    MARKER_COLLISION,
     SANITIZATION_FAILURE_MARKER,
+    ReferenceMarkerRegistry,
     SanitizationResult,
     _Sanitizer,
     sanitize_untrusted_data,
@@ -213,26 +215,40 @@ class RecursiveSanitizerTests(unittest.TestCase):
         result = self.sanitize(value)
         self.assert_removed(result, SYNTHETIC_SETUP_CODE, SYNTHETIC_API_KEY, SYNTHETIC_FLOW)
 
-    def test_already_redacted_content_is_unchanged(self):
+    def test_marker_shaped_input_is_not_trusted_as_redacted(self):
+        # HAMCP-191 D1/D2: input text never counts as already redacted
+        # (beta.19 kept this string unchanged); the whole string collides.
         value = "Authorization: [REDACTED:token]"
         result = self.sanitize(value)
-        self.assertEqual(result.value, value)
-        self.assertFalse(result.redaction_applied)
+        self.assertEqual(result.value, MARKER_COLLISION)
+        self.assertTrue(result.redaction_applied)
+        self.assertEqual(result.marker_collision_count, 1)
 
-    def test_sanitizer_is_idempotent(self):
+    def test_sanitizer_is_idempotent_through_the_identity_record(self):
+        # HAMCP-191 D4: a second pass keeps the first pass's markers only by
+        # object identity in the same request's record; without the record
+        # (beta.19 trusted the text) the re-scan collides.
         value = {
             "message": f"Bearer {SYNTHETIC_TOKEN} {SYNTHETIC_MATTER_PAYLOAD}",
             "entity_id": "sensor.beta11_fixture",
         }
-        first = self.sanitize(value).value
-        second = self.sanitize(first).value
+        registry = ReferenceMarkerRegistry()
+        first = self.sanitize(value, registry=registry).value
+        second = self.sanitize(first, registry=registry).value
         self.assertEqual(second, first)
+        unrecorded = self.sanitize(first).value
+        self.assertEqual(unrecorded["message"], MARKER_COLLISION)
+        self.assertEqual(unrecorded["entity_id"], "sensor.beta11_fixture")
 
     def test_sanitizer_failure_replaces_field(self):
         with patch.object(_Sanitizer, "_sanitize_string", side_effect=RuntimeError):
             result = self.sanitize({"message": SYNTHETIC_TOKEN})
         self.assertTrue(result.failed_closed)
-        self.assertEqual(result.value["message"], SANITIZATION_FAILURE_MARKER)
+        # HAMCP-191: key text runs the same scan; a key whose scan fails is
+        # withheld too (beta.19 wrote the raw key back).
+        self.assertEqual(
+            result.value, {SANITIZATION_FAILURE_MARKER: SANITIZATION_FAILURE_MARKER}
+        )
         self.assert_removed(result, SYNTHETIC_TOKEN)
         self.assertIn("sanitization_failure", result.redaction_categories)
 

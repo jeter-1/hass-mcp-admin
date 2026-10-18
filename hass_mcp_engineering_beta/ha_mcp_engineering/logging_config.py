@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from .request_context import current_request_id
-from .sanitization import sanitize_untrusted_data
+from .sanitization import ReferenceMarkerRegistry, sanitize_untrusted_data
 
 
 def redact_untrusted_text(
@@ -30,11 +30,13 @@ def redact_data(
     secret: str = "",
     secrets: tuple[str, ...] = (),
     max_string: int = 2048,
+    registry: ReferenceMarkerRegistry | None = None,
 ) -> Any:
     result = sanitize_untrusted_data(
         value,
         known_secrets=tuple(item for item in (secret, *secrets) if item),
         max_string=max_string,
+        registry=registry,
     )
     return result.value
 
@@ -51,7 +53,13 @@ class JsonFormatter(logging.Formatter):
         }
         if record.exc_info:
             untrusted_payload["exception_type"] = record.exc_info[0].__name__
-        sanitized = sanitize_untrusted_data(untrusted_payload, max_string=2048)
+        # HAMCP-191 D4: the context was sanitized by log_event in this same
+        # record; its identity record keeps Engineering's markers there.
+        sanitized = sanitize_untrusted_data(
+            untrusted_payload,
+            max_string=2048,
+            registry=getattr(record, "sanitizer_registry", None),
+        )
         payload = sanitized.value
         if isinstance(payload, dict):
             payload["redaction_applied"] = sanitized.redaction_applied
@@ -84,6 +92,7 @@ def log_event(
     secret: str = "",
     exc_info: bool = False,
 ) -> None:
+    registry = ReferenceMarkerRegistry()
     logger.log(
         level,
         message,
@@ -91,7 +100,10 @@ def log_event(
             "event": event,
             "subsystem": logger.name.rsplit(".", 1)[-1],
             "request_id": current_request_id(),
-            "safe_context": redact_data(context or {}, secret=secret),
+            "safe_context": redact_data(
+                context or {}, secret=secret, registry=registry
+            ),
+            "sanitizer_registry": registry,
         },
         exc_info=exc_info,
     )

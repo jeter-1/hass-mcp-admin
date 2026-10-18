@@ -27,7 +27,11 @@ from ha_mcp_engineering.reliability.models import (  # noqa: E402
 from ha_mcp_engineering.reliability.provider import DirectHaReliabilityProvider  # noqa: E402
 from ha_mcp_engineering.reliability.service import AutomationReliabilityAnalysisService  # noqa: E402
 from ha_mcp_engineering.reliability.rules import evaluate_rules  # noqa: E402
-from ha_mcp_engineering.sanitization import sanitize_untrusted_data  # noqa: E402
+from ha_mcp_engineering.sanitization import (  # noqa: E402
+    MARKER_COLLISION,
+    ReferenceMarkerRegistry,
+    sanitize_untrusted_data,
+)
 from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
 
 
@@ -434,14 +438,18 @@ class ToolAndSanitizerTests(unittest.TestCase):
 
     def test_overlapping_matter_markers_collapse_and_remain_idempotent(self):
         value = "setup_payload=MT:SYNTHETICOVERLAP"
-        first = sanitize_untrusted_data(value).value
-        second = sanitize_untrusted_data(first).value
+        # HAMCP-191 D4: a re-scan keeps its own markers only through the
+        # request's identity record; marker text from input collides whole.
+        registry = ReferenceMarkerRegistry()
+        first = sanitize_untrusted_data(value, registry=registry).value
+        second = sanitize_untrusted_data(first, registry=registry).value
         self.assertEqual(first, "setup_payload=[REDACTED:matter_setup_payload]")
         self.assertEqual(first, second)
+        self.assertEqual(sanitize_untrusted_data(first).value, MARKER_COLLISION)
         adjacent = sanitize_untrusted_data(
             "[REDACTED:matter_setup_payload] [REDACTED:matter_setup_payload]"
         ).value
-        self.assertEqual(adjacent, "[REDACTED:matter_setup_payload]")
+        self.assertEqual(adjacent, MARKER_COLLISION)
 
 
 if __name__ == "__main__":

@@ -34,7 +34,11 @@ from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..errors import DashboardProviderError, ErrorCode, GovernanceError
 from ..observability import METRICS
 from ..request_context import current_telemetry
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import (
+    RedactionTally,
+    redaction_summary,
+    sanitize_untrusted_data,
+)
 from ..upstream_tool_policy import (
     RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1,
     load_reviewed_upstream_release_registry,
@@ -457,8 +461,9 @@ class UpstreamDashboardProvider:
             warnings = self._upstream_warnings(payload)
             normalized: list[dict[str, Any]] = []
             malformed = 0
+            redactions = RedactionTally()
             for item in dashboards:
-                safe = self._dashboard_metadata(item)
+                safe = self._dashboard_metadata(item, redactions)
                 if safe is None:
                     malformed += 1
                     continue
@@ -492,7 +497,20 @@ class UpstreamDashboardProvider:
                 warnings.append(
                     "The dashboard inventory was bounded by the requested limit."
                 )
-            completeness = "partial" if truncated or malformed else "complete"
+            # HAMCP-191 Finding 11: redaction makes the inventory partial.
+            if redactions.applied:
+                warnings.append(
+                    "Sensitive dashboard metadata was redacted; the inventory "
+                    "is not complete."
+                )
+            completeness = (
+                "partial"
+                if truncated or malformed or redactions.applied
+                else "complete"
+            )
+            metadata = self._metadata(exchange.handshake, completeness)
+            if redactions.applied:
+                metadata["redaction"] = redactions.summary()
             return DashboardProviderResult(
                 data={
                     "count": len(returned),
@@ -500,7 +518,7 @@ class UpstreamDashboardProvider:
                     "truncated": truncated,
                 },
                 warnings=warnings[:20],
-                metadata=self._metadata(exchange.handshake, completeness),
+                metadata=metadata,
                 completeness=completeness,
                 provider_authority=self._optional_dashboard_provider_authority(
                     exchange.handshake
@@ -602,7 +620,13 @@ class UpstreamDashboardProvider:
 
             warnings = self._upstream_warnings(payload)
             completeness = "complete"
-            if sanitation.failed_closed or sanitation.truncated_field_count:
+            # HAMCP-191 Finding 11: redaction makes the configuration partial.
+            redaction = redaction_summary(sanitation)
+            if (
+                sanitation.failed_closed
+                or sanitation.truncated_field_count
+                or redaction is not None
+            ):
                 completeness = "partial"
                 warnings.append(
                     "Dashboard content was sanitized or bounded and is not complete."
@@ -620,10 +644,13 @@ class UpstreamDashboardProvider:
                 and canonical_path != url_path
             ):
                 data["requested_url_path"] = url_path
+            metadata = self._metadata(exchange.handshake, completeness)
+            if redaction is not None:
+                metadata["redaction"] = redaction
             return DashboardProviderResult(
                 data=data,
                 warnings=warnings[:20],
-                metadata=self._metadata(exchange.handshake, completeness),
+                metadata=metadata,
                 completeness=completeness,
                 provider_authority=self._optional_dashboard_provider_authority(
                     exchange.handshake
@@ -1607,7 +1634,9 @@ class UpstreamDashboardProvider:
                 details["upstream_action"] = action
         return details
 
-    def _dashboard_metadata(self, value: Any) -> dict[str, Any] | None:
+    def _dashboard_metadata(
+        self, value: Any, redactions: RedactionTally | None = None
+    ) -> dict[str, Any] | None:
         if not isinstance(value, dict):
             return None
         path = value.get("url_path")
@@ -1628,11 +1657,14 @@ class UpstreamDashboardProvider:
         ):
             if key not in value:
                 continue
-            safe = sanitize_untrusted_data(
+            sanitation = sanitize_untrusted_data(
                 value[key],
                 known_secrets=self._known_secrets,
                 max_string=256,
-            ).value
+            )
+            if redactions is not None:
+                redactions.add(sanitation)
+            safe = sanitation.value
             if safe is None or isinstance(safe, (str, bool, int, float)):
                 output[key] = safe
         return output

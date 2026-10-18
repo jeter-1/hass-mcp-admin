@@ -1353,7 +1353,7 @@ class AuthenticatedMcpGateway:
                         if capability.get("operation_class")
                         else {}
                     ),
-                ))
+                ), registry=telemetry.sanitizer_registry)
             elif authenticated_request_accepted and telemetry.error_code:
                 self.audit.write(
                     {

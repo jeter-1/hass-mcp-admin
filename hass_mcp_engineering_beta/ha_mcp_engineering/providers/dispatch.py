@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable
 from ..errors import ErrorCode, GovernanceError, map_exception
 from ..capabilities import capability_for_tool
 from ..models import FailureResponse, SuccessResponse
+from ..models.responses import dump_json_with_truncation
 from ..observability import METRICS
 from ..request_context import current_request_id, current_telemetry
 from ..tool_framework import timing_since
@@ -117,16 +118,19 @@ class CanonicalProviderDispatcher:
             if telemetry:
                 telemetry.result_status = "partial" if provider_result.completeness == ProviderCompleteness.PARTIAL else "success"
                 telemetry.completeness = provider_result.completeness.value
-            rendered = SuccessResponse(
-                operation=tool_name,
-                summary=f"Completed {tool_name} through facilitator provider routing.",
-                data=data,
-                warnings=warnings,
-                metadata=metadata,
-                timing=timing_since(started),
-                request_id=current_request_id(),
-            ).to_json(response_limit)
-            if "... [truncated at " in rendered:
+            rendered, truncated = dump_json_with_truncation(
+                SuccessResponse(
+                    operation=tool_name,
+                    summary=f"Completed {tool_name} through facilitator provider routing.",
+                    data=data,
+                    warnings=warnings,
+                    metadata=metadata,
+                    timing=timing_since(started),
+                    request_id=current_request_id(),
+                ).as_dict(),
+                response_limit,
+            )
+            if truncated:
                 METRICS.record_evidence_truncation()
             return rendered
         except Exception as exc:

@@ -12,6 +12,7 @@ import re
 from typing import Any, Iterable
 
 from .logging_config import get_logger, log_event, redact_data
+from .sanitization import ReferenceMarkerRegistry
 from .version import SERVER_VERSION
 
 AUDIT_MAX_BYTES = 5 * 1024 * 1024
@@ -62,8 +63,21 @@ class AuditLogger:
         self.last_error: str | None = None
         self.logger = get_logger("audit")
 
-    def sanitize(self, entry: dict[str, Any]) -> dict[str, Any]:
-        safe = redact_data(entry, secret=self.access_secret, max_string=1024)
+    def sanitize(
+        self,
+        entry: dict[str, Any],
+        *,
+        registry: ReferenceMarkerRegistry | None = None,
+    ) -> dict[str, Any]:
+        # HAMCP-191 D4: ``registry`` is the identity record of the request
+        # the entry describes; only markers Engineering produced in that
+        # request survive, by object identity.
+        safe = redact_data(
+            entry,
+            secret=self.access_secret,
+            max_string=1024,
+            registry=registry,
+        )
         encoded = json.dumps(safe, default=str, sort_keys=True)
         if len(encoded) <= self.max_payload_chars:
             return safe
@@ -118,7 +132,10 @@ class AuditLogger:
             os.fsync(handle.fileno())
 
     def write_batch(
-        self, entries: Iterable[AuditRecord | dict[str, Any]]
+        self,
+        entries: Iterable[AuditRecord | dict[str, Any]],
+        *,
+        registry: ReferenceMarkerRegistry | None = None,
     ) -> int:
         """Append one replay batch with a single retained-log identity scan."""
 
@@ -132,7 +149,7 @@ class AuditLogger:
                 if isinstance(entry, AuditRecord)
                 else dict(entry)
             )
-            safe = self.sanitize(raw)
+            safe = self.sanitize(raw, registry=registry)
             safe.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
             safe.setdefault("server_version", SERVER_VERSION)
             safe_entries.append(safe)
@@ -175,8 +192,13 @@ class AuditLogger:
             )
             return completed
 
-    def write(self, entry: AuditRecord | dict[str, Any]) -> bool:
-        return self.write_batch((entry,)) == 1
+    def write(
+        self,
+        entry: AuditRecord | dict[str, Any],
+        *,
+        registry: ReferenceMarkerRegistry | None = None,
+    ) -> bool:
+        return self.write_batch((entry,), registry=registry) == 1
 
     def state(self) -> dict[str, Any]:
         return {
