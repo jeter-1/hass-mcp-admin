@@ -10,7 +10,7 @@ from ha_mcp_engineering.ha_core_readmission.routes import static_tool_requiremen
 from ha_mcp_engineering.providers.routing import routing_for_tool, CapabilityRoute
 
 
-# HAMCP-171 (2.4.1-beta.17) adds exactly one optional input to
+# HAMCP-171 (2.4.1-beta.18) adds exactly one optional input to
 # get_server_health and two description lines documenting it. Every other part
 # of that descriptor must still equal the historical baseline, so strip only
 # that reviewed property and text before comparing.
