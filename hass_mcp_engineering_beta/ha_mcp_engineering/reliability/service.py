@@ -14,6 +14,7 @@ import re
 import time
 import uuid
 
+from ..clients.paths import INVALID_IDENTIFIER_MESSAGE
 from ..errors import AutomationNotFoundError, ErrorCode, GovernanceError, InvalidRequestError
 from ..facilitation import DetailLevel
 from ..observability import METRICS
@@ -25,7 +26,9 @@ from .rules import build_root_cause_groups, evaluate_rules
 from .timestamps import normalize_timestamp, parse_timestamp
 
 
-AUTOMATION_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+# HAMCP-200: the automation config ID grammar has no dots (one safe path
+# segment); ``automation.<object_id>`` entity IDs are therefore refused here.
+AUTOMATION_ID = re.compile(r"[A-Za-z0-9_:-]{1,128}\Z")
 MAX_FINDINGS = 100
 PAGINATION_SNAPSHOT_TTL_SECONDS = 300.0
 MAX_PAGINATION_SNAPSHOTS = 16
@@ -97,9 +100,16 @@ class AutomationReliabilityAnalysisService:
         started = time.perf_counter()
         METRICS.record_reliability_analysis_request()
         normalized_id = str(automation_id).strip()
-        if not AUTOMATION_ID.fullmatch(normalized_id) or "." in normalized_id and normalized_id.startswith("automation."):
+        if not AUTOMATION_ID.fullmatch(normalized_id):
             METRICS.record_reliability_analysis_failure("request_validation")
-            raise InvalidRequestError(details={"operation": "automation_reliability_analysis"})
+            raise InvalidRequestError(
+                INVALID_IDENTIFIER_MESSAGE,
+                details={
+                    "operation": "automation_reliability_analysis",
+                    "reason": "invalid_identifier",
+                    "field": "automation_id",
+                },
+            )
         if detail_level not in {item.value for item in DetailLevel}:
             METRICS.record_reliability_analysis_failure("request_validation")
             raise InvalidRequestError(details={"operation": "automation_reliability_analysis"})

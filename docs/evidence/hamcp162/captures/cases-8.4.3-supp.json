@@ -1,0 +1,867 @@
+{
+ "cases": [
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.1"
+   },
+   "client_error": null,
+   "elapsed_s": 0.064,
+   "fixture": {
+    "bytes": 38,
+    "sha256": "d419cdfb72815b9fb03211562d20a47c08af245d70414616b7f4232c301abd41",
+    "variant": "nk_int"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 346,
+    "raw_sha256": "03f080bfcd2f8da6908fb8d40490c7a47fc15f1bf9818f5bbb2ab3f240a87afc"
+   },
+   "id": "supp:nk_int:nk.1",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3281,
+    3292
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 2,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.1\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 0,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [],
+       "success": true,
+       "yaml_path": "nk.1"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.plain"
+   },
+   "client_error": null,
+   "elapsed_s": 0.01,
+   "fixture": {
+    "sha256": "d419cdfb72815b9fb03211562d20a47c08af245d70414616b7f4232c301abd41",
+    "variant": "nk_int"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 516,
+    "raw_sha256": "388a0c0d3b6c5b53cc6808b3ac9f83357bd3f0d36c6306af4ae5b24bee115b3f"
+   },
+   "id": "supp:nk_int:nk.plain",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3293,
+    3295
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 3,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.plain\",\"matches\":[{\"file\":\"configuration.yaml\",\"yaml_path\":\"nk.plain\",\"parsed\":\"plain_value\"}],\"count\":1,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 1,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [
+        {
+         "file": "configuration.yaml",
+         "parsed": "plain_value",
+         "yaml_path": "nk.plain"
+        }
+       ],
+       "success": true,
+       "yaml_path": "nk.plain"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.1"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "bytes": 53,
+    "sha256": "388de3d8c54dd18344986617158ec3954f9f1c454dcdb401898379087a00d1d6",
+    "variant": "nk_int_str"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 492,
+    "raw_sha256": "7bf68f5786bf39f411a629f32d9faf00de31062f82a97d5510d0c7029d7a4152"
+   },
+   "id": "supp:nk_int_str:nk.1",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3296,
+    3298
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 4,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.1\",\"matches\":[{\"file\":\"configuration.yaml\",\"yaml_path\":\"nk.1\",\"parsed\":\"str_one\"}],\"count\":1,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 1,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [
+        {
+         "file": "configuration.yaml",
+         "parsed": "str_one",
+         "yaml_path": "nk.1"
+        }
+       ],
+       "success": true,
+       "yaml_path": "nk.1"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.True"
+   },
+   "client_error": null,
+   "elapsed_s": 0.009,
+   "fixture": {
+    "bytes": 43,
+    "sha256": "1a9b6cc5d3849510f49727a1fd8f163ffa790bca737adcbe6384deda90cfd298",
+    "variant": "nk_bool"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 352,
+    "raw_sha256": "d49ca517ae0b9a010cddea843798120229fe4f4407dd6e8ce04d55e649075401"
+   },
+   "id": "supp:nk_bool:nk.True",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3299,
+    3301
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 5,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.True\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 0,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [],
+       "success": true,
+       "yaml_path": "nk.True"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.true"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "sha256": "1a9b6cc5d3849510f49727a1fd8f163ffa790bca737adcbe6384deda90cfd298",
+    "variant": "nk_bool"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 352,
+    "raw_sha256": "71275e493a33acdb25dc0c71c377fc6db157db4c8426b27babc9d3138a675ea3"
+   },
+   "id": "supp:nk_bool:nk.true",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3302,
+    3304
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 6,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.true\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 0,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [],
+       "success": true,
+       "yaml_path": "nk.true"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.True"
+   },
+   "client_error": null,
+   "elapsed_s": 0.009,
+   "fixture": {
+    "bytes": 62,
+    "sha256": "032b5e8644d88aa3d672cba73f80981e88339282262f2d9ca254816ddb649525",
+    "variant": "nk_bool_str"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 506,
+    "raw_sha256": "3d68ea6dafc1694e49e1bdec01f83ebcf2c78de93ea9b16921f9ef050a185276"
+   },
+   "id": "supp:nk_bool_str:nk.True",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3305,
+    3307
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 7,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.True\",\"matches\":[{\"file\":\"configuration.yaml\",\"yaml_path\":\"nk.True\",\"parsed\":\"str_true\"}],\"count\":1,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 1,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [
+        {
+         "file": "configuration.yaml",
+         "parsed": "str_true",
+         "yaml_path": "nk.True"
+        }
+       ],
+       "success": true,
+       "yaml_path": "nk.True"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.None"
+   },
+   "client_error": null,
+   "elapsed_s": 0.009,
+   "fixture": {
+    "bytes": 42,
+    "sha256": "4a33d2efccb9bccbebc717f462eed1be9a5177cb3bf16e3d9b05dc8bb51588f4",
+    "variant": "nk_null"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 352,
+    "raw_sha256": "9a7886dc17a13fa1783cb373af3f22ae7ca56d22a1a08382ad9a2563a6b2b30b"
+   },
+   "id": "supp:nk_null:nk.None",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3308,
+    3310
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 8,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.None\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 0,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [],
+       "success": true,
+       "yaml_path": "nk.None"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.null"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "sha256": "4a33d2efccb9bccbebc717f462eed1be9a5177cb3bf16e3d9b05dc8bb51588f4",
+    "variant": "nk_null"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 352,
+    "raw_sha256": "ff17b466cb2f60c809d36b3ea887b47500194acf6c5a8b623539e993cb647613"
+   },
+   "id": "supp:nk_null:nk.null",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3311,
+    3313
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 9,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.null\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 0,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [],
+       "success": true,
+       "yaml_path": "nk.null"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.~"
+   },
+   "client_error": null,
+   "elapsed_s": 0.007,
+   "fixture": {
+    "sha256": "4a33d2efccb9bccbebc717f462eed1be9a5177cb3bf16e3d9b05dc8bb51588f4",
+    "variant": "nk_null"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 347,
+    "raw_sha256": "1304d6741343062de3a2263d1c25db234d0650b3594f71ddb664395b33d36efc"
+   },
+   "id": "supp:nk_null:nk.~",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3314,
+    3316
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 10,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.~\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 0,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [],
+       "success": true,
+       "yaml_path": "nk.~"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.1.5"
+   },
+   "client_error": null,
+   "elapsed_s": 0.01,
+   "fixture": {
+    "bytes": 42,
+    "sha256": "1cc53b60d67a9d92290d75e15a62b6aec220abff0102703fda41136723d21bfb",
+    "variant": "nk_float"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 351,
+    "raw_sha256": "ac7a9316317a16748c6871ee1be024eaa763a7345e040167a737c31a5d065ddf"
+   },
+   "id": "supp:nk_float:nk.1.5",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3317,
+    3319
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 11,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.1.5\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 0,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [],
+       "success": true,
+       "yaml_path": "nk.1.5"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.('a', 'b')"
+   },
+   "client_error": null,
+   "elapsed_s": 0.009,
+   "fixture": {
+    "bytes": 52,
+    "sha256": "e7401996fa232918c5584d657ec66d8402ac98255cc9bfcbab7ea5824375d960",
+    "variant": "nk_complex"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 365,
+    "raw_sha256": "908b5d8c3504cb8ef59a1f34209183fe8cf8a70f696e9ba0e51d4aa5510eb83e"
+   },
+   "id": "supp:nk_complex:nk.('a', 'b')",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3320,
+    3322
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 12,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.('a', 'b')\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 0,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [],
+       "success": true,
+       "yaml_path": "nk.('a', 'b')"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "nk.2026-10-16"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "bytes": 48,
+    "sha256": "5c91cbf00f00130fd9ac399f2b25eccf3338c6b047d936d94ffd926de609e709",
+    "variant": "nk_date"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 365,
+    "raw_sha256": "efd75ad3691742c7bc86cb811881b286d992ed00925b3d6205d5c2010e9ddd14"
+   },
+   "id": "supp:nk_date:nk.2026-10-16",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3323,
+    3325
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 13,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"nk.2026-10-16\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 0,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [],
+       "success": true,
+       "yaml_path": "nk.2026-10-16"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "recorder"
+   },
+   "client_error": null,
+   "elapsed_s": 0.109,
+   "fixture": {
+    "bytes": 30948,
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 827,
+    "raw_sha256": "c1ac74b4f1c774c81fe951bb1763786b7f262904a9faae95da46d63ae2f89e30"
+   },
+   "id": "supp:config_symlink_inside:recorder",
+   "note": "",
+   "prep": "config_symlink_inside",
+   "proxy_seq": [
+    3326,
+    3328
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 14,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"recorder\",\"matches\":[{\"file\":\"configuration.yaml\",\"yaml_path\":\"recorder\",\"parsed\":{\"db_url\":\"my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4\",\"purge_keep_days\":10,\"commit_interval\":5,\"exclude\":{\"domains\":[\"automation\",\"updater\"]}}}],\"count\":1,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 1,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [
+        {
+         "file": "configuration.yaml",
+         "parsed": {
+          "commit_interval": 5,
+          "db_url": "my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4",
+          "exclude": {
+           "domains": [
+            "automation",
+            "updater"
+           ]
+          },
+          "purge_keep_days": 10
+         },
+         "yaml_path": "recorder"
+        }
+       ],
+       "success": true,
+       "yaml_path": "recorder"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "x"
+   },
+   "client_error": null,
+   "elapsed_s": 0.009,
+   "fixture": {
+    "bytes": 30948,
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 431,
+    "raw_sha256": "3fea9629053451862ed16c8606a3e8afed5fbb0999c78d5295d31acfc434b44c"
+   },
+   "id": "supp:config_symlink_escape:x",
+   "note": "",
+   "prep": "config_symlink_escape",
+   "proxy_seq": [
+    3329,
+    3331
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 15,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\n  \"success\": false,\n  \"error\": \"Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**, themes/**, custom_templates/**, dashboards/**, blueprints/**, packages/*.yaml, custom_components/**/*.py\"\n}",
+        "type": "text"
+       }
+      ],
+      "isError": true
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "path": "configuration.yaml"
+   },
+   "client_error": null,
+   "elapsed_s": 0.044,
+   "fixture": {
+    "bytes": 30948,
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 69012,
+    "raw_sha256": "18678b16cec1885f93c6e3af1d3573ca82fd8ec90533b6bf3db911c861c2a1c5"
+   },
+   "id": "supp:config_symlink_inside:read_file",
+   "note": "",
+   "prep": "config_symlink_inside",
+   "proxy_seq": [
+    3332,
+    3334
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 16,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"path\":\"configuration.yaml\",\"content\":\"# HAMCP-162 D1 synthetic configuration. Every credential below is synthetic.\\nhomeassistant:\\n  name: Synthetic D1\\n  unit_system: metric\\n  packages: !include_dir_named packages\\n  customize:\\n    sensor.synthetic_temperature:\\n      friendly_name: Synthetic temperature\\n      icon: mdi:thermometer\\n  auth_providers:\\n    - type: homeassistant\\nrecorder:\\n  # commented-out credential: password: Zq7v0147Xw\\n  db_url: \\\"my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4\\\"\\n  purge_keep_days: 10\\n  commit_interval: 5\\n  exclude:\\n    domains:\\n      - automation\\n      - updater\\nrecorder_sqlite:\\n  db_url: sqlite:////config/home-assistant_v2.db\\ntemplate:\\n  - sensor:\\n      - name: Synthetic template\\n        state: \\\"{{ states('sensor.synthetic_temperature') | float(0) + 1 }}\\\"\\nmqtt:\\n  broker: mqtt.local\\n  port: 1883\\n  username: synthetic_user\\n  password: \\\"Zq7v0141Xw\\\"\\n  credentials:\\n    value: \\\"Zq7v0142Xw\\\"\\n    id: 7\\n  certificate: auto\\nx:\\n  pin: 1234\\n  code: 987654\\n  pin_float: 12.5\\n  token_bool: true\\n  password_null:\\n  auth:\\n    password: \\\"Zq7v0144Xw\\\"\\nhttp:\\n  api_key: \\\"Zq7v0145Xw\\\"\\n  server_port: 8123\\ninfluxdb:\\n  token: \\\"Zq7v0146Xw\\\"\\n  database:\\n    name: ha\\nrest:\\n  - resource: https://api.example.com/v1/status\\n    authentication: basic\\n    username: synthetic_user\\n    password: \\\"Zq7v0150Xw\\\"\\n    headers:\\n      Authorization: \\\"Bearer Zq7v0151Xw\\\"\\nlists:\\n  harmless:\\n    - name: a\\n      password: \\\"Zq7v0152Xw\\\"\\n    - name: b\\n      nested: {api_key: \\\"Zq7v0153Xw\\\", port: 1}\\n  credentials:\\n    - id: 1\\n      value: \\\"Zq7v0155Xw\\\"\\nrefs:\\n  password: !secret mqtt_password\\n  api_key: !secret k\\n  broker: !secret mqtt_host\\n  token: !env_var TOK\\n  pw_default: !env_var MQTT_PW Zq7v0148Xw\\n  pw_multi: !env_var MQTT_PW multi word default Zq7v0149Xw\\n  quoted: \\\"!secret abc\\\"\\n  single_quoted: '!secret abc'\\n  db_url: !secret recorder_db_url\\n  container:\\n    password: !secret x\\n  two_words: !secret two words\\n  long_name: !secret aa⟦split⟧aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa⟦split⟧aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa⟦split⟧aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n  bad_env: !env_var 1BAD d\\n  jwt_name: !secret ey⟦split⟧JhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aCJ9.c2ln\\n  leading_space_quoted: \\\" !secret x\\\"\\nforgery:\\n  a: {env_var_ref: \\\"Zq7v0156Xw\\\"}\\n  b: {secret_ref: \\\"Zq7v0157Xw\\\"}\\n  c: {env_var_ref: x, default_redacted: true}\\nincludes:\\n  sensor: !include sensors.yaml\\n  automation: !include automations.yaml\\n  dir_list: !include_dir_list lists_dir\\n  dir_named: !include_dir_named named_dir\\n  dir_merge_list: !include_dir_merge_list merge_list_dir\\n  dir_merge_named: !include_dir_merge_named merge_named_dir\\nsensor: !include sensors.yaml\\nautomation: !include automations.yaml\\nscript: !include scripts.yaml\\nanchors:\\n  base: &base {a: 1, b: two}\\n  merged:\\n    <<: *base\\n    c: 3\\n  alias: *base\\n  list_alias: &l [1, 2]\\n  list_ref: *l\\nyaml11:\\n  yes_: yes\\n  no_: no\\n  on_: on\\n  off_: off\\n  y_: y\\n  true_: true\\n  True_: True\\n  octal_0o: 0o17\\n  octal_0: 017\\n  hex: 0x1F\\n  underscore: 1_000\\n  sexagesimal: 12:30:00\\n  date: 2026-10-16\\n  datetime: 2026-10-16T10:00:00Z\\n  inf: .inf\\n  ninf: -.inf\\n  nan: .nan\\n  tilde: ~\\n  null_: null\\n  exp: 1e3\\n  plus: +1\\n  bin: 0b101\\n  float_: 1.50\\n  bigint: 123456789012345678901234567890\\ndotted:\\n  \\\"a.b\\\": dotted_key_value\\n  plain: plain_value\\nempty_values:\\n  null_value:\\n  empty_map: {}\\n  empty_list: []\\n  empty_string: \\\"\\\"\\ntop_null:\\ntop_scalar: just a string\\ntop_list:\\n  - one\\n  - two\\ncorpus:\\n  c0000: \\\"Server=db;Uid=u;Pw⟦split⟧d=Zq7v0001Xw\\\"\\n  c0001: \\\"Server%3Ddb%3BUid%3Du%3BPwd%3DZq7v0001Xw\\\"\\n  c0002: \\\"Server%253Ddb%253BUid%253Du%253BPwd%253DZq7v0001Xw\\\"\\n  c0003: \\\"Server%25253Ddb%25253BUid%25253Du%25253BPwd%25253DZq7v0001Xw\\\"\\n  c0004: \\\"Server%2525253Ddb%2525253BUid%2525253Du%2525253BPwd%2525253DZq7v0001Xw\\\"\\n  c0005: \\\"Server%252525253Ddb%252525253BUid%252525253Du%252525253BPwd%252525253DZq7v0001Xw\\\"\\n  c0006: \\\"Server%25252525253Ddb%25252525253BUid%25252525253Du%25252525253BPwd%25252525253DZq7v0001Xw\\\"\\n  c0007: \\\"my⟦split⟧sq⟦split⟧l:⟦split⟧//u:Zq7v0002Xw@db/ha\\\"\\n  c0008: \\\"mysql%3A%2F%2Fu%3AZq7v0002Xw%40db%2Fha\\\"\\n  c0009: \\\"mysql%253A%252F%252Fu%253AZq7v0002Xw%2540db%252Fha\\\"\\n  c0010: \\\"mysql%25253A%25252F%25252Fu%25253AZq7v0002Xw%252540db%25252Fha\\\"\\n  c0011: \\\"mysql%2525253A%2525252F%2525252Fu%2525253AZq7v0002Xw%25252540db%2525252Fha\\\"\\n  c0012: \\\"mysql%252525253A%252525252F%252525252Fu%252525253AZq7v0002Xw%2525252540db%252525252Fha\\\"\\n  c0013: \\\"mysql%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0002Xw%252525252540db%25252525252Fha\\\"\\n  c0014: \\\"Server=db;Uid=u;Pw⟦split⟧d==Zq7v0003Xw\\\"\\n  c0015: \\\"Server%3Ddb%3BUid%3Du%3BPwd%3D%3DZq7v0003Xw\\\"\\n  c0016: \\\"Server%253Ddb%253BUid%253Du%253BPwd%253D%253DZq7v0003Xw\\\"\\n  c0017: \\\"Server%25253Ddb%25253BUid%25253Du%25253BPwd%25253D%25253DZq7v0003Xw\\\"\\n  c0018: \\\"Server%2525253Ddb%2525253BUid%2525253Du%2525253BPwd%2525253D%2525253DZq7v0003Xw\\\"\\n  c0019: \\\"Server%252525253Ddb%252525253BUid%252525253Du%252525253BPwd%252525253D%252525253DZq7v0003Xw\\\"\\n  c0020: \\\"Server%25252525253Ddb%25252525253BUid%25252525253Du%25252525253BPwd%25252525253D%25252525253DZq7v0003Xw\\\"\\n  c0021: \\\"mysql://db/ha?pw⟦split⟧d==Zq7v0004Xw\\\"\\n  c0022: \\\"Pw⟦split⟧d==Zq7v0005Xw\\\"\\n  c0023: \\\"Pwd%3D%3DZq7v0005Xw\\\"\\n  c0024: \\\"Pwd%253D%253DZq7v0005Xw\\\"\\n  c0025: \\\"Pwd%25253D%25253DZq7v0005Xw\\\"\\n  c0026: \\\"Pwd%2525253D%2525253DZq7v0005Xw\\\"\\n  c0027: \\\"Pwd%252525253D%252525253DZq7v0005Xw\\\"\\n  c0028: \\\"Pwd%25252525253D%25252525253DZq7v0005Xw\\\"\\n  c0029: \\\"PWD :=Zq7v0006Xw\\\"\\n  c0030: \\\"PWD%20%3A%3DZq7v0006Xw\\\"\\n  c0031: \\\"PWD%2520%253A%253DZq7v0006Xw\\\"\\n  c0032: \\\"PWD%252520%25253A%25253DZq7v0006Xw\\\"\\n  c0033: \\\"PWD%25252520%2525253A%2525253DZq7v0006Xw\\\"\\n  c0034: \\\"PWD%2525252520%252525253A%252525253DZq7v0006Xw\\\"\\n  c0035: \\\"PWD%252525252520%25252525253A%25252525253DZq7v0006Xw\\\"\\n  c0036: \\\";pwd;Zq7v0007Xw\\\"\\n  c0037: \\\"%3Bpwd%3BZq7v0007Xw\\\"\\n  c0038: \\\"%253Bpwd%253BZq7v0007Xw\\\"\\n  c0039: \\\"%25253Bpwd%25253BZq7v0007Xw\\\"\\n  c0040: \\\"%2525253Bpwd%2525253BZq7v0007Xw\\\"\\n  c0041: \\\"%252525253Bpwd%252525253BZq7v0007Xw\\\"\\n  c0042: \\\"%25252525253Bpwd%25252525253BZq7v0007Xw\\\"\\n  c0043: \\\"P%57D=Zq7v0008Xw\\\"\\n  c0044: \\\"P%2557D%3DZq7v0008Xw\\\"\\n  c0045: \\\"P%252557D%253DZq7v0008Xw\\\"\\n  c0046: \\\"P%25252557D%25253DZq7v0008Xw\\\"\\n  c0047: \\\"P%2525252557D%2525253DZq7v0008Xw\\\"\\n  c0048: \\\"P%252525252557D%252525253DZq7v0008Xw\\\"\\n  c0049: \\\"P%25252525252557D%25252525253DZq7v0008Xw\\\"\\n  c0050: \\\"\\\\uFF50\\\\uFF57\\\\uFF44=Zq7v0009Xw\\\"\\n  c0051: \\\"%EF%BD%90%EF%BD%97%EF%BD%84%3DZq7v0009Xw\\\"\\n  c0052: \\\"%25EF%25BD%2590%25EF%25BD%2597%25EF%25BD%2584%253DZq7v0009Xw\\\"\\n  c0053: \\\"%2525EF%2525BD%252590%2525EF%2525BD%252597%2525EF%2525BD%252584%25253DZq7v0009Xw\\\"\\n  c0054: \\\"%252525EF%252525BD%25252590%252525EF%252525BD%25252597%252525EF%252525BD%25252584%2525253DZq7v0009Xw\\\"\\n  c0055: \\\"%25252525EF%25252525BD%2525252590%25252525EF%25252525BD%2525252597%25252525EF%25252525BD%2525252584%252525253DZq7v0009Xw\\\"\\n  c0056: \\\"%2525252525EF%2525252525BD%252525252590%2525252525EF%2525252525BD%252525252597%2525252525EF%2525252525BD%252525252584%25252525253DZq7v0009Xw\\\"\\n  c0057: \\\"pw⟦split⟧d=Zq7v0010Xw\\\"\\n  c0058: \\\"pwd%3DZq7v0010Xw\\\"\\n  c0059: \\\"pwd%253DZq7v0010Xw\\\"\\n  c0060: \\\"pwd%25253DZq7v0010Xw\\\"\\n  c0061: \\\"pwd%2525253DZq7v0010Xw\\\"\\n  c0062: \\\"pwd%252525253DZq7v0010Xw\\\"\\n  c0063: \\\"pwd%25252525253DZq7v0010Xw\\\"\\n  c0064: \\\"?x=PWD%3DZq7v0011Xw%3Bz\\\"\\n  c0065: \\\"%3Fx%3DPWD%253DZq7v0011Xw%253Bz\\\"\\n  c0066: \\\"%253Fx%253DPWD%25253DZq7v0011Xw%25253Bz\\\"\\n  c0067: \\\"%25253Fx%25253DPWD%2525253DZq7v0011Xw%2525253Bz\\\"\\n  c0068: \\\"%2525253Fx%2525253DPWD%252525253DZq7v0011Xw%252525253Bz\\\"\\n  c0069: \\\"%252525253Fx%252525253DPWD%25252525253DZq7v0011Xw%25252525253Bz\\\"\\n  c0070: \\\"%25252525253Fx%25252525253DPWD%2525252525253DZq7v0011Xw%2525252525253Bz\\\"\\n  c0071: \\\"?%2550WD=Zq7v0012Xw\\\"\\n  c0072: \\\"%3F%252550WD%3DZq7v0012Xw\\\"\\n  c0073: \\\"%253F%25252550WD%253DZq7v0012Xw\\\"\\n  c0074: \\\"%25253F%2525252550WD%25253DZq7v0012Xw\\\"\\n  c0075: \\\"%2525253F%252525252550WD%2525253DZq7v0012Xw\\\"\\n  c0076: \\\"%252525253F%25252525252550WD%252525253DZq7v0012Xw\\\"\\n  c0077: \\\"%25252525253F%2525252525252550WD%25252525253DZq7v0012Xw\\\"\\n  c0078: \\\"{\\\\\\\"pwd\\\\\\\": \\\\\\\"Zq7v0013Xw\\\\\\\"}\\\"\\n  c0079: \\\"%7B%22pwd%22%3A%20%22Zq7v0013Xw%22%7D\\\"\\n  c0080: \\\"%257B%2522pwd%2522%253A%2520%2522Zq7v0013Xw%2522%257D\\\"\\n  c0081: \\\"%25257B%252522pwd%252522%25253A%252520%252522Zq7v0013Xw%252522%25257D\\\"\\n  c0082: \\\"%2525257B%25252522pwd%25252522%2525253A%25252520%25252522Zq7v0013Xw%25252522%2525257D\\\"\\n  c0083: \\\"%252525257B%2525252522pwd%2525252522%252525253A%2525252520%2525252522Zq7v0013Xw%2525252522%252525257D\\\"\\n  c0084: \\\"%25252525257B%252525252522pwd%252525252522%25252525253A%252525252520%252525252522Zq7v0013Xw%252525252522%25252525257D\\\"\\n  c0085: \\\"pass=Zq7v0014Xw\\\"\\n  c0086: \\\"pass%3DZq7v0014Xw\\\"\\n  c0087: \\\"pass%253DZq7v0014Xw\\\"\\n  c0088: \\\"pass%25253DZq7v0014Xw\\\"\\n  c0089: \\\"pass%2525253DZq7v0014Xw\\\"\\n  c0090: \\\"pass%252525253DZq7v0014Xw\\\"\\n  c0091: \\\"pass%25252525253DZq7v0014Xw\\\"\\n  c0092: \\\"PASS ==Zq7v0015Xw\\\"\\n  c0093: \\\"PASS%20%3D%3DZq7v0015Xw\\\"\\n  c0094: \\\"PASS%2520%253D%253DZq7v0015Xw\\\"\\n  c0095: \\\"PASS%252520%25253D%25253DZq7v0015Xw\\\"\\n  c0096: \\\"PASS%25252520%2525253D%2525253DZq7v0015Xw\\\"\\n  c0097: \\\"PASS%2525252520%252525253D%252525253DZq7v0015Xw\\\"\\n  c0098: \\\"PASS%252525252520%25252525253D%25252525253DZq7v0015Xw\\\"\\n  c0099: \\\"key: Zq7v0016Xw\\\"\\n  c0100: \\\"key%3A%20Zq7v0016Xw\\\"\\n  c0101: \\\"key%253A%2520Zq7v0016Xw\\\"\\n  c0102: \\\"key%25253A%252520Zq7v0016Xw\\\"\\n  c0103: \\\"key%2525253A%25252520Zq7v0016Xw\\\"\\n  c0104: \\\"key%252525253A%2525252520Zq7v0016Xw\\\"\\n  c0105: \\\"key%25252525253A%252525252520Zq7v0016Xw\\\"\\n  c0106: \\\";key=Zq7v0017Xw\\\"\\n  c0107: \\\"%3Bkey%3DZq7v0017Xw\\\"\\n  c0108: \\\"%253Bkey%253DZq7v0017Xw\\\"\\n  c0109: \\\"%25253Bkey%25253DZq7v0017Xw\\\"\\n  c0110: \\\"%2525253Bkey%2525253DZq7v0017Xw\\\"\\n  c0111: \\\"%252525253Bkey%252525253DZq7v0017Xw\\\"\\n  c0112: \\\"%25252525253Bkey%25252525253DZq7v0017Xw\\\"\\n  c0113: \\\"key==Zq7v0018Xw\\\"\\n  c0114: \\\"key%3D%3DZq7v0018Xw\\\"\\n  c0115: \\\"key%253D%253DZq7v0018Xw\\\"\\n  c0116: \\\"key%25253D%25253DZq7v0018Xw\\\"\\n  c0117: \\\"key%2525253D%2525253DZq7v0018Xw\\\"\\n  c0118: \\\"key%252525253D%252525253DZq7v0018Xw\\\"\\n  c0119: \\\"key%25252525253D%25252525253DZq7v0018Xw\\\"\\n  c0120: \\\"pass:=Zq7v0019Xw\\\"\\n  c0121: \\\"pass%3A%3DZq7v0019Xw\\\"\\n  c0122: \\\"pass%253A%253DZq7v0019Xw\\\"\\n  c0123: \\\"pass%25253A%25253DZq7v0019Xw\\\"\\n  c0124: \\\"pass%2525253A%2525253DZq7v0019Xw\\\"\\n  c0125: \\\"pass%252525253A%252525253DZq7v0019Xw\\\"\\n  c0126: \\\"pass%25252525253A%25252525253DZq7v0019Xw\\\"\\n  c0127: \\\"key :=Zq7v0020Xw\\\"\\n  c0128: \\\"key%20%3A%3DZq7v0020Xw\\\"\\n  c0129: \\\"key%2520%253A%253DZq7v0020Xw\\\"\\n  c0130: \\\"key%252520%25253A%25253DZq7v0020Xw\\\"\\n  c0131: \\\"key%25252520%2525253A%2525253DZq7v0020Xw\\\"\\n  c0132: \\\"key%2525252520%252525253A%252525253DZq7v0020Xw\\\"\\n  c0133: \\\"key%252525252520%25252525253A%25252525253DZq7v0020Xw\\\"\\n  c0134: \\\"Key=Zq7v0021Xw\\\"\\n  c0135: \\\"Key%3DZq7v0021Xw\\\"\\n  c0136: \\\"Key%253DZq7v0021Xw\\\"\\n  c0137: \\\"Key%25253DZq7v0021Xw\\\"\\n  c0138: \\\"Key%2525253DZq7v0021Xw\\\"\\n  c0139: \\\"Key%252525253DZq7v0021Xw\\\"\\n  c0140: \\\"Key%25252525253DZq7v0021Xw\\\"\\n  c0141: \\\"x=1;pass=Zq7v0022Xw\\\"\\n  c0142: \\\"x%3D1%3Bpass%3DZq7v0022Xw\\\"\\n  c0143: \\\"x%253D1%253Bpass%253DZq7v0022Xw\\\"\\n  c0144: \\\"x%25253D1%25253Bpass%25253DZq7v0022Xw\\\"\\n  c0145: \\\"x%2525253D1%2525253Bpass%2525253DZq7v0022Xw\\\"\\n  c0146: \\\"x%252525253D1%252525253Bpass%252525253DZq7v0022Xw\\\"\\n  c0147: \\\"x%25252525253D1%25252525253Bpass%25252525253DZq7v0022Xw\\\"\\n  c0148: \\\"a&key=Zq7v0023Xw\\\"\\n  c0149: \\\"a%26key%3DZq7v0023Xw\\\"\\n  c0150: \\\"a%2526key%253DZq7v0023Xw\\\"\\n  c0151: \\\"a%252526key%25253DZq7v0023Xw\\\"\\n  c0152: \\\"a%25252526key%2525253DZq7v0023Xw\\\"\\n  c0153: \\\"a%2525252526key%252525253DZq7v0023Xw\\\"\\n  c0154: \\\"a%252525252526key%25252525253DZq7v0023Xw\\\"\\n  c0155: \\\"key\\\\u0009=Zq7v0024Xw\\\"\\n  c0156: \\\"key%09%3DZq7v0024Xw\\\"\\n  c0157: \\\"key%2509%253DZq7v0024Xw\\\"\\n  c0158: \\\"key%252509%25253DZq7v0024Xw\\\"\\n  c0159: \\\"key%25252509%2525253DZq7v0024Xw\\\"\\n  c0160: \\\"key%2525252509%252525253DZq7v0024Xw\\\"\\n  c0161: \\\"key%252525252509%25252525253DZq7v0024Xw\\\"\\n  c0162: \\\"key\\\\u00A0=Zq7v0025Xw\\\"\\n  c0163: \\\"key%C2%A0%3DZq7v0025Xw\\\"\\n  c0164: \\\"key%25C2%25A0%253DZq7v0025Xw\\\"\\n  c0165: \\\"key%2525C2%2525A0%25253DZq7v0025Xw\\\"\\n  c0166: \\\"key%252525C2%252525A0%2525253DZq7v0025Xw\\\"\\n  c0167: \\\"key%25252525C2%25252525A0%252525253DZq7v0025Xw\\\"\\n  c0168: \\\"key%2525252525C2%2525252525A0%25252525253DZq7v0025Xw\\\"\\n  c0169: \\\"\\\\uFF4B\\\\uFF45\\\\uFF59\\\\uFF1DZq7v0026Xw\\\"\\n  c0170: \\\"%EF%BD%8B%EF%BD%85%EF%BD%99%EF%BC%9DZq7v0026Xw\\\"\\n  c0171: \\\"%25EF%25BD%258B%25EF%25BD%2585%25EF%25BD%2599%25EF%25BC%259DZq7v0026Xw\\\"\\n  c0172: \\\"%2525EF%2525BD%25258B%2525EF%2525BD%252585%2525EF%2525BD%252599%2525EF%2525BC%25259DZq7v0026Xw\\\"\\n  c0173: \\\"%252525EF%252525BD%2525258B%252525EF%252525BD%25252585%252525EF%252525BD%25252599%252525EF%252525BC%2525259DZq7v0026Xw\\\"\\n  c0174: \\\"%25252525EF%25252525BD%252525258B%25252525EF%25252525BD%2525252585%25252525EF%25252525BD%2525252599%25252525EF%25252525BC%252525259DZq7v0026Xw\\\"\\n  c0175: \\\"%2525252525EF%2525252525BD%25252525258B%2525252525EF%2525252525BD%252525252585%2525252525EF%2525252525BD%252525252599%2525252525EF%2525252525BC%25252525259DZq7v0026Xw\\\"\\n  c0176: \\\"\\\\uFF50\\\\uFF41\\\\uFF53\\\\uFF53\\\\uFF1AZq7v0027Xw\\\"\\n  c0177: \\\"%EF%BD%90%EF%BD%81%EF%BD%93%EF%BD%93%EF%BC%9AZq7v0027Xw\\\"\\n  c0178: \\\"%25EF%25BD%2590%25EF%25BD%2581%25EF%25BD%2593%25EF%25BD%2593%25EF%25BC%259AZq7v0027Xw\\\"\\n  c0179: \\\"%2525EF%2525BD%252590%2525EF%2525BD%252581%2525EF%2525BD%252593%2525EF%2525BD%252593%2525EF%2525BC%25259AZq7v0027Xw\\\"\\n  c0180: \\\"%252525EF%252525BD%25252590%252525EF%252525BD%25252581%252525EF%252525BD%25252593%252525EF%252525BD%25252593%252525EF%252525BC%2525259AZq7v0027Xw\\\"\\n  c0181: \\\"%25252525EF%25252525BD%2525252590%25252525EF%25252525BD%2525252581%25252525EF%25252525BD%2525252593%25252525EF%25252525BD%2525252593%25252525EF%25252525BC%252525259AZq7v0027Xw\\\"\\n  c0182: \\\"%2525252525EF%2525252525BD%252525252590%2525252525EF%2525252525BD%252525252581%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BC%25252525259AZq7v0027Xw\\\"\\n  c0183: \\\"pass%3DZq7v0028Xw\\\"\\n  c0184: \\\"pass%253DZq7v0028Xw\\\"\\n  c0185: \\\"pass%25253DZq7v0028Xw\\\"\\n  c0186: \\\"pass%2525253DZq7v0028Xw\\\"\\n  c0187: \\\"pass%252525253DZq7v0028Xw\\\"\\n  c0188: \\\"pass%25252525253DZq7v0028Xw\\\"\\n  c0189: \\\"pass%2525252525253DZq7v0028Xw\\\"\\n  c0190: \\\"%6Bey=Zq7v0029Xw\\\"\\n  c0191: \\\"%256Bey%3DZq7v0029Xw\\\"\\n  c0192: \\\"%25256Bey%253DZq7v0029Xw\\\"\\n  c0193: \\\"%2525256Bey%25253DZq7v0029Xw\\\"\\n  c0194: \\\"%252525256Bey%2525253DZq7v0029Xw\\\"\\n  c0195: \\\"%25252525256Bey%252525253DZq7v0029Xw\\\"\\n  c0196: \\\"%2525252525256Bey%25252525253DZq7v0029Xw\\\"\\n  c0197: \\\"k%45Y: Zq7v0030Xw\\\"\\n  c0198: \\\"k%2545Y%3A%20Zq7v0030Xw\\\"\\n  c0199: \\\"k%252545Y%253A%2520Zq7v0030Xw\\\"\\n  c0200: \\\"k%25252545Y%25253A%252520Zq7v0030Xw\\\"\\n  c0201: \\\"k%2525252545Y%2525253A%25252520Zq7v0030Xw\\\"\\n  c0202: \\\"k%252525252545Y%252525253A%2525252520Zq7v0030Xw\\\"\\n  c0203: \\\"k%25252525252545Y%25252525253A%252525252520Zq7v0030Xw\\\"\\n  c0204: \\\"https://api.example.com/v1?key=Zq7v0031Xw\\\"\\n  c0205: \\\"https%3A%2F%2Fapi.example.com%2Fv1%3Fkey%3DZq7v0031Xw\\\"\\n  c0206: \\\"https%253A%252F%252Fapi.example.com%252Fv1%253Fkey%253DZq7v0031Xw\\\"\\n  c0207: \\\"https%25253A%25252F%25252Fapi.example.com%25252Fv1%25253Fkey%25253DZq7v0031Xw\\\"\\n  c0208: \\\"https%2525253A%2525252F%2525252Fapi.example.com%2525252Fv1%2525253Fkey%2525253DZq7v0031Xw\\\"\\n  c0209: \\\"mysql://db/ha?pass=Zq7v0032Xw\\\"\\n  c0210: \\\"mysql%3A%2F%2Fdb%2Fha%3Fpass%3DZq7v0032Xw\\\"\\n  c0211: \\\"mysql%253A%252F%252Fdb%252Fha%253Fpass%253DZq7v0032Xw\\\"\\n  c0212: \\\"mysql%25253A%25252F%25252Fdb%25252Fha%25253Fpass%25253DZq7v0032Xw\\\"\\n  c0213: \\\"mysql%2525253A%2525252F%2525252Fdb%2525252Fha%2525253Fpass%2525253DZq7v0032Xw\\\"\\n  c0214: \\\"https://api.example.com/v1?a=1&KEY=Zq7v0033Xw\\\"\\n  c0215: \\\"https%3A%2F%2Fapi.example.com%2Fv1%3Fa%3D1%26KEY%3DZq7v0033Xw\\\"\\n  c0216: \\\"https%253A%252F%252Fapi.example.com%252Fv1%253Fa%253D1%2526KEY%253DZq7v0033Xw\\\"\\n  c0217: \\\"https%25253A%25252F%25252Fapi.example.com%25252Fv1%25253Fa%25253D1%252526KEY%25253DZq7v0033Xw\\\"\\n  c0218: \\\"https%2525253A%2525252F%2525252Fapi.example.com%2525252Fv1%2525253Fa%2525253D1%25252526KEY%2525253DZq7v0033Xw\\\"\\n  c0219: \\\"keypad\\\"\\n  c0220: \\\"monkey\\\"\\n  c0221: \\\"bypass\\\"\\n  c0222: \\\"compass\\\"\\n  c0223: \\\"key fob\\\"\\n  c0224: \\\"monkey=1\\\"\\n  c0225: \\\"keypad: 4\\\"\\n  c0226: \\\"bypass=on\\\"\\n  c0227: \\\"compass: north\\\"\\n  c0228: \\\"hotkey=F5\\\"\\n  c0229: \\\"passkey=1\\\"\\n  c0230: \\\"turnkey: yes\\\"\\n  c0231: \\\"Kitchen keypad\\\"\\n  c0232: \\\"Hall pass\\\"\\n  c0233: \\\"pass the salt\\\"\\n  c0234: \\\"key lime pie\\\"\\n  c0235: \\\"keys=3\\\"\\n  c0236: \\\"passes: 2\\\"\\n  c0237: \\\"po⟦split⟧st⟦split⟧gr⟦split⟧es⟦split⟧ql⟦split⟧+ps⟦split⟧yc⟦split⟧op⟦split⟧g2⟦split⟧://u:Zq7v0034Xw@db/ha\\\"\\n  c0238: \\\"postgresql%2Bpsycopg2%3A%2F%2Fu%3AZq7v0034Xw%40db%2Fha\\\"\\n  c0239: \\\"postgresql%252Bpsycopg2%253A%252F%252Fu%253AZq7v0034Xw%2540db%252Fha\\\"\\n  c0240: \\\"postgresql%25252Bpsycopg2%25253A%25252F%25252Fu%25253AZq7v0034Xw%252540db%25252Fha\\\"\\n  c0241: \\\"postgresql%2525252Bpsycopg2%2525253A%2525252F%2525252Fu%2525253AZq7v0034Xw%25252540db%2525252Fha\\\"\\n  c0242: \\\"postgresql%252525252Bpsycopg2%252525253A%252525252F%252525252Fu%252525253AZq7v0034Xw%2525252540db%252525252Fha\\\"\\n  c0243: \\\"postgresql%25252525252Bpsycopg2%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0034Xw%252525252540db%25252525252Fha\\\"\\n  c0244: \\\"ms⟦split⟧sq⟦split⟧l+⟦split⟧py⟦split⟧od⟦split⟧bc⟦split⟧://u:Zq7v0035Xw@db/ha\\\"\\n  c0245: \\\"mssql%2Bpyodbc%3A%2F%2Fu%3AZq7v0035Xw%40db%2Fha\\\"\\n  c0246: \\\"mssql%252Bpyodbc%253A%252F%252Fu%253AZq7v0035Xw%2540db%252Fha\\\"\\n  c0247: \\\"mssql%25252Bpyodbc%25253A%25252F%25252Fu%25253AZq7v0035Xw%252540db%25252Fha\\\"\\n  c0248: \\\"mssql%2525252Bpyodbc%2525253A%2525252F%2525252Fu%2525253AZq7v0035Xw%25252540db%2525252Fha\\\"\\n  c0249: \\\"mssql%252525252Bpyodbc%252525253A%252525252F%252525252Fu%252525253AZq7v0035Xw%2525252540db%252525252Fha\\\"\\n  c0250: \\\"mssql%25252525252Bpyodbc%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0035Xw%252525252540db%25252525252Fha\\\"\\n  c0251: \\\"redis://:Zq7v0036Xw@cache:6379/0\\\"\\n  c0252: \\\"redis%3A%2F%2F%3AZq7v0036Xw%40cache%3A6379%2F0\\\"\\n  c0253: \\\"redis%253A%252F%252F%253AZq7v0036Xw%2540cache%253A6379%252F0\\\"\\n  c0254: \\\"redis%25253A%25252F%25252F%25253AZq7v0036Xw%252540cache%25253A6379%25252F0\\\"\\n  c0255: \\\"redis%2525253A%2525252F%2525252F%2525253AZq7v0036Xw%25252540cache%2525253A6379%2525252F0\\\"\\n  c0256: \\\"redis%252525253A%252525252F%252525252F%252525253AZq7v0036Xw%2525252540cache%252525253A6379%252525252F0\\\"\\n  c0257: \\\"redis%25252525253A%25252525252F%25252525252F%25252525253AZq7v0036Xw%252525252540cache%25252525253A6379%25252525252F0\\\"\\n  c0258: \\\"ht⟦split⟧tp⟦split⟧s:⟦split⟧//u:Zq7v0037Xw@example.com/x\\\"\\n  c0259: \\\"https%3A%2F%2Fu%3AZq7v0037Xw%40example.com%2Fx\\\"\\n  c0260: \\\"https%253A%252F%252Fu%253AZq7v0037Xw%2540example.com%252Fx\\\"\\n  c0261: \\\"https%25253A%25252F%25252Fu%25253AZq7v0037Xw%252540example.com%25252Fx\\\"\\n  c0262: \\\"https%2525253A%2525252F%2525252Fu%2525253AZq7v0037Xw%25252540example.com%2525252Fx\\\"\\n  c0263: \\\"https%252525253A%252525252F%252525252Fu%252525253AZq7v0037Xw%2525252540example.com%252525252Fx\\\"\\n  c0264: \\\"https%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0037Xw%252525252540example.com%25252525252Fx\\\"\\n  c0265: \\\"mysql://u@db/ha\\\"\\n  c0266: \\\"mysql%3A%2F%2Fu%40db%2Fha\\\"\\n  c0267: \\\"mysql%253A%252F%252Fu%2540db%252Fha\\\"\\n  c0268: \\\"mysql%25253A%25252F%25252Fu%252540db%25252Fha\\\"\\n  c0269: \\\"mysql%2525253A%2525252F%2525252Fu%25252540db%2525252Fha\\\"\\n  c0270: \\\"mysql%252525253A%252525252F%252525252Fu%2525252540db%252525252Fha\\\"\\n  c0271: \\\"mysql%25252525253A%25252525252F%25252525252Fu%252525252540db%25252525252Fha\\\"\\n  c0272: \\\"mysql://u:Zq7v0039Xw\\\\uFF20db/ha\\\"\\n  c0273: \\\"mysql%3A%2F%2Fu%3AZq7v0039Xw%EF%BC%A0db%2Fha\\\"\\n  c0274: \\\"mysql%253A%252F%252Fu%253AZq7v0039Xw%25EF%25BC%25A0db%252Fha\\\"\\n  c0275: \\\"mysql%25253A%25252F%25252Fu%25253AZq7v0039Xw%2525EF%2525BC%2525A0db%25252Fha\\\"\\n  c0276: \\\"mysql%2525253A%2525252F%2525252Fu%2525253AZq7v0039Xw%252525EF%252525BC%252525A0db%2525252Fha\\\"\\n  c0277: \\\"mysql%252525253A%252525252F%252525252Fu%252525253AZq7v0039Xw%25252525EF%25252525BC%25252525A0db%252525252Fha\\\"\\n  c0278: \\\"mysql%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0039Xw%2525252525EF%2525252525BC%2525252525A0db%25252525252Fha\\\"\\n  c0279: \\\"mysql://db/ha?pa⟦split⟧ssword=Zq7v0040Xw\\\"\\n  c0280: \\\"mysql%3A%2F%2Fdb%2Fha%3Fpassword%3DZq7v0040Xw\\\"\\n  c0281: \\\"mysql%253A%252F%252Fdb%252Fha%253Fpassword%253DZq7v0040Xw\\\"\\n  c0282: \\\"mysql%25253A%25252F%25252Fdb%25252Fha%25253Fpassword%25253DZq7v0040Xw\\\"\\n  c0283: \\\"mysql%2525253A%2525252F%2525252Fdb%2525252Fha%2525253Fpassword%2525253DZq7v0040Xw\\\"\\n  c0284: \\\"mysql%252525253A%252525252F%252525252Fdb%252525252Fha%252525253Fpassword%252525253DZq7v0040Xw\\\"\\n  c0285: \\\"mysql%25252525253A%25252525252F%25252525252Fdb%25252525252Fha%25252525253Fpassword%25252525253DZq7v0040Xw\\\"\\n  c0286: \\\"DRIVER={X};SERVER=db;UID=u;PW⟦split⟧D=Zq7v0041Xw\\\"\\n  c0287: \\\"DRIVER%3D%7BX%7D%3BSERVER%3Ddb%3BUID%3Du%3BPWD%3DZq7v0041Xw\\\"\\n  c0288: \\\"DRIVER%253D%257BX%257D%253BSERVER%253Ddb%253BUID%253Du%253BPWD%253DZq7v0041Xw\\\"\\n  c0289: \\\"DRIVER%25253D%25257BX%25257D%25253BSERVER%25253Ddb%25253BUID%25253Du%25253BPWD%25253DZq7v0041Xw\\\"\\n  c0290: \\\"DRIVER%2525253D%2525257BX%2525257D%2525253BSERVER%2525253Ddb%2525253BUID%2525253Du%2525253BPWD%2525253DZq7v0041Xw\\\"\\n  c0291: \\\"DRIVER%252525253D%252525257BX%252525257D%252525253BSERVER%252525253Ddb%252525253BUID%252525253Du%252525253BPWD%252525253DZq7v0041Xw\\\"\\n  c0292: \\\"DRIVER%25252525253D%25252525257BX%25252525257D%25252525253BSERVER%25252525253Ddb%25252525253BUID%25252525253Du%25252525253BPWD%25252525253DZq7v0041Xw\\\"\\n  c0293: \\\"Data Source=db;User ID=u;Pa⟦split⟧ssword=Zq7v0042Xw\\\"\\n  c0294: \\\"Data%20Source%3Ddb%3BUser%20ID%3Du%3BPassword%3DZq7v0042Xw\\\"\\n  c0295: \\\"Data%2520Source%253Ddb%253BUser%2520ID%253Du%253BPassword%253DZq7v0042Xw\\\"\\n  c0296: \\\"Data%252520Source%25253Ddb%25253BUser%252520ID%25253Du%25253BPassword%25253DZq7v0042Xw\\\"\\n  c0297: \\\"Data%25252520Source%2525253Ddb%2525253BUser%25252520ID%2525253Du%2525253BPassword%2525253DZq7v0042Xw\\\"\\n  c0298: \\\"Data%2525252520Source%252525253Ddb%252525253BUser%2525252520ID%252525253Du%252525253BPassword%252525253DZq7v0042Xw\\\"\\n  c0299: \\\"Data%252525252520Source%25252525253Ddb%25252525253BUser%252525252520ID%25252525253Du%25252525253BPassword%25252525253DZq7v0042Xw\\\"\\n  c0300: \\\"host=db dbname=ha user=u pa⟦split⟧ssword=Zq7v0043Xw\\\"\\n  c0301: \\\"host%3Ddb%20dbname%3Dha%20user%3Du%20password%3DZq7v0043Xw\\\"\\n  c0302: \\\"host%253Ddb%2520dbname%253Dha%2520user%253Du%2520password%253DZq7v0043Xw\\\"\\n  c0303: \\\"host%25253Ddb%252520dbname%25253Dha%252520user%25253Du%252520password%25253DZq7v0043Xw\\\"\\n  c0304: \\\"host%2525253Ddb%25252520dbname%2525253Dha%25252520user%2525253Du%25252520password%2525253DZq7v0043Xw\\\"\\n  c0305: \\\"host%252525253Ddb%2525252520dbname%252525253Dha%2525252520user%252525253Du%2525252520password%252525253DZq7v0043Xw\\\"\\n  c0306: \\\"host%25252525253Ddb%252525252520dbname%25252525253Dha%252525252520user%25252525253Du%252525252520password%25252525253DZq7v0043Xw\\\"\\n  c0307: \\\"mssql+pyodbc:///?odbc_connect=DRIVER%3D%7BODBC%7D%3BSERVER%3Ddb%3BUID%3Du%3BPWD%3DZq7v0044Xw\\\"\\n  c0308: \\\"mssql%2Bpyodbc%3A%2F%2F%2F%3Fodbc_connect%3DDRIVER%253D%257BODBC%257D%253BSERVER%253Ddb%253BUID%253Du%253BPWD%253DZq7v0044Xw\\\"\\n  c0309: \\\"mssql%252Bpyodbc%253A%252F%252F%252F%253Fodbc_connect%253DDRIVER%25253D%25257BODBC%25257D%25253BSERVER%25253Ddb%25253BUID%25253Du%25253BPWD%25253DZq7v0044Xw\\\"\\n  c0310: \\\"mssql%25252Bpyodbc%25253A%25252F%25252F%25252F%25253Fodbc_connect%25253DDRIVER%2525253D%2525257BODBC%2525257D%2525253BSERVER%2525253Ddb%2525253BUID%2525253Du%2525253BPWD%2525253DZq7v0044Xw\\\"\\n  c0311: \\\"mssql%2525252Bpyodbc%2525253A%2525252F%2525252F%2525252F%2525253Fodbc_connect%2525253DDRIVER%252525253D%252525257BODBC%252525257D%252525253BSERVER%252525253Ddb%252525253BUID%252525253Du%252525253BPWD%252525253DZq7v0044Xw\\\"\\n  c0312: \\\"mssql%252525252Bpyodbc%252525253A%252525252F%252525252F%252525252F%252525253Fodbc_connect%252525253DDRIVER%25252525253D%25252525257BODBC%25252525257D%25252525253BSERVER%25252525253Ddb%25252525253BUID%25252525253Du%25252525253BPWD%25252525253DZq7v0044Xw\\\"\\n  c0313: \\\"mssql%25252525252Bpyodbc%25252525253A%25252525252F%25252525252F%25252525252F%25252525253Fodbc_connect%25252525253DDRIVER%2525252525253D%2525252525257BODBC%2525252525257D%2525252525253BSERVER%2525252525253Ddb%2525252525253BUID%2525252525253Du%2525252525253BPWD%2525252525253DZq7v0044Xw\\\"\\n  c0314: \\\"Living%2525252520Room\\\"\\n  c0315: \\\"Living%252525252520Room\\\"\\n  c0316: \\\"%41%\\\"\\n  c0317: \\\"%G1%41\\\"\\n  c0318: \\\"%41 50% off\\\"\\n  c0319: \\\"%FF\\\"\\n  c0320: \\\"%C0%AE\\\"\\n  c0321: \\\"a%00b\\\"\\n  c0322: \\\"\\\\uFF05\\\\uFF17\\\\uFF10wd=Zq7v0045Xw\\\"\\n  c0323: \\\"Living%25252520Room\\\"\\n  c0324: \\\"Living%2525252520Room\\\"\\n  c0325: \\\"Pwd%2525253DZq7v0046Xw\\\"\\n  c0326: \\\"50% off\\\"\\n  c0327: \\\"100%\\\"\\n  c0328: \\\"%G1\\\"\\n  c0329: \\\"{{ states('sensor.x') }}\\\"\\n  c0330: \\\"sqlite:////config/home-assistant_v2.db\\\"\\n  c0331: \\\"sqlite:///home-assistant_v2.db\\\"\\n  c0332: \\\"sqlite:///a..b.db\\\"\\n  c0333: \\\"sqlite:////config/home-assistant_v2.db\\\\u000A\\\"\\n  c0334: \\\"sqlite:////config/home\\\\u000A-assistant_v2.db\\\"\\n  c0335: \\\"sqlite:////config/x\\\\u000D.db\\\"\\n  c0336: \\\"sqlite:////config/x\\\\u0009.db\\\"\\n  c0337: \\\"sqlite:////config/x\\\\u0000.db\\\"\\n  c0338: \\\"sqlite:////config/x\\\\u007F.db\\\"\\n  c0339: \\\"sqlite:////config/x\\\\u2028.db\\\"\\n  c0340: \\\"sqlite:////config/x\\\\u2029.db\\\"\\n  c0341: \\\"sqlite:///../x.db\\\"\\n  c0342: \\\"sqlite:////config/../x.db\\\"\\n  c0343: \\\"sqlite:////config/x.db/..\\\"\\n  c0344: \\\"sqlite:////config/x%2D.db\\\"\\n  c0345: \\\"sqlite:////config/x%.db\\\"\\n  c0346: \\\"SQLITE:///x.db\\\"\\n  c0347: \\\"sqlite:///X.db\\\"\\n  c0348: \\\"sqlite:////config/\\\\uFF58.db\\\"\\n  c0349: \\\"sqlite:////config/x.db?mode=ro\\\"\\n  c0350: \\\"sqlite:////config/u@x.db\\\"\\n  c0351: \\\"sqlite:////config/x;y.db\\\"\\n  c0352: \\\"sqlite:////config/x=y.db\\\"\\n  c0353: \\\"sqlite:////config/x y.db\\\"\\n  c0354: \\\"sqlite:///:memory:\\\"\\n  c0355: \\\"sqlite:////config/session.db\\\"\\n  c0356: \\\"mysql://db.local:3306/ha?charset=utf8mb4\\\"\\n  c0357: \\\"postgresql://db.local/ha?sslmode=require\\\"\\n  c0358: \\\"mysql://[fd00::5]:3306/ha\\\"\\n  c0359: \\\"unknown://host/path\\\"\\n  c0360: \\\"https://api.example.com/v1?entity=sensor.x\\\"\\n  c0361: \\\"http://api.local/{{ states('input_text.x') }}/v1\\\"\\n  c0362: \\\"Server=db;Database=ha;Trusted_Connection=yes\\\"\\n  c0363: \\\"Living Room\\\"\\n  c0364: \\\"50% off\\\"\\n  c0365: \\\"Refresh the access token daily\\\"\\n  c0366: \\\"Author: Synthetic\\\"\\n  c0367: \\\"Session started\\\"\\n  c0368: \\\"private room\\\"\\n  c0369: \\\"cookie jar\\\"\\n  c0370: \\\"secretary\\\"\\n  c0371: \\\"https://example.com/oauth/authorize\\\"\\n  c0372: \\\"{% if token == 1 %}\\\"\\n  c0373: \\\"token://host/x\\\"\\n  c0374: \\\"mailto://someone@example.com\\\"\\n  c0375: \\\"Hall pass: yes\\\"\\n  c0376: \\\"Press key: Enter\\\"\\n  c0377: \\\"{% set key = 1 %}\\\"\\n  c0378: \\\"Spare key=garage\\\"\\n  c0379: \\\"key://host/x\\\"\\n  c0380: \\\"http://key:8080/x\\\"\\n  c0381: \\\"login=Zq7v0047Xw\\\"\\n  c0382: \\\"pw=Zq7v0048Xw\\\"\\n  c0383: \\\"psk=Zq7v0049Xw\\\"\\n  c0384: \\\"p_w_d=Zq7v0050Xw\\\"\\n  c0385: \\\"P\\\\u0441d=Zq7v0051Xw\\\"\\n  c0386: \\\"k\\\\u0435y=Zq7v0052Xw\\\"\\n  c0387: \\\"my_key=Zq7v0053Xw\\\"\\n  c0388: \\\"app_key=Zq7v0054Xw\\\"\\n  c0389: \\\"passkey=Zq7v0055Xw\\\"\\n  c0390: \\\"pass_word=Zq7v0056Xw\\\"\\n  c0391: \\\"\\\\\\\"key\\\\\\\": \\\\\\\"Zq7v0057Xw\\\\\\\"\\\"\\n  c0392: \\\"{'pass': 'Zq7v0058Xw'}\\\"\\n  c0393: \\\"key\\\\u2192Zq7v0059Xw\\\"\\n  c0394: \\\"QUJDREVGR0g=\\\"\\n  c0395: \\\"Bearer ey⟦split⟧JhbGciOiJIUzI1NiJ9.ey⟦split⟧JzdWIiOiJzeW50aGV0aWMifQ.Zq7v0060Xw\\\"\\n  c0396: \\\"ey⟦split⟧JhbGciOiJIUzI1NiJ9.ey⟦split⟧JzdWIiOiJzeW50aGV0aWMtMiJ9.Zq7v0061Xw\\\"\\n  c0397: \\\"--⟦split⟧---BEGIN ENCRYPTED PRIVATE KEY-----\\\\u000AU1lOVEhFVElDLU5PVC1BLUtFWS0Zq7v0062Xw\\\\u000A--⟦split⟧---END ENCRYPTED PRIVATE KEY-----\\\\u000A\\\"\\n  c0398: \\\"--⟦split⟧---BEGIN CERTIFICATE-----\\\\u000AU1lOVEhFVElDLUNFUlQZq7v0063Xw\\\\u000A--⟦split⟧---END CERTIFICATE-----\\\\u000A\\\"\\n  c0399: \\\"U1⟦split⟧lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1⟦split⟧lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1⟦split⟧lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDZq⟦split⟧7v0064Xw\\\"\\n  c0400: \\\"a\\\\u00A0b\\\"\\n  c0401: \\\"\\\\uFEFFbom\\\"\\n  c0402: \\\"\\\\u200Bzw\\\"\\n  c0403: \\\"line1\\\\u000Aline2\\\"\\n  c0404: \\\"tab\\\\u0009here\\\"\\n  c0405: \\\"\\\\U0001F600 emoji\\\"\\n  c0406: \\\"\\\\u0085nel\\\"\\n  c0407: \\\"trailing   \\\"\\n  c0408: \\\"  leading\\\"\\nkeys:\\n  \\\"p%61ssword\\\": \\\"Zq7v0069Xw\\\"\\n  \\\"p%2561ssword\\\": \\\"Zq7v0070Xw\\\"\\n  \\\"p%252561ssword\\\": \\\"Zq7v0071Xw\\\"\\n  \\\"p%25252561ssword\\\": \\\"Zq7v0072Xw\\\"\\n  \\\"p%2525252561ssword\\\": \\\"Zq7v0073Xw\\\"\\n  \\\"p%252525252561ssword\\\": \\\"Zq7v0074Xw\\\"\\n  \\\"p%25252525252561ssword\\\": \\\"Zq7v0075Xw\\\"\\n  \\\"%70assword\\\": \\\"Zq7v0076Xw\\\"\\n  \\\"%2570assword\\\": \\\"Zq7v0077Xw\\\"\\n  \\\"%252570assword\\\": \\\"Zq7v0078Xw\\\"\\n  \\\"%25252570assword\\\": \\\"Zq7v0079Xw\\\"\\n  \\\"%2525252570assword\\\": \\\"Zq7v0080Xw\\\"\\n  \\\"%252525252570assword\\\": \\\"Zq7v0081Xw\\\"\\n  \\\"%25252525252570assword\\\": \\\"Zq7v0082Xw\\\"\\n  \\\"PASSWORD\\\": \\\"Zq7v0083Xw\\\"\\n  \\\"\\\\uFF50\\\\uFF41\\\\uFF53\\\\uFF53\\\\uFF57\\\\uFF4F\\\\uFF52\\\\uFF44\\\": \\\"Zq7v0084Xw\\\"\\n  \\\"%EF%BD%90%EF%BD%81%EF%BD%93%EF%BD%93%EF%BD%97%EF%BD%8F%EF%BD%92%EF%BD%84\\\": \\\"Zq7v0085Xw\\\"\\n  \\\"%25EF%25BD%2590%25EF%25BD%2581%25EF%25BD%2593%25EF%25BD%2593%25EF%25BD%2597%25EF%25BD%258F%25EF%25BD%2592%25EF%25BD%2584\\\": \\\"Zq7v0086Xw\\\"\\n  \\\"%2525EF%2525BD%252590%2525EF%2525BD%252581%2525EF%2525BD%252593%2525EF%2525BD%252593%2525EF%2525BD%252597%2525EF%2525BD%25258F%2525EF%2525BD%252592%2525EF%2525BD%252584\\\": \\\"Zq7v0087Xw\\\"\\n  \\\"%252525EF%252525BD%25252590%252525EF%252525BD%25252581%252525EF%252525BD%25252593%252525EF%252525BD%25252593%252525EF%252525BD%25252597%252525EF%252525BD%2525258F%252525EF%252525BD%25252592%252525EF%252525BD%25252584\\\": \\\"Zq7v0088Xw\\\"\\n  \\\"%25252525EF%25252525BD%2525252590%25252525EF%25252525BD%2525252581%25252525EF%25252525BD%2525252593%25252525EF%25252525BD%2525252593%25252525EF%25252525BD%2525252597%25252525EF%25252525BD%252525258F%25252525EF%25252525BD%2525252592%25252525EF%25252525BD%2525252584\\\": \\\"Zq7v0089Xw\\\"\\n  \\\"%2525252525EF%2525252525BD%252525252590%2525252525EF%2525252525BD%252525252581%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BD%252525252597%2525252525EF%2525252525BD%25252525258F%2525252525EF%2525252525BD%252525252592%2525252525EF%2525252525BD%252525252584\\\": \\\"Zq7v0090Xw\\\"\\n  \\\"MQTT-PassWord\\\": \\\"Zq7v0091Xw\\\"\\n  \\\"Pass Word\\\": \\\"Zq7v0092Xw\\\"\\n  \\\"Pass%20Word\\\": \\\"Zq7v0093Xw\\\"\\n  \\\"Pass%2520Word\\\": \\\"Zq7v0094Xw\\\"\\n  \\\"Pass%252520Word\\\": \\\"Zq7v0095Xw\\\"\\n  \\\"Pass%25252520Word\\\": \\\"Zq7v0096Xw\\\"\\n  \\\"Pass%2525252520Word\\\": \\\"Zq7v0097Xw\\\"\\n  \\\"Pass%252525252520Word\\\": \\\"Zq7v0098Xw\\\"\\n  \\\"db%5Furl\\\": \\\"Zq7v0099Xw\\\"\\n  \\\"db%255Furl\\\": \\\"Zq7v0100Xw\\\"\\n  \\\"db%25255Furl\\\": \\\"Zq7v0101Xw\\\"\\n  \\\"db%2525255Furl\\\": \\\"Zq7v0102Xw\\\"\\n  \\\"db%252525255Furl\\\": \\\"Zq7v0103Xw\\\"\\n  \\\"db%25252525255Furl\\\": \\\"Zq7v0104Xw\\\"\\n  \\\"db%2525252525255Furl\\\": \\\"Zq7v0105Xw\\\"\\n  \\\"db_ur\\\\u2113\\\": \\\"Zq7v0106Xw\\\"\\n  \\\"db_ur%E2%84%93\\\": \\\"Zq7v0107Xw\\\"\\n  \\\"db_ur%25E2%2584%2593\\\": \\\"Zq7v0108Xw\\\"\\n  \\\"db_ur%2525E2%252584%252593\\\": \\\"Zq7v0109Xw\\\"\\n  \\\"db_ur%252525E2%25252584%25252593\\\": \\\"Zq7v0110Xw\\\"\\n  \\\"db_ur%25252525E2%2525252584%2525252593\\\": \\\"Zq7v0111Xw\\\"\\n  \\\"db_ur%2525252525E2%252525252584%252525252593\\\": \\\"Zq7v0112Xw\\\"\\n  \\\"pw⟦split⟧d=Zq7v0065Xw\\\": \\\"Zq7v0113Xw\\\"\\n  \\\"pwd%3DZq7v0065Xw\\\": \\\"Zq7v0114Xw\\\"\\n  \\\"pwd%253DZq7v0065Xw\\\": \\\"Zq7v0115Xw\\\"\\n  \\\"pwd%25253DZq7v0065Xw\\\": \\\"Zq7v0116Xw\\\"\\n  \\\"pwd%2525253DZq7v0065Xw\\\": \\\"Zq7v0117Xw\\\"\\n  \\\"pwd%252525253DZq7v0065Xw\\\": \\\"Zq7v0118Xw\\\"\\n  \\\"pwd%25252525253DZq7v0065Xw\\\": \\\"Zq7v0119Xw\\\"\\n  \\\"my⟦split⟧sq⟦split⟧l:⟦split⟧//u:Zq7v0066Xw@db\\\": \\\"Zq7v0120Xw\\\"\\n  \\\"mysql%3A%2F%2Fu%3AZq7v0066Xw%40db\\\": \\\"Zq7v0121Xw\\\"\\n  \\\"mysql%253A%252F%252Fu%253AZq7v0066Xw%2540db\\\": \\\"Zq7v0122Xw\\\"\\n  \\\"mysql%25253A%25252F%25252Fu%25253AZq7v0066Xw%252540db\\\": \\\"Zq7v0123Xw\\\"\\n  \\\"mysql%2525253A%2525252F%2525252Fu%2525253AZq7v0066Xw%25252540db\\\": \\\"Zq7v0124Xw\\\"\\n  \\\"mysql%252525253A%252525252F%252525252Fu%252525253AZq7v0066Xw%2525252540db\\\": \\\"Zq7v0125Xw\\\"\\n  \\\"mysql%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0066Xw%252525252540db\\\": \\\"Zq7v0126Xw\\\"\\n  \\\"token: Zq7v0067Xw\\\": \\\"Zq7v0127Xw\\\"\\n  \\\"token%3A%20Zq7v0067Xw\\\": \\\"Zq7v0128Xw\\\"\\n  \\\"token%253A%2520Zq7v0067Xw\\\": \\\"Zq7v0129Xw\\\"\\n  \\\"token%25253A%252520Zq7v0067Xw\\\": \\\"Zq7v0130Xw\\\"\\n  \\\"token%2525253A%25252520Zq7v0067Xw\\\": \\\"Zq7v0131Xw\\\"\\n  \\\"token%252525253A%2525252520Zq7v0067Xw\\\": \\\"Zq7v0132Xw\\\"\\n  \\\"token%25252525253A%252525252520Zq7v0067Xw\\\": \\\"Zq7v0133Xw\\\"\\n  \\\"key=Zq7v0068Xw\\\": \\\"Zq7v0134Xw\\\"\\n  \\\"key%3DZq7v0068Xw\\\": \\\"Zq7v0135Xw\\\"\\n  \\\"key%253DZq7v0068Xw\\\": \\\"Zq7v0136Xw\\\"\\n  \\\"key%25253DZq7v0068Xw\\\": \\\"Zq7v0137Xw\\\"\\n  \\\"key%2525253DZq7v0068Xw\\\": \\\"Zq7v0138Xw\\\"\\n  \\\"key%252525253DZq7v0068Xw\\\": \\\"Zq7v0139Xw\\\"\\n  \\\"key%25252525253DZq7v0068Xw\\\": \\\"Zq7v0140Xw\\\"\\nmqtt_keys:\\n  broker: mqtt.local\\n  \\\"MQTT-PassWord\\\": \\\"Zq7v0158Xw\\\"\\n\",\"size\":30948,\"modified\":\"2026-10-16T05:29:20.332395\"}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "content": "# HAMCP-162 D1 synthetic configuration. Every credential below is synthetic.\nhomeassistant:\n  name: Synthetic D1\n  unit_system: metric\n  packages: !include_dir_named packages\n  customize:\n    sensor.synthetic_temperature:\n      friendly_name: Synthetic temperature\n      icon: mdi:thermometer\n  auth_providers:\n    - type: homeassistant\nrecorder:\n  # commented-out credential: password: Zq7v0147Xw\n  db_url: \"my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4\"\n  purge_keep_days: 10\n  commit_interval: 5\n  exclude:\n    domains:\n      - automation\n      - updater\nrecorder_sqlite:\n  db_url: sqlite:////config/home-assistant_v2.db\ntemplate:\n  - sensor:\n      - name: Synthetic template\n        state: \"{{ states('sensor.synthetic_temperature') | float(0) + 1 }}\"\nmqtt:\n  broker: mqtt.local\n  port: 1883\n  username: synthetic_user\n  password: \"Zq7v0141Xw\"\n  credentials:\n    value: \"Zq7v0142Xw\"\n    id: 7\n  certificate: auto\nx:\n  pin: 1234\n  code: 987654\n  pin_float: 12.5\n  token_bool: true\n  password_null:\n  auth:\n    password: \"Zq7v0144Xw\"\nhttp:\n  api_key: \"Zq7v0145Xw\"\n  server_port: 8123\ninfluxdb:\n  token: \"Zq7v0146Xw\"\n  database:\n    name: ha\nrest:\n  - resource: https://api.example.com/v1/status\n    authentication: basic\n    username: synthetic_user\n    password: \"Zq7v0150Xw\"\n    headers:\n      Authorization: \"Bearer Zq7v0151Xw\"\nlists:\n  harmless:\n    - name: a\n      password: \"Zq7v0152Xw\"\n    - name: b\n      nested: {api_key: \"Zq7v0153Xw\", port: 1}\n  credentials:\n    - id: 1\n      value: \"Zq7v0155Xw\"\nrefs:\n  password: !secret mqtt_password\n  api_key: !secret k\n  broker: !secret mqtt_host\n  token: !env_var TOK\n  pw_default: !env_var MQTT_PW Zq7v0148Xw\n  pw_multi: !env_var MQTT_PW multi word default Zq7v0149Xw\n  quoted: \"!secret abc\"\n  single_quoted: '!secret abc'\n  db_url: !secret recorder_db_url\n  container:\n    password: !secret x\n  two_words: !secret two words\n  long_name: !secret aa⟦split⟧aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa⟦split⟧aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa⟦split⟧aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n  bad_env: !env_var 1BAD d\n  jwt_name: !secret ey⟦split⟧JhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aCJ9.c2ln\n  leading_space_quoted: \" !secret x\"\nforgery:\n  a: {env_var_ref: \"Zq7v0156Xw\"}\n  b: {secret_ref: \"Zq7v0157Xw\"}\n  c: {env_var_ref: x, default_redacted: true}\nincludes:\n  sensor: !include sensors.yaml\n  automation: !include automations.yaml\n  dir_list: !include_dir_list lists_dir\n  dir_named: !include_dir_named named_dir\n  dir_merge_list: !include_dir_merge_list merge_list_dir\n  dir_merge_named: !include_dir_merge_named merge_named_dir\nsensor: !include sensors.yaml\nautomation: !include automations.yaml\nscript: !include scripts.yaml\nanchors:\n  base: &base {a: 1, b: two}\n  merged:\n    <<: *base\n    c: 3\n  alias: *base\n  list_alias: &l [1, 2]\n  list_ref: *l\nyaml11:\n  yes_: yes\n  no_: no\n  on_: on\n  off_: off\n  y_: y\n  true_: true\n  True_: True\n  octal_0o: 0o17\n  octal_0: 017\n  hex: 0x1F\n  underscore: 1_000\n  sexagesimal: 12:30:00\n  date: 2026-10-16\n  datetime: 2026-10-16T10:00:00Z\n  inf: .inf\n  ninf: -.inf\n  nan: .nan\n  tilde: ~\n  null_: null\n  exp: 1e3\n  plus: +1\n  bin: 0b101\n  float_: 1.50\n  bigint: 123456789012345678901234567890\ndotted:\n  \"a.b\": dotted_key_value\n  plain: plain_value\nempty_values:\n  null_value:\n  empty_map: {}\n  empty_list: []\n  empty_string: \"\"\ntop_null:\ntop_scalar: just a string\ntop_list:\n  - one\n  - two\ncorpus:\n  c0000: \"Server=db;Uid=u;Pw⟦split⟧d=Zq7v0001Xw\"\n  c0001: \"Server%3Ddb%3BUid%3Du%3BPwd%3DZq7v0001Xw\"\n  c0002: \"Server%253Ddb%253BUid%253Du%253BPwd%253DZq7v0001Xw\"\n  c0003: \"Server%25253Ddb%25253BUid%25253Du%25253BPwd%25253DZq7v0001Xw\"\n  c0004: \"Server%2525253Ddb%2525253BUid%2525253Du%2525253BPwd%2525253DZq7v0001Xw\"\n  c0005: \"Server%252525253Ddb%252525253BUid%252525253Du%252525253BPwd%252525253DZq7v0001Xw\"\n  c0006: \"Server%25252525253Ddb%25252525253BUid%25252525253Du%25252525253BPwd%25252525253DZq7v0001Xw\"\n  c0007: \"my⟦split⟧sq⟦split⟧l:⟦split⟧//u:Zq7v0002Xw@db/ha\"\n  c0008: \"mysql%3A%2F%2Fu%3AZq7v0002Xw%40db%2Fha\"\n  c0009: \"mysql%253A%252F%252Fu%253AZq7v0002Xw%2540db%252Fha\"\n  c0010: \"mysql%25253A%25252F%25252Fu%25253AZq7v0002Xw%252540db%25252Fha\"\n  c0011: \"mysql%2525253A%2525252F%2525252Fu%2525253AZq7v0002Xw%25252540db%2525252Fha\"\n  c0012: \"mysql%252525253A%252525252F%252525252Fu%252525253AZq7v0002Xw%2525252540db%252525252Fha\"\n  c0013: \"mysql%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0002Xw%252525252540db%25252525252Fha\"\n  c0014: \"Server=db;Uid=u;Pw⟦split⟧d==Zq7v0003Xw\"\n  c0015: \"Server%3Ddb%3BUid%3Du%3BPwd%3D%3DZq7v0003Xw\"\n  c0016: \"Server%253Ddb%253BUid%253Du%253BPwd%253D%253DZq7v0003Xw\"\n  c0017: \"Server%25253Ddb%25253BUid%25253Du%25253BPwd%25253D%25253DZq7v0003Xw\"\n  c0018: \"Server%2525253Ddb%2525253BUid%2525253Du%2525253BPwd%2525253D%2525253DZq7v0003Xw\"\n  c0019: \"Server%252525253Ddb%252525253BUid%252525253Du%252525253BPwd%252525253D%252525253DZq7v0003Xw\"\n  c0020: \"Server%25252525253Ddb%25252525253BUid%25252525253Du%25252525253BPwd%25252525253D%25252525253DZq7v0003Xw\"\n  c0021: \"mysql://db/ha?pw⟦split⟧d==Zq7v0004Xw\"\n  c0022: \"Pw⟦split⟧d==Zq7v0005Xw\"\n  c0023: \"Pwd%3D%3DZq7v0005Xw\"\n  c0024: \"Pwd%253D%253DZq7v0005Xw\"\n  c0025: \"Pwd%25253D%25253DZq7v0005Xw\"\n  c0026: \"Pwd%2525253D%2525253DZq7v0005Xw\"\n  c0027: \"Pwd%252525253D%252525253DZq7v0005Xw\"\n  c0028: \"Pwd%25252525253D%25252525253DZq7v0005Xw\"\n  c0029: \"PWD :=Zq7v0006Xw\"\n  c0030: \"PWD%20%3A%3DZq7v0006Xw\"\n  c0031: \"PWD%2520%253A%253DZq7v0006Xw\"\n  c0032: \"PWD%252520%25253A%25253DZq7v0006Xw\"\n  c0033: \"PWD%25252520%2525253A%2525253DZq7v0006Xw\"\n  c0034: \"PWD%2525252520%252525253A%252525253DZq7v0006Xw\"\n  c0035: \"PWD%252525252520%25252525253A%25252525253DZq7v0006Xw\"\n  c0036: \";pwd;Zq7v0007Xw\"\n  c0037: \"%3Bpwd%3BZq7v0007Xw\"\n  c0038: \"%253Bpwd%253BZq7v0007Xw\"\n  c0039: \"%25253Bpwd%25253BZq7v0007Xw\"\n  c0040: \"%2525253Bpwd%2525253BZq7v0007Xw\"\n  c0041: \"%252525253Bpwd%252525253BZq7v0007Xw\"\n  c0042: \"%25252525253Bpwd%25252525253BZq7v0007Xw\"\n  c0043: \"P%57D=Zq7v0008Xw\"\n  c0044: \"P%2557D%3DZq7v0008Xw\"\n  c0045: \"P%252557D%253DZq7v0008Xw\"\n  c0046: \"P%25252557D%25253DZq7v0008Xw\"\n  c0047: \"P%2525252557D%2525253DZq7v0008Xw\"\n  c0048: \"P%252525252557D%252525253DZq7v0008Xw\"\n  c0049: \"P%25252525252557D%25252525253DZq7v0008Xw\"\n  c0050: \"\\uFF50\\uFF57\\uFF44=Zq7v0009Xw\"\n  c0051: \"%EF%BD%90%EF%BD%97%EF%BD%84%3DZq7v0009Xw\"\n  c0052: \"%25EF%25BD%2590%25EF%25BD%2597%25EF%25BD%2584%253DZq7v0009Xw\"\n  c0053: \"%2525EF%2525BD%252590%2525EF%2525BD%252597%2525EF%2525BD%252584%25253DZq7v0009Xw\"\n  c0054: \"%252525EF%252525BD%25252590%252525EF%252525BD%25252597%252525EF%252525BD%25252584%2525253DZq7v0009Xw\"\n  c0055: \"%25252525EF%25252525BD%2525252590%25252525EF%25252525BD%2525252597%25252525EF%25252525BD%2525252584%252525253DZq7v0009Xw\"\n  c0056: \"%2525252525EF%2525252525BD%252525252590%2525252525EF%2525252525BD%252525252597%2525252525EF%2525252525BD%252525252584%25252525253DZq7v0009Xw\"\n  c0057: \"pw⟦split⟧d=Zq7v0010Xw\"\n  c0058: \"pwd%3DZq7v0010Xw\"\n  c0059: \"pwd%253DZq7v0010Xw\"\n  c0060: \"pwd%25253DZq7v0010Xw\"\n  c0061: \"pwd%2525253DZq7v0010Xw\"\n  c0062: \"pwd%252525253DZq7v0010Xw\"\n  c0063: \"pwd%25252525253DZq7v0010Xw\"\n  c0064: \"?x=PWD%3DZq7v0011Xw%3Bz\"\n  c0065: \"%3Fx%3DPWD%253DZq7v0011Xw%253Bz\"\n  c0066: \"%253Fx%253DPWD%25253DZq7v0011Xw%25253Bz\"\n  c0067: \"%25253Fx%25253DPWD%2525253DZq7v0011Xw%2525253Bz\"\n  c0068: \"%2525253Fx%2525253DPWD%252525253DZq7v0011Xw%252525253Bz\"\n  c0069: \"%252525253Fx%252525253DPWD%25252525253DZq7v0011Xw%25252525253Bz\"\n  c0070: \"%25252525253Fx%25252525253DPWD%2525252525253DZq7v0011Xw%2525252525253Bz\"\n  c0071: \"?%2550WD=Zq7v0012Xw\"\n  c0072: \"%3F%252550WD%3DZq7v0012Xw\"\n  c0073: \"%253F%25252550WD%253DZq7v0012Xw\"\n  c0074: \"%25253F%2525252550WD%25253DZq7v0012Xw\"\n  c0075: \"%2525253F%252525252550WD%2525253DZq7v0012Xw\"\n  c0076: \"%252525253F%25252525252550WD%252525253DZq7v0012Xw\"\n  c0077: \"%25252525253F%2525252525252550WD%25252525253DZq7v0012Xw\"\n  c0078: \"{\\\"pwd\\\": \\\"Zq7v0013Xw\\\"}\"\n  c0079: \"%7B%22pwd%22%3A%20%22Zq7v0013Xw%22%7D\"\n  c0080: \"%257B%2522pwd%2522%253A%2520%2522Zq7v0013Xw%2522%257D\"\n  c0081: \"%25257B%252522pwd%252522%25253A%252520%252522Zq7v0013Xw%252522%25257D\"\n  c0082: \"%2525257B%25252522pwd%25252522%2525253A%25252520%25252522Zq7v0013Xw%25252522%2525257D\"\n  c0083: \"%252525257B%2525252522pwd%2525252522%252525253A%2525252520%2525252522Zq7v0013Xw%2525252522%252525257D\"\n  c0084: \"%25252525257B%252525252522pwd%252525252522%25252525253A%252525252520%252525252522Zq7v0013Xw%252525252522%25252525257D\"\n  c0085: \"pass=Zq7v0014Xw\"\n  c0086: \"pass%3DZq7v0014Xw\"\n  c0087: \"pass%253DZq7v0014Xw\"\n  c0088: \"pass%25253DZq7v0014Xw\"\n  c0089: \"pass%2525253DZq7v0014Xw\"\n  c0090: \"pass%252525253DZq7v0014Xw\"\n  c0091: \"pass%25252525253DZq7v0014Xw\"\n  c0092: \"PASS ==Zq7v0015Xw\"\n  c0093: \"PASS%20%3D%3DZq7v0015Xw\"\n  c0094: \"PASS%2520%253D%253DZq7v0015Xw\"\n  c0095: \"PASS%252520%25253D%25253DZq7v0015Xw\"\n  c0096: \"PASS%25252520%2525253D%2525253DZq7v0015Xw\"\n  c0097: \"PASS%2525252520%252525253D%252525253DZq7v0015Xw\"\n  c0098: \"PASS%252525252520%25252525253D%25252525253DZq7v0015Xw\"\n  c0099: \"key: Zq7v0016Xw\"\n  c0100: \"key%3A%20Zq7v0016Xw\"\n  c0101: \"key%253A%2520Zq7v0016Xw\"\n  c0102: \"key%25253A%252520Zq7v0016Xw\"\n  c0103: \"key%2525253A%25252520Zq7v0016Xw\"\n  c0104: \"key%252525253A%2525252520Zq7v0016Xw\"\n  c0105: \"key%25252525253A%252525252520Zq7v0016Xw\"\n  c0106: \";key=Zq7v0017Xw\"\n  c0107: \"%3Bkey%3DZq7v0017Xw\"\n  c0108: \"%253Bkey%253DZq7v0017Xw\"\n  c0109: \"%25253Bkey%25253DZq7v0017Xw\"\n  c0110: \"%2525253Bkey%2525253DZq7v0017Xw\"\n  c0111: \"%252525253Bkey%252525253DZq7v0017Xw\"\n  c0112: \"%25252525253Bkey%25252525253DZq7v0017Xw\"\n  c0113: \"key==Zq7v0018Xw\"\n  c0114: \"key%3D%3DZq7v0018Xw\"\n  c0115: \"key%253D%253DZq7v0018Xw\"\n  c0116: \"key%25253D%25253DZq7v0018Xw\"\n  c0117: \"key%2525253D%2525253DZq7v0018Xw\"\n  c0118: \"key%252525253D%252525253DZq7v0018Xw\"\n  c0119: \"key%25252525253D%25252525253DZq7v0018Xw\"\n  c0120: \"pass:=Zq7v0019Xw\"\n  c0121: \"pass%3A%3DZq7v0019Xw\"\n  c0122: \"pass%253A%253DZq7v0019Xw\"\n  c0123: \"pass%25253A%25253DZq7v0019Xw\"\n  c0124: \"pass%2525253A%2525253DZq7v0019Xw\"\n  c0125: \"pass%252525253A%252525253DZq7v0019Xw\"\n  c0126: \"pass%25252525253A%25252525253DZq7v0019Xw\"\n  c0127: \"key :=Zq7v0020Xw\"\n  c0128: \"key%20%3A%3DZq7v0020Xw\"\n  c0129: \"key%2520%253A%253DZq7v0020Xw\"\n  c0130: \"key%252520%25253A%25253DZq7v0020Xw\"\n  c0131: \"key%25252520%2525253A%2525253DZq7v0020Xw\"\n  c0132: \"key%2525252520%252525253A%252525253DZq7v0020Xw\"\n  c0133: \"key%252525252520%25252525253A%25252525253DZq7v0020Xw\"\n  c0134: \"Key=Zq7v0021Xw\"\n  c0135: \"Key%3DZq7v0021Xw\"\n  c0136: \"Key%253DZq7v0021Xw\"\n  c0137: \"Key%25253DZq7v0021Xw\"\n  c0138: \"Key%2525253DZq7v0021Xw\"\n  c0139: \"Key%252525253DZq7v0021Xw\"\n  c0140: \"Key%25252525253DZq7v0021Xw\"\n  c0141: \"x=1;pass=Zq7v0022Xw\"\n  c0142: \"x%3D1%3Bpass%3DZq7v0022Xw\"\n  c0143: \"x%253D1%253Bpass%253DZq7v0022Xw\"\n  c0144: \"x%25253D1%25253Bpass%25253DZq7v0022Xw\"\n  c0145: \"x%2525253D1%2525253Bpass%2525253DZq7v0022Xw\"\n  c0146: \"x%252525253D1%252525253Bpass%252525253DZq7v0022Xw\"\n  c0147: \"x%25252525253D1%25252525253Bpass%25252525253DZq7v0022Xw\"\n  c0148: \"a&key=Zq7v0023Xw\"\n  c0149: \"a%26key%3DZq7v0023Xw\"\n  c0150: \"a%2526key%253DZq7v0023Xw\"\n  c0151: \"a%252526key%25253DZq7v0023Xw\"\n  c0152: \"a%25252526key%2525253DZq7v0023Xw\"\n  c0153: \"a%2525252526key%252525253DZq7v0023Xw\"\n  c0154: \"a%252525252526key%25252525253DZq7v0023Xw\"\n  c0155: \"key\\u0009=Zq7v0024Xw\"\n  c0156: \"key%09%3DZq7v0024Xw\"\n  c0157: \"key%2509%253DZq7v0024Xw\"\n  c0158: \"key%252509%25253DZq7v0024Xw\"\n  c0159: \"key%25252509%2525253DZq7v0024Xw\"\n  c0160: \"key%2525252509%252525253DZq7v0024Xw\"\n  c0161: \"key%252525252509%25252525253DZq7v0024Xw\"\n  c0162: \"key\\u00A0=Zq7v0025Xw\"\n  c0163: \"key%C2%A0%3DZq7v0025Xw\"\n  c0164: \"key%25C2%25A0%253DZq7v0025Xw\"\n  c0165: \"key%2525C2%2525A0%25253DZq7v0025Xw\"\n  c0166: \"key%252525C2%252525A0%2525253DZq7v0025Xw\"\n  c0167: \"key%25252525C2%25252525A0%252525253DZq7v0025Xw\"\n  c0168: \"key%2525252525C2%2525252525A0%25252525253DZq7v0025Xw\"\n  c0169: \"\\uFF4B\\uFF45\\uFF59\\uFF1DZq7v0026Xw\"\n  c0170: \"%EF%BD%8B%EF%BD%85%EF%BD%99%EF%BC%9DZq7v0026Xw\"\n  c0171: \"%25EF%25BD%258B%25EF%25BD%2585%25EF%25BD%2599%25EF%25BC%259DZq7v0026Xw\"\n  c0172: \"%2525EF%2525BD%25258B%2525EF%2525BD%252585%2525EF%2525BD%252599%2525EF%2525BC%25259DZq7v0026Xw\"\n  c0173: \"%252525EF%252525BD%2525258B%252525EF%252525BD%25252585%252525EF%252525BD%25252599%252525EF%252525BC%2525259DZq7v0026Xw\"\n  c0174: \"%25252525EF%25252525BD%252525258B%25252525EF%25252525BD%2525252585%25252525EF%25252525BD%2525252599%25252525EF%25252525BC%252525259DZq7v0026Xw\"\n  c0175: \"%2525252525EF%2525252525BD%25252525258B%2525252525EF%2525252525BD%252525252585%2525252525EF%2525252525BD%252525252599%2525252525EF%2525252525BC%25252525259DZq7v0026Xw\"\n  c0176: \"\\uFF50\\uFF41\\uFF53\\uFF53\\uFF1AZq7v0027Xw\"\n  c0177: \"%EF%BD%90%EF%BD%81%EF%BD%93%EF%BD%93%EF%BC%9AZq7v0027Xw\"\n  c0178: \"%25EF%25BD%2590%25EF%25BD%2581%25EF%25BD%2593%25EF%25BD%2593%25EF%25BC%259AZq7v0027Xw\"\n  c0179: \"%2525EF%2525BD%252590%2525EF%2525BD%252581%2525EF%2525BD%252593%2525EF%2525BD%252593%2525EF%2525BC%25259AZq7v0027Xw\"\n  c0180: \"%252525EF%252525BD%25252590%252525EF%252525BD%25252581%252525EF%252525BD%25252593%252525EF%252525BD%25252593%252525EF%252525BC%2525259AZq7v0027Xw\"\n  c0181: \"%25252525EF%25252525BD%2525252590%25252525EF%25252525BD%2525252581%25252525EF%25252525BD%2525252593%25252525EF%25252525BD%2525252593%25252525EF%25252525BC%252525259AZq7v0027Xw\"\n  c0182: \"%2525252525EF%2525252525BD%252525252590%2525252525EF%2525252525BD%252525252581%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BC%25252525259AZq7v0027Xw\"\n  c0183: \"pass%3DZq7v0028Xw\"\n  c0184: \"pass%253DZq7v0028Xw\"\n  c0185: \"pass%25253DZq7v0028Xw\"\n  c0186: \"pass%2525253DZq7v0028Xw\"\n  c0187: \"pass%252525253DZq7v0028Xw\"\n  c0188: \"pass%25252525253DZq7v0028Xw\"\n  c0189: \"pass%2525252525253DZq7v0028Xw\"\n  c0190: \"%6Bey=Zq7v0029Xw\"\n  c0191: \"%256Bey%3DZq7v0029Xw\"\n  c0192: \"%25256Bey%253DZq7v0029Xw\"\n  c0193: \"%2525256Bey%25253DZq7v0029Xw\"\n  c0194: \"%252525256Bey%2525253DZq7v0029Xw\"\n  c0195: \"%25252525256Bey%252525253DZq7v0029Xw\"\n  c0196: \"%2525252525256Bey%25252525253DZq7v0029Xw\"\n  c0197: \"k%45Y: Zq7v0030Xw\"\n  c0198: \"k%2545Y%3A%20Zq7v0030Xw\"\n  c0199: \"k%252545Y%253A%2520Zq7v0030Xw\"\n  c0200: \"k%25252545Y%25253A%252520Zq7v0030Xw\"\n  c0201: \"k%2525252545Y%2525253A%25252520Zq7v0030Xw\"\n  c0202: \"k%252525252545Y%252525253A%2525252520Zq7v0030Xw\"\n  c0203: \"k%25252525252545Y%25252525253A%252525252520Zq7v0030Xw\"\n  c0204: \"https://api.example.com/v1?key=Zq7v0031Xw\"\n  c0205: \"https%3A%2F%2Fapi.example.com%2Fv1%3Fkey%3DZq7v0031Xw\"\n  c0206: \"https%253A%252F%252Fapi.example.com%252Fv1%253Fkey%253DZq7v0031Xw\"\n  c0207: \"https%25253A%25252F%25252Fapi.example.com%25252Fv1%25253Fkey%25253DZq7v0031Xw\"\n  c0208: \"https%2525253A%2525252F%2525252Fapi.example.com%2525252Fv1%2525253Fkey%2525253DZq7v0031Xw\"\n  c0209: \"mysql://db/ha?pass=Zq7v0032Xw\"\n  c0210: \"mysql%3A%2F%2Fdb%2Fha%3Fpass%3DZq7v0032Xw\"\n  c0211: \"mysql%253A%252F%252Fdb%252Fha%253Fpass%253DZq7v0032Xw\"\n  c0212: \"mysql%25253A%25252F%25252Fdb%25252Fha%25253Fpass%25253DZq7v0032Xw\"\n  c0213: \"mysql%2525253A%2525252F%2525252Fdb%2525252Fha%2525253Fpass%2525253DZq7v0032Xw\"\n  c0214: \"https://api.example.com/v1?a=1&KEY=Zq7v0033Xw\"\n  c0215: \"https%3A%2F%2Fapi.example.com%2Fv1%3Fa%3D1%26KEY%3DZq7v0033Xw\"\n  c0216: \"https%253A%252F%252Fapi.example.com%252Fv1%253Fa%253D1%2526KEY%253DZq7v0033Xw\"\n  c0217: \"https%25253A%25252F%25252Fapi.example.com%25252Fv1%25253Fa%25253D1%252526KEY%25253DZq7v0033Xw\"\n  c0218: \"https%2525253A%2525252F%2525252Fapi.example.com%2525252Fv1%2525253Fa%2525253D1%25252526KEY%2525253DZq7v0033Xw\"\n  c0219: \"keypad\"\n  c0220: \"monkey\"\n  c0221: \"bypass\"\n  c0222: \"compass\"\n  c0223: \"key fob\"\n  c0224: \"monkey=1\"\n  c0225: \"keypad: 4\"\n  c0226: \"bypass=on\"\n  c0227: \"compass: north\"\n  c0228: \"hotkey=F5\"\n  c0229: \"passkey=1\"\n  c0230: \"turnkey: yes\"\n  c0231: \"Kitchen keypad\"\n  c0232: \"Hall pass\"\n  c0233: \"pass the salt\"\n  c0234: \"key lime pie\"\n  c0235: \"keys=3\"\n  c0236: \"passes: 2\"\n  c0237: \"po⟦split⟧st⟦split⟧gr⟦split⟧es⟦split⟧ql⟦split⟧+ps⟦split⟧yc⟦split⟧op⟦split⟧g2⟦split⟧://u:Zq7v0034Xw@db/ha\"\n  c0238: \"postgresql%2Bpsycopg2%3A%2F%2Fu%3AZq7v0034Xw%40db%2Fha\"\n  c0239: \"postgresql%252Bpsycopg2%253A%252F%252Fu%253AZq7v0034Xw%2540db%252Fha\"\n  c0240: \"postgresql%25252Bpsycopg2%25253A%25252F%25252Fu%25253AZq7v0034Xw%252540db%25252Fha\"\n  c0241: \"postgresql%2525252Bpsycopg2%2525253A%2525252F%2525252Fu%2525253AZq7v0034Xw%25252540db%2525252Fha\"\n  c0242: \"postgresql%252525252Bpsycopg2%252525253A%252525252F%252525252Fu%252525253AZq7v0034Xw%2525252540db%252525252Fha\"\n  c0243: \"postgresql%25252525252Bpsycopg2%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0034Xw%252525252540db%25252525252Fha\"\n  c0244: \"ms⟦split⟧sq⟦split⟧l+⟦split⟧py⟦split⟧od⟦split⟧bc⟦split⟧://u:Zq7v0035Xw@db/ha\"\n  c0245: \"mssql%2Bpyodbc%3A%2F%2Fu%3AZq7v0035Xw%40db%2Fha\"\n  c0246: \"mssql%252Bpyodbc%253A%252F%252Fu%253AZq7v0035Xw%2540db%252Fha\"\n  c0247: \"mssql%25252Bpyodbc%25253A%25252F%25252Fu%25253AZq7v0035Xw%252540db%25252Fha\"\n  c0248: \"mssql%2525252Bpyodbc%2525253A%2525252F%2525252Fu%2525253AZq7v0035Xw%25252540db%2525252Fha\"\n  c0249: \"mssql%252525252Bpyodbc%252525253A%252525252F%252525252Fu%252525253AZq7v0035Xw%2525252540db%252525252Fha\"\n  c0250: \"mssql%25252525252Bpyodbc%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0035Xw%252525252540db%25252525252Fha\"\n  c0251: \"redis://:Zq7v0036Xw@cache:6379/0\"\n  c0252: \"redis%3A%2F%2F%3AZq7v0036Xw%40cache%3A6379%2F0\"\n  c0253: \"redis%253A%252F%252F%253AZq7v0036Xw%2540cache%253A6379%252F0\"\n  c0254: \"redis%25253A%25252F%25252F%25253AZq7v0036Xw%252540cache%25253A6379%25252F0\"\n  c0255: \"redis%2525253A%2525252F%2525252F%2525253AZq7v0036Xw%25252540cache%2525253A6379%2525252F0\"\n  c0256: \"redis%252525253A%252525252F%252525252F%252525253AZq7v0036Xw%2525252540cache%252525253A6379%252525252F0\"\n  c0257: \"redis%25252525253A%25252525252F%25252525252F%25252525253AZq7v0036Xw%252525252540cache%25252525253A6379%25252525252F0\"\n  c0258: \"ht⟦split⟧tp⟦split⟧s:⟦split⟧//u:Zq7v0037Xw@example.com/x\"\n  c0259: \"https%3A%2F%2Fu%3AZq7v0037Xw%40example.com%2Fx\"\n  c0260: \"https%253A%252F%252Fu%253AZq7v0037Xw%2540example.com%252Fx\"\n  c0261: \"https%25253A%25252F%25252Fu%25253AZq7v0037Xw%252540example.com%25252Fx\"\n  c0262: \"https%2525253A%2525252F%2525252Fu%2525253AZq7v0037Xw%25252540example.com%2525252Fx\"\n  c0263: \"https%252525253A%252525252F%252525252Fu%252525253AZq7v0037Xw%2525252540example.com%252525252Fx\"\n  c0264: \"https%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0037Xw%252525252540example.com%25252525252Fx\"\n  c0265: \"mysql://u@db/ha\"\n  c0266: \"mysql%3A%2F%2Fu%40db%2Fha\"\n  c0267: \"mysql%253A%252F%252Fu%2540db%252Fha\"\n  c0268: \"mysql%25253A%25252F%25252Fu%252540db%25252Fha\"\n  c0269: \"mysql%2525253A%2525252F%2525252Fu%25252540db%2525252Fha\"\n  c0270: \"mysql%252525253A%252525252F%252525252Fu%2525252540db%252525252Fha\"\n  c0271: \"mysql%25252525253A%25252525252F%25252525252Fu%252525252540db%25252525252Fha\"\n  c0272: \"mysql://u:Zq7v0039Xw\\uFF20db/ha\"\n  c0273: \"mysql%3A%2F%2Fu%3AZq7v0039Xw%EF%BC%A0db%2Fha\"\n  c0274: \"mysql%253A%252F%252Fu%253AZq7v0039Xw%25EF%25BC%25A0db%252Fha\"\n  c0275: \"mysql%25253A%25252F%25252Fu%25253AZq7v0039Xw%2525EF%2525BC%2525A0db%25252Fha\"\n  c0276: \"mysql%2525253A%2525252F%2525252Fu%2525253AZq7v0039Xw%252525EF%252525BC%252525A0db%2525252Fha\"\n  c0277: \"mysql%252525253A%252525252F%252525252Fu%252525253AZq7v0039Xw%25252525EF%25252525BC%25252525A0db%252525252Fha\"\n  c0278: \"mysql%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0039Xw%2525252525EF%2525252525BC%2525252525A0db%25252525252Fha\"\n  c0279: \"mysql://db/ha?pa⟦split⟧ssword=Zq7v0040Xw\"\n  c0280: \"mysql%3A%2F%2Fdb%2Fha%3Fpassword%3DZq7v0040Xw\"\n  c0281: \"mysql%253A%252F%252Fdb%252Fha%253Fpassword%253DZq7v0040Xw\"\n  c0282: \"mysql%25253A%25252F%25252Fdb%25252Fha%25253Fpassword%25253DZq7v0040Xw\"\n  c0283: \"mysql%2525253A%2525252F%2525252Fdb%2525252Fha%2525253Fpassword%2525253DZq7v0040Xw\"\n  c0284: \"mysql%252525253A%252525252F%252525252Fdb%252525252Fha%252525253Fpassword%252525253DZq7v0040Xw\"\n  c0285: \"mysql%25252525253A%25252525252F%25252525252Fdb%25252525252Fha%25252525253Fpassword%25252525253DZq7v0040Xw\"\n  c0286: \"DRIVER={X};SERVER=db;UID=u;PW⟦split⟧D=Zq7v0041Xw\"\n  c0287: \"DRIVER%3D%7BX%7D%3BSERVER%3Ddb%3BUID%3Du%3BPWD%3DZq7v0041Xw\"\n  c0288: \"DRIVER%253D%257BX%257D%253BSERVER%253Ddb%253BUID%253Du%253BPWD%253DZq7v0041Xw\"\n  c0289: \"DRIVER%25253D%25257BX%25257D%25253BSERVER%25253Ddb%25253BUID%25253Du%25253BPWD%25253DZq7v0041Xw\"\n  c0290: \"DRIVER%2525253D%2525257BX%2525257D%2525253BSERVER%2525253Ddb%2525253BUID%2525253Du%2525253BPWD%2525253DZq7v0041Xw\"\n  c0291: \"DRIVER%252525253D%252525257BX%252525257D%252525253BSERVER%252525253Ddb%252525253BUID%252525253Du%252525253BPWD%252525253DZq7v0041Xw\"\n  c0292: \"DRIVER%25252525253D%25252525257BX%25252525257D%25252525253BSERVER%25252525253Ddb%25252525253BUID%25252525253Du%25252525253BPWD%25252525253DZq7v0041Xw\"\n  c0293: \"Data Source=db;User ID=u;Pa⟦split⟧ssword=Zq7v0042Xw\"\n  c0294: \"Data%20Source%3Ddb%3BUser%20ID%3Du%3BPassword%3DZq7v0042Xw\"\n  c0295: \"Data%2520Source%253Ddb%253BUser%2520ID%253Du%253BPassword%253DZq7v0042Xw\"\n  c0296: \"Data%252520Source%25253Ddb%25253BUser%252520ID%25253Du%25253BPassword%25253DZq7v0042Xw\"\n  c0297: \"Data%25252520Source%2525253Ddb%2525253BUser%25252520ID%2525253Du%2525253BPassword%2525253DZq7v0042Xw\"\n  c0298: \"Data%2525252520Source%252525253Ddb%252525253BUser%2525252520ID%252525253Du%252525253BPassword%252525253DZq7v0042Xw\"\n  c0299: \"Data%252525252520Source%25252525253Ddb%25252525253BUser%252525252520ID%25252525253Du%25252525253BPassword%25252525253DZq7v0042Xw\"\n  c0300: \"host=db dbname=ha user=u pa⟦split⟧ssword=Zq7v0043Xw\"\n  c0301: \"host%3Ddb%20dbname%3Dha%20user%3Du%20password%3DZq7v0043Xw\"\n  c0302: \"host%253Ddb%2520dbname%253Dha%2520user%253Du%2520password%253DZq7v0043Xw\"\n  c0303: \"host%25253Ddb%252520dbname%25253Dha%252520user%25253Du%252520password%25253DZq7v0043Xw\"\n  c0304: \"host%2525253Ddb%25252520dbname%2525253Dha%25252520user%2525253Du%25252520password%2525253DZq7v0043Xw\"\n  c0305: \"host%252525253Ddb%2525252520dbname%252525253Dha%2525252520user%252525253Du%2525252520password%252525253DZq7v0043Xw\"\n  c0306: \"host%25252525253Ddb%252525252520dbname%25252525253Dha%252525252520user%25252525253Du%252525252520password%25252525253DZq7v0043Xw\"\n  c0307: \"mssql+pyodbc:///?odbc_connect=DRIVER%3D%7BODBC%7D%3BSERVER%3Ddb%3BUID%3Du%3BPWD%3DZq7v0044Xw\"\n  c0308: \"mssql%2Bpyodbc%3A%2F%2F%2F%3Fodbc_connect%3DDRIVER%253D%257BODBC%257D%253BSERVER%253Ddb%253BUID%253Du%253BPWD%253DZq7v0044Xw\"\n  c0309: \"mssql%252Bpyodbc%253A%252F%252F%252F%253Fodbc_connect%253DDRIVER%25253D%25257BODBC%25257D%25253BSERVER%25253Ddb%25253BUID%25253Du%25253BPWD%25253DZq7v0044Xw\"\n  c0310: \"mssql%25252Bpyodbc%25253A%25252F%25252F%25252F%25253Fodbc_connect%25253DDRIVER%2525253D%2525257BODBC%2525257D%2525253BSERVER%2525253Ddb%2525253BUID%2525253Du%2525253BPWD%2525253DZq7v0044Xw\"\n  c0311: \"mssql%2525252Bpyodbc%2525253A%2525252F%2525252F%2525252F%2525253Fodbc_connect%2525253DDRIVER%252525253D%252525257BODBC%252525257D%252525253BSERVER%252525253Ddb%252525253BUID%252525253Du%252525253BPWD%252525253DZq7v0044Xw\"\n  c0312: \"mssql%252525252Bpyodbc%252525253A%252525252F%252525252F%252525252F%252525253Fodbc_connect%252525253DDRIVER%25252525253D%25252525257BODBC%25252525257D%25252525253BSERVER%25252525253Ddb%25252525253BUID%25252525253Du%25252525253BPWD%25252525253DZq7v0044Xw\"\n  c0313: \"mssql%25252525252Bpyodbc%25252525253A%25252525252F%25252525252F%25252525252F%25252525253Fodbc_connect%25252525253DDRIVER%2525252525253D%2525252525257BODBC%2525252525257D%2525252525253BSERVER%2525252525253Ddb%2525252525253BUID%2525252525253Du%2525252525253BPWD%2525252525253DZq7v0044Xw\"\n  c0314: \"Living%2525252520Room\"\n  c0315: \"Living%252525252520Room\"\n  c0316: \"%41%\"\n  c0317: \"%G1%41\"\n  c0318: \"%41 50% off\"\n  c0319: \"%FF\"\n  c0320: \"%C0%AE\"\n  c0321: \"a%00b\"\n  c0322: \"\\uFF05\\uFF17\\uFF10wd=Zq7v0045Xw\"\n  c0323: \"Living%25252520Room\"\n  c0324: \"Living%2525252520Room\"\n  c0325: \"Pwd%2525253DZq7v0046Xw\"\n  c0326: \"50% off\"\n  c0327: \"100%\"\n  c0328: \"%G1\"\n  c0329: \"{{ states('sensor.x') }}\"\n  c0330: \"sqlite:////config/home-assistant_v2.db\"\n  c0331: \"sqlite:///home-assistant_v2.db\"\n  c0332: \"sqlite:///a..b.db\"\n  c0333: \"sqlite:////config/home-assistant_v2.db\\u000A\"\n  c0334: \"sqlite:////config/home\\u000A-assistant_v2.db\"\n  c0335: \"sqlite:////config/x\\u000D.db\"\n  c0336: \"sqlite:////config/x\\u0009.db\"\n  c0337: \"sqlite:////config/x\\u0000.db\"\n  c0338: \"sqlite:////config/x\\u007F.db\"\n  c0339: \"sqlite:////config/x\\u2028.db\"\n  c0340: \"sqlite:////config/x\\u2029.db\"\n  c0341: \"sqlite:///../x.db\"\n  c0342: \"sqlite:////config/../x.db\"\n  c0343: \"sqlite:////config/x.db/..\"\n  c0344: \"sqlite:////config/x%2D.db\"\n  c0345: \"sqlite:////config/x%.db\"\n  c0346: \"SQLITE:///x.db\"\n  c0347: \"sqlite:///X.db\"\n  c0348: \"sqlite:////config/\\uFF58.db\"\n  c0349: \"sqlite:////config/x.db?mode=ro\"\n  c0350: \"sqlite:////config/u@x.db\"\n  c0351: \"sqlite:////config/x;y.db\"\n  c0352: \"sqlite:////config/x=y.db\"\n  c0353: \"sqlite:////config/x y.db\"\n  c0354: \"sqlite:///:memory:\"\n  c0355: \"sqlite:////config/session.db\"\n  c0356: \"mysql://db.local:3306/ha?charset=utf8mb4\"\n  c0357: \"postgresql://db.local/ha?sslmode=require\"\n  c0358: \"mysql://[fd00::5]:3306/ha\"\n  c0359: \"unknown://host/path\"\n  c0360: \"https://api.example.com/v1?entity=sensor.x\"\n  c0361: \"http://api.local/{{ states('input_text.x') }}/v1\"\n  c0362: \"Server=db;Database=ha;Trusted_Connection=yes\"\n  c0363: \"Living Room\"\n  c0364: \"50% off\"\n  c0365: \"Refresh the access token daily\"\n  c0366: \"Author: Synthetic\"\n  c0367: \"Session started\"\n  c0368: \"private room\"\n  c0369: \"cookie jar\"\n  c0370: \"secretary\"\n  c0371: \"https://example.com/oauth/authorize\"\n  c0372: \"{% if token == 1 %}\"\n  c0373: \"token://host/x\"\n  c0374: \"mailto://someone@example.com\"\n  c0375: \"Hall pass: yes\"\n  c0376: \"Press key: Enter\"\n  c0377: \"{% set key = 1 %}\"\n  c0378: \"Spare key=garage\"\n  c0379: \"key://host/x\"\n  c0380: \"http://key:8080/x\"\n  c0381: \"login=Zq7v0047Xw\"\n  c0382: \"pw=Zq7v0048Xw\"\n  c0383: \"psk=Zq7v0049Xw\"\n  c0384: \"p_w_d=Zq7v0050Xw\"\n  c0385: \"P\\u0441d=Zq7v0051Xw\"\n  c0386: \"k\\u0435y=Zq7v0052Xw\"\n  c0387: \"my_key=Zq7v0053Xw\"\n  c0388: \"app_key=Zq7v0054Xw\"\n  c0389: \"passkey=Zq7v0055Xw\"\n  c0390: \"pass_word=Zq7v0056Xw\"\n  c0391: \"\\\"key\\\": \\\"Zq7v0057Xw\\\"\"\n  c0392: \"{'pass': 'Zq7v0058Xw'}\"\n  c0393: \"key\\u2192Zq7v0059Xw\"\n  c0394: \"QUJDREVGR0g=\"\n  c0395: \"Bearer ey⟦split⟧JhbGciOiJIUzI1NiJ9.ey⟦split⟧JzdWIiOiJzeW50aGV0aWMifQ.Zq7v0060Xw\"\n  c0396: \"ey⟦split⟧JhbGciOiJIUzI1NiJ9.ey⟦split⟧JzdWIiOiJzeW50aGV0aWMtMiJ9.Zq7v0061Xw\"\n  c0397: \"--⟦split⟧---BEGIN ENCRYPTED PRIVATE KEY-----\\u000AU1lOVEhFVElDLU5PVC1BLUtFWS0Zq7v0062Xw\\u000A--⟦split⟧---END ENCRYPTED PRIVATE KEY-----\\u000A\"\n  c0398: \"--⟦split⟧---BEGIN CERTIFICATE-----\\u000AU1lOVEhFVElDLUNFUlQZq7v0063Xw\\u000A--⟦split⟧---END CERTIFICATE-----\\u000A\"\n  c0399: \"U1⟦split⟧lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1⟦split⟧lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1⟦split⟧lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDZq⟦split⟧7v0064Xw\"\n  c0400: \"a\\u00A0b\"\n  c0401: \"\\uFEFFbom\"\n  c0402: \"\\u200Bzw\"\n  c0403: \"line1\\u000Aline2\"\n  c0404: \"tab\\u0009here\"\n  c0405: \"\\U0001F600 emoji\"\n  c0406: \"\\u0085nel\"\n  c0407: \"trailing   \"\n  c0408: \"  leading\"\nkeys:\n  \"p%61ssword\": \"Zq7v0069Xw\"\n  \"p%2561ssword\": \"Zq7v0070Xw\"\n  \"p%252561ssword\": \"Zq7v0071Xw\"\n  \"p%25252561ssword\": \"Zq7v0072Xw\"\n  \"p%2525252561ssword\": \"Zq7v0073Xw\"\n  \"p%252525252561ssword\": \"Zq7v0074Xw\"\n  \"p%25252525252561ssword\": \"Zq7v0075Xw\"\n  \"%70assword\": \"Zq7v0076Xw\"\n  \"%2570assword\": \"Zq7v0077Xw\"\n  \"%252570assword\": \"Zq7v0078Xw\"\n  \"%25252570assword\": \"Zq7v0079Xw\"\n  \"%2525252570assword\": \"Zq7v0080Xw\"\n  \"%252525252570assword\": \"Zq7v0081Xw\"\n  \"%25252525252570assword\": \"Zq7v0082Xw\"\n  \"PASSWORD\": \"Zq7v0083Xw\"\n  \"\\uFF50\\uFF41\\uFF53\\uFF53\\uFF57\\uFF4F\\uFF52\\uFF44\": \"Zq7v0084Xw\"\n  \"%EF%BD%90%EF%BD%81%EF%BD%93%EF%BD%93%EF%BD%97%EF%BD%8F%EF%BD%92%EF%BD%84\": \"Zq7v0085Xw\"\n  \"%25EF%25BD%2590%25EF%25BD%2581%25EF%25BD%2593%25EF%25BD%2593%25EF%25BD%2597%25EF%25BD%258F%25EF%25BD%2592%25EF%25BD%2584\": \"Zq7v0086Xw\"\n  \"%2525EF%2525BD%252590%2525EF%2525BD%252581%2525EF%2525BD%252593%2525EF%2525BD%252593%2525EF%2525BD%252597%2525EF%2525BD%25258F%2525EF%2525BD%252592%2525EF%2525BD%252584\": \"Zq7v0087Xw\"\n  \"%252525EF%252525BD%25252590%252525EF%252525BD%25252581%252525EF%252525BD%25252593%252525EF%252525BD%25252593%252525EF%252525BD%25252597%252525EF%252525BD%2525258F%252525EF%252525BD%25252592%252525EF%252525BD%25252584\": \"Zq7v0088Xw\"\n  \"%25252525EF%25252525BD%2525252590%25252525EF%25252525BD%2525252581%25252525EF%25252525BD%2525252593%25252525EF%25252525BD%2525252593%25252525EF%25252525BD%2525252597%25252525EF%25252525BD%252525258F%25252525EF%25252525BD%2525252592%25252525EF%25252525BD%2525252584\": \"Zq7v0089Xw\"\n  \"%2525252525EF%2525252525BD%252525252590%2525252525EF%2525252525BD%252525252581%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BD%252525252597%2525252525EF%2525252525BD%25252525258F%2525252525EF%2525252525BD%252525252592%2525252525EF%2525252525BD%252525252584\": \"Zq7v0090Xw\"\n  \"MQTT-PassWord\": \"Zq7v0091Xw\"\n  \"Pass Word\": \"Zq7v0092Xw\"\n  \"Pass%20Word\": \"Zq7v0093Xw\"\n  \"Pass%2520Word\": \"Zq7v0094Xw\"\n  \"Pass%252520Word\": \"Zq7v0095Xw\"\n  \"Pass%25252520Word\": \"Zq7v0096Xw\"\n  \"Pass%2525252520Word\": \"Zq7v0097Xw\"\n  \"Pass%252525252520Word\": \"Zq7v0098Xw\"\n  \"db%5Furl\": \"Zq7v0099Xw\"\n  \"db%255Furl\": \"Zq7v0100Xw\"\n  \"db%25255Furl\": \"Zq7v0101Xw\"\n  \"db%2525255Furl\": \"Zq7v0102Xw\"\n  \"db%252525255Furl\": \"Zq7v0103Xw\"\n  \"db%25252525255Furl\": \"Zq7v0104Xw\"\n  \"db%2525252525255Furl\": \"Zq7v0105Xw\"\n  \"db_ur\\u2113\": \"Zq7v0106Xw\"\n  \"db_ur%E2%84%93\": \"Zq7v0107Xw\"\n  \"db_ur%25E2%2584%2593\": \"Zq7v0108Xw\"\n  \"db_ur%2525E2%252584%252593\": \"Zq7v0109Xw\"\n  \"db_ur%252525E2%25252584%25252593\": \"Zq7v0110Xw\"\n  \"db_ur%25252525E2%2525252584%2525252593\": \"Zq7v0111Xw\"\n  \"db_ur%2525252525E2%252525252584%252525252593\": \"Zq7v0112Xw\"\n  \"pw⟦split⟧d=Zq7v0065Xw\": \"Zq7v0113Xw\"\n  \"pwd%3DZq7v0065Xw\": \"Zq7v0114Xw\"\n  \"pwd%253DZq7v0065Xw\": \"Zq7v0115Xw\"\n  \"pwd%25253DZq7v0065Xw\": \"Zq7v0116Xw\"\n  \"pwd%2525253DZq7v0065Xw\": \"Zq7v0117Xw\"\n  \"pwd%252525253DZq7v0065Xw\": \"Zq7v0118Xw\"\n  \"pwd%25252525253DZq7v0065Xw\": \"Zq7v0119Xw\"\n  \"my⟦split⟧sq⟦split⟧l:⟦split⟧//u:Zq7v0066Xw@db\": \"Zq7v0120Xw\"\n  \"mysql%3A%2F%2Fu%3AZq7v0066Xw%40db\": \"Zq7v0121Xw\"\n  \"mysql%253A%252F%252Fu%253AZq7v0066Xw%2540db\": \"Zq7v0122Xw\"\n  \"mysql%25253A%25252F%25252Fu%25253AZq7v0066Xw%252540db\": \"Zq7v0123Xw\"\n  \"mysql%2525253A%2525252F%2525252Fu%2525253AZq7v0066Xw%25252540db\": \"Zq7v0124Xw\"\n  \"mysql%252525253A%252525252F%252525252Fu%252525253AZq7v0066Xw%2525252540db\": \"Zq7v0125Xw\"\n  \"mysql%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0066Xw%252525252540db\": \"Zq7v0126Xw\"\n  \"token: Zq7v0067Xw\": \"Zq7v0127Xw\"\n  \"token%3A%20Zq7v0067Xw\": \"Zq7v0128Xw\"\n  \"token%253A%2520Zq7v0067Xw\": \"Zq7v0129Xw\"\n  \"token%25253A%252520Zq7v0067Xw\": \"Zq7v0130Xw\"\n  \"token%2525253A%25252520Zq7v0067Xw\": \"Zq7v0131Xw\"\n  \"token%252525253A%2525252520Zq7v0067Xw\": \"Zq7v0132Xw\"\n  \"token%25252525253A%252525252520Zq7v0067Xw\": \"Zq7v0133Xw\"\n  \"key=Zq7v0068Xw\": \"Zq7v0134Xw\"\n  \"key%3DZq7v0068Xw\": \"Zq7v0135Xw\"\n  \"key%253DZq7v0068Xw\": \"Zq7v0136Xw\"\n  \"key%25253DZq7v0068Xw\": \"Zq7v0137Xw\"\n  \"key%2525253DZq7v0068Xw\": \"Zq7v0138Xw\"\n  \"key%252525253DZq7v0068Xw\": \"Zq7v0139Xw\"\n  \"key%25252525253DZq7v0068Xw\": \"Zq7v0140Xw\"\nmqtt_keys:\n  broker: mqtt.local\n  \"MQTT-PassWord\": \"Zq7v0158Xw\"\n",
+       "modified": "2026-10-16T05:29:20.332395",
+       "path": "configuration.yaml",
+       "size": 30948,
+       "success": true
+      }
+     }
+    }
+   },
+   "tool": "ha_read_file"
+  }
+ ],
+ "ha_yaml11_runtime_view": {
+  "ok": true,
+  "yaml11": {
+   "yaml11": {
+    "True_": true,
+    "bigint": 123456789012345678901234567890,
+    "bin": 5,
+    "date": "<date:2026-10-16>",
+    "datetime": "<datetime:2026-10-16 10:00:00+00:00>",
+    "exp": "1e3",
+    "float_": 1.5,
+    "hex": 31,
+    "inf": Infinity,
+    "nan": NaN,
+    "ninf": -Infinity,
+    "no_": false,
+    "null_": null,
+    "octal_0": 15,
+    "octal_0o": "0o17",
+    "off_": false,
+    "on_": true,
+    "plus": 1,
+    "sexagesimal": 45000,
+    "tilde": null,
+    "true_": true,
+    "underscore": 1000,
+    "y_": "y",
+    "yes_": true
+   }
+  }
+ },
+ "label": "8.4.3-supp",
+ "protocolVersion": "2025-03-26",
+ "server": {
+  "icons": [
+   {
+    "mimeType": "image/svg+xml",
+    "src": "https://raw.githubusercontent.com/homeassistant-ai/ha-mcp/master/packaging/mcpb/icon.svg"
+   },
+   {
+    "mimeType": "image/png",
+    "sizes": [
+     "128x128"
+    ],
+    "src": "https://raw.githubusercontent.com/homeassistant-ai/ha-mcp/master/packaging/mcpb/icon-128.png"
+   }
+  ],
+  "name": "ha-mcp",
+  "version": "8.4.3"
+ }
+}

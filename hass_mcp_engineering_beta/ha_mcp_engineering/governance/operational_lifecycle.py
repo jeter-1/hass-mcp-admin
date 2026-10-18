@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Awaitable, Callable
 
+from ..clients.paths import rest_path
 from ..clients.rest import HomeAssistantRestClient
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import (
@@ -886,7 +887,7 @@ class OperationalLifecycleGateway:
 
     async def read_home_assistant_identity(self) -> dict[str, Any]:
         try:
-            raw = await self.rest.request("GET", "/config")
+            raw = await self.rest.request("GET", rest_path("/config"))
         except AuthorizationError:
             raise LifecycleGatewayError("permission_failure") from None
         except HomeAssistantTimeoutError:

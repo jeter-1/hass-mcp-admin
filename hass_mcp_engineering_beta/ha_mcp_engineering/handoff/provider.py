@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 import time
 from typing import Any
 
+from ..clients.paths import rest_path
+
 from ..capabilities import build_capability_catalog
 from ..dependency.extraction import valid_entity_id
 from ..incident.models import IncidentSourceCoverage
@@ -447,7 +449,9 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
         async def one(entity_id):
             try:
                 async with semaphore:
-                    value = await self.rest_client.request("GET", f"/states/{entity_id}")
+                    value = await self.rest_client.request(
+                        "GET", rest_path("/states/{}", entity_id, kinds=("entity_id",))
+                    )
                 safe = sanitize_untrusted_data(value, known_secrets=(self.secret, self.ha_token), max_string=500)
                 if safe.failed_closed or not isinstance(safe.value, dict):
                     raise TypeError("invalid state response")
@@ -465,7 +469,9 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
         async def one(automation_id):
             try:
                 async with semaphore:
-                    value = await self.rest_client.request("GET", f"/config/automation/config/{automation_id}")
+                    value = await self.rest_client.request(
+                        "GET", rest_path("/config/automation/config/{}", automation_id)
+                    )
                 safe = sanitize_untrusted_data(value, known_secrets=(self.secret, self.ha_token), max_string=500)
                 if safe.failed_closed or not isinstance(safe.value, dict):
                     raise TypeError("invalid automation response")
@@ -479,7 +485,7 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
         state_inventory_failed = False
         state_by_internal_id = {}
         try:
-            raw_states = await self.rest_client.request("GET", "/states")
+            raw_states = await self.rest_client.request("GET", rest_path("/states"))
             if not isinstance(raw_states, list):
                 raise TypeError("invalid state inventory response")
             safe_states = sanitize_untrusted_data(

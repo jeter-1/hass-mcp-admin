@@ -26,6 +26,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -101,6 +102,12 @@ class _PreparedStub:
                 "target_type": declaration["target_type"],
             },
         )()
+
+
+# HAMCP-171: the sweep reads a child's dispatch intent and terminal status
+# before deciding whether to read its parent. An orphan-shaped stub (no
+# dispatch intent, not terminal) still requires the parent read.
+_ORPHAN_SHAPED_CHILD = SimpleNamespace(dispatch_intent=None, terminal=False)
 
 
 class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
@@ -4370,7 +4377,9 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             ) as cleanup_pending,
             patch.object(self.runtime.locks, "records", return_value=()),
             patch.object(
-                self.runtime.children, "get", return_value=object()
+                self.runtime.children,
+                "get",
+                return_value=_ORPHAN_SHAPED_CHILD,
             ),
             patch.object(
                 self.runtime.children,
@@ -4432,7 +4441,9 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             ),
             patch.object(self.runtime.locks, "records", return_value=()),
             patch.object(
-                self.runtime.children, "get", return_value=object()
+                self.runtime.children,
+                "get",
+                return_value=_ORPHAN_SHAPED_CHILD,
             ),
             patch.object(
                 self.runtime.children,

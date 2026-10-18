@@ -1,6 +1,60 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.15** closes the remaining HAMCP-189 residuals:
+Engineering **2.4.1-beta.19** verifies slow typed fan and power devices
+promptly (HAMCP-192). After dispatch it polls the entity inline for about 10
+seconds and verifies on the first match, so a device that reports a few
+seconds late is `succeeded_verified` instead of `observing`. The typed entity
+lease is 30 s instead of 120 s, so a task that still yields is re-read within
+about a minute, and one final read at the evidence deadline decides verified
+or manual review. A `lock_conflict` receipt names the blocking task using the
+lock check's own predicate, and receipts gain additive `observation_status`
+hints. A manual-review hold can be released only on the Ingress page `/typed`,
+which shows the requested and freshly read state side by side; the release
+records a fresh readback and exactly one audit entry, never dispatches and
+keeps the outcome `manual_review_required`.
+
+It builds on beta.18 below.
+
+Engineering **2.4.1-beta.18** makes `get_server_health` much cheaper on
+large plan stores (HAMCP-171). Health reuses, in process memory only, the
+safety verdict of each unchanged persisted plan record. The verdict is keyed
+by filename, inode, size, mtime and a SHA-256 of the parsed bytes, so any
+change validates fresh. `get_server_health(deep_storage_audit=true)`
+re-validates everything. The 30 s recovery sweep now reads a parent task only
+when the child's own status requires it. No persisted format changes.
+
+It builds on beta.17 below.
+
+Engineering **2.4.1-beta.17** makes every Home Assistant REST path safe by
+construction (HAMCP-200). The REST transport accepts only a typed `Route`
+issued by `rest_path` for a reviewed template in a closed registry; a plain
+string is refused before any session or credential exists. Each bound value
+passes one guard that refuses dot segments, separators, control characters
+and their encoded forms. The transport sends a request only when the
+normalized URL equals the template, and it never follows redirects.
+`get_automation_config`, `get_entity`, `get_history` and
+`automation_reliability_analysis` refuse an invalid identifier as
+`invalid_request` without contacting Home Assistant. Automation
+configuration IDs no longer accept dots. The compatibility module's
+standalone entry point is removed. Before this change a crafted identifier
+could make Engineering send token-bearing GET requests to other
+HA/Supervisor routes, including any GET-enabled webhook (which can trigger
+automations); no POST/PUT/DELETE/PATCH was reachable.
+
+It builds on beta.16, which adds one optional reviewed delegated read,
+`ha_config_get_yaml` (HAMCP-162). It reads one mapping-key path of
+`configuration.yaml` only:
+- every other file, including `secrets.yaml`, and every credential-shaped
+  path is refused before any upstream call;
+- `!secret`/`!env_var` become reference-name markers;
+- credential-shaped keys, connection strings and credential text are redacted
+  whole;
+- every result discloses that values are ha-mcp's YAML 1.2 parse.
+
+It is admitted only on the exact reviewed ha-mcp 8.4.3 and 8.5.0
+descriptors. `ha_list_files` and `ha_read_file` stay unexposed.
+
+Beta.16 builds on beta.15, which closes the remaining HAMCP-189 residuals:
 fresh rollback planning acquires its own Core lease before any planning read,
 so under degraded Core it is refused before any Home Assistant read; an
 observed read counts an upstream attempt only after the Core authorizer
@@ -38,8 +92,8 @@ beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
 The healthy catalog is **87 tools: 59 native and 28 admitted delegated
 reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA15_RELEASE_NOTES.md) and
-[acceptance contract](docs/V2_4_1_BETA15_ACCEPTANCE.md).
+See the [release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
+[acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -123,14 +177,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.15 release notes](docs/V2_4_1_BETA15_RELEASE_NOTES.md) and
-[2.4.1-beta.15 acceptance contract](docs/V2_4_1_BETA15_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.18 release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
+[2.4.1-beta.18 acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.15 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.19 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

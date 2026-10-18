@@ -11,12 +11,13 @@ import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from aiohttp import web
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.clients import logbook
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
+from ha_mcp_engineering.clients.paths import rest_path
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError, HomeAssistantApiError, InvalidRequestError, error_definition
 from ha_mcp_engineering.request_context import begin_request, end_request
 from ha_mcp_engineering.tools import compatibility
@@ -132,7 +133,10 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
                 args, kwargs = client.calls[0]
                 path = urlsplit(args[1])
                 self.assertEqual(args[0], "GET")
-                self.assertEqual(path.path, "/logbook/"+(NOW-timedelta(hours=hours)).isoformat())
+                # HAMCP-200: the start timestamp is one percent-encoded segment.
+                start = (NOW-timedelta(hours=hours)).isoformat()
+                self.assertEqual(path.path, "/logbook/"+quote(start, safe=""))
+                self.assertEqual(unquote(path.path), "/logbook/"+start)
                 self.assertEqual(parse_qs(path.query), {"end_time": [NOW.isoformat()], **({"entity": [entity]} if entity else {})})
                 self.assertEqual(kwargs, {"raw": True, "logbook_read": True})
 
@@ -451,7 +455,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                 task = asyncio.create_task(self.read())
                 while not entered.is_set():
                     await asyncio.sleep(.001)
-                useful = await self.client.request("GET", "/logbook/synthetic")
+                useful = await self.client.request("GET", rest_path("/logbook/{}", "synthetic"))
                 self.assertEqual(useful, entries())
                 self.assertFalse(task.done())
                 release.set()

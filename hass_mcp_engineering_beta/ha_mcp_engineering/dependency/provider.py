@@ -15,6 +15,7 @@ import re
 import time
 from typing import Any
 
+from ..clients.paths import rest_path
 from ..facilitation import EvidenceReference
 from ..observability import METRICS
 from ..logging_config import redact_data
@@ -259,7 +260,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         try:
             config = await request(
                 "home_assistant_config",
-                lambda: self.rest_client.request("GET", "/config"),
+                lambda: self.rest_client.request("GET", rest_path("/config")),
             )
             if not isinstance(config, dict):
                 home_assistant_version_status = "unreadable"
@@ -277,7 +278,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
 
         state_started = time.perf_counter()
         try:
-            states = await request("states_inventory", lambda: self.rest_client.request("GET", "/states"))
+            states = await request("states_inventory", lambda: self.rest_client.request("GET", rest_path("/states")))
             if not isinstance(states, list):
                 raise TypeError("state response is not a list")
             METRICS.record_provider_result(self.provider_id, "complete", dispatched=True)
@@ -400,7 +401,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             try:
                 config = await request(
                     "automation_config",
-                    lambda: self.rest_client.request("GET", f"/config/automation/config/{internal_id}"),
+                    lambda: self.rest_client.request(
+                        "GET", rest_path("/config/automation/config/{}", internal_id)
+                    ),
                     queued=True,
                 )
                 if not isinstance(config, dict):

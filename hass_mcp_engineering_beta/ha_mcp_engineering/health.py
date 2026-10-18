@@ -68,13 +68,16 @@ class HealthRegistry:
         self.fan_operations = fan_operations
         self.power_operations = power_operations
 
-    async def async_snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
+    async def async_snapshot(
+        self, ha_connection: dict[str, Any], *, deep_storage_audit: bool = False
+    ) -> dict[str, Any]:
         governance = (
             await self.governance.async_health_summary(
                 home_assistant_status=ha_connection.get(
                     "rest_status", ha_connection.get("status")
                 ),
                 home_assistant_websocket_status=ha_connection.get("websocket_status"),
+                **({"deep_storage_audit": True} if deep_storage_audit else {}),
             )
             if self.governance else {"enabled": False, "storage": {"configured": False}}
         )

@@ -1421,7 +1421,8 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             "ha_mcp_tools/device_get",
             '"service": "turn_on"',
             '"service": "turn_off"',
-            '/states/{entity_id}',
+            # HAMCP-200: the direct-target readback binds the entity through the path guard.
+            'rest_path("/states/{}", entity_id, kinds=("entity_id",))',
             "primary_config_entry_id",
             "primary_id",
             "device_id",
@@ -1733,7 +1734,9 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertEqual(jobs["validate"]["needs"], "detect-release")
         self.assertEqual(jobs["validate"]["if"],
                          "needs.detect-release.outputs.release_action == 'publish'")
-        self.assertIn("validate", jobs["promote"]["needs"])
+        # HAMCP-204: every job in the split publication chain needs validate.
+        for name in ("verify-release", "claim", "build", "verify-image", "promote"):
+            self.assertIn("validate", jobs[name]["needs"])
 
 
 if __name__ == "__main__":

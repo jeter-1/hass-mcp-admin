@@ -118,6 +118,7 @@ class _CoreNetwork:
                 self.exits += 1
 
             def get(self, url, **_kwargs):
+                url = str(url)  # HAMCP-200: the transport passes a verified yarl URL.
                 if url.endswith("/config"):
                     return Response(json.dumps({"version": network.version}).encode())
                 if url.endswith(("/states", "/services")):
@@ -125,7 +126,7 @@ class _CoreNetwork:
                 raise AssertionError("unexpected synthetic REST probe")
 
             def post(self, url, **_kwargs):
-                assert url.endswith("/config/core/check_config")
+                assert str(url).endswith("/config/core/check_config")
                 return core_tests._RawJsonResponse(
                     b'{"result":"valid","errors":null,"warnings":null}'
                 )

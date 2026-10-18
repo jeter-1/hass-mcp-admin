@@ -1,0 +1,207 @@
+{
+ "tree": "head 7553dde (HAMCP-171)",
+ "plans": 435,
+ "applied": 240,
+ "actions_per_plan": 7,
+ "build_seconds": 522.3,
+ "plan_files": 435,
+ "plan_bytes_mean": 37024,
+ "plan_bytes_total": 16105625,
+ "idle_probe": {
+  "round_trips": 56918,
+  "rtt_median_ms": 0.034,
+  "rtt_p99_ms": 0.068,
+  "rtt_max_ms": 0.591,
+  "max_loop_gap_ms": 1.692,
+  "ticks": 2000
+ },
+ "health_calls": [
+  {
+   "deep": false,
+   "wall_s": 5.485,
+   "validation_wait_ms": 4013.8,
+   "worker_elapsed_ms": 4010.7,
+   "phases_ms": {
+    "reader_wait_ms": 0.0,
+    "abandoned_worker_wait_ms": 0.0,
+    "snapshot_ms": 452.8,
+    "validation_wait_ms": 4013.8,
+    "worker_elapsed_ms": 4010.7,
+    "projection_ms": 232.1,
+    "assembly_ms": 529.5,
+    "overlay_ms": 213.6
+   },
+   "health_cache_hit_count": 0,
+   "safety_verdict_cache": {
+    "mode": "cached",
+    "hits": 0,
+    "misses": 435,
+    "not_applicable": 0,
+    "pruned": 0
+   },
+   "probe": {
+    "round_trips": 2696,
+    "rtt_median_ms": 0.073,
+    "rtt_p99_ms": 20.522,
+    "rtt_max_ms": 531.73,
+    "max_loop_gap_ms": 531.745,
+    "ticks": 808
+   }
+  },
+  {
+   "deep": false,
+   "wall_s": 1.537,
+   "validation_wait_ms": 1.5,
+   "worker_elapsed_ms": 0.0,
+   "phases_ms": {
+    "reader_wait_ms": 0.0,
+    "abandoned_worker_wait_ms": 0.0,
+    "snapshot_ms": 490.8,
+    "validation_wait_ms": 1.5,
+    "worker_elapsed_ms": 0.0,
+    "projection_ms": 233.0,
+    "assembly_ms": 561.8,
+    "overlay_ms": 207.3
+   },
+   "health_cache_hit_count": 1,
+   "safety_verdict_cache": {
+    "mode": "cached",
+    "hits": 435,
+    "misses": 0,
+    "not_applicable": 0,
+    "pruned": 0
+   },
+   "probe": {
+    "round_trips": 2426,
+    "rtt_median_ms": 0.04,
+    "rtt_p99_ms": 2.814,
+    "rtt_max_ms": 564.29,
+    "max_loop_gap_ms": 564.475,
+    "ticks": 460
+   }
+  },
+  {
+   "deep": false,
+   "wall_s": 1.552,
+   "validation_wait_ms": 1.5,
+   "worker_elapsed_ms": 0.0,
+   "phases_ms": {
+    "reader_wait_ms": 0.0,
+    "abandoned_worker_wait_ms": 0.0,
+    "snapshot_ms": 491.9,
+    "validation_wait_ms": 1.5,
+    "worker_elapsed_ms": 0.0,
+    "projection_ms": 239.1,
+    "assembly_ms": 572.4,
+    "overlay_ms": 202.3
+   },
+   "health_cache_hit_count": 2,
+   "safety_verdict_cache": {
+    "mode": "cached",
+    "hits": 435,
+    "misses": 0,
+    "not_applicable": 0,
+    "pruned": 0
+   },
+   "probe": {
+    "round_trips": 2444,
+    "rtt_median_ms": 0.035,
+    "rtt_p99_ms": 2.756,
+    "rtt_max_ms": 574.49,
+    "max_loop_gap_ms": 574.744,
+    "ticks": 462
+   }
+  },
+  {
+   "deep": true,
+   "wall_s": 5.606,
+   "validation_wait_ms": 4034.4,
+   "worker_elapsed_ms": 4031.2,
+   "phases_ms": {
+    "reader_wait_ms": 0.0,
+    "abandoned_worker_wait_ms": 0.0,
+    "snapshot_ms": 489.1,
+    "validation_wait_ms": 4034.4,
+    "worker_elapsed_ms": 4031.2,
+    "projection_ms": 238.8,
+    "assembly_ms": 585.4,
+    "overlay_ms": 211.7
+   },
+   "health_cache_hit_count": 2,
+   "safety_verdict_cache": {
+    "mode": "deep_rescan",
+    "hits": 0,
+    "misses": 435,
+    "not_applicable": 0,
+    "pruned": 0
+   },
+   "probe": {
+    "round_trips": 2770,
+    "rtt_median_ms": 0.05,
+    "rtt_p99_ms": 15.587,
+    "rtt_max_ms": 587.582,
+    "max_loop_gap_ms": 587.019,
+    "ticks": 830
+   }
+  },
+  {
+   "deep": false,
+   "wall_s": 1.572,
+   "validation_wait_ms": 1.9,
+   "worker_elapsed_ms": 0.0,
+   "phases_ms": {
+    "reader_wait_ms": 0.0,
+    "abandoned_worker_wait_ms": 0.0,
+    "snapshot_ms": 492.1,
+    "validation_wait_ms": 1.9,
+    "worker_elapsed_ms": 0.0,
+    "projection_ms": 240.7,
+    "assembly_ms": 581.9,
+    "overlay_ms": 208.2
+   },
+   "health_cache_hit_count": 3,
+   "safety_verdict_cache": {
+    "mode": "cached",
+    "hits": 435,
+    "misses": 0,
+    "not_applicable": 0,
+    "pruned": 0
+   },
+   "probe": {
+    "round_trips": 2372,
+    "rtt_median_ms": 0.042,
+    "rtt_p99_ms": 2.729,
+    "rtt_max_ms": 583.862,
+    "max_loop_gap_ms": 583.532,
+    "ticks": 470
+   }
+  }
+ ],
+ "sweep_passes": [
+  {
+   "task_repository_get": 0,
+   "wall_s": 0.123,
+   "max_loop_gap_ms": 123.813
+  },
+  {
+   "task_repository_get": 0,
+   "wall_s": 0.123,
+   "max_loop_gap_ms": 124.209
+  },
+  {
+   "task_repository_get": 0,
+   "wall_s": 0.122,
+   "max_loop_gap_ms": 122.433
+  },
+  {
+   "task_repository_get": 0,
+   "wall_s": 0.124,
+   "max_loop_gap_ms": 125.225
+  },
+  {
+   "task_repository_get": 0,
+   "wall_s": 0.123,
+   "max_loop_gap_ms": 123.46
+  }
+ ]
+}

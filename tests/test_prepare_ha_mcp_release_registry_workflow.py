@@ -32,8 +32,18 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
         cls.script = SCRIPT_PATH.read_text(encoding="utf-8")
         cls.fixture = FIXTURE_PATH.read_text(encoding="utf-8")
 
+    def _job(self, name: str) -> dict:
+        return self.workflow["jobs"][name]
+
+    def _step(self, job: str, name: str) -> dict:
+        return next(
+            step
+            for step in self._job(job)["steps"]
+            if step.get("name") == name or step.get("id") == name
+        )
+
     def _parse_architecture_index(self, value: object) -> dict[str, str]:
-        steps = self.workflow["jobs"]["prepare"]["steps"]
+        steps = self.workflow["jobs"]["evidence"]["steps"]
         run = next(step for step in steps if step.get("id") == "image")["run"]
         marker = 'python - "$raw" "$RUNNER_TEMP/platforms.json" <<\'PY\'\n'
         code = run.split(marker, 1)[1].split("\nPY\n", 1)[0]
@@ -60,23 +70,36 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
         self.assertEqual(reason["type"], "string")
         self.assertFalse(reason["required"])
         self.assertEqual(reason["default"], "")
-        job = self.workflow["jobs"]["prepare"]
-        self.assertEqual(job["if"], "github.ref == 'refs/heads/main'")
+        jobs = self.workflow["jobs"]
+        self.assertEqual(set(jobs), {"evidence", "sign", "publish"})
+        for job in jobs.values():
+            self.assertEqual(job["if"], "github.ref == 'refs/heads/main'")
+            self.assertNotIn("packages", json.dumps(job["permissions"]))
         self.assertEqual(
-            job["environment"], "ha-mcp-release-registry-signing"
+            jobs["sign"]["environment"], "ha-mcp-release-registry-signing"
         )
+        self.assertNotIn("environment", jobs["evidence"])
+        self.assertNotIn("environment", jobs["publish"])
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
+        self.assertEqual(jobs["evidence"]["permissions"], {"contents": "read"})
+        self.assertEqual(jobs["sign"]["permissions"], {"contents": "read"})
         self.assertEqual(
-            job["permissions"],
+            jobs["publish"]["permissions"],
             {"contents": "write", "pull-requests": "write"},
         )
-        self.assertEqual(job["timeout-minutes"], 75)
-        self.assertNotIn("packages", json.dumps(job["permissions"]))
+        self.assertEqual(jobs["sign"]["needs"], "evidence")
+        self.assertEqual(jobs["publish"]["needs"], "sign")
+        # The former single 75-minute job is now bounded per stage.
+        self.assertEqual(
+            [jobs[name]["timeout-minutes"] for name in ("evidence", "sign", "publish")],
+            [60, 20, 15],
+        )
 
     def test_actions_are_immutable_and_locations_are_fixed(self) -> None:
         uses = [
             step["uses"]
-            for step in self.workflow["jobs"]["prepare"]["steps"]
+            for job in self.workflow["jobs"].values()
+            for step in job["steps"]
             if "uses" in step
         ]
         self.assertTrue(uses)
@@ -92,14 +115,19 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
         self.assertIn("architecture_image_digests", self.source)
 
     def test_private_key_is_scoped_only_to_signing_step(self) -> None:
-        job = self.workflow["jobs"]["prepare"]
+        job = self.workflow["jobs"]["sign"]
         self.assertNotIn("HA_MCP_RELEASE_REGISTRY_SIGNING_KEY", job["env"])
+        for other in ("evidence", "publish"):
+            self.assertNotIn(
+                "HA_MCP_RELEASE_REGISTRY_SIGNING_KEY",
+                json.dumps(self.workflow["jobs"][other]),
+            )
+        self.assertEqual(
+            self.source.count("secrets.HA_MCP_RELEASE_REGISTRY_SIGNING_KEY"), 1
+        )
         steps = job["steps"]
-        signing = next(
-            step
-            for step in steps
-            if step.get("name")
-            == "Sign and verify data-only release-registry update"
+        signing = self._step(
+            "sign", "Sign and verify data-only release-registry update"
         )
         self.assertEqual(
             set(signing["env"]),
@@ -130,7 +158,7 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
         self.assertIn('stats["approval_notification_calls"]', self.source)
 
     def test_mutable_tag_is_resolved_once_then_never_reused(self) -> None:
-        steps = self.workflow["jobs"]["prepare"]["steps"]
+        steps = self.workflow["jobs"]["evidence"]["steps"]
         image = next(step for step in steps if step.get("id") == "image")
         run = image["run"]
         self.assertEqual(
@@ -189,46 +217,61 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
                 self._parse_architecture_index(value)
 
     def test_revocation_is_denial_only_and_skips_upstream_observation(self) -> None:
-        steps = self.workflow["jobs"]["prepare"]["steps"]
         add_only = {
-            "Resolve exact official source tag",
-            "Set up Docker Buildx",
-            "Resolve exact official image",
-            "Start disposable read-only Home Assistant fixture",
-            "Capture exact runtime catalog twice",
-            "Generate bounded immutable release evidence",
-            "Clean up disposable runtime",
+            "evidence": {
+                "Resolve exact official source tag",
+                "Set up Docker Buildx",
+                "Resolve exact official image",
+                "Start disposable read-only Home Assistant fixture",
+                "Capture exact runtime catalog twice",
+                "Generate bounded immutable release evidence",
+                "Stage bounded release evidence for signing",
+                "Retain bounded release evidence for signing",
+                "Clean up disposable runtime",
+            },
+            "sign": {
+                "Download bounded release evidence",
+                "Verify bounded release evidence",
+                "Remove bounded add preparation inputs",
+            },
         }
-        for step in steps:
-            if step.get("name") in add_only:
-                condition = step.get("if")
-                if step.get("name") == "Clean up disposable runtime":
+        for job_name, names in add_only.items():
+            present = {
+                step.get("name") for step in self._job(job_name)["steps"]
+            }
+            self.assertLessEqual(names, present)
+            for name in names:
+                condition = self._step(job_name, name).get("if")
+                if name == "Clean up disposable runtime":
                     self.assertEqual(
                         condition, "${{ always() && inputs.operation == 'add' }}"
                     )
                 else:
                     self.assertEqual(condition, "inputs.operation == 'add'")
+        # Signing, staging and publication run for both add and revoke.
+        for job_name, name in (
+            ("sign", "Sign and verify data-only release-registry update"),
+            ("sign", "Stage exact signed data-only update"),
+            ("sign", "Retain exact signed data-only update"),
+            ("publish", "Download exact signed data-only update"),
+            ("publish", "Verify and apply exact signed data-only update"),
+            ("publish", "Enforce data-only diff"),
+        ):
+            self.assertNotIn("if", self._step(job_name, name))
 
-        signing = next(
-            step
-            for step in steps
-            if step.get("name")
-            == "Sign and verify data-only release-registry update"
+        signing = self._step(
+            "sign", "Sign and verify data-only release-registry update"
         )
         self.assertIn("HA_MCP_RELEASE_REGISTRY_REVOCATION_REASON", signing["env"])
         self.assertIn('--operation "$OPERATION"', signing["run"])
         self.assertNotIn("--revocation-reason", signing["run"])
-        validation = next(
-            step
-            for step in steps
-            if step.get("name") == "Validate protected-main request"
-        )["run"]
+        validation = self._step("evidence", "Validate protected-main request")["run"]
         self.assertIn("reason.encode", validation)
         self.assertIn("reason.strip", validation)
         self.assertIn("unicodedata.category", validation)
         self.assertIn('character in {"\\u2028", "\\u2029"}', validation)
 
-        branch = next(step for step in steps if step.get("id") == "branch")["run"]
+        branch = self._step("publish", "branch")["run"]
         self.assertIn('if [[ "$OPERATION" == "add" ]]', branch)
         self.assertIn('expected_count=3', branch)
         self.assertIn('expected_count=2', branch)
@@ -236,24 +279,106 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
         self.assertIn("Revoke ha-mcp ${VERSION} compatible-read authority", branch)
         self.assertIn('test "$staged" = "$expected"', branch)
         self.assertIn('test "$changed" = "$expected"', branch)
-        summary = next(
-            step
-            for step in steps
-            if step.get("name") == "Write bounded preparation summary"
-        )["run"]
+        summary = self._step("evidence", "Write bounded preparation summary")["run"]
         self.assertNotIn("REVOCATION_REASON", summary)
 
-    def test_add_removes_ephemeral_inputs_before_exact_file_gate(self) -> None:
-        steps = self.workflow["jobs"]["prepare"]["steps"]
-        cleanup = next(
-            step
-            for step in steps
-            if step.get("name") == "Remove bounded add preparation inputs"
+    def _bash(
+        self, cwd: Path, script: str, extra: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["bash", "-c", script],
+            cwd=cwd,
+            env={
+                **os.environ,
+                "GITHUB_RUN_ID": "12345",
+                "OPERATION": "add",
+                "VERSION": "8.4.4",
+                **(extra or {}),
+            },
+            capture_output=True,
+            text=True,
         )
-        branch = next(step for step in steps if step.get("id") == "branch")
-        cleanup_index = steps.index(cleanup)
-        branch_index = steps.index(branch)
-        self.assertLess(cleanup_index, branch_index)
+
+    def _baseline_repository(self, root: Path) -> Path:
+        repository = root / "signer"
+        repository.mkdir()
+
+        def git(*arguments: str, cwd: Path = repository) -> None:
+            subprocess.run(
+                ["git", *arguments], cwd=cwd, check=True, capture_output=True, text=True
+            )
+
+        git("init")
+        git("config", "user.name", "fixture")
+        git("config", "user.email", "fixture@example.invalid")
+        baseline = {
+            "upstream-trust/ha-mcp-release-registry.json": "{}\n",
+            "docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md": "baseline\n",
+        }
+        for relative, value in baseline.items():
+            path = repository / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(value, encoding="utf-8")
+        git("add", ".")
+        git("commit", "-m", "baseline")
+        git("clone", "--quiet", str(repository), str(root / "publisher"), cwd=root)
+        git("config", "user.name", "fixture", cwd=root / "publisher")
+        git("config", "user.email", "fixture@example.invalid", cwd=root / "publisher")
+        return repository
+
+    def _sign_and_stage(self, root: Path) -> tuple[Path, str]:
+        """Run the signer-side cleanup and staging steps; return staging and hash."""
+
+        repository = self._baseline_repository(root)
+        generated = {
+            "upstream-trust/ha-mcp-release-registry.json": '{"updated":true}\n',
+            "docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md": "updated\n",
+            "docs/evidence/ha-mcp-release-registry/ha-mcp-8.4.4.json": "{}\n",
+            ".compat/ha-mcp-runtime-capture.json": "{}\n",
+            ".compat/ha-mcp-release-evidence.json": "{}\n",
+        }
+        for relative, value in generated.items():
+            path = repository / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(value, encoding="utf-8")
+        runner_temp = root / "runner"
+        runner_temp.mkdir()
+        output = root / "sign-output"
+        cleanup = self._step("sign", "Remove bounded add preparation inputs")["run"]
+        stage = self._step("sign", "stage")["run"]
+        result = self._bash(
+            repository,
+            cleanup + "\n" + stage,
+            {"RUNNER_TEMP": str(runner_temp), "GITHUB_OUTPUT": str(output)},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((repository / ".compat").exists())
+        outputs = dict(
+            line.split("=", 1) for line in output.read_text().splitlines()
+        )
+        return runner_temp, outputs["manifest_sha256"]
+
+    def _publish(self, root: Path, runner_temp: Path, manifest_sha256: str):
+        apply = self._step("publish", "Verify and apply exact signed data-only update")[
+            "run"
+        ]
+        branch = self._step("publish", "branch")["run"]
+        push_marker = "git -c credential.helper="
+        self.assertEqual(branch.count(push_marker), 1)
+        enforce_before_push = branch.split(push_marker, 1)[0]
+        return self._bash(
+            root / "publisher",
+            apply + "\n" + enforce_before_push,
+            {"RUNNER_TEMP": str(runner_temp), "MANIFEST_SHA256": manifest_sha256},
+        )
+
+    def test_add_removes_ephemeral_inputs_before_exact_file_gate(self) -> None:
+        cleanup = self._step("sign", "Remove bounded add preparation inputs")
+        signing = self._step("sign", "Sign and verify data-only release-registry update")
+        stage = self._step("sign", "stage")
+        sign_steps = self._job("sign")["steps"]
+        self.assertLess(sign_steps.index(signing), sign_steps.index(cleanup))
+        self.assertLess(sign_steps.index(cleanup), sign_steps.index(stage))
         self.assertEqual(cleanup["if"], "inputs.operation == 'add'")
         self.assertIn(
             "test -f .compat/ha-mcp-runtime-capture.json", cleanup["run"]
@@ -262,12 +387,9 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
             "test -f .compat/ha-mcp-release-evidence.json", cleanup["run"]
         )
         self.assertIn("rmdir -- .compat", cleanup["run"])
+        self.assertIn('test "$changed" = "$expected"', stage["run"])
 
-        final_cleanup = next(
-            step
-            for step in steps
-            if step.get("name") == "Clean up disposable runtime"
-        )
+        final_cleanup = self._step("evidence", "Clean up disposable runtime")
         self.assertEqual(
             final_cleanup["if"],
             "${{ always() && inputs.operation == 'add' }}",
@@ -275,62 +397,14 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
         self.assertIn("rm -rf .compat", final_cleanup["run"])
 
         with tempfile.TemporaryDirectory() as directory:
-            repository = Path(directory)
-
-            def run(*arguments: str, script: str | None = None) -> None:
-                command = (
-                    ["git", *arguments]
-                    if script is None
-                    else ["bash", "-c", script]
-                )
-                subprocess.run(
-                    command,
-                    cwd=repository,
-                    env={
-                        **os.environ,
-                        "GITHUB_RUN_ID": "12345",
-                        "OPERATION": "add",
-                        "VERSION": "8.4.4",
-                    },
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-
-            run("init")
-            run("config", "user.name", "fixture")
-            run("config", "user.email", "fixture@example.invalid")
-            baseline = {
-                "upstream-trust/ha-mcp-release-registry.json": "{}\n",
-                "docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md": "baseline\n",
-            }
-            for relative, value in baseline.items():
-                path = repository / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(value, encoding="utf-8")
-            run("add", ".")
-            run("commit", "-m", "baseline")
-
-            generated = {
-                "upstream-trust/ha-mcp-release-registry.json": '{"updated":true}\n',
-                "docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md": "updated\n",
-                "docs/evidence/ha-mcp-release-registry/ha-mcp-8.4.4.json": "{}\n",
-                ".compat/ha-mcp-runtime-capture.json": "{}\n",
-                ".compat/ha-mcp-release-evidence.json": "{}\n",
-            }
-            for relative, value in generated.items():
-                path = repository / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(value, encoding="utf-8")
-
-            enforce_before_push = branch["run"].split(
-                'git push origin "HEAD:refs/heads/${branch}"', 1
-            )[0]
-            run(script=cleanup["run"] + "\n" + enforce_before_push)
-
+            root = Path(directory)
+            runner_temp, manifest_sha256 = self._sign_and_stage(root)
+            result = self._publish(root, runner_temp, manifest_sha256)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            publisher = root / "publisher"
             committed = subprocess.run(
                 ["git", "show", "--pretty=", "--name-only", "HEAD"],
-                cwd=repository,
+                cwd=publisher,
                 check=True,
                 capture_output=True,
                 text=True,
@@ -343,11 +417,100 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
                     "upstream-trust/ha-mcp-release-registry.json",
                 ],
             )
-            self.assertFalse((repository / ".compat").exists())
+            self.assertEqual(
+                (publisher / "upstream-trust/ha-mcp-release-registry.json").read_text(),
+                '{"updated":true}\n',
+            )
+            self.assertFalse((publisher / ".compat").exists())
+            self.assertFalse((runner_temp / "signed").exists())
+
+    def test_signer_staging_refuses_unexpected_changes(self) -> None:
+        stage = self._step("sign", "stage")["run"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = self._baseline_repository(root)
+            for relative in (
+                "upstream-trust/ha-mcp-release-registry.json",
+                "docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md",
+                "docs/evidence/ha-mcp-release-registry/ha-mcp-8.4.4.json",
+                "scripts/unexpected.py",
+            ):
+                path = repository / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("changed\n", encoding="utf-8")
+            (root / "runner").mkdir()
+            result = self._bash(
+                repository,
+                stage,
+                {
+                    "RUNNER_TEMP": str(root / "runner"),
+                    "GITHUB_OUTPUT": str(root / "out"),
+                },
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((root / "runner" / "signed" / "SHA256SUMS").exists())
+
+    def test_publication_refuses_tampered_or_unbound_signed_update(self) -> None:
+        def tamper_file(signed: Path) -> None:
+            (signed / "files/upstream-trust/ha-mcp-release-registry.json").write_text(
+                '{"updated":false}\n', encoding="utf-8"
+            )
+
+        def extra_file(signed: Path) -> None:
+            path = signed / "files/.github/workflows/injected.yml"
+            path.parent.mkdir(parents=True)
+            path.write_text("on: push\n", encoding="utf-8")
+
+        def missing_file(signed: Path) -> None:
+            (signed / "files/docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md").unlink()
+
+        def symlink(signed: Path) -> None:
+            path = signed / "files/upstream-trust/ha-mcp-release-registry.json"
+            path.unlink()
+            path.symlink_to("/etc/hostname")
+
+        def rewritten_manifest(signed: Path) -> None:
+            manifest = signed / "SHA256SUMS"
+            manifest.write_text(manifest.read_text() + "0" * 64 + "  extra\n")
+
+        cases = {
+            "tampered file": (tamper_file, None),
+            "extra file": (extra_file, None),
+            "missing file": (missing_file, None),
+            "symlink": (symlink, None),
+            "rewritten manifest": (rewritten_manifest, None),
+            "wrong manifest hash": (None, "0" * 64),
+            "malformed manifest hash": (None, "not-a-hash"),
+        }
+        for name, (mutate, manifest_override) in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                runner_temp, manifest_sha256 = self._sign_and_stage(root)
+                if mutate is not None:
+                    mutate(runner_temp / "signed")
+                result = self._publish(
+                    root, runner_temp, manifest_override or manifest_sha256
+                )
+                self.assertNotEqual(result.returncode, 0)
+                head = subprocess.run(
+                    ["git", "log", "--format=%s"],
+                    cwd=root / "publisher",
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.splitlines()
+                self.assertEqual(head, ["baseline"])
+                self.assertEqual(
+                    (
+                        root / "publisher" / "upstream-trust/ha-mcp-release-registry.json"
+                    ).read_text(),
+                    "{}\n",
+                )
 
     def test_workflow_creates_only_bounded_data_pr(self) -> None:
         self.assertIn("gh pr create --draft", self.source)
-        self.assertIn("git push origin", self.source)
+        self.assertIn('push origin "HEAD:refs/heads/${branch}"', self.source)
+        self.assertEqual(self.source.count("push origin"), 1)
         self.assertNotIn("docker push", self.source)
         self.assertNotIn("build-push-action", self.source)
         self.assertNotIn("gh release", self.source)

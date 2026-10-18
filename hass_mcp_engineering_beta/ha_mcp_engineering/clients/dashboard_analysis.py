@@ -20,6 +20,7 @@ from httpx_sse import EventSource
 from ..dashboard_analysis import contracts as c
 from ..observability import METRICS
 from ..request_context import current_telemetry
+from .paths import request_url, rest_path
 
 
 _PRIVATE_ANALYSIS_LOGS = ContextVar("dashboard_analysis_private_sdk_logs", default=False)
@@ -202,7 +203,7 @@ class InventoryPeer:
     async def _states(self):
         async with self.attempt("states"):
             async with self._session().get(
-                self.client._api_url + "/states", allow_redirects=False,
+                request_url(self.client._api_url, rest_path("/states")), allow_redirects=False,
                 headers={"Authorization": "Bearer " + self.client._token}) as response:
                 if response.status in (401, 403):
                     raise c.AnalysisError("access_denied")

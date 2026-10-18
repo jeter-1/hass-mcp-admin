@@ -12,10 +12,11 @@ import math
 import re
 from typing import Any
 
+from ..clients.paths import UnsafeRequestPathError, rest_path
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import AuthorizationError, HomeAssistantApiError
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import SegmentMemo, sanitize_untrusted_data
 from .normalize import (
     AUTOMATION_VERIFICATION_NORMALIZATION_VERSION,
     AutomationVerificationNormalizationError,
@@ -92,10 +93,8 @@ _LOG_LEVELS = frozenset(
     {"debug", "info", "warning", "error", "critical", "silent"}
 )
 _INPUT_NUMBER_MODES = frozenset({"box", "slider"})
-_CONFIG_ENDPOINTS = {
-    "automation": "/config/automation/config",
-    "script": "/config/script/config",
-}
+# REST-backed configuration types; each has one literal route template.
+_CONFIG_ENDPOINTS = frozenset({"automation", "script"})
 _HELPER_ID_FIELDS = {
     "input_boolean": "input_boolean_id",
     "input_number": "input_number_id",
@@ -103,6 +102,16 @@ _HELPER_ID_FIELDS = {
 _SAFE_HELPER_CREATE_NAME = re.compile(
     r"[A-Za-z0-9]+(?:[ _-]+[A-Za-z0-9]+)*"
 )
+
+
+def _config_route(resource_type: str, resource_id: str):
+    """Bind the resource ID into its fixed literal configuration route."""
+
+    if resource_type == "automation":
+        return rest_path("/config/automation/config/{}", resource_id)
+    if resource_type == "script":
+        return rest_path("/config/script/config/{}", resource_id)
+    raise UnsafeRequestPathError("unregistered_route")
 
 
 class ConfigurationMutationNotDispatchedError(HomeAssistantApiError):
@@ -565,7 +574,7 @@ class ConfigurationResourceGateway:
         if resource_type in _CONFIG_ENDPOINTS:
             value = await self.rest_client.request(
                 "GET",
-                f"{_CONFIG_ENDPOINTS[resource_type]}/{resource_id}",
+                _config_route(resource_type, resource_id),
                 expected_statuses=frozenset({404}),
             )
             if isinstance(value, ExpectedHttpStatus) and value.status == 404:
@@ -674,7 +683,7 @@ class ConfigurationResourceGateway:
         try:
             entity_state = await self.rest_client.request(
                 "GET",
-                f"/states/{resource_id}",
+                rest_path("/states/{}", resource_id, kinds=("entity_id",)),
                 expected_statuses=frozenset({404}),
             )
         except Exception as exc:
@@ -861,7 +870,7 @@ class ConfigurationResourceGateway:
         """Run Home Assistant's bounded full configuration check."""
 
         return await self.rest_client.request(
-            "POST", "/config/core/check_config"
+            "POST", rest_path("/config/core/check_config")
         )
 
     async def validate_all(self) -> Any:
@@ -876,9 +885,19 @@ class ConfigurationResourceGateway:
         approved_config: dict[str, Any],
     ) -> Any:
         try:
+            path = _config_route(resource_type, resource_id)
+        except UnsafeRequestPathError as exc:
+            raise ConfigurationMutationNotDispatchedError(
+                details={
+                    "operation": f"{resource_type}_configuration_write",
+                    "reason": "invalid_identifier",
+                    "provider_response_received": False,
+                }
+            ) from exc
+        try:
             return await self.rest_client.request(
                 "POST",
-                f"{_CONFIG_ENDPOINTS[resource_type]}/{resource_id}",
+                path,
                 body=configuration_write_config(
                     resource_type, approved_config
                 ),
@@ -1201,20 +1220,25 @@ def _unknown_field_errors(
 
 
 def persistence_safety_errors(
-    value: Any, sensitive_values: tuple[str, ...] = ()
+    value: Any,
+    sensitive_values: tuple[str, ...] = (),
+    *,
+    segment_memo: SegmentMemo | None = None,
 ) -> list[str]:
     """Detect secret material without returning or persisting a redacted copy.
 
     Configuration plans must retain exact operational input for hash binding and
     later application, so redaction is not a safe substitute here.  The shared
     recursive sanitizer is used only as a detector; any redaction or sanitation
-    failure makes the value ineligible for plan persistence.
+    failure makes the value ineligible for plan persistence.  A caller-owned
+    ``segment_memo`` only reuses identical segment scans within one job.
     """
 
     errors: list[str] = []
     sanitized = sanitize_untrusted_data(
         value,
         known_secrets=sensitive_values,
+        segment_memo=segment_memo,
     )
     if sanitized.failed_closed or sanitized.redaction_applied:
         errors.append(

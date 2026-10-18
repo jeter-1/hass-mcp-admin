@@ -1,5 +1,176 @@
 # Changelog
 
+## 2.4.1-beta.19 - Prompt verification of slow typed fan and power devices (HAMCP-192)
+
+Builds on 2.4.1-beta.18.
+
+- Poll the entity inline for about 10 seconds after a typed fan or power
+  dispatch (reads at about 0, 1, 2, 4, 6, 8 and 10 s, at most 7) and verify
+  on the first match. A device that reports a few seconds late is now
+  `succeeded_verified` in the original call instead of `observing`.
+- Shorten the typed fan/power entity lease from 120 s to 30 s, renewed every
+  10 s, so a task that does yield `observing` is re-read by the first sweep
+  after about 40-70 s.
+- Make one final read at or after the 180 s evidence deadline before any
+  manual-review decision (`final_read_at_deadline`, opt-in, used only by the
+  typed services). F3 governed executions are unchanged.
+- Keep `lock_conflict` with no superseding, and name the blocking task in the
+  receipt (`blocking_tasks`, `blocking_tasks_observed_at`, `lease_status`).
+  The hints and the lock check share one predicate
+  (`DurableLockStore.holder_blocks`), so an expired lease that recovery has
+  not yet reconciled is named as `expired_pending_recovery`.
+- Add derived, additive receipt hints: `observation_status` and, for manual
+  review, `hold_release`.
+- Add a governed hold release for a manual-review typed task on the Ingress
+  page `/typed`. It shows the requested and freshly read state side by
+  side, needs the Ingress principal and a single-use token bound to the reviewed
+  facts and readback, refuses if the state changed after review, records a
+  fresh readback in an additive sidecar and exactly one audit entry (keyed by
+  a stable `hold_release_id`, retried by recovery after a crash or failed
+  write, `audit_recorded` set only after an enabled audit logger confirms the
+  write, otherwise `false` with `audit_disabled` or `audit_write_failed` and
+  backfilled by recovery once auditing is enabled), and never dispatches. The outcome stays `manual_review_required`, reported as
+  `hold_released_state_matches` or `hold_released_state_differs`. The
+  administrator-role check for every approval page, including `/typed`, is
+  deferred to HAMCP-205.
+- Preserve the catalog, input schemas, signed registries, HOLD, support
+  window, existing persisted formats, workflows and stable v1.
+
+## 2.4.1-beta.18 - Health verdict cache and sweep parent reads (HAMCP-171)
+
+Builds on 2.4.1-beta.17's typed, registered REST routes (HAMCP-200). Josh's 2026-10-18 decisions D1–D6 apply.
+
+- Memoize the pure per-segment sanitizer scan within one health validation
+  job (D5). The memo is bounded, bound to the job's sensitive values and
+  discarded when the job ends.
+- Keep health safety verdicts in process memory between calls for unchanged
+  records only (D1). Key: canonical filename, `st_ino`, `st_size`,
+  `st_mtime_ns` (from `fstat` of the parsed handle), the SHA-256 of the
+  parsed bytes and the detector context. Any change, a new record, a failed
+  `fstat` or a key mismatch validates fresh. Any failed scan, storage error,
+  quarantine or unexpected worker failure discards every verdict. Verdicts
+  are never persisted, are empty at start and are never used by
+  authoritative paths.
+- Add the optional `get_server_health(deep_storage_audit=true)` input, which
+  bypasses and repopulates the cache. It and two description lines are the
+  only public descriptor change; the catalog stays at 88. The internal `deep_audit_plan_store` also
+  discards every verdict.
+- Report cache hits, misses, deep re-scans and invalidations under
+  `plan_store_scaling.safety_verdict_cache`. `health_cache_hit_count` now
+  counts async calls that reused verdicts.
+- Read a parent task in the periodic recovery sweep only for orphan cleanup
+  (no dispatch intent) or a terminal child with a recorded readiness fault.
+  Dispatch, redispatch, expiry and cancel behavior is unchanged.
+- No persisted-format (D6), registry, workflow or stable-v1 change.
+
+## 2.4.1-beta.17 - Typed, registered routes for every Home Assistant REST call (HAMCP-200)
+
+Builds on 2.4.1-beta.16.
+
+- Accept only a typed `Route` in the REST transport. `rest_path` is the only
+  way to obtain one, and only for a reviewed template in the closed
+  `ROUTE_TEMPLATES` registry. A `Route` cannot be constructed, subclassed,
+  mutated, cloned or pickled, and a plain string, including a fixed one, is
+  refused as `unbound_request_path` before any session, credential or
+  request exists.
+- Bind every value through one guard. It refuses the dot segments, `/`,
+  `\`, `?`, `#`, NUL and control characters, plus their percent- and
+  multiply-encoded forms, and otherwise encodes the value as one segment.
+  Before attaching the token, the transport re-encodes the route from its
+  binding and requires the normalized URL to equal the template.
+- Never follow redirects. The REST transport, the Core re-admission reader
+  and the Supervisor self-information reader send `allow_redirects=False`,
+  and a 3xx response is a failure.
+- Check identifiers at the tool boundary for `get_automation_config`,
+  `get_entity`, `get_history` and `automation_reliability_analysis`. An
+  invalid value is refused as `invalid_request` ("The identifier is
+  invalid.", reason `invalid_identifier`), audited and counted, with no Home
+  Assistant request. Handoff generation skips unsafe IDs from Home Assistant
+  and reports partial coverage. Governed writes report the refusal as not
+  dispatched.
+- Narrow automation configuration IDs to `[A-Za-z0-9_:-]`: dotted IDs are no
+  longer accepted by `automation_reliability_analysis` or
+  `capture_automation_baseline`.
+- Remove the compatibility module's standalone ASGI gateway and `main()`
+  entry point. The add-on still starts `python -m ha_mcp_engineering`.
+- Add a secondary source scan that fails on raw, concatenated or formatted
+  request paths, route literals outside `rest_path`, computed templates,
+  `.request` aliases and websocket URLs other than the configured one.
+- Disclose the corrected past exposure: a crafted identifier could make
+  Engineering send token-bearing GET requests to other HA/Supervisor routes,
+  including any GET-enabled webhook (which can trigger automations); no
+  POST/PUT/DELETE/PATCH was reachable.
+- Preserve the catalog, input schemas, signed registries, HOLD, support
+  window, persisted formats, workflows and stable v1.
+
+## 2.4.1-beta.16 - Optional reviewed YAML configuration reader (HAMCP-162)
+
+Builds on 2.4.1-beta.15's rollback Core lease, cancel telemetry, expired
+pre-intent deadline and gateway audit reason corrections (HAMCP-189 PR B + C)
+and 2.4.1-beta.14's Core-authority, unmapped-refusal and durable-cancel
+corrections (HAMCP-189 PR A).
+
+- Add the delegated read-only tool `ha_config_get_yaml` for one mapping-key
+  path of `configuration.yaml`. Engineering sends a fixed upstream shape
+  (`include_content: false`, `include_parsed: true`).
+- Refuse every other file (including `secrets.yaml`, `packages/`,
+  `configuration.yml` and case variants) and every credential-shaped path
+  before route acquisition, Core acquisition and any upstream call.
+- Redact on absolute canonical key paths:
+  - credential-shaped keys and containers;
+  - connection-shaped values, except one strict safe SQLite shape;
+  - credential text: userinfo, 13 words and the `pass`/`key` token rule;
+  - percent-encoding up to four rounds, NFKC and casefold;
+  - PEM, opaque blobs and the existing sanitizer patterns. Opaque blobs
+    are also sought with all whitespace removed, so a wrapped header-less
+    key body is redacted (A1).
+
+  `!secret`/`!env_var` become typed reference-name markers, trusted only by
+  the identity of a marker the same read minted. Values and `!env_var`
+  defaults are never returned, and `!include` is never followed.
+- Apply the 4,000-node cap to the upstream tree before redaction, so a
+  truncated mapping is judged in its returned shape; marker-shaped mappings
+  are withheld. Pass every other client-visible field (limitations, include
+  and path descriptions, warnings, metadata, error details) through a final
+  shared-sanitizer pass with the configured known secrets.
+- Trust redaction markers by registry identity only (H3). Upstream text
+  that could read as a marker, including encoded, look-alike and
+  byte-identical forms, is replaced whole as `redaction_marker_collision`,
+  and a mapping with such a key is withheld. Every upstream string runs
+  through every rule. The shared sanitizer's default mode for other tools
+  is unchanged.
+- Screen every emitted string through one function, `screen`, with the
+  complete rule set in every one of 21 output positions (H4). Canonical
+  keys get the PEM and opaque-blob scanners; path segments are screened
+  under the segments above them. Values and list items keep the D12
+  exception for key text. A 798-cell rule × position matrix and a
+  coverage test pin it.
+- Build every HAMCP-162 synthetic secret at runtime from fragments, and
+  store the D1 captures and fixtures through a reversible encoding
+  (`docs/evidence/hamcp162/codec.py`, `DECODED.sha256`). A test fails if a
+  committed HAMCP-162 test, fixture or evidence file matches the
+  repository secret-pattern scan.
+- Disclose on every success the YAML 1.2 parse (K7), key conversion and
+  collapse (K5) and best-effort redaction (D12). Disclose the first-call
+  admin caller-token dependency (K1: the component's
+  `POST ha_mcp_tools/get_caller_token`) in the description; Engineering makes
+  no write or service call.
+- Map upstream errors to fixed codes, with no upstream text. HTTP 400 is
+  reported as "upstream validation failed or component unavailable" (K2);
+  non-UTF-8 and other 500 errors as "upstream read failed" (K4).
+- Admit the tool as optional only on the exact complete-descriptor binding
+  for ha-mcp 8.4.3 (78 -> 81 upstream tools) and 8.5.0 (77 -> 80):
+  - explicit dispositions for every registry version, with no default;
+  - excluded from the stock order fingerprint, aggregate admission and signed
+    selections;
+  - a drift, removal or disposition change between admission and dispatch
+    gives zero dispatch;
+  - Core mapping: basic REST and WebSocket reads.
+- `ha_list_files` and `ha_read_file` stay reviewed and never exposed. The
+  catalog grows from 87 to 88 tools (29 delegated).
+- Preserve signed registries, HOLD, support window, policy JSON, persisted
+  formats, workflows and stable v1.
+
 ## 2.4.1-beta.15 - Rollback Core lease, cancel telemetry, expired pre-intent deadline, gateway audit reason (HAMCP-189)
 
 Builds on 2.4.1-beta.14.

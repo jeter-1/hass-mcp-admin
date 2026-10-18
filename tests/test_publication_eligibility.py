@@ -18,6 +18,10 @@ from tests import test_publication_handoff as fixtures
 
 handoff = fixtures.handoff
 ROOT = Path(__file__).resolve().parents[1]
+# HAMCP-204: the former single promote job, split in dependency order.
+PUBLICATION_CHAIN = ("verify-release", "claim", "build", "verify-image", "promote")
+# Only always() is modeled; any other status function is refused below.
+STATUS_FUNCTIONS = ("always()", "success()", "failure()", "cancelled()")
 
 
 def job_runs(job, results, context):
@@ -25,12 +29,18 @@ def job_runs(job, results, context):
     needs = job.get("needs", [])
     if isinstance(needs, str):
         needs = [needs]
-    # GitHub supplies implicit success() when no status function is specified.
-    if any(results.get(name) != "success" for name in needs):
-        return False
-    expression = job.get("if", "True").replace("&&", "and").replace("||", "or")
+    condition = job.get("if", "True")
+    # GitHub supplies implicit success() when no status function is specified;
+    # always() removes that implicit dependency-result gate.
+    if not any(function in condition for function in STATUS_FUNCTIONS):
+        if any(results.get(name) != "success" for name in needs):
+            return False
+    expression = condition.replace("&&", "and").replace("||", "or")
 
     def value(node):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "always" and not node.args and not node.keywords):
+            return True
         if isinstance(node, ast.Constant):
             return node.value
         if isinstance(node, ast.Name):
@@ -117,7 +127,7 @@ class PublicationEligibilityTests(unittest.TestCase):
             git("checkout", "main")
             if forged:
                 fixture.run["actor"] = {"login": "foreign"}
-            verified = handoff.verify(7, 1, merge, fixture.api, git)
+            verified = fixtures.handoff_verify.verify(7, 1, merge, fixture.api, git)
             environment = {**os.environ, **{
                 name: "" for name in self.jobs["detect-release"]["steps"][-1]["env"]}}
             environment.update({
@@ -140,15 +150,37 @@ class PublicationEligibilityTests(unittest.TestCase):
         results = {"detect-release": "success"}
         self.assertEqual(job_runs(self.jobs["validate"], results, context), eligible)
         self.assertEqual(job_runs(self.jobs["recovery-source"], results, context), eligible)
-        for status in ("success", "failure", "cancelled", "skipped"):
-            results.update(validate=status, **{"recovery-source": "success"})
-            self.assertEqual(job_runs(self.jobs["promote"], results, context),
-                             eligible and status == "success")
-        for name in ("detect-release", "recovery-source"):
-            for status in ("failure", "cancelled", "skipped"):
-                results = {"validate": "success", "detect-release": "success", "recovery-source": "success"}
+        # HAMCP-204: every job of the split chain runs only after validate and
+        # every earlier job succeeded, and skips when any upstream did not.
+        upstream = ["validate", "detect-release", "recovery-source"]
+        for name in PUBLICATION_CHAIN:
+            with self.subTest(job=name):
+                job = self.jobs[name]
+                for status in ("success", "failure", "cancelled", "skipped"):
+                    results = {upstream_name: "success" for upstream_name in upstream}
+                    results["validate"] = status
+                    self.assertEqual(job_runs(job, results, context),
+                                     eligible and status == "success")
+                for failed in upstream:
+                    for status in ("failure", "cancelled", "skipped"):
+                        results = {upstream_name: "success" for upstream_name in upstream}
+                        results[failed] = status
+                        self.assertFalse(job_runs(job, results, context), (failed, status))
+            upstream.append(name)
+        # summary is the only always() job: it reports any upstream outcome of
+        # an eligible publication, never runs otherwise, and holds no token.
+        summary = self.jobs["summary"]
+        self.assertEqual(summary["permissions"], {})
+        self.assertEqual([step.get("uses") for step in summary["steps"] if "uses" in step], [])
+        self.assertEqual(summary["needs"], ["detect-release", *PUBLICATION_CHAIN])
+        for name in ["detect-release", *PUBLICATION_CHAIN]:
+            for status in ("success", "failure", "cancelled", "skipped"):
+                results = {upstream_name: "success" for upstream_name in summary["needs"]}
                 results[name] = status
-                self.assertFalse(job_runs(self.jobs["promote"], results, context))
+                self.assertEqual(job_runs(summary, results, context), eligible, (name, status))
+        always_jobs = {name for name, job in self.jobs.items()
+                       if any(function in str(job.get("if", "")) for function in STATUS_FUNCTIONS)}
+        self.assertEqual(always_jobs, {"summary"})
 
     def test_ordinary_merge_skips_complete_ci_and_all_publication(self):
         verified, outputs, _ = self.compose()

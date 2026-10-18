@@ -325,6 +325,22 @@ class DurableLockStore:
             > now
         )
 
+    @classmethod
+    def holder_blocks(cls, holder: LockRecord, request_mode: object, now: datetime) -> bool:
+        """Whether ``holder`` refuses a new owner's request for its key.
+
+        The one acquisition predicate; receipts that name blockers use it too.
+        Expired leases remain conflicts until task-aware stale recovery
+        explicitly releases, transfers, or holds them: expiry alone never
+        frees a key, even between shared holders.
+        """
+        return (
+            holder.conflict_hold
+            or request_mode == "exclusive"
+            or holder.mode == "exclusive"
+            or not cls._record_active(holder, now)
+        )
+
     def acquire_once(
         self,
         requests: Iterable[object],
@@ -387,11 +403,7 @@ class DurableLockStore:
             for request in normalized:
                 holders = [record for record in records if record.key == request.key]
                 for holder in holders:
-                    # Expired leases remain conflicts until task-aware stale
-                    # recovery explicitly releases, transfers, or holds them.
-                    if holder.conflict_hold or request.mode == "exclusive" or holder.mode == "exclusive":
-                        conflicts.add(request.key)
-                    elif not self._record_active(holder, instant):
+                    if self.holder_blocks(holder, request.mode, instant):
                         conflicts.add(request.key)
             if conflicts:
                 keys = _bytewise(conflicts)
