@@ -78,9 +78,20 @@ fault-free children cost no parent read. The following are unchanged:
 A corrupt parent the sweep does not need is no longer read by the sweep.
 Health and every authoritative read still detect it.
 
-**Measured effect (synthetic store).** See
-[the acceptance contract](V2_4_1_BETA17_ACCEPTANCE.md#measured-effect) for
-the before/after table and the projected production effect.
+**Measured effect (synthetic 435-plan store, offline).**
+- Health: 23.0–24.0 s on beta.16, against 5.5 s for the first call (memo
+  only), 1.5 s for the following calls (435 of 435 verdicts reused) and
+  5.6 s for a deep re-scan.
+- The validation wait fell from 21.6 s to 4.0 s cold and 1.5 ms warm.
+- Sweep parent reads per pass fell from 239 to 0.
+- During a warm call, the event-loop echo p99 fell from 20.6 ms to 2.8 ms.
+- The longest single loop stall (about 0.5 s, from the existing synchronous
+  snapshot and assembly phases) is unchanged.
+- Projected live: about 9 s for the first and deep calls and about 3 s
+  after that (against 36.5 s).
+
+The tables and method are in
+[the acceptance contract](V2_4_1_BETA17_ACCEPTANCE.md#measured-effect).
 
 **Not included.** A separate validation process (D2, deferred), a direct
 `automations.yaml` read (D4) and the dependency index (D3, HAMCP-195).

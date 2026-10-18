@@ -106,7 +106,60 @@ fail at least one test, including the brief's three:
 
 ### Measured effect
 
-MEASUREMENT_PLACEHOLDER
+These are offline numbers from `docs/evidence/hamcp171-measurements/` (a
+synthetic store; see its README), not production. Both trees ran back to
+back on one host. The store has 435 plans, 240 of them applied, with a mean
+plan file of 37,024 bytes.
+
+| Health call | Wall | Validation wait | Verdicts |
+| --- | --- | --- | --- |
+| beta.16 base, three calls | 23.0 / 23.1 / 24.0 s | 21.6 / 21.7 / 22.5 s | none (`health_cache_hit_count` 0) |
+| head, first call (cold, memo only) | 5.5 s | 4.0 s | 0 hits / 435 misses |
+| head, second and third calls | 1.54 / 1.55 s | 1.5 ms | 435 hits / 0 misses |
+| head, `deep_storage_audit=true` | 5.6 s | 4.0 s | `deep_rescan`, 0 / 435 |
+| head, next plain call | 1.57 s | 1.9 ms | 435 / 0 |
+
+`health_cache_hit_count` went 0, 1, 2, 2, 3 across the five head calls. The
+other phases (snapshot about 0.45 s, projection 0.23 s, assembly 0.55 s and
+overlay 0.21 s) are unchanged.
+
+**Event-loop responsiveness during a health call.** A 1-byte loopback echo
+client and a 1 ms ticker ran on the owner loop during each call. When idle,
+the echo round trip had a median of 0.03 ms and a p99 of 0.07 ms.
+
+| During the call | Echo median | Echo p99 | Echo throughput | Longest loop gap |
+| --- | --- | --- | --- | --- |
+| beta.16 base | 0.16–0.18 ms | 20.6–22.7 ms | about 175/s for 23 s | 0.51–0.58 s |
+| head, cold or deep | 0.05–0.07 ms | 15.6–20.5 ms | about 490/s for 5.5 s | 0.53–0.59 s |
+| head, warm | 0.035–0.042 ms | 2.7–2.8 ms | about 1,570/s for 1.5 s | 0.56–0.58 s |
+
+Other requests stay responsive. The 22 s window of GIL contention from the
+validation worker shrinks to about 4 s on a cold or deep call and to none on
+a warm call. The longest single stall is unchanged at about 0.5 s. It comes
+from the existing synchronous snapshot and assembly phases on the loop, not
+from the worker, and this release does not change those phases.
+
+**Recovery sweep (five periodic passes).**
+
+| | Parent `task_repository.get` per pass | Pass time and loop stall |
+| --- | --- | --- |
+| beta.16 base | 240, 239, 239, 239, 239 | 0.205–0.245 s |
+| head | 0, 0, 0, 0, 0 | 0.122–0.124 s |
+
+**Projected production effect.** Live beta.16 took 36.5 s, of which 33.8 s
+was validation wait. Validation is about 1.54 times slower live than on this
+store (33.8 s against 21.9 s); the other phases take about 2.7 s live. The
+projection is:
+- the first health call after a restart, and every deep re-scan: about
+  2.7 s + 1.54 × 4.0 s ≈ 9 s;
+- following calls with unchanged records: about 3 s, plus fresh validation
+  of only the records that changed;
+- the sweep's 239 parent reads per 30 s (about 8 records per second, most
+  of the live 7/s task deserialization rate) fall to zero for terminal,
+  dispatched, fault-free children.
+
+Health itself still deserializes every task once per call, so subtract
+those reads in the live task-read check.
 
 ## 2. Publication and recovery preparation
 
