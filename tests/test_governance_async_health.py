@@ -358,17 +358,28 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
             interval = []
             ticks = []
             done = asyncio.Event()
+            ticked_during_scan = threading.Event()
 
             def measured(plans, sensitive_values):
                 interval.append(time.monotonic())
                 try:
-                    return original(plans, sensitive_values)
+                    elapsed = original(plans, sensitive_values)
+                    # HAMCP-171: the segment memo makes one cold scan short.
+                    # Keep the real detector (GIL-bound CPU) running, bounded,
+                    # until the owner loop has run; a scan on the loop thread
+                    # could never observe a tick and fails at the bound.
+                    deadline = time.monotonic() + 2
+                    while not ticked_during_scan.is_set() and time.monotonic() < deadline:
+                        original(plans, sensitive_values)
+                    return elapsed
                 finally:
                     interval.append(time.monotonic())
 
             async def heartbeat():
                 while not done.is_set():
                     ticks.append(time.monotonic())
+                    if len(interval) == 1:
+                        ticked_during_scan.set()
                     await asyncio.sleep(0.001)
 
             ticker = asyncio.create_task(heartbeat())
@@ -513,24 +524,25 @@ class CooperativePlanCollectionTests(unittest.IsolatedAsyncioTestCase):
     asyncTearDown = AsyncHealthTests.asyncTearDown
 
     async def test_cold_damaged_index_yields_between_each_exact_plan_read(self):
-        from pathlib import Path
+        from ha_mcp_engineering.governance import storage as storage_module
         for _ in range(32):
             await self.fixture.update_plan()
         self.repository._ordered_keys.clear()
         reads, ticks, boundaries = [], [], []
-        original = Path.read_text
+        # Health collection reads each record once, with byte evidence.
+        original = storage_module._read_record_text
         async def pulse():
             while True:
                 await asyncio.sleep(0)
                 ticks.append(None)
-        def read(path, *args, **kwargs):
+        def read(path):
             if path.parent == self.repository.root and path.suffix == ".json":
                 reads.append(path)
                 boundaries.append(len(ticks))
-            return original(path, *args, **kwargs)
+            return original(path)
         pulse_task = asyncio.create_task(pulse())
         try:
-            with patch.object(Path, "read_text", read), patch.object(
+            with patch.object(storage_module, "_read_record_text", read), patch.object(
                 self.repository, "_scan_and_rebuild", side_effect=AssertionError("hidden synchronous scan")
             ):
                 result = await self.service.async_health_summary()

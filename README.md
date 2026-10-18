@@ -1,5 +1,15 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.18** makes `get_server_health` much cheaper on
+large plan stores (HAMCP-171). Health reuses, in process memory only, the
+safety verdict of each unchanged persisted plan record. The verdict is keyed
+by filename, inode, size, mtime and a SHA-256 of the parsed bytes, so any
+change validates fresh. `get_server_health(deep_storage_audit=true)`
+re-validates everything. The 30 s recovery sweep now reads a parent task only
+when the child's own status requires it. No persisted format changes.
+
+It builds on beta.17 below.
+
 Engineering **2.4.1-beta.17** makes every Home Assistant REST path safe by
 construction (HAMCP-200). The REST transport accepts only a typed `Route`
 issued by `rest_path` for a reviewed template in a closed registry; a plain
@@ -67,8 +77,8 @@ beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
 The healthy catalog is **87 tools: 59 native and 28 admitted delegated
 reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA17_RELEASE_NOTES.md) and
-[acceptance contract](docs/V2_4_1_BETA17_ACCEPTANCE.md).
+See the [release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
+[acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -152,8 +162,8 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.17 release notes](docs/V2_4_1_BETA17_RELEASE_NOTES.md) and
-[2.4.1-beta.17 acceptance contract](docs/V2_4_1_BETA17_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.18 release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
+[2.4.1-beta.18 acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering

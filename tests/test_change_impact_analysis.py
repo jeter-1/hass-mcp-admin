@@ -94,7 +94,7 @@ BETA14_SCHEMA_HASHES = {
     "get_error_log": "0ddecfe978641f4343307f5789ef97e9c2fe16fbdbe171856b2e87d4a5901d96",
     "get_history": "a346b066803be136b1963715522823c7aa76ccfd7ac7ed17d6dd50526e80ffa8",
     "get_logbook": "b7a48e84df2494b751498b0fe101a30275f8ed187cd937d59f42dacef2947ef9",
-    "get_server_health": "24c310d6b8d751d6265ac086c87b8fc3dd523b245cd9ad216dfbaa2680146dbb",
+    "get_server_health": "8cc10d71d136c0b99a3c42204801f88749edaa2b024f02f4c76897a061703939",
     "list_areas": "09500efe0423c3973945154635eb7ca1edde2e87292fe7d5056c09a3b398d662",
     "list_automation_traces": "6cec62a2d9754119fe111bb221eb322d38cb67a819d2c5034c47b759533ab905",
     "list_automations": "016ce22acba5bcf0307fb6f3ba827070a486a7692a2a1dfc7ba35b7b30e11d96",

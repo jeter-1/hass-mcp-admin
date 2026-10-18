@@ -45,7 +45,7 @@ from ha_mcp_engineering.tools import compatibility, governance as governance_too
 from ha_mcp_engineering.version import SCHEMA_VERSION  # noqa: E402
 
 
-F2_PUBLIC_SCHEMA_SHA256 = "2e1667f26f158331a73c184f363e17093de57936c4dce9227f05bf1e26fb70f6"
+F2_PUBLIC_SCHEMA_SHA256 = "363476ec57de1d2adcd1a5dbcceae1ffdf674c728df4a7b926306feb74f5498e"
 
 CURRENT = {
     "alias": "Beta 26 expiry fixture",

@@ -10,6 +10,26 @@ from ha_mcp_engineering.ha_core_readmission.routes import static_tool_requiremen
 from ha_mcp_engineering.providers.routing import routing_for_tool, CapabilityRoute
 
 
+# HAMCP-171 (2.4.1-beta.18) adds exactly one optional input to
+# get_server_health and two description lines documenting it. Every other part
+# of that descriptor must still equal the historical baseline, so strip only
+# that reviewed property and text before comparing.
+HAMCP171_DEEP_STORAGE_AUDIT = {"default": False, "title": "Deep Storage Audit", "type": "boolean"}
+HAMCP171_DESCRIPTION_LINES = (
+    "    Set deep_storage_audit=True to discard the in-memory safety verdicts and\n"
+    "    re-validate every persisted plan record (slower; read-only).\n"
+)
+
+
+def _without_hamcp171_deep_storage_audit(case, descriptor):
+    descriptor = json.loads(json.dumps(descriptor))
+    properties = descriptor["inputSchema"]["properties"]
+    case.assertEqual(properties.pop("deep_storage_audit"), HAMCP171_DEEP_STORAGE_AUDIT)
+    case.assertEqual(descriptor["description"].count(HAMCP171_DESCRIPTION_LINES), 1)
+    descriptor["description"] = descriptor["description"].replace(HAMCP171_DESCRIPTION_LINES, "")
+    return descriptor
+
+
 class CatalogTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_55_existing_descriptors_identical_exactly_one_added(self):
         expected = json.loads((FIXTURES / "beta10_catalog_baseline.json").read_text())["baseline_descriptors_sha256"]
@@ -17,6 +37,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(actual) - set(expected), {"get_integration_inspection", "capture_automation_baseline", "dashboard_integrity_analysis",
                                                           "create_entity_metadata_plan"})
         self.assertEqual(set(expected) - set(actual), set())
+        actual["get_server_health"] = _without_hamcp171_deep_storage_audit(self, actual["get_server_health"])
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 59)
