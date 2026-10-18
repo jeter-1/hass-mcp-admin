@@ -11,6 +11,7 @@ signing workflows run no Python at all.  Mutation tests prove each rule fails.
 from __future__ import annotations
 
 import copy
+import itertools
 import json
 from pathlib import Path
 import re
@@ -49,9 +50,29 @@ SHELL_SEPARATOR = re.compile(r"&&|\|\||[;&|\n()`{}]|\$\(")
 # Every package-installer name in a run script must belong to a parsed
 # invocation; one that cannot be attributed (for example inside a Python
 # string) fails closed.
-INSTALLER_NAME = re.compile(r"(?<![\w.-])(?:pip(?:3(?:\.[0-9]+)?)?|pipx|uvx?)(?![\w.-])")
+# A dotted suffix (``pip.__main__``) is part of the name, and an attached
+# Python ``-m`` cluster (``-mpip``, ``-Impip``) names its module too.
+INSTALLER_NAME = re.compile(
+    r"(?<![\w.-])(?:-[A-Za-z?]*m)?(?:pip(?:3(?:\.[0-9]+)?)?|pipx|uvx?)"
+    r"(?:\.[A-Za-z_]\w*)*(?![\w.-])"
+)
 PIP_PROGRAM = re.compile(r"pip(?:3(?:\.[0-9]+)?)?")
-PYTHON_PROGRAM = re.compile(r"python(?:3(?:\.[0-9]+)?)?")
+PYTHON_PROGRAM = re.compile(r"python(?:[0-9]+(?:\.[0-9]+)?)?")
+# CPython's short options (Modules/main.c, Python/getopt.c): flags that take no
+# argument, and options whose argument is the cluster remainder or else the
+# next word.  ``-c`` and ``-m`` end option processing.  Any other letter or
+# long option is unknown to the guard and fails closed.
+PYTHON_FLAGS = frozenset("bBdEhiIOPqRsSuvVx?")
+PYTHON_VALUE_OPTIONS = frozenset("cmWX")
+PYTHON_LONG_FLAGS = {"--help", "--help-all", "--help-env", "--help-xoptions", "--version"}
+PYTHON_LONG_VALUE_OPTIONS = {"--check-hash-based-pycs"}
+# Installer modules ``python -m`` can run, and the tool each one is.
+INSTALLER_MODULES = {"pip": "pip", "pipx": "pipx", "uv": "uv"}
+# Operator tokens that end an interpreter's words in a quote-aware split.
+SHELL_OPERATORS = {"&&", "||", ";", ";;", "|", "&", "(", ")", "<", ">", "<<", ">>", "|&"}
+# Interpreter code (``-c`` or standard input) that mentions an installer
+# cannot be attributed and fails closed.
+INSTALLER_CODE = re.compile(r"pip|install|\buvx?\b", re.IGNORECASE)
 NESTED_SHELL_TEXT = re.compile(r"\s")
 # The only options a hash-locked pip install may carry.
 INSTALL_FLAGS = {"--isolated", "--require-hashes"}
@@ -120,11 +141,11 @@ def _is_signing_job(job: dict) -> bool:
 class Install:
     """One parsed package-installer invocation from a run script."""
 
-    def __init__(self, tool: str, arguments: list[str]) -> None:
+    def __init__(self, tool: str, arguments: list[str], names: int | None = None) -> None:
         self.tool = tool
         self.arguments = arguments
         # Installer names this invocation accounts for (``uv pip`` has two).
-        self.names = len(tool.split())
+        self.names = len(tool.split()) if names is None else names
 
     def __repr__(self) -> str:
         return f"Install({self.tool!r}, {self.arguments!r})"
@@ -179,37 +200,160 @@ class Install:
         return files
 
 
-def _segment_installs(argv: list[str]) -> list[Install]:
-    """Find every installer invocation in one simple command's words."""
+def _python_command(arguments: list[str]) -> tuple[str, str | None, int]:
+    """Walk CPython's options before the script or module.
+
+    Returns ``(kind, value, consumed)``: kind ``"m"`` (module), ``"c"`` (code),
+    ``"script"`` or ``"none"``; value is the module, code or script; consumed
+    counts the words that belong to the interpreter's own options, including
+    the ``-m``/``-c`` argument.  Raises ``ValueError`` for an option shape the
+    guard cannot parse with certainty.
+    """
+
+    index = 0
+    while index < len(arguments):
+        word = arguments[index]
+        if word == "--":
+            script = arguments[index + 1 : index + 2]
+            return "script", (script or [None])[0], index + 1
+        if word == "-" or not word.startswith("-"):
+            return "script", word, index
+        index += 1
+        if word.startswith("--"):
+            if word in PYTHON_LONG_FLAGS:
+                continue
+            if word in PYTHON_LONG_VALUE_OPTIONS and index < len(arguments):
+                index += 1
+                continue
+            raise ValueError(f"unknown Python option {word!r}")
+        cluster = word[1:]
+        for position, letter in enumerate(cluster):
+            if letter in PYTHON_FLAGS:
+                continue
+            if letter not in PYTHON_VALUE_OPTIONS:
+                raise ValueError(f"unknown Python option -{letter}")
+            value = cluster[position + 1 :]
+            if not value:
+                if index >= len(arguments):
+                    raise ValueError(f"Python option -{letter} has no argument")
+                value = arguments[index]
+                index += 1
+            if letter in "cm":
+                return letter, value, index
+            break  # -W and -X consumed the rest of the cluster
+    return "none", None, index
+
+
+def _module_tool(module: str) -> str | None:
+    """Return the installer a ``python -m`` module runs, or None if it is none.
+
+    Raises ``ValueError`` for an installer submodule other than ``__main__``.
+    """
+
+    package, _dot, submodule = module.partition(".")
+    tool = "pip" if PIP_PROGRAM.fullmatch(package) else INSTALLER_MODULES.get(package)
+    if tool is None:
+        return None
+    if submodule not in {"", "__main__"}:
+        raise ValueError(f"unattributable installer module {module!r}")
+    return tool
+
+
+def _shell_words(text: str) -> list[str]:
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    return list(lexer)
+
+
+def _interpreter_code_is_unattributable(text: str) -> bool:
+    """Whether a Python interpreter runs code the guard cannot attribute.
+
+    The separator split ignores quotes, so interpreter code is checked first,
+    one command line at a time (joined while a quote is open).  Code given by
+    ``-c``, a heredoc on standard input or the rest of the line that mentions
+    an installer fails closed, as does an unparseable option or quote.
+    """
+
+    lines = text.split("\n")
+    index = 0
+    while index < len(lines):
+        chunk = lines[index]
+        index += 1
+        if "python" not in chunk or chunk.lstrip().startswith("#"):
+            continue
+        while True:
+            try:
+                words = _shell_words(chunk)
+                break
+            except ValueError:
+                if index >= len(lines):
+                    return bool(INSTALLER_CODE.search(chunk))
+                chunk += "\n" + lines[index]
+                index += 1
+        for position, word in enumerate(words):
+            if not PYTHON_PROGRAM.fullmatch(word.lstrip("`").rsplit("/", 1)[-1]):
+                continue
+            command = list(
+                itertools.takewhile(lambda item: item not in SHELL_OPERATORS, words[position + 1 :])
+            )
+            try:
+                kind, value, _consumed = _python_command(command)
+            except ValueError:
+                return True
+            if kind == "c" and INSTALLER_CODE.search(value):
+                return True
+            if kind == "none" or value == "-":
+                # Standard input: a heredoc body, or text piped on this line.
+                stdin = chunk
+                after = words[position + 1 + len(command) :]
+                if after[:1] == ["<<"] and len(after) > 1:
+                    tag = after[1].lstrip("-")
+                    body = list(
+                        itertools.takewhile(lambda line: line.strip() != tag, lines[index:])
+                    )
+                    stdin = "\n".join(body)
+                if INSTALLER_CODE.search(stdin):
+                    return True
+    return False
+
+
+def _segment_installs(argv: list[str]) -> list[Install] | None:
+    """Find every installer invocation in one simple command's words.
+
+    Returns None when an interpreter invocation cannot be parsed with certainty.
+    """
 
     starts: list[tuple[int, int, str]] = []
-    for index, word in enumerate(argv):
-        name = word.rsplit("/", 1)[-1]
-        following = argv[index + 1 : index + 3]
+    index = 0
+    while index < len(argv):
+        name = argv[index].rsplit("/", 1)[-1]
+        tool = None
+        arguments_at = index + 1
         if PIP_PROGRAM.fullmatch(name):
-            if index >= 1 and argv[index - 1] in {"-m", "uv"}:
-                continue  # counted at its python -m or uv prefix
-            starts.append((index, index + 1, "pip"))
-        elif name == "pipx":
-            starts.append((index, index + 1, "pipx"))
-        elif name == "uvx":
-            starts.append((index, index + 1, "uvx"))
-        elif name == "uv":
-            if following[:1] == ["pip"]:
-                starts.append((index, index + 2, "uv pip"))
-            else:
-                starts.append((index, index + 1, "uv"))
+            tool = "pip"
+        elif name in {"pipx", "uvx", "uv"}:
+            tool = name
         elif PYTHON_PROGRAM.fullmatch(name):
-            rest = argv[index + 1 :]
-            if "-m" in rest:
-                module_at = rest.index("-m")
-                module = rest[module_at + 1 : module_at + 2]
-                if module and PIP_PROGRAM.fullmatch(module[0]):
-                    starts.append((index, index + module_at + 3, "pip"))
+            try:
+                kind, value, consumed = _python_command(argv[index + 1 :])
+                tool = _module_tool(value) if kind == "m" else None
+            except ValueError:
+                return None
+            if kind == "c" and INSTALLER_CODE.search(value):
+                return None
+            arguments_at = index + 1 + consumed
+        if tool == "uv" and argv[arguments_at : arguments_at + 1] == ["pip"]:
+            tool, arguments_at = "uv pip", arguments_at + 1
+        if tool is not None:
+            starts.append((index, arguments_at, tool))
+        # The interpreter's or installer's own prefix words are not rescanned.
+        index = arguments_at
     installs: list[Install] = []
-    for position, (_start, arguments_at, tool) in enumerate(starts):
+    for position, (start, arguments_at, tool) in enumerate(starts):
         end = starts[position + 1][0] if position + 1 < len(starts) else len(argv)
-        installs.append(Install(tool, argv[arguments_at:end]))
+        names = sum(len(INSTALLER_NAME.findall(word)) for word in argv[start:arguments_at])
+        installs.append(Install(tool, argv[arguments_at:end], names))
     return installs
 
 
@@ -222,6 +366,8 @@ def install_invocations(text: str) -> list[Install] | None:
     """
 
     text = re.sub(r"\\\n\s*", " ", text)
+    if _interpreter_code_is_unattributable(text):
+        return None
     installs: list[Install] = []
     for segment in SHELL_SEPARATOR.split(text):
         if not segment.strip():
@@ -232,7 +378,10 @@ def install_invocations(text: str) -> list[Install] | None:
             if INSTALLER_NAME.search(segment):
                 return None
             continue
-        installs.extend(_segment_installs(argv))
+        segment_installs = _segment_installs(argv)
+        if segment_installs is None:
+            return None
+        installs.extend(segment_installs)
         for word in argv:
             if NESTED_SHELL_TEXT.search(word) and INSTALLER_NAME.search(word):
                 nested = install_invocations(word)
@@ -303,7 +452,7 @@ def job_violations(workflow: dict, job: dict, *, signing_workflow: bool) -> set[
     elif signing_workflow:
         # Write jobs beside a signer run no Python or package installation.
         if any(_action(step) == "actions/setup-python" for step in steps) or any(
-            re.search(r"\b(python3?|pip3?)\b", _run_text(step)) for step in steps
+            re.search(r"\b(python[0-9.]*|pip[0-9.]*)\b", _run_text(step)) for step in steps
         ):
             violations.add("WRITE_JOB_RUNS_PYTHON")
     return violations
@@ -805,6 +954,184 @@ class ChainedInstallGuardTests(unittest.TestCase):
                     module, "_install_violations", _line_regex_install_violations
                 ):
                     self.assertNotIn("UNHASHED_INSTALL", self._sign_with(name, run))
+
+def _space_separated_module_only(arguments: list[str]) -> tuple[str, str | None, int]:
+    """Mutant interpreter parser: the pre-correction (feb65a4) ``-m pip`` match."""
+
+    if "-m" in arguments:
+        module_at = arguments.index("-m")
+        module = arguments[module_at + 1 : module_at + 2]
+        return "m", (module or [""])[0], module_at + 2
+    return "none", None, 0
+
+
+_PRE_CORRECTION_INSTALLER_NAME = re.compile(
+    r"(?<![\w.-])(?:pip(?:3(?:\.[0-9]+)?)?|pipx|uvx?)(?![\w.-])"
+)
+
+
+class PythonInterpreterGuardTests(unittest.TestCase):
+    """Python invocations are parsed the way CPython parses them (Codex M2 residual)."""
+
+    # Interpreter prefixes that run pip, each followed by its pip arguments.
+    PIP_PREFIXES = {
+        "codex -mpip": "python -mpip",
+        "codex -Impip": "python3 -Impip",
+        "-I -m pip": "python -I -m pip",
+        "-Im pip": "python -Im pip",
+        "-BIm pip": "python -BIm pip",
+        "-W ignore -m pip": "python -W ignore -m pip",
+        "-Wignore -mpip": "python -Wignore -mpip",
+        "-X dev -m pip": "python -X dev -m pip",
+        "-Xdev -Im pip": "python -Xdev -Im pip",
+        "-W consumes -m": "python -W -m -m pip",
+        "-OO -m pip": "python -OO -m pip",
+        "--version flag": "python --version -m pip",
+        "--check-hash-based-pycs": "python --check-hash-based-pycs never -m pip",
+        "python3.12 -mpip": "python3.12 -mpip",
+        "python4 -m pip": "python4 -m pip",
+        "/usr/bin/python3 -m pip": "/usr/bin/python3 -m pip",
+        "relative venv -Impip": "./.venv/bin/python -Impip",
+        "-m pip.__main__": "python -m pip.__main__",
+        "-mpip3": "python -mpip3",
+        "sudo -Impip": "sudo python3 -Impip",
+    }
+
+    def _sign_with(self, name: str, run: str) -> set[str]:
+        return ChainedInstallGuardTests._sign_with(self, name, run)
+
+    def test_codex_attached_option_probes_fail_in_both_signing_jobs(self) -> None:
+        probes = {
+            "-mpip chained": f"{LOCKED_INSTALL} && python -mpip install {UNHASHED_PACKAGE}",
+            "-Impip chained": f"{LOCKED_INSTALL} && python3 -Impip install {UNHASHED_PACKAGE}",
+            "-mpip standalone": f"python -mpip install {UNHASHED_PACKAGE}",
+            "-Impip standalone": f"python3 -Impip install {UNHASHED_PACKAGE}",
+        }
+        for name in SIGNING_WORKFLOWS:
+            for label, run in probes.items():
+                with self.subTest(workflow=name, probe=label):
+                    found = self._sign_with(name, run)
+                    self.assertIn("UNHASHED_INSTALL", found)
+                    self.assertIn("SIGNING_JOB_EXTRA_INSTALL", found)
+
+    def test_option_variants_identify_the_pip_module(self) -> None:
+        for label, prefix in self.PIP_PREFIXES.items():
+            script = f"{prefix} install {UNHASHED_PACKAGE}"
+            with self.subTest(prefix=label):
+                installs = install_invocations(script)
+                self.assertIsNotNone(installs)
+                self.assertEqual(
+                    [(install.tool, install.arguments) for install in installs],
+                    [("pip", ["install", UNHASHED_PACKAGE])],
+                )
+                self.assertTrue(_install_violations(script))
+            for name in SIGNING_WORKFLOWS:
+                with self.subTest(prefix=label, workflow=name):
+                    found = self._sign_with(name, f"{LOCKED_INSTALL} && {script}")
+                    self.assertIn("UNHASHED_INSTALL", found)
+                    self.assertIn("SIGNING_JOB_EXTRA_INSTALL", found)
+
+    def test_locked_attached_option_installs_still_pass(self) -> None:
+        locked_arguments = LOCKED_INSTALL.removeprefix("python -m pip ")
+        for label in ("codex -Impip", "-BIm pip", "-W ignore -m pip", "python3.12 -mpip"):
+            run = f"{self.PIP_PREFIXES[label]} {locked_arguments}"
+            with self.subTest(prefix=label):
+                self.assertEqual(
+                    [install.requirement_files() for install in install_invocations(run)],
+                    [[SIGNING_LOCK]],
+                )
+                self.assertFalse(_install_violations(run))
+            for name in SIGNING_WORKFLOWS:
+                with self.subTest(prefix=label, workflow=name):
+                    self.assertEqual(self._sign_with(name, run), set())
+
+    def test_unparseable_interpreter_invocations_fail_closed(self) -> None:
+        unparseable = {
+            "-c pip": "python -c \"import pip; pip.main(['install', 'x'])\"",
+            "-c runpy": "python -c 'import runpy; runpy.run_module(\"pip\")'",
+            "-Ic install": "python3 -Ic 'import subprocess; subprocess.run([\"install\"])'",
+            "-c uv": "python -c 'import uv'",
+            "unknown short option": f"python -t -m pip install {UNHASHED_PACKAGE}",
+            "unknown cluster letter": f"python -IJm pip install {UNHASHED_PACKAGE}",
+            "unknown long option": f"python --isolated -m pip install {UNHASHED_PACKAGE}",
+            "long option with equals": (
+                f"python --check-hash-based-pycs=never -m pip install {UNHASHED_PACKAGE}"
+            ),
+            "missing -W argument": "python -W",
+            "missing -m argument": "python -I -m",
+            "pip submodule": f"python -m pip._internal.cli.main install {UNHASHED_PACKAGE}",
+            "computed interpreter": f'"$PYTHON" -mpip install {UNHASHED_PACKAGE}',
+            "multi-line -c": "python -c '\nimport sys\nimport pip\n' && true",
+            "unclosed -c": "python -c 'import pip",
+            "heredoc stdin": "python - <<'PY'\nimport runpy\nrunpy.run_module('pip')\nPY",
+            "stripped heredoc": "python3 -I <<-PY\n\timport pip\n\tPY",
+            "piped stdin": "echo 'import pip' | python -",
+        }
+        for label, script in unparseable.items():
+            with self.subTest(script=label):
+                self.assertIsNone(install_invocations(script))
+                self.assertTrue(_install_violations(script))
+        # Script arguments are not interpreter options: the bare installer
+        # word is then parsed as its own (unlocked) invocation.
+        for label, script in {
+            "script arguments": f"python scripts/run.py -m pip install {UNHASHED_PACKAGE}",
+            "after --": f"python -- -m pip install {UNHASHED_PACKAGE}",
+        }.items():
+            with self.subTest(script=label):
+                self.assertTrue(_install_violations(script))
+        for name in SIGNING_WORKFLOWS:
+            for label in ("-c pip", "-c runpy", "unknown short option"):
+                with self.subTest(workflow=name, script=label):
+                    found = self._sign_with(name, f"{LOCKED_INSTALL} && {unparseable[label]}")
+                    self.assertIn("UNHASHED_INSTALL", found)
+
+    def test_other_installer_modules_are_checked(self) -> None:
+        for script in (
+            f"python -m uv pip install {UNHASHED_PACKAGE}",
+            f"python -muv add {UNHASHED_PACKAGE}",
+            f"python3 -Impipx install {UNHASHED_PACKAGE}",
+        ):
+            with self.subTest(script=script):
+                self.assertTrue(_install_violations(script))
+
+    def test_non_installer_python_still_passes(self) -> None:
+        for script in (
+            "python -c 'print(1)'",
+            "python -c 'import json, sys; print(json.load(open(sys.argv[1]))[\"revision\"])' x.json",
+            "python -I -B scripts/sign.py --output out.json",
+            "python -W ignore -X dev scripts/sign.py",
+            "python -- scripts/sign.py",
+            "python3 -Im compileall -q scripts",
+            "python -m json.tool in.json",
+            "python",
+            "python - out.md <<'PY'\nimport sys\nprint(sys.argv)\nPY\nset -euo pipefail",
+            "# the signer's own lock\npython -c 'print(1)'",
+        ):
+            with self.subTest(script=script):
+                self.assertEqual(install_invocations(script), [])
+                self.assertFalse(_install_violations(script))
+
+    def test_space_separated_module_parser_is_killed(self) -> None:
+        module = sys.modules[__name__]
+        probe = f"{LOCKED_INSTALL} && python3 -Impip install {UNHASHED_PACKAGE}"
+        locked = f"python3 -Impip {LOCKED_INSTALL.removeprefix('python -m pip ')}"
+        with mock.patch.object(module, "_python_command", _space_separated_module_only):
+            # The mutant cannot identify an attached module: the backstop
+            # refuses the locked control, so the variant tests fail.
+            self.assertIsNone(install_invocations(f"python -Impip install {UNHASHED_PACKAGE}"))
+            self.assertTrue(_install_violations(locked))
+            with mock.patch.object(
+                module, "INSTALLER_NAME", _PRE_CORRECTION_INSTALLER_NAME
+            ), mock.patch.object(module, "_interpreter_code_is_unattributable", lambda text: False):
+                # With the old name pattern and no code pass, it is the guard
+                # Codex bypassed.
+                for name in SIGNING_WORKFLOWS:
+                    with self.subTest(workflow=name, guard="pre-correction"):
+                        self.assertEqual(self._sign_with(name, probe), set())
+        self.assertFalse(_install_violations(locked))
+        for name in SIGNING_WORKFLOWS:
+            with self.subTest(workflow=name, guard="real"):
+                self.assertIn("UNHASHED_INSTALL", self._sign_with(name, probe))
 
 
 # How each workflow binds the recorded revision to the verified attestation.
