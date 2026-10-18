@@ -67,6 +67,10 @@ class SurfaceState:
             self.retired_generation_diagnostics = []
 
 
+def _profile_order(profile: CapabilityProfile) -> str:
+    return evidence_fingerprint(profile.to_mapping())
+
+
 class CapabilityAdmissionCoordinator:
     """Publish bounded decisions and enforce single-use route leases.
 
@@ -147,30 +151,44 @@ class CapabilityAdmissionCoordinator:
     def replace_surface_profile(
         self,
         profile: CapabilityProfile,
+        extension: CapabilityProfile | None = None,
     ) -> int | None:
         """Install one binary-owned surface profile and retire old leases.
 
         Profile replacement is a caller-owned binary configuration event, not
         signed or observed authority. Runtime integration uses it only after an
-        exact compiled policy binding has selected the profile.
+        exact compiled policy binding has selected the profile. ``extension``
+        is at most one optional profile (HAMCP-162) installed atomically with
+        the stock profile; every one of its contracts must be optional.
         """
 
         if not isinstance(profile, CapabilityProfile):
             raise CompatibilityModelError("profile_registry_invalid")
+        if any(item.optional for item in profile.capabilities):
+            raise CompatibilityModelError("profile_registry_invalid")
+        if extension is not None and (
+            not isinstance(extension, CapabilityProfile)
+            or extension.surface is not profile.surface
+            or not all(item.optional for item in extension.capabilities)
+        ):
+            raise CompatibilityModelError("profile_registry_invalid")
+        installed = (profile,) if extension is None else (profile, extension)
         with self._lock:
             current = tuple(
                 item
                 for item in self._profiles
                 if item.surface is profile.surface
             )
-            if current == (profile,):
+            if sorted(current, key=_profile_order) == sorted(
+                installed, key=_profile_order
+            ):
                 return None
             retained = tuple(
                 item
                 for item in self._profiles
                 if item.surface is not profile.surface
             )
-            candidate = retained + (profile,)
+            candidate = retained + installed
             profile_keys = tuple(
                 (item.profile_id, item.profile_version)
                 for item in candidate
@@ -216,7 +234,10 @@ class CapabilityAdmissionCoordinator:
                 evidence_fingerprint(
                     {
                         "surface": profile.surface.value,
-                        "profiles": [profile.to_mapping()],
+                        "profiles": [
+                            item.to_mapping()
+                            for item in sorted(installed, key=_profile_order)
+                        ],
                     }
                 )
             )
@@ -773,7 +794,14 @@ class CapabilityAdmissionCoordinator:
             )
 
         ordered = tuple(sorted(decisions, key=lambda item: item.capability_id))
-        declared = tuple(item for item in ordered if item.profile_id is not None)
+        # Optional contracts keep their own decisions in ``ordered`` but never
+        # move the surface aggregate (HAMCP-162 aggregate isolation).
+        declared = tuple(
+            item
+            for item in ordered
+            if item.profile_id is not None
+            and not self._profile_contract(item.capability_id).optional
+        )
         admitted = tuple(item for item in declared if item.disposition in _ADMITTED)
         admissible_declared = tuple(
             item

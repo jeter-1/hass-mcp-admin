@@ -1,6 +1,19 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.15** closes the remaining HAMCP-189 residuals:
+Engineering **2.4.1-beta.16** adds one optional reviewed delegated read,
+`ha_config_get_yaml` (HAMCP-162). It reads one mapping-key path of
+`configuration.yaml` only:
+- every other file, including `secrets.yaml`, and every credential-shaped
+  path is refused before any upstream call;
+- `!secret`/`!env_var` become reference-name markers;
+- credential-shaped keys, connection strings and credential text are redacted
+  whole;
+- every result discloses that values are ha-mcp's YAML 1.2 parse.
+
+It is admitted only on the exact reviewed ha-mcp 8.4.3 and 8.5.0
+descriptors. `ha_list_files` and `ha_read_file` stay unexposed.
+
+It builds on beta.15, which closes the remaining HAMCP-189 residuals:
 fresh rollback planning acquires its own Core lease before any planning read,
 so under degraded Core it is refused before any Home Assistant read; an
 observed read counts an upstream attempt only after the Core authorizer
