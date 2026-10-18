@@ -2,8 +2,9 @@
 
 Engineering 2.4.1-beta.18 makes `get_server_health` much cheaper on a large
 plan store, and stops the 30 s recovery sweep from reading parent tasks it
-does not need (HAMCP-171). It builds on beta.16 (HAMCP-162), beta.15
-(HAMCP-189 PR B + C) and beta.14 (HAMCP-189 PR A).
+does not need (HAMCP-171). It builds on beta.17
+(HAMCP-200 typed REST routes), beta.16 (HAMCP-162), beta.15 (HAMCP-189
+PR B + C) and beta.14 (HAMCP-189 PR A).
 
 The investigation is
 [`HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md`](HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md).

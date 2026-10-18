@@ -142,6 +142,8 @@ def main() -> int:
     work = arguments.work.expanduser().resolve()
     if work == ROOT or ROOT in work.parents:
         raise SystemExit("--work must be outside the repository")
+    log_dir = arguments.output.expanduser().resolve().parent / "mutation-logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
     selected = [item for item in MUTATIONS if not arguments.only or item["id"] in arguments.only]
     if len({item["id"] for item in MUTATIONS}) != len(MUTATIONS):
         raise SystemExit("duplicate mutation id")
@@ -155,7 +157,9 @@ def main() -> int:
     tree = trees.get()
     code, output, seconds = run_tests(tree, baseline_modules, arguments.timeout, failfast=False)
     trees.put(tree)
-    baseline = {"modules": baseline_modules, "returncode": code, "seconds": round(seconds, 1),
+    baseline_log = log_dir / "baseline.log"
+    baseline_log.write_text(output, encoding="utf-8")
+    baseline = {"log_path": str(baseline_log), "modules": baseline_modules, "returncode": code, "seconds": round(seconds, 1),
                 "summary": output.strip().splitlines()[-1] if output.strip() else ""}
     print(f"baseline rc={code} {baseline['summary']} ({seconds:.0f}s)", flush=True)
     if code != 0:
@@ -177,8 +181,11 @@ def main() -> int:
             trees.put(tree)
         failures = [f"{kind} {name} ({where})" for kind, name, where in _FAILURE_LINE.findall(output)]
         import_error = "ImportError" in output or "SyntaxError" in output or "Failed to import" in output
+        log_path = log_dir / f"{mutation['id']}.log"
+        log_path.write_text(output, encoding="utf-8")
         result = {
             **mutation,
+            "log_path": str(log_path),
             "returncode": code,
             "killed": code != 0,
             "killed_by_import_or_syntax_error": import_error,

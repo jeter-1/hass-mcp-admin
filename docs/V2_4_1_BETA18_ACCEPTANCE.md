@@ -2,8 +2,8 @@
 
 This contract covers HAMCP-171: the health safety verdict cache (D1), the
 per-job scan memo (D5) and the recovery sweep's parent reads. It builds on
-beta.17 (HAMCP-200 typed REST routes), beta.16 (HAMCP-162), beta.15 (HAMCP-189 PR B + C) and beta.14 (HAMCP-189
-PR A).
+beta.17 (HAMCP-200 typed REST routes), beta.16 (HAMCP-162), beta.15
+(HAMCP-189 PR B + C) and beta.14 (HAMCP-189 PR A).
 
 It separates four stages:
 1. source and disposable acceptance;
@@ -42,8 +42,11 @@ The review needs a security section covering:
 - invalidation: a whole-cache discard on any failed scan, storage error,
   quarantine, unexpected worker failure (including an abandoned job's drained
   failure) and the internal `deep_audit_plan_store`; verdicts recorded only
-  after the worker validates the whole pending set; nothing recorded by a
-  cancelled call;
+  after the worker validates the whole pending set. Cancellation before worker
+  completion records no new verdicts for the unvalidated pending records.
+  Verdicts recorded after successful validation may safely survive later
+  cancellation or supersession; cancellation returns no successful health
+  response and does not continue lifecycle work;
 - process memory only: nothing persisted, empty at start, and no
   authoritative read, save, approval or execution path consulting the cache;
 - bounded reporting with no digest, path or key material;
@@ -90,8 +93,11 @@ They must prove each of the following:
 - the deep re-scan bypasses and repopulates the cache, through the public
   tool as well as the service;
 - whole-cache invalidation on worker failure, on an abandoned job's
-  failure and on the internal deep audit, and no verdicts from a cancelled
-  call;
+  failure and on the internal deep audit;
+- cancellation before worker completion records no new verdicts, even when
+  the abandoned worker later succeeds. Cancellation after successful validation
+  may retain the fully validated verdicts for reuse, but returns no health
+  response and performs no subsequent lifecycle work;
 - restart starts empty, and nothing is persisted;
 - memo equivalence, its refusal of mismatched secrets, and a fresh memo per
   job;
@@ -108,8 +114,10 @@ fail at least one test, including the brief's three:
 - the sweep skips a needed parent read.
 
 The recorded run is in `docs/evidence/hamcp171-mutations/results.json`
-(Python 3.12.14, against this branch's runtime). The baseline passed, and
-8 of 8 mutations were killed, none by an import or syntax error.
+(Python 3.12.14, before the main merge/restage). Rerun all eight on the final
+merged candidate and retain its exact-head report with the PR evidence. The
+recorded baseline passed, and 8 of 8 mutations were killed, none by an import
+or syntax error.
 
 ### Measured effect
 
@@ -177,11 +185,11 @@ handoff. Verify the following with the shipped verifiers:
 - the immutable version and commit images;
 - provenance and SBOM.
 
-Never invent future image identities. Retain the beta.16, beta.15 and beta.14
+Never invent future image identities. Retain the beta.17, beta.16, beta.15 and beta.14
 artifacts and the known-good beta.12 and beta.11 artifacts and options for
 recovery.
 
-No new persisted format is introduced, and beta.16 reads every beta.17
+No new persisted format is introduced, and beta.17 reads every beta.18
 record.
 
 ## 3. Installed Engineering
@@ -198,7 +206,7 @@ content.
    enumeration: exactly 88 tools (59 native, 29 delegated).
    `get_server_health` must show the reviewed schema with the optional
    `deep_storage_audit` boolean and the two added description lines. Every
-   other descriptor must match beta.16.
+   other descriptor must match beta.17.
    Also compare Core signed selection, storage and audit health, F3
    readiness and zero fallback.
 3. **Two consecutive health calls.** After the add-on has started, call

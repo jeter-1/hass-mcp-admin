@@ -439,7 +439,7 @@ class VerdictCacheTests(ConfigurationPlanTestCase):
         run = (await self.health())["last_run"]
         self.assertEqual((run["hits"], run["misses"]), (0, 3))
 
-    async def test_cancelled_call_publishes_no_verdicts(self):
+    async def test_cancel_before_worker_completion_publishes_no_verdicts(self):
         original = service_module._validate_health_records
         entered = asyncio.Event()
         loop = asyncio.get_running_loop()
@@ -463,6 +463,35 @@ class VerdictCacheTests(ConfigurationPlanTestCase):
         self.assertEqual(self.service._safety_verdict_cache, {})
         run = (await self.health())["last_run"]
         self.assertEqual(run["misses"], 3)
+
+    async def test_cancel_after_validation_retains_only_verified_verdicts(self):
+        original = self.service._safety_verdict_store
+        stored = {}
+
+        def store_then_cancel(plans, pending, run):
+            # Cancel at the real fence await after the successful worker;
+            # do not add an artificial yield to production code.
+            original(plans, pending, run)
+            stored.update(self.service._safety_verdict_cache)
+            asyncio.current_task().cancel()
+
+        with patch.object(
+            self.service, "_safety_verdict_store", side_effect=store_then_cancel
+        ), patch.object(
+            self.service, "_resolve_lifecycle", wraps=self.service._resolve_lifecycle
+        ) as lifecycle:
+            pending = asyncio.create_task(self.service.async_health_summary())
+            with self.assertRaises(asyncio.CancelledError):
+                await pending
+            self.assertTrue(pending.cancelled())
+            lifecycle.assert_not_called()
+
+        self.assertEqual(self.validated, [sorted(self.plan_ids)])
+        self.assertEqual(set(stored), set(self.plan_ids))
+        self.assertEqual(self.service._safety_verdict_cache, stored)
+        run = (await self.health())["last_run"]
+        self.assertEqual((run["hits"], run["misses"]), (3, 0))
+        self.assertEqual(self.validated[-1], [])
 
 
 class SegmentMemoTests(unittest.TestCase):

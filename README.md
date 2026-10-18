@@ -162,8 +162,8 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.17 release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
-[2.4.1-beta.17 acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.18 release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
+[2.4.1-beta.18 acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
