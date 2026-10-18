@@ -75,14 +75,14 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
             transport = Transport()
             transport.catalog = PowerTransport(provider_version).catalog
             provider = FanProvider(transport, lambda *args: transport.authority)
-            service = FanService(self.root/uuid.uuid4().hex, provider, FanCoreAuthority(self.core), now=self.clock)
+            service = FanService(self.root/uuid.uuid4().hex, provider, FanCoreAuthority(self.core), now=self.clock, sleep=self.clock.sleep)
             request = FanRequest(entity_id='fan.synthetic', action=action,
                                  percentage=50 if action != 'turn_off' else None,
                                  operation_id=f'{int(self.clock().timestamp())}-{uuid.uuid4().hex}')
         else:
             transport = PowerTransport(provider_version)
             provider = PowerProvider(transport, lambda *args: transport.authority)
-            service = PowerService(self.root/uuid.uuid4().hex, provider, PowerCoreAuthority(self.core), now=self.clock)
+            service = PowerService(self.root/uuid.uuid4().hex, provider, PowerCoreAuthority(self.core), now=self.clock, sleep=self.clock.sleep)
             request = PowerRequest(entity_id=family+'.synthetic', action=action,
                                    operation_id=f'{int(self.clock().timestamp())}-{uuid.uuid4().hex}')
         self.addAsyncCleanup(service.close)
@@ -344,7 +344,7 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(result['state'], 'succeeded_verified', result)
         self.assertEqual(transport.writes, 1)
         # A fresh service instance simulates loss of the original owner.
-        fresh = FanService(service.root.parent, service.provider, FanCoreAuthority(self.core), now=self.clock)
+        fresh = FanService(service.root.parent, service.provider, FanCoreAuthority(self.core), now=self.clock, sleep=self.clock.sleep)
         self.addAsyncCleanup(fresh.close)
         unchanged = await fresh.control(request)
         self.assertNotEqual(unchanged['state'], 'succeeded_verified')
@@ -379,7 +379,7 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
             raw = (folder/record['file']).read_bytes()
             self.assertEqual(sha256(raw).hexdigest(), record['sha256'])
             cls = FanService if record['family'] == 'fan' else PowerService
-            service = cls(self.root/record['file'], object(), object(), now=self.clock)
+            service = cls(self.root/record['file'], object(), object(), now=self.clock, sleep=self.clock.sleep)
             path = service._path(record['task_id']); path.write_bytes(raw)
             prepared = service.load(record['task_id'])
             self.assertEqual(prepared.provider_contract, record['contract'])

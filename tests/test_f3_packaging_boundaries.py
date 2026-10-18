@@ -47,6 +47,7 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_hamcp189_authority_cancel.py",
     "tests/test_hamcp189_expired_pre_intent_deadline.py",
     "tests/test_hamcp189_expired_unclaimed_declaration.py",
+    "tests/test_hamcp192_observing_fix.py",
     "tests/test_f3_tokenless_lock_recovery.py",
     "tests/fixtures/f3_lock_recovery/generate.py",
     "tests/f3_configuration_fixtures.py",

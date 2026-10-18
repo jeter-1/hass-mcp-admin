@@ -122,11 +122,29 @@ another dispatch. No arbitrary provider payload or exception text enters these
 projections. `ordinary_power` health reports its receipts, active work, holds,
 locks, recovery failures and audit projection failures separately from fan work.
 
-The power family uses the existing timing bounds: 16 active/preparing requests,
+The power family uses the fan timing bounds: 16 active/preparing requests,
 4,096 retained declarations without eviction, 180-second verification evidence
-window, six observation/verification attempts, and a recovery sweep of up to eight
-records within 45 seconds. Provider exchanges retain 20-second outer and
-15-second call limits. No fan limits or TTLs change.
+window, six attempts for failed or incomplete observations, and a recovery sweep
+of up to eight records within 45 seconds. Provider exchanges retain 20-second
+outer and 15-second call limits.
+
+HAMCP-192 applies the fan observation changes unchanged to power, through the
+shared service:
+- an inline poll of about 10 seconds that verifies on the first match;
+- a 30-second entity lease, renewed every 10 seconds;
+- one final read at the evidence deadline before any manual-review decision;
+- derived `observation_status` and `blocking_tasks` receipt hints;
+- the governed Ingress hold release at `/typed/power/<task_id>`.
+
+The hold release is approval-gated, shows the requested and freshly read
+state side by side before approval, records a fresh readback, writes one
+`power_hold_release_action` audit entry exactly once (keyed by the stable
+`hold_release_id`; reported as not recorded, with a reason, while auditing is
+disabled, then backfilled once it is enabled) and never dispatches. Blocker hints use the lock store's
+own acquisition predicate, including expired leases that recovery has not yet
+reconciled. The page shares the existing approval pages' identity check; the
+system-wide administrator-role check is deferred to HAMCP-205. See
+[Typed fan control](TYPED_FAN_CONTROL.md).
 
 ## Validation and acceptance
 
