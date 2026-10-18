@@ -16,13 +16,18 @@ permissions:
   contents: read
 
 jobs:
-  attest:
+  # Upstream observation runs without the signing environment, its secrets, or
+  # any write token.  Its only output is a bounded, hash-bound artifact.
+  evidence:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    environment: upstream-attestation-signing
+    timeout-minutes: 60
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      runtime_sha256: ${{ steps.stage.outputs.runtime_sha256 }}
+      release_sha256: ${{ steps.stage.outputs.release_sha256 }}
     env:
       VERSION: ${{ inputs.upstream_version }}
       UPSTREAM_REPOSITORY: https://github.com/homeassistant-ai/ha-mcp.git
@@ -30,21 +35,15 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            hass_mcp_engineering_beta/requirements.txt
-            tests/requirements.txt
+          python-version: "3.12.14"
 
-      - name: Install fixed review dependencies
+      - name: Install hash-locked runtime dependencies
         run: >-
-          python -m pip install
-          -r hass_mcp_engineering_beta/requirements.txt
-          -r tests/requirements.txt
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
 
       - name: Validate exact stable version and fixed source locations
         shell: bash
@@ -77,70 +76,55 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image="${UPSTREAM_IMAGE_REPOSITORY}:${VERSION}"
-          raw="$RUNNER_TEMP/upstream-index.json"
+          tagged="${UPSTREAM_IMAGE_REPOSITORY}:${VERSION}"
           inspect="$RUNNER_TEMP/upstream-inspect.txt"
-          docker buildx imagetools inspect --raw "$image" > "$raw"
-          docker buildx imagetools inspect "$image" > "$inspect"
+          docker buildx imagetools inspect "$tagged" > "$inspect"
           index_digest="$(awk '$1 == "Digest:" {print $2; exit}' "$inspect")"
-          python - "$raw" "$RUNNER_TEMP/platforms.json" "$RUNNER_TEMP/attestation-digests.txt" <<'PY'
+          [[ "$index_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          immutable="${UPSTREAM_IMAGE_REPOSITORY}@${index_digest}"
+          # Provenance comes only from the digest-verified attestation payloads;
+          # index annotations only locate them.
+          python scripts/verify_upstream_image_provenance.py \
+            --index-digest "$index_digest" \
+            --version "$VERSION" \
+            --source-commit "${{ steps.source.outputs.source_commit }}" \
+            --output "$RUNNER_TEMP/upstream-provenance.json"
+          python - "$RUNNER_TEMP/upstream-provenance.json" "$RUNNER_TEMP/platforms.json" "$RUNNER_TEMP/attested.json" "$index_digest" <<'PY'
           import json, pathlib, sys
-          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
-          platforms = {}
-          attestations = []
-          for item in value.get("manifests", []):
-              platform = item.get("platform", {})
-              if item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest":
-                  attestations.append(item["digest"])
-                  continue
-              os_name, arch, variant = platform.get("os"), platform.get("architecture"), platform.get("variant")
-              if os_name == "linux" and arch in {"amd64", "arm64", "arm"}:
-                  key = f"linux/{arch}" + (f"/{variant}" if variant else "")
-                  platforms[key] = item["digest"]
+          provenance = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          if provenance["image_index_digest"] != sys.argv[4]:
+              raise SystemExit("attested image index differs from the resolved index")
+          if provenance["slsa_provenance"] != "present_per_platform":
+              raise SystemExit("SLSA provenance is missing for an upstream platform")
+          platforms = provenance["platform_digests"]
           if not {"linux/amd64", "linux/arm64"}.issubset(platforms):
               raise SystemExit("required upstream platforms are missing")
-          if len(attestations) < len(platforms):
-              raise SystemExit("SLSA provenance is missing for an upstream platform")
-          pathlib.Path(sys.argv[2]).write_text(json.dumps({"platform_digests": platforms, "attestation_count": len(attestations)}, sort_keys=True))
-          pathlib.Path(sys.argv[3]).write_text("\n".join(attestations) + "\n")
+          pathlib.Path(sys.argv[2]).write_text(json.dumps({
+              "platform_digests": platforms,
+              "attestation_count": len(provenance["attested_platforms"]),
+              "slsa_provenance": provenance["slsa_provenance"],
+              "sbom": provenance["sbom"],
+          }, sort_keys=True))
+          pathlib.Path(sys.argv[3]).write_text(json.dumps({
+              "revision": provenance["workflow_sha"],
+              "created": provenance["attested_labels"].get("created", ""),
+          }, sort_keys=True))
           PY
-          mkdir -p "$RUNNER_TEMP/upstream-attestations"
-          number=0
-          while IFS= read -r digest; do
-            test -n "$digest"
-            docker buildx imagetools inspect --raw "${UPSTREAM_IMAGE_REPOSITORY}@${digest}" \
-              > "$RUNNER_TEMP/upstream-attestations/${number}.json"
-            number=$((number + 1))
-          done < "$RUNNER_TEMP/attestation-digests.txt"
-          python - "$RUNNER_TEMP/upstream-attestations" "$RUNNER_TEMP/platforms.json" <<'PY'
-          import json, pathlib, sys
-          directory = pathlib.Path(sys.argv[1])
-          provenance = 0
-          sbom = 0
-          for path in directory.glob("*.json"):
-              manifest = json.loads(path.read_text())
-              predicates = {
-                  layer.get("annotations", {}).get("in-toto.io/predicate-type", "")
-                  for layer in manifest.get("layers", [])
-              }
-              provenance += any("slsa" in item.lower() for item in predicates)
-              sbom += any("spdx" in item.lower() or "cyclonedx" in item.lower() for item in predicates)
-          platforms_path = pathlib.Path(sys.argv[2])
-          value = json.loads(platforms_path.read_text())
-          if provenance < len(value["platform_digests"]):
-              raise SystemExit("SLSA provenance is missing for an upstream platform")
-          value["slsa_provenance"] = "present_per_platform"
-          value["sbom"] = "present" if sbom >= len(value["platform_digests"]) else "absent"
-          platforms_path.write_text(json.dumps(value, sort_keys=True))
-          PY
-          docker pull --platform linux/amd64 "$image"
-          revision="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
-          image_version="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
-          created="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
-          source_label="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
-          dirty_label="$(docker image inspect "$image" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
-          test "$image_version" = "$VERSION"
+          revision="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["revision"])' "$RUNNER_TEMP/attested.json")"
+          attested_created="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["created"])' "$RUNNER_TEMP/attested.json")"
           [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+          docker pull --platform linux/amd64 "$immutable"
+          # Image labels are informational; they must agree with the attestation.
+          label_revision="$(docker image inspect "$immutable" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          image_version="$(docker image inspect "$immutable" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+          created="$(docker image inspect "$immutable" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
+          source_label="$(docker image inspect "$immutable" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
+          dirty_label="$(docker image inspect "$immutable" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
+          test "$label_revision" = "$revision"
+          test "$image_version" = "$VERSION"
+          if [[ -n "$attested_created" ]]; then
+            test "$created" = "$attested_created"
+          fi
           test "$source_label" = "https://github.com/homeassistant-ai/ha-mcp"
           if [[ -n "$dirty_label" && "$dirty_label" != "false" ]]; then
             echo "::error::The official upstream image reports a dirty build."
@@ -219,47 +203,27 @@ jobs:
           pathlib.Path(".compat/release-evidence.json").write_text(json.dumps(value, sort_keys=True))
           PY
 
-      - name: Sign and verify data-only registry update
-        env:
-          UPSTREAM_TRUST_REGISTRY_SIGNING_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_SIGNING_KEY }}
-          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
-          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
+      - name: Stage bounded release evidence for signing
+        id: stage
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$UPSTREAM_TRUST_REGISTRY_SIGNING_KEY"
-          test -n "$UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY"
-          test -n "$UPSTREAM_TRUST_REGISTRY_KEY_ID"
-          python scripts/prepare_upstream_compatibility_attestation.py --version "$VERSION"
+          staging="$RUNNER_TEMP/release-evidence"
+          mkdir -- "$staging"
+          cp -- .compat/runtime-evidence.json .compat/release-evidence.json "$staging/"
+          {
+            echo "runtime_sha256=$(sha256sum -- "$staging/runtime-evidence.json" | cut -d ' ' -f 1)"
+            echo "release_sha256=$(sha256sum -- "$staging/release-evidence.json" | cut -d ' ' -f 1)"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Enforce data-only diff
-        id: branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          branch="data/upstream-attestation-${VERSION}-${GITHUB_RUN_ID}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git add -- \
-            upstream-trust/upstream-dashboard-registry.json \
-            upstream-trust/upstream-dashboard-registry.sig.json \
-            "docs/evidence/upstream-compatibility/ha-mcp-${VERSION}.json" \
-            docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX.md
-          unexpected="$(git diff --cached --name-only | grep -Ev '^(upstream-trust/upstream-dashboard-registry(\.sig)?\.json|docs/evidence/upstream-compatibility/ha-mcp-[0-9]+\.[0-9]+\.[0-9]+\.json|docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX\.md)$' || true)"
-          test -z "$unexpected"
-          git commit -m "Attest ha-mcp ${VERSION} dashboard read compatibility"
-          git push origin "HEAD:refs/heads/${branch}"
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
-
-      - name: Open data-only draft pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh pr create --draft --base main --head "${{ steps.branch.outputs.branch }}" \
-            --title "Attest ha-mcp ${VERSION} dashboard read compatibility" \
-            --body "Data-only signed compatibility attestation for exact ha-mcp ${VERSION}. No Engineering code, image, tool allowlist, or argument builder is changed."
+      - name: Retain bounded release evidence for signing
+        id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: upstream-attestation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-evidence/
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Write bounded attestation summary
         if: always()
@@ -282,3 +246,196 @@ jobs:
           docker rm -f upstream-compatibility-review >/dev/null 2>&1 || true
           if [[ -f "$RUNNER_TEMP/fake-ha.pid" ]]; then kill "$(cat "$RUNNER_TEMP/fake-ha.pid")" >/dev/null 2>&1 || true; fi
           rm -rf .compat
+
+  # Signing holds the environment-scoped seed but no write token.  It installs
+  # only the hash-locked runtime parsers the signer re-validates evidence with.
+  sign:
+    needs: evidence
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: upstream-attestation-signing
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      manifest_sha256: ${{ steps.stage.outputs.manifest_sha256 }}
+    env:
+      VERSION: ${{ inputs.upstream_version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+
+      - name: Install hash-locked runtime dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+
+      - name: Download bounded release evidence
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.evidence.outputs.artifact_id }}
+          path: .compat
+
+      - name: Verify bounded release evidence
+        env:
+          RUNTIME_SHA256: ${{ needs.evidence.outputs.runtime_sha256 }}
+          RELEASE_SHA256: ${{ needs.evidence.outputs.release_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          present="$(cd .compat && find . -mindepth 1 -printf '%P\n' | sort)"
+          test "$present" = "$(printf '%s\n' release-evidence.json runtime-evidence.json)"
+          test ! -L .compat/runtime-evidence.json
+          test ! -L .compat/release-evidence.json
+          [[ "$RUNTIME_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$RELEASE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(sha256sum -- .compat/runtime-evidence.json | cut -d ' ' -f 1)" = "$RUNTIME_SHA256"
+          test "$(sha256sum -- .compat/release-evidence.json | cut -d ' ' -f 1)" = "$RELEASE_SHA256"
+
+      - name: Sign and verify data-only registry update
+        env:
+          UPSTREAM_TRUST_REGISTRY_SIGNING_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_SIGNING_KEY }}
+          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$UPSTREAM_TRUST_REGISTRY_SIGNING_KEY"
+          test -n "$UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY"
+          test -n "$UPSTREAM_TRUST_REGISTRY_KEY_ID"
+          python scripts/prepare_upstream_compatibility_attestation.py --version "$VERSION"
+
+      - name: Remove bounded signing inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- .compat/runtime-evidence.json .compat/release-evidence.json
+          rmdir -- .compat
+
+      - name: Stage exact signed data-only update
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s\n' \
+            upstream-trust/upstream-dashboard-registry.json \
+            upstream-trust/upstream-dashboard-registry.sig.json \
+            "docs/evidence/upstream-compatibility/ha-mcp-${VERSION}.json" \
+            docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX.md | sort)"
+          changed="$(
+            {
+              git diff --name-only
+              git diff --cached --name-only
+              git ls-files --others --exclude-standard
+            } | sort -u
+          )"
+          test -n "$changed"
+          unexpected="$(comm -23 <(printf '%s\n' "$changed") <(printf '%s\n' "$expected"))"
+          test -z "$unexpected"
+          staging="$RUNNER_TEMP/signed"
+          mkdir -p -- "$staging/files"
+          while IFS= read -r relative; do
+            test -f "$relative"
+            test ! -L "$relative"
+            install -D -m 0644 -- "$relative" "$staging/files/$relative"
+          done <<< "$changed"
+          (cd "$staging/files" && sha256sum -- $changed) > "$staging/SHA256SUMS"
+          echo "manifest_sha256=$(sha256sum -- "$staging/SHA256SUMS" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Retain exact signed data-only update
+        id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: upstream-attestation-signed-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/signed/
+          if-no-files-found: error
+          retention-days: 1
+
+  # Publication holds the write token but no signing environment or secret,
+  # and runs no Python or package installation.
+  publish:
+    needs: sign
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      VERSION: ${{ inputs.upstream_version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download exact signed data-only update
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.sign.outputs.artifact_id }}
+          path: ${{ runner.temp }}/signed
+
+      - name: Verify and apply exact signed data-only update
+        env:
+          MANIFEST_SHA256: ${{ needs.sign.outputs.manifest_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          signed="$RUNNER_TEMP/signed"
+          expected="$(printf '%s\n' \
+            upstream-trust/upstream-dashboard-registry.json \
+            upstream-trust/upstream-dashboard-registry.sig.json \
+            "docs/evidence/upstream-compatibility/ha-mcp-${VERSION}.json" \
+            docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX.md | sort)"
+          [[ "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test ! -L "$signed/SHA256SUMS"
+          test "$(sha256sum -- "$signed/SHA256SUMS" | cut -d ' ' -f 1)" = "$MANIFEST_SHA256"
+          listed="$(cut -c 67- "$signed/SHA256SUMS" | sort)"
+          test -n "$listed"
+          test -z "$(comm -23 <(printf '%s\n' "$listed") <(printf '%s\n' "$expected"))"
+          test "$(cd "$signed/files" && find . -mindepth 1 ! -type d -printf '%P\n' | sort)" = "$listed"
+          test -z "$(cd "$signed/files" && find . -mindepth 1 ! -type d ! -type f)"
+          (cd "$signed/files" && sha256sum --strict --check --quiet ../SHA256SUMS)
+          while IFS= read -r relative; do
+            install -D -m 0644 -- "$signed/files/$relative" "$relative"
+          done <<< "$listed"
+          rm -rf -- "$signed"
+
+      - name: Enforce data-only diff
+        id: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="data/upstream-attestation-${VERSION}-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -- \
+            upstream-trust/upstream-dashboard-registry.json \
+            upstream-trust/upstream-dashboard-registry.sig.json \
+            "docs/evidence/upstream-compatibility/ha-mcp-${VERSION}.json" \
+            docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX.md
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(upstream-trust/upstream-dashboard-registry(\.sig)?\.json|docs/evidence/upstream-compatibility/ha-mcp-[0-9]+\.[0-9]+\.[0-9]+\.json|docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX\.md)$' || true)"
+          test -z "$unexpected"
+          git commit -m "Attest ha-mcp ${VERSION} dashboard read compatibility"
+          # Checkout credentials are not persisted; the token reaches git only
+          # through the gh credential helper for this one push.
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+            push origin "HEAD:refs/heads/${branch}"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Open data-only draft pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh pr create --draft --base main --head "${{ steps.branch.outputs.branch }}" \
+            --title "Attest ha-mcp ${VERSION} dashboard read compatibility" \
+            --body "Data-only signed compatibility attestation for exact ha-mcp ${VERSION}. No Engineering code, image, tool allowlist, or argument builder is changed."
