@@ -607,7 +607,7 @@ SANITIZER_SITES = {
     ("integrity/provider.py", "DirectHaIntegrityProvider._entity_registry", "sanitize_untrusted_data"): (1, "analysis"),
     ("integrity/provider.py", "DirectHaIntegrityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),
     ("logging_config.py", "JsonFormatter.format", "sanitize_untrusted_data"): (1, "audit"),
-    ("logging_config.py", "log_event", "redact_data"): (1, "audit"),
+    ("logging_config.py", "log_event", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_data", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_untrusted_text", "sanitize_untrusted_data"): (1, "audit"),
     ("providers/core_logs.py", "CoreLogReader.evidence", "sanitize_untrusted_data"): (1, "logs"),
@@ -874,6 +874,20 @@ class IdentityRecordTests(unittest.TestCase):
         self.assertEqual(rescanned.value["v"], COLLISION)
         self.assertNotIn(late, rendered(rescanned.value))
 
+    def test_an_inherited_record_never_skips_a_secret_the_child_pass_adds(self):
+        # Codex review R1 reproduction: a parent's output rescanned through a
+        # child record with a newly known secret is scanned, not kept.
+        parent = S.ReferenceMarkerRegistry()
+        first, late = syn.needle("review first"), syn.needle("review late")
+        original = S.sanitize_untrusted_data(
+            syn.bearer(first) + " tail " + late, known_secrets=(first,), registry=parent
+        ).value
+        self.assertIn(late, original)
+        child = S.ReferenceMarkerRegistry(inherits=parent)
+        result = S.sanitize_untrusted_data(original, known_secrets=(first, late), registry=child)
+        self.assertNotIn(late, rendered(result.value))
+        self.assertTrue(result.redaction_applied)
+
     def test_an_inherited_record_is_read_only(self):
         parent = S.ReferenceMarkerRegistry()
         own = produced(parent, syn.needle("hamcp191 parent"))
@@ -892,6 +906,14 @@ class IdentityRecordTests(unittest.TestCase):
         self.assertIsNot(first.sanitizer_registry, second.sanitizer_registry)
         own = produced(first.sanitizer_registry, syn.needle("hamcp191 request"))
         self.assertFalse(second.sanitizer_registry.output(own))
+
+    def test_marker_text_past_the_string_limit_still_collides(self):
+        # Codex review R2 reproduction: the collision check covers the whole
+        # input string, not just the part that survives truncation.
+        raw = "ordinary " * 100 + marker("token")
+        result = S.sanitize_untrusted_data(raw, max_string=40)
+        self.assertEqual(result.value, COLLISION)
+        self.assertEqual(result.marker_collision_count, 1)
 
     def test_truncation_suffix_joins_the_record(self):
         registry = S.ReferenceMarkerRegistry()
@@ -1165,16 +1187,62 @@ HAMCP191_GLOBS = (
     "docs/HAMCP_191_*.md",
 )
 
+# Codex review L2: every other file this change touches, so the scan covers
+# the whole pull-request diff and not only the HAMCP-191-named files.
+HAMCP191_CHANGED_FILES = (
+    "README.md",
+    "docs/V2_4_1_BETA20_ACCEPTANCE.md",
+    "docs/V2_4_1_BETA20_RELEASE_NOTES.md",
+    "hass_mcp_engineering_beta/CHANGELOG.md",
+    "hass_mcp_engineering_beta/config.yaml",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/audit.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/extraction.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/index.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/models.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_calls.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_sources.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/approval_projection.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/semantic_diff.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/config_validation.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/operational_lifecycle.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/health.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/impact/provider.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/incident/normalization.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/integrity/provider.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/logging_config.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/models/responses.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/core_logs.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/dispatch.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/request_context.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/routing.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/version.py",
+    "scripts/validate_addon_metadata.py",
+    "tests/test_automation_reliability_analysis.py",
+    "tests/test_beta11_sanitization.py",
+    "tests/test_hamcp162_yaml_reader.py",
+    "tests/test_hamcp171_health_verdict_cache.py",
+    "tests/test_readonly_upstream_gateway.py",
+)
+
 
 class CommittedFileScanTests(unittest.TestCase):
     def test_no_committed_hamcp191_file_has_secret_shaped_text(self):
+        for name in HAMCP191_CHANGED_FILES:
+            self.assertTrue((ROOT / name).is_file(), name)
         files = sorted({
             path.resolve()
-            for pattern in HAMCP191_GLOBS
+            for pattern in (*HAMCP191_GLOBS, *HAMCP191_CHANGED_FILES)
             for path in ROOT.glob(pattern)
             if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
         })
         self.assertIn(Path(__file__).resolve(), files)
+        self.assertIn((ROOT / "tests/test_beta11_sanitization.py").resolve(), files)
         self.assertEqual(syn.scan(files), [])
 
 

@@ -2241,6 +2241,27 @@ class ChangeGovernanceService:
         except ChangePlanStorageError as exc:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from exc
 
+    def _require_strict_new_plan(self, plan: ChangePlan) -> None:
+        """HAMCP-191 H1: a new operational plan passes the strict sanitizer.
+
+        The save-time gate is the tolerant D11 stored-plan re-scan, so it
+        cannot be the creation gate. Every operational family (backup,
+        helper state, reload and restarts) checks its complete new record
+        here, before any supersession, persistence or response, so Home
+        Assistant text such as a version, location name or dependency
+        profile cannot reach the store wrapped or marker-like.
+        """
+
+        try:
+            unsafe = bool(persistence_safety_errors(plan.to_dict(), self.sensitive_values))
+        except Exception:
+            unsafe = True
+        if unsafe:
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={"reason": "plan_contains_prohibited_sensitive_data"},
+            )
+
     def _require_v2_persisted_plan_safe(self, plan: ChangePlan) -> None:
         """Reject any unsafe contract-v2 record without echoing its contents.
 
@@ -3597,7 +3618,10 @@ class ChangeGovernanceService:
                 "rollback_available": False,
             },
             rollback=ChangeRollback(available=False, status="unavailable"),
-            caller_context=sanitize_context(caller_context),
+            caller_context=_sanitize_configuration_caller_context(
+                caller_context,
+                known_secrets=self.sensitive_values,
+            ),
             contract_version=OPERATIONAL_PLAN_CONTRACT_VERSION,
             plan_family="operational_administration",
             operational=operational,
@@ -3605,6 +3629,7 @@ class ChangeGovernanceService:
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        self._require_strict_new_plan(plan)
         self._supersede_prior(plan)
         self._record(plan, "operational_backup_plan_created", "success")
         return {
@@ -3835,6 +3860,7 @@ class ChangeGovernanceService:
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        self._require_strict_new_plan(plan)
         self._supersede_prior(plan)
         self._record(
             plan,
@@ -4125,6 +4151,7 @@ class ChangeGovernanceService:
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        self._require_strict_new_plan(plan)
         self._supersede_prior(plan)
         self._record(
             plan,
@@ -4169,7 +4196,40 @@ class ChangeGovernanceService:
                 ErrorCode.AUTOMATION_VALIDATION_FAILED,
                 details={"validation_errors": ["The proposal contains prohibited sensitive data."]},
             )
+        # HAMCP-191 H1: every caller-supplied field this plan persists passes
+        # the strict sanitizer before any Home Assistant read or persistence.
+        # The stored-plan re-scan (D11) tolerates marker-shaped text, so it
+        # cannot be the creation gate.  The persisted (truncated) text is
+        # checked as well as the full input.
+        if persistence_safety_errors(
+            {
+                "plan_title": title,
+                "plan_description": description,
+                "persisted_text": [title[:160], description[:1000]],
+                "proposed_config": proposed_config,
+            },
+            self.sensitive_values,
+        ):
+            raise GovernanceError(
+                ErrorCode.AUTOMATION_VALIDATION_FAILED,
+                details={"validation_errors": ["The proposal contains prohibited sensitive data."]},
+            )
         current = await self.gateway.get(automation_id) if valid else None
+        if current is not None and persistence_safety_errors(
+            current, self.sensitive_values
+        ):
+            # The before-value is persisted verbatim and returned in the plan.
+            raise GovernanceError(
+                ErrorCode.AUTOMATION_VALIDATION_FAILED,
+                details={
+                    "resource_id": automation_id,
+                    "validation_errors": [
+                        "The current automation contains prohibited "
+                        "sensitive data and cannot be persisted in a "
+                        "change plan."
+                    ],
+                },
+            )
         failure_code = ErrorCode.AUTOMATION_VALIDATION_FAILED
         if valid and change_operation == ChangeOperation.CREATE_AUTOMATION and current is not None:
             errors.append("automation_id already exists")
@@ -4222,7 +4282,9 @@ class ChangeGovernanceService:
                 available=False,
                 status=("not_yet_available" if change_operation == ChangeOperation.UPDATE_AUTOMATION else "unavailable_for_create"),
             ),
-            caller_context=sanitize_context(caller_context, self.sensitive_values),
+            caller_context=_sanitize_configuration_caller_context(
+                caller_context, known_secrets=self.sensitive_values
+            ),
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
@@ -4257,6 +4319,21 @@ class ChangeGovernanceService:
         ):
             raise GovernanceError(
                 ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED
+            )
+        # HAMCP-191 H1: the caller's title, description and patch values are
+        # persisted with the plan, so they pass the strict sanitizer before
+        # any Home Assistant read or persistence.
+        if persistence_safety_errors(
+            {
+                "plan_title": title,
+                "plan_description": description,
+                "patch_operations": patch_operations,
+            },
+            self.sensitive_values,
+        ):
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={"reason": "dashboard_contains_prohibited_sensitive_data"},
             )
         try:
             proposal = await build_dashboard_update(

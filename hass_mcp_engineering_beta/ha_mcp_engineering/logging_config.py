@@ -7,7 +7,11 @@ import logging
 from typing import Any
 
 from .request_context import current_request_id
-from .sanitization import ReferenceMarkerRegistry, sanitize_untrusted_data
+from .sanitization import (
+    RedactionTally,
+    ReferenceMarkerRegistry,
+    sanitize_untrusted_data,
+)
 
 
 def redact_untrusted_text(
@@ -62,9 +66,19 @@ class JsonFormatter(logging.Formatter):
         )
         payload = sanitized.value
         if isinstance(payload, dict):
-            payload["redaction_applied"] = sanitized.redaction_applied
-            payload["redacted_field_count"] = sanitized.redacted_field_count
-            payload["redaction_categories"] = list(sanitized.redaction_categories)
+            # HAMCP-191 L1: report log_event's first pass too. Its markers are
+            # identity hits here and are not counted twice.
+            tally = RedactionTally()
+            first = getattr(record, "sanitizer_tally", None)
+            if isinstance(first, RedactionTally):
+                tally.redacted_field_count = first.redacted_field_count
+                tally.categories.update(first.categories)
+            tally.add(sanitized)
+            payload["redaction_applied"] = (
+                tally.applied or sanitized.redaction_applied
+            )
+            payload["redacted_field_count"] = tally.redacted_field_count
+            payload["redaction_categories"] = sorted(tally.categories)
         return json.dumps(payload, sort_keys=True)
 
 
@@ -93,6 +107,15 @@ def log_event(
     exc_info: bool = False,
 ) -> None:
     registry = ReferenceMarkerRegistry()
+    first = sanitize_untrusted_data(
+        context or {},
+        known_secrets=(secret,) if secret else (),
+        max_string=2048,
+        registry=registry,
+    )
+    # HAMCP-191 L1: the formatter reports this pass's counts as well.
+    tally = RedactionTally()
+    tally.add(first)
     logger.log(
         level,
         message,
@@ -100,10 +123,9 @@ def log_event(
             "event": event,
             "subsystem": logger.name.rsplit(".", 1)[-1],
             "request_id": current_request_id(),
-            "safe_context": redact_data(
-                context or {}, secret=secret, registry=registry
-            ),
+            "safe_context": first.value,
             "sanitizer_registry": registry,
+            "sanitizer_tally": tally,
         },
         exc_info=exc_info,
     )

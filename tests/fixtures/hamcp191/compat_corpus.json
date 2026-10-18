@@ -345,6 +345,39 @@
     },
     {
       "base": {
+        "logbook.project": "\"[{\\\"name\\\":\\\"corpus\\\",\\\"message\\\":\\\"2026-10-18 INFO [homeassistant.components.synthetic] password was **REDACTED**\\\"}]\"",
+        "redact_data": "\"2026-10-18 INFO [homeassistant.components.synthetic] password was **REDACTED**\"",
+        "redact_untrusted_text": "\"2026-10-18 INFO [homeassistant.components.synthetic] password was **REDACTED**\"",
+        "sanitize_untrusted_data": "{\"value\": \"2026-10-18 INFO [homeassistant.components.synthetic] password was **REDACTED**\", \"redaction_applied\": false, \"redacted_field_count\": 0, \"redaction_categories\": [], \"truncated_field_count\": 0, \"failed_closed\": false}"
+      },
+      "class": "ordinary",
+      "id": "text_30",
+      "input": "\"2026-10-18 INFO [homeassistant.components.synthetic] password was **REDACTED**\""
+    },
+    {
+      "base": {
+        "logbook.project": "\"[{\\\"name\\\":\\\"corpus\\\",\\\"message\\\":\\\"2026-09-01 01:02:03.456 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\\\"}]\"",
+        "redact_data": "\"2026-09-01 01:02:03.456 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\"",
+        "redact_untrusted_text": "\"2026-09-01 01:02:03.456 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\"",
+        "sanitize_untrusted_data": "{\"value\": \"2026-09-01 01:02:03.456 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\", \"redaction_applied\": false, \"redacted_field_count\": 0, \"redaction_categories\": [], \"truncated_field_count\": 0, \"failed_closed\": false}"
+      },
+      "class": "ordinary",
+      "id": "text_31",
+      "input": "\"2026-09-01 01:02:03.456 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\""
+    },
+    {
+      "base": {
+        "logbook.project": "\"[{\\\"name\\\":\\\"corpus\\\",\\\"message\\\":\\\"Config entry synthetic: host=**REDACTED**, port=8123\\\"}]\"",
+        "redact_data": "\"Config entry synthetic: host=**REDACTED**, port=8123\"",
+        "redact_untrusted_text": "\"Config entry synthetic: host=**REDACTED**, port=8123\"",
+        "sanitize_untrusted_data": "{\"value\": \"Config entry synthetic: host=**REDACTED**, port=8123\", \"redaction_applied\": false, \"redacted_field_count\": 0, \"redaction_categories\": [], \"truncated_field_count\": 0, \"failed_closed\": false}"
+      },
+      "class": "ordinary",
+      "id": "text_32",
+      "input": "\"Config entry synthetic: host=**REDACTED**, port=8123\""
+    },
+    {
+      "base": {
         "logbook.project": "\"[{\\\"entity_id\\\":\\\"light.kitchen\\\",\\\"state\\\":\\\"on\\\",\\\"attributes\\\":{\\\"friendly_name\\\":\\\"Kitchen [main]\\\",\\\"brightness\\\":128,\\\"rgb_color\\\":[255,180,100],\\\"supported_features\\\":44,\\\"icon\\\":\\\"mdi:lightbulb\\\"},\\\"last_changed\\\":\\\"2026-09-01T01:02:03.456789+00:00\\\",\\\"context\\\":{\\\"id\\\":\\\"01J0000000000000000000000\\\",\\\"parent_id\\\":null,\\\"user_id\\\":null}}]\"",
         "redact_data": "{\"entity_id\": \"light.kitchen\", \"state\": \"on\", \"attributes\": {\"friendly_name\": \"Kitchen [main]\", \"brightness\": 128, \"rgb_color\": [255, 180, 100], \"supported_features\": 44, \"icon\": \"mdi:lightbulb\"}, \"last_changed\": \"2026-09-01T01:02:03.456789+00:00\", \"context\": {\"id\": \"01J0000000000000000000000\", \"parent_id\": null, \"user_id\": null}}",
         "sanitize_untrusted_data": "{\"value\": {\"entity_id\": \"light.kitchen\", \"state\": \"on\", \"attributes\": {\"friendly_name\": \"Kitchen [main]\", \"brightness\": 128, \"rgb_color\": [255, 180, 100], \"supported_features\": 44, \"icon\": \"mdi:lightbulb\"}, \"last_changed\": \"2026-09-01T01:02:03.456789+00:00\", \"context\": {\"id\": \"01J0000000000000000000000\", \"parent_id\": null, \"user_id\": null}}, \"redaction_applied\": false, \"redacted_field_count\": 0, \"redaction_categories\": [], \"truncated_field_count\": 0, \"failed_closed\": false}"
@@ -412,6 +445,26 @@
       "class": "ordinary",
       "id": "log_entry",
       "input": "{\"timestamp\": 1789000000.0, \"name\": \"homeassistant.components.synthetic\", \"level\": \"ERROR\", \"message\": [\"Setup of synthetic failed [retrying]\", \"Connection refused (111)\"], \"source\": [\"components/synthetic/__init__.py\", 42], \"count\": 3, \"first_occurred\": 1788999000.0}"
+    },
+    {
+      "base": {
+        "logbook.project": "\"[{\\\"value_template\\\":\\\"{{ state_attr('sensor.kitchen', 'friendly_name') | default('Unavailable') }}\\\"}]\"",
+        "redact_data": "{\"value_template\": \"{{ state_attr('sensor.kitchen', 'friendly_name') | default('Unavailable') }}\"}",
+        "sanitize_untrusted_data": "{\"value\": {\"value_template\": \"{{ state_attr('sensor.kitchen', 'friendly_name') | default('Unavailable') }}\"}, \"redaction_applied\": false, \"redacted_field_count\": 0, \"redaction_categories\": [], \"truncated_field_count\": 0, \"failed_closed\": false}"
+      },
+      "class": "ordinary",
+      "id": "template",
+      "input": "{\"value_template\": \"{{ state_attr('sensor.kitchen', 'friendly_name') | default('Unavailable') }}\"}"
+    },
+    {
+      "base": {
+        "logbook.project": "\"[{\\\"name\\\":\\\"corpus\\\",\\\"message\\\":[\\\"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\\\",\\\"2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\\\",\\\"2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\\\",\\\"\\\"]}]\"",
+        "redact_data": "[\"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\", \"2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\", \"2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\", \"\"]",
+        "sanitize_untrusted_data": "{\"value\": [\"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\", \"2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\", \"2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\", \"\"], \"redaction_applied\": false, \"redacted_field_count\": 0, \"redaction_categories\": [], \"truncated_field_count\": 0, \"failed_closed\": false}"
+      },
+      "class": "ordinary",
+      "id": "core_log_lines",
+      "input": "[\"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\", \"2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\", \"2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\", \"\"]"
     },
     {
       "base_sha256": {
@@ -529,6 +582,15 @@
       },
       "class": "redacted",
       "id": "redacted_truncation"
+    },
+    {
+      "base_sha256": {
+        "logbook.project": "sha256:9b93cb3297557dad8ccbc6823f9babf74fd4138b6f84243a47fc296aa2c0451d",
+        "redact_data": "sha256:55f06ec6d9ea52f6bf5ac397af6c76f1a1fb6c8bb03ece376c27ee073ce5e790",
+        "sanitize_untrusted_data": "sha256:ff3098c7b0991d88883d63ef7ad688756ac580801e16340e16b82022e20dd1da"
+      },
+      "class": "redacted",
+      "id": "redacted_ha_placeholder_assignment"
     },
     {
       "base_leaks_secret": true,
@@ -649,6 +711,28 @@
       },
       "class": "changed",
       "id": "lookalike_prose_truncated",
+      "reason": "D3"
+    },
+    {
+      "base_leaks_secret": false,
+      "base_sha256": {
+        "logbook.project": "sha256:752a477cec351fa318c0d32c82f6aeb8930602dc4c4cff490587395833004c40",
+        "redact_data": "sha256:c147d913bb41d404e3cbda5095d31807c9493caa00ce2fc53e3619b3d4450f15",
+        "sanitize_untrusted_data": "sha256:659862a02254f38e6dcb8202be33cc9c268115a7cbfc089652e98f6983a81525"
+      },
+      "class": "changed",
+      "id": "lookalike_dashboard_markdown",
+      "reason": "D3"
+    },
+    {
+      "base_leaks_secret": false,
+      "base_sha256": {
+        "logbook.project": "sha256:b9aa0d8642a31f6b35b570375674eed0490b795daabafc2a76d1cac8b91abf0e",
+        "redact_data": "sha256:f099a9ca4a17bf5f20027628936dd8a86f06d57ff920f4d93e50d7ac33888d58",
+        "sanitize_untrusted_data": "sha256:4fe04577b8cbab87d88303374ba549be2f39b22035bc97a7adb92da297a478eb"
+      },
+      "class": "changed",
+      "id": "lookalike_attribute_description",
       "reason": "D3"
     }
   ]

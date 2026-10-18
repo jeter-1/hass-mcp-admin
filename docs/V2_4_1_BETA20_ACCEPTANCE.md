@@ -3,7 +3,8 @@
 This contract covers HAMCP-191: one shared sanitizer with identity-only
 redaction markers for every tool, D3 health counters, and truthful
 completeness when redaction applies. Stored plans keep beta.19's marker
-tolerance (D11). It builds on 2.4.1-beta.19 (HAMCP-192).
+tolerance on re-read (D11); every plan family is strict at creation. It
+builds on 2.4.1-beta.19 (HAMCP-192).
 
 See also:
 - Release notes:
@@ -40,7 +41,7 @@ Bind the following:
 Every synthetic secret is built at runtime. No committed HAMCP-191 file
 holds secret-shaped text (`CommittedFileScanTests`).
 
-**`tests/test_hamcp191_shared_sanitizer.py` (50 tests):**
+**`tests/test_hamcp191_shared_sanitizer.py` (52 tests):**
 - `RuleDerivationTests` (4) and `UnitMatrixTests` (6): the
   rule × wrapper × position matrix.
   - Rules are derived from the code, and each rule has a builder that fires
@@ -61,11 +62,13 @@ holds secret-shaped text (`CommittedFileScanTests`).
   committed table and maps to a ranked family with an injector. The proof
   fails for an unlisted or removed site. `identity_markers_only=False`
   raises, and the default pass is strict.
-- `IdentityRecordTests` (11):
+- `IdentityRecordTests` (13):
   - Engineering's output survives by object identity, and a byte-identical
     upstream copy collides.
   - A slice, a different type or another request's record is scanned.
-  - A secret the producing pass lacked is never skipped.
+  - A secret the producing pass lacked is never skipped, including one a
+    child pass adds to an inherited record (review R1).
+  - Marker text past the string limit still collides (review R2).
   - Inherited records are read-only.
   - The truncation suffix, the dependency snapshot, the audit sink and
     gateway-withheld evidence each join the record.
@@ -86,13 +89,30 @@ holds secret-shaped text (`CommittedFileScanTests`).
 - `IncidentHeaderTests` (1), X2.
 - `LinearDetectorTests` (3): the linear look-alike detector equals the
   reference grammar, and long opener runs are linear.
+- `CommittedFileScanTests` (1): every file this PR changes, by glob or by
+  the explicit `HAMCP191_CHANGED_FILES` list, holds no secret-shaped text.
 
-**`tests/test_hamcp191_families.py` (21 tests):** one injector per ranked
+**`tests/test_hamcp191_families.py` (38 tests):** one injector per ranked
 family: logs, delegated, logbook, analysis, dashboard, governance,
 identifier and audit.
 - Each drives a real call site offline with P1, P2 and an ordinary value.
 - Delegated and dashboard reads report `partial` with `metadata.redaction`
   when redaction applied, and stay `complete` and unchanged for ordinary data.
+  A redaction in a dashboard warning or hint alone makes the response
+  `partial`; the held-read canary carries the summary, also when its result
+  is omitted.
+- Core logs are sanitized per line: a marker-like line and an anchor-split
+  line each collapse or redact only that line, with bounded
+  `redacted_line_count` and `collided_line_count`; an ordinary window is
+  unchanged.
+- `PlanCreationGateTests` (7) and `OperationalCreationGateTests` (3): the
+  review's legacy-planning reproductions (title, provider current state,
+  description, proposal and split anchor) are refused with nothing
+  persisted or returned; caller-context entries the strict pass would change
+  are dropped; dashboard, configuration, backup, helper state, reload and
+  restart plans refuse flagged text before persisting; an ordinary legacy
+  plan is unchanged.
+- Structured-log redaction counters include `log_event`'s first pass.
 - An approval note's Engineering marker is shown intact in the plan view,
   and a forged note collides.
 - Persistence and resource validation refuse forged markers and count the
@@ -103,18 +123,20 @@ identifier and audit.
 **`tests/test_hamcp191_compatibility.py` (5 tests):**
 - It reruns `docs/evidence/hamcp191/generate_corpus.py compare` against the
   base-recorded fixture `tests/fixtures/hamcp191/compat_corpus.json`.
-- Of 61 samples, 50 are byte-identical and 11 changed by decision
-  (P1 ×2, P2 ×2, D1 ×4, D2, D3 ×2), with 0 unexpected.
+- Of 69 samples, 56 are byte-identical and 13 changed by decision
+  (P1 ×2, P2 ×2, D1 ×4, D2, D3 ×4), with 0 unexpected.
 - The P1 and P2 samples leaked on the base and do not leak on the head.
+- Log lines holding Home Assistant's own `**REDACTED**` placeholder are
+  byte-identical.
 
 **Existing tests whose pins changed** are listed in the implementation
 notes, section 5.
 
 ### Mutation proof
 
-`docs/evidence/hamcp191-mutations/run_mutations.py` applied 52 mutations,
+`docs/evidence/hamcp191-mutations/run_mutations.py` applied 64 mutations,
 each to a disposable copy, and ran the three modules above. The committed
-`results.json` records 51 killed, 0 survived, and one equivalent (M5, as
+`results.json` records 63 killed, 0 survived, and one equivalent (M5, as
 explained in the implementation notes, section 6). The mutations cover:
 - a marker trusted by text;
 - the identity check skipped;
@@ -125,7 +147,11 @@ explained in the implementation notes, section 6). The mutations cover:
 - design M1–M18;
 - D11 (allow list widened; stored re-scan made strict; write time made
   tolerant; the stored flag ignored);
-- counters and wiring.
+- counters and wiring;
+- the Codex review corrections: R1 and R2; each H1 creation gate bypassed
+  (legacy input, legacy current state, legacy and backup caller context,
+  dashboard input, operational plans); M1 warning and canary summaries;
+  the L1 first-pass tally; and Core logs sanitized as one window.
 
 ## 2. Release CI and publication
 
@@ -204,9 +230,17 @@ authorization.
    4. Do not approve or apply the plan; let it expire.
 
    **D11.** Stored plans keep beta.19's tolerance until HAMCP-207. A
-   persisted plan's canonical markers are trusted by text on re-read, while
-   everything written by beta.20 is strict.
-6. **Collision behaviour, forged markers in every position, the identity
+   persisted plan's canonical markers are trusted by text on re-read. Every
+   plan family runs the strict detector on its new record before persisting
+   or returning it, so a plan beta.20 creates holds no forged marker; the
+   save-time gate itself is the tolerant re-scan and is not the creation
+   gate.
+6. **Core log per-line behaviour (read-only).** Call `get_core_log_history`
+   with a small window. **Pass:** `completeness: partial`, integer
+   `redacted_line_count` and `collided_line_count`, and lines holding Home
+   Assistant's `**REDACTED**` shown unchanged. Record both counts; nonzero
+   counts are reported to Josh, not treated as failure.
+7. **Collision behaviour, forged markers in every position, the identity
    record and the raw-key branch** are proven offline only (§1). Do not put
    forged markers into live Home Assistant data to test them.
 

@@ -39,6 +39,7 @@ from ha_mcp_engineering import sanitization as S  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.capabilities import replace_dynamic_upstream_capabilities  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
+from ha_mcp_engineering.errors import GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.resources import persistence_safety_errors  # noqa: E402
 from ha_mcp_engineering.governance.service import ChangeGovernanceService  # noqa: E402
 from ha_mcp_engineering.governance.storage import ChangePlanRepository  # noqa: E402
@@ -133,30 +134,72 @@ class LogsFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload["data"]["redaction_applied"])
         self.assert_injected(payload, secrets=(secret, needle), before=before)
 
-    def test_core_log_window_is_one_string(self):
-        # The Core log window is one sanitized string, so D2 replaces all of
-        # it when any line carries a forged marker; ordinary logs are kept.
+    @staticmethod
+    def core_window(lines):
+        return CoreLogWindow(
+            content=("\n".join(lines) + "\n").encode(), download_capped=False,
+            received_at="2026-09-01T01:02:09Z",
+        )
+
+    def test_core_log_lines_are_sanitized_independently(self):
+        # Owner direction: each journal line is sanitized on its own, so a
+        # marker-like line collapses only that line, never the window.
         settings = plain_settings()
         reader = CoreLogReader(settings)
         needle = syn.needle("hamcp191 core log needle")
-        lines = (
-            "2026-09-01 01:02:03 ERROR " + p1(settings.access_secret) + "\n"
-            "2026-09-01 01:02:04 ERROR " + p2(needle) + "\n"
-        )
-        window = CoreLogWindow(
-            content=lines.encode(), download_capped=False, received_at="2026-09-01T01:02:05Z"
-        )
+        split = syn.needle("hamcp191 core log split anchor")
+        ordinary = "2026-09-01 01:02:01 INFO " + ORDINARY
+        home_assistant = "2026-09-01 01:02:02 WARNING [homeassistant.setup] Setup data: **REDACTED**"
+        later = "2026-09-01 01:02:06 INFO second " + ORDINARY
+        lines = [
+            ordinary,
+            home_assistant,
+            "2026-09-01 01:02:03 ERROR " + p1(settings.access_secret),
+            "2026-09-01 01:02:04 ERROR request header " + syn.auth_header(split),
+            "2026-09-01 01:02:05 ERROR " + p2(needle),
+            later,
+        ]
         before = self.collisions()
-        out = reader.evidence(window, limit=20, offset=0)
-        self.assertEqual(out["log"], COLLISION)
-        self.assert_injected(out, secrets=(settings.access_secret, needle), before=before, collisions=1)
-        ordinary = "2026-09-01 01:02:03 ERROR " + ORDINARY + "\n"
-        clean = reader.evidence(
-            CoreLogWindow(content=ordinary.encode(), download_capped=False, received_at="x"),
-            limit=20,
-            offset=0,
+        out = reader.evidence(self.core_window(lines), limit=20, offset=0)
+        self.assert_injected(
+            out, secrets=(settings.access_secret, needle, split), before=before, collisions=2,
         )
-        self.assertEqual(clean["log"], ordinary)
+        returned = out["log"].split("\n")[:-1]
+        self.assertEqual(len(returned), len(lines))
+        self.assertEqual(returned[0], ordinary)
+        # Home Assistant's own placeholder is ordinary text, kept verbatim.
+        self.assertEqual(returned[1], home_assistant)
+        self.assertEqual(returned[2], COLLISION)
+        self.assertTrue(returned[3].startswith("2026-09-01 01:02:04 ERROR request header "))
+        self.assertIn(marker("token"), returned[3])
+        self.assertEqual(returned[4], COLLISION)
+        self.assertEqual(returned[5], later)
+        self.assertEqual(out["collided_line_count"], 2)
+        self.assertEqual(out["redacted_line_count"], 3)
+        self.assertEqual(out["completeness"], "partial")
+        self.assertEqual(out["redaction"]["marker_collision_count"], 2)
+        self.assertIn(S.MARKER_COLLISION_CATEGORY, out["redaction_categories"])
+
+    def test_core_log_ordinary_window_is_unchanged(self):
+        reader = CoreLogReader(plain_settings())
+        lines = [
+            "2026-09-01 01:02:03 ERROR " + ORDINARY,
+            "2026-09-01 01:02:04 WARNING [homeassistant.setup] Setup data: **REDACTED**",
+            "",
+            "2026-09-01 01:02:05 INFO trailing\tcolumns\r",
+        ]
+        before = self.collisions()
+        out = reader.evidence(self.core_window(lines), limit=20, offset=0)
+        self.assertEqual(out["log"], "\n".join(lines) + "\n")
+        self.assertEqual(out["returned_lines"], len(lines))
+        self.assertFalse(out["redaction_applied"])
+        self.assertEqual((out["collided_line_count"], out["redacted_line_count"]), (0, 0))
+        self.assertIsNone(out["redaction"])
+        self.assertEqual(self.collisions(), before)
+        empty = reader.evidence(
+            CoreLogWindow(content=b"", download_capped=False, received_at="x"), limit=20, offset=0,
+        )
+        self.assertEqual((empty["log"], empty["returned_lines"]), ("", 0))
 
 
 class DelegatedFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
@@ -238,6 +281,56 @@ class DelegatedFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
         evidence = result["data"]["canary_evidence"]
         self.assertEqual(evidence["completeness"], "partial")
         self.assertIn(REDACTION_WARNING, json.dumps(result))
+        # M1: the canary response carries the bounded redaction summary.
+        redaction = result["metadata"]["redaction"]
+        self.assertIn(S.MARKER_COLLISION_CATEGORY, redaction["categories"])
+        self.assertGreaterEqual(redaction["marker_collision_count"], 2)
+
+    async def canary(self, value, *, response_size_limit=60_000):
+        from tests.test_held_read_canary import ENTRY_ID, captured_tools
+        from tests.test_readonly_upstream_gateway import FakeTransport, settings
+
+        raw = {"content": [{"type": "text", "text": json.dumps(value)}], "isError": False}
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(response_size_limit),
+            transport=FakeTransport(captured_tools("8.1.1"), version="8.1.1", result=raw),
+            release_registry=load_reviewed_upstream_release_registry(),
+            admission_validator=lambda _catalog: None,
+        )
+        await gateway.initialize(FastMCP("hamcp191-canary"))
+        return json.loads(await gateway.run_held_read_canary(
+            upstream_tool_name="ha_get_operation_status",
+            expected_compatibility_entry_id=ENTRY_ID,
+            arguments={"operation_id": "synthetic-operation"},
+        ))
+
+    async def test_canary_reproduction_carries_the_summary(self):
+        # Codex M1 reproduction: one wrapped known secret, nothing else.
+        from tests.test_readonly_upstream_gateway import SECRET
+
+        result = await self.canary({"success": True, "a": p1(SECRET)})
+        self.assertNotIn(SECRET, json.dumps(result))
+        self.assertEqual(result["data"]["canary_evidence"]["completeness"], "partial")
+        self.assertGreaterEqual(result["metadata"]["redaction"]["marker_collision_count"], 1)
+
+    async def test_canary_omitted_result_keeps_the_summary(self):
+        from tests.test_readonly_upstream_gateway import SECRET
+
+        bulk = [ORDINARY + " " + str(index) for index in range(1200)]
+        result = await self.canary(
+            {"success": True, "a": p1(SECRET), "bulk": bulk}, response_size_limit=12_000,
+        )
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["data"]["result"]["result_omitted"])
+        self.assertNotIn(SECRET, json.dumps(result))
+        self.assertGreaterEqual(result["metadata"]["redaction"]["marker_collision_count"], 1)
+
+    async def test_ordinary_canary_has_no_summary(self):
+        result = await self.canary({"success": True, "c": ORDINARY})
+        self.assertTrue(result["success"])
+        self.assertNotIn("redaction", result["metadata"])
+        self.assertNotIn(REDACTION_WARNING, json.dumps(result))
 
 
 class LogbookFamilyTests(FamilyAssertions, unittest.TestCase):
@@ -385,6 +478,45 @@ class DashboardFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["metadata"]["completeness"], "partial")
         self.assertIn("redaction", result["metadata"])
 
+    def payload(self, action, **extra):
+        if action == "list":
+            return {"success": True, "action": "list", "dashboards": [self.entry("safe-dashboard", "Kitchen")],
+                    "count": 1, **extra}
+        return {"success": True, "action": "get", "url_path": "inj-dash", "config": {"title": ORDINARY}, **extra}
+
+    async def call(self, action):
+        from ha_mcp_engineering.tools import dashboard as tools
+
+        if action == "list":
+            return json.loads(await tools.list_dashboards(limit=10))
+        return json.loads(await tools.get_dashboard_config("inj-dash"))
+
+    async def test_warning_or_hint_redaction_makes_the_response_partial(self):
+        # Codex M1 reproduction: redaction only in an upstream warning or
+        # hint still makes the response partial with the bounded summary.
+        for action in ("list", "get"):
+            for source in ("warnings", "hint"):
+                with self.subTest(action=action, source=source):
+                    needle = syn.needle("hamcp191 dashboard " + source)
+                    value = marker(needle)
+                    await self.configure(self.payload(action, **{source: [value] if source == "warnings" else value}))
+                    result = await self.call(action)
+                    self.assertTrue(result["success"], result)
+                    self.assertNotIn(needle, json.dumps(result))
+                    self.assertIn(COLLISION, result["warnings"])
+                    self.assertEqual(result["metadata"]["completeness"], "partial")
+                    self.assertGreaterEqual(result["metadata"]["redaction"]["marker_collision_count"], 1)
+
+    async def test_ordinary_warning_and_hint_stay_complete(self):
+        for action in ("list", "get"):
+            with self.subTest(action=action):
+                await self.configure(self.payload(action, warnings=["Ordinary note"], hint="Ordinary hint"))
+                result = await self.call(action)
+                self.assertEqual(result["metadata"]["completeness"], "complete")
+                self.assertNotIn("redaction", result["metadata"])
+                self.assertIn("Ordinary note", result["warnings"])
+                self.assertIn("Ordinary hint", result["warnings"])
+
 
 # ---------------------------------------------------------------------------
 
@@ -402,8 +534,10 @@ class _PlanGateway:
     def __init__(self):
         self.configs = {"fixture": {**copy.deepcopy(PLAN_CURRENT), "id": "fixture"}}
         self.writes = 0
+        self.reads = 0
 
     async def get(self, automation_id):
+        self.reads += 1
         return copy.deepcopy(self.configs.get(automation_id))
 
     async def write(self, automation_id, config):
@@ -415,7 +549,9 @@ class _PlanGateway:
         return {"result": "valid", "errors": None}
 
 
-class GovernanceFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
+class _GovernanceHarness(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
+    """Shared governance service fixture; defines no tests of its own."""
+
     FAMILY = "governance"
 
     async def asyncSetUp(self):
@@ -447,6 +583,8 @@ class GovernanceFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
             proposed_config=proposed,
         )
 
+
+class GovernanceFamilyTests(_GovernanceHarness):
     def test_persistence_refuses_forged_markers_and_counts_the_refusal(self):
         needle = syn.needle("hamcp191 persistence")
         before = S.marker_collision_health()["marker_collision_refusals"]
@@ -525,6 +663,231 @@ class GovernanceFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.gateway.configs["fixture"]["description"], "After " + ORDINARY)
 
 
+class _Forbidden:
+    """A provider that fails the test if a refused plan reaches it."""
+
+    def __getattr__(self, name):
+        raise AssertionError("a refused plan reached its provider: " + name)
+
+
+class PlanCreationGateTests(_GovernanceHarness):
+    """HAMCP-191 H1: every plan family is strict before persist and return.
+
+    The save-time gate is the tolerant D11 stored-plan re-scan, so each
+    creation path carries its own strict gate. Codex's reproduction lowers
+    the known secret so the wrapped form reads as a well-formed marker.
+    """
+
+    def wrapped_access(self) -> str:
+        self.access = self.access.lower()
+        self.service.sensitive_values = (self.access,)
+        return p1(self.access)
+
+    async def assert_refused(self, call, *secrets):
+        with self.assertRaises(GovernanceError) as raised:
+            await call
+        text = json.dumps(raised.exception.details, default=str) + str(raised.exception)
+        for secret in secrets:
+            self.assertNotIn(secret, text)
+        self.assertEqual(self.repository.list(), [])
+        self.assertEqual(self.gateway.writes, 0)
+        return raised.exception
+
+    async def legacy(self, *, title="ordinary", description="ordinary", proposed=None, **extra):
+        if proposed is None:
+            proposed = copy.deepcopy(PLAN_CURRENT)
+            proposed["description"] = "After"
+        return await self.service.create_plan(
+            title=title, description=description, operation="update_automation",
+            automation_id="fixture", proposed_config=proposed, **extra,
+        )
+
+    async def test_legacy_title_reproduction_is_refused_before_persist(self):
+        wrapped = self.wrapped_access()
+        await self.assert_refused(self.legacy(title=wrapped), self.access)
+        self.assertEqual(self.gateway.reads, 0)
+
+    async def test_legacy_provider_current_reproduction_is_refused_before_persist(self):
+        wrapped = self.wrapped_access()
+        self.gateway.configs["fixture"]["description"] = wrapped
+        await self.assert_refused(self.legacy(), self.access)
+
+    async def test_legacy_description_proposal_and_split_anchor_are_refused(self):
+        wrapped = self.wrapped_access()
+        needle = syn.needle("hamcp191 legacy split anchor")
+        proposed = copy.deepcopy(PLAN_CURRENT)
+        proposed["description"] = wrapped
+        for case, arguments in (
+            ("description", {"description": wrapped}),
+            ("proposed_config", {"proposed": proposed}),
+            ("split_anchor_title", {"title": p2(needle)}),
+            ("forged_marker_title", {"title": "Before " + FORGED}),
+        ):
+            with self.subTest(case=case):
+                await self.assert_refused(self.legacy(**arguments), self.access, needle)
+
+    async def test_legacy_caller_context_keeps_only_strictly_safe_entries(self):
+        wrapped = self.wrapped_access()
+        needle = syn.needle("hamcp191 context")
+        # The tolerant filter keeps the forged marker and the split anchor,
+        # which name no known secret; the strict filter drops both.
+        created = await self.legacy(caller_context={
+            "ticket": "HAMCP-191", "note": wrapped,
+            "forged": "Before " + FORGED, "split": p2(needle),
+        })
+        stored = self.repository.get(created["plan_id"])
+        self.assertEqual(stored.caller_context, {"ticket": "HAMCP-191"})
+        self.assertNotIn(needle, json.dumps(created, default=str))
+        self.assertNotIn(self.access, json.dumps(stored.to_dict(), default=str))
+        self.assertNotIn(self.access, json.dumps(created, default=str))
+
+    async def test_ordinary_legacy_plan_is_unchanged(self):
+        created = await self.legacy(
+            title="HAMCP-191 " + ORDINARY, description="Governed " + ORDINARY,
+            caller_context={"ticket": "HAMCP-191"},
+        )
+        stored = self.repository.get(created["plan_id"])
+        self.assertEqual(stored.title, "HAMCP-191 " + ORDINARY)
+        self.assertEqual(stored.description, "Governed " + ORDINARY)
+        self.assertEqual(stored.caller_context, {"ticket": "HAMCP-191"})
+        self.assertEqual(stored.proposed_config["description"], "After")
+        self.assertEqual(stored.current_config["description"], "Before")
+        self.assertEqual(self.gateway.reads, 1)
+        self.assertNotIn(COLLISION, json.dumps(created, default=str))
+
+    async def test_dashboard_plan_title_is_refused_before_any_read(self):
+        wrapped = self.wrapped_access()
+        self.service.dashboard_gateway = _Forbidden()
+        self.service.dashboard_artifacts = _Forbidden()
+        for arguments in (
+            {"title": wrapped, "description": "ordinary"},
+            {"title": "ordinary", "description": wrapped},
+        ):
+            with self.subTest(field=sorted(k for k, v in arguments.items() if v == wrapped)):
+                error = await self.assert_refused(
+                    self.service.create_dashboard_update_plan(
+                        url_path="hamcp191-dash", patch_operations=[], **arguments,
+                    ),
+                    self.access,
+                )
+                self.assertEqual(error.details["reason"], "dashboard_contains_prohibited_sensitive_data")
+
+    async def test_configuration_plan_title_is_refused_before_any_read(self):
+        wrapped = self.wrapped_access()
+        await self.assert_refused(
+            self.service.create_configuration_plan(
+                title=wrapped, description="ordinary",
+                operations=[{
+                    "operation_id": "update", "resource_type": "automation", "action": "update",
+                    "target_id": "fixture", "depends_on": [], "proposed_config": copy.deepcopy(PLAN_CURRENT),
+                }],
+            ),
+            self.access,
+        )
+        self.assertEqual(self.gateway.reads, 0)
+
+
+class OperationalCreationGateTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
+    """H1 per family: backup, helper state, reload and restarts.
+
+    Home Assistant text these plans keep (a helper's last_changed, a
+    location name) and the service-level backup title pass the strict gate
+    before persistence; the ordinary plan of each family is still created.
+    """
+
+    FAMILY = "governance"
+
+    async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.access = syn.needle("hamcp191 operational access").lower()
+        self.wrapped = p1(self.access)
+        self.telemetry, self.context = begin_request("hamcp191-operational")
+        self.telemetry.caller_id = "mcp-requester"
+
+    async def asyncTearDown(self):
+        end_request(self.context)
+        self.temp.cleanup()
+
+    def service(self, **gateways):
+        root = Path(tempfile.mkdtemp(dir=self.temp.name))
+        self.repository = ChangePlanRepository(root / "plans")
+        return ChangeGovernanceService(
+            self.repository,
+            _PlanGateway(),
+            AuditLogger(str(root / "audit.jsonl"), self.access),
+            sensitive_values=(self.access,),
+            **gateways,
+        )
+
+    async def assert_refused(self, call):
+        with self.assertRaises(GovernanceError) as raised:
+            await call
+        self.assertNotIn(self.access, json.dumps(raised.exception.details, default=str))
+        self.assertEqual(raised.exception.details.get("reason"), "plan_contains_prohibited_sensitive_data")
+        self.assertEqual(self.repository.list(), [])
+
+    async def test_backup_plan(self):
+        from tests.test_2_1a_operational_backup import FakeOperationalGateway
+
+        service = self.service(operational_gateway=FakeOperationalGateway())
+        await self.assert_refused(service.create_backup_plan(backup_name="Nightly safe backup", title=self.wrapped))
+        await self.assert_refused(service.create_backup_plan(
+            backup_name="Nightly safe backup", description="Before " + FORGED,
+        ))
+        created = await service.create_backup_plan(
+            backup_name="Nightly safe backup", caller_context={"ticket": "HAMCP-191", "note": self.wrapped},
+        )
+        stored = self.repository.get(created["plan"]["plan_id"])
+        self.assertEqual(stored.caller_context, {"ticket": "HAMCP-191"})
+        self.assertNotIn(self.access, json.dumps(stored.to_dict(), default=str))
+
+    async def test_helper_state_plan(self):
+        from tests.test_beta37_exact_helper_state import FakeDependencyRiskReader, FakeHelperStateGateway
+
+        helper = FakeHelperStateGateway()
+        service = self.service(
+            helper_state_gateway=helper,
+            helper_dependency_risk_reader=FakeDependencyRiskReader(helper.entity_id),
+        )
+        ordinary = helper.last_changed
+        helper.last_changed = self.wrapped
+        await self.assert_refused(service.create_helper_state_plan(entity_id=helper.entity_id, desired_state="on"))
+        helper.last_changed = ordinary
+        created = await service.create_helper_state_plan(entity_id=helper.entity_id, desired_state="on")
+        self.assertEqual(created["status"], "awaiting_approval")
+        self.assertEqual(len(self.repository.list()), 1)
+
+    async def test_restart_and_reload_plans(self):
+        from tests.test_2_1a_beta2_operational_lifecycle import FakeLifecycleGateway
+
+        wrapped = self.wrapped
+
+        class Injected(FakeLifecycleGateway):
+            inject = False
+
+            async def planning_evidence(self, operation, target):
+                evidence = await super().planning_evidence(operation, target)
+                text = json.dumps(evidence)
+                if self.inject:
+                    text = text.replace("Test Home", wrapped).replace("automation.reload", wrapped)
+                return json.loads(text)
+
+        for name, create in (
+            ("home_assistant_restart", lambda service: service.create_home_assistant_restart_plan()),
+            ("controlled_reload", lambda service: service.create_reload_plan(reload_target="automation")),
+        ):
+            with self.subTest(family=name):
+                lifecycle = Injected()
+                service = self.service(lifecycle_gateway=lifecycle)
+                lifecycle.inject = True
+                await self.assert_refused(create(service))
+                lifecycle.inject = False
+                created = await create(service)
+                self.assertEqual(created["status"], "awaiting_approval")
+                self.assertNotIn(self.access, json.dumps(created, default=str))
+                self.assertEqual(len(self.repository.list()), 1)
+
+
 class IdentifierFamilyTests(FamilyAssertions, unittest.TestCase):
     FAMILY = "identifier"
 
@@ -591,6 +954,37 @@ class AuditFamilyTests(FamilyAssertions, unittest.TestCase):
         self.assertIn(COLLISION, output)
         self.assertIn(ORDINARY, output)
         self.assertGreaterEqual(self.collisions() - before, 2)
+
+    def structured(self, context, secret=None):
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(JsonFormatter())
+        logger = logging.getLogger("ha_mcp_engineering.hamcp191-counters")
+        logger.handlers = [handler]
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        self.addCleanup(setattr, logger, "handlers", [])
+        log_event(logger, logging.INFO, "hamcp191_counters", "Ordinary message.", context=context, secret=secret)
+        return json.loads(stream.getvalue().splitlines()[-1])
+
+    @staticmethod
+    def counters(record):
+        return record["redaction_applied"], record["redacted_field_count"], record["redaction_categories"]
+
+    def test_structured_log_counters_are_truthful(self):
+        # L1: the counters include the context pass, not only the formatter.
+        self.assertEqual(self.counters(self.structured({"value": ORDINARY})), (False, 0, []))
+        needle = syn.needle("hamcp191 log probe")
+        collided = self.structured({"value": marker(needle)})
+        self.assertNotIn(needle, json.dumps(collided))
+        self.assertEqual(self.counters(collided), (True, 1, [S.MARKER_COLLISION_CATEGORY]))
+        access = syn.needle("hamcp191 log counter access")
+        plain = self.structured({"value": "before " + access}, secret=access)
+        self.assertNotIn(access, json.dumps(plain))
+        applied, count, categories = self.counters(plain)
+        self.assertTrue(applied)
+        self.assertEqual(count, 1)
+        self.assertNotIn(S.MARKER_COLLISION_CATEGORY, categories)
 
     def test_redact_data_keeps_the_requests_own_markers(self):
         registry = S.ReferenceMarkerRegistry()

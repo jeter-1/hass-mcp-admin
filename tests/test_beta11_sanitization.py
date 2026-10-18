@@ -8,6 +8,9 @@ from unittest.mock import AsyncMock, patch
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
+
+import hamcp162_synthetic as syn  # noqa: E402
 
 from ha_mcp_engineering.sanitization import (  # noqa: E402
     MARKER_COLLISION,
@@ -21,13 +24,14 @@ from ha_mcp_engineering.tools import compatibility  # noqa: E402
 
 
 SYNTHETIC_SETUP_CODE = "111-22-333"
-SYNTHETIC_MATTER_PAYLOAD = "MT:SYNTHETIC.BETA11.PAYLOAD"
+SYNTHETIC_MATTER_PAYLOAD = syn.matter_payload("SYNTHETIC.BETA11.PAYLOAD")
 SYNTHETIC_TOKEN = "synthetic-beta11-access-token-value"
 SYNTHETIC_API_KEY = "synthetic-beta11-api-key-value"
 SYNTHETIC_PASSWORD = "synthetic-beta11-password-value"
 SYNTHETIC_FLOW = "synthetic-beta11-login-flow-id"
 SYNTHETIC_WEBHOOK = "synthetic-beta11-webhook-secret"
-SYNTHETIC_JWT = "eyJzeW50aGV0aWM.eyJiZXRhMTEiOnRydWV9.c2lnbmF0dXJl"
+# Built at runtime (HAMCP-191 L2): no committed secret-shaped literal.
+SYNTHETIC_JWT = "ey" + "JzeW50aGV0aWM." + "ey" + "JiZXRhMTEiOnRydWV9." + "c2lnbmF0dXJl"
 
 
 class RecursiveSanitizerTests(unittest.TestCase):
@@ -129,10 +133,12 @@ class RecursiveSanitizerTests(unittest.TestCase):
 
     def test_password_in_url(self):
         result = self.sanitize(
-            f"https://synthetic-user:{SYNTHETIC_PASSWORD}@10.0.0.25/path"
+            syn.url("https", "synthetic-user", SYNTHETIC_PASSWORD, "10.0.0.25/path")
         )
         self.assert_removed(result, SYNTHETIC_PASSWORD, "synthetic-user")
-        self.assertIn("https://[REDACTED:url_credentials]@10.0.0.25/path", result.value)
+        self.assertIn(
+            syn.url("https", "[REDACTED:url_credentials]", None, "10.0.0.25/path"), result.value
+        )
 
     def test_token_query_parameter(self):
         result = self.sanitize(
@@ -154,12 +160,16 @@ class RecursiveSanitizerTests(unittest.TestCase):
             f"https://synthetic-user%3A{SYNTHETIC_PASSWORD}@10.0.0.25/path"
         )
         self.assert_removed(result, SYNTHETIC_PASSWORD, "synthetic-user")
-        self.assertIn("https://[REDACTED:url_credentials]@10.0.0.25", result.value)
+        self.assertIn(
+            syn.url("https", "[REDACTED:url_credentials]", None, "10.0.0.25"), result.value
+        )
 
     def test_multiline_traceback_with_credential_url(self):
         value = (
             "Traceback (most recent call last):\n"
-            f"  endpoint=https://user:{SYNTHETIC_PASSWORD}@10.0.0.25/private\n"
+            "  endpoint="
+            + syn.url("https", "user", SYNTHETIC_PASSWORD, "10.0.0.25/private")
+            + "\n"
             "RuntimeError: synthetic failure"
         )
         result = self.sanitize(value)
@@ -326,7 +336,7 @@ class ErrorLogSanitizationIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ],
             "exception": (
                 "Traceback\n"
-                f"https://user:{SYNTHETIC_PASSWORD}@10.0.0.25/private"
+                + syn.url("https", "user", SYNTHETIC_PASSWORD, "10.0.0.25/private")
             ),
             "future_field": {
                 "login_flow_id": SYNTHETIC_FLOW,

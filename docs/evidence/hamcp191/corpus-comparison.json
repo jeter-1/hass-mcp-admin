@@ -1,6 +1,6 @@
 {
   "base_revision": "3c4c27b702a0be33ad5f55868377eb4197d4ef38",
-  "byte_identical": 50,
+  "byte_identical": 56,
   "changed_by_decision": [
     {
       "base_leaks_secret": true,
@@ -133,8 +133,32 @@
       "head_leaks_secret": false,
       "id": "lookalike_prose_truncated",
       "reason": "D3"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "Ordinary prose that folds to a marker look-alike collides; accepted by the owner and counted in health (D3).",
+      "head_leaks_secret": false,
+      "id": "lookalike_dashboard_markdown",
+      "reason": "D3"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "Ordinary prose that folds to a marker look-alike collides; accepted by the owner and counted in health (D3).",
+      "head_leaks_secret": false,
+      "id": "lookalike_attribute_description",
+      "reason": "D3"
     }
   ],
-  "sample_count": 61,
+  "sample_count": 69,
   "unexpected": []
 }

@@ -8,7 +8,9 @@ is the HAMCP-162 and HAMCP-171 runners'.
 
 Coverage: the six mutations of the HAMCP-191 brief (``U*``), design section 5
 ``M1``-``M18`` (several with variants), the D11 allow-list and tolerance
-mutations (``D11*``), and the D3 and Finding 11 counters (``C*``).
+mutations (``D11*``), the D3 and Finding 11 counters (``C*``), the Codex
+review's probes ``R1``/``R2`` and findings ``H1*``, ``M1*`` and ``L1``, and the
+owner's per-line Core log direction (``CL1``).
 
 ``M5`` as the design words it ("dedup by text instead of by type") is an
 equivalent mutant here and is listed with ``equivalent`` and its argument:
@@ -45,6 +47,9 @@ RESOURCES = f"{E}/governance/resources.py"
 GATEWAY = f"{E}/providers/upstream_read_gateway.py"
 DASHBOARD = f"{E}/providers/upstream_dashboard.py"
 LOGBOOK = f"{E}/clients/logbook.py"
+SERVICE = f"{E}/governance/service.py"
+LOGGING = f"{E}/logging_config.py"
+CORE_LOGS = f"{E}/providers/core_logs.py"
 T_SHARED_FILE = "tests/test_hamcp191_shared_sanitizer.py"
 T_FAMILIES_FILE = "tests/test_hamcp191_families.py"
 
@@ -126,7 +131,7 @@ MUTATIONS = [
     )]),
     m("U5d-dashboard-get-complete-despite-redaction", "brief: \"complete\" despite redaction (dashboard get)", [(
         DASHBOARD,
-        "                or sanitation.truncated_field_count\n                or redaction is not None\n",
+        "                or sanitation.truncated_field_count\n                or redactions.applied\n",
         "                or sanitation.truncated_field_count\n",
     )]),
     m("U6-matrix-cell-removed", "brief: a matrix cell removed", [(
@@ -347,6 +352,147 @@ MUTATIONS = [
         "    return _REDACTED_EVIDENCE\n",
         "    return _REDACTED_EVIDENCE\n",
     )]),
+    # Codex review of 6212b7c, reviewer probes R1/R2 (own_mutations.py).
+    m("R1-inherited-registry-drops-new-secrets", "Review R1: a child registry checks only inherited secrets", [(
+        SAN,
+        "value, known_secrets\n            )",
+        "value, ()\n            )",
+    )]),
+    m("R2-collision-checked-after-truncation", "Review R2: marker text past the string limit is not detected", [(
+        SAN,
+        "if marker_like_text(value):",
+        "if marker_like_text(value[:self.max_string]):",
+    )]),
+    # Codex review H1: every new plan passes the strict sanitizer.
+    m("H1a-legacy-input-gate-bypassed", "H1: legacy automation planning skips the strict input gate", [(
+        SERVICE,
+        "        if persistence_safety_errors(\n"
+        "            {\n"
+        "                \"plan_title\": title,\n"
+        "                \"plan_description\": description,\n"
+        "                \"persisted_text\"",
+        "        if False and persistence_safety_errors(\n"
+        "            {\n"
+        "                \"plan_title\": title,\n"
+        "                \"plan_description\": description,\n"
+        "                \"persisted_text\"",
+    )]),
+    m("H1b-legacy-current-gate-bypassed", "H1: the Home Assistant current automation is persisted unchecked", [(
+        SERVICE,
+        "        if current is not None and persistence_safety_errors(\n"
+        "            current, self.sensitive_values\n"
+        "        ):\n",
+        "        if False and current is not None and persistence_safety_errors(\n"
+        "            current, self.sensitive_values\n"
+        "        ):\n",
+    )]),
+    m("H1c-legacy-caller-context-unfiltered", "H1: legacy caller context returns to the tolerant filter", [(
+        SERVICE,
+        "            caller_context=_sanitize_configuration_caller_context(\n"
+        "                caller_context, known_secrets=self.sensitive_values\n"
+        "            ),",
+        "            caller_context=sanitize_context(caller_context, self.sensitive_values),",
+    )]),
+    m("H1d-dashboard-input-gate-bypassed", "H1: dashboard planning skips the strict input gate", [(
+        SERVICE,
+        "        if persistence_safety_errors(\n"
+        "            {\n"
+        "                \"plan_title\": title,\n"
+        "                \"plan_description\": description,\n"
+        "                \"patch_operations\"",
+        "        if False and persistence_safety_errors(\n"
+        "            {\n"
+        "                \"plan_title\": title,\n"
+        "                \"plan_description\": description,\n"
+        "                \"patch_operations\"",
+    )]),
+    m("H1e-operational-gate-noop", "H1: operational plans skip the strict creation gate", [(
+        SERVICE,
+        "            unsafe = bool(persistence_safety_errors(plan.to_dict(), self.sensitive_values))\n",
+        "            unsafe = False\n",
+    )]),
+    m("H1f-backup-caller-context-unfiltered", "H1: backup caller context returns to the tolerant filter", [(
+        SERVICE,
+        "                \"rollback_available\": False,\n"
+        "            },\n"
+        "            rollback=ChangeRollback(available=False, status=\"unavailable\"),\n"
+        "            caller_context=_sanitize_configuration_caller_context(\n"
+        "                caller_context,\n"
+        "                known_secrets=self.sensitive_values,\n"
+        "            ),\n"
+        "            contract_version=OPERATIONAL_PLAN_CONTRACT_VERSION,\n"
+        "            plan_family=\"operational_administration\",\n"
+        "            operational=operational,\n"
+        "            execution_outcome=\"not_applied\",\n"
+        "        )\n"
+        "        plan.policy_decision = evaluate_change_policy(plan)\n"
+        "        self._bind_new_plan_policy(plan)\n"
+        "        self._require_strict_new_plan(plan)\n"
+        "        self._supersede_prior(plan)\n"
+        "        self._record(plan, \"operational_backup_plan_created\"",
+        "                \"rollback_available\": False,\n"
+        "            },\n"
+        "            rollback=ChangeRollback(available=False, status=\"unavailable\"),\n"
+        "            caller_context=sanitize_context(caller_context),\n"
+        "            contract_version=OPERATIONAL_PLAN_CONTRACT_VERSION,\n"
+        "            plan_family=\"operational_administration\",\n"
+        "            operational=operational,\n"
+        "            execution_outcome=\"not_applied\",\n"
+        "        )\n"
+        "        plan.policy_decision = evaluate_change_policy(plan)\n"
+        "        self._bind_new_plan_policy(plan)\n"
+        "        self._require_strict_new_plan(plan)\n"
+        "        self._supersede_prior(plan)\n"
+        "        self._record(plan, \"operational_backup_plan_created\"",
+    )]),
+    # Codex review M1: any redaction in a response is reported.
+    m("M1a-dashboard-warning-tally-ignored", "M1: warning and hint redaction is not counted", [(
+        DASHBOARD,
+        "                value, max_chars=MAX_WARNING_CHARS, redactions=redactions\n",
+        "                value, max_chars=MAX_WARNING_CHARS\n",
+    )]),
+    m("M1b-canary-summary-dropped", "M1: the held-read canary drops the redaction summary", [(
+        GATEWAY,
+        "                if redaction is not None:\n                    metadata[\"redaction\"] = redaction\n",
+        "",
+    )]),
+    # Codex review L1: structured-log counters include log_event's first pass.
+    m("L1-first-pass-tally-dropped", "L1: the structured log omits log_event's first-pass counts", [(
+        LOGGING,
+        "    tally.add(first)\n    logger.log(",
+        "    logger.log(",
+    )]),
+    # Owner direction: Core log lines are sanitized independently.
+    m("CL1-core-log-whole-window", "Owner: the Core log window is sanitized as one string", [
+        (
+            CORE_LOGS,
+            "        sanitized = sanitize_untrusted_data(\n"
+            "            bodies, known_secrets=",
+            "        sanitized = sanitize_untrusted_data(\n"
+            "            text, known_secrets=",
+        ),
+        (
+            CORE_LOGS,
+            "        if (\n"
+            "            sanitized.failed_closed or not isinstance(sanitized.value, list)\n"
+            "            or len(sanitized.value) != len(bodies) or ending\n"
+            "            or not all(isinstance(line, str) for line in sanitized.value)\n"
+            "        ):\n",
+            "        if sanitized.failed_closed or not isinstance(sanitized.value, str):\n",
+        ),
+        (
+            CORE_LOGS,
+            "        collided_lines = sum(1 for line in sanitized.value if line == MARKER_COLLISION)\n"
+            "        redacted_lines = sum(1 for safe, line in zip(sanitized.value, bodies) if safe != line)\n",
+            "        collided_lines = int(sanitized.value == MARKER_COLLISION)\n"
+            "        redacted_lines = int(sanitized.redaction_applied)\n",
+        ),
+        (
+            CORE_LOGS,
+            "        safe_lines = [line + \"\\n\" for line in sanitized.value]\n",
+            "        safe_lines = sanitized.value.splitlines(keepends=True)\n",
+        ),
+    ]),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

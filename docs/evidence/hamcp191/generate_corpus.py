@@ -92,6 +92,13 @@ ORDINARY_TEXT = [
     "line one\nline two\r\nline three\ttabbed",
     "ordinary words " * 20,
     "",
+    # Home Assistant writes its own "**REDACTED**" placeholder into logs and
+    # diagnostics. It is not marker-shaped, so it stays ordinary text (Codex
+    # review sample "ha_log" and the owner's Core-log direction).
+    "2026-10-18 INFO [homeassistant.components.synthetic] password was **REDACTED**",
+    "2026-09-01 01:02:03.456 WARNING (MainThread) [homeassistant.components.synthetic] "
+    "Setup data: **REDACTED**",
+    "Config entry synthetic: host=**REDACTED**, port=8123",
 ]
 
 ORDINARY_VALUES: list[tuple[str, Any]] = [
@@ -134,6 +141,18 @@ ORDINARY_VALUES: list[tuple[str, Any]] = [
         "count": 3,
         "first_occurred": 1_788_999_000.0,
     }),
+    # Codex review sample "template".
+    ("template", {
+        "value_template": "{{ state_attr('sensor.kitchen', 'friendly_name') | default('Unavailable') }}",
+    }),
+    # A Core log window as the per-line pass sees it: one string per line.
+    ("core_log_lines", [
+        "2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic",
+        "2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] "
+        "Setup data: **REDACTED**",
+        "2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline",
+        "",
+    ]),
 ]
 
 
@@ -154,6 +173,11 @@ def redacted_samples() -> list[tuple[str, Callable[[], tuple[Any, tuple[str, ...
         ("serialized", lambda: ({"note": syn.serialized("api_key", secret("serialized"))}, ())),
         ("known_secret", lambda: ({"note": "value " + secret("known")}, (secret("known"),))),
         ("truncation", lambda: ({"note": "ordinary " * 400}, ())),
+        # Home Assistant's placeholder as a serialized token value: the
+        # assignment rule redacts the value, exactly as beta.19 did.
+        ("ha_placeholder_assignment", lambda: (
+            {"note": "Config entry data: {" + "'to" + "ken': '**REDACTED**'}"}, ()
+        )),
     ]
 
 
@@ -180,6 +204,15 @@ def changed_samples() -> list[tuple[str, str, Callable[[], tuple[Any, tuple[str,
         )),
         ("lookalike_prose_parenthesized", "D3", lambda: ({"note": "value (redacted) by the vendor"}, ())),
         ("lookalike_prose_truncated", "D3", lambda: ({"note": "device log ...<truncated>"}, ())),
+        # Codex review samples "dashboard" and "attributes" (the review kept
+        # outputs only; these inputs carry the same keys and the same prose).
+        ("lookalike_dashboard_markdown", "D3", lambda: (
+            {"type": "markdown", "content": "Guest network password (redacted) on request"}, ()
+        )),
+        ("lookalike_attribute_description", "D3", lambda: (
+            {"friendly_name": "Kitchen [main]", "unit_of_measurement": "\u00b0C",
+             "description": "Serial number <redacted>"}, ()
+        )),
     ]
 
 

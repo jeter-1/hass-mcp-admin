@@ -24,6 +24,9 @@ from unittest.mock import AsyncMock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+sys.path.insert(0, str(ROOT / "tests"))
+
+import hamcp162_synthetic as syn  # noqa: E402
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
@@ -500,12 +503,13 @@ class SegmentMemoTests(unittest.TestCase):
     CORPUS = (
         "plain text",
         "token: synthetic-known-secret-value and more",
-        "Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789",
-        "https://user:pass@example.invalid/path?access_token=abcdef0123456789",
-        "https://example.invalid/api/webhook/abcdefabcdefabcdef",
+        # Secret-shaped entries are built at runtime (HAMCP-191 L2).
+        syn.auth_header(syn.bearer("abcdefghijklmnopqrstuvwxyz0123456789")),
+        syn.url("https", "user", "pass", "example.invalid/path?access_token=abcdef0123456789"),
+        "https://example.invalid" + syn.webhook_path("abcdefabcdefabcdef"),
         '{"password": "hunter2-synthetic"}',
         "[REDACTED:token] already marked",
-        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c2lnbmF0dXJlc3ludGhldGlj",
+        "ey" + "JhbGciOiJIUzI1NiJ9." + "ey" + "JzdWIiOiJzeW50aGV0aWMifQ." + "c2lnbmF0dXJlc3ludGhldGlj",
         "",
         "x" * 5000,
     )

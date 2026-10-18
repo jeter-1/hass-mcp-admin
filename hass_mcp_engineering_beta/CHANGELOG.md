@@ -14,20 +14,26 @@ Builds on 2.4.1-beta.19.
   impact, integrity, reliability, gateway-withheld evidence and the audit
   sink). A byte-identical upstream copy collides.
 - Keep beta.19's marker tolerance only for the re-scan of stored plans (D11),
-  through one allow-listed entry point; write time is strict. Follow-up:
-  HAMCP-207.
+  through one allow-listed entry point. Every plan family (configuration,
+  legacy automation, dashboard, backup, helper state, reload, restart) runs
+  the strict detector before persisting or returning a new plan, and refuses
+  flagged text. Follow-up: HAMCP-207.
 - Add `sanitization` to `get_server_health` (`strict_marker_mode`,
   `marker_collisions`, `marker_collision_refusals`). Look-alike text can now
   block a governed edit, and each refusal is counted.
 - Report `completeness: partial` with a bounded `metadata.redaction` summary
-  when redaction applied on the generic delegated read, the held-read
-  canary, the YAML reader and dashboard get/list; the delegated read also
-  warns that the result is not complete.
+  when redaction applied anywhere in the response (including warnings, hints
+  and server identity) on the generic delegated read, the held-read canary,
+  the YAML reader and dashboard get/list; the delegated read also warns that
+  the result is not complete.
+- Sanitize Core log history per line: a marker-like line collapses only
+  that line, with bounded `redacted_line_count`, `collided_line_count` and
+  `redaction`. Structured-log redaction counters include the first pass.
 - Scan or withhold a key whose scan failed (never write the raw key back),
   count evidence truncation from a structural flag, and show
   `(authorization header withheld)` in incident correlation.
-- Ordinary data is byte-identical to beta.19 (61-sample corpus: 50
-  identical, 11 changed by decision, 0 unexpected). Preserve the catalog,
+- Ordinary data is byte-identical to beta.19 (69-sample corpus: 56
+  identical, 13 changed by decision, 0 unexpected). Preserve the catalog,
   input schemas, signed registries, HOLD, support window, persisted formats,
   workflows and stable v1.
 

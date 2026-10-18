@@ -4780,6 +4780,9 @@ class UpstreamReadGateway:
                 )
             truncated = bool(sanitation.truncated_field_count)
             redacted = sanitation.redaction_applied
+            # HAMCP-191 Finding 11 (M1): the canary carries the same bounded
+            # redaction summary as every other delegated read.
+            redaction = redaction_summary(sanitation)
             if redacted:
                 warnings.append(REDACTION_WARNING)
             completeness = (
@@ -4804,6 +4807,15 @@ class UpstreamReadGateway:
             )
 
             def bounded_success_response() -> str | None:
+                metadata = {
+                    "provider": PROVIDER_ID,
+                    "untrusted_upstream_content": True,
+                    "fallback": "none",
+                    "fallback_occurred": False,
+                    "promotion_performed": False,
+                }
+                if redaction is not None:
+                    metadata["redaction"] = redaction
                 response = SuccessResponse(
                     operation="run_held_read_canary",
                     summary=(
@@ -4812,13 +4824,7 @@ class UpstreamReadGateway:
                     ),
                     data={"canary_evidence": report, "result": result},
                     warnings=response_warnings,
-                    metadata={
-                        "provider": PROVIDER_ID,
-                        "untrusted_upstream_content": True,
-                        "fallback": "none",
-                        "fallback_occurred": False,
-                        "promotion_performed": False,
-                    },
+                    metadata=metadata,
                     timing=timing_since(started),
                     request_id=current_request_id(),
                 )

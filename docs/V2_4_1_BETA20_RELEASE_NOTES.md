@@ -50,22 +50,43 @@ like `[REDACTED:<category>]` as if Engineering had written it.
      between them with every rule.
    - This is the one explicit exception. It is reached only through
      `rescan_stored_plan`, from six allow-listed call sites, and is tested.
-   - Write time is strict, so no new plan can store a forged marker.
-     Removing the exception is HAMCP-207.
-4. **Health counters (D3).**
+   - Plan creation is strict for every family: configuration, legacy
+     automation, dashboard, backup, helper state, reload and restart plans
+     run the strict detector on their caller-supplied and Home
+     Assistant-derived text before persisting or returning anything. So no
+     new plan can store a forged marker or a wrapped secret. Removing the
+     exception is HAMCP-207.
+4. **Strict plan creation (review finding H1).**
+   - The save-time gate is the tolerant re-scan, so each plan family now
+     checks its new record itself. Legacy automation planning had no such
+     check and could store and return a wrapped known secret, and the
+     operational families did not check Home Assistant text such as a
+     version or location name.
+   - A plan whose text the strict pass flags is refused with no plan
+     written. Caller-context entries the strict pass would change are
+     dropped.
+5. **Health counters (D3).**
    - `get_server_health` adds `sanitization` with `strict_marker_mode: true`,
      `marker_collisions` and `marker_collision_refusals`. These are process
      counts with no content.
    - Look-alike text can now block a governed edit whose path has a detector
      gate. Each such refusal is counted.
-5. **Truthful completeness (Finding 11).** When redaction applied, the
-   generic delegated read, the held-read canary, the YAML reader and
-   dashboard get/list report:
+6. **Truthful completeness (Finding 11).** When redaction applied anywhere
+   in the response, including upstream warnings, hints and server
+   identity, the generic delegated read, the held-read canary, the YAML
+   reader and dashboard get/list report:
    - `completeness: partial`;
    - a bounded `metadata.redaction` summary (categories with counts);
    - for the delegated read, the warning "Sensitive values in the untrusted
      upstream response were redacted; the result is not complete."
-6. **Smaller fixes.**
+7. **Per-line Core log sanitization (Josh's direction).**
+   `get_core_log_history` sanitizes each line on its own. A marker-like line
+   collapses only that line, and the response carries bounded
+   `redacted_line_count` and `collided_line_count` values plus the
+   `redaction` summary. Home Assistant's own `**REDACTED**` placeholder is
+   not marker-shaped and passes unchanged.
+8. **Smaller fixes.**
+   - Structured-log redaction counters include `log_event`'s first pass.
    - The raw-key failure branch scans the key or withholds it; it never
      writes the raw key back.
    - The evidence-truncation metric counts from a structural flag, not from
@@ -76,15 +97,18 @@ like `[REDACTED:<category>]` as if Engineering had written it.
 
 ## Visible changes
 
-- Ordinary data is unchanged. Of 61 corpus samples recorded on the exact
-  beta.19 base, 50 are byte-identical and 11 change by decision:
+- Ordinary data is unchanged. Of 69 corpus samples recorded on the exact
+  beta.19 base, 56 are byte-identical and 13 change by decision:
   - P1 ×2 and P2 ×2: the base leaked; beta.20 does not;
   - forged markers ×4 (D1);
   - a forged marker beside text (D2);
-  - look-alike prose ×2 (D3).
-- A Core log download is sanitized as one string. So one marker-like line
-  replaces that whole window with the collision marker (D2). No secret is
-  shown, and the collision is counted.
+  - look-alike prose ×4 (D3).
+  Log lines containing Home Assistant's `**REDACTED**` are byte-identical.
+- A marker-like Core log line becomes the collision marker on its own; the
+  other lines of the window are kept. Lines split on `\n` only, so a `\r`
+  stays inside its line.
+- Plans whose text the strict pass flags (including look-alike prose in an
+  automation title or description) are refused instead of created.
 - A collided system-log or trace entry no longer correlates in reliability
   analysis.
 
@@ -92,8 +116,8 @@ like `[REDACTED:<category>]` as if Engineering had written it.
 
 - **Stored formats** are unchanged. Plans written by beta.19 re-read exactly
   as before (D11).
-- **Responses** gain only the additive health `sanitization` object and
-  `metadata.redaction`. Redacted reads say `partial`. Look-alike untrusted
-  text becomes the collision marker.
+- **Responses** gain only the additive health `sanitization` object,
+  `metadata.redaction` and the Core log line counts. Redacted reads say
+  `partial`. Look-alike untrusted text becomes the collision marker.
 - **Rollback** is reinstalling the beta.19 artifact, which reads every record
   this release writes. Rolling back restores the P1 and P2 leaks.

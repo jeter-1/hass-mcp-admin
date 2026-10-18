@@ -30,8 +30,27 @@ for stored plans only. The consequences are as follows:
 - A persisted plan's marker-like text is still trusted by text when that plan
   is re-read (approval review, plan views, health verdicts). This is
   unchanged from beta.19.
-- Write-time input is strict, so no new plan can carry a forged marker into
-  storage.
+- Plan creation is strict for every plan family (section 7, Codex H1).
+  The save-time gate is the tolerant D11 re-scan and is not the creation
+  gate, so each creation path runs the strict detector itself before any
+  supersession, persistence or response:
+  - configuration-contract plans (`_create_configuration_plan`, which also
+    serves entity metadata and the F3 rollback paths), as before;
+  - legacy automation plans (`create_plan`): title, description, the
+    persisted (truncated) text, the proposal and the Home Assistant current
+    automation;
+  - dashboard plans: title, description and patch values, before any read;
+  - operational plans (backup, helper state, reload, add-on restart, Home
+    Assistant restart): the complete new record, through
+    `_require_strict_new_plan`.
+  Caller context keeps only entries the strict pass leaves unchanged.
+  So a new plan can no longer carry a forged marker or a wrapped secret
+  into storage. Beta.20 at `6212b7c` claimed this but did not meet it for
+  the legacy automation and operational families.
+- The tolerance applies only when a stored plan is re-read, which is the
+  scope Josh's D11 deferred. It is still justified: every record it
+  tolerates was either written before beta.20 or passed the strict creation
+  gate, and a secret between markers is still refused.
 - Removing the exception needs a storage-format decision, tracked by
   HAMCP-207.
 
@@ -88,7 +107,8 @@ Each file is under a protected path and is named here as task scope.
 | `f3_dashboard/approval_projection.py` | D3: the refusal counter at the X7 projection gate |
 | `dependency/extraction.py`, `dependency/index.py`, `dependency/models.py` | D4: one record per dependency snapshot build (`bind_sanitizer_registry`); impact and integrity read it through `inherits=` |
 | `dependency/script_calls.py`, `dependency/script_sources.py` | D3: the refusal counter at the script X7 gates |
-| `providers/upstream_dashboard.py` | Finding 11: dashboard get/list report `partial` and `metadata.redaction` when redaction applied |
+| `providers/upstream_dashboard.py` | Finding 11: dashboard get/list report `partial` and `metadata.redaction` when redaction applied, including warnings, the hint and the upstream identity (Codex M1) |
+| `providers/core_logs.py` | Josh's direction after the Codex review: per-line Core log sanitization with bounded line counts (section 7). New to the pull request in the correction batch. |
 
 `scripts/validate_addon_metadata.py` (not protected) carries the version
 through `promote_next_release.py --apply`.
@@ -123,20 +143,15 @@ the Dockerfile.
   - a 65,000-character opener run takes about 3 ms;
   - the folding (NFKC, casefold, confusable table) and the four decode rounds
     are unchanged.
-- **Core log reads.** `CoreLogReader.evidence` sanitizes the downloaded window
-  as one string. Under D2 a single marker-like line therefore replaces the
-  whole window with the collision marker. The read stays truthful (no
-  secret, a counted collision) but loses that window's text. Josh should
-  decide whether a per-line pass is wanted; it is not part of this PR.
-- **No X7 gate on automation `create_plan`.**
-  - The persistence detector runs for configuration-contract plans
-    (`_create_configuration_plan`), dashboard plans and resource validation,
-    as in beta.19.
-  - The legacy automation `create_plan` has no detector gate, also as in
-    beta.19. So marker-like text in an automation description is still
-    plannable.
-  - The plan's approval note and the views of it are strict at write time,
-    and D11 at re-read.
+- **Core log reads (owner direction, section 7).** `CoreLogReader.evidence`
+  sanitizes each journal line on its own, in one pass over the list of
+  lines that shares one tally. A marker-like line collapses only that line
+  to the collision marker. The response carries bounded
+  `redacted_line_count` and `collided_line_count` values and the
+  `redaction` summary, and is always `partial`.
+- **Strict gate on every plan creation (Codex H1).** See D11 above and
+  section 7. Marker-like text in an automation title or description is no
+  longer plannable; it is refused before any Home Assistant read.
 - **Audit registry scope.** `AuditLogger.sanitize` and `write_batch` take the
   request's record. Audit entries written outside a request get no record,
   so any marker-like text in them collides. The structured log formatter
@@ -154,6 +169,14 @@ the Dockerfile.
   - a bounded `metadata.redaction` summary (`RedactionTally`, at most
     `MAX_REDACTION_CATEGORIES` categories with counts);
   - for the delegated read, the `REDACTION_WARNING` warning.
+  - Any redaction anywhere in the response counts (Codex M1): dashboard
+    get/list tally upstream warnings, the hint and the upstream identity
+    with the data, and the held-read canary carries the summary, including
+    when its result is omitted for size.
+- **Structured-log counters (Codex L1).** `log_event`'s first pass is the
+  strict `sanitize_untrusted_data`; its tally travels on the log record and
+  `JsonFormatter` reports it with the formatter's own pass. Markers from the
+  first pass are identity hits in the second and are not counted twice.
 
 ## 5. Changed outputs (compatibility)
 
@@ -161,8 +184,16 @@ the Dockerfile.
 exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
 `compare` on this tree writes `docs/evidence/hamcp191/corpus-comparison.json`.
 
-- **Result:** 61 samples. 50 are byte-identical (37 ordinary, 13 plain
-  redactions), 11 changed by decision, 0 unexpected.
+- **Result:** 69 samples. 56 are byte-identical (42 ordinary, 14 plain
+  redactions), 13 changed by decision, 0 unexpected.
+- **Codex review and Home Assistant samples:** Home Assistant's own
+  `**REDACTED**` placeholder in three log lines, a Core log window as a
+  list of lines, and Codex's template sample stay byte-identical. The
+  placeholder as a serialized token value (`'token': '**REDACTED**'`) is
+  redacted by the assignment rule, exactly as in beta.19. Codex's dashboard
+  `(redacted)` and attribute `<redacted>` prose change by D3. The review
+  kept only their outputs, so the inputs here carry the same keys and the
+  same kind of prose.
 - **Entry points compared:**
   - `sanitize_untrusted_data`
   - `redact_data`
@@ -176,7 +207,7 @@ exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
 | `p2_anchor_split_bearer`, `p2_anchor_split_webhook` | P2 | The base leaked the split secret; the head does not |
 | `forged_exact_marker`, `forged_marker_key`, `forged_encoded_marker`, `forged_fullwidth_marker` | D1 | A forged marker collides instead of being trusted by text |
 | `forged_marker_beside_text` | D2 | The whole string is replaced |
-| `lookalike_prose_parenthesized`, `lookalike_prose_truncated` | D3 | Look-alike prose collides |
+| `lookalike_prose_parenthesized`, `lookalike_prose_truncated`, `lookalike_dashboard_markdown`, `lookalike_attribute_description` | D3 | Look-alike prose collides |
 
 **Tool-level output changes outside the corpus:**
 - `get_server_health` gains the additive
@@ -187,6 +218,13 @@ exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
   `metadata.redaction`, plus (delegated read) `REDACTION_WARNING`, when
   redaction applied. Before, a redacted read could report `complete`
   (Finding 11).
+- `get_core_log_history` sanitizes each line independently and adds
+  `redacted_line_count`, `collided_line_count` and `redaction`. Lines now
+  split on `\n` only; a `\r` stays inside its line (before, `splitlines`
+  also split on it).
+- New plans whose caller-supplied or Home Assistant-derived text is
+  strictly flagged are refused (section 7). Caller context entries the
+  strict pass would change are dropped.
 - Incident correlation shows `(authorization header withheld)` instead of a
   marker-shaped placeholder (X2).
 - The X1 evidence-truncation metric now counts from the structural flag.
@@ -204,12 +242,16 @@ exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
   memo, cross-pass reuse refused)
 - `tests/test_readonly_upstream_gateway.py` (1: the Finding 11 warning comes
   before the partial-coverage warning)
+- `tests/test_beta11_sanitization.py`, `tests/test_automation_reliability_analysis.py`
+  and `tests/test_hamcp171_health_verdict_cache.py` also build their
+  secret-shaped inputs at runtime now (Codex L2); every value is unchanged.
 
 ## 6. Mutations
 
 `docs/evidence/hamcp191-mutations/run_mutations.py` applies each mutation to a
 disposable copy outside the repository and runs the three HAMCP-191 test
-modules. Results are in `docs/evidence/hamcp191-mutations/results.json`.
+modules. Results are in `docs/evidence/hamcp191-mutations/results.json`:
+64 mutations, 63 killed, 0 survived, 1 equivalent (M5).
 
 - **Brief:** U1 (trust a marker by text), U2 (skip the identity check), U3
   (collision before the rules), U4a/U4b (raw key written back), U5a–U5d
@@ -218,6 +260,11 @@ modules. Results are in `docs/evidence/hamcp191-mutations/results.json`.
 - **D11:** D11a (allow list widened), D11b (the re-scan loses its tolerance),
   D11c (write time tolerant), D11d (the stored flag ignored).
 - **Counters and wiring:** C1–C6, W1, W2.
+- **Codex review (section 7):** R1 and R2 (the reviewer's own probe
+  mutants), H1a–H1f (each strict creation gate bypassed, both caller
+  context filters reverted), M1a (dashboard warning and hint redaction not
+  counted), M1b (canary summary dropped), L1 (first-pass tally dropped) and
+  CL1 (Core log window sanitized as one string).
 - **M5 as worded** ("dedup by text instead of by type") is an equivalent
   mutant. A string piece equal to marker text exists only when the original
   string held marker text, and `_scan` returns the collision before
@@ -228,3 +275,66 @@ modules. Results are in `docs/evidence/hamcp191-mutations/results.json`.
   slice: the identity-hit branch slicing instead of calling `_truncate`.
 - **M18** is killed both by a source check of the dispatcher and by the
   helper's behavioral flag test (M18b).
+
+## 7. Codex review corrections (review of `6212b7c`)
+
+The review in `~/handoffs/hass-mcp-admin-HAMCP-191-review.md` reported one
+High, one Medium and two Low findings. Josh added the per-line Core log
+direction. Every reproduction is a permanent test.
+
+**H1 (High): legacy planning persisted a wrapped known secret.**
+- Cause: the save gate (`_require_safe_persisted_plan`) is the tolerant D11
+  re-scan and returns early for contract-1 plans, and `create_plan` had no
+  detector gate of its own.
+- Fix: strict gates at creation, before any supersession, persistence or
+  response, in every family (D11 above). The sweep of creation paths found
+  the operational families (backup, helper state, reload, add-on and Home
+  Assistant restart) also unchecked for Home Assistant-derived text such as
+  a version, a location name, a helper's `last_changed` or a dependency
+  profile; `_require_strict_new_plan` now checks their complete record.
+- Tests (`tests/test_hamcp191_families.py`): `PlanCreationGateTests`
+  (Codex's title and `provider_current` reproductions; description,
+  proposal, split anchor and forged marker; caller context; dashboard title
+  and description refused before any read; an ordinary legacy plan
+  unchanged) and `OperationalCreationGateTests` (backup, helper state,
+  reload and Home Assistant restart: refused when injected, created when
+  ordinary). Every refusal leaves the repository empty and does not echo
+  the secret.
+- Paths reviewed and already strict or literal-only: configuration-contract
+  plans (also entity metadata and F3 rollback), the dashboard review
+  projection, F3 runtime re-saves and storage-recovery saves. Apply-time
+  verification evidence written into an existing plan was not traced and is
+  outside this correction.
+
+**M1 (Medium): redaction outside the data did not mark a response partial.**
+Dashboard get/list now tally warnings, the hint and the upstream identity;
+the held-read canary carries `metadata.redaction`. Tests: warning or hint
+redaction makes get and list partial; ordinary warnings stay complete; the
+canary reproduction, an omitted canary result and an ordinary canary.
+
+**L1 (Low): structured-log counters.** See section 4. Test:
+`test_structured_log_counters_are_truthful` (ordinary, collision, plain
+secret).
+
+**L2 (Low): secret-shaped literals.** The 12 literals in three existing test
+files are built at runtime from `tests/hamcp162_synthetic.py`. The committed
+file scan now covers every file this pull request changes
+(`HAMCP191_CHANGED_FILES`) and reports no hits.
+
+**Owner direction: Core log lines.** See section 4. Tests: a window with an
+ordinary line, Home Assistant's `**REDACTED**` placeholder (kept verbatim),
+two marker-like lines (collided alone) and an anchor-split secret line
+(redacted, its prefix kept); an ordinary window is unchanged and has no
+summary.
+
+**Home Assistant's `**REDACTED**`.** The placeholder is not marker-shaped, so
+log lines and diagnostics containing it pass unchanged and do not collide.
+Serialized as a token value (`'token': '**REDACTED**'`), the assignment
+rule redacts the value, as beta.19 did.
+
+**Behavior narrowing to note.**
+- Legacy and operational plans whose text the strict pass flags (D3
+  look-alike prose, a sensitive key in the current automation, marker-like
+  Home Assistant text) are refused instead of created.
+- Strictly flagged caller-context entries are dropped.
+- Core log lines split on `\n` only.

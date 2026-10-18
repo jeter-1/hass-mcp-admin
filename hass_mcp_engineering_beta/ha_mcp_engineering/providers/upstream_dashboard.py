@@ -36,7 +36,6 @@ from ..observability import METRICS
 from ..request_context import current_telemetry
 from ..sanitization import (
     RedactionTally,
-    redaction_summary,
     sanitize_untrusted_data,
 )
 from ..upstream_tool_policy import (
@@ -458,10 +457,12 @@ class UpstreamDashboardProvider:
             dashboards = payload.get("dashboards")
             if not isinstance(dashboards, list):
                 self._raise("invalid_response", dispatched=True)
-            warnings = self._upstream_warnings(payload)
+            # HAMCP-191 Finding 11: one tally covers every emitted field,
+            # warnings, hints and upstream identity included.
+            redactions = RedactionTally()
+            warnings = self._upstream_warnings(payload, redactions)
             normalized: list[dict[str, Any]] = []
             malformed = 0
-            redactions = RedactionTally()
             for item in dashboards:
                 safe = self._dashboard_metadata(item, redactions)
                 if safe is None:
@@ -497,6 +498,7 @@ class UpstreamDashboardProvider:
                 warnings.append(
                     "The dashboard inventory was bounded by the requested limit."
                 )
+            metadata = self._metadata(exchange.handshake, "complete", redactions)
             # HAMCP-191 Finding 11: redaction makes the inventory partial.
             if redactions.applied:
                 warnings.append(
@@ -508,7 +510,7 @@ class UpstreamDashboardProvider:
                 if truncated or malformed or redactions.applied
                 else "complete"
             )
-            metadata = self._metadata(exchange.handshake, completeness)
+            metadata["completeness"] = completeness
             if redactions.applied:
                 metadata["redaction"] = redactions.summary()
             return DashboardProviderResult(
@@ -618,14 +620,18 @@ class UpstreamDashboardProvider:
                     },
                 )
 
-            warnings = self._upstream_warnings(payload)
+            # HAMCP-191 Finding 11: one tally covers the configuration, the
+            # warnings and hints, and the upstream identity.
+            redactions = RedactionTally()
+            redactions.add(sanitation)
+            warnings = self._upstream_warnings(payload, redactions)
+            metadata = self._metadata(exchange.handshake, "complete", redactions)
             completeness = "complete"
             # HAMCP-191 Finding 11: redaction makes the configuration partial.
-            redaction = redaction_summary(sanitation)
             if (
                 sanitation.failed_closed
                 or sanitation.truncated_field_count
-                or redaction is not None
+                or redactions.applied
             ):
                 completeness = "partial"
                 warnings.append(
@@ -644,9 +650,9 @@ class UpstreamDashboardProvider:
                 and canonical_path != url_path
             ):
                 data["requested_url_path"] = url_path
-            metadata = self._metadata(exchange.handshake, completeness)
-            if redaction is not None:
-                metadata["redaction"] = redaction
+            metadata["completeness"] = completeness
+            if redactions.applied:
+                metadata["redaction"] = redactions.summary()
             return DashboardProviderResult(
                 data=data,
                 warnings=warnings[:20],
@@ -1669,7 +1675,11 @@ class UpstreamDashboardProvider:
                 output[key] = safe
         return output
 
-    def _upstream_warnings(self, payload: dict[str, Any]) -> list[str]:
+    def _upstream_warnings(
+        self,
+        payload: dict[str, Any],
+        redactions: RedactionTally | None = None,
+    ) -> list[str]:
         values: list[Any] = []
         warnings = payload.get("warnings")
         if isinstance(warnings, list):
@@ -1680,21 +1690,34 @@ class UpstreamDashboardProvider:
             values.append(payload["hint"])
         safe: list[str] = []
         for value in values:
-            sanitized = self._safe_string(value, max_chars=MAX_WARNING_CHARS)
+            sanitized = self._safe_string(
+                value, max_chars=MAX_WARNING_CHARS, redactions=redactions
+            )
             if sanitized:
                 safe.append(sanitized)
         return safe
 
-    def _safe_string(self, value: Any, *, max_chars: int) -> str:
+    def _safe_string(
+        self,
+        value: Any,
+        *,
+        max_chars: int,
+        redactions: RedactionTally | None = None,
+    ) -> str:
         result = sanitize_untrusted_data(
             str(value),
             known_secrets=self._known_secrets,
             max_string=max_chars,
         )
+        if redactions is not None:
+            redactions.add(result)
         return str(result.value)
 
     def _metadata(
-        self, handshake: McpDashboardHandshake, completeness: str
+        self,
+        handshake: McpDashboardHandshake,
+        completeness: str,
+        redactions: RedactionTally | None = None,
     ) -> dict[str, Any]:
         return {
             "provider": PROVIDER_ID,
@@ -1703,14 +1726,20 @@ class UpstreamDashboardProvider:
             "source_timestamp": _utc_now(),
             "upstream_server": {
                 "name": self._safe_string(
-                    handshake.server_name, max_chars=MAX_IDENTITY_CHARS
+                    handshake.server_name,
+                    max_chars=MAX_IDENTITY_CHARS,
+                    redactions=redactions,
                 ),
                 "version": self._safe_string(
-                    handshake.server_version, max_chars=MAX_IDENTITY_CHARS
+                    handshake.server_version,
+                    max_chars=MAX_IDENTITY_CHARS,
+                    redactions=redactions,
                 ),
             },
             "mcp_protocol_version": self._safe_string(
-                handshake.protocol_version, max_chars=64
+                handshake.protocol_version,
+                max_chars=64,
+                redactions=redactions,
             ),
             "schema_fingerprint": self._state.required_schema_fingerprint,
             "contract_fingerprint": self._state.required_contract_fingerprint,

@@ -11,6 +11,9 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
+
+import hamcp162_synthetic as syn  # noqa: E402
 
 from ha_mcp_engineering.errors import AutomationNotFoundError, ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
@@ -437,7 +440,7 @@ class ToolAndSanitizerTests(unittest.TestCase):
         json.dumps(schema)
 
     def test_overlapping_matter_markers_collapse_and_remain_idempotent(self):
-        value = "setup_payload=MT:SYNTHETICOVERLAP"
+        value = "setup_payload=" + syn.matter_payload("SYNTHETICOVERLAP")
         # HAMCP-191 D4: a re-scan keeps its own markers only through the
         # request's identity record; marker text from input collides whole.
         registry = ReferenceMarkerRegistry()
