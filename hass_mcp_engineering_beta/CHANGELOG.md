@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.4.1-beta.17 - Typed, registered routes for every Home Assistant REST call (HAMCP-200)
+
+Builds on 2.4.1-beta.16.
+
+- Accept only a typed `Route` in the REST transport. `rest_path` is the only
+  way to obtain one, and only for a reviewed template in the closed
+  `ROUTE_TEMPLATES` registry. A `Route` cannot be constructed, subclassed,
+  mutated, cloned or pickled, and a plain string, including a fixed one, is
+  refused as `unbound_request_path` before any session, credential or
+  request exists.
+- Bind every value through one guard. It refuses the dot segments, `/`,
+  `\`, `?`, `#`, NUL and control characters, plus their percent- and
+  multiply-encoded forms, and otherwise encodes the value as one segment.
+  Before attaching the token, the transport re-encodes the route from its
+  binding and requires the normalized URL to equal the template.
+- Never follow redirects. The REST transport, the Core re-admission reader
+  and the Supervisor self-information reader send `allow_redirects=False`,
+  and a 3xx response is a failure.
+- Check identifiers at the tool boundary for `get_automation_config`,
+  `get_entity`, `get_history` and `automation_reliability_analysis`. An
+  invalid value is refused as `invalid_request` ("The identifier is
+  invalid.", reason `invalid_identifier`), audited and counted, with no Home
+  Assistant request. Handoff generation skips unsafe IDs from Home Assistant
+  and reports partial coverage. Governed writes report the refusal as not
+  dispatched.
+- Narrow automation configuration IDs to `[A-Za-z0-9_:-]`: dotted IDs are no
+  longer accepted by `automation_reliability_analysis` or
+  `capture_automation_baseline`.
+- Remove the compatibility module's standalone ASGI gateway and `main()`
+  entry point. The add-on still starts `python -m ha_mcp_engineering`.
+- Add a secondary source scan that fails on raw, concatenated or formatted
+  request paths, route literals outside `rest_path`, computed templates,
+  `.request` aliases and websocket URLs other than the configured one.
+- Disclose the corrected past exposure: a crafted identifier could make
+  Engineering send token-bearing GET requests to other HA/Supervisor routes,
+  including any GET-enabled webhook (which can trigger automations); no
+  POST/PUT/DELETE/PATCH was reachable.
+- Preserve the catalog, input schemas, signed registries, HOLD, support
+  window, persisted formats, workflows and stable v1.
+
 ## 2.4.1-beta.16 - Optional reviewed YAML configuration reader (HAMCP-162)
 
 Builds on 2.4.1-beta.15's rollback Core lease, cancel telemetry, expired

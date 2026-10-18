@@ -9,8 +9,8 @@ import json
 import re
 import time
 from typing import Any
-from urllib.parse import quote
 
+from ..clients.paths import rest_path
 from ..dependency.extraction import valid_entity_id
 from ..errors import EntityNotFoundError
 from ..integrity.models import IntegrityEvidenceBundle, IntegritySourceCoverage
@@ -379,7 +379,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
     async def _states(self):
         started = time.perf_counter()
         try:
-            value = await self.rest_client.request("GET", "/states")
+            value = await self.rest_client.request("GET", rest_path("/states"))
             if not isinstance(value, list):
                 raise TypeError("states inventory is invalid")
             safe = sanitize_untrusted_data(value, known_secrets=(self.secret, self.ha_token), max_string=500)
@@ -420,11 +420,11 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
 
     async def _entity_activity(self, entity_id, lookback_hours, instant, semaphore):
         start = normalize_timestamp(instant - timedelta(hours=lookback_hours))
-        encoded_start = quote(start or "", safe="-:TZ.")
-        encoded_entity = quote(entity_id, safe="._")
-        async def call(path):
+        async def call(bind):
             began = time.perf_counter()
             try:
+                # An unusable start or entity refuses here; no request is sent.
+                path = bind()
                 async with semaphore:
                     value = await self.rest_client.request("GET", path)
                 safe = sanitize_untrusted_data(value, known_secrets=(self.secret, self.ha_token), max_string=500)
@@ -435,8 +435,26 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
             except Exception:
                 return [], (0, 1, (time.perf_counter() - began) * 1000)
         history, logbook = await asyncio.gather(
-            call(f"/history/period/{encoded_start}?filter_entity_id={encoded_entity}&minimal_response&no_attributes"),
-            call(f"/logbook/{encoded_start}?entity={encoded_entity}"),
+            call(
+                lambda: rest_path(
+                    "/history/period/{}",
+                    start,
+                    kinds=("timestamp",),
+                    query=[
+                        ("filter_entity_id", entity_id),
+                        ("minimal_response", None),
+                        ("no_attributes", None),
+                    ],
+                )
+            ),
+            call(
+                lambda: rest_path(
+                    "/logbook/{}",
+                    start,
+                    kinds=("timestamp",),
+                    query=[("entity", entity_id)],
+                )
+            ),
         )
         return entity_id, history[0], logbook[0], history[1], logbook[1]
 

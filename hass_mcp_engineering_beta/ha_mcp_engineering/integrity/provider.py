@@ -8,6 +8,7 @@ from dataclasses import asdict
 import time
 from typing import Any
 
+from ..clients.paths import rest_path
 from ..dependency.models import SOURCE_TYPES
 from ..providers import (
     EngineeringEvidenceProvider,
@@ -251,7 +252,7 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
         )
 
     async def _current_states(self) -> dict[str, dict[str, Any]]:
-        value = await self.rest_client.request("GET", "/states")
+        value = await self.rest_client.request("GET", rest_path("/states"))
         if not isinstance(value, list):
             raise TypeError("current-state inventory is invalid")
         safe = sanitize_untrusted_data(

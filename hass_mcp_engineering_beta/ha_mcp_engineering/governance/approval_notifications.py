@@ -15,6 +15,7 @@ import re
 from typing import Any, Awaitable, Callable
 
 from ..audit import AuditLogger
+from ..clients.paths import rest_path
 from ..errors import (
     HomeAssistantApiError,
     HomeAssistantTimeoutError,
@@ -334,7 +335,7 @@ class ApprovalNotificationManager:
             self.queue.task_done()
 
     async def _dispatch(self, work: _NotificationWork) -> None:
-        path = f"/services/notify/{self.service.split('.', 1)[1]}"
+        path = rest_path("/services/notify/{}", self.service.split(".", 1)[1])
         if work.operation == "notify":
             if _SAFE_PLAN_ID.fullmatch(work.plan_id) is None:
                 self._failed(
