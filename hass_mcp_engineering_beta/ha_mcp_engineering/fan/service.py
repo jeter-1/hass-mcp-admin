@@ -18,7 +18,7 @@ import tempfile
 import uuid
 
 from ..f3.executor import SharedOperationExecutor, PreIntentRetryRequired
-from ..f3.locks import LockOwnershipError
+from ..f3.locks import LockOwnershipError, normalize_lock_requests
 from ..f3.models import (ExecutionIdentity, ExecutorTiming, LockOwner, LockToken,
                          parse_timestamp, validate_sha256)
 from ..request_context import current_telemetry
@@ -41,8 +41,12 @@ HOLD_RELEASE_MODEL = "typed-hold-release-v1"
 HOLD_RELEASE_FIELDS = frozenset({
     "model", "task_id", "prepared_hash", "record_generation", "hold_key", "hold_generation",
     "authority_hash", "readback_hash", "readback_matches_requested_state",
-    "authorized_at", "released_at",
+    "authorized_at", "released_at", "audit_recorded",
 })
+# The authorized decision; completion fields are excluded, so the release ID
+# (and the audit event ID derived from it) never changes while it finishes.
+HOLD_RELEASE_DECISION_FIELDS = HOLD_RELEASE_FIELDS - {"released_at", "audit_recorded"}
+HOLD_RELEASE_AUDIT_MODEL = "typed-hold-release-audit-v1"
 MAX_HOLD_RELEASE_ITEMS = 100
 
 
@@ -418,35 +422,42 @@ class FanService:
         return status
 
     def _blocking_tasks(self, prepared, task_id):
-        """Name the current holders of this task's conflicting keys."""
+        """Name the holders that currently block this task's lock requests.
+
+        The lock store's own acquisition predicate decides, so the receipt
+        names exactly what acquisition refuses. An expired lease still blocks
+        until the recovery sweep reconciles it (read, transfer or hold);
+        expiry itself releases nothing, so it gets no expected release time.
+        """
         now = self.now()
-        requested = {request.key: getattr(request.mode, "value", request.mode)
-                     for request in self.adapter.lock_requests(prepared)}
-        holders = []
-        for item in self.locks.records():
-            if item.task_id == task_id or item.key not in requested:
-                continue
-            if not item.conflict_hold and parse_timestamp(item.lease_expires_at,
-                                                          field_name="lease_expires_at") <= now:
-                continue  # expired: no longer an active holder
-            if requested[item.key] != "exclusive" and item.mode != "exclusive":
-                continue  # shared with shared never conflicts
-            holders.append(item)
+        requested = {request.key: request.mode
+                     for request in normalize_lock_requests(self.adapter.lock_requests(prepared))}
+        holders = [item for item in self.locks.records()
+                   if item.task_id != task_id and item.key in requested
+                   and self.locks.holder_blocks(item, requested[item.key], now)]
         result = []
         for item in sorted(holders, key=lambda value: (value.key, value.task_id))[:MAX_BLOCKING_TASKS]:
             try:
                 record = self.executions.get(item.task_id)
             except Exception:
                 record = None
+            expired = not item.conflict_hold and parse_timestamp(
+                item.lease_expires_at, field_name="lease_expires_at") <= now
             entry = {
                 "task_id": item.task_id, "lock_key": item.key,
                 "conflict_hold": item.conflict_hold,
                 "state": (record.task_state if record is not None
                           else "conflict_hold" if item.conflict_hold else "lease_held"),
-                "expected_release_at": None if item.conflict_hold else item.lease_expires_at,
+                "lease_status": ("conflict_hold" if item.conflict_hold
+                                 else "expired_pending_recovery" if expired else "active"),
+                "expected_release_at": (None if item.conflict_hold or expired
+                                        else item.lease_expires_at),
                 "release": ("governed_hold_release_required" if item.conflict_hold
+                            else "recovery_sweep_reconciles_expired_lease" if expired
                             else "verified_readback_or_deadline_final_read"),
             }
+            if expired:
+                entry["lease_expired_at"] = item.lease_expires_at
             if record is not None and record.dispatch_intent is not None and not item.conflict_hold:
                 entry["decision_deadline"] = record.dispatch_intent["evidence_deadline"]
             result.append(entry)
@@ -464,6 +475,8 @@ class FanService:
         matches = release["readback_matches_requested_state"]
         return {
             "released": release["released_at"] is not None,
+            "hold_release_id": self.hold_release_id(release),
+            "audit_recorded": release["audit_recorded"],
             "authorized_at": release["authorized_at"],
             "released_at": release["released_at"],
             "readback_matches_requested_state": matches,
@@ -491,7 +504,9 @@ class FanService:
                     or value["model"] != HOLD_RELEASE_MODEL or value["task_id"] != task_id
                     or type(value["record_generation"]) is not int
                     or type(value["hold_generation"]) is not int
-                    or type(value["readback_matches_requested_state"]) is not bool):
+                    or type(value["readback_matches_requested_state"]) is not bool
+                    or type(value["audit_recorded"]) is not bool
+                    or (value["audit_recorded"] and value["released_at"] is None)):
                 raise ValueError
             for key in ("prepared_hash", "authority_hash", "readback_hash"):
                 validate_sha256(value[key], field_name=key)
@@ -642,6 +657,7 @@ class FanService:
             "authority_hash": digest({"principal": authorized_principal}),
             "readback_hash": readback_hash, "readback_matches_requested_state": matches,
             "authorized_at": self.now().isoformat(), "released_at": None,
+            "audit_recorded": False,
         }
         with self.transaction():
             # The read awaited; re-check the exact reviewed facts before the
@@ -652,19 +668,38 @@ class FanService:
             if binding != (item["record_generation"], item["prepared_hash"], item["hold_binding"]):
                 raise self.refusal("fan_hold_release_stale")
             self._write_release(release)
-        self._finish_hold_release(task_id, release)
+        release = self._finish_hold_release(task_id)
         record = self.executions.get(task_id)
         outcome = "hold_released_state_matches" if matches else "hold_released_state_differs"
         return {"status": outcome, "task_id": task_id,
                 "readback_matches_requested_state": matches,
                 "readback_evidence_hash": readback_hash,
+                "audit_recorded": release["audit_recorded"],
                 "comparison": self._state_comparison(prepared.request, state),
                 "terminal_outcome": record.normalized_outcome, "dispatch": "none"}
 
-    def _finish_hold_release(self, task_id, release):
-        """Complete an already authorized release; never start one."""
-        if release["released_at"] is not None:
+    def _finish_hold_release(self, task_id):
+        """Complete an already authorized release; never start one.
+
+        Every step runs under the declaration transaction from the durable
+        sidecar, so a decision request and any recovery finisher (in this or
+        another process) settle one completion. Each step is idempotent and
+        recorded before the next: hold cleared -> ``released_at`` -> audit
+        entry -> ``audit_recorded``. A crash or audit failure after any step
+        leaves a state the next recovery pass completes; the audit entry's ID
+        derives from the release ID, so a re-projection is deduplicated.
+        """
+        with self.transaction():
+            release = self._load_release(task_id)
+            if release is None:
+                raise LockOwnershipError("fan hold release decision is missing")
+            if release["released_at"] is None:
+                release = self._clear_released_hold(task_id, release)
+            if not release["audit_recorded"]:
+                release = self._audit_hold_release(task_id, release)
             return release
+
+    def _clear_released_hold(self, task_id, release):
         record = self.executions.get(task_id)
         if (record is None or not record.terminal
                 or record.normalized_outcome != "manual_review_required"
@@ -684,20 +719,27 @@ class FanService:
                 reason_code=HOLD_RELEASE_REASON)
         release = {**release, "released_at": self.now().isoformat()}
         self._write_release(release)
-        # Audited once, at the transition, whether the decision request or a
-        # later recovery pass completes it.
-        self._audit_hold_release(prepared, record, release)
         return release
 
-    def _audit_hold_release(self, prepared, record, release):
+    @staticmethod
+    def hold_release_id(release):
+        """Stable identity of one authorized release decision."""
+        return digest({"model": HOLD_RELEASE_MODEL,
+                       "decision": {key: release[key] for key in HOLD_RELEASE_DECISION_FIELDS}})
+
+    def _audit_hold_release(self, task_id, release):
+        """Project the completed release once; ``audit_recorded`` only after a confirmed write."""
         audit = self.executions.audit
         if audit is None:
-            return
+            return release
+        prepared = self.load(task_id)
+        record = self.executions.get(task_id)
         kind = self.executions.kind
-        outcome = ("hold_released_state_matches" if release["readback_matches_requested_state"]
-                   else "hold_released_state_differs")
+        release_id = self.hold_release_id(release)
         entry = {
             "event": kind + "_hold_release_action",
+            "audit_event_id": digest({"model": HOLD_RELEASE_AUDIT_MODEL, "release_id": release_id}),
+            "hold_release_id": release_id,
             "request_id": record.execution_identity().request_id,
             "task_id": prepared.request.task_id, "operation_id": prepared.request.operation_id,
             "operation_hash": prepared.prepared_operation_hash,
@@ -709,16 +751,23 @@ class FanService:
             "readback_evidence_hash": release["readback_hash"],
             "readback_matches_requested_state": release["readback_matches_requested_state"],
             "hold_key": release["hold_key"], "hold_generation": release["hold_generation"],
-            "outcome": outcome, "terminal_outcome": record.normalized_outcome,
+            "outcome": ("hold_released_state_matches" if release["readback_matches_requested_state"]
+                        else "hold_released_state_differs"),
+            "terminal_outcome": record.normalized_outcome,
             "dispatch": "none", "redispatch_prohibited": True,
             "timestamp": release["released_at"],
         }
-        entry["audit_event_id"] = digest(entry)
         try:
-            if audit.write_batch([entry]) != 1:
-                self.executions.audit_projection_failures += 1
+            written = audit.write_batch([entry])
         except Exception:
+            written = 0
+        if written != 1:
+            # Not recorded: recovery retries the same entry on its next pass.
             self.executions.audit_projection_failures += 1
+            return release
+        release = {**release, "audit_recorded": True}
+        self._write_release(release)
+        return release
 
     async def reconcile(self, task_id):
         prepared = self.load(task_id)
@@ -745,7 +794,7 @@ class FanService:
         if release is not None:
             # An administrator decision exists: only finish it. No executor,
             # adapter or provider path is entered for a released hold.
-            self._finish_hold_release(task_id, release)
+            self._finish_hold_release(task_id)
             return self.receipt(task_id)
         self.locks.reconcile_terminal_hold(record)
         if not record.terminal and parse_timestamp(record.claim_expires_at, field_name="claim_expires_at") > self.now():
@@ -768,7 +817,9 @@ class FanService:
             return False  # an invalid sidecar is surfaced as a recovery failure
         if release is None:
             return self.locks.hold_settled(record, owned)
-        return release["released_at"] is not None and not owned
+        # Settled once released and audited; a pending audit entry is retried.
+        return (release["released_at"] is not None and not owned
+                and (release["audit_recorded"] or self.executions.audit is None))
 
     async def recover_once(self):
         # Bounded sweep; an active owner wins. Observation cannot turn a saved

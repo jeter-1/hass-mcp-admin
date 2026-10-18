@@ -5,13 +5,17 @@ release a manual-review hold only on a governed Ingress decision.
 Deterministic offline fixtures: synthetic transport, fake clock and fake sleep.
 """
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import re
 import sys
 import tempfile
+import threading
+import time
 import unittest
+from unittest.mock import patch
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +24,9 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 import httpx
 
 from ha_mcp_engineering.approval_web import create_approval_application
+from ha_mcp_engineering.audit import AuditLogger
+from ha_mcp_engineering.f3.locks import DurableLockStore, LockConflict
+from ha_mcp_engineering.f3.models import LockOwner
 from ha_mcp_engineering.fan.authority import FanCoreAuthority
 from ha_mcp_engineering.fan.contracts import FanRefusal, FanRequest, digest
 from ha_mcp_engineering.fan.locks import FAN_LOCK_TIMING
@@ -306,7 +313,7 @@ class BlockingTaskTests(ObservingFixture):
         self.assertEqual(receipt["blocking_tasks"], [{
             "task_id": first.task_id, "lock_key": "entity:fan.synthetic",
             "conflict_hold": False, "state": blocker["state"],
-            "expected_release_at": lease,
+            "lease_status": "active", "expected_release_at": lease,
             "release": "verified_readback_or_deadline_final_read",
             "decision_deadline": blocker["observation_status"]["evidence_deadline"],
         }])
@@ -320,6 +327,7 @@ class BlockingTaskTests(ObservingFixture):
         self.assertEqual(receipt["blocking_tasks"], [{
             "task_id": held.task_id, "lock_key": "entity:fan.synthetic",
             "conflict_hold": True, "state": "manual_review_required",
+            "lease_status": "conflict_hold",
             "expected_release_at": None, "release": "governed_hold_release_required",
         }])
         self.assertEqual(self.transport.writes, 1)
@@ -615,6 +623,258 @@ class HoldReleaseIngressTests(ObservingFixture):
         self.assertNotIn("<form", review.text)
         self.assertNotIn("csrf", review.text)
         self.assertEqual([item.conflict_hold for item in self.owned(request.task_id)], [True])
+
+
+class ExpiredBlockerTests(ObservingFixture):
+    """Codex M2: receipts name exactly what the lock check refuses."""
+
+    async def test_expired_unreconciled_lease_still_names_its_blocker(self):
+        # Codex's reproduction: the lease has expired, the sweep has not run.
+        first = self.request()
+        await self.call(first)
+        owned = {item.key: item for item in self.owned(first.task_id)}
+        self.assertEqual(sorted(item.mode for item in owned.values()),
+                         ["exclusive", "shared", "shared"])
+        self.clock.advance(31)
+        self.assertTrue(all(datetime.fromisoformat(item.lease_expires_at) < self.clock()
+                            for item in owned.values()))
+        receipt = await self.call(self.request())
+        self.assertEqual(receipt["terminal_outcome"], "lock_conflict", receipt)
+        entries = receipt["blocking_tasks"]
+        self.assertEqual({entry["task_id"] for entry in entries}, {first.task_id})
+        # The exclusive entity lease and both expired shared leases block.
+        self.assertEqual(sorted(entry["lock_key"] for entry in entries), sorted(owned))
+        for entry in entries:
+            self.assertEqual(entry["lease_status"], "expired_pending_recovery")
+            self.assertIsNone(entry["expected_release_at"])  # expiry releases nothing
+            self.assertEqual(entry["lease_expired_at"], owned[entry["lock_key"]].lease_expires_at)
+            self.assertEqual(entry["release"], "recovery_sweep_reconciles_expired_lease")
+            self.assertEqual(entry["state"], "observing")
+        self.assertEqual(len(self.owned(first.task_id)), 3)
+        self.assertEqual(self.transport.writes, 1)  # refused: no queueing, no superseding
+
+    def shared_holder(self):
+        """A synthetic other owner of only the shared core key."""
+        request = next(item for item in self.service.adapter.lock_requests(self.prepared_probe())
+                       if item.key == "home_assistant:core")
+        owner = LockOwner(uuid.uuid4().hex, uuid.uuid4().hex, None, "synthetic-shared-holder",
+                          uuid.uuid4().hex)
+        self.service.locks.acquire_once((request,), owner=owner, timing=FAN_LOCK_TIMING,
+                                        now=self.clock())
+        return owner
+
+    def prepared_probe(self):
+        from ha_mcp_engineering.fan.adapter import prepare_record
+        from ha_mcp_engineering.fan.contracts import FAN_CONTRACTS
+        return prepare_record(self.request(), {"state": "off", "percentage": 0,
+                                               "supported_features": 49}, FAN_CONTRACTS[-1])
+
+    async def test_active_shared_holder_does_not_block_but_an_expired_one_does(self):
+        owner = self.shared_holder()
+        self.transport.delay = 0
+        first = await self.call(self.request())
+        self.assertEqual(first["state"], "succeeded_verified", first)  # shared + shared: no conflict
+        self.assertNotIn("blocking_tasks", first)
+        self.clock.advance(31)  # the synthetic shared lease expires unreconciled
+        receipt = await self.call(self.request())
+        self.assertEqual(receipt["terminal_outcome"], "lock_conflict", receipt)
+        self.assertEqual([(entry["task_id"], entry["lock_key"], entry["lease_status"], entry["state"])
+                          for entry in receipt["blocking_tasks"]],
+                         [(owner.task_id, "home_assistant:core", "expired_pending_recovery",
+                           "lease_held")])
+        self.assertEqual(self.transport.writes, 1)
+
+    async def test_lock_check_and_hints_share_one_predicate(self):
+        first = self.request()
+        await self.call(first)
+        self.clock.advance(31)
+        sites = []
+        original = DurableLockStore.holder_blocks.__func__
+
+        def spy(cls, holder, mode, now):
+            import inspect
+            sites.append(inspect.stack()[1].function)
+            return original(cls, holder, mode, now)
+
+        with patch.object(DurableLockStore, "holder_blocks", classmethod(spy)):
+            receipt = await self.call(self.request())
+        self.assertEqual(receipt["terminal_outcome"], "lock_conflict", receipt)
+        self.assertIn("mutate", sites)  # acquisition
+        self.assertIn("_blocking_tasks", sites)  # receipt hints
+        # The predicate is the acquisition rule: every documented combination.
+        holder = next(item for item in self.owned(first.task_id) if item.mode == "shared")
+        for expired in (False, True):
+            instant = (datetime.fromisoformat(holder.lease_expires_at)
+                       + timedelta(seconds=1 if expired else -1))
+            self.assertIs(DurableLockStore.holder_blocks(holder, "shared", instant), expired)
+            self.assertTrue(DurableLockStore.holder_blocks(holder, "exclusive", instant))
+
+
+class HoldReleaseExactlyOnceTests(ObservingFixture):
+    """Codex M1: one durable audit entry per release, whatever interrupts it.
+
+    Uses the production idempotent AuditLogger. ``Crash`` is a BaseException
+    standing in for process loss; a replacement service models the restart.
+    """
+
+    class Crash(BaseException):
+        pass
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.audit_path = Path(self.tmp.name) / "audit.jsonl"
+        self.audit = AuditLogger(str(self.audit_path), "synthetic-audit-secret-not-real")
+        self.service = self.build()
+
+    def release_entries(self):
+        if not self.audit_path.exists():
+            return []
+        entries = [json.loads(line) for line in self.audit_path.read_text().splitlines()]
+        return [item for item in entries if item["event"] == "fan_hold_release_action"]
+
+    async def decide(self, request, service=None):
+        service = service or self.service
+        review = await service.hold_release_review(request.task_id)
+        return await service.release_hold(
+            request.task_id, record_generation=review["record_generation"],
+            prepared_hash=review["prepared_hash"], hold_binding=review["hold_binding"],
+            reviewed_readback_hash=review["readback_hash"],
+            authorized_principal="home_assistant_admin_ingress:admin-fixture")
+
+    async def assert_settled_once(self, request, service):
+        reads = self.transport.reads()
+        for _ in range(3):
+            self.clock.advance(30)
+            await service.recover_once()
+        self.assertEqual(self.transport.reads(), reads)  # finishing never reads or dispatches
+        self.assertEqual(self.transport.writes, 1)
+        entries = self.release_entries()
+        self.assertEqual(len(entries), 1, entries)
+        sidecar = service._load_release(request.task_id)
+        self.assertIsNotNone(sidecar["released_at"])
+        self.assertTrue(sidecar["audit_recorded"])
+        self.assertEqual(entries[0]["timestamp"], sidecar["released_at"])
+        self.assertEqual(entries[0]["hold_release_id"], service.hold_release_id(sidecar))
+        self.assertEqual(entries[0]["dispatch"], "none")
+        self.assertEqual(self.owned(request.task_id, service), [])
+        self.assertEqual(service.health()["conflict_hold_count"], 0)
+        self.assertEqual(service.recovery_failures, 0)
+        receipt = service.receipt(request.task_id)
+        self.assertEqual(receipt["terminal_outcome"], "manual_review_required")
+        self.assertEqual(receipt["hold_release"]["audit_recorded"], True)
+        self.assertEqual(receipt["hold_release"]["hold_release_id"], entries[0]["hold_release_id"])
+
+    async def crash_then_restart(self, target, attribute, *, after, when=lambda *args, **kwargs: True):
+        request = await self.held_task()
+        original = getattr(target, attribute)
+        fired = []
+
+        def crashing(*args, **kwargs):
+            if fired or not when(*args, **kwargs):
+                return original(*args, **kwargs)
+            fired.append(True)
+            if after:
+                original(*args, **kwargs)
+            raise self.Crash()
+
+        with patch.object(target, attribute, side_effect=crashing):
+            with self.assertRaises(self.Crash):
+                await self.decide(request)
+        self.assertEqual(fired, [True])
+        await self.assert_settled_once(request, self.build())
+
+    async def test_crash_after_the_decision_before_the_hold_is_cleared(self):
+        await self.crash_then_restart(self.service.locks, "release_conflict_hold", after=False)
+
+    async def test_crash_after_the_hold_is_cleared_before_released_at(self):
+        await self.crash_then_restart(self.service.locks, "release_conflict_hold", after=True)
+
+    async def test_crash_after_released_at_before_the_audit_write(self):
+        await self.crash_then_restart(self.audit, "write_batch", after=False)
+
+    async def test_crash_after_the_audit_write_before_audit_recorded(self):
+        # The replacement re-projects; the stable event ID deduplicates it.
+        await self.crash_then_restart(self.audit, "write_batch", after=True)
+
+    async def test_crash_after_audit_recorded(self):
+        await self.crash_then_restart(self.service, "_write_release", after=True,
+                                      when=lambda value: value["audit_recorded"])
+
+    async def test_audit_failure_is_retried_by_recovery(self):
+        request = await self.held_task()
+        with patch.object(self.audit, "_write_safe_unlocked", side_effect=OSError("synthetic")):
+            result = await self.decide(request)
+        self.assertEqual(result["status"], "hold_released_state_differs")
+        self.assertFalse(result["audit_recorded"])
+        self.assertEqual(self.release_entries(), [])
+        self.assertEqual(self.owned(request.task_id), [])
+        self.assertEqual(self.service.health()["audit_projection_failures"], 1)
+        self.assertFalse(self.service.receipt(request.task_id)["hold_release"]["audit_recorded"])
+        await self.assert_settled_once(request, self.service)
+
+    async def test_concurrent_finishers_settle_one_completion(self):
+        request = await self.held_task()
+        with patch.object(self.service.locks, "release_conflict_hold", side_effect=self.Crash):
+            with self.assertRaises(self.Crash):
+                await self.decide(request)
+        replacement = self.build()
+        started, resume = threading.Event(), threading.Event()
+        original_release = self.service.locks.release_conflict_hold
+        original_write = self.audit.write_batch
+        writes = []
+
+        def paused(**kwargs):
+            started.set()
+            if not resume.wait(10):
+                raise AssertionError("first finisher was not resumed")
+            return original_release(**kwargs)
+
+        def counted(entries):
+            writes.append(len(entries))
+            return original_write(entries)
+
+        with (patch.object(self.service.locks, "release_conflict_hold", side_effect=paused),
+              patch.object(self.audit, "write_batch", side_effect=counted),
+              ThreadPoolExecutor(max_workers=2) as pool):
+            first = pool.submit(self.service._finish_hold_release, request.task_id)
+            self.assertTrue(started.wait(10))
+            second = pool.submit(replacement._finish_hold_release, request.task_id)
+            time.sleep(0.3)
+            self.assertFalse(second.done())  # serialized behind the first finisher
+            resume.set()
+            completed = (first.result(timeout=10), second.result(timeout=10))
+        self.assertEqual(completed[0], completed[1])
+        self.assertEqual(writes, [1])  # one projection, not one per finisher
+        await self.assert_settled_once(request, replacement)
+
+    async def test_without_an_audit_target_the_release_still_settles(self):
+        self.audit = None
+        self.service = self.build()
+        request = await self.held_task()
+        result = await self.decide(request)
+        self.assertFalse(result["audit_recorded"])
+        failures, reads = self.service.recovery_failures, self.transport.reads()
+        for _ in range(3):
+            self.clock.advance(30)
+            await self.service.recover_once()
+        self.assertEqual((self.service.recovery_failures, self.transport.reads()), (failures, reads))
+        self.assertEqual(self.owned(request.task_id), [])
+
+    async def test_audit_recorded_without_released_at_is_corrupt(self):
+        request = await self.held_task()
+        with patch.object(self.service.locks, "release_conflict_hold", side_effect=self.Crash):
+            with self.assertRaises(self.Crash):
+                await self.decide(request)
+        path = self.service._release_path(request.task_id)
+        value = json.loads(path.read_text())
+        path.write_text(json.dumps({**value, "audit_recorded": True}))
+        with self.assertRaisesRegex(FanRefusal, "fan_hold_release_corrupt"):
+            self.service._load_release(request.task_id)
+        self.clock.advance(30)
+        await self.service.recover_once()
+        self.assertEqual(self.service.recovery_failures, 1)
+        self.assertEqual([item.conflict_hold for item in self.owned(request.task_id)], [True])
+        self.assertEqual(self.release_entries(), [])
 
 
 class RestartTests(ObservingFixture):
