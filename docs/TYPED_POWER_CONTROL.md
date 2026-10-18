@@ -136,7 +136,8 @@ shared service:
 - derived `observation_status` and `blocking_tasks` receipt hints;
 - the governed Ingress hold release at `/typed/power/<task_id>`.
 
-The hold release is approval-gated, records a fresh readback, writes one
+The hold release is approval-gated, shows the requested and freshly read
+state side by side before approval, records a fresh readback, writes one
 `power_hold_release_action` audit entry and never dispatches. See
 [Typed fan control](TYPED_FAN_CONTROL.md).
 

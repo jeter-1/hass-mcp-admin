@@ -351,7 +351,7 @@ class IngressApprovalApplication:
         # HAMCP-192 decision 6: typed fan/power hold release. ``typed_services``
         # maps kind -> zero-argument callable returning the configured service.
         self._typed_services = typed_services
-        self._typed_csrf: dict[tuple[str, str], tuple[str, str, int, str, str]] = {}
+        self._typed_csrf: dict[tuple[str, str], tuple[str, str, int, str, str, str]] = {}
 
     def create(self) -> Starlette:
         app = Starlette(
@@ -790,7 +790,18 @@ class IngressApprovalApplication:
         item = None
         if service is not None and _TYPED_TASK_ID.fullmatch(task_id):
             try:
-                item = service.hold_release_item(task_id)
+                item = await service.hold_release_review(task_id)
+            except EngineeringServerError:
+                # Releasable, but the fresh readback failed: nothing to approve.
+                return self._response(
+                    _page(
+                        "Typed hold readback unavailable",
+                        "<p>The device could not be read, so the requested and current "
+                        "state cannot be compared. The hold stays in place.</p>",
+                        prefix=prefix,
+                    ),
+                    503,
+                )
             except Exception:
                 item = None
         if item is None:
@@ -811,6 +822,7 @@ class IngressApprovalApplication:
             item["record_generation"],
             item["prepared_hash"],
             item["hold_binding"],
+            item["readback_hash"],
         )
         rows = "".join(
             f"<tr><th>{escape(label)}</th><td><code>{escape(_text(value, 1000))}</code></td></tr>"
@@ -839,16 +851,24 @@ class IngressApprovalApplication:
             )
         )
         action_url = escape(f"{prefix}/typed/{kind}/{task_id}/release", quote=True)
+        comparison = _typed_state_comparison(
+            item["comparison"], item["readback_matches_requested_state"], "Freshly read now"
+        )
         notice = (
-            "<p>Releasing reads the device once and records that readback. It sends no "
-            "command and does not change the manual-review outcome.</p>"
+            "<p>Releasing reads the device once more and records that readback. It sends no "
+            "command and does not change the manual-review outcome. If the device state "
+            "changes before you release, the release is refused and you review again.</p>"
         )
         form = (
             f'<form method="post" action="{action_url}">{hidden}'
             '<button type="submit">release hold after fresh readback</button></form>'
         )
         return self._response(
-            _page("Typed manual-review hold", f"<table>{rows}</table>{notice}{form}", prefix=prefix)
+            _page(
+                "Typed manual-review hold",
+                f"<table>{rows}</table>{comparison}{notice}{form}",
+                prefix=prefix,
+            )
         )
 
     async def typed_release(self, request: Request) -> Response:
@@ -879,7 +899,7 @@ class IngressApprovalApplication:
                 raise ValueError
             generation = int(one("record_generation"))
             hold_binding = one("hold_binding")[:512]
-            if (generation, one("prepared_hash"), hold_binding) != binding[2:]:
+            if (generation, one("prepared_hash"), hold_binding) != binding[2:5]:
                 raise ValueError
             service = self._typed_service(kind)
             if service is None:
@@ -889,6 +909,7 @@ class IngressApprovalApplication:
                 record_generation=generation,
                 prepared_hash=one("prepared_hash")[:64],
                 hold_binding=hold_binding,
+                reviewed_readback_hash=binding[5],
                 authorized_principal=principal,
             )
         except TimeoutError:
@@ -911,10 +932,16 @@ class IngressApprovalApplication:
                 _page("Hold release refused", "<p>The hold was not released.</p>", prefix=prefix),
                 409,
             )
+        comparison = _typed_state_comparison(
+            result.get("comparison") or (),
+            result.get("readback_matches_requested_state") is True,
+            "Recorded readback",
+        )
         return self._response(
             _page(
                 "Hold release recorded",
                 f"<p>{escape(_text(result.get('status'), 96))}</p>"
+                f"{comparison}"
                 "<p>Dispatch: none. Outcome remains "
                 f"{escape(_text(result.get('terminal_outcome'), 96))}.</p>"
                 f'<p><a href="{escape(f"{prefix}/typed", quote=True)}">'
@@ -1040,6 +1067,38 @@ def _text(value: Any, limit: int) -> str:
         for character in raw
     )
     return safe[:limit]
+
+
+def _typed_state_value(value: Any, *, requested: bool) -> str:
+    if value is None:
+        return "any" if requested else "not reported"
+    return _text(str(value), 64)
+
+
+def _typed_state_comparison(rows: Any, matches: bool, read_label: str) -> str:
+    """Requested and read values side by side, with an explicit verdict."""
+
+    body = "".join(
+        "<tr><th>{}</th><td><code>{}</code></td><td><code>{}</code></td><td>{}</td></tr>".format(
+            escape(_text(field, 32)),
+            escape(_typed_state_value(requested, requested=True)),
+            escape(_typed_state_value(read, requested=False)),
+            "same" if requested is None or requested == read else "<strong>DIFFERENT</strong>",
+        )
+        for field, requested, read in rows
+    )
+    verdict = (
+        "The read state matches the requested state."
+        if matches
+        else "The read state DIFFERS from the requested state."
+    )
+    return (
+        f'<h2>Requested state compared with {escape(read_label.lower())}</h2>'
+        '<table class="typed-state-comparison"><thead><tr><th>Field</th>'
+        f"<th>Requested</th><th>{escape(read_label)}</th><th>Comparison</th></tr></thead>"
+        f"<tbody>{body}</tbody></table>"
+        f'<p><strong>{escape(verdict)}</strong></p>'
+    )
 
 
 def _page(title: str, content: str, *, prefix: str | None = None) -> str:

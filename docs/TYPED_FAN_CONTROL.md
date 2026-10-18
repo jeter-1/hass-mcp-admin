@@ -132,7 +132,11 @@ Governed hold release (HAMCP-192). A manual-review hold is never released
 automatically. A Home Assistant administrator can release it at the add-on's
 Ingress page `/typed/fan/<task_id>`. The page shows the exact reviewed facts
 behind a single-use CSRF token bound to the record generation, prepared hash and
-hold generation. Release performs one fresh state readback and records it with
+hold generation. The page also reads the device once and shows the requested
+state and the freshly read state side by side, field by field, with an explicit
+verdict, before the release button; the token is bound to that readback, so a
+state change after review refuses the release until it is reviewed again.
+Release performs one fresh state readback and records it with
 the decision in an additive sidecar (`hold-releases/<task_id>.json`). It then
 clears only that hold and writes one `fan_hold_release_action` audit entry. The
 task outcome stays `manual_review_required`, and the readback match is reported

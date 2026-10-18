@@ -330,29 +330,33 @@ class HoldReleaseServiceTests(ObservingFixture):
         path = self.service.root / "hold-releases" / f"{task_id}.json"
         return json.loads(path.read_text()) if path.exists() else None
 
-    async def release(self, request, principal="home_assistant_admin_ingress:admin-fixture"):
-        item = self.service.hold_release_item(request.task_id)
+    async def release(self, request, principal="home_assistant_admin_ingress:admin-fixture",
+                      review=None):
+        review = review or await self.service.hold_release_review(request.task_id)
         return await self.service.release_hold(
-            request.task_id, record_generation=item["record_generation"],
-            prepared_hash=item["prepared_hash"], hold_binding=item["hold_binding"],
-            authorized_principal=principal)
+            request.task_id, record_generation=review["record_generation"],
+            prepared_hash=review["prepared_hash"], hold_binding=review["hold_binding"],
+            reviewed_readback_hash=review["readback_hash"], authorized_principal=principal)
 
     async def test_release_without_admin_approval_is_refused(self):
         request = await self.held_task()
+        review = await self.service.hold_release_review(request.task_id)
         reads = self.transport.reads()
         for principal in (None, "", "authenticated_connector", "home_assistant_admin_ingress:",
                           "home_assistant_admin_panel"):
             with self.assertRaisesRegex(FanRefusal, "fan_hold_release_authority_required"):
-                await self.release(request, principal)
+                await self.release(request, principal, review)
         self.assertEqual(self.transport.reads(), reads)
         self.assertIsNone(self.sidecar(request.task_id))
         self.assertEqual([item.conflict_hold for item in self.owned(request.task_id)], [True])
 
     async def test_release_records_a_readback_clears_the_hold_and_never_dispatches(self):
         request = await self.held_task()
+        review = await self.service.hold_release_review(request.task_id)
         reads, writes = self.transport.reads(), self.transport.service_calls()
-        result = await self.release(request)
+        result = await self.release(request, review=review)
         self.assertEqual(result["status"], "hold_released_state_differs")
+        self.assertEqual(result["comparison"], [("state", "on", "off"), ("percentage", 50, 0)])
         self.assertFalse(result["readback_matches_requested_state"])
         self.assertEqual(result["terminal_outcome"], "manual_review_required")
         self.assertEqual(result["dispatch"], "none")
@@ -390,8 +394,9 @@ class HoldReleaseServiceTests(ObservingFixture):
         with self.assertRaisesRegex(FanRefusal, "fan_hold_release_unavailable"):
             await self.service.release_hold(
                 request.task_id, record_generation=0, prepared_hash="0" * 64,
-                hold_binding="entity:fan.synthetic:1",
+                hold_binding="entity:fan.synthetic:1", reviewed_readback_hash=review["readback_hash"],
                 authorized_principal="home_assistant_admin_ingress:admin-fixture")
+        self.assertIsNone(await self.service.hold_release_review(request.task_id))
         # Same-ID replay stays reconciliation-only.
         await self.call(request)
         self.assertEqual(self.transport.writes, 1)
@@ -414,19 +419,22 @@ class HoldReleaseServiceTests(ObservingFixture):
 
     async def test_failed_readback_or_stale_binding_changes_nothing(self):
         request = await self.held_task()
-        item = self.service.hold_release_item(request.task_id)
+        item = await self.service.hold_release_review(request.task_id)
         for changed in ({"record_generation": item["record_generation"] + 1},
                         {"prepared_hash": "0" * 64},
                         {"hold_binding": "entity:fan.synthetic:999"}):
             arguments = {"record_generation": item["record_generation"],
                          "prepared_hash": item["prepared_hash"],
-                         "hold_binding": item["hold_binding"], **changed}
+                         "hold_binding": item["hold_binding"],
+                         "reviewed_readback_hash": item["readback_hash"], **changed}
             with self.assertRaisesRegex(FanRefusal, "fan_hold_release_stale"):
                 await self.service.release_hold(
                     request.task_id, authorized_principal="home_assistant_admin_ingress:a", **arguments)
         self.transport.fail_reads = True
         with self.assertRaisesRegex(FanRefusal, "fan_hold_release_readback_unavailable"):
-            await self.release(request)
+            await self.release(request, review=item)
+        with self.assertRaisesRegex(FanRefusal, "fan_hold_release_readback_unavailable"):
+            await self.service.hold_release_review(request.task_id)
         self.assertIsNone(self.sidecar(request.task_id))
         self.assertEqual([item.conflict_hold for item in self.owned(request.task_id)], [True])
         self.assertEqual(self.transport.writes, 1)
@@ -458,6 +466,38 @@ class HoldReleaseServiceTests(ObservingFixture):
                          [self.sidecar(request.task_id)["released_at"]])
         self.assertEqual(self.transport.writes, 1)
 
+    async def test_review_shows_requested_and_freshly_read_state_side_by_side(self):
+        request = await self.held_task()
+        reads, writes = self.transport.reads(), self.transport.writes
+        review = await self.service.hold_release_review(request.task_id)
+        self.assertEqual(self.transport.reads(), reads + 1)  # one fresh, read-only readback
+        self.assertEqual(review["comparison"], [("state", "on", "off"), ("percentage", 50, 0)])
+        self.assertFalse(review["readback_matches_requested_state"])
+        self.assertEqual(review["readback_hash"], digest({
+            "entity_id": "fan.synthetic", "state": "off", "percentage": 0,
+            "supported_features": 49, "last_updated": self.transport.state.get("last_updated"),
+        }))
+        self.transport.reach()
+        review = await self.service.hold_release_review(request.task_id)
+        self.assertEqual(review["comparison"], [("state", "on", "on"), ("percentage", 50, 50)])
+        self.assertTrue(review["readback_matches_requested_state"])
+        self.assertEqual(self.transport.writes, writes)
+        self.assertIsNone(self.sidecar(request.task_id))
+        self.assertEqual([item.conflict_hold for item in self.owned(request.task_id)], [True])
+
+    async def test_state_change_after_review_refuses_the_release(self):
+        request = await self.held_task()
+        review = await self.service.hold_release_review(request.task_id)
+        self.transport.reach()  # the device moves after the reviewer saw "off"
+        with self.assertRaisesRegex(FanRefusal, "fan_hold_release_state_changed"):
+            await self.release(request, review=review)
+        self.assertIsNone(self.sidecar(request.task_id))
+        self.assertEqual([item.conflict_hold for item in self.owned(request.task_id)], [True])
+        self.assertEqual(self.transport.writes, 1)
+        result = await self.release(request)  # a fresh review covers the new state
+        self.assertEqual(result["status"], "hold_released_state_matches")
+        self.assertEqual(result["comparison"], [("state", "on", "on"), ("percentage", 50, 50)])
+
     async def test_invalid_sidecar_fails_closed(self):
         request = await self.held_task()
         path = self.service.root / "hold-releases" / f"{request.task_id}.json"
@@ -484,12 +524,20 @@ class HoldReleaseIngressTests(ObservingFixture):
     def form(html):
         return dict(re.findall(r'name="([a-z_]+)" value="([^"]*)"', html))
 
+    @staticmethod
+    def comparison(html):
+        table = re.search(r'<table class="typed-state-comparison">(.*?)</table>', html, re.S)
+        return [tuple(re.sub(r"<[^>]+>", "", cell) for cell in re.findall(r"<t[hd]>(.*?)</t[hd]>", row))
+                for row in re.findall(r"<tr>(.*?)</tr>", table.group(1), re.S)]
+
     async def test_ingress_release_requires_admin_approval_and_a_fresh_binding(self):
         request = await self.held_task()
         path = f"/typed/fan/{request.task_id}"
+        reads = self.transport.reads()
         for headers in ({"X-Remote-User-Id": ""}, {"X-Ingress-Path": ""}):
             self.assertEqual((await self.client.get("/typed", headers=headers)).status_code, 403)
             self.assertEqual((await self.client.get(path, headers=headers)).status_code, 403)
+        self.assertEqual(self.transport.reads(), reads)  # no review readback without an admin
         listing = await self.client.get("/typed")
         self.assertIn(request.task_id, listing.text)
         self.assertEqual((await self.client.get(f"/typed/fan/{'0' * 32}")).status_code, 404)
@@ -519,11 +567,54 @@ class HoldReleaseIngressTests(ObservingFixture):
         self.assertEqual(released.status_code, 200, released.text)
         self.assertIn("hold_released_state_differs", released.text)
         self.assertIn("Dispatch: none", released.text)
+        self.assertEqual(self.comparison(released.text)[1:], [
+            ("state", "on", "off", "DIFFERENT"), ("percentage", "50", "0", "DIFFERENT")])
         self.assertEqual(self.transport.service_calls(), writes)
-        self.assertEqual(self.transport.reads(), reads + 1)
+        self.assertEqual(self.transport.reads(), reads + 2)  # the review read and the release read
         self.assertEqual(self.owned(request.task_id), [])
         self.assertEqual((await self.client.get(path)).status_code, 404)
         self.assertNotIn(request.task_id, (await self.client.get("/typed")).text)
+
+
+    async def test_review_page_shows_requested_and_fresh_state_side_by_side(self):
+        request = await self.held_task()
+        path = f"/typed/fan/{request.task_id}"
+        review = await self.client.get(path)
+        self.assertEqual(review.status_code, 200)
+        self.assertEqual(self.comparison(review.text), [
+            ("Field", "Requested", "Freshly read now", "Comparison"),
+            ("state", "on", "off", "DIFFERENT"),
+            ("percentage", "50", "0", "DIFFERENT"),
+        ])
+        self.assertIn("<strong>The read state DIFFERS from the requested state.</strong>", review.text)
+        # The comparison precedes the release control.
+        self.assertLess(review.text.index("typed-state-comparison"), review.text.index("<form"))
+
+        # The device moves after review: the decision no longer covers it.
+        self.transport.reach()
+        refused = await self.client.post(path + "/release", data=self.form(review.text))
+        self.assertEqual(refused.status_code, 409)
+        self.assertIn("fan_hold_release_state_changed", refused.text)
+        self.assertEqual([item.conflict_hold for item in self.owned(request.task_id)], [True])
+
+        review = await self.client.get(path)
+        self.assertEqual(self.comparison(review.text)[1:], [
+            ("state", "on", "on", "same"), ("percentage", "50", "50", "same")])
+        self.assertIn("matches the requested state", review.text)
+        released = await self.client.post(path + "/release", data=self.form(review.text))
+        self.assertEqual(released.status_code, 200, released.text)
+        self.assertIn("hold_released_state_matches", released.text)
+        self.assertEqual(self.comparison(released.text)[0][2], "Recorded readback")
+        self.assertEqual(self.transport.writes, 1)
+
+    async def test_review_page_without_a_readback_offers_no_release(self):
+        request = await self.held_task()
+        self.transport.fail_reads = True
+        review = await self.client.get(f"/typed/fan/{request.task_id}")
+        self.assertEqual(review.status_code, 503)
+        self.assertNotIn("<form", review.text)
+        self.assertNotIn("csrf", review.text)
+        self.assertEqual([item.conflict_hold for item in self.owned(request.task_id)], [True])
 
 
 class RestartTests(ObservingFixture):
@@ -587,7 +678,11 @@ class PowerInheritanceTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(Exception, "power_hold_release_authority_required"):
                 await service.release_hold(request.task_id, record_generation=0, prepared_hash="0" * 64,
                                            hold_binding="entity:light.synthetic:1",
+                                           reviewed_readback_hash="0" * 64,
                                            authorized_principal="authenticated_connector")
+            # Power compares the one field it controls.
+            self.assertEqual(service._state_comparison(request, {"state": "off"}),
+                             [("state", "on", "off")])
 
 
 if __name__ == "__main__":

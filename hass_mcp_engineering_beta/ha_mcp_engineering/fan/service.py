@@ -555,6 +555,44 @@ class FanService:
             "updated_at": record.updated_at,
         }
 
+    async def hold_release_review(self, task_id):
+        """The review facts plus one fresh readback, or ``None``.
+
+        The requested and freshly read values are returned field by field so
+        the reviewer sees any difference before deciding. The readback hash
+        binds the decision: a release refuses if the state changed since.
+        """
+        item = self.hold_release_item(task_id)
+        if item is None:
+            return None
+        prepared = self.load(task_id)
+        state, matches, readback_hash = await self._fresh_readback(prepared)
+        return {**item, "comparison": self._state_comparison(prepared.request, state),
+                "readback_matches_requested_state": matches, "readback_hash": readback_hash}
+
+    async def _fresh_readback(self, prepared):
+        """One read through the adapter's own observation read; never dispatches."""
+        inner = self.adapter.inner
+        try:
+            state = await inner.core.read(
+                lambda check: inner.provider.state(prepared.request.entity_id, check,
+                                                   contract=prepared.provider_contract), prepared,
+            )
+            matches = inner.desired(prepared.request, state) is True
+            readback_hash = validate_sha256(digest(state), field_name="readback_state_fingerprint")
+        except Exception:
+            raise self.refusal("fan_hold_release_readback_unavailable") from None
+        return state, matches, readback_hash
+
+    @staticmethod
+    def _state_comparison(request, state):
+        """(field, requested, freshly read) rows in the readback's own fields."""
+        percentage = getattr(request, "percentage", None)
+        off = request.action == "turn_off" or percentage == 0
+        requested = {"state": "off" if off else "on", "percentage": percentage}
+        fields = ("state", "percentage") if "percentage" in state else ("state",)
+        return [(field, requested[field], state[field]) for field in fields]
+
     def _release_recorded(self, task_id):
         # Any sidecar, valid or not, ends releasability; an invalid one fails closed.
         return self._release_path(task_id).exists()
@@ -573,12 +611,14 @@ class FanService:
         return items
 
     async def release_hold(self, task_id, *, record_generation, prepared_hash,
-                           hold_binding, authorized_principal):
+                           hold_binding, reviewed_readback_hash, authorized_principal):
         """Release one manual-review hold on an Ingress administrator decision.
 
-        The decision is the external approval. A fresh readback is recorded
-        first and reported truthfully; the task's outcome stays
-        ``manual_review_required``. No provider dispatch is reachable here.
+        The decision is the external approval of the reviewed readback. A
+        fresh readback is recorded first and reported truthfully; it must
+        equal the reviewed one, so the decision covers exactly the state that
+        was shown. The task's outcome stays ``manual_review_required``. No
+        provider dispatch is reachable here.
         """
         if (not isinstance(authorized_principal, str)
                 or not len(ADMIN_INGRESS_PREFIX) < len(authorized_principal) <= 180
@@ -591,13 +631,9 @@ class FanService:
         if binding != (item["record_generation"], item["prepared_hash"], item["hold_binding"]):
             raise self.refusal("fan_hold_release_stale")
         prepared = self.load(task_id)
-        try:
-            observation = await self.adapter.inner.observe(prepared, None)
-            matches = observation.intended_result_observed is True
-            readback_hash = validate_sha256(observation.readback_state_fingerprint,
-                                            field_name="readback_state_fingerprint")
-        except Exception:
-            raise self.refusal("fan_hold_release_readback_unavailable") from None
+        state, matches, readback_hash = await self._fresh_readback(prepared)
+        if readback_hash != reviewed_readback_hash:
+            raise self.refusal("fan_hold_release_state_changed")
         hold_key, _, generation = hold_binding.rpartition(":")
         release = {
             "model": HOLD_RELEASE_MODEL, "task_id": task_id, "prepared_hash": prepared_hash,
@@ -622,6 +658,7 @@ class FanService:
         return {"status": outcome, "task_id": task_id,
                 "readback_matches_requested_state": matches,
                 "readback_evidence_hash": readback_hash,
+                "comparison": self._state_comparison(prepared.request, state),
                 "terminal_outcome": record.normalized_outcome, "dispatch": "none"}
 
     def _finish_hold_release(self, task_id, release):

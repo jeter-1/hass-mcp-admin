@@ -220,24 +220,33 @@ external approval.
      whose hold is settled: exactly the entity hold, owned by the task.
    - It shows the receipt facts, the hold token, and the last recorded
      readback.
+   - **Amendment 2:** it also performs one fresh, read-only readback and
+     shows the REQUESTED state and the FRESHLY READ state side by side,
+     field by field (`state`; plus `percentage` for fan), with a per-field
+     `same`/`DIFFERENT` column and an explicit verdict line, above the
+     release button. If that read fails, the page is a 503 with no form.
    - It issues a single-use CSRF token bound to: principal, record event
-     count, prepared operation hash, and `entity:<id>:<generation>`.
+     count, prepared operation hash, `entity:<id>:<generation>`, and
+     (amendment 2) the reviewed readback hash.
    - A `/typed` list page shows held typed tasks.
 2. **Decide (POST `/typed/{kind}/{task_id}/release`).**
    - The form must be urlencoded and within the size bounds.
    - The token must match: principal, event count, prepared hash and hold
      binding. Otherwise 400 (stale or invalid). This POST is the external
      approval.
-3. **`FanService.release_hold(task_id, *, record_generation, prepared_hash, hold_binding, authorized_principal)`:**
+3. **`FanService.release_hold(task_id, *, record_generation, prepared_hash, hold_binding, reviewed_readback_hash, authorized_principal)`:**
    1. Refuse unless the principal starts with
       `home_assistant_admin_ingress:`. A direct call without the Ingress
       principal is refused.
    2. Refuse unless the task is not active, is terminal
       `manual_review_required`, the prepared hash matches, the hold is
       settled and matches the binding, and no release has been recorded.
-   3. **Fresh readback:** one read through the inner adapter's `observe`
-      (`core.read` → `provider.state`). If the read fails, the release is
-      refused and nothing changes.
+   3. **Fresh readback:** one read through the inner adapter's own
+      observation read (`core.read` → `provider.state`). If the read fails,
+      the release is refused and nothing changes. **Amendment 2:** if its
+      hash differs from the reviewed readback hash, the device moved after
+      review; the release is refused (`<kind>_hold_release_state_changed`)
+      and nothing changes. The reviewer reviews again.
    4. Under the declaration transaction, re-check the reviewed facts, then
       atomically write the release sidecar
       `<namespace>/hold-releases/<task_id>.json` with `released_at: null`:
@@ -297,6 +306,30 @@ external approval.
   released task it finds no owned hold, so its recovery counts one
   `recovery_failures` per sweep for that task. It never dispatches.
 
+### Amendment 2 — requested and fresh state side by side (Josh, 2026-10-18)
+
+- **Requirement (Josh):** the hold-release review page shows the REQUESTED
+  state and the FRESHLY READ state side by side, so any difference is
+  unmistakable before approval. Josh also confirmed that release is allowed
+  when the fresh read differs (`hold_released_state_differs`, the task stays
+  `manual_review_required`).
+- **Implementation:** `FanService.hold_release_review` returns the review
+  facts plus one fresh readback through the same read path as observation,
+  as `(field, requested, freshly read)` rows. The requested values come from
+  the prepared request with the adapter's own `desired` semantics (`off`
+  for `turn_off` or percentage 0; percentage only for fan; `any` when the
+  request did not fix it). The result page repeats the comparison for the
+  recorded readback.
+- **Binding:** the CSRF binding carries the reviewed readback hash, and
+  `release_hold` refuses if its own fresh readback differs. The decision
+  therefore covers exactly the state that was shown. This adds a refusal
+  only; it adds no write, dispatch or stored field.
+- **Read reachability:** the review GET now performs one provider read
+  (`ha_get_state`) after `_require_admin`. A request without Ingress and an
+  administrator gets 403 and causes no read (tested).
+- **Files:** `R/fan/service.py`, `R/approval_web.py` (both already on the
+  list). No new file.
+
 ## 8. Tests and mutations
 
 New tests are in `tests/test_hamcp192_observing_fix.py`. They use a
@@ -313,13 +346,15 @@ deterministic fake clock and a fake sleep, and offline fixtures.
 | hold release | Ingress admin approval required (403, 400 stale CSRF, direct call refused without the admin principal); readback recorded; hold cleared; audit entries; no dispatch; terminal outcome unchanged; mismatching readback recorded truthfully; interrupted release finished by `reconcile` |
 | restart mid-observation | process loss during the inline poll; a replacement service verifies after the claim expires, with no second dispatch |
 | F3 default | executor without the flag keeps the pre-read deadline check |
+| side-by-side review (amendment 2) | the review page and the release result show requested vs freshly read values per field with `same`/`DIFFERENT` and a verdict, before the form; a state change after review refuses the release (409) and changes nothing; a failed review read gives 503 with no form; no read without an admin |
 
 Each mutation must make at least one test fail:
 
 - deadline checked before the final read;
 - lease left at 120 s;
 - release without approval (principal check removed);
-- release dispatches.
+- release dispatches;
+- (amendment 2) the review page omits the side-by-side comparison.
 
 ## 9. HAMCP-162 overlap
 
@@ -333,3 +368,21 @@ Each mutation must make at least one test fail:
 - Per the task, `origin/main` is merged (a merge commit, no rebase) after
   HAMCP-162 lands and before the release is materialized. This PR then takes
   the next beta.
+
+### Merge record (2026-10-18)
+
+- `origin/main` at `020bfd8` (HAMCP-162 beta.16 #267, HAMCP-171 report #276,
+  HAMCP-200 beta.17 #274) was merged with a merge commit. **There were no textual
+  conflicts.** Main changed none of this PR's files (`R/f3/executor.py`,
+  `R/fan/`, `R/power/`, `R/approval_web.py` and the typed test modules are
+  untouched on main since the base `e4ac184`).
+- **HAMCP-200 typed `Route`:** this PR adds or touches **no** Engineering
+  REST or WebSocket call. Every state read in the inline poll, the sweep,
+  the deadline final read, the hold-release review read and the release
+  readback goes through the reviewed delegated provider tool `ha_get_state`
+  (`providers/upstream_fan.py`/`upstream_power.py` → `core.read`), which
+  builds no Home Assistant URL. There is therefore nothing to convert to
+  `rest_path`. The `Route(...)` entries in `R/approval_web.py` are Starlette
+  Ingress routes for this add-on's own pages, not Home Assistant routes.
+- HAMCP-171's runtime PR (#277, beta.18 planned) was still an open draft at
+  merge time; its recovery-sweep change is not in this branch.
