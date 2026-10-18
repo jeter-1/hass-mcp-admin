@@ -106,16 +106,71 @@ and point to supported task retrieval.
 Active owners take precedence over recovery. Owner loss before intent cancels
 without dispatch; after intent, recovery reads only. A declaration visible before
 its executor claims ownership remains pending until the original operation ID
-expires; this prevents another process from cancelling still-authorized work. Verification has a
-180-second evidence deadline and six observation/verification attempts. A late
-or unresolved outcome becomes manual review and retains conflict protection only
-for the exact unresolved fan. Core and ha-mcp availability dependencies remain
+expires; this prevents another process from cancelling still-authorized work.
+
+Observation (HAMCP-192). After dispatch the request polls the fan's state for up
+to about 10 seconds (reads at 0, 1, 2, 4, 6, 8 and 10 s) and verifies on the
+first exact match. A fan that is still settling returns an `observing` receipt.
+Its entity lease is 30 seconds, renewed every 10 seconds while owned, so the
+30-second recovery sweep re-reads it within about a minute and then every sweep.
+Verification keeps the 180-second evidence deadline. Failed or incomplete reads
+keep the six-attempt bound. The deadline is never decided before reading: the
+first sweep at or after the deadline performs one final read. A match verifies;
+otherwise the task becomes manual review and retains conflict protection only
+for the exact unresolved fan.
+
+Receipts add derived hints and do not change any stored format.
+`observation_status` reports why the task is observing, the evidence deadline,
+the earliest next re-read (`next_reobservation_not_before`), the attempt count,
+and the last-observed and verified timestamps. A `lock_conflict` receipt names
+each blocking task in `blocking_tasks`: task ID, lock key, state,
+`lease_status`, expected release time and how it releases. The list uses the
+lock store's own acquisition predicate, so it names exactly the holders that
+caused the refusal. A holder blocks when it is a conflict hold, when either
+side is exclusive, or when its lease has expired: expiry alone never frees a
+key, even between two shared holders, until task-aware recovery releases,
+transfers or holds it. `lease_status` is `active` (expected release at the
+lease expiry), `conflict_hold` (expected release `null`; a governed release is
+required) or `expired_pending_recovery` (expected release `null`,
+`lease_expired_at` gives the expiry, and the recovery sweep reconciles it). A new command
+on a held fan is still refused; it is never queued and never supersedes the
+holder.
+
+Governed hold release (HAMCP-192). A manual-review hold is never released
+automatically. It can be released at the add-on's Ingress page
+`/typed/fan/<task_id>`. The page uses the same Ingress identity check as the
+existing approval pages; the system-wide Home Assistant administrator-role
+check for every approval page is deferred to HAMCP-205. The page shows the exact reviewed facts
+behind a single-use CSRF token bound to the record generation, prepared hash and
+hold generation. The page also reads the device once and shows the requested
+state and the freshly read state side by side, field by field, with an explicit
+verdict, before the release button; the token is bound to that readback, so a
+state change after review refuses the release until it is reviewed again.
+Release performs one fresh state readback and records it with
+the decision in an additive sidecar (`hold-releases/<task_id>.json`). It then
+clears only that hold and writes one `fan_hold_release_action` audit entry.
+The audit entry is written exactly once: its event ID derives from a stable
+`hold_release_id` over the authorized decision, the audit logger deduplicates
+by that ID, and the sidecar's `audit_recorded` is set only after a confirmed
+write. A crash or a failed audit write at any step is finished by recovery
+without a second entry. With auditing disabled, the release completes with
+`audit_recorded: false` and `audit_unrecorded_reason: audit_disabled` (a
+failed write reports `audit_write_failed`); once auditing is enabled again,
+recovery backfills the missing entry once and sets `audit_recorded`. The
+"exactly once" guarantee covers the retained audit log (the live file and its
+`.1` rotation). The
+task outcome stays `manual_review_required`, and the readback match is reported
+truthfully. Release never dispatches. Recovery may finish an interrupted release
+from the sidecar without any provider access. An invalid sidecar fails closed
+and keeps the hold.
+
+Core and ha-mcp availability dependencies remain
 locked during active execution, but are released atomically when the target's
 non-expiring hold is retained. A failed local settlement keeps the previous lock
 set intact for fenced, read-only reconciliation; it never permits redispatch.
 Task receipts expose retained keys and generations; health counts ordinary locks
 and holds separately. Already settled holds do not consume the recovery budget;
-there is no automated second action or lock override. External actors can still
+there is no automated second action, lock override or automatic hold release. External actors can still
 change the fan between the final preread and dispatch: this is not an atomic
 compare-and-set against Home Assistant or outside editors.
 

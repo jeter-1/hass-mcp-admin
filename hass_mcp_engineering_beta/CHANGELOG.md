@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.4.1-beta.19 - Prompt verification of slow typed fan and power devices (HAMCP-192)
+
+Builds on 2.4.1-beta.18.
+
+- Poll the entity inline for about 10 seconds after a typed fan or power
+  dispatch (reads at about 0, 1, 2, 4, 6, 8 and 10 s, at most 7) and verify
+  on the first match. A device that reports a few seconds late is now
+  `succeeded_verified` in the original call instead of `observing`.
+- Shorten the typed fan/power entity lease from 120 s to 30 s, renewed every
+  10 s, so a task that does yield `observing` is re-read by the first sweep
+  after about 40-70 s.
+- Make one final read at or after the 180 s evidence deadline before any
+  manual-review decision (`final_read_at_deadline`, opt-in, used only by the
+  typed services). F3 governed executions are unchanged.
+- Keep `lock_conflict` with no superseding, and name the blocking task in the
+  receipt (`blocking_tasks`, `blocking_tasks_observed_at`, `lease_status`).
+  The hints and the lock check share one predicate
+  (`DurableLockStore.holder_blocks`), so an expired lease that recovery has
+  not yet reconciled is named as `expired_pending_recovery`.
+- Add derived, additive receipt hints: `observation_status` and, for manual
+  review, `hold_release`.
+- Add a governed hold release for a manual-review typed task on the Ingress
+  page `/typed`. It shows the requested and freshly read state side by
+  side, needs the Ingress principal and a single-use token bound to the reviewed
+  facts and readback, refuses if the state changed after review, records a
+  fresh readback in an additive sidecar and exactly one audit entry (keyed by
+  a stable `hold_release_id`, retried by recovery after a crash or failed
+  write, `audit_recorded` set only after an enabled audit logger confirms the
+  write, otherwise `false` with `audit_disabled` or `audit_write_failed` and
+  backfilled by recovery once auditing is enabled), and never dispatches. The outcome stays `manual_review_required`, reported as
+  `hold_released_state_matches` or `hold_released_state_differs`. The
+  administrator-role check for every approval page, including `/typed`, is
+  deferred to HAMCP-205.
+- Preserve the catalog, input schemas, signed registries, HOLD, support
+  window, existing persisted formats, workflows and stable v1.
+
 ## 2.4.1-beta.18 - Health verdict cache and sweep parent reads (HAMCP-171)
 
 Builds on 2.4.1-beta.17's typed, registered REST routes (HAMCP-200). Josh's 2026-10-18 decisions D1–D6 apply.

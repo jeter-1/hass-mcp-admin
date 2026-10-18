@@ -1,5 +1,20 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.19** verifies slow typed fan and power devices
+promptly (HAMCP-192). After dispatch it polls the entity inline for about 10
+seconds and verifies on the first match, so a device that reports a few
+seconds late is `succeeded_verified` instead of `observing`. The typed entity
+lease is 30 s instead of 120 s, so a task that still yields is re-read within
+about a minute, and one final read at the evidence deadline decides verified
+or manual review. A `lock_conflict` receipt names the blocking task using the
+lock check's own predicate, and receipts gain additive `observation_status`
+hints. A manual-review hold can be released only on the Ingress page `/typed`,
+which shows the requested and freshly read state side by side; the release
+records a fresh readback and exactly one audit entry, never dispatches and
+keeps the outcome `manual_review_required`.
+
+It builds on beta.18 below.
+
 Engineering **2.4.1-beta.18** makes `get_server_health` much cheaper on
 large plan stores (HAMCP-171). Health reuses, in process memory only, the
 safety verdict of each unchanged persisted plan record. The verdict is keyed
@@ -169,7 +184,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.17 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.19 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

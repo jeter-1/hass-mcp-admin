@@ -578,7 +578,7 @@ class PowerCandidateContractTests(unittest.IsolatedAsyncioTestCase):
                 assert method == 'GET' and path.startswith('/states/')
                 return deepcopy(transport.states[path.removeprefix('/states/')])
         with tempfile.TemporaryDirectory() as directory:
-            service = PowerService(directory,PowerProvider(transport,lambda *args:transport.authority),PowerCoreAuthority(core),now=clock)
+            service = PowerService(directory,PowerProvider(transport,lambda *args:transport.authority),PowerCoreAuthority(core),now=clock, sleep=clock.sleep)
             telemetry, token = begin_request('synthetic-container-lane')
             try:
                 result = await lane.power_contract(service,Rest(),telemetry,'synthetic',Path(directory),version)

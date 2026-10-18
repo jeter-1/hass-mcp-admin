@@ -199,6 +199,10 @@ class ApprovalThemeTests(unittest.TestCase):
                 "/f3": frozenset({"GET", "HEAD"}),
                 "/f3/{child_id}": frozenset({"GET", "HEAD"}),
                 "/f3/{child_id}/reconcile": frozenset({"POST"}),
+                # HAMCP-192 decision 6: governed fan/power hold release.
+                "/typed": frozenset({"GET", "HEAD"}),
+                "/typed/{kind}/{task_id}": frozenset({"GET", "HEAD"}),
+                "/typed/{kind}/{task_id}/release": frozenset({"POST"}),
             },
         )
 

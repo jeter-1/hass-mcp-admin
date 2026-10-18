@@ -26,7 +26,7 @@ class RecoveryFixture:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.clock, self.core, self.transport = Clock(), Core(), Transport()
-        self.service = FanService(self.tmp.name, FanProvider(self.transport, lambda: self.transport.authority), FanCoreAuthority(self.core), now=self.clock)
+        self.service = FanService(self.tmp.name, FanProvider(self.transport, lambda: self.transport.authority), FanCoreAuthority(self.core), now=self.clock, sleep=self.clock.sleep)
         self.addAsyncCleanup(self.service.close)
         self.telemetry, token = begin_request('independent-synthetic-request')
         self.addCleanup(end_request, token)
@@ -123,7 +123,7 @@ class AuditProbe(unittest.TestCase):
             settings = settings_for(directory)
             clock, core, transport = Clock(), Core(), Transport()
             audit = AuditLogger(settings.audit_path, SECRET)
-            service = FanService(directory, FanProvider(transport, lambda: transport.authority), FanCoreAuthority(core), now=clock, audit=audit)
+            service = FanService(directory, FanProvider(transport, lambda: transport.authority), FanCoreAuthority(core), now=clock, sleep=clock.sleep, audit=audit)
             server = create_mcp_server(settings)
             server.tool()(control_fan)
             inner = server.streamable_http_app()
@@ -161,7 +161,7 @@ class HoldRecoveryTests(RecoveryFixture, unittest.IsolatedAsyncioTestCase):
     async def test_reconstruction_preserves_target_and_generation(self):
         request = await self.unresolved()
         before = self.service.locks.records()
-        rebuilt = FanService(self.tmp.name, self.service.provider, self.service.core, now=self.clock)
+        rebuilt = FanService(self.tmp.name, self.service.provider, self.service.core, now=self.clock, sleep=self.clock.sleep)
         self.addAsyncCleanup(rebuilt.close)
         self.clock.advance(86400)
         await rebuilt.recover_once()
@@ -256,7 +256,7 @@ class LifecycleAuditTests(unittest.IsolatedAsyncioTestCase):
         self.audit = AuditLogger(str(self.audit_path), 'synthetic-secret-never-export')
         self.clock, self.core, self.transport = Clock(), Core(), Transport()
         self.provider = FanProvider(self.transport, lambda: self.transport.authority)
-        self.service = FanService(self.tmp.name, self.provider, FanCoreAuthority(self.core), now=self.clock, audit=self.audit)
+        self.service = FanService(self.tmp.name, self.provider, FanCoreAuthority(self.core), now=self.clock, sleep=self.clock.sleep, audit=self.audit)
         self.addAsyncCleanup(self.service.close)
         self.telemetry, self.token = begin_request('synthetic-original-request')
         self.addCleanup(end_request, self.token)
@@ -293,7 +293,7 @@ class LifecycleAuditTests(unittest.IsolatedAsyncioTestCase):
         request = self.request()
         await self.call(request)
         before = self.entries()
-        rebuilt = FanService(self.tmp.name, self.provider, self.service.core, now=self.clock, audit=self.audit)
+        rebuilt = FanService(self.tmp.name, self.provider, self.service.core, now=self.clock, sleep=self.clock.sleep, audit=self.audit)
         self.addAsyncCleanup(rebuilt.close)
         for _ in range(3):
             await rebuilt.reconcile(request.task_id)
@@ -332,7 +332,7 @@ class LifecycleAuditTests(unittest.IsolatedAsyncioTestCase):
         # A fresh context has no ordinary authorization and a different request.
         _, token = begin_request('synthetic-unrelated-background')
         try:
-            rebuilt = FanService(self.tmp.name, self.provider, self.service.core, now=self.clock, audit=self.audit)
+            rebuilt = FanService(self.tmp.name, self.provider, self.service.core, now=self.clock, sleep=self.clock.sleep, audit=self.audit)
             self.addAsyncCleanup(rebuilt.close)
             await rebuilt.recover_once()
             self.assertEqual(rebuilt.receipt(request.task_id)['state'], 'succeeded_verified')

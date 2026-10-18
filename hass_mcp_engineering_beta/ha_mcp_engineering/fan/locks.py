@@ -2,6 +2,9 @@
 from ..f3.locks import DurableLockStore, LockOwnershipError
 from ..f3.models import LockHandle, LockOwner, LockTiming, LockToken
 
+# HAMCP-192 decision 2: the one fan/power entity lease (renewed every 10 s).
+FAN_LOCK_TIMING = LockTiming(30, 10, 0)
+
 
 class FanLockStore(DurableLockStore):
     def __init__(self, root, declaration):
@@ -45,7 +48,7 @@ class FanLockStore(DurableLockStore):
             LockHandle(owner, tuple(LockToken(item.key, item.generation, item.mode)
                                     for item in owned),
                        min(item.acquired_at for item in owned),
-                       min(item.lease_expires_at for item in owned), LockTiming(120, 10, 0)),
+                       min(item.lease_expires_at for item in owned), FAN_LOCK_TIMING),
             reason_code="manual_review_unresolved_dispatch",
         )
 
