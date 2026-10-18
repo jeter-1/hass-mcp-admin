@@ -17,6 +17,7 @@ from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.capabilities import (  # noqa: E402
     build_capability_catalog,
     capability_for_tool,
+    replace_dynamic_upstream_capabilities,
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
@@ -520,6 +521,11 @@ class McpOutcomeClassificationTests(unittest.TestCase):
             for tool in registered_tools(get_registered_server()).values()
         }
         self.assertEqual(len(tools), 59)
+        # The counts below are the static catalog; start from the module's
+        # initial empty dynamic snapshot rather than whatever an earlier test
+        # module's gateway published in this process.
+        replace_dynamic_upstream_capabilities((), {})
+        self.addCleanup(replace_dynamic_upstream_capabilities, (), {})
         catalog = build_capability_catalog()
         self.assertEqual(catalog["registered_count"], 59)
         self.assertEqual(catalog["count"], 25)
