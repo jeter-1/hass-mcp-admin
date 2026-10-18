@@ -11,6 +11,7 @@ import re
 import time
 from typing import Any
 
+from ..clients.paths import rest_path
 from ..clients.rest import ExpectedHttpStatus
 from ..dependency.models import SOURCE_TYPES
 from ..dependency.service import select_dependency_findings
@@ -553,7 +554,9 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
     async def _exact_state(self, entity_id: str) -> tuple[dict[str, Any] | None, bool]:
         try:
             value = await self.rest_client.request(
-                "GET", f"/states/{entity_id}", expected_statuses=frozenset({404})
+                "GET",
+                rest_path("/states/{}", entity_id, kinds=("entity_id",)),
+                expected_statuses=frozenset({404}),
             )
         except EntityNotFoundError:
             return None, True

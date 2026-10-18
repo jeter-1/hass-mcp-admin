@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import time
 from typing import Any
 
+from ..clients.paths import rest_path
 from .authority import BUILD_TIMEOUT_SECONDS, dependency_build_authority
 from .index import DependencyIndex
 from .provider import DirectHaDependencyProvider
@@ -74,7 +75,7 @@ class DependencyAnalysisRuntime:
             deadline = time.monotonic() + BUILD_TIMEOUT_SECONDS
             async with asyncio.timeout(BUILD_TIMEOUT_SECONDS):
                 with self._build_scope(deadline):
-                    return await provider.rest_client.request("GET", "/config")
+                    return await provider.rest_client.request("GET", rest_path("/config"))
 
         return await self.require().index.prewarm(connectivity_check)
 

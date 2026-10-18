@@ -4,47 +4,35 @@ Runs as a Home Assistant add-on. Talks to HA Core through the Supervisor
 proxy (REST + WebSocket) using the injected SUPERVISOR_TOKEN, so no
 long-lived access token is required.
 
-Exposes a streamable-HTTP MCP endpoint protected by a secret URL path:
-
-    https://<your-tunnel-domain>/<access_secret>/mcp
-
-Designed for ChatGPT, Claude, and other streamable-HTTP MCP clients.
+This module only defines compatibility tool implementations. It has no
+executable entry point: the canonical application (``python -m
+ha_mcp_engineering``) is the sole server, owning inbound authentication,
+rate limiting and audit (HAMCP-200 finding 15).
 """
 
 import json
-import logging
 import os
 import re
-import sys
 import time
 from collections.abc import Mapping
-from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
-import ipaddress
-import threading
 from typing import Any, Optional
 
-import uvicorn
-
-from ..audit import (
-    AUTH_FAILURE_EVENT,
-    AUTH_FAILURE_THROTTLED_EVENT,
-    RATE_LIMITED_EVENT,
-)
 from ..capabilities import build_capability_catalog, build_server_metadata
 from ..clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
 from ..clients.logbook import LOGBOOK
+from ..clients.paths import Route, rest_path
 from ..configuration import load_settings
 from ..health import HEALTH
+from ..identifiers import require_automation_config_id, require_entity_id
 from ..dependency import DEPENDENCY_ANALYSIS
 from ..errors import ErrorCode, GovernanceError, HomeAssistantApiError
-from ..logging_config import get_logger, log_event
+from ..logging_config import get_logger
 from ..mcp_server import create_mcp_server
 from ..models.responses import dump_json
 from ..sanitization import sanitize_untrusted_data
 from ..trace_normalization import fetch_normalized_trace_list
 from ..tool_framework import run_structured
-from ..routing import MAX_BUCKET_STORE_SIZE, resolve_client_address
 from ..providers.upstream_dashboard import UPSTREAM_DASHBOARD
 
 # ---------------------------------------------------------------------------
@@ -77,7 +65,7 @@ LOGGER = get_logger("compatibility")
 # ---------------------------------------------------------------------------
 
 
-async def rest(method: str, path: str, body: Any = None, raw: bool = False) -> Any:
+async def rest(method: str, path: Route, body: Any = None, raw: bool = False) -> Any:
     return await REST_CLIENT.request(method, path, body=body, raw=raw)
 
 
@@ -143,7 +131,7 @@ async def server_info(check_ha: bool = True) -> str:
         else:
             started = time.monotonic()
             try:
-                config = await rest("GET", "/config")
+                config = await rest("GET", rest_path("/config"))
                 connection = {
                     "checked": True,
                     "status": "connected",
@@ -206,7 +194,7 @@ async def get_server_health(check_ha: bool = True) -> str:
         else:
             connection = {"checked": True}
             try:
-                config = await rest("GET", "/config")
+                config = await rest("GET", rest_path("/config"))
                 connection.update(
                     {
                         "status": "connected",
@@ -265,13 +253,16 @@ async def get_server_health(check_ha: bool = True) -> str:
 @mcp.tool()
 async def get_entity(entity_id: str) -> str:
     """Get full current state and all attributes for one entity."""
-    normalized_entity_id = entity_id.strip().lower()
-    if not re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", normalized_entity_id):
-        raise ValueError("entity_id must be a canonical Home Assistant entity ID")
+    normalized_entity_id = require_entity_id(
+        entity_id.strip().lower() if isinstance(entity_id, str) else entity_id
+    )
     return await run_structured(
         "get_entity",
         "Returned the requested Home Assistant entity state.",
-        lambda: rest("GET", f"/states/{normalized_entity_id}"),
+        lambda: rest(
+            "GET",
+            rest_path("/states/{}", normalized_entity_id, kinds=("entity_id",)),
+        ),
         metadata={"resource_type": "entity", "resource_id": normalized_entity_id},
         response_limit=SETTINGS.response_size_limit,
     )
@@ -295,7 +286,7 @@ async def search_entities(query: str = "", domain: str = "", limit: int = 50) ->
     if normalized_domain and not re.fullmatch(r"[a-z0-9_]+", normalized_domain):
         raise ValueError("domain must be empty or a canonical Home Assistant domain")
 
-    states = await rest("GET", "/states")
+    states = await rest("GET", rest_path("/states"))
     if not isinstance(states, list):
         raise HomeAssistantApiError(
             details={"endpoint_category": "states_inventory", "status": "malformed_response"}
@@ -349,10 +340,13 @@ async def get_history(entity_id: str, hours: float = 24, minimal: bool = True) -
             f"Refused: {hours}h exceeds the 168h (7-day) per-call limit. "
             "Chunk the range into multiple calls to stay inside gateway timeouts."
         )
-    start = _utc(hours)
-    path = f"/history/period/{start}?filter_entity_id={entity_id}"
+    require_entity_id(entity_id)
+    query = [("filter_entity_id", entity_id)]
     if minimal:
-        path += "&minimal_response&no_attributes"
+        query += [("minimal_response", None), ("no_attributes", None)]
+    path = rest_path(
+        "/history/period/{}", _utc(hours), kinds=("timestamp",), query=query
+    )
     data = await rest("GET", path)
     return dump(data)
 
@@ -499,7 +493,7 @@ async def get_error_log(tail_lines: int = 200) -> str:
 async def render_template(template: str) -> str:
     """Render a Jinja2 template against live HA state. Use this to test
     template logic before putting it in an automation."""
-    return await rest("POST", "/template", {"template": template}, raw=True)
+    return await rest("POST", rest_path("/template"), {"template": template}, raw=True)
 
 
 @mcp.tool()
@@ -541,7 +535,7 @@ async def list_automations(query: str = "", limit: int = 100) -> str:
     the internal id needed for config edits and traces. Optional substring
     filter on entity_id/friendly_name — prefer filtering over full dumps to
     save context."""
-    states = await rest("GET", "/states")
+    states = await rest("GET", rest_path("/states"))
     q = query.lower()
     autos = []
     for s in states:
@@ -571,7 +565,10 @@ async def get_automation_config(automation_id: str) -> str:
     automation, by internal id. If the result contains 'use_blueprint', the
     actual logic lives in the blueprint — read it with get_blueprint before
     reasoning about behavior."""
-    return dump(await rest("GET", f"/config/automation/config/{automation_id}"))
+    require_automation_config_id(automation_id)
+    return dump(
+        await rest("GET", rest_path("/config/automation/config/{}", automation_id))
+    )
 
 
 # ----- Blueprints ------------------------------------------------------------
@@ -657,7 +654,7 @@ async def delete_automation(automation_id: str, confirm: bool = False) -> str:
 async def check_config() -> str:
     """Run HA's full configuration check. Returns 'valid' or the errors.
     Run this after config writes and before any restart."""
-    return dump(await rest("POST", "/config/core/check_config"))
+    return dump(await rest("POST", rest_path("/config/core/check_config")))
 
 
 @mcp.tool()
@@ -750,7 +747,7 @@ async def search_services(query: str, limit: int = 30) -> str:
     description. Returns slim results (service, description, field names
     only) — use this for discovery, then list_services(domain) for full
     field schemas. Much cheaper on context than list_services."""
-    services = await rest("GET", "/services")
+    services = await rest("GET", rest_path("/services"))
     requested_limit = int(limit)
     effective_limit = max(1, min(requested_limit, 100))
     q = query.lower()
@@ -798,7 +795,7 @@ async def list_services(domain: str = "") -> str:
     """All available services with FULL field schemas — large output. For
     discovery, use search_services first; only call this (with a domain
     filter) when you need complete field metadata."""
-    services = await rest("GET", "/services")
+    services = await rest("GET", rest_path("/services"))
     if domain:
         services = [s for s in services if s.get("domain") == domain]
     maximum_services = 50
@@ -868,228 +865,3 @@ async def get_audit_log(lines: int = 50, event: str = "") -> str:
                 continue
             rows.append(row)
     return "".join(rows) or "No matching entries."
-
-
-# ---------------------------------------------------------------------------
-# ASGI gateway: secret-path auth + rate limiting + audit logging
-# ---------------------------------------------------------------------------
-
-AUDIT_PATH = os.environ.get("AUDIT_PATH", "/data/audit.jsonl")
-AUDIT_MAX_BYTES = 5 * 1024 * 1024
-RATE_PER_MINUTE = int(OPTS.get("rate_limit_per_minute", 120))
-RATE_BURST = int(OPTS.get("rate_limit_burst", 25))
-
-
-class TokenBucket:
-    def __init__(self, per_minute: float, burst: float):
-        self.rate = per_minute / 60.0
-        self.cap = burst
-        self.tokens = burst
-        self.last = time.monotonic()
-
-    def allow(self) -> bool:
-        now = time.monotonic()
-        self.tokens = min(self.cap, self.tokens + (now - self.last) * self.rate)
-        self.last = now
-        if self.tokens >= 1:
-            self.tokens -= 1
-            return True
-        return False
-
-
-def audit_write(entry: dict) -> None:
-    entry = {"ts": datetime.now(timezone.utc).isoformat(), **entry}
-    try:
-        if os.path.exists(AUDIT_PATH) and os.path.getsize(AUDIT_PATH) > AUDIT_MAX_BYTES:
-            os.replace(AUDIT_PATH, AUDIT_PATH + ".1")
-        with open(AUDIT_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, default=str) + "\n")
-    except OSError as e:
-        log_event(
-            LOGGER,
-            logging.ERROR,
-            "legacy_audit_write_failed",
-            "Compatibility audit output could not be written.",
-            context={"error_type": type(e).__name__},
-            secret=ACCESS_SECRET,
-        )
-
-
-def _summarize_args(args: Any, limit: int = 300) -> Any:
-    if isinstance(args, dict):
-        return {k: (v if not isinstance(v, str) or len(v) <= limit else v[:limit] + "…")
-                for k, v in args.items()}
-    return args
-
-
-class Gateway:
-    """Order of checks: health -> client identification -> auth (strict
-    bucket on failures) -> rate limit (per-client + global) -> audit
-    tools/call bodies -> strip secret prefix -> forward."""
-
-    def __init__(self, app, secret: str):
-        self.app = app
-        self.prefix = f"/{secret}"
-        self.clients: OrderedDict[str, TokenBucket] = OrderedDict()
-        self.global_bucket = TokenBucket(RATE_PER_MINUTE * 2, RATE_BURST * 2)
-        self.auth_fail: OrderedDict[str, TokenBucket] = OrderedDict()
-        self._bucket_lock = threading.Lock()
-        self._trusted_proxy_networks = tuple(
-            ipaddress.ip_network(value, strict=False)
-            for value in SETTINGS.trusted_proxy_cidrs
-        )
-
-    def _redact_path(self, path: str) -> str:
-        """Remove the complete credential from any path written to audit logs."""
-        return path.replace(self.prefix, "/<access_secret>")[:64]
-
-    def _client_ip(self, scope) -> str:
-        return resolve_client_address(
-            scope,
-            trust_cf_connecting_ip=SETTINGS.trust_cf_connecting_ip,
-            trusted_proxy_networks=self._trusted_proxy_networks,
-        )
-
-    def _bucket(
-        self,
-        store: OrderedDict[str, TokenBucket],
-        key: str,
-        per_minute: float,
-        burst: float,
-    ) -> TokenBucket:
-        with self._bucket_lock:
-            existing = store.pop(key, None)
-            if existing is not None:
-                store[key] = existing
-                return existing
-            while len(store) >= MAX_BUCKET_STORE_SIZE:
-                store.popitem(last=False)
-            bucket = TokenBucket(per_minute, burst)
-            store[key] = bucket
-            return bucket
-
-    @staticmethod
-    async def _respond(send, status: int, body: bytes):
-        await send({"type": "http.response.start", "status": status,
-                    "headers": [(b"content-type", b"text/plain")]})
-        await send({"type": "http.response.body", "body": body})
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "lifespan":
-            return await self.app(scope, receive, send)
-        path = scope.get("path", "")
-        if path == "/health":
-            return await self._respond(send, 200, b"ok")
-
-        ip = self._client_ip(scope)
-
-        # Auth: wrong path = failed credential attempt. Strict bucket: burst
-        # 5, refill 30/hour per IP — then we stop even answering 404s.
-        if not path.startswith(self.prefix + "/") and path != self.prefix:
-            fb = self._bucket(self.auth_fail, ip, per_minute=0.5, burst=5)
-            if not fb.allow():
-                audit_write({"event": AUTH_FAILURE_THROTTLED_EVENT, "client_ip": ip,
-                             "path": self._redact_path(path)})
-                return await self._respond(send, 429, b"too many requests")
-            audit_write({"event": AUTH_FAILURE_EVENT, "client_ip": ip,
-                         "path": self._redact_path(path)})
-            return await self._respond(send, 404, b"not found")
-
-        # Rate limits (authenticated traffic)
-        cb = self._bucket(self.clients, ip, RATE_PER_MINUTE, RATE_BURST)
-        if not cb.allow() or not self.global_bucket.allow():
-            audit_write({"event": RATE_LIMITED_EVENT, "client_ip": ip})
-            return await self._respond(send, 429, b"rate limited")
-
-        # Audit: buffer POST body, parse JSON-RPC, log tools/call
-        new_receive = receive
-        tool_entry = None
-        if scope.get("method") == "POST":
-            chunks, more, total = [], True, 0
-            while more:
-                msg = await receive()
-                chunks.append(msg)
-                total += len(msg.get("body", b""))
-                more = msg.get("more_body", False)
-                if total > 2_000_000:
-                    break
-            body = b"".join(m.get("body", b"") for m in chunks)
-            try:
-                rpc = json.loads(body)
-                if isinstance(rpc, dict) and rpc.get("method") == "tools/call":
-                    params = rpc.get("params", {})
-                    args = params.get("arguments", {}) or {}
-                    tool_entry = {
-                        "event": "tool_call",
-                        "tool": params.get("name"),
-                        "args": _summarize_args(args),
-                        "client_ip": ip,
-                        "user": "claude",
-                        "destructive_confirmed": bool(args.get("confirm")) or None,
-                    }
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                pass
-            queue = list(chunks)
-
-            async def replay():
-                if queue:
-                    return queue.pop(0)
-                return await receive()
-
-            new_receive = replay
-
-        # Capture response status for the audit entry
-        status_holder = {}
-
-        async def send_wrapper(message):
-            if message["type"] == "http.response.start":
-                status_holder["status"] = message["status"]
-            await send(message)
-
-        scope = dict(scope)
-        internal_path = path[len(self.prefix):] or "/"
-        # FastMCP's canonical endpoint has a trailing slash. Normalize both
-        # authenticated public forms internally so Starlette never sends a
-        # redirect that drops the secret prefix from the client-visible URL.
-        if internal_path in ("/mcp", "/mcp/"):
-            internal_path = "/mcp/"
-        scope["path"] = internal_path
-        if scope.get("raw_path"):
-            raw, pref = scope["raw_path"], self.prefix.encode()
-            if raw.startswith(pref):
-                internal_raw_path = raw[len(pref):] or b"/"
-                if internal_raw_path in (b"/mcp", b"/mcp/"):
-                    internal_raw_path = b"/mcp/"
-                scope["raw_path"] = internal_raw_path
-        try:
-            await self.app(scope, new_receive, send_wrapper)
-        finally:
-            if tool_entry is not None:
-                tool_entry["http_status"] = status_holder.get("status")
-                audit_write(tool_entry)
-
-
-def main() -> None:
-    if not HA_TOKEN:
-        sys.exit("FATAL: no SUPERVISOR_TOKEN/HA_TOKEN available — cannot reach Home Assistant.")
-    if not ACCESS_SECRET or len(ACCESS_SECRET) < 24:
-        sys.exit(
-            "FATAL: access_secret is unset or too short (min 24 chars). "
-            "Set it in the add-on configuration — generate one with: openssl rand -hex 24"
-        )
-    log_event(
-        LOGGER,
-        logging.INFO,
-        "legacy_entrypoint_starting",
-        "Compatibility entry point is starting.",
-        context={"port": PORT},
-        secret=ACCESS_SECRET,
-    )
-    app = Gateway(mcp.streamable_http_app(), ACCESS_SECRET)
-    # Request paths contain the access secret. Uvicorn's standard access log
-    # prints the complete path, so it must remain disabled for this gateway.
-    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info", access_log=False)
-
-
-if __name__ == "__main__":
-    main()

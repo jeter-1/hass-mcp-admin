@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 import json
 import math
 import re
-from urllib.parse import urlencode
 
 import aiohttp
 
@@ -15,6 +14,7 @@ from ..errors import (
 )
 from ..sanitization import sanitize_untrusted_data
 from ..models.responses import logbook_data_limit
+from .paths import rest_path
 
 MAX_BYTES = 1024 * 1024
 MAX_RECORDS = 10_000
@@ -200,10 +200,12 @@ class LogbookReader:
             end = datetime.now(timezone.utc)
             start = end - timedelta(hours=hours)
             interval = {"start": start.isoformat(), "end": end.isoformat()}
-            query = {"end_time": interval["end"]}
+            query = [("end_time", interval["end"])]
             if entity_id:
-                query["entity"] = entity_id
-            path = "/logbook/" + interval["start"] + "?" + urlencode(query)
+                query.append(("entity", entity_id))
+            path = rest_path(
+                "/logbook/{}", interval["start"], kinds=("timestamp",), query=query
+            )
             text = await client.request("GET", path, raw=True, logbook_read=True)
             worker = asyncio.create_task(asyncio.to_thread(project, text, interval, response_limit, secrets))
             return await asyncio.shield(worker)
