@@ -1,6 +1,14 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.16** adds one optional reviewed delegated read,
+Engineering **2.4.1-beta.17** makes `get_server_health` much cheaper on
+large plan stores (HAMCP-171). Health reuses, in process memory only, the
+safety verdict of each unchanged persisted plan record. The verdict is keyed
+by filename, inode, size, mtime and a SHA-256 of the parsed bytes, so any
+change validates fresh. `get_server_health(deep_storage_audit=true)`
+re-validates everything. The 30 s recovery sweep now reads a parent task only
+when the child's own status requires it. No persisted format changes.
+
+It builds on beta.16, which adds one optional reviewed delegated read,
 `ha_config_get_yaml` (HAMCP-162). It reads one mapping-key path of
 `configuration.yaml` only:
 - every other file, including `secrets.yaml`, and every credential-shaped

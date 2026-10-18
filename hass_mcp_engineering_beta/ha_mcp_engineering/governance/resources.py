@@ -15,7 +15,7 @@ from typing import Any
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import AuthorizationError, HomeAssistantApiError
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import SegmentMemo, sanitize_untrusted_data
 from .normalize import (
     AUTOMATION_VERIFICATION_NORMALIZATION_VERSION,
     AutomationVerificationNormalizationError,
@@ -1201,20 +1201,25 @@ def _unknown_field_errors(
 
 
 def persistence_safety_errors(
-    value: Any, sensitive_values: tuple[str, ...] = ()
+    value: Any,
+    sensitive_values: tuple[str, ...] = (),
+    *,
+    segment_memo: SegmentMemo | None = None,
 ) -> list[str]:
     """Detect secret material without returning or persisting a redacted copy.
 
     Configuration plans must retain exact operational input for hash binding and
     later application, so redaction is not a safe substitute here.  The shared
     recursive sanitizer is used only as a detector; any redaction or sanitation
-    failure makes the value ineligible for plan persistence.
+    failure makes the value ineligible for plan persistence.  A caller-owned
+    ``segment_memo`` only reuses identical segment scans within one job.
     """
 
     errors: list[str] = []
     sanitized = sanitize_untrusted_data(
         value,
         known_secrets=sensitive_values,
+        segment_memo=segment_memo,
     )
     if sanitized.failed_closed or sanitized.redaction_applied:
         errors.append(

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from heapq import merge
 from itertools import islice
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -84,6 +85,40 @@ _PLAN_NAVIGATION_FIELDS = (
     "_expected_recovery_candidate_count", "_expected_active_signature",
     "_expected_approval_signature", "_expected_recovery_signature",
 )
+
+
+@dataclass(frozen=True)
+class PlanRecordEvidence:
+    """Proof of the exact persisted bytes one health collection parsed.
+
+    ``stat`` is ``(st_ino, st_size, st_mtime_ns)`` from ``fstat`` of the
+    descriptor that was read, or ``None`` when it could not be established or
+    disagreed with the number of bytes read.  ``sha256`` digests exactly those
+    bytes.  Evidence is process-memory input to the health verdict cache only;
+    it is never persisted and never authorizes anything by itself.
+    """
+
+    path: str
+    stat: tuple[int, int, int] | None
+    sha256: str
+
+
+def _read_record_text(path: Path) -> tuple[str, PlanRecordEvidence]:
+    """Read one record exactly as ``Path.read_text`` would, with evidence."""
+    with open(path, "rb") as handle:
+        try:
+            status = os.fstat(handle.fileno())
+        except OSError:
+            status = None
+        raw = handle.read()
+    stat = None
+    if status is not None and status.st_size == len(raw):
+        stat = (status.st_ino, status.st_size, status.st_mtime_ns)
+    # ``read_text`` uses universal newlines; reproduce that parse exactly.
+    text = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return text, PlanRecordEvidence(
+        str(path), stat, hashlib.sha256(raw).hexdigest()
+    )
 
 
 @dataclass(frozen=True)
@@ -583,15 +618,25 @@ class ChangePlanRepository:
             return plan
 
     def _load(
-        self, path: Path, *, before_quarantine: Callable[[], None] | None = None
+        self,
+        path: Path,
+        *,
+        before_quarantine: Callable[[], None] | None = None,
+        evidence: dict[str, PlanRecordEvidence] | None = None,
     ) -> ChangePlan | None:
         try:
             with self._lock:
-                value = json.loads(path.read_text(encoding="utf-8"))
+                if evidence is None:
+                    text, observed = path.read_text(encoding="utf-8"), None
+                else:
+                    text, observed = _read_record_text(path)
+                value = json.loads(text)
             plan = ChangePlan.from_dict(value)
             self.records_deserialized += 1
             if is_terminal_plan(plan):
                 self.terminal_records_deserialized += 1
+            if observed is not None:
+                evidence[plan.plan_id] = observed
             return plan
         except FileNotFoundError:
             return None
@@ -610,12 +655,18 @@ class ChangePlanRepository:
         return sorted(plans, key=lambda plan: plan.created_at, reverse=True)
 
     async def collect_health(
-        self, *, checkpoint: Callable[[], None], watch: Callable[[Path], None]
+        self,
+        *,
+        checkpoint: Callable[[], None],
+        watch: Callable[[Path], None],
+        evidence: dict[str, PlanRecordEvidence] | None = None,
     ) -> list[ChangePlan]:
         """Validate once and stage the existing navigation projection cooperatively.
 
         Synchronous readers/writers keep their existing APIs. No lock, partial
         navigation table or mutable repository is handed to an async worker.
+        When ``evidence`` is supplied it receives, per plan id, the stat and
+        SHA-256 of the exact bytes this collection parsed.
         """
         generation, directory = self.generation, self._directory_token()
 
@@ -640,7 +691,9 @@ class ChangePlanRepository:
                     path = Path(entry.path)
                     watch(path)
                     with self._lock:
-                        plan = self._load(path, before_quarantine=check)
+                        plan = self._load(
+                            path, before_quarantine=check, evidence=evidence
+                        )
                     check()
                     if plan is None:
                         raise ChangePlanStorageError("Governance record is missing")

@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.4.1-beta.17 - Health verdict cache and sweep parent reads (HAMCP-171)
+
+Builds on 2.4.1-beta.16's optional reviewed YAML configuration reader
+(HAMCP-162). Josh's 2026-10-18 decisions D1–D6 apply.
+
+- Memoize the pure per-segment sanitizer scan within one health validation
+  job (D5). The memo is bounded, bound to the job's sensitive values and
+  discarded when the job ends.
+- Keep health safety verdicts in process memory between calls for unchanged
+  records only (D1). Key: canonical filename, `st_ino`, `st_size`,
+  `st_mtime_ns` (from `fstat` of the parsed handle), the SHA-256 of the
+  parsed bytes and the detector context. Any change, a new record, a failed
+  `fstat` or a key mismatch validates fresh. Any failed scan, storage error,
+  quarantine or unexpected worker failure discards every verdict. Verdicts
+  are never persisted, are empty at start and are never used by
+  authoritative paths.
+- Add the optional `get_server_health(deep_storage_audit=true)` input, which
+  bypasses and repopulates the cache. It is the only public schema change;
+  the catalog stays at 88. The internal `deep_audit_plan_store` also
+  discards every verdict.
+- Report cache hits, misses, deep re-scans and invalidations under
+  `plan_store_scaling.safety_verdict_cache`. `health_cache_hit_count` now
+  counts async calls that reused verdicts.
+- Read a parent task in the periodic recovery sweep only for orphan cleanup
+  (no dispatch intent) or a terminal child with a recorded readiness fault.
+  Dispatch, redispatch, expiry and cancel behavior is unchanged.
+- No persisted-format (D6), registry, workflow or stable-v1 change.
+
 ## 2.4.1-beta.16 - Optional reviewed YAML configuration reader (HAMCP-162)
 
 Builds on 2.4.1-beta.15's rollback Core lease, cancel telemetry, expired

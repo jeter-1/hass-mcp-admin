@@ -222,6 +222,7 @@ class GovernanceRuntime:
         *,
         home_assistant_status: str | None = None,
         home_assistant_websocket_status: str | None = None,
+        deep_storage_audit: bool = False,
     ) -> dict[str, Any]:
         if self.service is None:
             return self.health_summary(
@@ -231,6 +232,7 @@ class GovernanceRuntime:
         return await self.service.async_health_summary(
             home_assistant_status=home_assistant_status,
             home_assistant_websocket_status=home_assistant_websocket_status,
+            deep_storage_audit=deep_storage_audit,
         )
 
     def health_summary(

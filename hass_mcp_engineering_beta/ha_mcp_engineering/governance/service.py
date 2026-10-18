@@ -36,7 +36,7 @@ from ..request_context import (
     current_caller_id,
     current_request_id,
 )
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import SegmentMemo, sanitize_untrusted_data
 from ..f3_dashboard.approval_projection import (
     build_dashboard_approval_projection,
     validate_dashboard_approval_projection,
@@ -130,6 +130,7 @@ from .storage import (
     ChangePlanRepository,
     ChangePlanStorageError,
     PlanHealthSnapshotSuperseded,
+    PlanRecordEvidence,
     is_terminal_plan,
 )
 from .task_models import (
@@ -236,6 +237,9 @@ def principal_separation_status(approval: Any) -> dict[str, Any]:
 
 
 CONFIGURATION_PLAN_CONTRACT_VERSION = 2
+# Bound into every in-memory safety verdict; change it whenever the persisted
+# plan safety detector's semantics change so no older verdict can be reused.
+SAFETY_VERDICT_DETECTOR_VERSION = "persisted-plan-safety-v1"
 BETA6_PROHIBITED_COMPAT_CONTRACT_VERSION = 2
 BETA6_LEGACY_EXPIRED_AUTOMATION_CONTRACT_VERSION = 1
 OPERATIONAL_PLAN_CONTRACT_VERSION = 3
@@ -618,6 +622,17 @@ class ChangeGovernanceService:
         self._health_cache_has_lifecycle_provider = False
         self._health_cache_rebuild_count = 0
         self._health_cache_hit_count = 0
+        # HAMCP-171 D1: verdicts for unchanged records, in process memory only.
+        # Never persisted, empty at every startup, used only by async health.
+        self._safety_verdict_cache: dict[
+            str, tuple[str, tuple[int, int, int], str, bytes]
+        ] = {}
+        self._safety_verdict_key = secrets.token_bytes(32)
+        self._safety_verdict_last_run: dict[str, Any] | None = None
+        self._safety_verdict_totals = {
+            "hits": 0, "misses": 0, "not_applicable": 0,
+            "deep_rescans": 0, "invalidations": 0,
+        }
         self._health_read_lock = asyncio.Lock()
         self._health_validation_job: asyncio.Task[float] | None = None
         self._health_cache = self._build_health_summary(
@@ -748,6 +763,9 @@ class ChangeGovernanceService:
     def deep_audit_plan_store(self) -> dict[str, Any]:
         """Deliberately revalidate history and rebuild derived navigation."""
 
+        # HAMCP-171: a deliberate deep audit also discards the in-memory
+        # health safety verdicts so the next health scan validates afresh.
+        self._safety_verdict_invalidate()
         plan = self.repository.rebuild_navigation_index()
         task = self.task_repository.rebuild_navigation_index()
         self._rebuild_projection_failure_index()
@@ -12718,12 +12736,17 @@ class ChangeGovernanceService:
         *,
         home_assistant_status: str | None = None,
         home_assistant_websocket_status: str | None = None,
+        deep_storage_audit: bool = False,
     ) -> dict[str, Any]:
         """Build public health without monopolizing the loop on safety scans.
 
         Only the pure detector sees detached records in the worker. Lifecycle
         resolution, repository writes and cache publication stay on the owner
         loop. Cancellation abandons publication, never the single-worker bound.
+        Every record is still collected and parsed on every call; only the
+        safety detector is skipped for a record whose exact bytes already
+        passed it in this process. ``deep_storage_audit`` discards every
+        cached verdict first and re-validates every record.
         """
         requested_at = time.monotonic()
         phases = {
@@ -12743,7 +12766,7 @@ class ChangeGovernanceService:
                     # Discard only the abandoned job's failure, without its text.
                     # Fresh validation below still propagates its own failures;
                     # caller cancellation (BaseException) must not be swallowed.
-                    pass
+                    self._safety_verdict_invalidate()
                 finally:
                     if previous.done():
                         self._health_validation_job = None
@@ -12774,9 +12797,11 @@ class ChangeGovernanceService:
                     sources.extend(self.f3_runtime._health_fence_sources()[2:])
                 fence = HealthScanFence(tuple(sources))
                 try:
+                    evidence: dict[str, PlanRecordEvidence] = {}
                     plans = await self.repository.collect_health(
                         checkpoint=fence.check,
-                        watch=lambda path: fence.watch(path, code=ErrorCode.CHANGE_PLAN_STORAGE_ERROR))
+                        watch=lambda path: fence.watch(path, code=ErrorCode.CHANGE_PLAN_STORAGE_ERROR),
+                        evidence=evidence)
                 except (GovernanceError, ChangePlanStorageError):
                     raise
                 except Exception as exc:
@@ -12794,8 +12819,14 @@ class ChangeGovernanceService:
                 self._require_health_generations(plan_generation, task_generation)
                 phases["snapshot_ms"] = (time.monotonic() - phase_started) * 1000.0
                 phase_started = time.monotonic()
+                pending, verdict_run = self._safety_verdict_lookup(
+                    plans, evidence, deep=bool(deep_storage_audit)
+                )
+                # The job is always submitted, even when every verdict hit, so
+                # the single-worker drain and cancellation contract is unchanged.
                 job = asyncio.create_task(asyncio.to_thread(
-                    _validate_health_records, plans, self.sensitive_values
+                    _validate_health_records,
+                    [plan for plan, _proof in pending], self.sensitive_values,
                 ))
                 self._health_validation_job = job
                 job.add_done_callback(lambda completed: (
@@ -12803,9 +12834,14 @@ class ChangeGovernanceService:
                 ))
                 try:
                     phases["worker_elapsed_ms"] = await asyncio.shield(job)
+                except Exception:
+                    # A failed scan proves nothing about any cached verdict.
+                    self._safety_verdict_invalidate()
+                    raise
                 finally:
                     if job.done():
                         self._health_validation_job = None
+                self._safety_verdict_store(plans, pending, verdict_run)
                 phases["validation_wait_ms"] = (time.monotonic() - phase_started) * 1000.0
                 # Detect in-place movement before the owner can persist expiry.
                 await fence.verify_files()
@@ -12873,6 +12909,7 @@ class ChangeGovernanceService:
                     else ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
             except (ChangePlanStorageError, ExecutionTaskStorageError) as exc:
                 self._health_cache_key = None
+                self._safety_verdict_invalidate()
                 if fence is not None and corruption_before == (self.repository.corruption_count, self.task_repository.corruption_count):
                     fence.check_after_failure()
                 if isinstance(exc, ExecutionTaskStorageError) and self.f3_runtime is not None:
@@ -12882,6 +12919,8 @@ class ChangeGovernanceService:
                     else ErrorCode.EXECUTION_TASK_STORAGE_ERROR) from exc
             except GovernanceError as exc:
                 self._health_cache_key = None
+                if exc.details.get("reason") != "health_snapshot_superseded":
+                    self._safety_verdict_invalidate()
                 if (exc.code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR
                         and exc.details.get("reason") != "health_snapshot_superseded"
                         and self.f3_runtime is not None):
@@ -12893,6 +12932,113 @@ class ChangeGovernanceService:
             finally:
                 if fence_holder is not None:
                     fence_holder._exit_health_fence()
+
+    def _safety_verdict_context(self) -> bytes:
+        """Bind verdicts to the detector and secret set without storing secrets."""
+        material = json.dumps(
+            [SAFETY_VERDICT_DETECTOR_VERSION, list(self.sensitive_values)],
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hmac.new(self._safety_verdict_key, material, hashlib.sha256).digest()
+
+    def _safety_verdict_lookup(
+        self,
+        plans: list[ChangePlan],
+        evidence: dict[str, PlanRecordEvidence],
+        *,
+        deep: bool,
+    ) -> tuple[
+        list[tuple[ChangePlan, tuple[str, tuple[int, int, int], str, bytes] | None]],
+        dict[str, Any],
+    ]:
+        """Split collected plans into cached-safe and must-validate records.
+
+        A hit requires an exact match of canonical path, ``(st_ino, st_size,
+        st_mtime_ns)``, SHA-256 of the bytes this call parsed and the detector
+        context. Missing evidence or a failed stat is always a fresh validation.
+        """
+        if deep:
+            self._safety_verdict_cache.clear()
+            self._safety_verdict_totals["deep_rescans"] += 1
+        context = self._safety_verdict_context()
+        pending: list[
+            tuple[ChangePlan, tuple[str, tuple[int, int, int], str, bytes] | None]
+        ] = []
+        hits = not_applicable = 0
+        for plan in plans:
+            if plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
+                # The detector has no rule for these; nothing is cached.
+                not_applicable += 1
+                continue
+            observed = evidence.get(plan.plan_id)
+            proof = (
+                None
+                if observed is None or observed.stat is None
+                else (observed.path, observed.stat, observed.sha256, context)
+            )
+            if (
+                not deep
+                and proof is not None
+                and self._safety_verdict_cache.get(plan.plan_id) == proof
+            ):
+                hits += 1
+            else:
+                pending.append((plan, proof))
+        run = {
+            "mode": "deep_rescan" if deep else "cached",
+            "hits": hits,
+            "misses": len(pending),
+            "not_applicable": not_applicable,
+            "pruned": 0,
+        }
+        return pending, run
+
+    def _safety_verdict_store(
+        self,
+        plans: list[ChangePlan],
+        pending: list[
+            tuple[ChangePlan, tuple[str, tuple[int, int, int], str, bytes] | None]
+        ],
+        run: dict[str, Any],
+    ) -> None:
+        """Record verdicts only after the worker proved every pending record safe."""
+        seen = {plan.plan_id for plan in plans}
+        stale = [plan_id for plan_id in self._safety_verdict_cache if plan_id not in seen]
+        for plan_id in stale:
+            del self._safety_verdict_cache[plan_id]
+        for plan, proof in pending:
+            if proof is None:
+                self._safety_verdict_cache.pop(plan.plan_id, None)
+            else:
+                self._safety_verdict_cache[plan.plan_id] = proof
+        run["pruned"] = len(stale)
+        for name in ("hits", "misses", "not_applicable"):
+            self._safety_verdict_totals[name] += run[name]
+        self._safety_verdict_last_run = run
+        if run["mode"] == "cached" and run["hits"]:
+            self._health_cache_hit_count += 1
+
+    def _safety_verdict_invalidate(self) -> None:
+        if self._safety_verdict_cache:
+            self._safety_verdict_cache.clear()
+            self._safety_verdict_totals["invalidations"] += 1
+
+    def _safety_verdict_health(self) -> dict[str, Any]:
+        """Bounded counters only; never paths, digests or record content."""
+        return {
+            "scope": "process_memory_only",
+            "persisted": False,
+            "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+            "authoritative_reads_use_cache": False,
+            "deep_rescan_input": "get_server_health.deep_storage_audit",
+            "entries": len(self._safety_verdict_cache),
+            "last_run": (
+                None
+                if self._safety_verdict_last_run is None
+                else dict(self._safety_verdict_last_run)
+            ),
+            "totals": dict(self._safety_verdict_totals),
+        }
 
     def _require_health_generations(self, plans: int, tasks: int) -> None:
         if self.repository.generation != plans:
@@ -13097,6 +13243,7 @@ class ChangeGovernanceService:
                 self._health_cache_rebuild_count
             ),
             "health_cache_hit_count": self._health_cache_hit_count,
+            "safety_verdict_cache": self._safety_verdict_health(),
             "hot_paths": deepcopy(self._hot_path_metrics),
             "historical_integrity": (
                 "validated_at_startup_or_explicit_deep_audit_and_when_"
@@ -14222,13 +14369,18 @@ def _automation_id_mismatch(
 
 
 def _require_safe_persisted_plan(
-    plan: ChangePlan, sensitive_values: tuple[str, ...]
+    plan: ChangePlan,
+    sensitive_values: tuple[str, ...],
+    *,
+    segment_memo: SegmentMemo | None = None,
 ) -> None:
     """Pure fail-closed detector shared by authoritative reads and health."""
     if plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
         return
     try:
-        unsafe = bool(persistence_safety_errors(plan.to_dict(), sensitive_values))
+        unsafe = bool(persistence_safety_errors(
+            plan.to_dict(), sensitive_values, segment_memo=segment_memo
+        ))
     except Exception:
         unsafe = True
     if unsafe:
@@ -14241,8 +14393,13 @@ def _require_safe_persisted_plan(
 def _validate_health_records(
     plans: list[ChangePlan], sensitive_values: tuple[str, ...]
 ) -> float:
-    """No repository, provider, audit, lifecycle or cache access in this worker."""
+    """No repository, provider, audit, lifecycle or cache access in this worker.
+
+    The segment memo (HAMCP-171 D5) is created for, and dies with, this one
+    job: it only reuses the pure scan of an identical string segment.
+    """
     started = time.monotonic()
+    memo = SegmentMemo(sensitive_values)
     for plan in plans:
-        _require_safe_persisted_plan(plan, sensitive_values)
+        _require_safe_persisted_plan(plan, sensitive_values, segment_memo=memo)
     return (time.monotonic() - started) * 1000.0
