@@ -13,10 +13,89 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from typing import Any
 import zipfile
 
-from validate_ci_provenance import Refusal, collection, positive_id, require, unique_keys
-from validate_ready_authorization import validate_timeline
+# Self-contained (HAMCP-204 M3): publishing jobs run this file as
+# ``python3 -I -S``, which keeps sibling scripts and site-packages off sys.path.
+# The definitions between the copy markers are verbatim copies of
+# scripts/validate_ci_provenance.py and scripts/validate_ready_authorization.py;
+# tests.test_signing_workflow_supply_chain pins them to those sources.
+
+# BEGIN COPY scripts/validate_ci_provenance.py
+class Refusal(ValueError):
+    pass
+
+
+def require(condition, category):
+    if not condition:
+        raise Refusal(category)
+
+
+def positive_id(value):
+    require(type(value) is int and value > 0, "invalid_identity")
+    return value
+
+
+def unique_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, "duplicate_json_key")
+        result[key] = value
+    return result
+
+
+def collection(value, key):
+    require(isinstance(value, dict), "malformed_collection")
+    items = value.get(key)
+    count = value.get("total_count")
+    require(type(count) is int and isinstance(items, list), "malformed_collection")
+    require(count == len(items) and 0 <= count <= 100, "incomplete_collection")
+    require(all(isinstance(item, dict) for item in items), "malformed_collection")
+    return items
+# END COPY
+
+
+# BEGIN COPY scripts/validate_ready_authorization.py
+AUTHORIZING_ACTOR = "jeter-1"
+HEAD_LIFECYCLE_EVENTS = {
+    "automatic_base_change_succeeded",
+    "base_ref_changed",
+    "closed",
+    "committed",
+    "convert_to_draft",
+    "head_ref_deleted",
+    "head_ref_force_pushed",
+    "head_ref_restored",
+    "ready_for_review",
+    "reopened",
+}
+
+
+class AuthorizationError(ValueError):
+    """The timeline does not prove current-head Ready authorization."""
+
+
+def validate_timeline(timeline: list[dict[str, Any]]) -> dict[str, Any]:
+    lifecycle = [
+        item for item in timeline if item.get("event") in HEAD_LIFECYCLE_EVENTS
+    ]
+    if not lifecycle:
+        raise AuthorizationError("pull-request timeline has no Ready lifecycle evidence")
+
+    latest = lifecycle[-1]
+    actor = latest.get("actor")
+    actor_login = actor.get("login") if isinstance(actor, dict) else None
+    if latest.get("event") != "ready_for_review" or actor_login != AUTHORIZING_ACTOR:
+        raise AuthorizationError(
+            "the latest head lifecycle event is not a Josh-authored Ready action"
+        )
+    return {
+        "status": "authorized",
+        "event_id": latest.get("id"),
+        "actor": actor_login,
+    }
+# END COPY
 
 REPOSITORY = "jeter-1/hass-mcp-admin"
 OWNER = "jeter-1"
@@ -166,46 +245,10 @@ def check_receipt(value, run_id, attempt):
     require(value["source_event"] in {"pull_request_target", "issue_comment"}, "receipt_event")
 
 
-def config_version(ref, run_git):
-    """Bind the bounded version spelling to one semantic root YAML field.
-
-    Compose nodes without constructing objects or expanding alias graphs.
-    This is eligibility, not full configuration or release validation. Import
-    the locked parser only here: production of receipts/claims remains stdlib.
-    """
-    text = run_git("show", f"{sha(ref)}:hass_mcp_engineering_beta/config.yaml")
-    require(len(text.encode("utf-8")) <= 65_536, "release_version_unavailable")
-    try:
-        import yaml
-    except ImportError as exc:
-        raise Refusal("release_version_parser_unavailable") from exc
-    try:
-        root = yaml.compose(text, Loader=yaml.SafeLoader)
-    except (yaml.YAMLError, RecursionError) as exc:
-        raise Refusal("release_version_unavailable") from exc
-    string_tag = "tag:yaml.org,2002:str"
-    require(isinstance(root, yaml.MappingNode) and root.tag == "tag:yaml.org,2002:map",
-            "release_version_unavailable")
-    # Merge and complex keys cannot supply implicit version authority. Inspect
-    # nodes before any constructor can discard duplicate or aliased root keys.
-    require(all(isinstance(key, yaml.ScalarNode) and key.tag == string_tag
-                for key, _ in root.value), "release_version_unavailable")
-    versions = [value for key, value in root.value if key.value == "version"]
-    require(len(versions) == 1 and isinstance(versions[0], yaml.ScalarNode)
-            and versions[0].tag == string_tag, "release_version_unavailable")
-    candidates = [line for line in text.splitlines()
-                  if re.match(r"^(?:version|[\"']version[\"'])[ \t]*:", line)]
-    require(len(candidates) == 1, "release_version_unavailable")
-    value = r"[0-9A-Za-z][0-9A-Za-z.+-]{0,63}"
-    match = re.fullmatch(rf"version:[ \t]*(?:\"({value})\"|'({value})'|({value}))[ \t]*",
-                         candidates[0])
-    require(match is not None, "release_version_unavailable")
-    version = next(item for item in match.groups() if item is not None)
-    require(version == versions[0].value, "release_version_unavailable")
-    return version
-
-
-def verify(run_id, attempt, authority, api=read_api, run_git=git):
+def verify(run_id, attempt, authority, api=read_api, run_git=git, *, version_of):
+    """Verify the handoff; ``version_of(ref, run_git)`` supplies the locked
+    YAML version reader from ``publication_handoff_verify.py``, so this module
+    and every write job that imports it stay standard-library only."""
     positive_id(run_id)
     positive_id(attempt)
     sha(authority)
@@ -255,7 +298,7 @@ def verify(run_id, attempt, authority, api=read_api, run_git=git):
         "actor", "triggering_actor", "repository", "head_repository")), "source_run_changed")
     require(not run_git("ls-tree", "--name-only", base, "--", ".release/next-version"),
             "unmaterialized_release")
-    previous_version, current_version = config_version(base, run_git), config_version(merge, run_git)
+    previous_version, current_version = version_of(base, run_git), version_of(merge, run_git)
     if previous_version == current_version:
         # Authenticated maintenance, including policy edits, has no publication
         # authority to transfer. Never emit a binding on this no-op path.
@@ -287,14 +330,11 @@ def guard(release, authority, run_git=git):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("produce", "verify", "guard"))
+    parser.add_argument("operation", choices=("produce", "guard"))
     parser.add_argument("--ready", type=Path)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--run-id", type=int)
-    parser.add_argument("--attempt", type=int)
     parser.add_argument("--authority")
     parser.add_argument("--release")
-    parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
     try:
         if args.operation == "produce":
@@ -302,12 +342,6 @@ def main():
             ready = json.loads(args.ready.read_text(), object_pairs_hook=unique_keys)
             result = produce(os.environ, ready)
             args.output.write_text(json.dumps(result, sort_keys=True) + "\n")
-        elif args.operation == "verify":
-            result = verify(args.run_id, args.attempt, args.authority)
-            if args.github_output:
-                with args.github_output.open("a") as output:
-                    for key, value in result.items():
-                        output.write(f"{key}={value}\n")
         else:
             guard(args.release, args.authority)
             result = {"status": "verified"}

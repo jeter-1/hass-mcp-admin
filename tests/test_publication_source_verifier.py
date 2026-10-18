@@ -1,5 +1,7 @@
+import contextlib
 import copy
 import hashlib
+import io
 import importlib.util
 import json
 from pathlib import Path
@@ -9,6 +11,8 @@ import tempfile
 import unittest
 from unittest import mock
 from urllib.parse import unquote, urlsplit
+
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +25,7 @@ assert SPEC.loader is not None
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
+PUBLISH_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 REPOSITORY = "jeter-1/hass-mcp-admin"
 OWNER = "jeter-1"
 RELEASE_SHA = "1" * 40
@@ -128,7 +133,8 @@ def valid_provenance():
             "ref": "refs/heads/main",
             "repository": {"full_name": REPOSITORY},
         },
-        "github_job": "promote",
+        # HAMCP-204: the split workflow builds the image in the `build` job.
+        "github_job": "build",
         "github_ref": "refs/heads/main",
         "github_ref_name": "main",
         "github_ref_protected": "true",
@@ -506,7 +512,14 @@ class PublicationSourceVerifierTests(unittest.TestCase):
         )
 
     def verify_source(
-        self, root, *, provenance=None, sbom=None, images=None, manifest=None
+        self,
+        root,
+        *,
+        provenance=None,
+        sbom=None,
+        images=None,
+        manifest=None,
+        expected_build_job="build",
     ):
         manifest_path, digest, provenance_path, sbom_path, image_paths = (
             self.write_evidence(
@@ -546,6 +559,8 @@ class PublicationSourceVerifierTests(unittest.TestCase):
                 WORKFLOW_SHA,
                 "--expected-event-name",
                 "workflow_dispatch",
+                "--expected-build-job",
+                expected_build_job,
                 "--repository",
                 REPOSITORY,
                 "--owner",
@@ -579,6 +594,62 @@ class PublicationSourceVerifierTests(unittest.TestCase):
             self.assertEqual(values["SOURCE_AMD64_DIGEST"], PLATFORM_DIGESTS["linux/amd64"])
             self.assertEqual(values["SOURCE_ARM64_DIGEST"], PLATFORM_DIGESTS["linux/arm64"])
             self.assertEqual(values["SOURCE_ARMV7_DIGEST"], PLATFORM_DIGESTS["linux/arm/v7"])
+
+    def verify_source_refusal(self, root, **arguments):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            result, output, _digest = self.verify_source(root, **arguments)
+        return result, output, stderr.getvalue()
+
+    def test_legacy_promote_build_job_is_accepted_only_when_expected(self):
+        # HAMCP-204: digest recovery of a run that predates the job split
+        # verifies provenance recorded by `promote`, but only when the exact
+        # source workflow names `promote` as its build job.
+        legacy = valid_provenance()
+        for statement in legacy.values():
+            statement["SLSA"]["buildDefinition"]["internalParameters"][
+                "github_job"
+            ] = "promote"
+        with tempfile.TemporaryDirectory() as directory:
+            result, output, _digest = self.verify_source(
+                Path(directory), provenance=legacy, expected_build_job="promote"
+            )
+            self.assertEqual(result, 0)
+            self.assertIn("source_image_verified=true", output.read_text())
+        for provenance, expected_build_job in (
+            (legacy, "build"),
+            (valid_provenance(), "promote"),
+        ):
+            with self.subTest(expected_build_job=expected_build_job), (
+                tempfile.TemporaryDirectory()
+            ) as directory:
+                result, output, stderr = self.verify_source_refusal(
+                    Path(directory),
+                    provenance=provenance,
+                    expected_build_job=expected_build_job,
+                )
+                self.assertEqual(result, 1)
+                self.assertFalse(output.exists())
+                self.assertIn("SOURCE_SLSA_GITHUB_IDENTITY_MISMATCH", stderr)
+
+    def test_expected_build_job_outside_reviewed_set_is_invalid(self):
+        for expected_build_job in ("verify-image", "claim", "summary", "", "Build"):
+            with self.subTest(expected_build_job=expected_build_job), (
+                tempfile.TemporaryDirectory()
+            ) as directory:
+                provenance = valid_provenance()
+                for statement in provenance.values():
+                    statement["SLSA"]["buildDefinition"]["internalParameters"][
+                        "github_job"
+                    ] = expected_build_job
+                result, output, stderr = self.verify_source_refusal(
+                    Path(directory),
+                    provenance=provenance,
+                    expected_build_job=expected_build_job,
+                )
+                self.assertEqual(result, 1)
+                self.assertFalse(output.exists())
+                self.assertIn("EXPECTED_BUILD_JOB_INVALID", stderr)
 
     def test_manifest_extraction_is_digest_bound_and_emits_safe_values(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -882,6 +953,8 @@ class PublicationSourceVerifierTests(unittest.TestCase):
                     WORKFLOW_SHA,
                     "--expected-event-name",
                     "workflow_dispatch",
+                    "--expected-build-job",
+                    "build",
                     "--repository",
                     REPOSITORY,
                     "--owner",
@@ -1006,6 +1079,129 @@ class PublicationSourceVerifierTests(unittest.TestCase):
                     ]
                 )
                 self.assertEqual(result, 1)
+
+
+def build_job_workflow(builders, *, plain_jobs=("verify-image",)):
+    """Return a synthetic publish workflow whose named jobs run the builder."""
+    jobs = {}
+    for name in plain_jobs:
+        jobs[name] = {
+            "runs-on": "ubuntu-24.04",
+            "steps": [{"name": "Plain", "run": "true"}],
+        }
+    for name in builders:
+        jobs[name] = {
+            "runs-on": "ubuntu-24.04",
+            "steps": [
+                {"uses": "actions/checkout@" + "0" * 40},
+                {"id": "build", "uses": "docker/build-push-action@" + "1" * 40},
+            ],
+        }
+    return yaml.safe_dump({"name": MODULE.WORKFLOW_NAME, "jobs": jobs})
+
+
+def builder_jobs(workflow):
+    """The same rule the verifier applies: jobs that run build-push-action."""
+    return [
+        name
+        for name, job in workflow["jobs"].items()
+        if any(
+            str(step.get("uses", "")).startswith(MODULE.BUILD_ACTION)
+            for step in job.get("steps", [])
+        )
+    ]
+
+
+class SourceBuildJobTests(unittest.TestCase):
+    """HAMCP-204: provenance build-job resolution from the exact workflow SHA."""
+
+    def workflow_repo(self, root, text):
+        path = root / MODULE.WORKFLOW_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        for arguments in (
+            ["init", "-q"], ["add", "--", MODULE.WORKFLOW_PATH],
+            ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+             "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"],
+        ):
+            subprocess.run(["git", "-C", str(root), *arguments], check=True,
+                           capture_output=True, timeout=10)
+        return subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"],
+                                       text=True).strip()
+
+    def resolve(self, root, sha):
+        output = root / "build-job.env"
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            result = MODULE.main([
+                "source-build-job", "--release-repo", str(root),
+                "--expected-workflow-sha", sha, "--github-output", str(output)])
+        return result, output, stderr.getvalue()
+
+    def test_exactly_one_reviewed_build_job_is_emitted(self):
+        for builder in ("build", "promote"):
+            with self.subTest(builder=builder), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                sha = self.workflow_repo(root, build_job_workflow([builder]))
+                # A changed checkout cannot change the committed build job.
+                (root / MODULE.WORKFLOW_PATH).write_text(
+                    build_job_workflow(["verify-image"], plain_jobs=()),
+                    encoding="utf-8",
+                )
+                result, output, stderr = self.resolve(root, sha)
+                self.assertEqual(result, 0, stderr)
+                self.assertEqual(output.read_text(), f"build_job={builder}\n")
+
+    def test_ambiguous_unknown_or_missing_build_job_fails_closed(self):
+        cases = (
+            ("two builders", build_job_workflow(["build", "promote"]),
+             "SOURCE_WORKFLOW_BUILD_JOB_INVALID"),
+            ("unreviewed builder", build_job_workflow(["verify-image"], plain_jobs=()),
+             "SOURCE_WORKFLOW_BUILD_JOB_INVALID"),
+            ("no builder", build_job_workflow([]),
+             "SOURCE_WORKFLOW_BUILD_JOB_INVALID"),
+            ("malformed YAML", "jobs: [unterminated\n",
+             "SOURCE_WORKFLOW_INVALID"),
+            ("jobs not a mapping", "jobs: [build]\n",
+             "SOURCE_WORKFLOW_INVALID"),
+            ("steps not a list", "jobs:\n  build:\n    steps: docker/build-push-action@x\n",
+             "SOURCE_WORKFLOW_INVALID"),
+        )
+        for label, text, error in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                sha = self.workflow_repo(root, text)
+                result, output, stderr = self.resolve(root, sha)
+                self.assertEqual(result, 1)
+                self.assertFalse(output.exists())
+                self.assertIn(error, stderr)
+
+    def test_workflow_sha_must_be_exact_and_present(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.workflow_repo(root, build_job_workflow(["build"]))
+            for sha, error in (
+                ("HEAD", "EXPECTED_WORKFLOW_SHA_INVALID"),
+                ("A" * 40, "EXPECTED_WORKFLOW_SHA_INVALID"),
+                ("3" * 40, "RELEASE_SOURCE_UNAVAILABLE"),
+            ):
+                with self.subTest(sha=sha):
+                    result, output, stderr = self.resolve(root, sha)
+                    self.assertEqual(result, 1)
+                    self.assertFalse(output.exists())
+                    self.assertIn(error, stderr)
+
+    def test_current_workflow_resolves_to_the_build_job(self):
+        raw = PUBLISH_WORKFLOW_PATH.read_bytes()
+        # Parsed directly with the verifier's rule, independent of Git state.
+        self.assertEqual(builder_jobs(yaml.safe_load(raw)), ["build"])
+        # The verifier itself reaches the same answer from the same bytes.
+        with mock.patch.object(MODULE, "release_blob", return_value=raw) as blob:
+            self.assertEqual(MODULE.source_build_job(Path("."), WORKFLOW_SHA), "build")
+        blob.assert_called_once_with(
+            Path("."), WORKFLOW_SHA, MODULE.WORKFLOW_PATH, limit=262_144
+        )
+        self.assertEqual(MODULE.BUILD_JOBS, ("build", "promote"))
 
 
 if __name__ == "__main__":

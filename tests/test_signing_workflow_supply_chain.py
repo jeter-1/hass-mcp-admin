@@ -5,18 +5,26 @@ permission must check out without persisted credentials and install only
 committed hash locks on an exact Python.  Signing jobs additionally hold no
 write token, run no general test or upstream-observation stack, install only
 the runtime lock, and receive their secret in exactly one step.  Write jobs in
-signing workflows run no Python at all.  Mutation tests prove each rule fails.
+signing workflows run no Python at all.  Image-publishing write jobs (HAMCP-204)
+install nothing and run Python only as ``python3 -I -S`` on allowlisted,
+self-contained workflow-authority scripts: the flags exclude implicit
+third-party loading; code review, backed by a static check, governs deliberate
+loading.  Mutation tests prove each rule fails.
 """
 
 from __future__ import annotations
 
+import ast
 import copy
 import itertools
 import json
+import os
 from pathlib import Path
 import re
 import shlex
+import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -26,6 +34,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 RELEASE_REGISTRY = "prepare-ha-mcp-release-registry-update.yml"
+PUBLISH = "publish-rc-image.yml"
 COMPATIBILITY = "prepare-upstream-compatibility-attestation.yml"
 SIGNING_WORKFLOWS = {
     RELEASE_REGISTRY: ("ha-mcp-release-registry-signing", ("HA_MCP_RELEASE_REGISTRY_SIGNING_KEY",)),
@@ -93,18 +102,76 @@ SIGNING_JOB_ACTIONS = {
     "actions/upload-artifact",
 }
 
-# Reviewed exceptions outside HAMCP-202 scope.  The publication `promote` job
-# pushes its release tag through persisted checkout credentials and runs the
-# release-validation unittest stack while holding contents/packages write.
-# Changing it is a separate publication-authority task (HAMCP-202 follow-up).
-# The set must match observed violations exactly so it cannot go stale.
-REVIEWED_EXCEPTIONS = {
-    ("publish-rc-image.yml", "promote"): {
-        "CHECKOUT_PERSISTS_CREDENTIALS",
-        "GENERAL_TEST_STACK",
-        "PIP_CACHE",
-    },
+# Write jobs of a workflow that holds `packages: write` publish images (HAMCP-204).
+# They install nothing, not even a hash lock, and run no release-validation
+# stack.  Owner decision (HAMCP-204 M1, M3): they run Python only as
+# ``python3 -I -S`` executing an allowlisted, self-contained, stdlib-only
+# repository script that the job materialized from the workflow-authority
+# commit, by path, with no other interpreter option, no ``-c``/``-m`` and no
+# code or data on standard input.  ``python3 -I -S`` guarantees that no
+# third-party package is loaded IMPLICITLY (from site-packages, PYTHON*
+# environment variables, the user site or the current directory).  It does
+# NOT, and cannot, prevent a script from DELIBERATELY loading code (sys.path
+# edits, pickle, exec, etc.).  Deliberate in-script loading in the allowlisted
+# scripts is governed by code review (every change goes through a reviewed PR),
+# backed by the static check ``_stdlib_violations`` below, which is a backstop
+# and not a complete guarantee (HAMCP-204 M4; residual owner-accepted).
+PUBLISHING_TEST_STACK = GENERAL_TEST_STACK + (
+    "compileall",
+    "discover",
+    "requirements.lock",
+    "unit_test_shards",
+)
+PUBLISHING_SCRIPTS = frozenset({
+    "publication_claim.py",
+    "publication_digest_binding.py",
+    "publication_github_release.py",
+    "publication_handoff.py",
+    "publish_registry_tags_guarded.py",
+})
+# The exact approved interpreter words before the allowlisted script path.
+APPROVED_INTERPRETER = ("python3", "-I", "-S")
+AUTHORITY_ENV = "${{ github.sha }}"
+POLICY_DIRECTORY = "$RUNNER_TEMP/publication-policy"
+POLICY_SCRIPT_PATH = re.compile(r"\$RUNNER_TEMP/publication-policy/([A-Za-z0-9_]+\.py)")
+# The reviewed materialization: workflow-authority scripts into the policy directory.
+POLICY_MATERIALIZATION = (
+    'mkdir -p "$RUNNER_TEMP/publication-policy"',
+    'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/${policy}" '
+    '> "$RUNNER_TEMP/publication-policy/${policy}"',
+)
+POLICY_LOOP = re.compile(r"for policy in ([A-Za-z0-9_. ]+); do")
+POLICY_INVOCATION = re.compile(r'python3 -I -S "' + POLICY_SCRIPT_PATH.pattern + '"')
+POLICY_INVOCATION_SCRIPT = re.compile(
+    r'(?<![\w./$-])python3 -I -S "' + POLICY_SCRIPT_PATH.pattern + '"'
+)
+# Every interpreter-like name (any case, any path or suffix, ``PYTHONPATH``
+# included) must belong to an approved invocation; any other fails closed.
+INTERPRETER_NAME = re.compile(r"python", re.IGNORECASE)
+# Words after which a simple command starts.  Anything else in front of the
+# interpreter (a pipe, ``exec``, ``env``, ``xargs``, an assignment) fails.
+COMMAND_START = {None, "&&", "||", ";", "!", "(", "{", "if", "elif", "then", "else", "do"}
+COMMAND_END = {"&&", "||", ";", ";;", "|", "|&", "&", ")"}
+PYTHON_CONTROL = ("site-packages", "sitecustomize", "usercustomize")
+# Package managers a publishing job may not run, by name or by path.
+PACKAGE_MANAGER = re.compile(
+    r"(?<![\w.-])(?:apt(?:-get)?|aptitude|dpkg|snap|yum|dnf|microdnf|rpm|apk|zypper|pacman"
+    r"|brew|conda|mamba|micromamba|npm|npx|yarn|pnpm|gem|cargo|pipx|uvx?|poetry|pipenv|pdm"
+    r"|hatch|easy_install|ensurepip|pip(?:[0-9]+(?:\.[0-9]+)?)?)(?![\w-])"
+)
+PUBLISHING_JOB_ACTIONS = {
+    "actions/checkout",
+    "actions/setup-python",
+    "docker/setup-buildx-action",
+    "docker/setup-qemu-action",
+    "docker/login-action",
+    "docker/build-push-action",
 }
+
+# Reviewed exceptions.  HAMCP-204 split the publication `promote` job, so no
+# privileged job is exempt.  The set must match observed violations exactly so
+# it cannot go stale or hide a new violation.
+REVIEWED_EXCEPTIONS: dict[tuple[str, str], set[str]] = {}
 
 
 def _load(name: str) -> dict:
@@ -405,7 +472,166 @@ def _install_violations(text: str) -> bool:
     )
 
 
-def job_violations(workflow: dict, job: dict, *, signing_workflow: bool) -> set[str]:
+def _publishes_packages(workflow: dict, job: dict) -> bool:
+    permissions = _permissions(workflow, job)
+    if isinstance(permissions, str):
+        return permissions == "write-all"
+    return isinstance(permissions, dict) and permissions.get("packages") == "write"
+
+
+def _authority_materialization(step: dict) -> str | None:
+    """Return the step text without its reviewed policy materialization, if any.
+
+    The loop may name only allowlisted scripts, from the workflow authority.
+    """
+    run = _run_text(step)
+    env = step.get("env", {}) or {}
+    loops = POLICY_LOOP.findall(run)
+    if (
+        env.get("WORKFLOW_AUTHORITY_SHA") != AUTHORITY_ENV
+        or not all(line in run for line in POLICY_MATERIALIZATION)
+        or len(loops) != 1
+        or not set(loops[0].split()) <= PUBLISHING_SCRIPTS
+    ):
+        return None
+    for line in POLICY_MATERIALIZATION:
+        run = run.replace(line, "")
+    return POLICY_LOOP.sub("", run)
+
+
+def _is_operator(word: str | None) -> bool:
+    return bool(word) and set(word) <= set("();<>|&")
+
+
+def _interpreter_word(word: str) -> bool:
+    """Whether a shell word names a Python interpreter, by name or by path."""
+    return bool(PYTHON_PROGRAM.fullmatch(word.lstrip("`").rsplit("/", 1)[-1]))
+
+
+def _approved_python(words: list[str], position: int) -> bool:
+    """Whether ``words[position]`` starts the one approved interpreter form.
+
+    ``python3 -I -S "$RUNNER_TEMP/publication-policy/<allowlisted>.py" args...``
+    at a command start: exactly those two options, in that order, as separate
+    words, and no standard-input redirect, heredoc, here-string or pipe into it.
+    """
+
+    if tuple(words[position : position + 3]) != APPROVED_INTERPRETER:
+        return False  # python, a path, python3.12, `python3, missing/extra options...
+    if (words[position - 1] if position else None) not in COMMAND_START:
+        return False  # piped into, or run through exec/env/xargs/an assignment
+    after = words[position + 1 :]
+    command = list(itertools.takewhile(lambda word: not _is_operator(word), after))
+    try:
+        kind, script, consumed = _python_command(command)
+    except ValueError:
+        return False
+    match = POLICY_SCRIPT_PATH.fullmatch(script or "")
+    if (
+        kind != "script"
+        or consumed != len(APPROVED_INTERPRETER) - 1
+        or not match
+        or match.group(1) not in PUBLISHING_SCRIPTS
+    ):
+        return False  # -c, -m, -, other options, stdin, or a non-allowlisted path
+    simple = itertools.takewhile(lambda word: word not in COMMAND_END, after)
+    return not any(_is_operator(word) and word.startswith("<") for word in simple)
+
+
+def _runs_unreviewed_python(text: str) -> bool:
+    """Whether a publishing-job run script runs Python outside the approved form.
+
+    Interpreters are recognized by name or path (``python``, ``python3.12``,
+    ``/usr/bin/python3``, ``./venv/bin/python``) anywhere in a command line,
+    including nested shell text.  Inline ``-c`` code, ``-m``, standard input
+    (``-``, no script, ``<``, ``<<``, ``<<-``, ``<<<`` or a pipe) and options
+    fail; so does any interpreter name the parser cannot attribute.
+    """
+
+    text = re.sub(r"\\\n\s*", " ", text)
+    names = len(INTERPRETER_NAME.findall(text))
+    if not names:
+        return False
+    approved = 0
+    lines = text.split("\n")
+    index = 0
+    while index < len(lines):
+        chunk = lines[index]
+        index += 1
+        if not INTERPRETER_NAME.search(chunk):
+            continue
+        while True:
+            try:
+                words = _shell_words(chunk)
+                break
+            except ValueError:
+                if index >= len(lines):
+                    return True  # an unclosed quote cannot be attributed
+                chunk += "\n" + lines[index]
+                index += 1
+        for position, word in enumerate(words):
+            if not _interpreter_word(word):
+                continue
+            if not _approved_python(words, position):
+                return True
+            approved += 1
+    # A name inside a quoted word (``bash -c '...'``), an assignment, a
+    # comment or a non-interpreter word is never attributed to an approved run.
+    return names != approved
+
+
+def _shell_is_bash(value: object) -> bool:
+    return value is None or value == "bash"
+
+
+def _publishing_violations(workflow: dict, job: dict) -> set[str]:
+    violations: set[str] = set()
+    steps = job.get("steps", [])
+    serialized = json.dumps(job)
+    if any(marker in serialized for marker in PUBLISHING_TEST_STACK):
+        violations.add("PUBLISHING_JOB_RUNS_TEST_STACK")
+    if any(marker in serialized for marker in PYTHON_CONTROL) or any(
+        INTERPRETER_NAME.search(str(name))
+        for scope in (workflow, job, *steps)
+        for name in (scope.get("env", {}) or {})
+    ):
+        violations.add("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON")
+    for scope in (workflow, job):
+        defaults = (scope.get("defaults", {}) or {}).get("run", {}) or {}
+        if not _shell_is_bash(defaults.get("shell")):
+            violations.add("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON")
+    for step in steps:
+        action = _action(step)
+        if action and action not in PUBLISHING_JOB_ACTIONS:
+            violations.add("PUBLISHING_JOB_EXTRA_ACTION")
+        if "run" in step and not _shell_is_bash(step.get("shell")):
+            violations.add("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON")
+        run = _run_text(step)
+        installs = install_invocations(run)
+        if (
+            installs is None
+            or any(install.is_install for install in installs)
+            or PACKAGE_MANAGER.search(run)
+        ):
+            violations.add("PUBLISHING_JOB_INSTALLS_PACKAGES")
+        if _runs_unreviewed_python(run):
+            violations.add("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON")
+        # Only the reviewed materialization may name the policy directory
+        # other than to run an allowlisted script from it.
+        remainder = _authority_materialization(step)
+        text = run if remainder is None else remainder
+        if POLICY_DIRECTORY in POLICY_INVOCATION.sub("", text):
+            violations.add("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON")
+    return violations
+
+
+def job_violations(
+    workflow: dict,
+    job: dict,
+    *,
+    signing_workflow: bool,
+    publishing_workflow: bool = False,
+) -> set[str]:
     signing = _is_signing_job(job)
     write = _has_write(_permissions(workflow, job))
     if not (signing or write):
@@ -455,12 +681,15 @@ def job_violations(workflow: dict, job: dict, *, signing_workflow: bool) -> set[
             re.search(r"\b(python[0-9.]*|pip[0-9.]*)\b", _run_text(step)) for step in steps
         ):
             violations.add("WRITE_JOB_RUNS_PYTHON")
+    if write and publishing_workflow:
+        violations |= _publishing_violations(workflow, job)
     return violations
 
 
 def workflow_violations(name: str, workflow: dict) -> dict[str, set[str]]:
     jobs = workflow.get("jobs", {})
     signing_workflow = any(_is_signing_job(job) for job in jobs.values())
+    publishing_workflow = any(_publishes_packages(workflow, job) for job in jobs.values())
     if signing_workflow:
         # Secrets may never be referenced by a non-signing job of a signer.
         for job_name, job in jobs.items():
@@ -470,7 +699,12 @@ def workflow_violations(name: str, workflow: dict) -> dict[str, set[str]]:
                 raise AssertionError(f"{name}:{job_name} references a signing secret")
     result = {}
     for job_name, job in jobs.items():
-        found = job_violations(workflow, job, signing_workflow=signing_workflow)
+        found = job_violations(
+            workflow,
+            job,
+            signing_workflow=signing_workflow,
+            publishing_workflow=publishing_workflow,
+        )
         if found:
             result[job_name] = found
     return result
@@ -499,7 +733,22 @@ class PrivilegedJobSupplyChainGuardTests(unittest.TestCase):
             self.assertIn((name, "sign"), privileged)
             self.assertIn((name, "publish"), privileged)
             self.assertNotIn((name, "evidence"), privileged)
-        self.assertIn(("publish-rc-image.yml", "promote"), privileged)
+        for job_name in ("claim", "build", "promote"):
+            self.assertIn((PUBLISH, job_name), privileged)
+        for job_name in ("verify-release", "verify-image", "summary"):
+            self.assertNotIn((PUBLISH, job_name), privileged)
+
+    def test_publishing_rules_cover_exactly_the_image_publication_workflow(self) -> None:
+        publishing = {
+            path.name
+            for path in sorted(WORKFLOWS.glob("*.y*ml"))
+            if any(
+                _publishes_packages(_load(path.name), job)
+                for job in _load(path.name).get("jobs", {}).values()
+            )
+        }
+        self.assertEqual(publishing, {PUBLISH})
+        self.assertEqual(REVIEWED_EXCEPTIONS, {})
 
     def test_signing_workflows_split_observation_signing_and_publication(self) -> None:
         for name, (environment, secrets) in SIGNING_WORKFLOWS.items():
@@ -775,17 +1024,214 @@ class GuardMutationTests(unittest.TestCase):
             )
         )
 
-    def test_reviewed_exception_cannot_hide_new_violations(self) -> None:
-        workflow = copy.deepcopy(_load("publish-rc-image.yml"))
-        step = next(
-            step
-            for step in workflow["jobs"]["promote"]["steps"]
-            if "--require-hashes" in step.get("run", "")
+
+class PublishingJobGuardTests(unittest.TestCase):
+    """HAMCP-204: image-publishing write jobs hold no installer or test stack."""
+
+    PUBLISHING_JOBS = ("claim", "build", "promote")
+
+    def _mutated(self, mutate) -> dict[str, set[str]]:
+        workflow = copy.deepcopy(_load(PUBLISH))
+        mutate(workflow["jobs"])
+        return workflow_violations(PUBLISH, workflow)
+
+    @staticmethod
+    def _append(job: dict, run: str, **extra) -> None:
+        job["steps"].append({"name": "mutation", "shell": "bash", "run": run, **extra})
+
+    @staticmethod
+    def _checkout(job: dict) -> dict:
+        return next(step for step in job["steps"] if _action(step) == "actions/checkout")
+
+    @staticmethod
+    def _setup_python(job: dict) -> dict:
+        return next(step for step in job["steps"] if _action(step) == "actions/setup-python")
+
+    def test_baseline_is_clean_and_read_only_jobs_hold_no_write(self) -> None:
+        self.assertEqual(self._mutated(lambda jobs: None), {})
+        jobs = _load(PUBLISH)["jobs"]
+        self.assertEqual(jobs["verify-release"]["permissions"], {"contents": "read"})
+        self.assertEqual(jobs["verify-image"]["permissions"], {"contents": "read"})
+        self.assertEqual(jobs["summary"]["permissions"], {})
+        # The validation stack still runs, in a job that cannot publish.
+        self.assertIn("unittest", json.dumps(jobs["verify-release"]))
+
+    def test_pre_split_promote_pattern_fails(self) -> None:
+        # The old single promote job: persisted checkout credentials, a pip
+        # cache, the hash-locked tests stack and release-checkout unittest.
+        def old_pattern(jobs):
+            job = jobs["promote"]
+            self._checkout(job)["with"]["persist-credentials"] = True
+            self._setup_python(job)["with"]["cache"] = "pip"
+            self._append(job, LOCKED_INSTALL.replace(SIGNING_LOCK, "tests/requirements.lock"))
+            self._append(job, "python -m unittest discover -s tests -v")
+
+        self.assertEqual(
+            self._mutated(old_pattern),
+            {
+                "promote": {
+                    "CHECKOUT_PERSISTS_CREDENTIALS",
+                    "PIP_CACHE",
+                    "GENERAL_TEST_STACK",
+                    "PUBLISHING_JOB_INSTALLS_PACKAGES",
+                    "PUBLISHING_JOB_RUNS_TEST_STACK",
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                }
+            },
         )
-        step["run"] = step["run"].replace("--require-hashes ", "")
-        found = workflow_violations("publish-rc-image.yml", workflow)["promote"]
-        self.assertNotEqual(found, REVIEWED_EXCEPTIONS[("publish-rc-image.yml", "promote")])
-        self.assertIn("UNHASHED_INSTALL", found)
+
+    def test_unhashed_install_fails_in_every_publishing_job(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in ("pip install requests", "python -m pip install -r scripts/requirements.txt"):
+                with self.subTest(job=job_name, run=run):
+                    found = self._mutated(
+                        lambda jobs, job_name=job_name, run=run: self._append(jobs[job_name], run)
+                    )[job_name]
+                    self.assertIn("UNHASHED_INSTALL", found)
+                    self.assertIn("PUBLISHING_JOB_INSTALLS_PACKAGES", found)
+
+    def test_hash_locked_install_still_fails_in_publishing_jobs(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            with self.subTest(job=job_name):
+                found = self._mutated(
+                    lambda jobs, job_name=job_name: self._append(jobs[job_name], LOCKED_INSTALL)
+                )[job_name]
+                self.assertIn("PUBLISHING_JOB_INSTALLS_PACKAGES", found)
+                self.assertNotIn("UNHASHED_INSTALL", found)
+
+    def test_persisted_credentials_fail_in_every_publishing_job(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for value in (True, None):
+                def mutate(jobs, job_name=job_name, value=value):
+                    options = self._checkout(jobs[job_name])["with"]
+                    if value is None:
+                        options.pop("persist-credentials")
+                    else:
+                        options["persist-credentials"] = value
+                with self.subTest(job=job_name, value=value):
+                    self.assertIn("CHECKOUT_PERSISTS_CREDENTIALS", self._mutated(mutate)[job_name])
+
+    def test_floating_python_or_pip_cache_fails_in_publishing_jobs(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            def floating(jobs, job_name=job_name):
+                self._setup_python(jobs[job_name])["with"]["python-version"] = "3.12"
+
+            def cached(jobs, job_name=job_name):
+                self._setup_python(jobs[job_name])["with"]["cache"] = "pip"
+
+            with self.subTest(job=job_name):
+                self.assertIn("FLOATING_PYTHON", self._mutated(floating)[job_name])
+                self.assertIn("PIP_CACHE", self._mutated(cached)[job_name])
+
+    def test_test_stack_fails_in_every_publishing_job(self) -> None:
+        stacks = {
+            "unittest": "python -m unittest discover -s tests -v",
+            "compileall": "python -m compileall -q hass_mcp_engineering_beta",
+            "check.ps1": "pwsh -File scripts/check.ps1 -Tier Full",
+            "tests lock": 'git show "${WORKFLOW_AUTHORITY_SHA}:tests/requirements.lock" > "$RUNNER_TEMP/lock"',
+            "shards": "echo scripts/unit_test_shards.py",
+        }
+        for job_name in self.PUBLISHING_JOBS:
+            for label, run in stacks.items():
+                with self.subTest(job=job_name, stack=label):
+                    found = self._mutated(
+                        lambda jobs, job_name=job_name, run=run: self._append(jobs[job_name], run)
+                    )[job_name]
+                    self.assertIn("PUBLISHING_JOB_RUNS_TEST_STACK", found)
+
+    def test_release_checkout_python_fails_in_publishing_jobs(self) -> None:
+        runs = (
+            "python scripts/publication_digest_binding.py --github-output x",
+            "python -m json.tool x.json",
+            "python3 -c 'print(1)'",
+            'verifier="scripts/verify_publication_source_image.py"\npython "$verifier" verify-source',
+            'cp scripts/publication_claim.py "$RUNNER_TEMP/publication-policy/publication_claim.py"',
+            'python "$RUNNER_TEMP/elsewhere/publication_claim.py" create',
+        )
+        for job_name in self.PUBLISHING_JOBS:
+            for run in runs:
+                with self.subTest(job=job_name, run=run):
+                    found = self._mutated(
+                        lambda jobs, job_name=job_name, run=run: self._append(
+                            jobs[job_name], run, env={"WORKFLOW_AUTHORITY_SHA": AUTHORITY_ENV}
+                        )
+                    )[job_name]
+                    self.assertIn("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON", found)
+
+    def test_policy_materialized_from_the_release_checkout_fails(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            def release_authority(jobs, job_name=job_name):
+                step = next(
+                    step
+                    for step in jobs[job_name]["steps"]
+                    if _authority_materialization(step) is not None
+                )
+                step["env"]["WORKFLOW_AUTHORITY_SHA"] = (
+                    "${{ needs.detect-release.outputs.release_sha }}"
+                )
+            with self.subTest(job=job_name):
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                    self._mutated(release_authority)[job_name],
+                )
+
+    def test_allowlisted_workflow_authority_scripts_still_pass(self) -> None:
+        for script in sorted(PUBLISHING_SCRIPTS):
+            run = f'python3 -I -S "$RUNNER_TEMP/publication-policy/{script}" --flag "$VALUE"'
+            with self.subTest(script=script):
+                self.assertFalse(_runs_unreviewed_python(run))
+        for job_name in self.PUBLISHING_JOBS:
+            with self.subTest(job=job_name):
+                self.assertEqual(
+                    self._mutated(
+                        lambda jobs, job_name=job_name: self._append(
+                            jobs[job_name],
+                            'if ! python3 -I -S "$RUNNER_TEMP/publication-policy/publication_handoff.py" '
+                            'guard --release "$R" --authority "$A" > "$RUNNER_TEMP/out"; then\n'
+                            "  exit 1\nfi",
+                        )
+                    ),
+                    {},
+                )
+
+    def test_former_inline_and_variable_python_allowances_now_fail(self) -> None:
+        # Pre-correction allowances: inline standard input and a quoted
+        # variable written by git show.  Neither is an allowlisted path.
+        for run in (
+            "python - \"$x\" <<'PY'\nprint(1)\nPY",
+            'publisher="$RUNNER_TEMP/p.py"\n'
+            'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/publish_registry_tags_guarded.py" '
+            '> "$publisher"\npython "$publisher" --help',
+        ):
+            with self.subTest(run=run):
+                self.assertTrue(_runs_unreviewed_python(run))
+
+    def test_non_publishing_write_workflow_is_not_subject_to_publishing_rules(self) -> None:
+        # A contents-write job elsewhere may run Python; adding packages: write
+        # brings it under the publishing rules.
+        workflow = copy.deepcopy(_load(PUBLISH))
+        job = workflow["jobs"]["claim"]
+        self._append(job, "python -m json.tool x.json")
+        for name in ("build", "promote"):
+            workflow["jobs"].pop(name)
+        self.assertEqual(workflow_violations(PUBLISH, workflow), {})
+        job["permissions"]["packages"] = "write"
+        self.assertEqual(
+            workflow_violations(PUBLISH, workflow),
+            {"claim": {"PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON"}},
+        )
+
+    def test_reviewed_exception_mutation_fails_the_exact_match(self) -> None:
+        # Re-adding the pre-HAMCP-204 exception no longer matches the observed set.
+        stale = {
+            (PUBLISH, "promote"): {
+                "CHECKOUT_PERSISTS_CREDENTIALS",
+                "GENERAL_TEST_STACK",
+                "PIP_CACHE",
+            },
+        }
+        self.assertNotEqual(all_violations(), stale)
+        self.assertEqual(all_violations(), REVIEWED_EXCEPTIONS)
 
 
 LOCKED_INSTALL = (
@@ -1132,6 +1578,837 @@ class PythonInterpreterGuardTests(unittest.TestCase):
         for name in SIGNING_WORKFLOWS:
             with self.subTest(workflow=name, guard="real"):
                 self.assertIn("UNHASHED_INSTALL", self._sign_with(name, probe))
+
+
+POLICY_SCRIPT = '"$RUNNER_TEMP/publication-policy/publication_claim.py"'
+# The surviving mutation from the Codex review of fc69da1 (R1), verbatim.
+CODEX_R1_PROBE = "/usr/bin/python3 scripts/validate_promotion_candidate.py --help"
+INTERPRETER_PATH_PROBES = (
+    CODEX_R1_PROBE,
+    f"/usr/bin/python3 {POLICY_SCRIPT} create",
+    f"/usr/bin/python {POLICY_SCRIPT} create",
+    f"./venv/bin/python {POLICY_SCRIPT} create",
+    f"venv/bin/python3.12 {POLICY_SCRIPT} create",
+    f"python3 {POLICY_SCRIPT} create",
+    f"python3.12 {POLICY_SCRIPT} create",
+    f"$(which python3) {POLICY_SCRIPT} create",
+    f'"$(command -v python)" {POLICY_SCRIPT} create',
+    f"`which python` {POLICY_SCRIPT} create",
+    'interpreter=/usr/bin/python3\n"$interpreter" -c "print(1)"',
+    "bash -c '/usr/bin/python3 scripts/validate_promotion_candidate.py --help'",
+    'sh -c "python -c 1"',
+)
+STDIN_PROBES = (
+    "python - < scripts/validate_promotion_candidate.py",
+    "python -",
+    "python",
+    "python -IS -",
+    "python <<'PY'\nprint(1)\nPY",
+    "python <<-PY\n\tprint(1)\n\tPY",
+    "python <<< 'print(1)'",
+    "python3 - <<'PY'\nprint(1)\nPY",
+    "/usr/bin/python3 - <<'PY'\nprint(1)\nPY",
+    "cat scripts/validate_promotion_candidate.py | python",
+    "cat scripts/validate_promotion_candidate.py | /usr/bin/python3 -",
+    "echo 'print(1)' |& python -",
+    f"python3 -I -S {POLICY_SCRIPT} create < scripts/payload",
+    f"python3 -I -S {POLICY_SCRIPT} create 0< scripts/payload",
+    f"python3 -I -S {POLICY_SCRIPT} create <<'PY'\nprint(1)\nPY",
+    f"python3 -I -S {POLICY_SCRIPT} create <<< 'print(1)'",
+    f"cat scripts/payload | python3 -I -S {POLICY_SCRIPT} create",
+    "python3 -I -S -",
+    "python3 -I -S - < scripts/validate_promotion_candidate.py",
+    "python3 -I -S <<'PY'\nprint(1)\nPY",
+)
+INLINE_PROBES = (
+    "python -c 'print(1)'",
+    "python -Ic 'print(1)'",
+    "python -I -c 'print(1)'",
+    "/usr/bin/python3 -c 'print(1)'",
+    "python -m json.tool x.json",
+    "python -Im json.tool x.json",
+    f"python -I {POLICY_SCRIPT} create",
+    f"python -- {POLICY_SCRIPT} create",
+    f"exec python {POLICY_SCRIPT} create",
+    f"env python {POLICY_SCRIPT} create",
+    f"PYTHONPATH=. python {POLICY_SCRIPT} create",
+    f"X=1 python {POLICY_SCRIPT} create",
+    "python scripts/publication_claim.py create",
+    'python "$RUNNER_TEMP/publication-policy/verify_publication_source_image.py"',
+    'python "$RUNNER_TEMP/publication-policy/../publication_claim.py"',
+    'python "$RUNNER_TEMP/elsewhere/publication_claim.py" create',
+    "# python is mentioned here",
+    'echo "run python later"',
+)
+PACKAGE_MANAGER_PROBES = (
+    "apt-get install -y jq",
+    "sudo apt install -y jq",
+    "/usr/bin/apt-get install -y jq",
+    "dpkg -i x.deb",
+    "npm ci",
+    "npx some-tool",
+    "pipx run some-tool",
+    "uv run some-tool",
+    "uvx some-tool",
+    "conda install x",
+    "brew install x",
+    "gem install x",
+    "cargo install x",
+    "poetry install",
+    "pip3 install x",
+)
+
+
+# Codex M3 (d3fb7e6): literal qualified, aliased and dynamic imports and code
+# execution that the bare-name AST check accepted.  R3b is the surviving mutation.
+CODEX_R3B_PROBE = (
+    "import builtins\n"
+    "try:\n"
+    "    builtins.__import__(\"yaml\")\n"
+    "except ImportError:\n"
+    "    pass\n"
+)
+M3_DYNAMIC_IMPORT_SOURCES = (
+    "import builtins\nbuiltins.__import__('yaml')\n",
+    "from builtins import __import__ as load_module\nload_module('yaml')\n",
+    "import builtins\nbuiltins.exec('import yaml')\n",
+    "import builtins as b\ngetattr(b, '__import__')('yaml')\n",
+    "getattr(__builtins__, '__import__')('yaml')\n",
+    "load = __import__\nload('yaml')\n",
+    "importlib = __import__('importlib')\n",
+    "import importlib\nimportlib.import_module('yaml')\n",
+    "from importlib import import_module as load\nload('yaml')\n",
+    "vars(globals()['__builtins__'])['__import__']('yaml')\n",
+    "import ctypes\n",
+    "import marshal\n",
+    "import sys\nsys.meta_path.clear()\n",
+    CODEX_R3B_PROBE,
+)
+
+
+# Codex R4 (M4), verbatim: an optional loader that edits the import path through
+# ``from sys import path`` and imports a planted module through pickle.  It
+# passed every test at 7e29fb2 and loads the planted module under ``-I -S``.
+CODEX_R4_PROBE = (
+    "from sys import path\n"
+    "import pickle\n"
+    "path.insert(0, str(Path(__file__).parent))\n"
+    "try:\n"
+    "    _optional_value = pickle.loads(b\"cyaml\\nSENTINEL\\n.\")\n"
+    "except (ImportError, AttributeError):\n"
+    "    pass\n"
+)
+# HAMCP-204 M4: obvious deliberate-loading constructs, by class.  Each must
+# fail the static backstop; none is prevented by ``python3 -I -S`` itself.
+DELIBERATE_LOADER_SOURCES = {
+    "sys-path": (
+        "import sys\nsys.path.insert(0, '.')\n",
+        "import sys as s\ns.path.append('.')\n",
+        "from sys import path\npath.insert(0, '.')\n",
+        "from sys import path as p\np.append('.')\n",
+        "import sys\ngetattr(sys, 'path').append('.')\n",
+        "import sys\nvars(sys)['path'].append('.')\n",
+        "import os\nos.sys.path.append('.')\n",
+        "from sys import *\npath.append('.')\n",
+    ),
+    "sys-meta-path": (
+        "import sys\nsys.meta_path.insert(0, object())\n",
+        "from sys import meta_path\nmeta_path.clear()\n",
+        "import sys as s\ns.meta_path.clear()\n",
+    ),
+    "sys-path-hooks": (
+        "import sys\nsys.path_hooks.append(object)\n",
+        "from sys import path_hooks\npath_hooks.append(object)\n",
+        "import sys\nsys.path_importer_cache.clear()\n",
+    ),
+    "deserializer": (
+        "import pickle\npickle.loads(b'cyaml\\nSENTINEL\\n.')\n",
+        "from pickle import loads\nloads(b'')\n",
+        "import _pickle\n",
+        "import marshal\nmarshal.loads(b'')\n",
+        "import shelve\nshelve.open('db')\n",
+        "import copyreg\n",
+        "import json\njson.pickle\n",
+        "from json import Unpickler\n",
+    ),
+    "exec-eval-compile": (
+        "exec(open('x').read())\n",
+        "eval(input())\n",
+        "code = compile(open('x').read(), 'x', 'exec')\n",
+        "run = exec\nrun(open('x').read())\n",
+        "exec('import yaml')\n",
+    ),
+    "importlib-file-loader": (
+        "from importlib.util import spec_from_file_location, module_from_spec\n",
+        "import importlib.util\n",
+        "from importlib.machinery import SourceFileLoader\n",
+        "import json\njson.spec_from_file_location('x', 'x.py')\n",
+        "import json\njson.module_from_spec(None)\n",
+        "import json\njson.SourceFileLoader('x', 'x.py').load_module()\n",
+        "import json\njson.loader.exec_module(None)\n",
+        "import _frozen_importlib_external\n",
+        "import _imp\n",
+    ),
+    "runpy": (
+        "import runpy\nrunpy.run_path('x.py')\n",
+        "from runpy import run_module\nrun_module('yaml')\n",
+        "import json\njson.run_path('x.py')\n",
+    ),
+    "ctypes": (
+        "import ctypes\n",
+        "from ctypes import CDLL\n",
+        "import ctypes.util\n",
+        "import _ctypes\n",
+    ),
+    "zipimport": (
+        "import zipimport\nzipimport.zipimporter('x.zip').load_module('yaml')\n",
+        "from zipimport import zipimporter\n",
+        "import json\njson.zipimporter('x.zip')\n",
+    ),
+    "dunder-import": (
+        "name = 'yaml'\n__import__(name)\n",
+        "__import__(input())\n",
+        "load = __import__\nload(open('x').read())\n",
+        "import builtins\nbuiltins.__import__(name)\n",
+        "getattr(__builtins__, '__import__')(name)\n",
+    ),
+}
+
+
+def _stdin_blind_approved_python(words: list[str], position: int) -> bool:
+    """Mutant: approves an allowlisted script whatever feeds its standard input."""
+
+    if tuple(words[position : position + 3]) != APPROVED_INTERPRETER:
+        return False
+    command = list(itertools.takewhile(lambda word: not _is_operator(word), words[position + 1 :]))
+    try:
+        kind, script, consumed = _python_command(command)
+    except ValueError:
+        return False
+    match = POLICY_SCRIPT_PATH.fullmatch(script or "")
+    return kind == "script" and consumed == 2 and bool(match) and match.group(1) in PUBLISHING_SCRIPTS
+
+
+
+# What ``python3 -I -S`` does and does not guarantee (HAMCP-204 M4, owner
+# decision): it guarantees that no third-party package is loaded IMPLICITLY
+# (from site-packages, PYTHON* environment variables, the user site or the
+# current directory).  It does NOT, and cannot, prevent a script from
+# DELIBERATELY loading code (sys.path edits, pickle, exec, etc.).  Deliberate
+# in-script loading in the allowlisted publication scripts is governed by code
+# review (every change goes through a reviewed PR), backed by the static check
+# below.  That residual is owner-accepted.
+#
+# The static check is a backstop that human review complements, NOT a
+# complete guarantee: Python has more ways to load code than any denylist can
+# name.  It fails on the obvious deliberate-loading constructs, by any
+# reference, call or not (aliases, ``from`` imports, ``builtins.__import__``,
+# ``getattr`` strings): non-stdlib or repository imports; import, loader,
+# deserializer and foreign-function modules; ``exec``/``eval``/``compile``
+# and ``__import__`` (literal arguments included, since ``exec('import x')``
+# is itself a loader); importlib file loaders; and any reference to the
+# import-path state of ``sys`` (``sys.path``, ``meta_path``, ``path_hooks``),
+# including through an alias, a ``from sys import`` or the bare module.
+DYNAMIC_MODULES = frozenset({
+    # Import machinery and code runners.
+    "_frozen_importlib", "_frozen_importlib_external", "_imp", "builtins", "code", "codeop",
+    "imp", "importlib", "pkgutil", "runpy", "site", "zipimport",
+    # Deserializers that import and call named objects.
+    "_pickle", "copyreg", "marshal", "pickle", "shelve",
+    # Foreign-function interfaces.
+    "_ctypes", "ctypes",
+})
+DYNAMIC_NAMES = frozenset({
+    "__builtins__", "__import__", "__loader__", "__spec__", "compile", "eval", "exec",
+    "import_module",
+})
+# Loader entry points, reachable as attributes or ``from`` imports.
+LOADER_NAMES = frozenset({
+    "ExtensionFileLoader", "FileFinder", "PathFinder", "SourceFileLoader",
+    "SourcelessFileLoader", "Unpickler", "exec_module", "load_module",
+    "module_from_spec", "run_module", "run_path", "spec_from_file_location",
+    "spec_from_loader", "zipimporter",
+})
+DYNAMIC_ATTRIBUTES = frozenset({
+    "__builtins__", "__import__", "__loader__", "__spec__", "eval", "exec", "import_module",
+    "meta_path", "path_hooks", "path_importer_cache", "sys",
+}) | LOADER_NAMES
+SYS_ATTRIBUTES = frozenset({
+    "executable", "meta_path", "modules", "path", "path_hooks", "path_importer_cache",
+})
+
+
+def _stdlib_violations(path: Path) -> list[str]:
+    """Non-stdlib or repository imports, or obvious deliberate code loading, in a script.
+
+    A backstop for code review, not a complete guarantee (see above).
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    sys_names = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == "sys"
+    }
+    attribute_bases = {
+        id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+    }
+    found = []
+    for node in ast.walk(tree):
+        modules = []
+        if isinstance(node, ast.Import):
+            modules = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                found.append(f"relative import at line {node.lineno}")
+            modules = [node.module or ""]
+            for alias in node.names:
+                if alias.name == "*":
+                    found.append(f"star import from {node.module} at line {node.lineno}")
+                if alias.name in DYNAMIC_NAMES | DYNAMIC_ATTRIBUTES:
+                    found.append(f"dynamic name {alias.name} imported at line {node.lineno}")
+                if node.module == "sys" and alias.name in SYS_ATTRIBUTES:
+                    found.append(f"sys.{alias.name} imported at line {node.lineno}")
+        for module in modules:
+            top = module.split(".", 1)[0]
+            if top in DYNAMIC_MODULES:
+                found.append(f"dynamic import machinery {module} at line {node.lineno}")
+            elif top not in sys.stdlib_module_names:
+                # Third-party and repository (sibling) modules alike: an
+                # allowlisted script is self-contained.
+                found.append(f"non-stdlib import {module} at line {node.lineno}")
+        if isinstance(node, ast.Name) and node.id in DYNAMIC_NAMES:
+            found.append(f"dynamic name {node.id} at line {node.lineno}")
+        if isinstance(node, ast.Name) and node.id in LOADER_NAMES:
+            found.append(f"loader name {node.id} at line {node.lineno}")
+        if isinstance(node, ast.Attribute) and node.attr in DYNAMIC_ATTRIBUTES:
+            found.append(f"dynamic attribute {node.attr} at line {node.lineno}")
+        if isinstance(node, ast.Attribute) and node.attr in DYNAMIC_MODULES:
+            # A loader module re-exported by another module (``json.pickle``).
+            found.append(f"dynamic module attribute {node.attr} at line {node.lineno}")
+        if isinstance(node, ast.Constant) and node.value in {"__builtins__", "__import__"}:
+            found.append(f"dynamic name string {node.value!r} at line {node.lineno}")
+        if isinstance(node, ast.Attribute) and node.attr in SYS_ATTRIBUTES and (
+            isinstance(node.value, ast.Name) and node.value.id in sys_names | {"sys"}
+        ):
+            found.append(f"sys.{node.attr} at line {node.lineno}")
+        if (
+            isinstance(node, ast.Name)
+            and node.id in sys_names
+            and id(node) not in attribute_bases
+        ):
+            # ``getattr(sys, ...)``, ``vars(sys)``, ``s = sys``: indirect access.
+            found.append(f"sys module used indirectly at line {node.lineno}")
+    return found
+
+
+def _sibling_imports(path: Path) -> set[str]:
+    siblings = {Path(name).stem for name in PUBLISHING_SCRIPTS} | {
+        item.stem for item in (ROOT / "scripts").glob("*.py")
+    }
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules |= {alias.name.split(".", 1)[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module.split(".", 1)[0])
+    return {module + ".py" for module in modules if module in siblings}
+
+
+class PublishingPythonInterpreterTests(unittest.TestCase):
+    """HAMCP-204 M1/M2: the approved Python form in image-publishing write jobs."""
+
+    PUBLISHING_JOBS = ("claim", "build", "promote")
+
+    def _with(self, job_name: str, run: str, **extra) -> set[str]:
+        workflow = copy.deepcopy(_load(PUBLISH))
+        workflow["jobs"][job_name]["steps"].append(
+            {"name": "mutation", "shell": "bash", "run": run, **extra}
+        )
+        return workflow_violations(PUBLISH, workflow).get(job_name, set())
+
+    def test_codex_r1_mutation_fails_in_promote(self) -> None:
+        # R1 verbatim: appended to the step before the digest binding step.
+        workflow = copy.deepcopy(_load(PUBLISH))
+        steps = workflow["jobs"]["promote"]["steps"]
+        bind = next(
+            index for index, step in enumerate(steps)
+            if step.get("name", "").startswith("Bind the promoted digest")
+        )
+        steps[bind - 1]["run"] = steps[bind - 1]["run"] + "\n" + CODEX_R1_PROBE + "\n\n"
+        self.assertEqual(
+            workflow_violations(PUBLISH, workflow),
+            {"promote": {"PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON"}},
+        )
+
+    def test_absolute_relative_and_substituted_interpreters_fail(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in INTERPRETER_PATH_PROBES:
+                with self.subTest(job=job_name, run=run):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON", self._with(job_name, run)
+                    )
+
+    def test_stdin_fed_python_fails(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in STDIN_PROBES:
+                with self.subTest(job=job_name, run=run):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON", self._with(job_name, run)
+                    )
+
+    def test_inline_module_option_and_unlisted_python_fails(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in INLINE_PROBES:
+                with self.subTest(job=job_name, run=run):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON", self._with(job_name, run)
+                    )
+
+    def test_allowlisted_script_by_path_still_passes(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in (
+                f"python3 -I -S {POLICY_SCRIPT} create --release \"$R\"",
+                f"python3 -I -S {POLICY_SCRIPT} create | tee \"$RUNNER_TEMP/out\"",
+                f"result=1\npython3 -I -S {POLICY_SCRIPT} create > \"$RUNNER_TEMP/out\" 2>&1",
+            ):
+                with self.subTest(job=job_name, run=run):
+                    self.assertEqual(self._with(job_name, run), set())
+
+    def test_python_shell_defaults_and_environment_fail(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            with self.subTest(job=job_name, form="shell: python"):
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                    self._with(job_name, "print(1)", shell="python"),
+                )
+            with self.subTest(job=job_name, form="shell: python {0}"):
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                    self._with(job_name, "print(1)", shell="python {0}"),
+                )
+            with self.subTest(job=job_name, form="step PYTHONPATH"):
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                    self._with(job_name, f"python3 -I -S {POLICY_SCRIPT}", env={"PYTHONPATH": "."}),
+                )
+            for scope in ("workflow", "job"):
+                workflow = copy.deepcopy(_load(PUBLISH))
+                target = workflow if scope == "workflow" else workflow["jobs"][job_name]
+                target["defaults"] = {"run": {"shell": "python"}}
+                with self.subTest(job=job_name, form=f"{scope} default shell"):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                        workflow_violations(PUBLISH, workflow)[job_name],
+                    )
+                workflow = copy.deepcopy(_load(PUBLISH))
+                target = workflow if scope == "workflow" else workflow["jobs"][job_name]
+                target.setdefault("env", {})["PYTHONSTARTUP"] = "scripts/x.py"
+                with self.subTest(job=job_name, form=f"{scope} PYTHONSTARTUP"):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                        workflow_violations(PUBLISH, workflow)[job_name],
+                    )
+            with self.subTest(job=job_name, form="site customization"):
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                    self._with(job_name, 'cp scripts/x "$TOOLCACHE/site-packages/x.pth"'),
+                )
+
+    def test_package_managers_and_extra_actions_fail(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in PACKAGE_MANAGER_PROBES:
+                with self.subTest(job=job_name, run=run):
+                    self.assertIn("PUBLISHING_JOB_INSTALLS_PACKAGES", self._with(job_name, run))
+            workflow = copy.deepcopy(_load(PUBLISH))
+            workflow["jobs"][job_name]["steps"].append(
+                {"uses": "astral-sh/setup-uv@" + "0" * 40}
+            )
+            with self.subTest(job=job_name, action="setup-uv"):
+                self.assertIn(
+                    "PUBLISHING_JOB_EXTRA_ACTION", workflow_violations(PUBLISH, workflow)[job_name]
+                )
+        # set -euo pipefail and other baseline words are not package managers.
+        self.assertIsNone(PACKAGE_MANAGER.search("set -euo pipefail; git show x > y"))
+
+    def test_materialization_names_only_allowlisted_scripts(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for extra in ("verify_publication_source_image.py", "validate_promotion_candidate.py"):
+                workflow = copy.deepcopy(_load(PUBLISH))
+                step = next(
+                    step for step in workflow["jobs"][job_name]["steps"]
+                    if _authority_materialization(step) is not None
+                )
+                step["run"] = step["run"].replace(
+                    "for policy in publication_handoff.py",
+                    f"for policy in {extra} publication_handoff.py",
+                )
+                with self.subTest(job=job_name, extra=extra):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                        workflow_violations(PUBLISH, workflow)[job_name],
+                    )
+
+    def test_every_job_materializes_the_scripts_it_runs_and_they_are_self_contained(self) -> None:
+        jobs = _load(PUBLISH)["jobs"]
+        for job_name in self.PUBLISHING_JOBS:
+            steps = jobs[job_name]["steps"]
+            materialized = set()
+            run = set()
+            for step in steps:
+                loops = POLICY_LOOP.findall(_run_text(step))
+                if _authority_materialization(step) is not None:
+                    materialized |= set(loops[0].split())
+                run |= set(POLICY_INVOCATION_SCRIPT.findall(_run_text(step)))
+            with self.subTest(job=job_name):
+                self.assertTrue(run)
+                self.assertLessEqual(run, materialized)
+                self.assertLessEqual(materialized, PUBLISHING_SCRIPTS)
+                # Under -I the script directory is not on sys.path: a sibling
+                # import could not load, so none may exist.
+                for name in run:
+                    self.assertEqual(_sibling_imports(ROOT / "scripts" / name), set(), name)
+
+    def test_every_publishing_invocation_is_exactly_python3_isolated_no_site(self) -> None:
+        jobs = _load(PUBLISH)["jobs"]
+        for job_name in self.PUBLISHING_JOBS:
+            text = "\n".join(_run_text(step) for step in jobs[job_name]["steps"])
+            invocations = POLICY_SCRIPT_PATH.findall(text)
+            with self.subTest(job=job_name):
+                # Each policy path is run (the loop's ${policy} does not match).
+                self.assertTrue(invocations)
+                self.assertEqual(
+                    len(POLICY_INVOCATION_SCRIPT.findall(text)), len(invocations)
+                )
+
+    def test_allowlisted_scripts_import_only_the_standard_library(self) -> None:
+        for name in sorted(PUBLISHING_SCRIPTS):
+            with self.subTest(script=name):
+                self.assertEqual(_stdlib_violations(ROOT / "scripts" / name), [])
+
+    def test_stdlib_import_check_rejects_third_party_and_dynamic_imports(self) -> None:
+        for source in (
+            "import yaml\n",
+            "def f():\n    import yaml\n",
+            "from requests import get\n",
+            "import importlib\n",
+            "from importlib import import_module\n",
+            "import runpy\n",
+            "__import__('yaml')\n",
+            "exec('import yaml')\n",
+            "import sys\nsys.path.insert(0, '.')\n",
+            "import sys\nsys.executable\n",
+            "import sys\nsys.modules['yaml']\n",
+            "from . import sibling\n",
+            "import verify_publication_source_image\n",
+            "import validate_ci_provenance\n",
+            "from publication_handoff import sha\n",
+            *M3_DYNAMIC_IMPORT_SOURCES,
+        ):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "candidate.py"
+                path.write_text(source, encoding="utf-8")
+                self.assertTrue(_stdlib_violations(path))
+        # The verifier that parses YAML stays outside the allowlist.
+        self.assertTrue(_stdlib_violations(ROOT / "scripts/publication_handoff_verify.py"))
+        self.assertNotIn("publication_handoff_verify.py", PUBLISHING_SCRIPTS)
+
+    def test_codex_r3b_optional_import_mutation_fails_the_static_net(self) -> None:
+        # Codex R3b verbatim in the allowlisted release script: green on every
+        # test at d3fb7e6 where PyYAML happened to be absent or present.
+        source = (ROOT / "scripts/publication_github_release.py").read_text(encoding="utf-8")
+        self.assertEqual(source.count("import argparse\n"), 1)
+        mutated = source.replace("import argparse\n", "import argparse\n" + CODEX_R3B_PROBE)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "publication_github_release.py"
+            path.write_text(mutated, encoding="utf-8")
+            self.assertTrue(_stdlib_violations(path))
+
+    def test_static_backstop_flags_each_deliberate_loading_class(self) -> None:
+        self.assertEqual(
+            set(DELIBERATE_LOADER_SOURCES),
+            {"sys-path", "sys-meta-path", "sys-path-hooks", "deserializer",
+             "exec-eval-compile", "importlib-file-loader", "runpy", "ctypes",
+             "zipimport", "dunder-import"},
+        )
+        for kind, sources in DELIBERATE_LOADER_SOURCES.items():
+            for source in sources:
+                with self.subTest(kind=kind, source=source), \
+                        tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "candidate.py"
+                    path.write_text(source, encoding="utf-8")
+                    self.assertTrue(_stdlib_violations(path))
+
+    def test_codex_r4_path_and_pickle_loader_fails_the_static_net(self) -> None:
+        # Codex R4 verbatim in the allowlisted release script: green on every
+        # test at 7e29fb2.  Both the ``from sys import path`` edit and the
+        # pickle loader are flagged independently.
+        source = (ROOT / "scripts/publication_github_release.py").read_text(encoding="utf-8")
+        self.assertEqual(source.count("\nimport sys\n"), 1)
+        mutated = source.replace("\nimport sys\n", "\nimport sys\n" + CODEX_R4_PROBE)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "publication_github_release.py"
+            path.write_text(mutated, encoding="utf-8")
+            violations = _stdlib_violations(path)
+        self.assertTrue(any(item.startswith("sys.path imported") for item in violations))
+        self.assertTrue(
+            any(item.startswith("dynamic import machinery pickle") for item in violations)
+        )
+
+    def test_python3_without_isolation_or_no_site_fails(self) -> None:
+        script = '"$RUNNER_TEMP/publication-policy/publication_digest_binding.py"'
+        for run in (
+            f"python3 {script}",
+            f"python3 -I {script}",
+            f"python3 -S {script}",
+            f"python3 -S -I {script}",
+            f"python3 -IS {script}",
+            f"python3 -SI {script}",
+            f"python3 -I -S -E {script}",
+            f"python3 -I -S -B {script}",
+            f"python3 -I -S -u {script}",
+            f"python3 -E -I -S {script}",
+            f"python3 -I -I -S {script}",
+            f"python3 -I -S -- {script}",
+            f"python3 -I -S -X dev {script}",
+            "python3 -I -S -c 'print(1)'",
+            "python3 -I -S -m json.tool x.json",
+            f"python -I -S {script}",
+            f"python3.12 -I -S {script}",
+            f"/usr/bin/python3 -I -S {script}",
+            f"./venv/bin/python3 -I -S {script}",
+            f"env python3 -I -S {script}",
+            f"exec python3 -I -S {script}",
+            f"PYTHONPATH=. python3 -I -S {script}",
+            f"bash -c 'python3 -I -S {script}'",
+            'python3 -I -S "$RUNNER_TEMP/publication-policy/publication_handoff_verify.py"',
+            'python3 -I -S "$RUNNER_TEMP/elsewhere/publication_claim.py"',
+            "python3 -I -S scripts/publication_claim.py",
+        ):
+            with self.subTest(run=run):
+                self.assertTrue(_runs_unreviewed_python(run))
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON", self._with("promote", run)
+                )
+        self.assertFalse(_runs_unreviewed_python(f"python3 -I -S {script} --repo-root ."))
+
+    def test_dropping_isolation_or_no_site_from_promote_fails(self) -> None:
+        for removed, replacement in (("-S", "python3 -I "), ("-I", "python3 -S ")):
+            workflow = copy.deepcopy(_load(PUBLISH))
+            step = next(
+                step for step in workflow["jobs"]["promote"]["steps"] if step.get("id") == "bind"
+            )
+            self.assertEqual(step["run"].count("python3 -I -S "), 1)
+            step["run"] = step["run"].replace("python3 -I -S ", replacement)
+            with self.subTest(removed=removed):
+                self.assertEqual(
+                    workflow_violations(PUBLISH, workflow),
+                    {"promote": {"PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON"}},
+                )
+
+    def test_path_blind_parser_is_killed(self) -> None:
+        module = sys.modules[__name__]
+        blind = re.compile(r"(?<![\w./$-])python(?:[0-9]+(?:\.[0-9]+)?)?(?![\w.-])")
+        bare = lambda word: bool(PYTHON_PROGRAM.fullmatch(word))  # noqa: E731
+        with mock.patch.object(module, "INTERPRETER_NAME", blind), mock.patch.object(
+            module, "_interpreter_word", bare
+        ):
+            # Recognizing only bare words, counting with the fc69da1 lookbehind:
+            # the absolute-path probes and R1 pass unseen, bare python3 does not.
+            self.assertTrue(_runs_unreviewed_python(f"python3 {POLICY_SCRIPT} create"))
+            for run in (CODEX_R1_PROBE, f"/usr/bin/python3 {POLICY_SCRIPT} create",
+                        f"./venv/bin/python {POLICY_SCRIPT} create"):
+                with self.subTest(guard="path-blind", run=run):
+                    self.assertFalse(_runs_unreviewed_python(run))
+        for run in (CODEX_R1_PROBE, f"/usr/bin/python3 {POLICY_SCRIPT} create",
+                    f"./venv/bin/python {POLICY_SCRIPT} create"):
+            with self.subTest(guard="real", run=run):
+                self.assertTrue(_runs_unreviewed_python(run))
+
+    def test_stdin_blind_parser_is_killed(self) -> None:
+        module = sys.modules[__name__]
+        probes = (
+            f"python3 -I -S {POLICY_SCRIPT} create < scripts/payload",
+            f"python3 -I -S {POLICY_SCRIPT} create <<'PY'\nprint(1)\nPY",
+            f"python3 -I -S {POLICY_SCRIPT} create <<< 'print(1)'",
+            f"cat scripts/payload | python3 -I -S {POLICY_SCRIPT} create",
+        )
+        with mock.patch.object(module, "_approved_python", _stdin_blind_approved_python):
+            for run in probes:
+                with self.subTest(guard="stdin-blind", run=run):
+                    self.assertFalse(_runs_unreviewed_python(run))
+        for run in probes:
+            with self.subTest(guard="real", run=run):
+                self.assertTrue(_runs_unreviewed_python(run))
+
+
+# Inlined helper copies in self-contained allowlisted scripts, and their source.
+COPIED_DEFINITIONS = {
+    "publication_handoff.py": (
+        "validate_ci_provenance.py", "validate_ready_authorization.py",
+    ),
+    "publication_claim.py": ("publication_handoff.py",),
+}
+
+
+def _copy_blocks(text: str) -> list[tuple[str, list[ast.stmt]]]:
+    """Return ``(source file, top-level statements)`` for each copy block."""
+
+    blocks = re.findall(r"^# BEGIN COPY scripts/(\S+)\n(.*?)^# END COPY$", text, re.M | re.S)
+    return [(name, ast.parse(body).body) for name, body in blocks]
+
+
+def _definition_name(node: ast.stmt) -> str:
+    if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+        return node.name
+    if isinstance(node, ast.Assign) and len(node.targets) == 1:
+        return getattr(node.targets[0], "id", "")
+    return ""
+
+
+def _isolated_run(script: Path, *arguments: str, flags=("-I", "-S"), env=None):
+    """Run a script as the publishing jobs do, from an empty directory."""
+
+    return subprocess.run(
+        [sys.executable, *flags, str(script), *arguments],
+        cwd=script.parent,
+        env={"PATH": os.environ.get("PATH", ""), **(env or {})},
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+class PublishingScriptIsolatedRuntimeTests(unittest.TestCase):
+    """HAMCP-204 M3/M4: what ``python3 -I -S`` guarantees, proven by execution.
+
+    It guarantees that no third-party package is loaded IMPLICITLY (from
+    site-packages, PYTHON* environment variables, the user site or the current
+    directory).  It does NOT, and cannot, prevent a script from DELIBERATELY
+    loading code (sys.path edits, pickle, exec, etc.); Codex R4 below shows
+    one such load succeeding under the flags.  Deliberate loading is governed
+    by code review, backed by the static check ``_stdlib_violations``.
+    """
+
+    def test_each_allowlisted_script_runs_alone_under_isolated_no_site(self) -> None:
+        for name in sorted(PUBLISHING_SCRIPTS):
+            with self.subTest(script=name), tempfile.TemporaryDirectory() as directory:
+                script = Path(directory) / name
+                script.write_bytes((ROOT / "scripts" / name).read_bytes())
+                result = _isolated_run(script, "--help")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("usage:", result.stdout)
+                self.assertEqual(sorted(path.name for path in Path(directory).iterdir()
+                                        if path.suffix == ".py"), [name])
+
+    def test_dynamic_third_party_imports_fail_at_runtime_under_isolated_no_site(self) -> None:
+        import yaml as installed  # noqa: F401 - the control needs PyYAML installed
+
+        for source in (
+            "import builtins\nbuiltins.__import__('yaml')\n",
+            "from builtins import __import__ as load_module\nload_module('yaml')\n",
+            "import builtins\nbuiltins.exec('import yaml')\n",
+            "import importlib\nimportlib.import_module('yaml')\n",
+            "getattr(__builtins__, '__import__')('yaml')\n",
+        ):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as directory:
+                script = Path(directory) / "probe.py"
+                script.write_text(source + "print('loaded')\n", encoding="utf-8")
+                control = _isolated_run(script, flags=())
+                self.assertEqual(control.returncode, 0, control.stderr)
+                self.assertIn("loaded", control.stdout)
+                result = _isolated_run(script)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("loaded", result.stdout)
+                self.assertIn("No module named 'yaml'", result.stderr)
+
+    def test_codex_r3b_optional_import_cannot_load_a_third_party_module(self) -> None:
+        source = CODEX_R3B_PROBE + "import sys\nprint('yaml' in sys.modules)\n"
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "probe.py"
+            script.write_text(source, encoding="utf-8")
+            # Without -S the optional import silently loads PyYAML.
+            self.assertEqual(_isolated_run(script, flags=("-I",)).stdout.strip(), "True")
+            result = _isolated_run(script)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "False")
+
+    def test_codex_r4_deliberate_loader_is_outside_the_runtime_guarantee(self) -> None:
+        # The owner-accepted residual, stated as fact: the flags do not stop a
+        # script that deliberately edits its import path and unpickles a
+        # planted module.  The static backstop flags R4; review governs the rest.
+        source = (ROOT / "scripts/publication_github_release.py").read_text(encoding="utf-8")
+        mutated = source.replace("\nimport sys\n", "\nimport sys\n" + CODEX_R4_PROBE)
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "publication_github_release.py"
+            script.write_text(mutated, encoding="utf-8")
+            (Path(directory) / "yaml.py").write_text(
+                "print('planted yaml loaded')\nSENTINEL = 1\n", encoding="utf-8"
+            )
+            result = _isolated_run(script, "--help")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("planted yaml loaded", result.stdout)
+            self.assertTrue(_stdlib_violations(script))
+            # The implicit form of the same load is what the flags exclude.
+            implicit = Path(directory) / "implicit.py"
+            implicit.write_text("import yaml\n", encoding="utf-8")
+            self.assertIn("planted yaml loaded", _isolated_run(implicit, flags=("-S",)).stdout)
+            result = _isolated_run(implicit)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("planted yaml loaded", result.stdout)
+            self.assertIn("No module named 'yaml'", result.stderr)
+
+    def test_isolation_ignores_planted_siblings_and_python_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            planted = root / "planted"
+            planted.mkdir()
+            for target in (root, planted):
+                (target / "yaml.py").write_text("print('planted')\n", encoding="utf-8")
+                (target / "validate_ci_provenance.py").write_text(
+                    "print('planted')\n", encoding="utf-8"
+                )
+            script = root / "probe.py"
+            script.write_text(
+                "import builtins\n"
+                "for name in ('yaml', 'validate_ci_provenance'):\n"
+                "    try:\n"
+                "        builtins.__import__(name)\n"
+                "    except ImportError:\n"
+                "        print('absent', name)\n",
+                encoding="utf-8",
+            )
+            env = {"PYTHONPATH": str(planted), "PYTHONSTARTUP": str(planted / "yaml.py")}
+            control = _isolated_run(script, flags=("-S",), env=env)
+            self.assertIn("planted", control.stdout)
+            result = _isolated_run(script, env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                result.stdout.split("\n"),
+                ["absent yaml", "absent validate_ci_provenance", ""],
+            )
+
+    def test_inlined_helper_copies_match_their_sources_exactly(self) -> None:
+        for name, sources in COPIED_DEFINITIONS.items():
+            blocks = _copy_blocks((ROOT / "scripts" / name).read_text(encoding="utf-8"))
+            with self.subTest(script=name):
+                self.assertEqual([source for source, _body in blocks], list(sources))
+            for source, body in blocks:
+                canonical = {
+                    _definition_name(node): node
+                    for node in ast.parse((ROOT / "scripts" / source).read_text(encoding="utf-8")).body
+                }
+                for node in body:
+                    label = _definition_name(node)
+                    with self.subTest(script=name, source=source, definition=label):
+                        self.assertTrue(label)
+                        self.assertIn(label, canonical)
+                        self.assertEqual(ast.dump(node), ast.dump(canonical[label]))
 
 
 # How each workflow binds the recorded revision to the verified attestation.
