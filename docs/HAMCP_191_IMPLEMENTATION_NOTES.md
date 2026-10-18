@@ -242,6 +242,11 @@ exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
   memo, cross-pass reuse refused)
 - `tests/test_readonly_upstream_gateway.py` (1: the Finding 11 warning comes
   before the partial-coverage warning)
+- `tests/test_beta25_external_approval.py` (1: the review-rendering test
+  first asserts that a legacy plan whose title holds a configured known
+  secret is refused with `AUTOMATION_VALIDATION_FAILED` and nothing is
+  stored, then renders a plan without the secret; its approve note is built
+  at runtime). The exact base stored and returned that secret raw (H1).
 - `tests/test_beta11_sanitization.py`, `tests/test_automation_reliability_analysis.py`
   and `tests/test_hamcp171_health_verdict_cache.py` also build their
   secret-shaped inputs at runtime now (Codex L2); every value is unchanged.
@@ -336,5 +341,8 @@ rule redacts the value, as beta.19 did.
 - Legacy and operational plans whose text the strict pass flags (D3
   look-alike prose, a sensitive key in the current automation, marker-like
   Home Assistant text) are refused instead of created.
+- A configured known secret in a legacy plan's title or description is
+  refused. The exact base stored and returned it raw; PR CI on the first
+  correction head caught the old `test_beta25_external_approval` pin.
 - Strictly flagged caller-context entries are dropped.
 - Core log lines split on `\n` only.

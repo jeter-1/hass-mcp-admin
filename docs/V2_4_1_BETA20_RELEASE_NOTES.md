@@ -108,7 +108,8 @@ like `[REDACTED:<category>]` as if Engineering had written it.
   other lines of the window are kept. Lines split on `\n` only, so a `\r`
   stays inside its line.
 - Plans whose text the strict pass flags (including look-alike prose in an
-  automation title or description) are refused instead of created.
+  automation title or description, or a configured known secret, which
+  beta.19 stored raw) are refused instead of created.
 - A collided system-log or trace entry no longer correlates in reliability
   analysis.
 

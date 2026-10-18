@@ -13,7 +13,9 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
+import hamcp162_synthetic as syn  # noqa: E402
 from ha_mcp_engineering.approval_web import create_approval_application  # noqa: E402
 from ha_mcp_engineering.application import _serve, validate_settings  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
@@ -495,9 +497,17 @@ class IngressBoundaryTests(ExternalApprovalTestCase):
             self.assertEqual(response.status_code, 403)
 
     async def test_server_rendered_review_escapes_untrusted_content_and_has_headers(self):
+        # HAMCP-191 H1: a title holding a known secret is refused at creation
+        # (beta.25 through beta.19 stored it verbatim and relied on output
+        # redaction); nothing is persisted.
+        with self.assertRaises(GovernanceError) as refused:
+            await self.create(title="unsafe beta25-test-access-secret")
+        self.assertEqual(refused.exception.code, ErrorCode.AUTOMATION_VALIDATION_FAILED)
+        self.assertNotIn("beta25-test-access-secret", repr(refused.exception.details))
+        self.assertEqual(self.repository.list(), [])
         created = await self.create(
             description='<script>alert(1)</script><img src=x onerror=alert(2)>\u202e',
-            title='<form action="https://attacker.example">unsafe</form> beta25-test-access-secret',
+            title='<form action="https://attacker.example">unsafe</form>',
         )
         pending = self.service.approve(created["plan_id"], created["plan_hash"])
         async with await self._client() as client:
@@ -520,7 +530,7 @@ class IngressBoundaryTests(ExternalApprovalTestCase):
         created = await self.create()
         self.service.approve(
             created["plan_id"], created["plan_hash"],
-            "Authorization: Bearer beta25-test-access-secret <script>approve</script>",
+            syn.auth_header(syn.bearer("beta25-test-access-secret")) + " <script>approve</script>",
         )
         persisted = self.repository.get(created["plan_id"])
         self.assertNotIn("beta25-test-access-secret", persisted.approval.request_note)

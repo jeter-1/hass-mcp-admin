@@ -1225,6 +1225,7 @@ HAMCP191_CHANGED_FILES = (
     "scripts/validate_addon_metadata.py",
     "tests/test_automation_reliability_analysis.py",
     "tests/test_beta11_sanitization.py",
+    "tests/test_beta25_external_approval.py",
     "tests/test_hamcp162_yaml_reader.py",
     "tests/test_hamcp171_health_verdict_cache.py",
     "tests/test_readonly_upstream_gateway.py",
