@@ -29,14 +29,18 @@ permissions:
   contents: read
 
 jobs:
-  prepare:
+  # Upstream observation runs without the signing environment, its secret, or
+  # any write token.  Its only output is a bounded, hash-bound artifact.
+  evidence:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    environment: ha-mcp-release-registry-signing
+    timeout-minutes: 60
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      capture_sha256: ${{ steps.stage.outputs.capture_sha256 }}
+      evidence_sha256: ${{ steps.stage.outputs.evidence_sha256 }}
     env:
       VERSION: ${{ inputs.upstream_version }}
       UPSTREAM_REPOSITORY: https://github.com/homeassistant-ai/ha-mcp.git
@@ -44,21 +48,15 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            hass_mcp_engineering_beta/requirements.txt
-            tests/requirements.txt
+          python-version: "3.12.14"
 
-      - name: Install fixed compatibility dependencies
+      - name: Install hash-locked runtime dependencies
         run: >-
-          python -m pip install
-          -r hass_mcp_engineering_beta/requirements.txt
-          -r tests/requirements.txt
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
 
       - name: Validate protected-main request
         env:
@@ -167,13 +165,38 @@ jobs:
               encoding="utf-8",
           )
           PY
+          # Provenance comes only from the digest-verified attestation payloads.
+          python scripts/verify_upstream_image_provenance.py \
+            --index-digest "$index_digest" \
+            --version "$VERSION" \
+            --source-commit "${{ steps.source.outputs.source_commit }}" \
+            --output "$RUNNER_TEMP/upstream-provenance.json"
+          python - "$RUNNER_TEMP/upstream-provenance.json" "$RUNNER_TEMP/platforms.json" "$index_digest" > "$RUNNER_TEMP/attested-revision.txt" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          provenance = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          platforms = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+          if provenance["image_index_digest"] != sys.argv[3]:
+              raise SystemExit("attested image index differs from the resolved index")
+          if provenance["slsa_provenance"] != "present_per_platform":
+              raise SystemExit("attested provenance is incomplete")
+          attested = {key: provenance["platform_digests"].get(key) for key in platforms}
+          if attested != platforms:
+              raise SystemExit("attested platform digests differ from the index")
+          print(provenance["workflow_sha"])
+          PY
+          revision="$(cat "$RUNNER_TEMP/attested-revision.txt")"
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
           docker pull --platform linux/amd64 "$immutable"
-          revision="$(docker image inspect "$immutable" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          # Image labels are informational; they must agree with the attestation.
+          label_revision="$(docker image inspect "$immutable" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
           image_version="$(docker image inspect "$immutable" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
           source_label="$(docker image inspect "$immutable" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
           dirty_label="$(docker image inspect "$immutable" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
+          test "$label_revision" = "$revision"
           test "$image_version" = "$VERSION"
-          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
           test "$source_label" = "https://github.com/homeassistant-ai/ha-mcp"
           if [[ -n "$dirty_label" && "$dirty_label" != "false" ]]; then
             echo "::error::The official upstream image reports a dirty build."
@@ -278,6 +301,109 @@ jobs:
           )
           PY
 
+      - name: Stage bounded release evidence for signing
+        id: stage
+        if: inputs.operation == 'add'
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="$RUNNER_TEMP/release-evidence"
+          mkdir -- "$staging"
+          cp -- .compat/ha-mcp-runtime-capture.json .compat/ha-mcp-release-evidence.json "$staging/"
+          {
+            echo "capture_sha256=$(sha256sum -- "$staging/ha-mcp-runtime-capture.json" | cut -d ' ' -f 1)"
+            echo "evidence_sha256=$(sha256sum -- "$staging/ha-mcp-release-evidence.json" | cut -d ' ' -f 1)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Retain bounded release evidence for signing
+        id: upload
+        if: inputs.operation == 'add'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ha-mcp-release-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-evidence/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Write bounded preparation summary
+        if: always()
+        env:
+          OPERATION: ${{ inputs.operation }}
+        shell: bash
+        run: |
+          {
+            echo "### ha-mcp release-registry preparation"
+            echo "- Version: ${VERSION}"
+            echo "- Operation: ${OPERATION}"
+            echo "- Source: homeassistant-ai/ha-mcp"
+            echo "- Image: ghcr.io/homeassistant-ai/ha-mcp"
+            echo "- Dashboard authority: separate"
+            echo "- Engineering image publication: false"
+            echo "- Deployment or restart: false"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up disposable runtime
+        if: ${{ always() && inputs.operation == 'add' }}
+        shell: bash
+        run: |
+          docker rm -f ha-mcp-release-review >/dev/null 2>&1 || true
+          if [[ -f "$RUNNER_TEMP/fake-ha.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/fake-ha.pid")" >/dev/null 2>&1 || true
+          fi
+          rm -rf .compat
+
+  # Signing holds the environment-scoped seed but no write token.  It installs
+  # only the hash-locked runtime parsers the signer re-validates evidence with.
+  sign:
+    needs: evidence
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: ha-mcp-release-registry-signing
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      manifest_sha256: ${{ steps.stage.outputs.manifest_sha256 }}
+    env:
+      VERSION: ${{ inputs.upstream_version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+
+      - name: Install hash-locked runtime dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+
+      - name: Download bounded release evidence
+        if: inputs.operation == 'add'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.evidence.outputs.artifact_id }}
+          path: .compat
+
+      - name: Verify bounded release evidence
+        if: inputs.operation == 'add'
+        env:
+          CAPTURE_SHA256: ${{ needs.evidence.outputs.capture_sha256 }}
+          EVIDENCE_SHA256: ${{ needs.evidence.outputs.evidence_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          present="$(cd .compat && find . -mindepth 1 -printf '%P\n' | sort)"
+          test "$present" = "$(printf '%s\n' ha-mcp-release-evidence.json ha-mcp-runtime-capture.json)"
+          test ! -L .compat/ha-mcp-runtime-capture.json
+          test ! -L .compat/ha-mcp-release-evidence.json
+          [[ "$CAPTURE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$EVIDENCE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(sha256sum -- .compat/ha-mcp-runtime-capture.json | cut -d ' ' -f 1)" = "$CAPTURE_SHA256"
+          test "$(sha256sum -- .compat/ha-mcp-release-evidence.json | cut -d ' ' -f 1)" = "$EVIDENCE_SHA256"
+
       - name: Sign and verify data-only release-registry update
         env:
           HA_MCP_RELEASE_REGISTRY_SIGNING_KEY: ${{ secrets.HA_MCP_RELEASE_REGISTRY_SIGNING_KEY }}
@@ -303,9 +429,108 @@ jobs:
             .compat/ha-mcp-release-evidence.json
           rmdir -- .compat
 
+      - name: Stage exact signed data-only update
+        id: stage
+        env:
+          OPERATION: ${{ inputs.operation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$OPERATION" == "add" ]]; then
+            expected="$(printf '%s\n' \
+              "docs/evidence/ha-mcp-release-registry/ha-mcp-${VERSION}.json" \
+              docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md \
+              upstream-trust/ha-mcp-release-registry.json | sort)"
+          else
+            expected="$(printf '%s\n' \
+              docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md \
+              upstream-trust/ha-mcp-release-registry.json | sort)"
+          fi
+          changed="$(
+            {
+              git diff --name-only
+              git diff --cached --name-only
+              git ls-files --others --exclude-standard
+            } | sort -u
+          )"
+          test "$changed" = "$expected"
+          staging="$RUNNER_TEMP/signed"
+          mkdir -p -- "$staging/files"
+          while IFS= read -r relative; do
+            test -f "$relative"
+            test ! -L "$relative"
+            install -D -m 0644 -- "$relative" "$staging/files/$relative"
+          done <<< "$expected"
+          (cd "$staging/files" && sha256sum -- $expected) > "$staging/SHA256SUMS"
+          echo "manifest_sha256=$(sha256sum -- "$staging/SHA256SUMS" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Retain exact signed data-only update
+        id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ha-mcp-release-registry-signed-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/signed/
+          if-no-files-found: error
+          retention-days: 1
+
+  # Publication holds the write token but no signing environment or secret,
+  # and runs no Python or package installation.
+  publish:
+    needs: sign
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      VERSION: ${{ inputs.upstream_version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download exact signed data-only update
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.sign.outputs.artifact_id }}
+          path: ${{ runner.temp }}/signed
+
+      - name: Verify and apply exact signed data-only update
+        env:
+          MANIFEST_SHA256: ${{ needs.sign.outputs.manifest_sha256 }}
+          OPERATION: ${{ inputs.operation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          signed="$RUNNER_TEMP/signed"
+          if [[ "$OPERATION" == "add" ]]; then
+            expected="$(printf '%s\n' \
+              "docs/evidence/ha-mcp-release-registry/ha-mcp-${VERSION}.json" \
+              docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md \
+              upstream-trust/ha-mcp-release-registry.json | sort)"
+          else
+            expected="$(printf '%s\n' \
+              docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md \
+              upstream-trust/ha-mcp-release-registry.json | sort)"
+          fi
+          [[ "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test ! -L "$signed/SHA256SUMS"
+          test "$(sha256sum -- "$signed/SHA256SUMS" | cut -d ' ' -f 1)" = "$MANIFEST_SHA256"
+          test "$(cut -c 67- "$signed/SHA256SUMS" | sort)" = "$expected"
+          test "$(cd "$signed/files" && find . -mindepth 1 ! -type d -printf '%P\n' | sort)" = "$expected"
+          test -z "$(cd "$signed/files" && find . -mindepth 1 ! -type d ! -type f)"
+          (cd "$signed/files" && sha256sum --strict --check --quiet ../SHA256SUMS)
+          while IFS= read -r relative; do
+            install -D -m 0644 -- "$signed/files/$relative" "$relative"
+          done <<< "$expected"
+          rm -rf -- "$signed"
+
       - name: Enforce data-only diff
         id: branch
         env:
+          GH_TOKEN: ${{ github.token }}
           OPERATION: ${{ inputs.operation }}
         shell: bash
         run: |
@@ -350,7 +575,10 @@ jobs:
           test "$changed" = "$expected"
           test "$(git diff --cached --name-only | wc -l)" -eq "$expected_count"
           git commit -m "$commit_message"
-          git push origin "HEAD:refs/heads/${branch}"
+          # Checkout credentials are not persisted; the token reaches git only
+          # through the gh credential helper for this one push.
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+            push origin "HEAD:refs/heads/${branch}"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
 
       - name: Open data-only draft pull request
@@ -369,30 +597,3 @@ jobs:
           gh pr create --draft --base main --head "${{ steps.branch.outputs.branch }}" \
             --title "$title" \
             --body "$body"
-
-      - name: Write bounded preparation summary
-        if: always()
-        env:
-          OPERATION: ${{ inputs.operation }}
-        shell: bash
-        run: |
-          {
-            echo "### ha-mcp release-registry preparation"
-            echo "- Version: ${VERSION}"
-            echo "- Operation: ${OPERATION}"
-            echo "- Source: homeassistant-ai/ha-mcp"
-            echo "- Image: ghcr.io/homeassistant-ai/ha-mcp"
-            echo "- Dashboard authority: separate"
-            echo "- Engineering image publication: false"
-            echo "- Deployment or restart: false"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Clean up disposable runtime
-        if: ${{ always() && inputs.operation == 'add' }}
-        shell: bash
-        run: |
-          docker rm -f ha-mcp-release-review >/dev/null 2>&1 || true
-          if [[ -f "$RUNNER_TEMP/fake-ha.pid" ]]; then
-            kill "$(cat "$RUNNER_TEMP/fake-ha.pid")" >/dev/null 2>&1 || true
-          fi
-          rm -rf .compat

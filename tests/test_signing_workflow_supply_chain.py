@@ -1,0 +1,535 @@
+"""Supply-chain guard for jobs holding signing secrets or write tokens (HAMCP-202).
+
+Every job that holds a signing environment, a non-default secret, or any write
+permission must check out without persisted credentials and install only
+committed hash locks on an exact Python.  Signing jobs additionally hold no
+write token, run no general test or upstream-observation stack, install only
+the runtime lock, and receive their secret in exactly one step.  Write jobs in
+signing workflows run no Python at all.  Mutation tests prove each rule fails.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
+import re
+import unittest
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOWS = ROOT / ".github" / "workflows"
+RELEASE_REGISTRY = "prepare-ha-mcp-release-registry-update.yml"
+COMPATIBILITY = "prepare-upstream-compatibility-attestation.yml"
+SIGNING_WORKFLOWS = {
+    RELEASE_REGISTRY: ("ha-mcp-release-registry-signing", ("HA_MCP_RELEASE_REGISTRY_SIGNING_KEY",)),
+    COMPATIBILITY: (
+        "upstream-attestation-signing",
+        (
+            "UPSTREAM_TRUST_REGISTRY_SIGNING_KEY",
+            "UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY",
+            "UPSTREAM_TRUST_REGISTRY_KEY_ID",
+        ),
+    ),
+}
+SIGNING_LOCK = "hass_mcp_engineering_beta/requirements.lock"
+EXACT_PYTHON = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+SECRET_REFERENCE = re.compile(r"secrets\.([A-Za-z_][A-Za-z0-9_]*)")
+PIP_INSTALL = re.compile(r"\bpip3?\b[^\n]*?\binstall\b[^\n]*")
+REQUIREMENT_FILE = re.compile(r"(?:^|\s)(?:-r|--requirement)(?:\s+|=)(\S+)")
+GENERAL_TEST_STACK = ("unittest", "pytest", "check.ps1", "tests/requirements")
+OBSERVATION_STACK = (
+    "docker ",
+    "docker/",
+    "imagetools",
+    "fake_ha_",
+    "review_upstream_read_release",
+    "inspect_upstream_dashboard_runtime",
+)
+SIGNING_JOB_ACTIONS = {
+    "actions/checkout",
+    "actions/setup-python",
+    "actions/download-artifact",
+    "actions/upload-artifact",
+}
+
+# Reviewed exceptions outside HAMCP-202 scope.  The publication `promote` job
+# pushes its release tag through persisted checkout credentials and runs the
+# release-validation unittest stack while holding contents/packages write.
+# Changing it is a separate publication-authority task (HAMCP-202 follow-up).
+# The set must match observed violations exactly so it cannot go stale.
+REVIEWED_EXCEPTIONS = {
+    ("publish-rc-image.yml", "promote"): {
+        "CHECKOUT_PERSISTS_CREDENTIALS",
+        "GENERAL_TEST_STACK",
+        "PIP_CACHE",
+    },
+}
+
+
+def _load(name: str) -> dict:
+    return yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
+
+
+def _run_text(step: dict) -> str:
+    # Join shell continuations so a multi-line install is checked as one command.
+    return re.sub(r"\\\n\s*", " ", str(step.get("run", "")))
+
+
+def _action(step: dict) -> str:
+    return str(step.get("uses", "")).split("@", 1)[0]
+
+
+def _permissions(workflow: dict, job: dict) -> object:
+    return job.get("permissions", workflow.get("permissions"))
+
+
+def _has_write(permissions: object) -> bool:
+    if isinstance(permissions, str):
+        return permissions == "write-all"
+    return isinstance(permissions, dict) and "write" in permissions.values()
+
+
+def _signing_secrets(job: dict) -> set[str]:
+    return set(SECRET_REFERENCE.findall(json.dumps(job))) - {"GITHUB_TOKEN"}
+
+
+def _is_signing_job(job: dict) -> bool:
+    return "environment" in job or bool(_signing_secrets(job))
+
+
+def _install_violations(text: str) -> bool:
+    for match in PIP_INSTALL.finditer(text):
+        command = match.group(0)
+        if "--require-hashes" not in command or "--only-binary=:all:" not in command:
+            return True
+        files = [value.strip("'\"") for value in REQUIREMENT_FILE.findall(command)]
+        if not files or any(not value.endswith(".lock") for value in files):
+            return True
+    return False
+
+
+def job_violations(workflow: dict, job: dict, *, signing_workflow: bool) -> set[str]:
+    signing = _is_signing_job(job)
+    write = _has_write(_permissions(workflow, job))
+    if not (signing or write):
+        return set()
+    violations: set[str] = set()
+    steps = job.get("steps", [])
+    serialized = json.dumps(job)
+    for step in steps:
+        action = _action(step)
+        options = step.get("with", {}) or {}
+        if action == "actions/checkout" and options.get("persist-credentials") is not False:
+            violations.add("CHECKOUT_PERSISTS_CREDENTIALS")
+        if action == "actions/setup-python":
+            if not EXACT_PYTHON.fullmatch(str(options.get("python-version", ""))):
+                violations.add("FLOATING_PYTHON")
+            if "cache" in options:
+                violations.add("PIP_CACHE")
+        if _install_violations(_run_text(step)):
+            violations.add("UNHASHED_INSTALL")
+    if any(marker in serialized for marker in GENERAL_TEST_STACK):
+        violations.add("GENERAL_TEST_STACK")
+
+    if signing:
+        if write:
+            violations.add("SIGNING_JOB_HAS_WRITE")
+        if any(marker in serialized for marker in OBSERVATION_STACK):
+            violations.add("SIGNING_JOB_RUNS_OBSERVATION_STACK")
+        for step in steps:
+            action = _action(step)
+            if action and action not in SIGNING_JOB_ACTIONS:
+                violations.add("SIGNING_JOB_EXTRA_ACTION")
+            for install in PIP_INSTALL.finditer(_run_text(step)):
+                files = REQUIREMENT_FILE.findall(install.group(0))
+                if [value.strip("'\"") for value in files] != [SIGNING_LOCK]:
+                    violations.add("SIGNING_JOB_EXTRA_INSTALL")
+        if SECRET_REFERENCE.search(json.dumps(job.get("env", {}))):
+            violations.add("SIGNING_SECRET_SCOPE")
+        holders = [
+            step for step in steps if SECRET_REFERENCE.search(json.dumps(step))
+        ]
+        if len(holders) > 1 or any(
+            SECRET_REFERENCE.search(json.dumps(step.get("with", {}))) for step in holders
+        ):
+            violations.add("SIGNING_SECRET_SCOPE")
+    elif signing_workflow:
+        # Write jobs beside a signer run no Python or package installation.
+        if any(_action(step) == "actions/setup-python" for step in steps) or any(
+            re.search(r"\b(python3?|pip3?)\b", _run_text(step)) for step in steps
+        ):
+            violations.add("WRITE_JOB_RUNS_PYTHON")
+    return violations
+
+
+def workflow_violations(name: str, workflow: dict) -> dict[str, set[str]]:
+    jobs = workflow.get("jobs", {})
+    signing_workflow = any(_is_signing_job(job) for job in jobs.values())
+    if signing_workflow:
+        # Secrets may never be referenced by a non-signing job of a signer.
+        for job_name, job in jobs.items():
+            if not _is_signing_job(job) and SECRET_REFERENCE.search(
+                json.dumps(job).replace("secrets.GITHUB_TOKEN", "")
+            ):
+                raise AssertionError(f"{name}:{job_name} references a signing secret")
+    result = {}
+    for job_name, job in jobs.items():
+        found = job_violations(workflow, job, signing_workflow=signing_workflow)
+        if found:
+            result[job_name] = found
+    return result
+
+
+def all_violations() -> dict[tuple[str, str], set[str]]:
+    result: dict[tuple[str, str], set[str]] = {}
+    for path in sorted(WORKFLOWS.glob("*.y*ml")):
+        for job_name, found in workflow_violations(path.name, _load(path.name)).items():
+            result[(path.name, job_name)] = found
+    return result
+
+
+class PrivilegedJobSupplyChainGuardTests(unittest.TestCase):
+    def test_privileged_jobs_match_reviewed_exceptions_exactly(self) -> None:
+        self.assertEqual(all_violations(), REVIEWED_EXCEPTIONS)
+
+    def test_guard_covers_every_privileged_job(self) -> None:
+        privileged = set()
+        for path in sorted(WORKFLOWS.glob("*.y*ml")):
+            workflow = _load(path.name)
+            for job_name, job in workflow.get("jobs", {}).items():
+                if _is_signing_job(job) or _has_write(_permissions(workflow, job)):
+                    privileged.add((path.name, job_name))
+        for name in SIGNING_WORKFLOWS:
+            self.assertIn((name, "sign"), privileged)
+            self.assertIn((name, "publish"), privileged)
+            self.assertNotIn((name, "evidence"), privileged)
+        self.assertIn(("publish-rc-image.yml", "promote"), privileged)
+
+    def test_signing_workflows_split_observation_signing_and_publication(self) -> None:
+        for name, (environment, secrets) in SIGNING_WORKFLOWS.items():
+            with self.subTest(workflow=name):
+                workflow = _load(name)
+                jobs = workflow["jobs"]
+                self.assertEqual(set(jobs), {"evidence", "sign", "publish"})
+                self.assertEqual(workflow["permissions"], {"contents": "read"})
+                self.assertEqual(jobs["evidence"]["permissions"], {"contents": "read"})
+                self.assertEqual(jobs["sign"]["permissions"], {"contents": "read"})
+                self.assertEqual(
+                    jobs["publish"]["permissions"],
+                    {"contents": "write", "pull-requests": "write"},
+                )
+                self.assertEqual(jobs["sign"]["environment"], environment)
+                self.assertNotIn("environment", jobs["evidence"])
+                self.assertNotIn("environment", jobs["publish"])
+                self.assertEqual(jobs["sign"]["needs"], "evidence")
+                self.assertEqual(jobs["publish"]["needs"], "sign")
+                for job_name in ("evidence", "sign", "publish"):
+                    job = jobs[job_name]
+                    self.assertEqual(job["if"], "github.ref == 'refs/heads/main'")
+                    self.assertEqual(job["runs-on"], "ubuntu-24.04")
+                    self.assertIsInstance(job["timeout-minutes"], int)
+                sign_text = json.dumps(jobs["sign"])
+                for secret in secrets:
+                    self.assertIn(f"secrets.{secret}", sign_text)
+                    self.assertNotIn(secret, json.dumps(jobs["evidence"]))
+                    self.assertNotIn(secret, json.dumps(jobs["publish"]))
+                self.assertNotIn("github.token", sign_text)
+                self.assertNotIn("github.token", json.dumps(jobs["evidence"]))
+                self.assertEqual(
+                    {
+                        _action(step)
+                        for step in jobs["publish"]["steps"]
+                        if "uses" in step
+                    },
+                    {"actions/checkout", "actions/download-artifact"},
+                )
+
+    def test_evidence_job_installs_only_hash_locked_runtime_on_exact_python(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            with self.subTest(workflow=name):
+                job = _load(name)["jobs"]["evidence"]
+                self.assertEqual(
+                    job_violations(
+                        {"permissions": {"contents": "write"}},
+                        job,
+                        signing_workflow=False,
+                    )
+                    - {"SIGNING_JOB_HAS_WRITE"},
+                    set(),
+                )
+                installs = [
+                    step for step in job["steps"] if PIP_INSTALL.search(_run_text(step))
+                ]
+                self.assertEqual(len(installs), 1)
+                self.assertIn(f"-r {SIGNING_LOCK}", installs[0]["run"])
+
+    def test_artifacts_are_bound_by_id_and_hash_between_jobs(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            with self.subTest(workflow=name):
+                jobs = _load(name)["jobs"]
+                for job_name, upstream in (("sign", "evidence"), ("publish", "sign")):
+                    downloads = [
+                        step
+                        for step in jobs[job_name]["steps"]
+                        if _action(step) == "actions/download-artifact"
+                    ]
+                    self.assertEqual(len(downloads), 1)
+                    self.assertEqual(
+                        downloads[0]["with"]["artifact-ids"],
+                        f"${{{{ needs.{upstream}.outputs.artifact_id }}}}",
+                    )
+                    self.assertNotIn("name", downloads[0]["with"])
+                    self.assertNotIn("pattern", downloads[0]["with"])
+                for job_name in ("evidence", "sign"):
+                    uploads = [
+                        step
+                        for step in jobs[job_name]["steps"]
+                        if _action(step) == "actions/upload-artifact"
+                    ]
+                    self.assertEqual(len(uploads), 1)
+                    self.assertEqual(uploads[0]["with"]["retention-days"], 1)
+                    self.assertEqual(uploads[0]["with"]["if-no-files-found"], "error")
+                    self.assertIn("${{ github.run_attempt }}", uploads[0]["with"]["name"])
+                publish = json.dumps(jobs["publish"])
+                self.assertIn("needs.sign.outputs.manifest_sha256", publish)
+                self.assertIn("sha256sum --strict --check", publish)
+                self.assertIn("credential.helper=!gh auth git-credential", publish)
+
+    def test_publication_push_uses_step_scoped_token_only(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            with self.subTest(workflow=name):
+                steps = _load(name)["jobs"]["publish"]["steps"]
+                pushing = [step for step in steps if "push origin" in step.get("run", "")]
+                self.assertEqual(len(pushing), 1)
+                self.assertEqual(pushing[0]["env"]["GH_TOKEN"], "${{ github.token }}")
+                self.assertIn("-c credential.helper= ", pushing[0]["run"])
+                self.assertNotIn("extraheader", json.dumps(steps))
+                self.assertNotIn("GH_TOKEN", json.dumps(_load(name)["jobs"]["publish"].get("env", {})))
+
+
+class GuardMutationTests(unittest.TestCase):
+    def _mutated(self, name: str, mutate) -> dict[str, set[str]]:
+        workflow = copy.deepcopy(_load(name))
+        mutate(workflow)
+        return workflow_violations(name, workflow)
+
+    @staticmethod
+    def _step(job: dict, predicate) -> dict:
+        return next(step for step in job["steps"] if predicate(step))
+
+    def _install(self, job: dict) -> dict:
+        return self._step(job, lambda step: PIP_INSTALL.search(_run_text(step)))
+
+    def _checkout(self, job: dict) -> dict:
+        return self._step(job, lambda step: _action(step) == "actions/checkout")
+
+    def test_baselines_are_clean(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            self.assertEqual(self._mutated(name, lambda workflow: None), {})
+
+    def test_dropping_require_hashes_fails(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            for job_name in ("sign",):
+                def mutate(workflow, job_name=job_name):
+                    step = self._install(workflow["jobs"][job_name])
+                    step["run"] = step["run"].replace("--require-hashes ", "")
+                with self.subTest(workflow=name, job=job_name):
+                    self.assertIn("UNHASHED_INSTALL", self._mutated(name, mutate)[job_name])
+
+    def test_dropping_only_binary_or_using_unlocked_requirements_fails(self) -> None:
+        replacements = (
+            ("--only-binary=:all: ", ""),
+            (SIGNING_LOCK, "hass_mcp_engineering_beta/requirements.txt"),
+        )
+        for name in SIGNING_WORKFLOWS:
+            for old, new in replacements:
+                def mutate(workflow, old=old, new=new):
+                    step = self._install(workflow["jobs"]["sign"])
+                    step["run"] = step["run"].replace(old, new)
+                with self.subTest(workflow=name, replaced=old):
+                    self.assertIn("UNHASHED_INSTALL", self._mutated(name, mutate)["sign"])
+
+    def test_persisting_credentials_fails(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            for job_name in ("sign", "publish"):
+                for value in (True, None):
+                    def mutate(workflow, job_name=job_name, value=value):
+                        options = self._checkout(workflow["jobs"][job_name])["with"]
+                        if value is None:
+                            options.pop("persist-credentials")
+                        else:
+                            options["persist-credentials"] = value
+                    with self.subTest(workflow=name, job=job_name, value=value):
+                        self.assertIn(
+                            "CHECKOUT_PERSISTS_CREDENTIALS",
+                            self._mutated(name, mutate)[job_name],
+                        )
+
+    def test_floating_python_or_pip_cache_in_signing_job_fails(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            def floating(workflow):
+                self._step(
+                    workflow["jobs"]["sign"],
+                    lambda step: _action(step) == "actions/setup-python",
+                )["with"]["python-version"] = "3.12"
+
+            def cached(workflow):
+                self._step(
+                    workflow["jobs"]["sign"],
+                    lambda step: _action(step) == "actions/setup-python",
+                )["with"]["cache"] = "pip"
+
+            with self.subTest(workflow=name):
+                self.assertIn("FLOATING_PYTHON", self._mutated(name, floating)["sign"])
+                self.assertIn("PIP_CACHE", self._mutated(name, cached)["sign"])
+
+    def test_test_stack_in_signing_job_fails(self) -> None:
+        mutations = {
+            "tests lock": lambda run: run + " -r tests/requirements.lock",
+            "unittest": lambda run: run + "\npython -m unittest discover -s tests",
+        }
+        for name in SIGNING_WORKFLOWS:
+            for label, change in mutations.items():
+                def mutate(workflow, change=change):
+                    step = self._install(workflow["jobs"]["sign"])
+                    step["run"] = change(step["run"])
+                with self.subTest(workflow=name, mutation=label):
+                    found = self._mutated(name, mutate)["sign"]
+                    self.assertIn("GENERAL_TEST_STACK", found)
+
+    def test_extra_install_or_observation_in_signing_job_fails(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            def extra_lock(workflow):
+                step = self._install(workflow["jobs"]["sign"])
+                step["run"] = step["run"] + " -r scripts/other.lock"
+
+            def observe(workflow):
+                workflow["jobs"]["sign"]["steps"].append(
+                    {"name": "observe", "run": "docker pull ghcr.io/example/image"}
+                )
+
+            def extra_action(workflow):
+                workflow["jobs"]["sign"]["steps"].append(
+                    {"uses": "docker/setup-buildx-action@" + "0" * 40}
+                )
+
+            with self.subTest(workflow=name):
+                self.assertIn("SIGNING_JOB_EXTRA_INSTALL", self._mutated(name, extra_lock)["sign"])
+                self.assertIn(
+                    "SIGNING_JOB_RUNS_OBSERVATION_STACK",
+                    self._mutated(name, observe)["sign"],
+                )
+                self.assertIn("SIGNING_JOB_EXTRA_ACTION", self._mutated(name, extra_action)["sign"])
+
+    def test_write_permission_on_signing_job_fails(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            def mutate(workflow):
+                workflow["jobs"]["sign"]["permissions"]["contents"] = "write"
+            with self.subTest(workflow=name):
+                self.assertIn("SIGNING_JOB_HAS_WRITE", self._mutated(name, mutate)["sign"])
+
+    def test_moving_secret_into_evidence_or_publish_job_fails(self) -> None:
+        for name, (_environment, secrets) in SIGNING_WORKFLOWS.items():
+            for job_name in ("evidence", "publish"):
+                def mutate(workflow, job_name=job_name, secret=secrets[0]):
+                    workflow["jobs"][job_name]["steps"][0].setdefault("env", {})[
+                        "LEAK"
+                    ] = f"${{{{ secrets.{secret} }}}}"
+                with self.subTest(workflow=name, job=job_name):
+                    found = self._mutated(name, mutate)[job_name]
+                    # A secret makes the job a signer; it then fails on its
+                    # observation stack (evidence) or its write token (publish).
+                    self.assertTrue(
+                        found
+                        & {"SIGNING_JOB_HAS_WRITE", "SIGNING_JOB_RUNS_OBSERVATION_STACK"}
+                    )
+
+    def test_secret_in_job_env_or_second_step_fails(self) -> None:
+        for name, (_environment, secrets) in SIGNING_WORKFLOWS.items():
+            def job_env(workflow, secret=secrets[0]):
+                workflow["jobs"]["sign"]["env"]["LEAK"] = f"${{{{ secrets.{secret} }}}}"
+
+            def second_step(workflow, secret=secrets[0]):
+                self._install(workflow["jobs"]["sign"]).setdefault("env", {})[
+                    "LEAK"
+                ] = f"${{{{ secrets.{secret} }}}}"
+
+            with self.subTest(workflow=name):
+                self.assertIn("SIGNING_SECRET_SCOPE", self._mutated(name, job_env)["sign"])
+                self.assertIn("SIGNING_SECRET_SCOPE", self._mutated(name, second_step)["sign"])
+
+    def test_python_in_publication_job_fails(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            def mutate(workflow):
+                workflow["jobs"]["publish"]["steps"].append(
+                    {"name": "parse", "run": "python -c 'print(1)'"}
+                )
+            with self.subTest(workflow=name):
+                self.assertIn("WRITE_JOB_RUNS_PYTHON", self._mutated(name, mutate)["publish"])
+
+    def test_multiline_unhashed_install_is_detected(self) -> None:
+        self.assertTrue(
+            _install_violations("python -m pip install \\\n  -r tests/requirements.txt")
+        )
+        self.assertTrue(_install_violations("pip install requests"))
+        self.assertFalse(
+            _install_violations(
+                "python -m pip --isolated install --require-hashes --only-binary=:all: "
+                "--index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock"
+            )
+        )
+
+    def test_reviewed_exception_cannot_hide_new_violations(self) -> None:
+        workflow = copy.deepcopy(_load("publish-rc-image.yml"))
+        step = next(
+            step
+            for step in workflow["jobs"]["promote"]["steps"]
+            if "--require-hashes" in step.get("run", "")
+        )
+        step["run"] = step["run"].replace("--require-hashes ", "")
+        found = workflow_violations("publish-rc-image.yml", workflow)["promote"]
+        self.assertNotEqual(found, REVIEWED_EXCEPTIONS[("publish-rc-image.yml", "promote")])
+        self.assertIn("UNHASHED_INSTALL", found)
+
+
+class ProvenanceWorkflowTests(unittest.TestCase):
+    def test_both_workflows_verify_attestation_payloads(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            with self.subTest(workflow=name):
+                source = (WORKFLOWS / name).read_text(encoding="utf-8")
+                image = next(
+                    step
+                    for step in _load(name)["jobs"]["evidence"]["steps"]
+                    if step.get("id") == "image"
+                )["run"]
+                self.assertIn("python scripts/verify_upstream_image_provenance.py", image)
+                self.assertIn('--index-digest "$index_digest"', image)
+                self.assertIn('--source-commit "${{ steps.source.outputs.source_commit }}"', image)
+                self.assertIn('--version "$VERSION"', image)
+                self.assertIn('provenance["workflow_sha"]', image)
+                self.assertIn('test "$label_revision" = "$revision"', image)
+                # Annotation strings and labels are never provenance evidence.
+                for prohibited in (
+                    '"slsa" in',
+                    "spdx\" in",
+                    "in-toto.io/predicate-type",
+                    "vnd.docker.reference.type",
+                ):
+                    self.assertNotIn(prohibited, source)
+                # The revision is never taken from an image label.
+                self.assertIsNone(
+                    re.search(r'(?<![A-Za-z_])revision="\$\(docker image inspect', source)
+                )
+                self.assertEqual(
+                    len(re.findall(r'imagetools inspect(?: --raw)? "\$tagged"', source)),
+                    1,
+                )
+                self.assertNotIn('docker pull --platform linux/amd64 "$image"', source)
+                self.assertNotIn('docker image inspect "$image"', source)
+
+
+if __name__ == "__main__":
+    unittest.main()
