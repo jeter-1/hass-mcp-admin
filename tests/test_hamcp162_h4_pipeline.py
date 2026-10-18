@@ -54,16 +54,13 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests")]
 import hamcp162_synthetic as syn  # noqa: E402
 import test_hamcp162_yaml_reader as T  # noqa: E402
 from ha_mcp_engineering import sanitization as S  # noqa: E402
-from ha_mcp_engineering.capabilities import replace_dynamic_upstream_capabilities  # noqa: E402
 from ha_mcp_engineering.providers import upstream_read_gateway as G  # noqa: E402
 
 y = T.y
 
-
-def tearDownModule():
-    # Each gateway publishes its catalog into the process-wide capability
-    # catalog; restore it so later modules see the static catalog only.
-    replace_dynamic_upstream_capabilities((), {})
+# Each gateway publishes its catalog into the process-wide capability catalog.
+# The shared per-test reset (tests/support/process_isolation.py) restores it
+# after every test, so later modules see the static catalog only.
 
 KNOWN = syn.needle("matrixconfigured")  # the configured ha_token
 MATTER_DIGITS = "3141-5926-535"
