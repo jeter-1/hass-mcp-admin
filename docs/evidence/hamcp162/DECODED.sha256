@@ -1,0 +1,10 @@
+806dabb53ca0cf51aa9b614f93b6d6bf48cae7393492854d0cf6c303a086f304  ./captures/analysis.json
+79311de7190e93b48808d38e987fd5fab4ffb7364a5e4cf2e0c34cbf64d9b74c  ./captures/case-table.txt
+04873b5c634c711a2696a8779ba679e8aac200afbedb72997a58c587ef99c9c5  ./captures/cases-8.4.3-supp.json
+55205b8955650a5c963002589425db85a48b1102c76635e5ecff69454fa0e415  ./captures/cases-8.4.3.json
+0cbd9aa99c17230a336b69bb04c2fbb73a62e4d4aa20cecf831489e3fd68d97a  ./captures/cases-8.5.0-supp.json
+de3e5dd59647806f9158d05cc450ccf868638ceda67593863361c78435c01455  ./captures/cases-8.5.0.json
+bde4bb8256af71784de695b1008982b8d631c6fc1ee2d07cefaf0776c84cd36a  ./fixtures/cases.json
+c13f242b8bf47ab47e73e703e26897a182e6b05de35e2965c41c7295f6e6ec6c  ./fixtures/companions/secrets.yaml.fixture
+cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63  ./fixtures/variants/main.yaml.fixture
+d6c7d52428982d64fd87cf42bc70f5ad6c792c434ff41bd6d0305a59d8c39f73  ./harness/gen_fixtures.py

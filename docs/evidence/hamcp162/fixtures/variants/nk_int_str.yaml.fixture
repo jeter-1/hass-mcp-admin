@@ -1,0 +1,4 @@
+nk:
+  1: int_one
+  "1": str_one
+  plain: plain_value
