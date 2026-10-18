@@ -19,7 +19,7 @@ from ..errors import (
 )
 from ..observability import METRICS
 from ..request_context import current_telemetry
-from .paths import request_url, require_route
+from .paths import Route, request_url, require_route
 from .single_read import SINGLE_READ, session_options, response_text
 from . import logbook
 
@@ -59,7 +59,7 @@ class HomeAssistantRestClient:
     async def request(
         self,
         method: str,
-        path: str,
+        path: Route,
         body: Any = None,
         raw: bool = False,
         expected_statuses: frozenset[int] = frozenset(),
@@ -70,7 +70,7 @@ class HomeAssistantRestClient:
         # authorization or session exists. An unsafe path fails closed here.
         route = require_route(path)
         url = request_url(self.settings.api_url, route)
-        if logbook_read and (method != "GET" or not route.template.startswith("/logbook/")
+        if logbook_read and (method != "GET" or route.template != "/logbook/{}"
                              or body is not None or not raw or expected_statuses):
             raise ValueError("invalid_internal_logbook_request")
         headers = {
@@ -126,7 +126,7 @@ class HomeAssistantRestClient:
                             "endpoint_category": category,
                             "provider_response_received": True,
                         }
-                        if response.status == 404 and route.template.startswith("/states/"):
+                        if response.status == 404 and route.template == "/states/{}":
                             error = EntityNotFoundError(details=details)
                         elif response.status == 404 and "/automation/" in route.template:
                             error = AutomationNotFoundError(details=details)

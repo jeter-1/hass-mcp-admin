@@ -517,7 +517,7 @@ class AutomationGateway:
             raise
 
     async def validate(self) -> Any:
-        return await self.client.request("POST", "/config/core/check_config")
+        return await self.client.request("POST", rest_path("/config/core/check_config"))
 
 
 class ChangeGovernanceService:

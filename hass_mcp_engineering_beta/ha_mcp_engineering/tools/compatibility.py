@@ -21,7 +21,7 @@ from typing import Any, Optional
 from ..capabilities import build_capability_catalog, build_server_metadata
 from ..clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
 from ..clients.logbook import LOGBOOK
-from ..clients.paths import rest_path
+from ..clients.paths import Route, rest_path
 from ..configuration import load_settings
 from ..health import HEALTH
 from ..identifiers import require_automation_config_id, require_entity_id
@@ -65,7 +65,7 @@ LOGGER = get_logger("compatibility")
 # ---------------------------------------------------------------------------
 
 
-async def rest(method: str, path: str, body: Any = None, raw: bool = False) -> Any:
+async def rest(method: str, path: Route, body: Any = None, raw: bool = False) -> Any:
     return await REST_CLIENT.request(method, path, body=body, raw=raw)
 
 
@@ -131,7 +131,7 @@ async def server_info(check_ha: bool = True) -> str:
         else:
             started = time.monotonic()
             try:
-                config = await rest("GET", "/config")
+                config = await rest("GET", rest_path("/config"))
                 connection = {
                     "checked": True,
                     "status": "connected",
@@ -194,7 +194,7 @@ async def get_server_health(check_ha: bool = True) -> str:
         else:
             connection = {"checked": True}
             try:
-                config = await rest("GET", "/config")
+                config = await rest("GET", rest_path("/config"))
                 connection.update(
                     {
                         "status": "connected",
@@ -286,7 +286,7 @@ async def search_entities(query: str = "", domain: str = "", limit: int = 50) ->
     if normalized_domain and not re.fullmatch(r"[a-z0-9_]+", normalized_domain):
         raise ValueError("domain must be empty or a canonical Home Assistant domain")
 
-    states = await rest("GET", "/states")
+    states = await rest("GET", rest_path("/states"))
     if not isinstance(states, list):
         raise HomeAssistantApiError(
             details={"endpoint_category": "states_inventory", "status": "malformed_response"}
@@ -493,7 +493,7 @@ async def get_error_log(tail_lines: int = 200) -> str:
 async def render_template(template: str) -> str:
     """Render a Jinja2 template against live HA state. Use this to test
     template logic before putting it in an automation."""
-    return await rest("POST", "/template", {"template": template}, raw=True)
+    return await rest("POST", rest_path("/template"), {"template": template}, raw=True)
 
 
 @mcp.tool()
@@ -535,7 +535,7 @@ async def list_automations(query: str = "", limit: int = 100) -> str:
     the internal id needed for config edits and traces. Optional substring
     filter on entity_id/friendly_name — prefer filtering over full dumps to
     save context."""
-    states = await rest("GET", "/states")
+    states = await rest("GET", rest_path("/states"))
     q = query.lower()
     autos = []
     for s in states:
@@ -654,7 +654,7 @@ async def delete_automation(automation_id: str, confirm: bool = False) -> str:
 async def check_config() -> str:
     """Run HA's full configuration check. Returns 'valid' or the errors.
     Run this after config writes and before any restart."""
-    return dump(await rest("POST", "/config/core/check_config"))
+    return dump(await rest("POST", rest_path("/config/core/check_config")))
 
 
 @mcp.tool()
@@ -747,7 +747,7 @@ async def search_services(query: str, limit: int = 30) -> str:
     description. Returns slim results (service, description, field names
     only) — use this for discovery, then list_services(domain) for full
     field schemas. Much cheaper on context than list_services."""
-    services = await rest("GET", "/services")
+    services = await rest("GET", rest_path("/services"))
     requested_limit = int(limit)
     effective_limit = max(1, min(requested_limit, 100))
     q = query.lower()
@@ -795,7 +795,7 @@ async def list_services(domain: str = "") -> str:
     """All available services with FULL field schemas — large output. For
     discovery, use search_services first; only call this (with a domain
     filter) when you need complete field metadata."""
-    services = await rest("GET", "/services")
+    services = await rest("GET", rest_path("/services"))
     if domain:
         services = [s for s in services if s.get("domain") == domain]
     maximum_services = 50

@@ -1,21 +1,27 @@
 """Fixed-route Home Assistant REST path construction (HAMCP-200).
 
-Every Engineering REST request names one fixed route template. Caller,
-provider and Home Assistant-derived values enter that template only through
-``path_segment``: each value is refused when any decoded form could change
-the route, and is otherwise percent-encoded as exactly one path segment.
-``request_url`` then rebuilds the URL the way the HTTP client would
-(including dot-segment normalization) and refuses it unless the normalized
-route is exactly the template's route. Refusals happen before any request
-or credential exists.
+Every Engineering REST request names one fixed route template from the
+closed ``ROUTE_TEMPLATES`` registry. Caller, provider and Home
+Assistant-derived values enter that template only through ``path_segment``:
+each value is refused when any decoded form could change the route, and is
+otherwise percent-encoded as exactly one path segment.
+
+``rest_path`` is the only way to obtain a ``Route``. A ``Route`` cannot be
+constructed, subclassed, copied into a new object or unpickled elsewhere,
+and the transports accept nothing else: a plain string (however it was
+built) or a forged object is refused before any session, credential or
+request exists. ``request_url`` then rebuilds the URL the way the HTTP
+client would (including dot-segment normalization) and refuses it unless
+the normalized route is exactly the template's route.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, final
 from urllib.parse import quote, unquote
+import weakref
 
 from yarl import URL
 
@@ -30,7 +36,6 @@ MAX_DECODE_ROUNDS = 4
 # Literal route segments and query keys are fixed source text, never data.
 _ROUTE_SEGMENT = re.compile(r"[a-z0-9_]+\Z")
 _QUERY_KEY = re.compile(r"[a-z_]+\Z")
-_STATIC_ROUTE = re.compile(r"(?:/[a-z0-9_]+)+\Z")
 # Separators, dots, query/fragment delimiters and control characters.
 _FORBIDDEN = re.compile(r"[./\\?#\x00-\x1f\x7f-\x9f]")
 _FORBIDDEN_QUERY_VALUE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
@@ -40,6 +45,32 @@ _TIMESTAMP = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})\Z"
 )
 SEGMENT_KINDS = frozenset({"identifier", "entity_id", "timestamp"})
+
+# Every route an Engineering transport may request. A template is reviewed
+# source text here, so a computed string can never become a route.
+ROUTE_TEMPLATES = frozenset({
+    "/addons/self/info",
+    "/config",
+    "/config/automation/config/{}",
+    "/config/core/check_config",
+    "/config/script/config/{}",
+    "/history/period/{}",
+    "/logbook/{}",
+    "/services",
+    "/services/notify/{}",
+    "/states",
+    "/states/{}",
+    "/template",
+})
+# Routes used only by the disposable-Core CI harnesses under ``scripts/``.
+# No runtime module names them (enforced by tests/test_hamcp200_path_safety).
+HARNESS_ROUTE_TEMPLATES = frozenset({
+    "/config/config_entries/flow",
+    "/events/dev14_real_contract_trigger",
+    "/services/automation/reload",
+    "/services/script/reload",
+})
+_TEMPLATES = ROUTE_TEMPLATES | HARNESS_ROUTE_TEMPLATES
 
 
 class UnsafeRequestPathError(InvalidRequestError):
@@ -93,28 +124,56 @@ def path_segment(value: Any, *, kind: str = "identifier", field: str | None = No
     return quote(value, safe="")
 
 
-class RestPath(str):
-    """An encoded REST path bound to the fixed route template it came from."""
+_ISSUED: "weakref.WeakValueDictionary[int, Route]" = weakref.WeakValueDictionary()
 
-    template: str
-    values: tuple[str, ...]
-    kinds: tuple[str, ...]
-    query: tuple[tuple[str, str | None], ...]
 
-    def __new__(
-        cls,
-        encoded: str,
-        template: str,
-        values: tuple[str, ...],
-        kinds: tuple[str, ...],
-        query: tuple[tuple[str, str | None], ...],
-    ) -> "RestPath":
-        instance = super().__new__(cls, encoded)
-        instance.template = template
-        instance.values = values
-        instance.kinds = kinds
-        instance.query = query
-        return instance
+@final
+class Route(str):
+    """An encoded REST path bound to the registered template it came from.
+
+    Only ``rest_path`` creates one. It stays a ``str`` so logs and test
+    doubles read it as a path, but every ``str`` operation returns a plain
+    ``str``, which the transports refuse.
+    """
+
+    __slots__ = ("_template", "_values", "_kinds", "_query", "__weakref__")
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Route":
+        raise TypeError("a Route is built only by rest_path()")
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        raise TypeError("Route cannot be subclassed")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("Route is immutable")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError("Route is immutable")
+
+    def __copy__(self) -> "Route":
+        return self
+
+    def __deepcopy__(self, memo: Any) -> "Route":
+        return self
+
+    def __reduce_ex__(self, protocol: Any) -> Any:
+        raise TypeError("Route cannot be serialized")
+
+    @property
+    def template(self) -> str:
+        return self._template
+
+    @property
+    def values(self) -> tuple[str, ...]:
+        return self._values
+
+    @property
+    def kinds(self) -> tuple[str, ...]:
+        return self._kinds
+
+    @property
+    def query(self) -> tuple[tuple[str, str | None], ...]:
+        return self._query
 
     def expected_parts(self) -> tuple[str, ...]:
         """Decoded route segments the template plus values must produce."""
@@ -126,6 +185,29 @@ class RestPath(str):
         return tuple(parts)
 
 
+def _issue(
+    encoded: str,
+    template: str,
+    values: tuple[str, ...],
+    kinds: tuple[str, ...],
+    query: tuple[tuple[str, str | None], ...],
+) -> Route:
+    route = str.__new__(Route, encoded)
+    for name, value in (
+        ("_template", template), ("_values", values),
+        ("_kinds", kinds), ("_query", query),
+    ):
+        object.__setattr__(route, name, value)
+    _ISSUED[id(route)] = route
+    return route
+
+
+def is_route(path: Any) -> bool:
+    """True only for a ``Route`` that ``rest_path`` itself issued."""
+
+    return type(path) is Route and _ISSUED.get(id(path)) is path
+
+
 def _template_literals(template: Any) -> list[str]:
     if type(template) is not str or not template.startswith("/") or "?" in template:
         raise ValueError("REST route template must be a fixed absolute route")
@@ -133,6 +215,8 @@ def _template_literals(template: Any) -> list[str]:
     for literal in literals:
         if literal != "{}" and not _ROUTE_SEGMENT.fullmatch(literal):
             raise ValueError("REST route template contains an unsafe literal")
+    if template not in _TEMPLATES:
+        raise UnsafeRequestPathError("unregistered_route")
     return literals
 
 
@@ -169,18 +253,31 @@ def rest_path(
     kinds: tuple[str, ...] | None = None,
     query: Mapping[str, Any] | Iterable[tuple[str, Any]] | None = None,
     field: str | None = None,
-) -> RestPath:
-    """Build one REST path from a fixed template and guarded segment values.
+) -> Route:
+    """Build one REST route from a registered template and guarded values.
 
-    ``template`` uses ``{}`` for each value; literal segments must be fixed
-    lowercase route text. ``kinds`` optionally names a typed grammar per value.
+    ``template`` must be in ``ROUTE_TEMPLATES`` (or the harness registry)
+    and uses ``{}`` for each value. ``kinds`` optionally names a typed
+    grammar per value.
     """
 
+    if kinds is None:
+        kinds = ("identifier",) * len(values)
+    pairs = _query_pairs(query, field)
+    encoded = _encode(template, values, tuple(kinds), pairs, field)
+    return _issue(encoded, template, tuple(values), tuple(kinds), pairs)
+
+
+def _encode(
+    template: str,
+    values: tuple[Any, ...],
+    kinds: tuple[str, ...],
+    pairs: tuple[tuple[str, str | None], ...],
+    field: str | None = None,
+) -> str:
     literals = _template_literals(template)
     if literals.count("{}") != len(values):
         raise ValueError("REST route template and value count differ")
-    if kinds is None:
-        kinds = ("identifier",) * len(values)
     if len(kinds) != len(values):
         raise ValueError("REST route kinds and value count differ")
     encoded_values = iter(
@@ -191,40 +288,37 @@ def rest_path(
         next(encoded_values) if literal == "{}" else literal
         for literal in literals
     )
-    pairs = _query_pairs(query, field)
     if pairs:
         encoded += "?" + _encoded_query(pairs)
-    return RestPath(encoded, template, tuple(values), tuple(kinds), pairs)
+    return encoded
 
 
-def require_route(path: Any) -> RestPath:
-    """Accept a template-built path or a fixed literal route; refuse others."""
+def require_route(path: Any) -> Route:
+    """Return ``path`` if ``rest_path`` issued it; refuse anything else."""
 
-    if isinstance(path, RestPath):
+    if is_route(path):
         return path
-    if type(path) is str and _STATIC_ROUTE.fullmatch(path):
-        return RestPath(path, path, (), (), ())
     raise UnsafeRequestPathError("unbound_request_path")
 
 
 def request_url(api_url: str, path: Any) -> URL:
     """Return the exact URL for ``path`` after re-verifying its fixed route.
 
-    The URL is parsed the way the HTTP client parses a string (requoting and
-    dot-segment normalization). The request is refused unless that
-    normalized URL keeps the base origin, the base path plus exactly the
-    template's segments, the template's query, and no fragment.
+    Only an issued ``Route`` is accepted. Its template, every bound value
+    and its encoding are re-checked, and the URL is parsed the way the HTTP
+    client parses a string (requoting and dot-segment normalization). The
+    request is refused unless that normalized URL keeps the base origin,
+    the base path plus exactly the template's segments, the template's
+    query, and no fragment.
     """
 
     route = require_route(path)
-    _template_literals(route.template)
-    if len(route.kinds) != len(route.values):
+    # Central guard: re-check the template, every bound value and the
+    # encoding, however the route object came to hold them.
+    if str.__str__(route) != _encode(route.template, route.values, route.kinds, route.query):
         raise UnsafeRequestPathError("route_mismatch")
-    # Central guard: re-check every bound value, however the path was built.
-    for value, kind in zip(route.values, route.kinds):
-        path_segment(value, kind=kind)
     base = URL(api_url)
-    url = URL(api_url.rstrip("/") + str(route))
+    url = URL(api_url.rstrip("/") + str.__str__(route))
     base_parts = tuple(part for part in base.parts if part not in ("", "/"))
     expected = base_parts + route.expected_parts()
     actual = tuple(part for part in url.parts if part != "/")
@@ -246,9 +340,12 @@ def request_url(api_url: str, path: Any) -> URL:
 
 
 __all__ = [
+    "HARNESS_ROUTE_TEMPLATES",
     "INVALID_IDENTIFIER_MESSAGE",
-    "RestPath",
+    "ROUTE_TEMPLATES",
+    "Route",
     "UnsafeRequestPathError",
+    "is_route",
     "path_segment",
     "request_url",
     "require_route",

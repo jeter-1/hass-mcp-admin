@@ -1,11 +1,14 @@
 """HAMCP-200 path-segment safety for every Home Assistant REST request.
 
-Every REST path is a fixed route template plus values that pass through one
-segment guard. Traversal-shaped identifiers are refused as truthful
-``invalid_request`` failures before any session or credential exists, the
+Every REST request carries a ``Route``: a registered fixed template plus
+values that passed one segment guard. ``rest_path`` is the only way to get
+one, and the transport refuses a plain string (however it was built) or a
+forged object before any session or credential exists. Traversal-shaped
+identifiers are refused as truthful ``invalid_request`` failures, the
 transport re-verifies the normalized route before attaching the token and
-never follows redirects, and a source scan fails on any raw interpolated
-Home Assistant path. Offline and deterministic: the aiohttp session is a
+never follows redirects, no crafted identifier can reach ``/api/webhook/*``,
+and a secondary source scan fails on raw interpolated paths or aliased
+request methods. Offline and deterministic: the aiohttp session is a
 counting fake and no Home Assistant is contacted.
 """
 
@@ -14,8 +17,12 @@ from __future__ import annotations
 import ast
 import asyncio
 from collections import Counter
+import copy
+import dataclasses
+import functools
 import json
 from pathlib import Path
+import pickle
 import re
 import sys
 import tempfile
@@ -33,10 +40,14 @@ from tests import test_beta_v2 as beta  # noqa: E402
 from tests.same_thread_asgi_client import SameThreadAsgiTestClient  # noqa: E402
 
 from ha_mcp_engineering.application import create_application  # noqa: E402
+from ha_mcp_engineering.clients import paths  # noqa: E402
 from ha_mcp_engineering.clients.paths import (  # noqa: E402
+    HARNESS_ROUTE_TEMPLATES,
     INVALID_IDENTIFIER_MESSAGE,
-    RestPath,
+    ROUTE_TEMPLATES,
+    Route,
     UnsafeRequestPathError,
+    is_route,
     path_segment,
     request_url,
     require_route,
@@ -241,24 +252,198 @@ class SegmentGuardTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             rest_path("/states/{}", "1", query={"Bad-Key": "1"})
 
-    def test_raw_strings_are_accepted_only_as_fixed_literal_routes(self):
-        self.assertEqual(require_route("/states").template, "/states")
-        self.assertEqual(
-            require_route("/config/core/check_config").template,
-            "/config/core/check_config",
-        )
+    def test_well_formed_templates_outside_the_registry_are_refused(self):
+        # Codex probe: a raw "/states/" + value has a valid route shape but
+        # names no registered template, so even as a template it refuses.
+        for template in (
+            "/states/" + "sensor/extra",
+            "/states/sensor",
+            "/webhook/{}",
+            "/hassio/addons",
+            "/config/{}/config/{}",
+            "/services/{}/{}",
+        ):
+            with self.subTest(template=template):
+                with self.assertRaises(UnsafeRequestPathError) as caught:
+                    rest_path(template, *(("x",) * template.count("{}")))
+                self.assertEqual(caught.exception.details["reason"], "unregistered_route")
+
+    def test_every_plain_string_is_refused_even_a_registered_static_route(self):
+        self.assertEqual(rest_path("/states").template, "/states")
         for raw in (
+            "/states",
+            "/config/core/check_config",
             "/states/light.kitchen",
+            "/states/" + "sensor/extra",
             "/config/automation/config/../../hassio",
             "/config/automation/config/1%2f..",
             "states",
             "/states?x=1",
+            str(rest_path("/states")),
+            rest_path("/states") + "",
+            rest_path("/states/{}", "light.kitchen", kinds=("entity_id",)).replace(
+                "light.kitchen", "light.kitchen/../../../hassio"
+            ),
             None,
+            b"/states",
+            7,
         ):
             with self.subTest(raw=raw):
+                self.assertFalse(is_route(raw))
                 with self.assertRaises(UnsafeRequestPathError) as caught:
                     require_route(raw)
                 self.assertEqual(caught.exception.details["reason"], "unbound_request_path")
+                with self.assertRaises(UnsafeRequestPathError):
+                    request_url(API_URL, raw)
+
+
+class RouteForgeryTests(unittest.TestCase):
+    """A ``Route`` exists only when ``rest_path`` issued it."""
+
+    def test_route_cannot_be_constructed_or_subclassed(self):
+        for build in (
+            lambda: Route("/states"),
+            lambda: Route.__new__(Route, "/states"),
+            lambda: Route(),
+        ):
+            with self.assertRaises(TypeError):
+                build()
+        with self.assertRaises(TypeError):
+            type("ForgedRoute", (Route,), {})
+
+    def test_str_new_forgery_is_not_an_issued_route(self):
+        forged = str.__new__(Route, "/states")
+        self.assertIs(type(forged), Route)
+        self.assertFalse(is_route(forged))
+        with self.assertRaises(UnsafeRequestPathError) as caught:
+            require_route(forged)
+        self.assertEqual(caught.exception.details["reason"], "unbound_request_path")
+
+    def test_issued_route_is_immutable_and_cannot_be_cloned_or_serialized(self):
+        route = rest_path("/config/automation/config/{}", "1")
+        self.assertTrue(is_route(route))
+        for name in ("_template", "_values", "template", "extra"):
+            with self.subTest(name=name):
+                with self.assertRaises(AttributeError):
+                    setattr(route, name, "/states/{}")
+                with self.assertRaises(AttributeError):
+                    delattr(route, name)
+        self.assertIs(copy.copy(route), route)
+        self.assertIs(copy.deepcopy(route), route)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                with self.assertRaises(TypeError):
+                    pickle.dumps(route, protocol=protocol)
+
+    def test_every_str_operation_on_a_route_yields_a_refused_plain_str(self):
+        route = rest_path("/states/{}", "light.kitchen", kinds=("entity_id",))
+        for derived in (
+            route + "/x",
+            "/x" + route,
+            route[:],
+            route.replace("kitchen", "x"),
+            route.lower(),
+            "%s" % route,
+            f"{route}",
+            str(route),
+            "".join([route]),
+        ):
+            with self.subTest(derived=derived):
+                self.assertIs(type(derived), str)
+                self.assertFalse(is_route(derived))
+
+    def test_tampering_with_an_issued_route_is_refused_centrally(self):
+        # Bypassing the immutability guard still cannot retarget a route:
+        # the transport re-encodes the bound template and values.
+        route = rest_path("/config/automation/config/{}", "1")
+        object.__setattr__(route, "_template", "/states/{}")
+        with self.assertRaises(UnsafeRequestPathError) as caught:
+            request_url(API_URL, route)
+        self.assertEqual(caught.exception.details["reason"], "route_mismatch")
+        route = rest_path("/config/automation/config/{}", "1")
+        object.__setattr__(route, "_template", "/webhook/{}")
+        with self.assertRaises(UnsafeRequestPathError) as caught:
+            request_url(API_URL, route)
+        self.assertEqual(caught.exception.details["reason"], "unregistered_route")
+
+
+class WebhookReachabilityTests(unittest.TestCase):
+    """M1: a crafted ID can never reach /api/webhook/* or leave its template."""
+
+    WEBHOOK_IDS = (
+        "../../../webhook/hamcp200_synthetic_only",
+        "../../webhook/x",
+        "../webhook/x",
+        "..%2f..%2f..%2fwebhook%2fx",
+        "%2e%2e/%2e%2e/%2e%2e/webhook/x",
+        "%252e%252e%252f%252e%252e%252fwebhook%252fx",
+        "..\\..\\..\\webhook\\x",
+        "1/../../../webhook/x",
+        "x?/../../../webhook/x",
+        "x#/../../../webhook/x",
+    )
+
+    def test_no_registered_template_names_a_webhook_or_unlisted_root(self):
+        for template in ROUTE_TEMPLATES | HARNESS_ROUTE_TEMPLATES:
+            with self.subTest(template=template):
+                self.assertNotIn("webhook", template)
+                self.assertIn(
+                    template.split("/")[1],
+                    {"addons", "config", "events", "history", "logbook",
+                     "services", "states", "template"},
+                )
+
+    def test_crafted_ids_never_reach_a_webhook_or_another_route(self):
+        kinds_for = {"/states/{}": "entity_id", "/history/period/{}": "timestamp",
+                     "/logbook/{}": "timestamp"}
+        for template in sorted(ROUTE_TEMPLATES | HARNESS_ROUTE_TEMPLATES):
+            if "{}" not in template:
+                continue
+            kind = kinds_for.get(template, "identifier")
+            for value in self.WEBHOOK_IDS + TRAVERSAL_IDS:
+                with self.subTest(template=template, value=value):
+                    try:
+                        route = rest_path(template, value, kinds=(kind,))
+                    except UnsafeRequestPathError:
+                        continue
+                    # Only a value that is one inert segment gets this far.
+                    url = request_url(API_URL, route)
+                    self.assertEqual(
+                        url.parts[:-1],
+                        ("/", "core", "api", *template.split("/")[1:-1]),
+                    )
+                    self.assertEqual(url.parts[-1], value)
+                    self.assertNotIn("webhook", url.parts[3:-1])
+
+    def test_webhook_ids_send_no_request_through_the_client(self):
+        factory = CountingSessionFactory()
+        client = rest_client()
+        with patched_session(factory):
+            for value in self.WEBHOOK_IDS:
+                with self.subTest(value=value):
+                    with self.assertRaises(UnsafeRequestPathError):
+                        asyncio.run(client.request(
+                            "GET", rest_path("/config/automation/config/{}", value)
+                        ))
+                    # The pre-fix raw form is now refused as a plain string.
+                    with self.assertRaises(UnsafeRequestPathError):
+                        asyncio.run(client.request(
+                            "GET", "/config/automation/config/" + value
+                        ))
+        self.assertEqual(factory.sessions, 0)
+        self.assertEqual(factory.requests, [])
+
+    def test_pre_fix_normalization_target_is_refused_by_the_url_guard(self):
+        # The Codex probe's pre-fix URL normalized to /core/api/webhook/...;
+        # even an issued route carrying that encoding cannot be sent.
+        encoded = "/config/automation/config/../../../webhook/hamcp200_synthetic_only"
+        with patch.object(paths, "_encode", lambda *args, **kwargs: encoded):
+            route = paths._issue(
+                encoded, "/config/automation/config/{}", ("1",), ("identifier",), ()
+            )
+            with self.assertRaises(UnsafeRequestPathError) as caught:
+                request_url(API_URL, route)
+        self.assertEqual(caught.exception.details["reason"], "route_mismatch")
 
 
 class IdentifierGrammarTests(unittest.TestCase):
@@ -291,13 +476,25 @@ class NormalizedRouteTests(unittest.TestCase):
     """The transport re-verifies the route before the token is attached."""
 
     def forged(self, encoded, values=("1",), kinds=("identifier",), query=()):
-        return RestPath(
+        # An issued route whose text disagrees with its bound template.
+        return paths._issue(
             encoded, "/config/automation/config/{}", values, kinds, query
         )
 
+    def test_route_text_that_disagrees_with_its_binding_is_refused(self):
+        for encoded in (
+            "/config/automation/config/../../../hassio/addons",
+            "/config/automation/config/2",
+            "/states/1",
+        ):
+            with self.subTest(encoded=encoded):
+                with self.assertRaises(UnsafeRequestPathError) as caught:
+                    request_url(API_URL, self.forged(encoded))
+                self.assertEqual(caught.exception.details["reason"], "route_mismatch")
+
     def test_crafted_route_that_normalizes_elsewhere_is_refused(self):
-        # The bound value is valid, so only the normalized-route comparison
-        # can catch a path string that dot-normalizes into Supervisor routes.
+        # The re-encode check is bypassed here, so only the normalized-route
+        # comparison can catch text that dot-normalizes into Supervisor routes.
         for encoded in (
             "/config/automation/config/../../../hassio/addons",
             "/config/automation/config/%2e%2e/%2e%2e/%2e%2e/hassio",
@@ -309,8 +506,10 @@ class NormalizedRouteTests(unittest.TestCase):
             "//evil.example/config/automation/config/1",
         ):
             with self.subTest(encoded=encoded):
-                with self.assertRaises(UnsafeRequestPathError) as caught:
-                    request_url(API_URL, self.forged(encoded))
+                with patch.object(paths, "_encode", lambda *a, _e=encoded, **k: _e):
+                    route = self.forged(encoded)
+                    with self.assertRaises(UnsafeRequestPathError) as caught:
+                        request_url(API_URL, route)
                 self.assertEqual(caught.exception.details["reason"], "route_mismatch")
 
     def test_central_guard_rechecks_values_however_the_path_was_built(self):
@@ -336,6 +535,8 @@ class NormalizedRouteTests(unittest.TestCase):
             self.forged("/config/automation/config/a%2Fb", values=("a/b",)),
             "/config/automation/config/../../hassio",
             "/states/" + "light.kitchen",
+            "/states",
+            str.__new__(Route, "/states"),
         )
         with patched_session(factory):
             for path in forged:
@@ -374,6 +575,97 @@ class NormalizedRouteTests(unittest.TestCase):
             "http://supervisor/core/api/config/automation/config/1700000000000",
         )
         self.assertIs(request["allow_redirects"], False)
+
+
+class RuntimeProbeTests(unittest.TestCase):
+    """Codex's scanner counterexamples, executed: the client refuses them all.
+
+    Each probe builds its path the way the review showed a source scan could
+    miss. None yields a ``Route``, so each fails before any session exists.
+    """
+
+    ENTITY = "sensor/extra"
+
+    async def alias_prefix(self, client):
+        prefix = "/states/"
+        path = prefix + self.ENTITY
+        fetch = client.request
+        return await fetch("GET", path)
+
+    async def helper_wrapper(self, client):
+        def build(prefix, item):
+            return prefix + item
+        return await client.request("GET", build("/states/", self.ENTITY))
+
+    async def format_alias(self, client):
+        render = "/states/{}".format
+        return await client.request("GET", render(self.ENTITY))
+
+    async def format_map(self, client):
+        return await client.request(
+            "GET", "/states/{entity}".format_map({"entity": self.ENTITY})
+        )
+
+    async def dynamic_template(self, client):
+        caller_route = "states/" + self.ENTITY
+        return await client.request("GET", rest_path("/" + caller_route))
+
+    async def receiver_alias(self, client):
+        rest = client
+        alias = rest
+        return await alias.request("GET", "/states/" + self.ENTITY)
+
+    async def request_alias(self, client):
+        fetch = getattr(client, "request")
+        return await fetch("GET", "/states/" + self.ENTITY)
+
+    async def partial_alias(self, client):
+        fetch = functools.partial(client.request, "GET")
+        return await fetch("/states/" + self.ENTITY)
+
+    async def keyword_path(self, client):
+        return await client.request("GET", path="/states/" + self.ENTITY)
+
+    async def unsafe_binder(self, client):
+        def state_path(entity):
+            return "/states/" + entity
+        return await client.request("GET", state_path(self.ENTITY))
+
+    async def static_plain_string(self, client):
+        return await client.request("GET", "/states")
+
+    PROBES = (
+        "alias_prefix", "helper_wrapper", "format_alias", "format_map",
+        "dynamic_template", "receiver_alias", "request_alias", "partial_alias",
+        "keyword_path", "unsafe_binder", "static_plain_string",
+    )
+
+    def test_every_probe_is_refused_before_any_session(self):
+        factory = CountingSessionFactory()
+        client = rest_client()
+        with patched_session(factory):
+            for name in self.PROBES:
+                with self.subTest(probe=name):
+                    with self.assertRaises(UnsafeRequestPathError) as caught:
+                        asyncio.run(getattr(self, name)(client))
+                    self.assertIn(
+                        caught.exception.details["reason"],
+                        {"unbound_request_path", "unregistered_route"},
+                    )
+        self.assertEqual(factory.sessions, 0)
+        self.assertEqual(factory.requests, [])
+
+    def test_the_same_requests_succeed_only_through_rest_path(self):
+        factory = CountingSessionFactory()
+        with patched_session(factory):
+            asyncio.run(rest_client().request("GET", rest_path("/states")))
+            asyncio.run(rest_client().request(
+                "GET", rest_path("/states/{}", "sensor.extra", kinds=("entity_id",))
+            ))
+        self.assertEqual(
+            [str(request["url"]) for request in factory.requests],
+            [API_URL + "/states", API_URL + "/states/sensor.extra"],
+        )
 
 
 class ProviderBoundaryTests(unittest.TestCase):
@@ -463,7 +755,13 @@ class ToolRefusalTests(unittest.TestCase):
                 )
 
         cls.tempdir = tempfile.TemporaryDirectory()
-        settings = beta.beta_settings(str(Path(cls.tempdir.name) / "audit.jsonl"))
+        # The refusal matrix exceeds the default synthetic burst; rate
+        # limiting is not under test here.
+        settings = dataclasses.replace(
+            beta.beta_settings(str(Path(cls.tempdir.name) / "audit.jsonl")),
+            rate_limit_per_minute=6000,
+            rate_limit_burst=1000,
+        )
         gateway = create_application(settings, core_snapshot_source=SyntheticCoreSource())
         asyncio.run(CORE_READMISSION.reconcile_once("synthetic-application-startup"))
         asyncio.run(
@@ -535,6 +833,19 @@ class ToolRefusalTests(unittest.TestCase):
                 )
                 self.assertIn("invalid_identifier", json.dumps(payload))
 
+    def test_tools_refuse_webhook_traversal_without_a_request(self):
+        # M1: the pre-fix exposure was a GET to a webhook; never again.
+        for index, value in enumerate(WebhookReachabilityTests.WEBHOOK_IDS):
+            with self.subTest(value=value):
+                self.assert_refused(
+                    "get_automation_config",
+                    {"automation_id": value},
+                    f"hamcp200-webhook-automation-{index}",
+                )
+                self.assert_refused(
+                    "get_entity", {"entity_id": value}, f"hamcp200-webhook-entity-{index}"
+                )
+
     def test_get_automation_config_reads_valid_ids(self):
         for index, value in enumerate(VALID_AUTOMATION_IDS):
             factory = CountingSessionFactory(body=json.dumps({"id": value}))
@@ -600,11 +911,15 @@ class ToolRefusalTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------- source scan
+#
+# The runtime type check above is the primary control: only a ``Route``
+# reaches the network. These scans are a secondary net that keeps the
+# source honest about it.
 
 HA_ROOTS = (
     "addons", "api", "calendars", "camera_proxy", "config", "core",
     "error_log", "events", "hassio", "history", "host", "logbook", "os",
-    "services", "states", "supervisor", "template",
+    "services", "states", "supervisor", "template", "webhook",
 )
 URL_NAMES = frozenset({
     "api_url", "_api_url", "base_url", "_base_url", "ha_url", "_ha_url",
@@ -614,6 +929,19 @@ REQUEST_CALLS = frozenset({"request", "rest", "ws_connect"})
 # HTTP verb methods count as requests only on a session-like receiver, so
 # ordinary ``dict.get`` lookups are not mistaken for request paths.
 SESSION_VERB_CALLS = frozenset({"get", "post", "put", "patch", "delete", "head"})
+# A ``.request`` attribute read without calling it is an alias of the
+# transport when its receiver looks like a client (``prepared.request`` on
+# fan plans is data, not a transport).
+CLIENT_RECEIVER = re.compile(r"client|rest|session", re.IGNORECASE)
+# The literal registries themselves, which name every route by design.
+REGISTRY_NAMES = frozenset({"ROUTE_TEMPLATES", "HARNESS_ROUTE_TEMPLATES"})
+PATHS_MODULE = "hass_mcp_engineering_beta/ha_mcp_engineering/clients/paths.py"
+# Every runtime websocket connects to the one configured URL.
+WEBSOCKET_URLS = frozenset({
+    "self.settings.websocket_url",
+    "self._settings.websocket_url",
+    "self.client._ws_url",
+})
 
 # Reviewed non-request strings that resemble routes. Each entry is
 # (repository-relative file, exact unparsed expression) so drift fails.
@@ -621,8 +949,8 @@ SCAN_EXEMPTIONS = frozenset({
     # The guarded URL constructor itself: the route was verified above it
     # and the normalized result is compared against the template below it.
     (
-        "hass_mcp_engineering_beta/ha_mcp_engineering/clients/paths.py",
-        "api_url.rstrip('/') + str(route)",
+        PATHS_MODULE,
+        "api_url.rstrip('/') + str.__str__(route)",
     ),
     # The fixed REST base derived from configuration, not a request path.
     (
@@ -677,17 +1005,85 @@ def _dynamic(node: ast.AST) -> bool:
     if (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
-        and node.func.attr in {"format", "join", "replace"}
+        and node.func.attr in {"format", "format_map", "join", "replace"}
     ):
         return True
     return False
 
 
+def _call_name(node: ast.Call) -> str:
+    if isinstance(node.func, ast.Attribute):
+        return node.func.attr
+    if isinstance(node.func, ast.Name):
+        return node.func.id
+    return ""
+
+
+def _request_aliases(tree: ast.AST, *, any_receiver: bool) -> list[ast.AST]:
+    """``x.request`` read without a call, or ``getattr(x, "request")``."""
+
+    called = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+    found = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == "request"
+            and id(node) not in called
+            and (any_receiver or CLIENT_RECEIVER.search(ast.unparse(node.value)))
+        ):
+            found.append(node)
+        elif (
+            isinstance(node, ast.Call)
+            and _call_name(node) == "getattr"
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "request"
+        ):
+            found.append(node)
+    return found
+
+
+def _bare_route_literals(tree: ast.AST, filename: str) -> list[ast.AST]:
+    """Route-shaped prefixes or templates outside a ``rest_path`` call.
+
+    A template literal may appear only as ``rest_path``'s first argument
+    (or in the registry, or compared with ``route.template``); a prefix
+    such as ``"/states/"`` exists only to be concatenated.
+    """
+
+    allowed = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _call_name(node) == "rest_path" and node.args:
+            allowed.add(id(node.args[0]))
+        elif isinstance(node, ast.JoinedStr):
+            # f-strings are judged whole by the dynamic-path rule.
+            allowed.update(id(part) for part in node.values)
+        elif isinstance(node, ast.Compare) and ast.unparse(node.left).endswith(".template"):
+            allowed.update(id(item) for item in node.comparators)
+        elif (
+            filename == PATHS_MODULE
+            and isinstance(node, (ast.Assign, ast.AnnAssign))
+            and {ast.unparse(t) for t in getattr(node, "targets", [getattr(node, "target", None)])}
+            & REGISTRY_NAMES
+        ):
+            allowed.update(id(item) for item in ast.walk(node))
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in allowed
+        and _route_like(node.value)
+        and (node.value.endswith("/") or "{" in node.value)
+    ]
+
+
 def scan_source(source: str, filename: str = "<synthetic>") -> list[str]:
-    """Return raw interpolated Home Assistant path constructions."""
+    """Return raw path constructions, aliased transports and computed templates."""
 
     findings = []
     tree = ast.parse(source)
+    flagged: list[ast.AST] = []
     for node in ast.walk(tree):
         expression = None
         if _dynamic(node):
@@ -697,35 +1093,73 @@ def scan_source(source: str, filename: str = "<synthetic>") -> list[str]:
                 expression = node
             elif _names(node) & URL_NAMES and not isinstance(node, ast.Call):
                 expression = node
+        elif (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Constant)
+            and _route_like(_literal_prefix(node.value))
+        ):
+            # A bound method of a route literal (``"/states/{}".format``).
+            expression = node
         elif isinstance(node, ast.Call):
-            name = node.func.attr if isinstance(node.func, ast.Attribute) else (
-                node.func.id if isinstance(node.func, ast.Name) else ""
-            )
+            name = _call_name(node)
             receiver = node.func.value if isinstance(node.func, ast.Attribute) else None
             session_verb = (
                 name in SESSION_VERB_CALLS
                 and receiver is not None
                 and "session" in ast.unparse(receiver).lower()
             )
-            if name in REQUEST_CALLS or session_verb:
+            if name == "rest_path" and not (
+                node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                # A computed template, however safe its pieces look.
+                expression = node
+            elif name == "ws_connect" and (
+                not node.args or ast.unparse(node.args[0]) not in WEBSOCKET_URLS
+            ):
+                expression = node
+            elif name in REQUEST_CALLS or session_verb:
                 arguments = list(node.args) + [k.value for k in node.keywords if k.arg in {"path", "url"}]
                 for argument in arguments:
                     if _dynamic(argument):
                         expression = argument
                         break
         if expression is not None:
-            text = ast.unparse(expression)
-            if (filename, text) not in SCAN_EXEMPTIONS:
-                findings.append(f"{filename}:{expression.lineno}: {text}")
-    return findings
+            flagged.append(expression)
+    flagged.extend(_request_aliases(tree, any_receiver=False))
+    flagged.extend(_bare_route_literals(tree, filename))
+    for expression in flagged:
+        text = ast.unparse(expression)
+        if (filename, text) not in SCAN_EXEMPTIONS:
+            findings.append(f"{filename}:{expression.lineno}: {text}")
+    return sorted(set(findings))
+
+
+def package_sources():
+    for path in sorted(PACKAGE_DIR.rglob("*.py")):
+        yield path.relative_to(ROOT).as_posix(), path.read_text(encoding="utf-8")
 
 
 def scan_package() -> list[str]:
     findings = []
-    for path in sorted(PACKAGE_DIR.rglob("*.py")):
-        relative = path.relative_to(ROOT).as_posix()
-        findings.extend(scan_source(path.read_text(encoding="utf-8"), relative))
+    for relative, source in package_sources():
+        findings.extend(scan_source(source, relative))
     return findings
+
+
+def rest_path_templates(sources) -> set[str]:
+    templates = set()
+    for _, source in sources:
+        for node in ast.walk(ast.parse(source)):
+            if (
+                isinstance(node, ast.Call)
+                and _call_name(node) == "rest_path"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+            ):
+                templates.add(node.args[0].value)
+    return templates
 
 
 class SourceScanTests(unittest.TestCase):
@@ -741,6 +1175,46 @@ class SourceScanTests(unittest.TestCase):
                     present.add((filename, text))
         self.assertEqual(present, set(SCAN_EXEMPTIONS))
 
+    def test_runtime_uses_exactly_the_runtime_route_registry(self):
+        # Every runtime template is a registered literal, and every runtime
+        # registration is in use: the registry is the reviewed route list.
+        self.assertEqual(rest_path_templates(package_sources()), set(ROUTE_TEMPLATES))
+        self.assertFalse(ROUTE_TEMPLATES & HARNESS_ROUTE_TEMPLATES)
+
+    def test_no_runtime_module_names_a_harness_only_route(self):
+        findings = []
+        for relative, source in package_sources():
+            if relative == PATHS_MODULE:
+                continue
+            for node in ast.walk(ast.parse(source)):
+                if (
+                    isinstance(node, ast.Constant)
+                    and node.value in HARNESS_ROUTE_TEMPLATES
+                ) or (
+                    isinstance(node, (ast.Name, ast.Attribute, ast.alias))
+                    and "HARNESS_ROUTE_TEMPLATES"
+                    in {getattr(node, "id", None), getattr(node, "attr", None),
+                        getattr(node, "name", None)}
+                ):
+                    findings.append(f"{relative}:{getattr(node, 'lineno', '?')}")
+        self.assertEqual(findings, [])
+
+    def test_websockets_connect_only_to_the_configured_url(self):
+        # No websocket path builder exists: every connection uses the one
+        # configured URL, and the cached copies are assigned from it.
+        connects = []
+        for relative, source in package_sources():
+            for node in ast.walk(ast.parse(source)):
+                if isinstance(node, ast.Call) and _call_name(node) == "ws_connect":
+                    connects.append(ast.unparse(node.args[0]))
+                if (
+                    isinstance(node, ast.Assign)
+                    and any(ast.unparse(t) == "self._ws_url" for t in node.targets)
+                ):
+                    self.assertEqual(ast.unparse(node.value), "settings.websocket_url", relative)
+        self.assertTrue(connects)
+        self.assertLessEqual(set(connects), WEBSOCKET_URLS)
+
     def test_scanner_fails_on_each_raw_interpolation_form(self):
         raw_sources = (
             'path = f"/config/automation/config/{automation_id}"',
@@ -755,69 +1229,144 @@ class SourceScanTests(unittest.TestCase):
             'value = await rest("GET", "/x/" + y)',
             'value = await session.get(base + path)',
             'value = await client.request("GET", path="/logbook/" + start)',
+            'path = f"/webhook/{webhook_id}"',
+            'await session.ws_connect(base + "/websocket")',
+            'await session.ws_connect(f"{host}/api/websocket")',
         )
         for source in raw_sources:
             with self.subTest(source=source):
                 self.assertTrue(scan_source(source), source)
 
+    def test_scanner_fails_on_each_codex_counterexample(self):
+        # Codex's package-scan misses, now each flagged by the scanner (and,
+        # independently, refused at runtime by RuntimeProbeTests).
+        variants = {
+            "alias_prefix": 'prefix="/states/"\npath=prefix+entity\nfetch=client.request\nawait fetch("GET",path)',
+            "helper_wrapper": 'def build(prefix,item):\n return prefix+item\nawait client.request("GET",build("/states/",entity))',
+            "format_alias": 'render="/states/{}".format\npath=render(entity)\nawait client.request("GET",path)',
+            "format_map": 'await client.request("GET","/states/{entity}".format_map(values))',
+            "dynamic_template": 'path=rest_path("/"+caller_route)',
+            "getattr_alias": 'fetch=getattr(self.rest_client,"request")\nawait fetch("GET",path)',
+            "partial_alias": 'fetch=functools.partial(self.rest_client.request,"GET")',
+            "argument_alias": 'await run(self.rest_client.request, path)',
+            "named_template": 'TEMPLATE="/states/{}"\npath=rest_path(TEMPLATE, entity)',
+            "lookup_template": 'path=rest_path(ROUTES[kind], entity)',
+        }
+        for name, source in variants.items():
+            with self.subTest(variant=name):
+                self.assertTrue(scan_source(source), name)
+
     def test_scanner_accepts_guarded_and_non_request_forms(self):
         clean_sources = (
             'path = rest_path("/states/{}", entity_id, kinds=("entity_id",))',
-            'value = await client.request("GET", "/states")',
+            'value = await client.request("GET", rest_path("/states"))',
             'value = await client.request("GET", rest_path("/config/automation/config/{}", x))',
+            'value = await client.request("GET", path)',
             'pointer = f"/views/{index}/cards/{card}"',
             'prefix = f"/{secret}"',
             'review_path = f"/app/{slug}"',
-            'url = request_url(self._api_url, "/states")',
+            'url = request_url(self._api_url, route)',
+            'request = prepared.request',
+            'if route.template == "/states/{}": pass',
+            'await session.ws_connect(self.settings.websocket_url)',
         )
         for source in clean_sources:
             with self.subTest(source=source):
                 self.assertEqual(scan_source(source), [])
 
 
-HARNESS_METHODS = frozenset({"GET", "POST", "PUT", "DELETE", "PATCH"})
 HARNESS_BINDERS = frozenset({"rest_path", "state_path"})
-STATIC_ROUTE = re.compile(r"(?:/[a-z0-9_]+)+\Z")
+# Reviewed raw HTTP sessions in harnesses that are not the guarded client:
+# the disposable-Core onboarding bootstrap and the 850 relay passthrough.
+HARNESS_EXEMPTIONS = frozenset({
+    ("real_ha_contract_tests.py", "f'{HA_URL}{path}'"),
+})
 
 
-def scan_harness_source(source: str) -> list[str]:
-    """Flag a Home Assistant REST client call whose path the transport would refuse."""
+def _binder_findings(tree: ast.AST) -> list[str]:
+    """A local binder must return ``rest_path`` with a literal template."""
 
     findings = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(tree):
         if not (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "request"
-            and len(node.args) >= 2
-            and isinstance(node.args[0], ast.Constant)
-            and node.args[0].value in HARNESS_METHODS
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in HARNESS_BINDERS
         ):
             continue
-        receiver = ast.unparse(node.func.value)
-        if receiver != "rest" and not receiver.endswith("rest_client"):
-            continue
-        path = node.args[1]
-        if isinstance(path, ast.Constant) and isinstance(path.value, str):
-            if STATIC_ROUTE.fullmatch(path.value):
-                continue
-        elif isinstance(path, ast.Call) and isinstance(path.func, ast.Name) and path.func.id in HARNESS_BINDERS:
-            continue
-        findings.append(f"{node.lineno}: {ast.unparse(node)[:90]}")
+        returns = [item for item in ast.walk(node) if isinstance(item, ast.Return)]
+        ok = node.name != "rest_path" and returns and all(
+            isinstance(item.value, ast.Call)
+            and _call_name(item.value) == "rest_path"
+            and item.value.args
+            and isinstance(item.value.args[0], ast.Constant)
+            and isinstance(item.value.args[0].value, str)
+            for item in returns
+        )
+        if not ok:
+            findings.append(f"{node.lineno}: unsafe binder {node.name}")
     return findings
 
 
+def scan_harness_source(source: str, filename: str = "<synthetic>") -> list[str]:
+    """Flag a harness path the guarded transport would refuse, or an alias."""
+
+    tree = ast.parse(source)
+    findings = _binder_findings(tree)
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and _call_name(node) == "request"):
+            continue
+        paths_given = [k.value for k in node.keywords if k.arg in {"path", "url"}]
+        if len(node.args) >= 2:
+            paths_given.insert(0, node.args[1])
+        for path in paths_given:
+            if (filename, ast.unparse(path)) in HARNESS_EXEMPTIONS:
+                continue
+            if isinstance(path, ast.Call) and _call_name(path) in HARNESS_BINDERS:
+                if _call_name(path) == "rest_path" and not (
+                    path.args and isinstance(path.args[0], ast.Constant)
+                ):
+                    findings.append(f"{node.lineno}: computed template {ast.unparse(path)[:80]}")
+                continue
+            if (isinstance(path, ast.Constant) and isinstance(path.value, str)) or _dynamic(path):
+                # A plain string, static or built, is refused by the client.
+                findings.append(f"{node.lineno}: {ast.unparse(node)[:90]}")
+    for alias in _request_aliases(tree, any_receiver=True):
+        findings.append(f"{alias.lineno}: aliased request {ast.unparse(alias)[:80]}")
+    return findings
+
+
+def harness_sources():
+    for script in sorted((ROOT / "scripts").glob("*.py")):
+        source = script.read_text(encoding="utf-8")
+        if "ha_mcp_engineering.clients" in source:
+            yield script.name, source
+
+
 class HarnessScriptTests(unittest.TestCase):
-    """Disposable-Core harnesses call the guarded transport with bound paths."""
+    """Disposable-Core harnesses call the guarded transport with bound routes."""
 
     def test_harness_scripts_bind_every_home_assistant_rest_path(self):
         findings = []
-        for script in sorted((ROOT / "scripts").glob("*.py")):
-            source = script.read_text(encoding="utf-8")
-            if "ha_mcp_engineering.clients" not in source:
-                continue
-            findings.extend(f"{script.name}:{item}" for item in scan_harness_source(source))
+        for name, source in harness_sources():
+            findings.extend(f"{name}:{item}" for item in scan_harness_source(source, name))
         self.assertEqual(findings, [])
+
+    def test_harness_templates_are_registered_and_exemptions_present(self):
+        self.assertLessEqual(
+            rest_path_templates(harness_sources()),
+            set(ROUTE_TEMPLATES | HARNESS_ROUTE_TEMPLATES),
+        )
+        # Every harness-only registration is still used by a harness.
+        self.assertEqual(
+            rest_path_templates(harness_sources()) & HARNESS_ROUTE_TEMPLATES,
+            set(HARNESS_ROUTE_TEMPLATES),
+        )
+        sources = dict(harness_sources())
+        for filename, text in HARNESS_EXEMPTIONS:
+            self.assertIn(
+                text,
+                {ast.unparse(n) for n in ast.walk(ast.parse(sources[filename]))},
+            )
 
     def test_harness_scanner_flags_paths_the_transport_refuses(self):
         for source in (
@@ -825,14 +1374,25 @@ class HarnessScriptTests(unittest.TestCase):
             'await rest.request("POST", "/states/light.synthetic_search_fixture", body={})',
             'await rest.request("GET", f"/config/script/config/{key}")',
             'await gateway.rest_client.request("DELETE", f"/config/{kind}/config/{rid}")',
+            # Raw static routes are refused at runtime now, so flagged too.
+            'await rest.request("GET", "/config")',
+            # Codex's harness-scan misses.
+            'client=rest\nawait client.request("GET","/states/"+entity)',
+            'fetch=rest.request\nawait fetch("GET","/states/"+entity)',
+            'await rest.request("GET",path="/states/"+entity)',
+            'def state_path(entity):\n return "/states/"+entity\nawait rest.request("GET",state_path(entity))',
+            'def state_path(entity):\n return rest_path(TEMPLATE, entity)',
+            'fetch=getattr(rest,"request")',
+            'await rest.request("GET", rest_path("/" + route))',
         ):
             with self.subTest(source=source):
                 self.assertTrue(scan_harness_source(source))
         for source in (
-            'await rest.request("GET", "/config")',
+            'await rest.request("GET", rest_path("/config"))',
             'await rest.request("GET", state_path(FAN))',
             'await rest.request("GET", rest_path("/config/script/config/{}", key))',
             'await session.request("GET", url)',
+            'def state_path(entity_id):\n from x import rest_path\n return rest_path("/states/{}", entity_id, kinds=("entity_id",))',
         ):
             with self.subTest(source=source):
                 self.assertEqual(scan_harness_source(source), [])

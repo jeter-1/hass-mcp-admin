@@ -798,7 +798,7 @@ async def wait_for_runtime_ready(rest: HomeAssistantRestClient) -> dict:
     }
     for _ in range(120):
         try:
-            runtime_config = await rest.request("GET", "/config")
+            runtime_config = await rest.request("GET", rest_path("/config"))
             components = set(runtime_config.get("components", []))
             if (
                 runtime_config.get("state") == "RUNNING"
@@ -952,7 +952,7 @@ async def prepare_migration_fixture() -> None:
         rest_path("/config/automation/config/{}", MIGRATION_AUTOMATION_ID),
         automation,
     )
-    await rest.request("POST", "/services/automation/reload", {})
+    await rest.request("POST", rest_path("/services/automation/reload"), {})
 
     DEVICE_FIXTURE_PATH.write_text(
         json.dumps(
@@ -3175,7 +3175,7 @@ async def _remove_disposable_script_package_entry(rest, websocket, rows, key, en
     if not matches:
         return rows
     assert isinstance(entity, str) and matches[0]["entity_id"] == entity
-    states = await rest.request("GET", "/states")
+    states = await rest.request("GET", rest_path("/states"))
     observed = [row for row in states if row.get("entity_id") == entity]
     assert len(observed) <= 1
     if observed:
@@ -3186,7 +3186,7 @@ async def _remove_disposable_script_package_entry(rest, websocket, rows, key, en
                 and state["attributes"].get("restored") is True)
     await websocket.command({"type": "config/entity_registry/remove", "entity_id": entity})
     for _ in range(10):
-        states = await rest.request("GET", "/states")
+        states = await rest.request("GET", rest_path("/states"))
         if entity not in {row.get("entity_id") for row in states}:
             break
         await asyncio.sleep(0.1)
@@ -3267,7 +3267,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
             await rest.request("POST", rest_path("/config/script/config/{}", key), bodies[key])
         stage = "fixture_reload"
         # Reload and registry changes are disposable setup, outside feature capture.
-        await rest.request("POST", "/services/script/reload", {})
+        await rest.request("POST", rest_path("/services/script/reload"), {})
         stage = "registry_identity_readback"
         for _ in range(30):
             entries = await websocket.command({"type": "config/entity_registry/list"})
@@ -3285,7 +3285,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
         await websocket.command({"type": "config/entity_registry/update",
                                  "entity_id": identities[keys[2]], "disabled_by": "user"})
         for _ in range(30):
-            states = await rest.request("GET", "/states")
+            states = await rest.request("GET", rest_path("/states"))
             if identities[keys[2]] not in {row.get("entity_id") for row in states}:
                 break
             await asyncio.sleep(1)
@@ -3297,7 +3297,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
             for field in ("sequence", "use_blueprint"):
                 if field in bodies[key]:
                     assert readback[field] == bodies[key][field]
-        services = await rest.request("GET", "/services")
+        services = await rest.request("GET", rest_path("/services"))
         script_services = next(row["services"] for row in services if row["domain"] == "script")
         assert keys[1] in script_services
         assert renamed.split(".", 1)[1] not in script_services
@@ -3393,7 +3393,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
                 cleanup_errors.append("fixture_file_restoration_failed")
         if created or files_prepared:
             try:
-                await rest.request("POST", "/services/script/reload", {})
+                await rest.request("POST", rest_path("/services/script/reload"), {})
                 remaining = await websocket.command({"type": "config/entity_registry/list"})
                 # Core removes package runtime entities on reload, but preserves
                 # their registry entries. Delete only this fixture's captured entry.
@@ -3863,10 +3863,14 @@ async def _cleanup_configuration_resources(
                 }
             )
         else:
-            await gateway.rest_client.request(
-                "DELETE",
-                rest_path("/config/{}/config/{}", resource_type, resource_id),
-            )
+            # Literal per-type templates; the generic shape is unregistered.
+            if resource_type == "automation":
+                route = rest_path("/config/automation/config/{}", resource_id)
+            elif resource_type == "script":
+                route = rest_path("/config/script/config/{}", resource_id)
+            else:
+                raise AssertionError(f"Unexpected REST cleanup type: {resource_type}")
+            await gateway.rest_client.request("DELETE", route)
         assert await gateway.read(resource_type, resource_id) is None
 
 
@@ -3932,10 +3936,10 @@ async def run_contracts() -> None:
         _assert_strict_configuration_check(await gateway.validate_all())
 
         phase = "rest_and_websocket_inventory"
-        runtime_config = await rest.request("GET", "/config")
+        runtime_config = await rest.request("GET", rest_path("/config"))
         assert isinstance(runtime_config, dict)
         assert runtime_config.get("version") == EXPECTED_HA_VERSION
-        states = await rest.request("GET", "/states")
+        states = await rest.request("GET", rest_path("/states"))
         assert isinstance(states, list)
         websocket_states = await websocket.command({"type": "get_states"})
         entity_registry = await websocket.command({"type": "config/entity_registry/list"})
@@ -3973,10 +3977,10 @@ async def run_contracts() -> None:
         # The trace contract is required, not silently skipped. Reloading and
         # firing this isolated event occur only in the disposable container.
         phase = "trace_generation"
-        await rest.request("POST", "/services/automation/reload", {})
+        await rest.request("POST", rest_path("/services/automation/reload"), {})
         await rest.request(
             "POST",
-            "/events/dev14_real_contract_trigger",
+            rest_path("/events/dev14_real_contract_trigger"),
             {"source": "disposable_contract"},
         )
         normalized = None

@@ -63,6 +63,7 @@ from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     _CoreVerificationAdapter,
 )
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E402
 from ha_mcp_engineering.clients.websocket import (  # noqa: E402
     HomeAssistantWebSocketClient,
@@ -1785,7 +1786,7 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
 
         session = Session()
         result = await AiohttpCoreSnapshotSource(settings())._rest_json(
-            session, "/config"
+            session, rest_path("/config")
         )
 
         self.assertEqual(result, {"version": "2026.9.1"})
@@ -1821,7 +1822,7 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
             RuntimeError, "core_probe_response_oversized"
         ):
             await AiohttpCoreSnapshotSource(settings())._rest_json(
-                Session(), "/states"
+                Session(), rest_path("/states")
             )
 
     async def test_check_config_probe_uses_only_the_exact_read_only_endpoint(self):
@@ -3639,7 +3640,7 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
                 await release_provider.wait()
                 try:
                     await HomeAssistantRestClient(configured).request(
-                        "GET", "/states"
+                        "GET", rest_path("/states")
                     )
                 except Exception:
                     pass
@@ -3739,7 +3740,7 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
             async def __call__(self, _scope, receive, send):
                 await receive()
                 await HomeAssistantRestClient(configured).request(
-                    "GET", "/config"
+                    "GET", rest_path("/config")
                 )
                 first_provider_call_finished.set()
                 await continue_request.wait()

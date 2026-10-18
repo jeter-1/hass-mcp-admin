@@ -126,7 +126,7 @@ class BaselinePeer:
 
     async def read(self, kind):
         if kind == "states":
-            return await self._rest("/states", c.FRAME_BYTES, "states")
+            return await self._rest(rest_path("/states"), c.FRAME_BYTES, "states")
         if kind not in c.COMMANDS or self.commands >= 8:
             raise c.CaptureError("invalid_arguments")
         self.commands += 1

@@ -485,7 +485,7 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
         state_inventory_failed = False
         state_by_internal_id = {}
         try:
-            raw_states = await self.rest_client.request("GET", "/states")
+            raw_states = await self.rest_client.request("GET", rest_path("/states"))
             if not isinstance(raw_states, list):
                 raise TypeError("invalid state inventory response")
             safe_states = sanitize_untrusted_data(

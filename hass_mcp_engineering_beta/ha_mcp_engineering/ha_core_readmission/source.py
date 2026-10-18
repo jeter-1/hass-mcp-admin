@@ -10,7 +10,7 @@ from typing import Any
 
 import aiohttp
 
-from ..clients.paths import request_url
+from ..clients.paths import request_url, rest_path
 from ..configuration import Settings
 from .device_registry import DeviceRegistrySchema, assess_device_registry
 from .models import CORE_IDENTITY
@@ -425,7 +425,7 @@ class AiohttpCoreSnapshotSource:
         # {result, errors, warnings} taxonomy; it performs no configuration
         # mutation.
         async with session.post(
-            request_url(self._settings.api_url, "/config/core/check_config"),
+            request_url(self._settings.api_url, rest_path("/config/core/check_config")),
             headers=headers,
             allow_redirects=False,
         ) as response:
@@ -648,9 +648,9 @@ class AiohttpCoreSnapshotSource:
             ws_close=self._settings.ha_timeout_seconds,
         )
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            rest_config = await self._rest_json(session, "/config")
+            rest_config = await self._rest_json(session, rest_path("/config"))
             try:
-                states = await self._rest_json(session, "/states")
+                states = await self._rest_json(session, rest_path("/states"))
             except (RuntimeError, ValueError, asyncio.TimeoutError):
                 # State inventory is a capability-local surface. A bounded
                 # response failure or timeout withholds state-dependent reads
@@ -658,7 +658,7 @@ class AiohttpCoreSnapshotSource:
                 # Connection failures still escape and retire the observation.
                 states = None
             try:
-                services = await self._rest_json(session, "/services")
+                services = await self._rest_json(session, rest_path("/services"))
             except (RuntimeError, ValueError, asyncio.TimeoutError):
                 # Service discovery is an independent read surface. A failed,
                 # malformed, oversized, or timed-out service inventory

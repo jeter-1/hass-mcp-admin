@@ -8,6 +8,7 @@ from aiohttp import web
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
+from ha_mcp_engineering.clients.paths import rest_path
 from ha_mcp_engineering.clients.websocket import HomeAssistantWebSocketClient
 from ha_mcp_engineering.clients.single_read import SINGLE_READ, MAX_READ_BYTES, session_options
 from ha_mcp_engineering.configuration import Settings
@@ -68,7 +69,7 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
         await self.runner.cleanup()
 
     async def test_success_one_request_and_one_ws_command(self):
-        self.assertEqual(await self.rest.request("GET", "/config/automation/config/example"), {"observed": True})
+        self.assertEqual(await self.rest.request("GET", rest_path("/config/automation/config/{}", "example")), {"observed": True})
         self.assertEqual(await self.ws.command({"type": "input_boolean/list"}), {"observed": True})
         self.assertEqual(len(self.calls), 2)
         self.assertEqual(self.commands, [{"id": 1, "type": "input_boolean/list"}])
@@ -76,7 +77,7 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_lost_connection_is_not_retried(self):
         self.mode = "disconnect"
         with self.assertRaises(HomeAssistantUnavailableError):
-            await self.rest.request("GET", "/config/automation/config/example")
+            await self.rest.request("GET", rest_path("/config/automation/config/{}", "example"))
         self.assertEqual(len(self.calls), 1)
         self.calls.clear()
         with self.assertRaises(HomeAssistantUnavailableError):
@@ -87,7 +88,7 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_redirect_never_reaches_second_target(self):
         self.mode = "redirect"
         with self.assertRaises(HomeAssistantUnavailableError):
-            await self.rest.request("GET", "/config/automation/config/example")
+            await self.rest.request("GET", rest_path("/config/automation/config/{}", "example"))
         with self.assertRaises(HomeAssistantUnavailableError):
             await self.ws.command({"type": "input_boolean/list"})
         self.assertNotIn("/redirected", self.calls)
@@ -96,7 +97,7 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_bounded_download_and_websocket_frame(self):
         self.mode = "oversize"
         with self.assertRaises(HomeAssistantUnavailableError):
-            await self.rest.request("GET", "/config/automation/config/example")
+            await self.rest.request("GET", rest_path("/config/automation/config/{}", "example"))
         self.mode = "ws_oversize"
         # The WS client maps an oversized frame/connection closure to its
         # existing typed API/transport failure, never an accepted configuration.
@@ -113,7 +114,7 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
             # the 3xx is the authoritative failure and the target is not read.
             self.mode = "redirect"
             with self.assertRaises(HomeAssistantApiError) as caught:
-                await self.rest.request("GET", "/config/automation/config/example")
+                await self.rest.request("GET", rest_path("/config/automation/config/{}", "example"))
             self.assertEqual(caught.exception.details["status"], 302)
             self.assertEqual(self.calls[-1], "/api/config/automation/config/example")
             self.assertNotIn("/redirected", self.calls)
@@ -132,7 +133,7 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
                 try:
                     try:
                         if transport == "rest":
-                            await self.rest.request("GET", "/config/automation/config/example")
+                            await self.rest.request("GET", rest_path("/config/automation/config/{}", "example"))
                         else:
                             await self.ws.command({"type": "input_boolean/list"})
                     except Exception:
@@ -150,7 +151,7 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
         self.mode = "hang"
         telemetry, token = begin_request()
         try:
-            task = asyncio.create_task(self.rest.request("GET", "/config/automation/config/example"))
+            task = asyncio.create_task(self.rest.request("GET", rest_path("/config/automation/config/{}", "example")))
             await self.entered.wait()
             task.cancel()
             with self.assertRaises(asyncio.CancelledError):

@@ -12,7 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import aiohttp
 
-from ..clients.paths import request_url
+from ..clients.paths import request_url, rest_path
 from ..configuration import Settings
 
 
@@ -195,7 +195,7 @@ class SupervisorSelfAddonIdentityResolver:
         timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(
-                request_url(self._base_url, "/addons/self/info"),
+                request_url(self._base_url, rest_path("/addons/self/info")),
                 headers=headers,
                 allow_redirects=False,
             ) as response:

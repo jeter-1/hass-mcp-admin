@@ -379,7 +379,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
     async def _states(self):
         started = time.perf_counter()
         try:
-            value = await self.rest_client.request("GET", "/states")
+            value = await self.rest_client.request("GET", rest_path("/states"))
             if not isinstance(value, list):
                 raise TypeError("states inventory is invalid")
             safe = sanitize_untrusted_data(value, known_secrets=(self.secret, self.ha_token), max_string=500)
@@ -420,13 +420,11 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
 
     async def _entity_activity(self, entity_id, lookback_hours, instant, semaphore):
         start = normalize_timestamp(instant - timedelta(hours=lookback_hours))
-        async def call(template, query):
+        async def call(bind):
             began = time.perf_counter()
             try:
                 # An unusable start or entity refuses here; no request is sent.
-                path = rest_path(
-                    template, start, kinds=("timestamp",), query=query
-                )
+                path = bind()
                 async with semaphore:
                     value = await self.rest_client.request("GET", path)
                 safe = sanitize_untrusted_data(value, known_secrets=(self.secret, self.ha_token), max_string=500)
@@ -438,14 +436,25 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                 return [], (0, 1, (time.perf_counter() - began) * 1000)
         history, logbook = await asyncio.gather(
             call(
-                "/history/period/{}",
-                [
-                    ("filter_entity_id", entity_id),
-                    ("minimal_response", None),
-                    ("no_attributes", None),
-                ],
+                lambda: rest_path(
+                    "/history/period/{}",
+                    start,
+                    kinds=("timestamp",),
+                    query=[
+                        ("filter_entity_id", entity_id),
+                        ("minimal_response", None),
+                        ("no_attributes", None),
+                    ],
+                )
             ),
-            call("/logbook/{}", [("entity", entity_id)]),
+            call(
+                lambda: rest_path(
+                    "/logbook/{}",
+                    start,
+                    kinds=("timestamp",),
+                    query=[("entity", entity_id)],
+                )
+            ),
         )
         return entity_id, history[0], logbook[0], history[1], logbook[1]
 
