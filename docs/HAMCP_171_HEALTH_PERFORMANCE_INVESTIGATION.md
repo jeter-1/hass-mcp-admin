@@ -7,7 +7,14 @@ decisions in [section 8](#8-owner-decisions) come first.
 
 Base: `origin/main` at `27df75b` (Engineering `2.4.1-beta.15`). All `file:line`
 references are against that commit. Runtime paths are relative to
-`hass_mcp_engineering_beta/ha_mcp_engineering/`.
+`hass_mcp_engineering_beta/ha_mcp_engineering/`. Where a bare file name is
+used, `service.py`, `storage.py`, `task_storage.py`, `models.py` and
+`resources.py` mean `governance/`; `runtime.py` means `f3_runtime/runtime.py`
+(`governance/runtime.py` and `dependency/runtime.py` are always written in
+full); `sanitization.py` and `application.py` are at the package root. In the
+"Where" column of the section 2 phase table a bare `:NNN` is
+`governance/service.py`; elsewhere it refers to the file most recently named
+in the same cell or sentence.
 
 ## Evidence labels
 
@@ -101,9 +108,9 @@ log, so this report neither confirms nor contradicts them. See
 | snapshot | `:12777`, `:12786` | Plan `collect_health` (`storage.py:612-666`) and task `collect_health` (`task_storage.py:696-753`): every plan and task file is deserialized once. |
 | **validation** | `:12797-12809` | `asyncio.to_thread(_validate_health_records, plans, sensitive_values)`, awaited under `asyncio.shield`. |
 | fence | `:12811`, `runtime.py:4622` | `fence.verify_files()` stamp checks. |
-| projection | `:12813-12838` | Historical-policy match hashing (`historical_policy.py:165-182`, `:780`) and `get_for_plan` globs (`task_storage.py:573-597`). |
+| projection | `:12813-12838` | Historical-policy match hashing (`governance/historical_policy.py:165-182`, `:780`) and `get_for_plan` globs (`task_storage.py:573-597`). |
 | assembly | `:13276` | `_build_health_summary`; repeats projection-match hashing at `:13304-13315`. |
-| F3 overlay | `:12849-12857` → `runtime.py:4580-4657` | Reads all child envelopes and manifests (`f3_runtime/repository.py:1236-1284`) and deep-copies them (`:12925`, `:13100`). |
+| F3 overlay | `:12849-12857` → `runtime.py:4580-4657` | Reads all child envelopes and manifests (`f3_runtime/repository.py:1236-1284`) and deep-copies them (`service.py:12925`, `:13100`). |
 
 ### 2.2 The validation worker (Source)
 
@@ -195,7 +202,7 @@ model is enough to rank the options either way.
 
 | Caller | Where | Frequency | Reads | Needed? |
 | --- | --- | --- | --- | --- |
-| **Periodic orphan sweep** | `application.py:433-440` → `runtime.py:6296-6310` → `_reconcile_orphaned_children` `:5507-5552` | Every 30 s (`RECOVERY_CADENCE_SECONDS`, `runtime.py:150`), when terminal history exists | One `get()` per distinct parent in a page of up to 1,024 declarations (`RECOVERY_DECLARATION_PAGE_SIZE`, `repository.py:54`) | Only for parents that are terminal **and** zero-dispatch, or that carry a readiness fault |
+| **Periodic orphan sweep** | `application.py:433-440` → `runtime.py:6296-6310` → `_reconcile_orphaned_children` `:5507-5552` | Every 30 s (`RECOVERY_CADENCE_SECONDS`, `runtime.py:150`), when terminal history exists | One `get()` per distinct parent in a page of up to 1,024 declarations (`RECOVERY_DECLARATION_PAGE_SIZE`, `f3_runtime/repository.py:54`) | Only for parents that are terminal **and** zero-dispatch, or that carry a readiness fault |
 | Active recovery candidates | `runtime.py:4868`, `:4913` | Each pass | Non-terminal tasks only | Yes |
 | Checkpoint candidates | `runtime.py:5050-5153` | Each pass | ≤ 16 | Yes |
 | Expired-lock loop | `runtime.py:6350-6395` | Each pass, when locks expire | Per expired lock | Yes (minor) |
@@ -334,18 +341,18 @@ vocabulary) still points to a gain of at least about 2×.
 | Step | Where |
 | --- | --- |
 | TTLs 600 s / 3,600 s; 8 fenced build attempts | `dependency/index.py:30-31`, `:38` |
-| `get`: current / soft-stale (served + background refresh) / foreground wait | `index.py:264-337` |
-| Single-flight build | `index.py:339-363` |
-| Invalidate is all-or-nothing, after every governed apply or rollback | `index.py:654-659`; `governance/service.py:10714-10717` |
-| Build timeout 300 s | `authority.py:19` |
-| Prewarm once, 45 s after start; no periodic refresh | `runtime.py:81-104` |
+| `get`: current / soft-stale (served + background refresh) / foreground wait | `dependency/index.py:264-337` |
+| Single-flight build | `dependency/index.py:339-363` |
+| Invalidate is all-or-nothing, after every governed apply or rollback | `dependency/index.py:654-659`; `governance/service.py:10714-10717` |
+| Build timeout 300 s | `dependency/authority.py:19` |
+| Prewarm once, 45 s after start; no periodic refresh | `dependency/runtime.py:81-104` |
 | Per-id REST `GET /config/automation/config/{id}`, all gathered | `dependency/provider.py:395-413` |
-| `Semaphore(8)` and queue-wait metric | `provider.py:229-239`, `:951-957` |
+| `Semaphore(8)` and queue-wait metric | `dependency/provider.py:229-239`, `:951-957` |
 | New `aiohttp.ClientSession` per request; no conditional headers | `clients/rest.py:104` |
-| Parse loop with no yields | `provider.py:418-696` |
-| Blueprint YAML read synchronously | `provider.py:457-458`, `:987-1021` |
-| Scripts via the read gateway, 60 s budget | `script_sources.py:179-241` |
-| Per-document `configuration_fingerprint` after the fetch | `extraction.py:269-272` |
+| Parse loop with no yields | `dependency/provider.py:418-696` |
+| Blueprint YAML read synchronously | `dependency/provider.py:457-458`, `:987-1021` |
+| Scripts via the read gateway, 60 s budget | `dependency/script_sources.py:179-241` |
+| Per-document `configuration_fingerprint` after the fetch | `dependency/extraction.py:269-272` |
 
 Upstream, Home Assistant Core `2026.10.1` (exact-version source, per ADR-021;
 the **installed** Core version is not known to this session):
@@ -393,13 +400,13 @@ blueprints out of the ~36 s total. Two consequences:
 
 ### 5.4 Staleness and HAMCP-195
 
-`helper_dependency.py:850-866` requires `freshness == "current"` (age ≤ the
+`governance/helper_dependency.py:850-866` requires `freshness == "current"` (age ≤ the
 600 s soft TTL); otherwise it adds `dependency_index_not_fresh`, which blocks
 execution (`:87-95`, `:1020-1029`, `:1927-1933`). `assess` (`:1681-1801`)
 rebuilds inline, input_boolean plan creation passes `refresh=True`
 (`service.py:3640-3642`), and post-lock preflight always performs a fenced full
 rebuild (`f3/operational_strategies.py:782-830`). Entity-metadata plans follow
-the same path (`entity_metadata_disclosure.py:251-301`).
+the same path (`governance/entity_metadata_disclosure.py:251-301`).
 
 For HAMCP-195's gated toggle this means:
 
@@ -415,7 +422,7 @@ For HAMCP-195's gated toggle this means:
 
 The audit-baseline capture (`audit_baseline/capture_contracts.py:13`, `:35-40`,
 `:129-144`; `clients/audit_baseline.py:145-150`; per-config SHA-256 in
-`capture_provider.py:91-97`, `:189-193`) fetches through the same per-id REST
+`audit_baseline/capture_provider.py:91-97`, `:189-193`) fetches through the same per-id REST
 view. It can supply **evidence** about content, but not a cheaper **change
 signal**: it pays the same O(N²) fetch. (The task brief calls this the
 "HAMCP-150 loaded-automation baseline". Register row HAMCP-150 is the beta.6
@@ -444,7 +451,7 @@ interval for 32 s. That covers MCP requests, approval web, the F3 recovery
 loop and HA websocket traffic, and it explains the reported sluggishness
 without any lock contention. Separately:
 
-* The dependency parse loop (`provider.py:418-696`) and blueprint reads
+* The dependency parse loop (`dependency/provider.py:418-696`) and blueprint reads
   (`:457-458`) run synchronously on the loop. Their production duration
   (`parsing_indexing_time_ms`) is not known to this session.
 * The periodic recovery pass ran as **one 0.39 s owner-loop stall** every 30 s
@@ -518,7 +525,7 @@ proof (E4); retuning concurrency (E6); a longer soft TTL for the HAMCP-195 gate.
 | C | `governance/storage.py`, `governance/task_storage.py` (digest of bytes parsed), `governance/service.py` (cache and counters), `docs/HEALTH_PERFORMANCE.md` | **Yes** (docs: no) |
 | D | `governance/service.py` (worker executor), possibly `application.py` (pool lifecycle) | **Yes** |
 | E | `dependency/provider.py`, a websocket or file client under `clients/`, `dependency/index.py` | **Yes** |
-| F | `dependency/index.py`, `runtime.py` (subscription and refresh), `helper_dependency.py` | **Yes** |
+| F | `dependency/index.py`, `dependency/runtime.py` (subscription and refresh), `governance/helper_dependency.py` | **Yes** |
 
 Each PR also needs the release-declaration and version work required by the
 repository workflow (`.release/`, `config.yaml`: **protected**), handled by
