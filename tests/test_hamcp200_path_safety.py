@@ -24,6 +24,8 @@ import json
 from pathlib import Path
 import pickle
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -42,7 +44,6 @@ from tests.same_thread_asgi_client import SameThreadAsgiTestClient  # noqa: E402
 from ha_mcp_engineering.application import create_application  # noqa: E402
 from ha_mcp_engineering.clients import paths  # noqa: E402
 from ha_mcp_engineering.clients.paths import (  # noqa: E402
-    HARNESS_ROUTE_TEMPLATES,
     INVALID_IDENTIFIER_MESSAGE,
     ROUTE_TEMPLATES,
     Route,
@@ -54,7 +55,11 @@ from ha_mcp_engineering.clients.paths import (  # noqa: E402
     rest_path,
 )
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E402
-from ha_mcp_engineering.errors import HomeAssistantApiError  # noqa: E402
+from ha_mcp_engineering.errors import (  # noqa: E402
+    HomeAssistantApiError,
+    HomeAssistantTimeoutError,
+    HomeAssistantUnavailableError,
+)
 from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.governance.resources import (  # noqa: E402
     ConfigurationMutationNotDispatchedError,
@@ -76,7 +81,15 @@ from ha_mcp_engineering.identifiers import (  # noqa: E402
 )
 from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E402
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
+from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
+from scripts import harness_routes  # noqa: E402
+from scripts.harness_routes import (  # noqa: E402
+    HARNESS_ROUTE_TEMPLATES,
+    HarnessRouteError,
+    harness_request,
+    harness_url,
+)
 
 
 API_URL = "http://supervisor/core/api"
@@ -396,7 +409,7 @@ class WebhookReachabilityTests(unittest.TestCase):
     def test_crafted_ids_never_reach_a_webhook_or_another_route(self):
         kinds_for = {"/states/{}": "entity_id", "/history/period/{}": "timestamp",
                      "/logbook/{}": "timestamp"}
-        for template in sorted(ROUTE_TEMPLATES | HARNESS_ROUTE_TEMPLATES):
+        for template in sorted(ROUTE_TEMPLATES):
             if "{}" not in template:
                 continue
             kind = kinds_for.get(template, "identifier")
@@ -934,7 +947,7 @@ SESSION_VERB_CALLS = frozenset({"get", "post", "put", "patch", "delete", "head"}
 # fan plans is data, not a transport).
 CLIENT_RECEIVER = re.compile(r"client|rest|session", re.IGNORECASE)
 # The literal registries themselves, which name every route by design.
-REGISTRY_NAMES = frozenset({"ROUTE_TEMPLATES", "HARNESS_ROUTE_TEMPLATES"})
+REGISTRY_NAMES = frozenset({"ROUTE_TEMPLATES"})
 PATHS_MODULE = "hass_mcp_engineering_beta/ha_mcp_engineering/clients/paths.py"
 # Every runtime websocket connects to the one configured URL.
 WEBSOCKET_URLS = frozenset({
@@ -1181,21 +1194,18 @@ class SourceScanTests(unittest.TestCase):
         self.assertEqual(rest_path_templates(package_sources()), set(ROUTE_TEMPLATES))
         self.assertFalse(ROUTE_TEMPLATES & HARNESS_ROUTE_TEMPLATES)
 
-    def test_no_runtime_module_names_a_harness_only_route(self):
+    def test_no_runtime_module_names_or_imports_a_harness_route(self):
+        # Including clients/paths.py: the runtime holds no harness registry.
         findings = []
         for relative, source in package_sources():
-            if relative == PATHS_MODULE:
-                continue
             for node in ast.walk(ast.parse(source)):
+                names = {getattr(node, "id", None), getattr(node, "attr", None),
+                         getattr(node, "name", None), getattr(node, "module", None)}
                 if (
                     isinstance(node, ast.Constant)
-                    and node.value in HARNESS_ROUTE_TEMPLATES
-                ) or (
-                    isinstance(node, (ast.Name, ast.Attribute, ast.alias))
-                    and "HARNESS_ROUTE_TEMPLATES"
-                    in {getattr(node, "id", None), getattr(node, "attr", None),
-                        getattr(node, "name", None)}
-                ):
+                    and isinstance(node.value, str)
+                    and any(t in node.value for t in HARNESS_ROUTE_TEMPLATES)
+                ) or names & {"HARNESS_ROUTE_TEMPLATES", "harness_routes", "harness_request"}:
                     findings.append(f"{relative}:{getattr(node, 'lineno', '?')}")
         self.assertEqual(findings, [])
 
@@ -1313,6 +1323,15 @@ def scan_harness_source(source: str, filename: str = "<synthetic>") -> list[str]
     tree = ast.parse(source)
     findings = _binder_findings(tree)
     for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _call_name(node) == "harness_request":
+            # The harness-only sender takes a literal harness template.
+            template = node.args[2] if len(node.args) >= 3 else None
+            if not (
+                isinstance(template, ast.Constant)
+                and template.value in HARNESS_ROUTE_TEMPLATES
+            ):
+                findings.append(f"{node.lineno}: harness route {ast.unparse(node)[:80]}")
+            continue
         if not (isinstance(node, ast.Call) and _call_name(node) == "request"):
             continue
         paths_given = [k.value for k in node.keywords if k.arg in {"path", "url"}]
@@ -1342,6 +1361,31 @@ def harness_sources():
             yield script.name, source
 
 
+def harness_request_templates(sources) -> Counter:
+    templates = Counter()
+    for _, source in sources:
+        for node in ast.walk(ast.parse(source)):
+            if (
+                isinstance(node, ast.Call)
+                and _call_name(node) == "harness_request"
+                and len(node.args) >= 3
+                and isinstance(node.args[2], ast.Constant)
+            ):
+                templates[node.args[2].value] += 1
+    return templates
+
+
+# The six harness calls that sent a harness-only route through the runtime
+# client before the move (9552182), by template. They now go through
+# ``harness_request`` and must keep sending exactly these routes.
+PRE_MOVE_HARNESS_CALLS = Counter({
+    "/config/config_entries/flow": 1,
+    "/events/dev14_real_contract_trigger": 1,
+    "/services/automation/reload": 2,
+    "/services/script/reload": 2,
+})
+
+
 class HarnessScriptTests(unittest.TestCase):
     """Disposable-Core harnesses call the guarded transport with bound routes."""
 
@@ -1352,15 +1396,12 @@ class HarnessScriptTests(unittest.TestCase):
         self.assertEqual(findings, [])
 
     def test_harness_templates_are_registered_and_exemptions_present(self):
-        self.assertLessEqual(
-            rest_path_templates(harness_sources()),
-            set(ROUTE_TEMPLATES | HARNESS_ROUTE_TEMPLATES),
-        )
-        # Every harness-only registration is still used by a harness.
-        self.assertEqual(
-            rest_path_templates(harness_sources()) & HARNESS_ROUTE_TEMPLATES,
-            set(HARNESS_ROUTE_TEMPLATES),
-        )
+        # Through the runtime client, harnesses use runtime routes only.
+        self.assertLessEqual(rest_path_templates(harness_sources()), set(ROUTE_TEMPLATES))
+        # Every harness-only route goes through the harness sender, at the
+        # same call sites as before the move, and every one is still used.
+        self.assertEqual(harness_request_templates(harness_sources()), PRE_MOVE_HARNESS_CALLS)
+        self.assertEqual(set(PRE_MOVE_HARNESS_CALLS), set(HARNESS_ROUTE_TEMPLATES))
         sources = dict(harness_sources())
         for filename, text in HARNESS_EXEMPTIONS:
             self.assertIn(
@@ -1384,6 +1425,10 @@ class HarnessScriptTests(unittest.TestCase):
             'def state_path(entity):\n return rest_path(TEMPLATE, entity)',
             'fetch=getattr(rest,"request")',
             'await rest.request("GET", rest_path("/" + route))',
+            # Harness-only routes go only through the harness sender, literally.
+            'await harness_request(rest.settings, "POST", "/states", {})',
+            'await harness_request(rest.settings, "POST", ROUTE, {})',
+            'await harness_request(rest.settings, "POST", "/services/" + name, {})',
         ):
             with self.subTest(source=source):
                 self.assertTrue(scan_harness_source(source))
@@ -1392,10 +1437,237 @@ class HarnessScriptTests(unittest.TestCase):
             'await rest.request("GET", state_path(FAN))',
             'await rest.request("GET", rest_path("/config/script/config/{}", key))',
             'await session.request("GET", url)',
+            'await harness_request(rest.settings, "POST", "/services/script/reload", {})',
             'def state_path(entity_id):\n from x import rest_path\n return rest_path("/states/{}", entity_id, kinds=("entity_id",))',
         ):
             with self.subTest(source=source):
                 self.assertEqual(scan_harness_source(source), [])
+
+
+HARNESS_API_URL = "http://127.0.0.1:8123/api"
+# The exact URLs the runtime client sent for the harness routes before the
+# move: ``request_url`` built ``api_url.rstrip("/") + template``.
+PRE_MOVE_HARNESS_URLS = {
+    "/config/config_entries/flow": "http://127.0.0.1:8123/api/config/config_entries/flow",
+    "/events/dev14_real_contract_trigger":
+        "http://127.0.0.1:8123/api/events/dev14_real_contract_trigger",
+    "/services/automation/reload": "http://127.0.0.1:8123/api/services/automation/reload",
+    "/services/script/reload": "http://127.0.0.1:8123/api/services/script/reload",
+}
+
+
+def harness_settings(ha_url: str = "http://127.0.0.1:8123"):
+    return dataclasses.replace(
+        rest_client().settings, ha_url=ha_url, ha_token="synthetic-harness-token"
+    )
+
+
+def patched_harness_session(factory: CountingSessionFactory):
+    return patch.object(harness_routes.aiohttp, "ClientSession", new=factory)
+
+
+class HarnessRouteIsolationTests(unittest.TestCase):
+    """The runtime REST client accepts only runtime templates."""
+
+    def test_runtime_registry_holds_no_harness_template(self):
+        self.assertFalse(ROUTE_TEMPLATES & HARNESS_ROUTE_TEMPLATES)
+        self.assertFalse(hasattr(paths, "HARNESS_ROUTE_TEMPLATES"))
+        self.assertNotIn("HARNESS_ROUTE_TEMPLATES", paths.__all__)
+
+    def test_rest_path_refuses_every_harness_template(self):
+        for template in sorted(HARNESS_ROUTE_TEMPLATES):
+            with self.subTest(template=template):
+                with self.assertRaises(UnsafeRequestPathError) as caught:
+                    rest_path(template)
+                self.assertEqual(caught.exception.details["reason"], "unregistered_route")
+
+    def test_harness_route_given_to_the_runtime_client_sends_nothing(self):
+        factory = CountingSessionFactory()
+        client = rest_client()
+        with patched_session(factory):
+            for template in sorted(HARNESS_ROUTE_TEMPLATES):
+                # A route issued for a harness template without rest_path's
+                # registry check, as if the runtime still accepted one.
+                forged = paths._issue(template, template, (), (), ())
+                self.assertTrue(is_route(forged))
+                for given, reason in (
+                    (template, "unbound_request_path"),
+                    (harness_url(HARNESS_API_URL, template), "unbound_request_path"),
+                    (forged, "unregistered_route"),
+                ):
+                    with self.subTest(template=template, given=type(given).__name__):
+                        with self.assertRaises(UnsafeRequestPathError) as caught:
+                            asyncio.run(client.request("POST", given, {}))
+                        self.assertEqual(caught.exception.details["reason"], reason)
+                        # The shared URL guard used by every runtime transport.
+                        with self.assertRaises(UnsafeRequestPathError):
+                            request_url(API_URL, given)
+        self.assertEqual(factory.sessions, 0)
+        self.assertEqual(factory.requests, [])
+
+
+class HarnessSenderTests(unittest.TestCase):
+    """``scripts/harness_routes`` sends exactly the pre-move harness URLs."""
+
+    def test_each_harness_route_sends_the_pre_move_url(self):
+        self.assertEqual(set(PRE_MOVE_HARNESS_URLS), set(HARNESS_ROUTE_TEMPLATES))
+        factory = CountingSessionFactory(body='{"type": "create_entry"}')
+        settings = harness_settings()
+        with patched_harness_session(factory):
+            for template, expected in sorted(PRE_MOVE_HARNESS_URLS.items()):
+                with self.subTest(template=template):
+                    result = asyncio.run(harness_request(
+                        settings, "POST", template, {"source": "disposable_contract"}
+                    ))
+                    self.assertEqual(result, {"type": "create_entry"})
+                    sent = factory.requests[-1]
+                    self.assertEqual(sent["method"], "POST")
+                    self.assertEqual(str(sent["url"]), expected)
+                    self.assertEqual(sent["url"], harness_url(settings.api_url, template))
+                    self.assertEqual(sent["headers"], {
+                        "Authorization": "Bearer synthetic-harness-token",
+                        "Content-Type": "application/json",
+                    })
+                    self.assertEqual(sent["json"], {"source": "disposable_contract"})
+                    self.assertIs(sent["allow_redirects"], False)
+        self.assertEqual(len(factory.requests), len(PRE_MOVE_HARNESS_URLS))
+
+    def test_harness_sender_refuses_anything_but_a_harness_route(self):
+        factory = CountingSessionFactory()
+        settings = harness_settings()
+        with patched_harness_session(factory):
+            for template in (
+                "/states", "/config", "/states/{}", "/template",
+                "/services/automation/reload/../../../hassio/addons",
+                "/services/automation/reload?x=1", "/webhook/x",
+                "services/automation/reload", rest_path("/states"), None, b"/events",
+            ):
+                with self.subTest(template=template):
+                    with self.assertRaises(HarnessRouteError):
+                        asyncio.run(harness_request(settings, "POST", template, {}))
+            # Only a loopback (disposable) Core; never Supervisor or a host.
+            for ha_url in ("http://supervisor/core", "http://homeassistant.local:8123",
+                           "http://127.0.0.1@example.invalid:8123"):
+                with self.subTest(ha_url=ha_url):
+                    with self.assertRaises(HarnessRouteError):
+                        asyncio.run(harness_request(
+                            harness_settings(ha_url), "POST", "/services/script/reload", {}
+                        ))
+            # Never inside an Engineering request context.
+            _telemetry, context = begin_request()
+            try:
+                with self.assertRaises(HarnessRouteError):
+                    asyncio.run(harness_request(settings, "POST", "/services/script/reload", {}))
+            finally:
+                end_request(context)
+        self.assertEqual(factory.sessions, 0)
+        self.assertEqual(factory.requests, [])
+
+    def test_harness_failure_is_not_followed_and_raises(self):
+        factory = CountingSessionFactory(status=302, body="")
+        with patched_harness_session(factory):
+            with self.assertRaises(HomeAssistantApiError) as caught:
+                asyncio.run(harness_request(
+                    harness_settings(), "POST", "/services/automation/reload", {}
+                ))
+        self.assertEqual(caught.exception.details["status"], 302)
+        self.assertEqual(len(factory.requests), 1)
+        self.assertIs(factory.requests[0]["allow_redirects"], False)
+
+    def test_harness_transport_errors_raise_the_runtime_typed_errors(self):
+        class FailingSession:
+            def __init__(self, failure, **_kwargs):
+                self.failure = failure
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            def request(self, *_args, **_kwargs):
+                raise self.failure
+
+        for failure, expected in (
+            (asyncio.TimeoutError(), HomeAssistantTimeoutError),
+            (harness_routes.aiohttp.ClientConnectionError(), HomeAssistantUnavailableError),
+        ):
+            with self.subTest(failure=type(failure).__name__):
+                session = functools.partial(FailingSession, failure)
+                with patch.object(harness_routes.aiohttp, "ClientSession", new=session):
+                    with self.assertRaises(expected) as caught:
+                        asyncio.run(harness_request(
+                            harness_settings(), "POST", "/services/script/reload", {}
+                        ))
+                self.assertEqual(caught.exception.details, {
+                    "method": "POST", "endpoint_category": "services",
+                })
+
+
+class AddOnPackagingTests(unittest.TestCase):
+    """The add-on image contains no harness route and cannot import one."""
+
+    def copied_build_files(self):
+        dockerfile = (BETA_DIR / "Dockerfile").read_text(encoding="utf-8")
+        sources = []
+        for line in dockerfile.splitlines():
+            words = line.split()
+            if not words or words[0] != "COPY" or any(w.startswith("--from") for w in words):
+                continue
+            sources.extend(words[1:-1])
+        self.assertIn("ha_mcp_engineering", sources)
+        files = []
+        for source in sources:
+            path = BETA_DIR / source
+            self.assertTrue(path.exists(), source)
+            candidates = sorted(path.rglob("*")) if path.is_dir() else [path]
+            files.extend(
+                item for item in candidates
+                if item.is_file() and "__pycache__" not in item.parts
+                and item.suffix not in {".pyc", ".pyo", ".pyd"}
+            )
+        return files
+
+    def test_add_on_build_contains_no_harness_route_templates(self):
+        files = self.copied_build_files()
+        self.assertIn(PACKAGE_DIR / "clients" / "paths.py", files)
+        forbidden = [t.encode() for t in HARNESS_ROUTE_TEMPLATES]
+        forbidden += [b"HARNESS_ROUTE_TEMPLATES", b"harness_routes", b"harness_request"]
+        findings = [
+            f"{item.relative_to(ROOT).as_posix()}: {needle.decode()}"
+            for item in files
+            for needle in forbidden
+            if needle in item.read_bytes()
+        ]
+        self.assertEqual(findings, [])
+
+    def test_image_copy_cannot_import_or_request_a_harness_route(self):
+        script = (
+            "import importlib.util, sys\n"
+            "sys.path[:0] = [sys.argv[1]]\n"
+            "from ha_mcp_engineering.clients import paths\n"
+            "assert importlib.util.find_spec('harness_routes') is None\n"
+            "assert importlib.util.find_spec('scripts') is None\n"
+            "assert not hasattr(paths, 'HARNESS_ROUTE_TEMPLATES')\n"
+            "for template in sys.argv[2:]:\n"
+            "    try:\n"
+            "        paths.rest_path(template)\n"
+            "    except paths.UnsafeRequestPathError as error:\n"
+            "        assert error.details['reason'] == 'unregistered_route'\n"
+            "    else:\n"
+            "        raise SystemExit('accepted ' + template)\n"
+            "print('isolated')\n"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "app"
+            shutil.copytree(PACKAGE_DIR, app / "ha_mcp_engineering",
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            result = subprocess.run(
+                [sys.executable, "-I", "-c", script, str(app), *sorted(HARNESS_ROUTE_TEMPLATES)],
+                cwd=app, capture_output=True, text=True, timeout=120,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        self.assertEqual(result.stdout.strip(), "isolated")
 
 
 class CompatibilityEntryPointTests(unittest.TestCase):

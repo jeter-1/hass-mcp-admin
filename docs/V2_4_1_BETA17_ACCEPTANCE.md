@@ -42,7 +42,7 @@ pre-validated or operator-configured values. Whether any deployed webhook
 allowed GET was not observed. The release notes say where a webhook
 trigger's allowed methods are set and how to check them without Engineering.
 
-### Offline proof (`tests/test_hamcp200_path_safety.py`, 50 tests)
+### Offline proof (`tests/test_hamcp200_path_safety.py`, 59 tests)
 
 - `SegmentGuardTests` (8):
   - 22 traversal variants are refused before encoding: `.` and `..`; `/`,
@@ -101,13 +101,30 @@ trigger's allowed methods are set and how to check them without Engineering.
   entity is one encoded query value.
 - `SourceScanTests` (8): the Engineering package has no raw interpolated
   request path; every named exemption is present; the runtime uses exactly
-  `ROUTE_TEMPLATES` and names no harness-only route; websockets connect only
+  `ROUTE_TEMPLATES` and names or imports no harness route; websockets connect only
   to the configured URL; the scanner flags each raw form and each Codex
   counterexample, and accepts guarded forms.
 - `HarnessScriptTests` (3): every Home Assistant REST call in the
   disposable-Core harness scripts binds through `rest_path` with a literal
-  template; harness templates are registered and used; the scanner flags
-  the forms the transport refuses, including a fixed raw `"/config"`.
+  runtime template or through `harness_request` with a literal harness
+  template; the harness sends each harness route exactly as many times as
+  before the move; the scanner flags the forms the transport refuses,
+  including a fixed raw `"/config"` and a non-harness `harness_request`.
+- `HarnessRouteIsolationTests` (3): the runtime and harness registries are
+  disjoint and `clients/paths.py` exposes no harness registry; `rest_path`
+  refuses every harness route; the runtime REST client refuses each harness
+  route as a plain string, a URL object and a forged `Route`, with zero
+  sessions and zero requests.
+- `HarnessSenderTests` (4): each harness route sends exactly
+  `http://127.0.0.1:8123/api<route>` with the same headers, JSON body and
+  disabled redirects as before; a non-harness route, a non-loopback Core or
+  a call inside an Engineering request is refused with zero sessions; a
+  redirect is an error, not followed; a timeout or connection failure
+  raises the runtime client's typed error.
+- `AddOnPackagingTests` (2): no file the Dockerfile copies names a harness
+  route, registry or sender; an isolated (`python -I`) copy of the image
+  package cannot import the harness module, and its `rest_path` refuses
+  every harness route.
 - `CompatibilityEntryPointTests` (2): `tools/compatibility.py` has no
   `main`, gateway, token bucket, audit writer or `__main__` guard, and the
   canonical `ha_mcp_engineering/__main__.py` remains.
@@ -124,6 +141,13 @@ above was run against it. Each one must fail:
 6. Enabling redirects in the REST transport.
 7. Dropping the template-registry check.
 8. Allowing `Route` construction.
+9. The runtime registry check accepting the four harness routes again.
+10. Restoring a harness registry in `clients/paths.py`.
+11. Changing the harness URL (a trailing slash).
+12. Dropping the harness loopback check.
+13. Dropping the harness request-context check.
+14. Enabling redirects in the harness sender.
+15. Dropping the harness sender's typed timeout and connection errors.
 
 ## 2. Release CI and publication
 

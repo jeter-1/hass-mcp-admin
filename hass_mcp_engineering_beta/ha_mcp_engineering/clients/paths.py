@@ -62,15 +62,8 @@ ROUTE_TEMPLATES = frozenset({
     "/states/{}",
     "/template",
 })
-# Routes used only by the disposable-Core CI harnesses under ``scripts/``.
-# No runtime module names them (enforced by tests/test_hamcp200_path_safety).
-HARNESS_ROUTE_TEMPLATES = frozenset({
-    "/config/config_entries/flow",
-    "/events/dev14_real_contract_trigger",
-    "/services/automation/reload",
-    "/services/script/reload",
-})
-_TEMPLATES = ROUTE_TEMPLATES | HARNESS_ROUTE_TEMPLATES
+# Disposable-Core CI harness routes are not runtime routes: they live only
+# under ``scripts/`` with their own sender, outside the add-on image.
 
 
 class UnsafeRequestPathError(InvalidRequestError):
@@ -215,7 +208,7 @@ def _template_literals(template: Any) -> list[str]:
     for literal in literals:
         if literal != "{}" and not _ROUTE_SEGMENT.fullmatch(literal):
             raise ValueError("REST route template contains an unsafe literal")
-    if template not in _TEMPLATES:
+    if template not in ROUTE_TEMPLATES:
         raise UnsafeRequestPathError("unregistered_route")
     return literals
 
@@ -256,9 +249,8 @@ def rest_path(
 ) -> Route:
     """Build one REST route from a registered template and guarded values.
 
-    ``template`` must be in ``ROUTE_TEMPLATES`` (or the harness registry)
-    and uses ``{}`` for each value. ``kinds`` optionally names a typed
-    grammar per value.
+    ``template`` must be in ``ROUTE_TEMPLATES`` and uses ``{}`` for each
+    value. ``kinds`` optionally names a typed grammar per value.
     """
 
     if kinds is None:
@@ -340,7 +332,6 @@ def request_url(api_url: str, path: Any) -> URL:
 
 
 __all__ = [
-    "HARNESS_ROUTE_TEMPLATES",
     "INVALID_IDENTIFIER_MESSAGE",
     "ROUTE_TEMPLATES",
     "Route",

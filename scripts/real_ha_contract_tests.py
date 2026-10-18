@@ -32,6 +32,9 @@ from ha_mcp_engineering.clients import (  # noqa: E402
     HomeAssistantWebSocketClient,
 )
 from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from harness_routes import harness_request  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
@@ -952,7 +955,7 @@ async def prepare_migration_fixture() -> None:
         rest_path("/config/automation/config/{}", MIGRATION_AUTOMATION_ID),
         automation,
     )
-    await rest.request("POST", rest_path("/services/automation/reload"), {})
+    await harness_request(rest.settings, "POST", "/services/automation/reload", {})
 
     DEVICE_FIXTURE_PATH.write_text(
         json.dumps(
@@ -3267,7 +3270,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
             await rest.request("POST", rest_path("/config/script/config/{}", key), bodies[key])
         stage = "fixture_reload"
         # Reload and registry changes are disposable setup, outside feature capture.
-        await rest.request("POST", rest_path("/services/script/reload"), {})
+        await harness_request(rest.settings, "POST", "/services/script/reload", {})
         stage = "registry_identity_readback"
         for _ in range(30):
             entries = await websocket.command({"type": "config/entity_registry/list"})
@@ -3393,7 +3396,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
                 cleanup_errors.append("fixture_file_restoration_failed")
         if created or files_prepared:
             try:
-                await rest.request("POST", rest_path("/services/script/reload"), {})
+                await harness_request(rest.settings, "POST", "/services/script/reload", {})
                 remaining = await websocket.command({"type": "config/entity_registry/list"})
                 # Core removes package runtime entities on reload, but preserves
                 # their registry entries. Delete only this fixture's captured entry.
@@ -3977,10 +3980,11 @@ async def run_contracts() -> None:
         # The trace contract is required, not silently skipped. Reloading and
         # firing this isolated event occur only in the disposable container.
         phase = "trace_generation"
-        await rest.request("POST", rest_path("/services/automation/reload"), {})
-        await rest.request(
+        await harness_request(rest.settings, "POST", "/services/automation/reload", {})
+        await harness_request(
+            rest.settings,
             "POST",
-            rest_path("/events/dev14_real_contract_trigger"),
+            "/events/dev14_real_contract_trigger",
             {"source": "disposable_contract"},
         )
         normalized = None

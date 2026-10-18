@@ -58,9 +58,8 @@ has a webhook trigger, or search `automations.yaml` (and any packages) for
 `Route` (`clients/paths.py`):
 - `rest_path(template, *values)` is the only way to obtain one. The
   template must be one of the reviewed literals in the closed
-  `ROUTE_TEMPLATES` registry (CI harness routes are a separate
-  `HARNESS_ROUTE_TEMPLATES` registry that no runtime module names). Any
-  other template, such as `/states/sensor/extra` or `/webhook/{}`, is
+  `ROUTE_TEMPLATES` registry. Any other template, such as
+  `/states/sensor/extra`, `/webhook/{}` or a CI-harness-only route, is
   refused as `unregistered_route`.
 - Each value passes the segment guard. It refuses the dot segments `.` and
   `..`; `/`, `\`, NUL and control characters; `?` and `#`; every percent-
@@ -165,3 +164,14 @@ template, or a `state_path`/`rest_path` binder whose body does not return
 `rest_path` with a literal template. Before this fix, the 8.5.0
 runtime-acceptance harness reported `synthetic_fan_unavailable` because its
 fan readiness probe was refused as an unbound path.
+
+Four routes only the harnesses need (creating a config entry, firing the
+contract event, and reloading automations or scripts) are not runtime
+routes. They live in `scripts/harness_routes.py`, outside the add-on image,
+with a separate sender. It sends exactly the URL the runtime client sent for
+them before, with the same headers, JSON body and disabled redirects. It
+accepts only those four literal routes, only a loopback (disposable) Core,
+and never runs inside an Engineering request. The runtime REST client
+refuses each of them before any request, including a forged `Route`. No
+file the Dockerfile copies into the image names them, and an isolated copy
+of the image package cannot import the harness module.

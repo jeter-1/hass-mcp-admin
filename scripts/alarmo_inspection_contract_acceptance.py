@@ -612,9 +612,9 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
     from core_registry_contract_lane import lane_entry, probe_profile_for
+    from harness_routes import harness_request
     from prepare_core_release_registry import prepare_candidate, sign_candidate, EXTENSION_EVIDENCE_MODEL
-    from ha_mcp_engineering.clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
-    from ha_mcp_engineering.clients.paths import rest_path
+    from ha_mcp_engineering.clients import HomeAssistantWebSocketClient
     from ha_mcp_engineering.ha_core_readmission import CoreRuntime
     from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
@@ -642,11 +642,11 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
     assert existing_core.current_observation.version == core_version
     probe_profile = probe_profile_for(core_version)
     assert existing_core.acquire(c.CORE_REQUIREMENTS) is None
-    rest, websocket = HomeAssistantRestClient(configured), HomeAssistantWebSocketClient(configured)
+    websocket = HomeAssistantWebSocketClient(configured)
     entries = await websocket.command({"type": "config_entries/get", "domain": "alarmo"})
     if entries:
         raise ValueError("Unexpected pre-existing disposable Alarmo entry")
-    created = await rest.request("POST", rest_path("/config/config_entries/flow"), {"handler": "alarmo", "show_advanced_options": False})
+    created = await harness_request(configured, "POST", "/config/config_entries/flow", {"handler": "alarmo", "show_advanced_options": False})
     assert created["type"] == "create_entry"
     # Setup readiness polling only, never retry an inspection command.
     for _ in range(30):
