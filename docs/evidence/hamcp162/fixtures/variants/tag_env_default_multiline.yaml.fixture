@@ -1,0 +1,2 @@
+refs:
+  pw: !env_var MQTT_PW "line1\nline2 Zq7v0160Xw"

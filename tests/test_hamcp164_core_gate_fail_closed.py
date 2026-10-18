@@ -325,7 +325,8 @@ class StaticCoreTableTests(unittest.TestCase):
         routes._validate_static_core_routes()
 
     def test_every_delegated_route_maps_a_non_empty_requirement_set(self):
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 30)
+        # HAMCP-162 maps ha_config_get_yaml (30 -> 31).
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
         self.assertFalse(set(DELEGATED_CORE_REQUIREMENTS) & set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, values in DELEGATED_CORE_REQUIREMENTS.items():
             with self.subTest(tool=name):

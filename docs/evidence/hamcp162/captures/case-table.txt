@@ -1,0 +1,221 @@
+main:recorder | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {
+main:homeassistant | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"auth_providers": [{"type": "homeassistant"}], "customize": {"sensor.synthetic_temperature": {"friendly_name
+main:homeassistant.customize | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"sensor.synthetic_temperature": {"friendly_name": "Synthetic temperature", "icon": "mdi:thermometer"}}]
+main:template | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[[{"sensor": [{"name": "Synthetic template", "state": "{{ states('sensor.synthetic_temperature') | float(0) +
+main:mqtt | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"broker": "mqtt.local", "certificate": "auto", "credentials": {"id": 7, "value": "Zq7v0142Xw"}, "password":
+main:mqtt.password | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["Zq7v0141Xw"]
+main:mqtt.credentials | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"id": 7, "value": "Zq7v0142Xw"}]
+main:mqtt.credentials.value | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["Zq7v0142Xw"]
+main:mqtt.port | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[1883]
+main:x | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"auth": {"password": "Zq7v0144Xw"}, "code": 987654, "password_null": null, "pin": 1234, "pin_float": 12.5, "
+main:x.pin | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[1234]
+main:x.password_null | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[null]
+main:x.auth | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"password": "Zq7v0144Xw"}]
+main:x.auth.password | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["Zq7v0144Xw"]
+main:http | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"api_key": "Zq7v0145Xw", "server_port": 8123}]
+main:http.api_key | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["Zq7v0145Xw"]
+main:influxdb | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"database": {"name": "ha"}, "token": "Zq7v0146Xw"}]
+main:influxdb.database | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"name": "ha"}]
+main:rest | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[[{"authentication": "basic", "headers": {"Authorization": "Bearer Zq7v0151Xw"}, "password": "Zq7v0150Xw", "re
+main:lists | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"credentials": [{"id": 1, "value": "Zq7v0155Xw"}], "harmless": [{"name": "a", "password": "Zq7v0152Xw"}, {"n
+main:refs | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"api_key": "!secret k", "bad_env": "!env_var 1BAD d", "broker": "!secret mqtt_host", "container": {"password
+main:refs.quoted | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["!secret abc"]
+main:refs.single_quoted | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["!secret abc"]
+main:refs.pw_default | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["!env_var MQTT_PW Zq7v0148Xw"]
+main:refs.password | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["!secret mqtt_password"]
+main:forgery | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"a": {"env_var_ref": "Zq7v0156Xw"}, "b": {"secret_ref": "Zq7v0157Xw"}, "c": {"default_redacted": true, "env_
+main:includes | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"automation": "!include automations.yaml", "dir_list": "!include_dir_list lists_dir", "dir_merge_list": "!in
+main:sensor | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["!include sensors.yaml"]
+main:automation | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["!include automations.yaml"]
+main:anchors | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"alias": {"a": 1, "b": "two"}, "base": {"a": 1, "b": "two"}, "list_alias": [1, 2], "list_ref": [1, 2], "merg
+main:yaml11 | isErr= True | ERR SERVICE_CALL_FAILED: API error: 500 - 500: Internal Server Error
+main:yaml11.yes_ | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["yes"]
+main:dotted | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"a.b": "dotted_key_value", "plain": "plain_value"}]
+main:dotted.a.b | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:empty_values | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"empty_list": [], "empty_map": {}, "empty_string": "", "null_value": null}]
+main:empty_values.null_value | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[null]
+main:empty_values.empty_map | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{}]
+main:empty_values.empty_list | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[[]]
+main:empty_values.empty_string | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[""]
+main:top_null | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[null]
+main:top_scalar | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["just a string"]
+main:top_list | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[["one", "two"]]
+main:template.0 | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:rest.0 | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:rest.0.resource | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:corpus | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"c0000": "Server=db;Uid=u;Pw⟦split⟧d=Zq7v0001Xw", "c0001": "Server%3Ddb%3BUid%3Du%3BPwd%3DZq7v0001Xw", "c0002": "Se
+main:keys | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"%25252525252570assword": "Zq7v0082Xw", "%252525252570assword": "Zq7v0081Xw", "%2525252525EF%2525252525BD%25
+main:mqtt_keys | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"MQTT-PassWord": "Zq7v0158Xw", "broker": "mqtt.local"}]
+main:recorder_sqlite | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"db_url": "sqlite:////config/home-assistant_v2.db"}]
+main:recorder.db_url | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4"]
+main:missing_key | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:recorder.missing | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main: | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:. | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:recorder. | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:.recorder | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:a..b | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:recorder..exclude | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main: recorder | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:Recorder | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:recorder  | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:* | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:recorder.* | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr(len1000) | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+main:homeassistant.auth_providers | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[[{"type": "homeassistant"}]]
+main:recorder.exclude.domains | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[["automation", "updater"]]
+main:recorder.exclude.domains.0 | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+yaml11key:yes_ | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["yes"]
+yaml11key:no_ | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["no"]
+yaml11key:on_ | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["on"]
+yaml11key:off_ | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["off"]
+yaml11key:y_ | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["y"]
+yaml11key:true_ | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[true]
+yaml11key:True_ | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[true]
+yaml11key:octal_0o | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[15]
+yaml11key:octal_0 | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[17]
+yaml11key:hex | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[31]
+yaml11key:underscore | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[1000]
+yaml11key:sexagesimal | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["12:30:00"]
+yaml11key:date | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["2026-10-16"]
+yaml11key:datetime | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["2026-10-16T10:00:00+00:00"]
+yaml11key:inf | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[".inf"]
+yaml11key:ninf | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["-.inf"]
+yaml11key:nan | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[".nan"]
+yaml11key:tilde | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[null]
+yaml11key:null_ | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[null]
+yaml11key:exp | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[1000.0]
+yaml11key:plus | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[1]
+yaml11key:bin | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[5]
+yaml11key:float_ | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[1.5]
+yaml11key:bigint | isErr= True | ERR SERVICE_CALL_FAILED: API error: 500 - 500: Internal Server Error
+variant:nk_int_str:nk | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"1": "str_one", "plain": "plain_value"}]
+variant:nk_int:nk | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"1": "int_one", "plain": "plain_value"}]
+variant:nk_bool:nk | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"True": "bool_true", "plain": "plain_value"}]
+variant:nk_bool_str:nk | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"True": "str_true", "plain": "plain_value"}]
+variant:nk_null:nk | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"None": "null_key", "plain": "plain_value"}]
+variant:nk_float:nk | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"1.5": "float_key", "plain": "plain_value"}]
+variant:nk_complex:nk | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"('a', 'b')": "complex_key", "plain": "plain_value"}]
+variant:nk_date:nk | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"2026-10-16": "date_key", "plain": "plain_value"}]
+defaults:recorder | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['content', 'file', 'yaml_path']] parsed=[null]
+defaults:mqtt | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['content', 'file', 'yaml_path']] parsed=[null]
+content+parsed:refs | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['content', 'file', 'parsed', 'yaml_path']] parsed=[{"api_key": "!secret k", "bad_env": "!env_var 1BAD d", "broker": "!secret mqtt_host", "container": {"password
+content+parsed:anchors | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['content', 'file', 'parsed', 'yaml_path']] parsed=[{"alias": {"a": 1, "b": "two"}, "base": {"a": 1, "b": "two"}, "list_alias": [1, 2], "list_ref": [1, 2], "merg
+neither:recorder | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'yaml_path']] parsed=[null]
+schema:yaml_path_int | isErr= True | ERR VALIDATION_FAILED: `yaml_path`: Input should be a valid string
+schema:missing_yaml_path | isErr= True | ERR VALIDATION_FAILED: `yaml_path`: Missing required argument
+schema:extra_property | isErr= True | ERR VALIDATION_FAILED: `path`: unknown parameter. Valid parameters: yaml_path, file, include_content, include_parsed.
+schema:include_parsed_str | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['content', 'file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {
+schema:file_null | isErr= True | ERR VALIDATION_FAILED: `file`: Input should be a valid string
+file:configuration.yml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:Configuration.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:CONFIGURATION.YAML | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:./configuration.yaml | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {
+file:/config/configuration.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:configuration.yaml  | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:packages/x.yaml | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"password": "Zq7v0166Xw", "value": 1}]
+file:packages/*.yaml | isErr= False | count=1 fs=4 fu=1 warn=True keys=[['file', 'parsed', 'yaml_path']] parsed=[{"password": "Zq7v0166Xw", "value": 1}]
+file:packages/[b].yaml | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"value": 3}]
+file:*.yaml | isErr= True | ERR Path not allowed. Must be in: www, themes, custom_templates, dashboards, blueprints, packages
+file:secrets.yaml | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["[MASKED]"]
+file:Secrets.YAML | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:PACKAGES/../secrets.yaml | isErr= True | ERR File does not exist: PACKAGES/../secrets.yaml
+file:packages/../secrets.yaml | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+file:.storage/core.config | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:scripts.yaml | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"sequence": []}]
+file:automations.yaml | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+file:configuration.yaml\x00 | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:packages\x.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:%2e%2e/secrets.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file://configuration.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:~/configuration.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:http://example.invalid/configuration.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:cccccccccccccccccccccccccccccccccccccccccccccccc(len305) | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:approval_pin.json | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:www/data.yaml | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"value": 1}]
+file:www/secret_link.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:www/escape.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:../etc/hostname | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:/etc/hostname | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:sensors.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+file:scenes.yaml | isErr= True | ERR File does not exist: scenes.yaml
+file:packages/missing.yaml | isErr= True | ERR File does not exist: packages/missing.yaml
+file:home-assistant.log | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+file:www/*.yaml | isErr= False | count=1 fs=3 fu=2 warn=True keys=[['file', 'parsed', 'yaml_path']] parsed=[{"value": 1}]
+file:packages/link.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+variant:parse_error:recorder | isErr= True | ERR CONFIG_INVALID: configuration.yaml could not be parsed as YAML: not valid YAML at line 4, column 23
+variant:parse_error:mqtt | isErr= True | ERR CONFIG_INVALID: configuration.yaml could not be parsed as YAML: not valid YAML at line 4, column 23
+variant:list_root:0 | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+variant:list_root:x | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+variant:scalar_root:x | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+variant:empty:recorder | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+variant:comment_only:recorder | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+variant:duplicate_keys:recorder | isErr= True | ERR CONFIG_INVALID: configuration.yaml could not be parsed as YAML: not valid YAML at line 3, column 1
+variant:dup_child_keys:recorder | isErr= True | ERR CONFIG_INVALID: configuration.yaml could not be parsed as YAML: not valid YAML at line 3, column 3
+variant:tag_SECRET:refs | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"upper": "x"}]
+variant:tag_input:refs | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"bp": "motion_entity"}]
+variant:tag_secret_bare:refs | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"bare": "!secret"}]
+variant:tag_on_mapping:refs | isErr= True | ERR CONFIG_INVALID: configuration.yaml could not be parsed as YAML: not valid YAML at line 2, column 6
+variant:tag_on_sequence:refs | isErr= True | ERR CONFIG_INVALID: configuration.yaml could not be parsed as YAML: not valid YAML at line 2, column 6
+variant:tag_custom_local:refs | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"c": "value"}]
+variant:tag_env_default_multiline:refs | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"pw": "!env_var MQTT_PW \"line1\\nline2 Zq7v0160Xw\""}]
+variant:nonstring_keys:nk | isErr= True | ERR CONFIG_INVALID: configuration.yaml could not be parsed as YAML: not valid YAML at line 4, column 3
+variant:nonstring_keys:nk.1 | isErr= True | ERR CONFIG_INVALID: configuration.yaml could not be parsed as YAML: not valid YAML at line 4, column 3
+variant:nonstring_keys:nk.true | isErr= True | ERR CONFIG_INVALID: configuration.yaml could not be parsed as YAML: not valid YAML at line 4, column 3
+variant:nonstring_keys:nk.True | isErr= True | ERR CONFIG_INVALID: configuration.yaml could not be parsed as YAML: not valid YAML at line 4, column 3
+variant:binary:recorder | isErr= True | ERR SERVICE_CALL_FAILED: API error: 500 - 500 Internal Server Error
+
+Server got itself in trouble
+variant:bom:recorder | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"purge_keep_days": 4}]
+variant:crlf:recorder | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"purge_keep_days": 5}]
+variant:latin1_text:recorder | isErr= True | ERR SERVICE_CALL_FAILED: API error: 500 - 500 Internal Server Error
+
+Server got itself in trouble
+variant:nodes_4001:big | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"k0000": 0, "k0001": 1, "k0002": 2, "k0003": 3, "k0004": 4, "k0005": 5, "k0006": 6, "k0007": 7, "k0008": 8,
+variant:depth_25:deep | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"l0": {"l1": {"l2": {"l3": {"l4": {"l5": {"l6": {"l7": {"l8": {"l9": {"l10": {"l11": {"l12": {"l13": {"l14":
+variant:alias_blowup:bomb | NONINLINE {"isError": false, "match_shapes": [{"keys": ["file", "parsed", "yaml_path"], "parsed_json_bytes": 2969217, "parsed_sha256": "ec2d6228dfe38f1392ca17ef6e6b870c0156dbfe2e0619d6711f6fbc09e6eac9"}], "stru
+variant:large_1mib_value:big | NONINLINE {"isError": false, "match_shapes": [{"keys": ["file", "parsed", "yaml_path"], "parsed_json_bytes": 1048589, "parsed_sha256": "f8803a30f98802d8bbbd1b55429146761c7776f53b2bd67ab745730fad75b173"}], "stru
+variant:large_8mib_file:small | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"ok": 1}]
+variant:large_8mib_file:big | NONINLINE {"isError": false, "match_shapes": [{"keys": ["file", "parsed", "yaml_path"], "parsed_json_bytes": 9200000, "parsed_sha256": "38579a91a21e35dcd11502c10f85b68fa80dbc762cbe665e404a739f2cad9e77"}], "stru
+variant:missing_config:recorder | isErr= True | ERR File does not exist: configuration.yaml
+variant:packages_custom_dir:pkgdir | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"value": 9}]
+variant:secrets_list:get_yaml | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
+variant:secrets_list:read_file | isErr= False | {"content": "# secrets.yaml is empty or not a key-value mapping \u2014 content withheld", "modified": "2026-10-16T05:23:55.441816", "path": "secrets.yaml", "size": 8, "success": true}
+variant:secrets_symlinked | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+variant:secrets_symlinked:get_yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:secrets.yaml | isErr= False | {"content": "\u2026", "modified": "2026-10-16T05:23:55.573817", "path": "secrets.yaml", "size": 173, "success": true}
+read_file:configuration.yaml | isErr= False | {"content": "\u2026", "modified": "2026-10-16T05:23:55.573817", "path": "configuration.yaml", "size": 30948, "success": true}
+read_file:approval_pin.json | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:.storage/core.config | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:www/secret_link.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:www/escape.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:sensors.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:packages/x.yaml | isErr= False | {"content": "x_pkg:\n  value: 1\n  password: \"Zq7v0166Xw\"\n", "modified": "2026-10-16T05:23:09.525454", "path": "packages/x.yaml", "size": 43, "success": true}
+read_file:Secrets.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:../etc/hostname | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:/etc/hostname | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:www/readme.txt | isErr= False | {"content": "synthetic www file\n", "modified": "2026-10-16T05:23:09.529454", "path": "www/readme.txt", "size": 19, "success": true}
+read_file:www/bin.dat | isErr= True | ERR Cannot read binary file: www/bin.dat. Only text files are supported.
+read_file:www/data.yaml | isErr= False | {"content": "www_yaml:\n  value: 1\n", "modified": "2026-10-16T05:23:09.529454", "path": "www/data.yaml", "size": 21, "success": true}
+read_file:scripts.yaml | isErr= False | {"content": "synthetic_script:\n  sequence: []\n", "modified": "2026-10-16T05:23:09.525454", "path": "scripts.yaml", "size": 33, "success": true}
+read_file:custom_components/ha_mcp_tools/manifest.json | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:configuration.yml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:packages/link.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
+read_file:configuration.yaml#mqtt | isErr= False | {"content": "\u2026", "modified": "2026-10-16T05:23:55.573817", "path": "configuration.yaml", "size": 30948, "subtree": "\u2026", "success": true}
+read_file:configuration.yaml#empty_path | isErr= False | {"content": "\u2026", "modified": "2026-10-16T05:23:55.573817", "path": "configuration.yaml", "size": 30948, "success": true}
+read_file:secrets.yaml#mqtt_password | isErr= False | {"content": "\u2026", "modified": "2026-10-16T05:23:55.573817", "path": "secrets.yaml", "size": 173, "subtree": "\"[MASKED]\"\n", "success": true}
+read_file:home-assistant.log#tail3 | isErr= False | {"content": "\u2026", "lines_returned": 3, "modified": "2026-10-16T05:23:55.785819", "path": "home-assistant.log", "size": 87222, "success": true, "total_lines": 1050, "truncated": true}
+read_file:home-assistant.log#yaml_path | isErr= False | {"content": "\u2026", "lines_returned": 2, "modified": "2026-10-16T05:23:55.785819", "path": "home-assistant.log", "size": 87222, "success": true, "total_lines": 1050, "truncated": true}
+read_file:tail_lines_0 | isErr= True | ERR VALIDATION_FAILED: `tail_lines`: Input should be greater than or equal to 1
+list_files:.:None | isErr= True | ERR Path not allowed. Must be in: www, themes, custom_templates, dashboards, blueprints, packages
+list_files:www:None | isErr= False | {"count": 5, "files": "\u2026", "path": "www", "pattern": null, "success": true}
+list_files:www:*.yaml | isErr= False | {"count": 3, "files": "\u2026", "path": "www", "pattern": "*.yaml", "success": true}
+list_files:packages:None | isErr= False | {"count": 4, "files": "\u2026", "path": "packages", "pattern": null, "success": true}
+list_files:packages:[b]* | isErr= False | {"count": 0, "files": [], "path": "packages", "pattern": "[b]*", "success": true}
+list_files:custom_components:None | isErr= True | ERR Path not allowed. Must be in: www, themes, custom_templates, dashboards, blueprints, packages
+list_files:.storage:None | isErr= True | ERR Path not allowed. Must be in: www, themes, custom_templates, dashboards, blueprints, packages
+list_files:blueprints:None | isErr= False | {"count": 2, "files": "\u2026", "path": "blueprints", "pattern": null, "success": true}
+list_files:../:None | isErr= True | ERR Path not allowed. Must be in: www, themes, custom_templates, dashboards, blueprints, packages
+list_files:themes:None | isErr= True | ERR Directory does not exist: themes
+unavailable:entry_removed | isErr= True | ERR VALIDATION_FAILED: API error: 400 - 400: Bad Request
+unavailable:entry_readded | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {

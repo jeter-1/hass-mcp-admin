@@ -38,6 +38,13 @@ from ..providers.upstream_platform_reads import (
     is_platform_adapter,
     withhold_unbound_platform_reads,
 )
+from ..providers.upstream_yaml_reader import (
+    OPTIONAL_TOOL_BINDINGS,
+    TOOL_NAME as OPTIONAL_TOOL_NAME,
+    extension_profile as optional_extension_profile,
+    observed_contract_fingerprint as optional_observed_contract_fingerprint,
+    withheld_reason as optional_withheld_reason,
+)
 from ..providers.upstream_search_8_6 import resolve_search_variant, search_capability_contract
 
 
@@ -196,15 +203,31 @@ class HaMcpAdmissionSelection:
     # Version-bound read routes the selected policy cannot carry to this
     # observed release, as (tool, reason). Empty for compiled exact releases.
     withheld_capabilities: tuple[tuple[str, str], ...] = ()
+    # HAMCP-162: the optional YAML reader extension, attached only to a
+    # compiled_exact selection whose release meets admission rules 2-4.
+    # Otherwise ``optional_withheld_reason`` records why it is absent.
+    optional_extension: CapabilityProfile | None = None
+    optional_withheld_reason: str | None = None
 
     @property
     def authority_token(self) -> str:
-        return evidence_fingerprint(
-            {
-                "profile": self.profile.to_mapping(),
-                "authority": self.authority.material_mapping(),
-            }
-        )
+        material: dict[str, Any] = {
+            "profile": self.profile.to_mapping(),
+            "authority": self.authority.material_mapping(),
+        }
+        # Present only with an extension, so every stock-only token stays
+        # byte-identical; attaching or changing the extension changes it.
+        if self.optional_extension is not None:
+            material["optional_extension"] = (
+                self.optional_extension.to_mapping()
+            )
+        return evidence_fingerprint(material)
+
+    @property
+    def profiles(self) -> tuple[CapabilityProfile, ...]:
+        if self.optional_extension is None:
+            return (self.profile,)
+        return (self.profile, self.optional_extension)
 
 
 class HaMcpAuthoritySelector:
@@ -306,6 +329,10 @@ class HaMcpAuthoritySelector:
         if selected is None:
             raise HaMcpAuthorityError("positive_authority_missing")
         binary_release, profile, withheld = selected
+        # Only the compiled_exact branch below may attach the extension; every
+        # signed-registry authority (positive or deny-only) withholds it.
+        optional_extension: CapabilityProfile | None = None
+        optional_withheld: str | None = "optional_signed_selection"
         if (
             compiled is None
             and signed_entry is not None
@@ -377,6 +404,30 @@ class HaMcpAuthoritySelector:
                 else binary_release.entry_id
             )
         elif compiled is not None:
+            optional_withheld = optional_withheld_reason(
+                compiled, signed_selection=False
+            )
+            if optional_withheld is None:
+                optional_extension = optional_extension_profile(
+                    compiled,
+                    OPTIONAL_TOOL_BINDINGS[(compiled.version, OPTIONAL_TOOL_NAME)],
+                )
+            extension_decisions = (
+                ()
+                if optional_extension is None
+                else (
+                    _authority_decision(
+                        profile=optional_extension,
+                        source=AuthoritySource.COMPILED_EXACT,
+                        status=AuthorityStatus.POSITIVE,
+                        identity=server_name,
+                        version=version,
+                        protocol=protocol_version,
+                        capability_ids=(OPTIONAL_TOOL_NAME,),
+                        reason_code="compiled_exact_optional_binding",
+                    ),
+                )
+            )
             authority = AuthorityBundle(
                 evaluated_at_epoch=evaluated_epoch,
                 decisions=(
@@ -393,7 +444,8 @@ class HaMcpAuthoritySelector:
                         ),
                         reason_code="compiled_exact_release",
                     ),
-                ),
+                )
+                + extension_decisions,
             )
             source = AuthoritySource.COMPILED_EXACT
             compatibility_entry_id = compiled.entry_id
@@ -451,6 +503,10 @@ class HaMcpAuthoritySelector:
             ),
             withheld_capabilities=tuple(
                 (name, PLATFORM_READ_BINDING_ABSENT) for name in withheld
+            ),
+            optional_extension=optional_extension,
+            optional_withheld_reason=(
+                None if optional_extension is not None else optional_withheld
             ),
         )
 
@@ -567,6 +623,20 @@ def observation_for_catalog(
                 {"invalid_descriptor": True}
             )
             kind = CapabilityKind.MIXED
+        elif (
+            name == OPTIONAL_TOOL_NAME
+            and selection.optional_extension is not None
+        ):
+            # The observed optional descriptor yields the same contract
+            # fingerprint as the binding only under an exact R4 match.
+            safe_id = name
+            kind = CapabilityKind.ORDINARY_READ
+            contract = optional_observed_contract_fingerprint(
+                raw,
+                OPTIONAL_TOOL_BINDINGS[
+                    (selection.binary_release.version, OPTIONAL_TOOL_NAME)
+                ],
+            )
         elif name in by_name and name in contracts:
             safe_id = name
             entry = by_name[name]
