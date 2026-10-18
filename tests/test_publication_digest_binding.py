@@ -391,7 +391,7 @@ class DigestHandoffWorkflowTests(unittest.TestCase):
             ["bind", "publish_tags", "verify", "finalize", "release"],
         )
         self.assertIn(
-            'python "$RUNNER_TEMP/publication-policy/publication_digest_binding.py"',
+            'python3 -I -S "$RUNNER_TEMP/publication-policy/publication_digest_binding.py"',
             _step(promote, "bind")["run"],
         )
         materialize = promote["steps"][2]["run"]

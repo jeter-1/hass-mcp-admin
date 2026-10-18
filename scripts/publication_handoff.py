@@ -13,10 +13,89 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from typing import Any
 import zipfile
 
-from validate_ci_provenance import Refusal, collection, positive_id, require, unique_keys
-from validate_ready_authorization import validate_timeline
+# Self-contained (HAMCP-204 M3): publishing jobs run this file as
+# ``python3 -I -S``, which keeps sibling scripts and site-packages off sys.path.
+# The definitions between the copy markers are verbatim copies of
+# scripts/validate_ci_provenance.py and scripts/validate_ready_authorization.py;
+# tests.test_signing_workflow_supply_chain pins them to those sources.
+
+# BEGIN COPY scripts/validate_ci_provenance.py
+class Refusal(ValueError):
+    pass
+
+
+def require(condition, category):
+    if not condition:
+        raise Refusal(category)
+
+
+def positive_id(value):
+    require(type(value) is int and value > 0, "invalid_identity")
+    return value
+
+
+def unique_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, "duplicate_json_key")
+        result[key] = value
+    return result
+
+
+def collection(value, key):
+    require(isinstance(value, dict), "malformed_collection")
+    items = value.get(key)
+    count = value.get("total_count")
+    require(type(count) is int and isinstance(items, list), "malformed_collection")
+    require(count == len(items) and 0 <= count <= 100, "incomplete_collection")
+    require(all(isinstance(item, dict) for item in items), "malformed_collection")
+    return items
+# END COPY
+
+
+# BEGIN COPY scripts/validate_ready_authorization.py
+AUTHORIZING_ACTOR = "jeter-1"
+HEAD_LIFECYCLE_EVENTS = {
+    "automatic_base_change_succeeded",
+    "base_ref_changed",
+    "closed",
+    "committed",
+    "convert_to_draft",
+    "head_ref_deleted",
+    "head_ref_force_pushed",
+    "head_ref_restored",
+    "ready_for_review",
+    "reopened",
+}
+
+
+class AuthorizationError(ValueError):
+    """The timeline does not prove current-head Ready authorization."""
+
+
+def validate_timeline(timeline: list[dict[str, Any]]) -> dict[str, Any]:
+    lifecycle = [
+        item for item in timeline if item.get("event") in HEAD_LIFECYCLE_EVENTS
+    ]
+    if not lifecycle:
+        raise AuthorizationError("pull-request timeline has no Ready lifecycle evidence")
+
+    latest = lifecycle[-1]
+    actor = latest.get("actor")
+    actor_login = actor.get("login") if isinstance(actor, dict) else None
+    if latest.get("event") != "ready_for_review" or actor_login != AUTHORIZING_ACTOR:
+        raise AuthorizationError(
+            "the latest head lifecycle event is not a Josh-authored Ready action"
+        )
+    return {
+        "status": "authorized",
+        "event_id": latest.get("id"),
+        "actor": actor_login,
+    }
+# END COPY
 
 REPOSITORY = "jeter-1/hass-mcp-admin"
 OWNER = "jeter-1"

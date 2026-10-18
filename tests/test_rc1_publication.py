@@ -1112,7 +1112,7 @@ else:
                 ROOT / "scripts" / "publication_github_release.py",
                 policy / "publication_github_release.py",
             )
-            (root / "python").symlink_to(sys.executable)
+            (root / "python3").symlink_to(sys.executable)
             fake_gh = root / "gh"
             fake_gh.write_text(
                 """#!/usr/bin/env python3
@@ -2263,7 +2263,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         # HAMCP-204: the publisher runs from the policy directory that the
         # promote materialization step wrote from the workflow authority.
         self.assertIn(
-            'python "$RUNNER_TEMP/publication-policy/publish_registry_tags_guarded.py"',
+            'python3 -I -S "$RUNNER_TEMP/publication-policy/publish_registry_tags_guarded.py"',
             publish_script,
         )
         self.assertNotIn("git show", publish_script)
@@ -2502,8 +2502,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "--target",
             "gh api",
             "HTTP 404",
-            'python "$RUNNER_TEMP/publication-policy/publication_github_release.py" notes',
-            'python "$RUNNER_TEMP/publication-policy/publication_github_release.py" verify',
+            'python3 -I -S "$RUNNER_TEMP/publication-policy/publication_github_release.py" notes',
+            'python3 -I -S "$RUNNER_TEMP/publication-policy/publication_github_release.py" verify',
             "scripts/assert_protected_release_ancestor.sh",
             '"$promoted_tag" != "$RELEASE_SHA"',
             "github_release_created=true",

@@ -11,9 +11,89 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 
-from publication_handoff import PREFIX, REPOSITORY, check_binding, git, read_api, sha
-from validate_ci_provenance import Refusal, positive_id, require, unique_keys
+# Self-contained (HAMCP-204 M3): publishing jobs run this file as
+# ``python3 -I -S``, which keeps sibling scripts and site-packages off sys.path.
+# The definitions between the copy markers are verbatim copies of
+# scripts/publication_handoff.py, itself pinned to its canonical sources;
+# tests.test_signing_workflow_supply_chain pins them.
+
+# BEGIN COPY scripts/publication_handoff.py
+class Refusal(ValueError):
+    pass
+
+
+def require(condition, category):
+    if not condition:
+        raise Refusal(category)
+
+
+def positive_id(value):
+    require(type(value) is int and value > 0, "invalid_identity")
+    return value
+
+
+def unique_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, "duplicate_json_key")
+        result[key] = value
+    return result
+
+
+REPOSITORY = "jeter-1/hass-mcp-admin"
+PREFIX = "repos/" + REPOSITORY
+BOUND = 4_000_000
+
+
+def sha(value):
+    require(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value), "invalid_sha")
+    return value
+
+
+def check_binding(value, release):
+    """Bounded source identity carried from verification into the attempt claim."""
+    require(isinstance(value, dict) and set(value) == {
+        "release_sha", "run_id", "run_attempt", "workflow_id", "event", "head_sha"
+    }, "handoff_binding_shape")
+    require(sha(value["release_sha"]) == release, "handoff_binding_release")
+    sha(value["head_sha"])
+    for key in ("run_id", "run_attempt", "workflow_id"):
+        positive_id(value[key])
+        require(value[key] < 10 ** 20, "handoff_binding_identity")
+    require(value["run_attempt"] <= 100
+            and value["event"] in {"pull_request_target", "issue_comment"}, "handoff_binding_identity")
+    return value
+
+
+def read_api(route, binary=False):
+    with tempfile.TemporaryFile() as output:
+        try:
+            result = subprocess.run(
+                ["gh", "api", route, "--hostname", "github.com", "--method", "GET"],
+                stdout=output, stderr=subprocess.DEVNULL, timeout=30, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise Refusal("github_read_unavailable") from exc
+        require(result.returncode == 0, "github_read_failed")
+        output.seek(0)
+        raw = output.read(BOUND + 1)
+    require(len(raw) <= BOUND, "github_response_bound")
+    if binary:
+        return raw
+    return json.loads(raw, object_pairs_hook=unique_keys)
+
+
+def git(*args):
+    try:
+        result = subprocess.run(["git", *args], stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, check=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Refusal("git_evidence_unavailable") from exc
+    require(len(result.stdout) <= BOUND, "git_output_bound")
+    return result.stdout.decode().strip()
+# END COPY
 
 
 def ref(version):

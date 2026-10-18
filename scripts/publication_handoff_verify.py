@@ -2,7 +2,7 @@
 
 This entry point is the only publication script that imports the locked YAML
 parser, from the hashed lock installed in detect-release. Write jobs never run
-it; they import ``publication_handoff`` and its stdlib-only siblings.
+it; they run the self-contained, stdlib-only ``publication_handoff``.
 """
 
 import argparse
@@ -11,8 +11,7 @@ import re
 import zipfile
 
 import publication_handoff as handoff
-from publication_handoff import sha
-from validate_ci_provenance import Refusal, require
+from publication_handoff import Refusal, require, sha
 
 
 def config_version(ref, run_git):

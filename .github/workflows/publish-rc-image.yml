@@ -383,7 +383,7 @@ jobs:
           set -euo pipefail
           [[ "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]
           mkdir -p "$RUNNER_TEMP/publication-policy"
-          for policy in publication_handoff.py publication_claim.py validate_ci_provenance.py validate_ready_authorization.py \
+          for policy in publication_handoff.py publication_claim.py \
             publication_digest_binding.py; do
             git show "${WORKFLOW_AUTHORITY_SHA}:scripts/${policy}" > "$RUNNER_TEMP/publication-policy/${policy}"
           done
@@ -679,7 +679,7 @@ jobs:
           set -euo pipefail
           [[ "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]
           mkdir -p "$RUNNER_TEMP/publication-policy"
-          for policy in publication_handoff.py publication_claim.py validate_ci_provenance.py validate_ready_authorization.py \
+          for policy in publication_handoff.py publication_claim.py \
             publication_digest_binding.py; do
             git show "${WORKFLOW_AUTHORITY_SHA}:scripts/${policy}" > "$RUNNER_TEMP/publication-policy/${policy}"
           done
@@ -739,7 +739,7 @@ jobs:
               exit 1
             fi
           elif [[ "$DETECTED_RELEASE_MODE" == "protected_merge_handoff" ]]; then
-            python "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
+            python3 -I -S "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
               --release "$DETECTED_RELEASE_SHA" --authority "$TRIGGER_SHA"
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
@@ -789,11 +789,11 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$SOURCE_MODE" == "build" ]]; then
-            python "$RUNNER_TEMP/publication-policy/publication_claim.py" create \
+            python3 -I -S "$RUNNER_TEMP/publication-policy/publication_claim.py" create \
               --release "$RELEASE_SHA" --version "$VERSION" \
               --handoff "$SOURCE_HANDOFF" --github-output "$GITHUB_OUTPUT"
           elif [[ "$SOURCE_MODE" == "resume_digest" ]]; then
-            python "$RUNNER_TEMP/publication-policy/publication_claim.py" resume \
+            python3 -I -S "$RUNNER_TEMP/publication-policy/publication_claim.py" resume \
               --release "$RELEASE_SHA" --version "$VERSION" \
               --run-id "$RECOVERY_RUN_ID" --attempt "$SOURCE_RUN_ATTEMPT" \
               --workflow-sha "$SOURCE_WORKFLOW_SHA" --event "$SOURCE_EVENT" \
@@ -843,7 +843,7 @@ jobs:
           set -euo pipefail
           [[ "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]
           mkdir -p "$RUNNER_TEMP/publication-policy"
-          for policy in publication_handoff.py publication_claim.py validate_ci_provenance.py validate_ready_authorization.py \
+          for policy in publication_handoff.py publication_claim.py \
             publication_digest_binding.py; do
             git show "${WORKFLOW_AUTHORITY_SHA}:scripts/${policy}" > "$RUNNER_TEMP/publication-policy/${policy}"
           done
@@ -914,7 +914,7 @@ jobs:
               exit 1
             fi
           elif [[ "$DETECTED_RELEASE_MODE" == "protected_merge_handoff" ]]; then
-            python "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
+            python3 -I -S "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
               --release "$DETECTED_RELEASE_SHA" --authority "$TRIGGER_SHA"
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
@@ -1238,7 +1238,7 @@ jobs:
           set -euo pipefail
           [[ "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]
           mkdir -p "$RUNNER_TEMP/publication-policy"
-          for policy in publication_handoff.py publication_claim.py validate_ci_provenance.py validate_ready_authorization.py \
+          for policy in publication_handoff.py publication_claim.py \
             publication_digest_binding.py publish_registry_tags_guarded.py publication_github_release.py; do
             git show "${WORKFLOW_AUTHORITY_SHA}:scripts/${policy}" > "$RUNNER_TEMP/publication-policy/${policy}"
           done
@@ -1270,7 +1270,7 @@ jobs:
         run: |
           set -euo pipefail
           # Promote publishes only the digest this exact-attempt binding emits.
-          python "$RUNNER_TEMP/publication-policy/publication_digest_binding.py" \
+          python3 -I -S "$RUNNER_TEMP/publication-policy/publication_digest_binding.py" \
             --repo-root . --github-output "$GITHUB_OUTPUT"
 
       - name: Revalidate publication authority before final image tags
@@ -1328,7 +1328,7 @@ jobs:
               exit 1
             fi
           elif [[ "$DETECTED_RELEASE_MODE" == "protected_merge_handoff" ]]; then
-            python "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
+            python3 -I -S "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
               --release "$DETECTED_RELEASE_SHA" --authority "$TRIGGER_SHA"
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
@@ -1375,7 +1375,7 @@ jobs:
           set -euo pipefail
 
           # Materialized from the exact workflow-authority commit; a missing file fails.
-          python "$RUNNER_TEMP/publication-policy/publish_registry_tags_guarded.py" \
+          python3 -I -S "$RUNNER_TEMP/publication-policy/publish_registry_tags_guarded.py" \
             --repository "$IMAGE_REPOSITORY" \
             --source-digest "$SOURCE_DIGEST" \
             --target-tag "sha-${RELEASE_SHA}" \
@@ -1487,7 +1487,7 @@ jobs:
               exit 1
             fi
           elif [[ "$DETECTED_RELEASE_MODE" == "protected_merge_handoff" ]]; then
-            python "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
+            python3 -I -S "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
               --release "$DETECTED_RELEASE_SHA" --authority "$TRIGGER_SHA"
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
@@ -1560,7 +1560,7 @@ jobs:
 
           release_title="HA MCP Engineering Server ${VERSION}"
           release_body="$RUNNER_TEMP/github-release-notes.md"
-          python "$RUNNER_TEMP/publication-policy/publication_github_release.py" notes \
+          python3 -I -S "$RUNNER_TEMP/publication-policy/publication_github_release.py" notes \
             "$RELEASE_NOTES_PATH" "$release_body" "$VERSION" "$SOURCE_MAIN_SHA" "$RELEASE_SHA" \
             "$BUILD_TIME" "$IMAGE_DIGEST" "$BUILD_PLATFORMS"
 
@@ -1607,7 +1607,7 @@ jobs:
               exit 1
             fi
           elif [[ "$DETECTED_RELEASE_MODE" == "protected_merge_handoff" ]]; then
-            python "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
+            python3 -I -S "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
               --release "$DETECTED_RELEASE_SHA" --authority "$TRIGGER_SHA"
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
@@ -1635,7 +1635,7 @@ jobs:
 
           release_json="$RUNNER_TEMP/github-release.json"
           gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > "$release_json"
-          python "$RUNNER_TEMP/publication-policy/publication_github_release.py" verify \
+          python3 -I -S "$RUNNER_TEMP/publication-policy/publication_github_release.py" verify \
             "$release_json" "$release_body" "$RELEASE_TAG" "$release_title" "$release_url" "$expected_prerelease"
           {
             echo "github_release_verified=true"
