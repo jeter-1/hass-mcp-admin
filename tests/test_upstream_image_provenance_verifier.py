@@ -43,6 +43,17 @@ PLATFORM_DIGESTS = {
     "linux/arm64": f"sha256:{'b' * 64}",
 }
 PLATFORM_SIZES = {"linux/amd64": 2001, "linux/arm64": 2002}
+# Image materials in the shape BuildKit records for the public ha-mcp releases
+# (7.13.0 through 8.5.0): a Dockerfile frontend plus platform-qualified,
+# digest-pinned base images.  The source is a local build context.
+FRONTEND_SHA = "c" * 64
+PYTHON_SHA = "d" * 64
+UV_SHA = "e" * 64
+IMAGE_MATERIALS = [
+    {"uri": "pkg:docker/docker/dockerfile@1", "sha256": FRONTEND_SHA},
+    {"uri": "pkg:docker/ghcr.io/astral-sh/uv@0.12.15-python3.13-trixie-slim", "sha256": UV_SHA},
+    {"uri": "pkg:docker/python@3.13-slim", "sha256": PYTHON_SHA},
+]
 
 
 def json_bytes(value):
@@ -74,6 +85,28 @@ def subjects(platform, digest):
         }
         for tag in (VERSION, "8.5", "8", "latest", "stable", VERSION)
     ]
+
+
+def resolved_dependencies(platform):
+    qualifier = f"&platform={quote(platform, safe='')}"
+    return [
+        {"uri": "pkg:docker/docker/dockerfile@1", "digest": {"sha256": FRONTEND_SHA}},
+        {
+            "uri": f"pkg:docker/python@3.13-slim?digest=sha256:{PYTHON_SHA}{qualifier}",
+            "digest": {"sha256": PYTHON_SHA},
+        },
+        {
+            "uri": (
+                "pkg:docker/ghcr.io/astral-sh/uv@0.12.15-python3.13-trixie-slim"
+                f"?digest=sha256:{UV_SHA}{qualifier}"
+            ),
+            "digest": {"sha256": UV_SHA},
+        },
+    ]
+
+
+def git_material(commit=SOURCE_COMMIT, repository="https://github.com/homeassistant-ai/ha-mcp"):
+    return {"uri": f"{repository}.git#refs/tags/v{VERSION}", "digest": {"sha1": commit}}
 
 
 def slsa_statement(platform, digest):
@@ -109,16 +142,23 @@ def slsa_statement(platform, digest):
                     "github_run_id": RUN_ID,
                     "github_run_attempt": RUN_ATTEMPT,
                 },
+                "resolvedDependencies": resolved_dependencies(platform),
             },
             "runDetails": {
                 "builder": {"id": BUILDER_ID},
                 "metadata": {
+                    "buildkit_completeness": {
+                        "request": True,
+                        "resolvedDependencies": False,
+                    },
                     "buildkit_metadata": {
                         "vcs": {
+                            "localdir:context": ".",
+                            "localdir:dockerfile": ".",
                             "source": MODULE.SOURCE_URL,
                             "revision": SOURCE_COMMIT,
                         }
-                    }
+                    },
                 },
             },
         },
@@ -305,6 +345,9 @@ class UpstreamProvenanceAcceptanceTests(unittest.TestCase):
                     "source": MODULE.SOURCE_URL,
                     "version": VERSION,
                 },
+                "source_material": "local_build_context",
+                "materials_declared_complete": False,
+                "image_materials": IMAGE_MATERIALS,
                 "platform_digests": PLATFORM_DIGESTS,
                 "attested_platforms": ["linux/amd64", "linux/arm64"],
                 "slsa_provenance": "present_per_platform",
@@ -663,6 +706,298 @@ class UpstreamProvenanceRefusalTests(unittest.TestCase):
         transport.blobs.clear()
         with self.assertRaisesRegex(MODULE.VerificationError, "REGISTRY_EVIDENCE_UNAVAILABLE"):
             run(index_digest, transport)
+
+
+def set_materials(materials, *, platforms=None):
+    """Statement mutator replacing resolvedDependencies (callable or value)."""
+
+    def mutate(platform, predicate_type, statement):
+        if predicate_type != MODULE.SLSA_PREDICATE_TYPE:
+            return
+        if platforms is not None and platform not in platforms:
+            return
+        value = materials(platform) if callable(materials) else copy.deepcopy(materials)
+        statement["predicate"]["buildDefinition"]["resolvedDependencies"] = value
+
+    return mutate
+
+
+class UpstreamProvenanceMaterialTests(unittest.TestCase):
+    """Materials must agree with the expected repository and commit (Codex M1).
+
+    Every case keeps matching subject digests and VCS metadata, so the
+    material check alone decides the outcome.
+    """
+
+    assertRefused = UpstreamProvenanceRefusalTests.assertRefused
+
+    def assertAccepted(self, **fixture_options):
+        index_digest, transport = fixture(**fixture_options)
+        return run(index_digest, transport)
+
+    # Codex review probes (pr275-7974e33 provenance-probes.json), verbatim.
+    def test_codex_probe_wrong_source_commit_material_is_refused(self):
+        material = [
+            {
+                "uri": "git+https://github.com/homeassistant-ai/ha-mcp@refs/heads/master",
+                "digest": {"sha1": "3" * 40},
+            }
+        ]
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIAL_COMMIT_MISMATCH",
+            statement_mutator=set_materials(material),
+        )
+
+    def test_codex_probe_wrong_repository_material_is_refused(self):
+        material = [
+            {
+                "uri": "git+https://github.com/synthetic-untrusted/fork@refs/heads/master",
+                "digest": {"sha1": SOURCE_COMMIT},
+            }
+        ]
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIAL_REPOSITORY_MISMATCH",
+            statement_mutator=set_materials(material),
+        )
+
+    def test_codex_probe_empty_materials_are_refused(self):
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIALS_MISSING",
+            statement_mutator=set_materials([]),
+        )
+
+    def test_codex_probe_malformed_materials_are_refused(self):
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIALS_INVALID",
+            statement_mutator=set_materials("not a dependency list"),
+        )
+
+    def test_missing_materials_are_refused(self):
+        def drop(platform, predicate_type, statement):
+            statement["predicate"]["buildDefinition"].pop("resolvedDependencies")
+
+        self.assertRefused("UPSTREAM_PROVENANCE_MATERIALS_MISSING", statement_mutator=drop)
+
+        def drop_one_platform(platform, predicate_type, statement):
+            if platform == "linux/arm64":
+                drop(platform, predicate_type, statement)
+
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIALS_MISSING", statement_mutator=drop_one_platform
+        )
+
+    def test_alternative_material_locations_are_refused(self):
+        def v02_materials(platform, predicate_type, statement):
+            statement["predicate"]["materials"] = [git_material("3" * 40)]
+
+        def extra_definition_key(platform, predicate_type, statement):
+            statement["predicate"]["buildDefinition"]["materials"] = [git_material("3" * 40)]
+
+        self.assertRefused("UPSTREAM_PROVENANCE_INVALID", statement_mutator=v02_materials)
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_INVALID", statement_mutator=extra_definition_key
+        )
+
+    def test_conflicting_source_materials_are_refused(self):
+        # One official material at the expected commit plus one at another.
+        def conflicting(platform):
+            return resolved_dependencies(platform) + [
+                git_material(),
+                git_material("3" * 40),
+            ]
+
+        def other_repository(platform):
+            return resolved_dependencies(platform) + [
+                git_material(),
+                git_material(repository="https://github.com/synthetic-untrusted/ha-mcp"),
+            ]
+
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIAL_COMMIT_MISMATCH",
+            statement_mutator=set_materials(conflicting),
+        )
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIAL_REPOSITORY_MISMATCH",
+            statement_mutator=set_materials(other_repository),
+        )
+
+    def test_repository_identity_is_exact(self):
+        lookalikes = [
+            "https://github.com/homeassistant-ai/ha-mcp-fork.git",
+            "https://github.com/homeassistant-ai/ha-mcp/extra",
+            "https://github.com.invalid/homeassistant-ai/ha-mcp",
+            "https://user@github.com/homeassistant-ai/ha-mcp",
+            "https://github.com:8443/homeassistant-ai/ha-mcp",
+            "https://github.com/homeassistant-ai/ha-mcp?ref=x",
+            "http://github.com/homeassistant-ai/ha-mcp",
+            "git://github.com/homeassistant-ai/ha-mcp",
+            "ssh://git@github.com/homeassistant-ai/ha-mcp",
+            "git@github.com:homeassistant-ai/ha-mcp.git",
+            "git+ssh://github.com/homeassistant-ai/ha-mcp",
+        ]
+        for uri in lookalikes:
+            material = [{"uri": uri, "digest": {"sha1": SOURCE_COMMIT}}]
+            with self.subTest(uri=uri):
+                self.assertRefused(
+                    "UPSTREAM_PROVENANCE_MATERIAL_REPOSITORY_MISMATCH",
+                    statement_mutator=set_materials(
+                        lambda platform, material=material: resolved_dependencies(platform)
+                        + material
+                    ),
+                )
+
+    def test_malformed_material_entries_are_refused(self):
+        cases = {
+            "UPSTREAM_PROVENANCE_MATERIAL_INVALID": [
+                "pkg:docker/python@3.13-slim",
+                {"uri": "pkg:docker/python@3.13-slim"},
+                {"uri": "pkg:docker/python", "digest": {"sha256": PYTHON_SHA}, "name": "x"},
+                {"uri": 7, "digest": {"sha256": PYTHON_SHA}},
+                {"uri": "pkg:docker/py thon", "digest": {"sha256": PYTHON_SHA}},
+                {"uri": "pkg:docker/", "digest": {"sha256": PYTHON_SHA}},
+                {"uri": "pkg:docker/python?arch=amd64", "digest": {"sha256": PYTHON_SHA}},
+                {
+                    "uri": f"pkg:docker/python?digest=sha256:{PYTHON_SHA}&digest=sha256:{PYTHON_SHA}",
+                    "digest": {"sha256": PYTHON_SHA},
+                },
+            ],
+            "UPSTREAM_PROVENANCE_MATERIAL_DIGEST_INVALID": [
+                {"uri": "pkg:docker/python", "digest": "sha256:" + PYTHON_SHA},
+                {"uri": "pkg:docker/python", "digest": {"sha512": PYTHON_SHA}},
+                {"uri": "pkg:docker/python", "digest": {"sha256": "D" * 64}},
+                {"uri": "pkg:docker/python", "digest": {"sha256": PYTHON_SHA, "sha1": "1" * 40}},
+                {"uri": git_material()["uri"], "digest": {"sha256": PYTHON_SHA}},
+            ],
+            "UPSTREAM_PROVENANCE_MATERIAL_UNSUPPORTED": [
+                {"uri": "file:///workspace/ha-mcp", "digest": {"sha256": PYTHON_SHA}},
+                {"uri": "pkg:pypi/requests@2.0", "digest": {"sha256": PYTHON_SHA}},
+            ],
+        }
+        for reason, entries in cases.items():
+            for entry in entries:
+                with self.subTest(reason=reason, entry=entry):
+                    self.assertRefused(
+                        reason,
+                        statement_mutator=set_materials(
+                            lambda platform, entry=entry: resolved_dependencies(platform)
+                            + [entry]
+                        ),
+                    )
+
+    def test_image_material_qualifiers_must_agree(self):
+        def wrong_digest(platform):
+            materials = resolved_dependencies(platform)
+            materials[1]["digest"]["sha256"] = "f" * 64
+            return materials
+
+        def wrong_platform(platform):
+            materials = resolved_dependencies(platform)
+            materials[1]["uri"] = materials[1]["uri"].replace(
+                quote(platform, safe=""), "linux%2Fs390x"
+            )
+            return materials
+
+        def duplicate_name(platform):
+            materials = resolved_dependencies(platform)
+            extra = copy.deepcopy(materials[1])
+            extra["uri"] = extra["uri"].replace(PYTHON_SHA, "f" * 64)
+            extra["digest"]["sha256"] = "f" * 64
+            return materials + [extra]
+
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIAL_DIGEST_MISMATCH",
+            statement_mutator=set_materials(wrong_digest),
+        )
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIAL_PLATFORM_MISMATCH",
+            statement_mutator=set_materials(wrong_platform),
+        )
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIAL_AMBIGUOUS",
+            statement_mutator=set_materials(duplicate_name),
+        )
+
+    def test_materials_bound_beyond_limit_are_refused(self):
+        many = [
+            {"uri": f"pkg:docker/synthetic/image{n}", "digest": {"sha256": f"{n:064x}"}}
+            for n in range(MODULE.MAX_MATERIALS + 1)
+        ]
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_MATERIALS_INVALID", statement_mutator=set_materials(many)
+        )
+
+    def test_cross_platform_material_disagreement_is_refused(self):
+        def arm_differs(platform):
+            materials = resolved_dependencies(platform)
+            materials[1]["uri"] = materials[1]["uri"].replace(PYTHON_SHA, "f" * 64)
+            materials[1]["digest"]["sha256"] = "f" * 64
+            return materials
+
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_PLATFORM_INCONSISTENT",
+            statement_mutator=set_materials(arm_differs, platforms={"linux/arm64"}),
+        )
+        # A Git source material on only one platform is also inconsistent.
+        self.assertRefused(
+            "UPSTREAM_PROVENANCE_PLATFORM_INCONSISTENT",
+            statement_mutator=set_materials(
+                lambda platform: resolved_dependencies(platform) + [git_material()],
+                platforms={"linux/amd64"},
+            ),
+        )
+
+    def test_local_context_is_required_without_git_material(self):
+        for key in ("localdir:context", "localdir:dockerfile"):
+            def drop(platform, predicate_type, statement, key=key):
+                statement["predicate"]["runDetails"]["metadata"]["buildkit_metadata"][
+                    "vcs"
+                ].pop(key)
+
+            with self.subTest(key=key):
+                self.assertRefused(
+                    "UPSTREAM_PROVENANCE_SOURCE_MATERIAL_MISSING", statement_mutator=drop
+                )
+
+    def test_completeness_declaration_must_be_well_formed(self):
+        def bad(platform, predicate_type, statement):
+            statement["predicate"]["runDetails"]["metadata"]["buildkit_completeness"][
+                "resolvedDependencies"
+            ] = "false"
+
+        self.assertRefused("UPSTREAM_PROVENANCE_INVALID", statement_mutator=bad)
+
+    def test_correct_materials_pass(self):
+        # Real upstream form: image materials and a local build context.
+        result = self.assertAccepted()
+        self.assertEqual(result["source_material"], "local_build_context")
+        self.assertEqual(result["image_materials"], IMAGE_MATERIALS)
+        self.assertIs(result["materials_declared_complete"], False)
+
+        # Official Git source material at the exact commit, in both forms;
+        # it may replace the local context.
+        for uri in (
+            f"https://github.com/homeassistant-ai/ha-mcp.git#refs/tags/v{VERSION}",
+            "git+https://github.com/homeassistant-ai/ha-mcp@refs/heads/master",
+            "https://github.com/homeassistant-ai/ha-mcp",
+        ):
+            material = {"uri": uri, "digest": {"sha1": SOURCE_COMMIT}}
+
+            def mutate(platform, predicate_type, statement, material=material):
+                set_materials(lambda p: resolved_dependencies(p) + [material])(
+                    platform, predicate_type, statement
+                )
+                vcs = statement["predicate"]["runDetails"]["metadata"]["buildkit_metadata"][
+                    "vcs"
+                ]
+                vcs.pop("localdir:context")
+                vcs.pop("localdir:dockerfile")
+                statement["predicate"]["runDetails"]["metadata"].pop("buildkit_completeness")
+
+            with self.subTest(uri=uri):
+                result = self.assertAccepted(statement_mutator=mutate)
+                self.assertEqual(result["source_material"], "official_git_commit")
+                self.assertIsNone(result["materials_declared_complete"])
+                self.assertEqual(result["source_commit"], SOURCE_COMMIT)
 
 
 class NoLabelEvidenceTests(unittest.TestCase):

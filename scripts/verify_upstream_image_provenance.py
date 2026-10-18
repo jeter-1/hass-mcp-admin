@@ -5,9 +5,13 @@ The upstream index is fetched anonymously by exact digest.  Every platform
 manifest must have exactly one BuildKit attestation manifest whose in-toto
 SLSA statement names that platform digest in every subject and binds the
 build to the exact upstream source commit, repository, protected workflow and
-GitHub-hosted builder.  Index annotations are used only to locate attestation
-manifests; image labels are never read here and remain informational
-consistency checks in the calling workflow.
+GitHub-hosted builder.  The statement's resolved dependencies (materials) must
+be well formed, platform-consistent and agree with that source: every Git
+material must name the official repository at the exact commit, and when no
+Git material is present the source must be the attested local build context.
+Index annotations are used only to locate attestation manifests; image labels
+are never read here and remain informational consistency checks in the
+calling workflow.
 
 Upstream currently publishes unsigned BuildKit in-toto statements.  There is
 no DSSE envelope, Sigstore bundle or signer certificate to verify, so the
@@ -24,7 +28,7 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, unquote, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -95,6 +99,20 @@ MAX_TOTAL_STATEMENT_BYTES = 67_108_864
 ATTESTATION_MANIFEST_KEYS = frozenset(
     {"schemaVersion", "mediaType", "artifactType", "config", "layers", "subject"}
 )
+# SLSA v1 predicate shape.  A v0.2-style ``materials`` list, or any other
+# alternative location for dependency evidence, is refused rather than ignored.
+PREDICATE_KEYS = frozenset({"buildDefinition", "runDetails"})
+BUILD_DEFINITION_KEYS = frozenset(
+    {"buildType", "externalParameters", "internalParameters", "resolvedDependencies"}
+)
+MAX_MATERIALS = 64
+MAX_MATERIAL_URI_LENGTH = 1_024
+IMAGE_MATERIAL_PREFIX = "pkg:docker/"
+IMAGE_MATERIAL_QUERY_KEYS = frozenset({"digest", "platform"})
+SHA256_HEX_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+# BuildKit records the requested source as local when the build context is a
+# checked-out directory; the commit is then attested only by VCS metadata.
+LOCAL_CONTEXT_KEYS = ("localdir:context", "localdir:dockerfile")
 RESULT_SCHEMA = "hamcp.upstream_image_provenance.v1"
 
 
@@ -327,13 +345,155 @@ def _verify_request_arguments(
     return attested
 
 
+def _material_uri(material: dict[str, Any]) -> str:
+    uri = material.get("uri")
+    if (
+        not isinstance(uri, str)
+        or not 1 <= len(uri) <= MAX_MATERIAL_URI_LENGTH
+        or any(ord(character) < 33 or ord(character) == 127 for character in uri)
+    ):
+        _fail("UPSTREAM_PROVENANCE_MATERIAL_INVALID")
+    return uri
+
+
+def _git_material_repository(uri: str) -> str | None:
+    """Return the repository URL named by a Git or URL source material.
+
+    Accepts BuildKit (``https://host/repo.git#ref``) and purl-style
+    (``git+https://host/repo@ref``) forms.  Returns ``None`` for a URI that
+    is not a remote source at all.
+    """
+
+    if uri.startswith("git+"):
+        remainder = uri.removeprefix("git+")
+    elif uri.startswith(("https://", "http://", "git://", "ssh://", "git@")):
+        remainder = uri
+    else:
+        return None
+    parsed = urlsplit(remainder)
+    if parsed.scheme != "https" or parsed.query:
+        # Non-HTTPS transports, credentials, ports and queries are never the
+        # official repository.
+        _fail("UPSTREAM_PROVENANCE_MATERIAL_REPOSITORY_MISMATCH")
+    path = parsed.path.split("@", 1)[0].removesuffix(".git")
+    return f"https://{parsed.netloc}{path}"
+
+
+def _image_material(
+    uri: str, digest: dict[str, Any], *, platform: str
+) -> tuple[str, str]:
+    if set(digest) != {"sha256"} or not isinstance(digest["sha256"], str):
+        _fail("UPSTREAM_PROVENANCE_MATERIAL_DIGEST_INVALID")
+    sha256 = digest["sha256"]
+    if SHA256_HEX_PATTERN.fullmatch(sha256) is None:
+        _fail("UPSTREAM_PROVENANCE_MATERIAL_DIGEST_INVALID")
+    name, separator, query = uri.partition("?")
+    if len(name) <= len(IMAGE_MATERIAL_PREFIX) or "#" in uri:
+        _fail("UPSTREAM_PROVENANCE_MATERIAL_INVALID")
+    try:
+        pairs = parse_qsl(query, keep_blank_values=True, strict_parsing=bool(separator))
+    except ValueError:
+        _fail("UPSTREAM_PROVENANCE_MATERIAL_INVALID")
+    keys = [key for key, _value in pairs]
+    if len(keys) != len(set(keys)) or not set(keys).issubset(IMAGE_MATERIAL_QUERY_KEYS):
+        _fail("UPSTREAM_PROVENANCE_MATERIAL_INVALID")
+    parameters = dict(pairs)
+    if "digest" in parameters and parameters["digest"] != f"sha256:{sha256}":
+        _fail("UPSTREAM_PROVENANCE_MATERIAL_DIGEST_MISMATCH")
+    if "platform" in parameters and parameters["platform"] != platform:
+        _fail("UPSTREAM_PROVENANCE_MATERIAL_PLATFORM_MISMATCH")
+    # Normalized without the platform qualifier so platforms can be compared.
+    return unquote(name), sha256
+
+
+def _verify_materials(
+    definition: dict[str, Any],
+    metadata: dict[str, Any],
+    vcs: dict[str, Any],
+    *,
+    platform: str,
+    source_commit: str,
+) -> dict[str, Any]:
+    """Validate resolved dependencies against the expected source.
+
+    Image materials must be digest-consistent and name only this platform.
+    Every Git material must be the official repository at the exact commit.
+    Absent any Git material, BuildKit must attest a local build context, whose
+    commit is the VCS revision already bound to ``source_commit``.  Anything
+    else (missing, empty, malformed, unsupported or conflicting materials)
+    fails closed.
+    """
+
+    if "resolvedDependencies" not in definition:
+        _fail("UPSTREAM_PROVENANCE_MATERIALS_MISSING")
+    materials = _sequence(
+        definition["resolvedDependencies"], "UPSTREAM_PROVENANCE_MATERIALS_INVALID"
+    )
+    if not materials:
+        _fail("UPSTREAM_PROVENANCE_MATERIALS_MISSING")
+    if len(materials) > MAX_MATERIALS:
+        _fail("UPSTREAM_PROVENANCE_MATERIALS_INVALID")
+    images: set[tuple[str, str]] = set()
+    image_names: set[str] = set()
+    git_commits: set[str] = set()
+    for raw_material in materials:
+        material = _mapping(raw_material, "UPSTREAM_PROVENANCE_MATERIAL_INVALID")
+        if set(material) != {"uri", "digest"}:
+            _fail("UPSTREAM_PROVENANCE_MATERIAL_INVALID")
+        uri = _material_uri(material)
+        digest = _mapping(material["digest"], "UPSTREAM_PROVENANCE_MATERIAL_DIGEST_INVALID")
+        if uri.startswith(IMAGE_MATERIAL_PREFIX):
+            name, sha256 = _image_material(uri, digest, platform=platform)
+            if name in image_names:
+                _fail("UPSTREAM_PROVENANCE_MATERIAL_AMBIGUOUS")
+            image_names.add(name)
+            images.add((name, sha256))
+            continue
+        repository = _git_material_repository(uri)
+        if repository is None:
+            _fail("UPSTREAM_PROVENANCE_MATERIAL_UNSUPPORTED")
+        if repository != SOURCE_URL:
+            _fail("UPSTREAM_PROVENANCE_MATERIAL_REPOSITORY_MISMATCH")
+        if set(digest) != {"sha1"} or not isinstance(digest["sha1"], str):
+            _fail("UPSTREAM_PROVENANCE_MATERIAL_DIGEST_INVALID")
+        if digest["sha1"] != source_commit:
+            _fail("UPSTREAM_PROVENANCE_MATERIAL_COMMIT_MISMATCH")
+        git_commits.add(digest["sha1"])
+
+    completeness = metadata.get("buildkit_completeness")
+    declared_complete: bool | None = None
+    if completeness is not None:
+        completeness = _mapping(completeness, "UPSTREAM_PROVENANCE_INVALID")
+        declared_complete = completeness.get("resolvedDependencies")
+        if not isinstance(declared_complete, bool):
+            _fail("UPSTREAM_PROVENANCE_INVALID")
+    if git_commits:
+        source_material = "official_git_commit"
+    else:
+        for key in LOCAL_CONTEXT_KEYS:
+            if not isinstance(vcs.get(key), str) or not vcs[key]:
+                _fail("UPSTREAM_PROVENANCE_SOURCE_MATERIAL_MISSING")
+        source_material = "local_build_context"
+    return {
+        "source_material": source_material,
+        "materials_declared_complete": declared_complete,
+        "image_materials": [
+            {"uri": name, "sha256": sha256} for name, sha256 in sorted(images)
+        ],
+    }
+
+
 def _verify_slsa_predicate(
-    statement: dict[str, Any], *, version: str, source_commit: str
+    statement: dict[str, Any], *, platform: str, version: str, source_commit: str
 ) -> dict[str, Any]:
     predicate = _mapping(statement.get("predicate"), "UPSTREAM_PROVENANCE_INVALID")
+    if set(predicate) != PREDICATE_KEYS:
+        _fail("UPSTREAM_PROVENANCE_INVALID")
     definition = _mapping(
         predicate.get("buildDefinition"), "UPSTREAM_PROVENANCE_INVALID"
     )
+    if not set(definition).issubset(BUILD_DEFINITION_KEYS):
+        _fail("UPSTREAM_PROVENANCE_INVALID")
     if definition.get("buildType") != BUILD_TYPE:
         _fail("UPSTREAM_PROVENANCE_BUILD_TYPE_INVALID")
     run_details = _mapping(predicate.get("runDetails"), "UPSTREAM_PROVENANCE_INVALID")
@@ -352,6 +512,9 @@ def _verify_slsa_predicate(
         _fail("UPSTREAM_PROVENANCE_SOURCE_MISMATCH")
     if vcs.get("revision") != source_commit:
         _fail("UPSTREAM_PROVENANCE_COMMIT_MISMATCH")
+    materials = _verify_materials(
+        definition, metadata, vcs, platform=platform, source_commit=source_commit
+    )
 
     internal = _mapping(
         definition.get("internalParameters"), "UPSTREAM_PROVENANCE_IDENTITY_INVALID"
@@ -409,6 +572,7 @@ def _verify_slsa_predicate(
         "builder_id": builder_id,
         "workflow_sha": workflow_sha,
         "attested_labels": dict(sorted(attested.items())),
+        **materials,
     }
 
 
@@ -471,7 +635,10 @@ def verify(
             if predicate_type == SLSA_PREDICATE_TYPE:
                 bindings.append(
                     _verify_slsa_predicate(
-                        statement, version=version, source_commit=source_commit
+                        statement,
+                        platform=platform,
+                        version=version,
+                        source_commit=source_commit,
                     )
                 )
             else:
@@ -490,6 +657,9 @@ def verify(
         "workflow_sha": bindings[0]["workflow_sha"],
         "builder_id": bindings[0]["builder_id"],
         "attested_labels": bindings[0]["attested_labels"],
+        "source_material": bindings[0]["source_material"],
+        "materials_declared_complete": bindings[0]["materials_declared_complete"],
+        "image_materials": bindings[0]["image_materials"],
         "platform_digests": {
             platform: images[platform].digest
             for platform in sorted(images)
