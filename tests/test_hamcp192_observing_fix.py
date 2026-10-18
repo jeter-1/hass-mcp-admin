@@ -31,7 +31,7 @@ from ha_mcp_engineering.fan.authority import FanCoreAuthority
 from ha_mcp_engineering.fan.contracts import FanRefusal, FanRequest, digest
 from ha_mcp_engineering.fan.locks import FAN_LOCK_TIMING
 from ha_mcp_engineering.fan.service import (
-    INLINE_POLL_BUDGET_SECONDS, FanService,
+    HOLD_RELEASE_AUDIT_MODEL, INLINE_POLL_BUDGET_SECONDS, FanService,
 )
 from ha_mcp_engineering.power.contracts import PowerRequest, digest as power_digest
 from ha_mcp_engineering.power.service import PowerCoreAuthority, PowerService
@@ -81,6 +81,8 @@ class SlowFanTransport(Transport):
 
 
 class RecordingAudit:
+    enabled = True
+
     def __init__(self):
         self.entries = []
 
@@ -575,6 +577,7 @@ class HoldReleaseIngressTests(ObservingFixture):
         self.assertEqual(released.status_code, 200, released.text)
         self.assertIn("hold_released_state_differs", released.text)
         self.assertIn("Dispatch: none", released.text)
+        self.assertIn("Audit entry: recorded.", released.text)  # an enabled logger confirmed it
         self.assertEqual(self.comparison(released.text)[1:], [
             ("state", "on", "off", "DIFFERENT"), ("percentage", "50", "0", "DIFFERENT")])
         self.assertEqual(self.transport.service_calls(), writes)
@@ -741,18 +744,19 @@ class HoldReleaseExactlyOnceTests(ObservingFixture):
             reviewed_readback_hash=review["readback_hash"],
             authorized_principal="home_assistant_admin_ingress:admin-fixture")
 
-    async def assert_settled_once(self, request, service):
+    async def assert_settled_once(self, request, service, *, dispatches=1):
         reads = self.transport.reads()
         for _ in range(3):
             self.clock.advance(30)
             await service.recover_once()
         self.assertEqual(self.transport.reads(), reads)  # finishing never reads or dispatches
-        self.assertEqual(self.transport.writes, 1)
-        entries = self.release_entries()
+        self.assertEqual(self.transport.writes, dispatches)  # one per held task, none from release
+        entries = [item for item in self.release_entries() if item["task_id"] == request.task_id]
         self.assertEqual(len(entries), 1, entries)
         sidecar = service._load_release(request.task_id)
         self.assertIsNotNone(sidecar["released_at"])
         self.assertTrue(sidecar["audit_recorded"])
+        self.assertIsNone(sidecar["audit_unrecorded_reason"])
         self.assertEqual(entries[0]["timestamp"], sidecar["released_at"])
         self.assertEqual(entries[0]["hold_release_id"], service.hold_release_id(sidecar))
         self.assertEqual(entries[0]["dispatch"], "none")
@@ -762,6 +766,7 @@ class HoldReleaseExactlyOnceTests(ObservingFixture):
         receipt = service.receipt(request.task_id)
         self.assertEqual(receipt["terminal_outcome"], "manual_review_required")
         self.assertEqual(receipt["hold_release"]["audit_recorded"], True)
+        self.assertIsNone(receipt["hold_release"]["audit_unrecorded_reason"])
         self.assertEqual(receipt["hold_release"]["hold_release_id"], entries[0]["hold_release_id"])
 
     async def crash_then_restart(self, target, attribute, *, after, when=lambda *args, **kwargs: True):
@@ -806,10 +811,13 @@ class HoldReleaseExactlyOnceTests(ObservingFixture):
             result = await self.decide(request)
         self.assertEqual(result["status"], "hold_released_state_differs")
         self.assertFalse(result["audit_recorded"])
+        self.assertEqual(result["audit_unrecorded_reason"], "audit_write_failed")
         self.assertEqual(self.release_entries(), [])
         self.assertEqual(self.owned(request.task_id), [])
         self.assertEqual(self.service.health()["audit_projection_failures"], 1)
-        self.assertFalse(self.service.receipt(request.task_id)["hold_release"]["audit_recorded"])
+        hold_release = self.service.receipt(request.task_id)["hold_release"]
+        self.assertEqual((hold_release["audit_recorded"], hold_release["audit_unrecorded_reason"]),
+                         (False, "audit_write_failed"))
         await self.assert_settled_once(request, self.service)
 
     async def test_concurrent_finishers_settle_one_completion(self):
@@ -853,6 +861,7 @@ class HoldReleaseExactlyOnceTests(ObservingFixture):
         request = await self.held_task()
         result = await self.decide(request)
         self.assertFalse(result["audit_recorded"])
+        self.assertEqual(result["audit_unrecorded_reason"], "audit_disabled")
         failures, reads = self.service.recovery_failures, self.transport.reads()
         for _ in range(3):
             self.clock.advance(30)
@@ -875,6 +884,131 @@ class HoldReleaseExactlyOnceTests(ObservingFixture):
         self.assertEqual(self.service.recovery_failures, 1)
         self.assertEqual([item.conflict_hold for item in self.owned(request.task_id)], [True])
         self.assertEqual(self.release_entries(), [])
+
+    # Codex M3: a disabled logger reports success without writing, so a
+    # release with auditing off must say no entry exists, settle without a
+    # retry loop, and be backfilled exactly once when auditing is enabled.
+
+    async def test_codex_m3_probe_disabled_audit_through_ingress_then_backfill(self):
+        self.audit.enabled = False  # the supported audit_enabled=false option
+        request = await self.held_task()
+        app = create_approval_application(object(), typed_services={"fan": lambda: self.service})
+        path = f"/typed/fan/{request.task_id}"
+        async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app, client=("172.30.32.2", 1)),
+                base_url="http://synthetic.local", headers=ADMIN_HEADERS) as client:
+            review = await client.get(path)
+            response = await client.post(path + "/release", data=HoldReleaseIngressTests.form(review.text))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Audit entry: not recorded (audit_disabled", response.text)
+        self.assertNotIn("Audit entry: recorded", response.text)
+        hold_release = self.service.receipt(request.task_id)["hold_release"]
+        self.assertEqual((hold_release["audit_recorded"], hold_release["audit_unrecorded_reason"]),
+                         (False, "audit_disabled"))
+        self.assertFalse(self.audit_path.exists())
+        self.assertEqual(self.owned(request.task_id), [])
+        # Re-enabled and restarted: recovery backfills the one missing entry.
+        self.audit.enabled = True
+        await self.assert_settled_once(request, self.build())
+
+    async def test_audit_disabled_records_false_with_a_reason_and_settles(self):
+        self.audit.enabled = False
+        request = await self.held_task()
+        writes = []
+        original = self.service._write_release
+        with patch.object(self.service, "_write_release",
+                          side_effect=lambda value: (writes.append(value), original(value))[1]):
+            result = await self.decide(request)
+            self.assertEqual((result["audit_recorded"], result["audit_unrecorded_reason"]),
+                             (False, "audit_disabled"))
+            sidecar = self.service._load_release(request.task_id)
+            self.assertIsNotNone(sidecar["released_at"])
+            self.assertEqual((sidecar["audit_recorded"], sidecar["audit_unrecorded_reason"]),
+                             (False, "audit_disabled"))
+            settled_writes, reads = len(writes), self.transport.reads()
+            for _ in range(3):  # settled while disabled: no retry loop
+                self.clock.advance(30)
+                await self.service.recover_once()
+            await self.service.reconcile(request.task_id)  # a same-ID replay changes nothing
+        self.assertEqual(len(writes), settled_writes)
+        self.assertEqual(self.transport.reads(), reads)
+        self.assertEqual(self.transport.writes, 1)
+        self.assertEqual(self.service.recovery_failures, 0)
+        self.assertEqual(self.service.health()["audit_projection_failures"], 0)
+        self.assertEqual(self.service.health()["conflict_hold_count"], 0)
+        self.assertFalse(self.audit_path.exists())
+
+    async def test_reenabling_audit_backfills_every_release_exactly_once(self):
+        self.audit.enabled = False
+        first = await self.held_task()
+        await self.decide(first)
+        second = await self.held_task()  # the entity is free again after the first release
+        await self.decide(second)
+        self.assertFalse(self.audit_path.exists())
+        self.audit.enabled = True  # enabled in place; the next sweep backfills
+        self.clock.advance(30)
+        await self.service.recover_once()
+        entries = self.release_entries()
+        self.assertEqual(sorted(item["task_id"] for item in entries),
+                         sorted((first.task_id, second.task_id)))
+        for request in (first, second):
+            sidecar = self.service._load_release(request.task_id)
+            self.assertEqual((sidecar["audit_recorded"], sidecar["audit_unrecorded_reason"]), (True, None))
+            entry = next(item for item in entries if item["task_id"] == request.task_id)
+            self.assertEqual(entry["audit_event_id"], digest({
+                "model": HOLD_RELEASE_AUDIT_MODEL, "release_id": self.service.hold_release_id(sidecar)}))
+            self.assertEqual(entry["timestamp"], sidecar["released_at"])
+        # Repeated passes, a restart and a same-ID replay never add a second entry.
+        replacement = self.build()
+        await replacement.reconcile(first.task_id)
+        for request in (first, second):
+            await self.assert_settled_once(request, replacement, dispatches=2)
+        self.assertEqual(len(self.release_entries()), 2)
+
+    async def test_write_failure_records_false_then_backfills_after_disable_and_reenable(self):
+        request = await self.held_task()
+        with patch.object(self.audit, "_write_safe_unlocked", side_effect=OSError("synthetic")):
+            result = await self.decide(request)
+        self.assertEqual((result["audit_recorded"], result["audit_unrecorded_reason"]),
+                         (False, "audit_write_failed"))
+        self.audit.enabled = False  # disabled before recovery retried: settled, no retry loop
+        failures = self.service.health()["audit_projection_failures"]
+        for _ in range(3):
+            self.clock.advance(30)
+            await self.service.recover_once()
+        sidecar = self.service._load_release(request.task_id)
+        # The reason is the last projection attempt's; still no entry is claimed.
+        self.assertEqual((sidecar["audit_recorded"], sidecar["audit_unrecorded_reason"]),
+                         (False, "audit_write_failed"))
+        self.assertEqual(self.service.health()["audit_projection_failures"], failures)
+        self.assertEqual(self.service.recovery_failures, 0)
+        self.assertEqual(self.release_entries(), [])
+        self.audit.enabled = True
+        await self.assert_settled_once(request, self.build())
+
+    async def test_a_disabled_logger_is_never_trusted_to_have_written(self):
+        # write_batch on a disabled logger returns the batch length; that
+        # convention is shared, so the service must not consult it.
+        self.audit.enabled = False
+        request = await self.held_task()
+        with patch.object(self.audit, "write_batch", wraps=self.audit.write_batch) as write_batch:
+            result = await self.decide(request)
+        write_batch.assert_not_called()
+        self.assertFalse(result["audit_recorded"])
+
+    async def test_inconsistent_audit_reason_is_corrupt(self):
+        request = await self.held_task()
+        await self.decide(request)
+        path = self.service._release_path(request.task_id)
+        value = json.loads(path.read_text())
+        for corrupt in ({**value, "audit_unrecorded_reason": "audit_disabled"},  # but recorded
+                        {**value, "audit_recorded": False, "audit_unrecorded_reason": "elsewhere"},
+                        {**value, "audit_recorded": False, "released_at": None,
+                         "audit_unrecorded_reason": "audit_disabled"}):
+            with self.subTest(corrupt=corrupt):
+                path.write_text(json.dumps(corrupt))
+                with self.assertRaisesRegex(FanRefusal, "fan_hold_release_corrupt"):
+                    self.service._load_release(request.task_id)
 
 
 class RestartTests(ObservingFixture):

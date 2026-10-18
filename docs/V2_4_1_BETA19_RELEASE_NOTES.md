@@ -88,7 +88,7 @@ All changes are in the shared typed fan service. `control_power`
      plus `percentage` for fan), with `same` or `DIFFERENT` and a verdict
      line, above the release button (Josh's added requirement). If that read
      fails, the page is 503 with no release button.
-   - The button carries a single-use token bound to the administrator, the
+   - The button carries a single-use token bound to the Ingress user, the
      task record, the prepared operation hash, the exact hold and the
      reviewed readback. A stale or reused token is 400.
    - The release makes one more read. If the state changed after the
@@ -105,6 +105,21 @@ All changes are in the shared typed fan service. `control_power`
      Completion is serialized and resumable: after a crash at any step, or a
      failed audit write, recovery finishes the release with exactly one
      audit entry. The receipt adds `hold_release_id` and `audit_recorded`.
+   - **Truthful audit status.** `audit_recorded` is `true` only when an
+     enabled audit logger confirmed the entry. With auditing disabled
+     (`audit_enabled: false`) the release still completes, `audit_recorded`
+     is `false` with `audit_unrecorded_reason: audit_disabled`, and nothing
+     retries while auditing stays off. A failed write gives
+     `audit_write_failed` and recovery retries it. When auditing is enabled
+     again, the recovery sweep backfills the one missing entry for each such
+     release (same event ID, original `released_at` timestamp) and then sets
+     `audit_recorded`. The result page and the receipt show both fields.
+   - "Exactly once" holds within the retained audit log (the live file and
+     its `.1` rotation). A crash between the entry write and the flag
+     update, followed by enough audit traffic to rotate the entry out of
+     both files before recovery runs, re-emits the same event ID; external
+     archives should deduplicate by `audit_event_id`. No hold is released
+     twice and nothing is dispatched.
    - Release is allowed whether or not the read state matches the request
      (confirmed by Josh). The receipt says `hold_released_state_matches` or
      `hold_released_state_differs`. The task's terminal outcome stays
@@ -117,7 +132,7 @@ All changes are in the shared typed fan service. `control_power`
 
 - **Stored formats.** The declaration, execution record, lock record and
   audit formats are unchanged. The only addition is the hold-release sidecar
-  (`typed-hold-release-v1`, closed fields including `audit_recorded`, ≤ 4 KiB, strictly validated; an
+  (`typed-hold-release-v1`, closed fields including `audit_recorded` and `audit_unrecorded_reason`, ≤ 4 KiB, strictly validated; an
   invalid sidecar fails closed and keeps the hold).
 - **Rollback** is reinstalling the beta.18 artifact. Beta.18 reads every
   record this release writes and ignores the sidecar directory. Its lease is

@@ -944,6 +944,7 @@ class IngressApprovalApplication:
                 f"{comparison}"
                 "<p>Dispatch: none. Outcome remains "
                 f"{escape(_text(result.get('terminal_outcome'), 96))}.</p>"
+                f"{_typed_audit_status(result)}"
                 f'<p><a href="{escape(f"{prefix}/typed", quote=True)}">'
                 "Return to typed hold release</a></p>",
                 prefix=prefix,
@@ -1073,6 +1074,21 @@ def _typed_state_value(value: Any, *, requested: bool) -> str:
     if value is None:
         return "any" if requested else "not reported"
     return _text(str(value), 64)
+
+
+def _typed_audit_status(result: Any) -> str:
+    """State whether the release audit entry exists; never imply one that does not."""
+    if result.get("audit_recorded") is True:
+        return '<p class="typed-audit-status">Audit entry: recorded.</p>'
+    reason = result.get("audit_unrecorded_reason")
+    detail = {
+        "audit_disabled": "auditing is disabled; the entry is written when auditing is enabled",
+        "audit_write_failed": "the audit write failed; recovery retries it",
+    }.get(reason, "not confirmed")
+    return (
+        '<p class="typed-audit-status">Audit entry: not recorded ('
+        f"{escape(_text(reason or 'unknown', 32))}: {escape(detail)}).</p>"
+    )
 
 
 def _typed_state_comparison(rows: Any, matches: bool, read_label: str) -> str:

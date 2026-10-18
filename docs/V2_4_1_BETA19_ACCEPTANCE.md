@@ -34,7 +34,7 @@ Bind the following:
 - the passing PR `validate` run for that exact head;
 - the Evidence tier log named in the PR.
 
-### Offline proof (`tests/test_hamcp192_observing_fix.py`, 35 tests)
+### Offline proof (`tests/test_hamcp192_observing_fix.py`, 41 tests)
 
 The tests use a deterministic fake clock and fake sleep, a synthetic slow
 transport and the real gateway, provider, signed Core authority, shared F3
@@ -70,14 +70,23 @@ executor, stores, locks and audit.
   recovery without provider access; the review returns the requested and
   freshly read state side by side; a state change after review refuses the
   release and changes nothing; an invalid sidecar fails closed.
-- `HoldReleaseExactlyOnceTests` (9), with the real audit logger: a crash
+- `HoldReleaseExactlyOnceTests` (15), with the real audit logger: a crash
   after the decision, after the hold is cleared, after `released_at`, after
   the audit write and after `audit_recorded`, each followed by a restart
   with a replacement service, leaves exactly one audit entry with the stable
   ID and a settled hold; a failed audit write is retried by recovery; two
   concurrent finishers write one entry; without an audit target the release
   still settles; `audit_recorded` without `released_at` is rejected as
-  corrupt.
+  corrupt. Truthful audit status (Codex M3): Codex's probe through the real
+  Ingress pages with auditing disabled gives 200, a result page and receipt
+  saying `audit_recorded: false` with `audit_disabled`, and no entry; after
+  re-enabling and a restart, recovery backfills exactly one entry and sets
+  the flag. While disabled, sweeps and a same-ID replay neither retry,
+  rewrite the sidecar nor count failures, and the disabled logger is never
+  asked to write. Re-enabling backfills one entry for each of two releases;
+  repeated sweeps, a restart and a replay add none. A failed write gives
+  `audit_write_failed`, stays settled if auditing is then disabled, and is
+  backfilled once re-enabled. An inconsistent or unknown reason is corrupt.
 - `HoldReleaseIngressTests` (3): the Ingress release needs the Ingress
   principal (403 with no read otherwise) and a fresh single-use binding (400 when
   stale); the review page shows the requested and freshly read values per
@@ -108,6 +117,11 @@ above was run against it. Each one must fail:
 9. Blocker hints computed with a separate filter instead of the shared
    predicate.
 10. The lock check no longer using the shared predicate.
+11. Recovery treating an unaudited release as settled (Codex's delta-review
+    mutation).
+12. `audit_recorded` set to `true` with auditing disabled, so no entry is
+    persisted (Codex M3).
+13. The audit logger's enabled flag not checked (Codex M3).
 
 ## 2. Release CI and publication
 
@@ -214,7 +228,11 @@ authorization.
       `retained_locks`, `hold_release.audit_recorded: true` and a
       `hold_release_id`. Confirm in `get_audit_log` exactly one
       `<kind>_hold_release_action` entry for the task, carrying that
-      `hold_release_id`.
+      `hold_release_id`. If auditing is disabled on the installed add-on,
+      the result page instead says "Audit entry: not recorded
+      (audit_disabled …)", the receipt shows `audit_recorded: false` with
+      `audit_unrecorded_reason: audit_disabled`, and no entry exists until
+      auditing is enabled again, when recovery backfills it.
    6. Repeat step 3: the hold counts are `0`.
 
    To prove the release path without a real hold, rely on the offline

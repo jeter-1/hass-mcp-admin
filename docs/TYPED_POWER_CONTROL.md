@@ -139,7 +139,8 @@ shared service:
 The hold release is approval-gated, shows the requested and freshly read
 state side by side before approval, records a fresh readback, writes one
 `power_hold_release_action` audit entry exactly once (keyed by the stable
-`hold_release_id`) and never dispatches. Blocker hints use the lock store's
+`hold_release_id`; reported as not recorded, with a reason, while auditing is
+disabled, then backfilled once it is enabled) and never dispatches. Blocker hints use the lock store's
 own acquisition predicate, including expired leases that recovery has not yet
 reconciled. The page shares the existing approval pages' identity check; the
 system-wide administrator-role check is deferred to HAMCP-205. See

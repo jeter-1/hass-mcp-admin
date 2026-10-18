@@ -18,7 +18,7 @@ of scope and would be reported before it is changed.
 | `R/f3/executor.py` | 3 | opt-in `final_read_at_deadline` flag (default off), used only by typed fan/power |
 | `R/f3/locks.py` | 4 (amendment 3) | one shared `holder_blocks` predicate, used by acquisition and by the receipt's blocker naming; behaviour-identical refactor |
 | `R/fan/locks.py` | 2 | the shared `FAN_LOCK_TIMING` (30 s) constant, also used by the promotion handle (was 120 s) |
-| `R/approval_web.py` | 6 | Ingress admin review page and POST for a typed hold release, copying the F3 reconciliation CSRF/binding pattern |
+| `R/approval_web.py` | 6 | Ingress review page and POST for a typed hold release, copying the F3 reconciliation CSRF/binding pattern (trusted Ingress and identity-presence checks only; the administrator-role check is deferred to HAMCP-205, amendment 3 H1) |
 | `.release/next-version` | release | consumed by the promotion script |
 | `hass_mcp_engineering_beta/config.yaml` | release | written by `promote_next_release.py --apply` |
 | `R/version.py` | release | written by the promotion script |
@@ -191,11 +191,14 @@ public receipt fields.
 
 ### Path chosen: an operation on the existing external-approval path, with no MCP tool and no plan type
 
-The smallest addition is the existing **Ingress administrator reconciliation
-path** that F3 already uses to release a conflict hold:
+The smallest addition is the existing **Ingress reconciliation path** that F3
+already uses to release a conflict hold:
 
 - `approval_web.py` `/f3/{child_id}` and `/f3/{child_id}/reconcile`;
-- the admin principal check (`home_assistant_admin_ingress:<user>`);
+- the Ingress principal check (`home_assistant_admin_ingress:<user>`). This is
+  a principal label built from the trusted Ingress peer and a well-formed
+  user ID; despite its name it does **not** prove the Home Assistant
+  administrator role (amendment 3, H1, deferred to HAMCP-205);
 - a single-use CSRF token bound to principal, record generation, prepared
   hash and `key:generation` hold binding;
 - `F3Runtime.reconcile_child` → `release_hold_after_verified_resolution`.
@@ -240,7 +243,8 @@ external approval.
 3. **`FanService.release_hold(task_id, *, record_generation, prepared_hash, hold_binding, reviewed_readback_hash, authorized_principal)`:**
    1. Refuse unless the principal starts with
       `home_assistant_admin_ingress:`. A direct call without the Ingress
-      principal is refused.
+      principal is refused. The prefix records the Ingress identity; it is
+      not an administrator-role check (deferred to HAMCP-205).
    2. Refuse unless the task is not active, is terminal
       `manual_review_required`, the prepared hash matches, the hold is
       settled and matches the binding, and no release has been recorded.
@@ -328,8 +332,12 @@ external approval.
   therefore covers exactly the state that was shown. This adds a refusal
   only; it adds no write, dispatch or stored field.
 - **Read reachability:** the review GET now performs one provider read
-  (`ha_get_state`) after `_require_admin`. A request without Ingress and an
-  administrator gets 403 and causes no read (tested).
+  (`ha_get_state`) after `_require_admin`. Despite its name, `_require_admin`
+  checks only the trusted Ingress peer and path and a well-formed user ID. A
+  request without Ingress or without a user ID gets 403 and causes no read
+  (tested). An authenticated non-administrator Ingress user is **not**
+  refused and does cause the read (Codex H1, deferred by Josh to HAMCP-205,
+  amendment 3).
 - **Files:** `R/fan/service.py`, `R/approval_web.py` (both already on the
   list). No new file.
 
@@ -362,7 +370,7 @@ external approval.
 - `audit_recorded = true` with `released_at = null` is rejected as corrupt
   (fail closed).
 - A release counts as settled only once it is released, owns nothing, and is
-  audited (or no audit target is configured).
+  audited (or auditing is disabled; amendment 4).
 - The receipt and status add `hold_release_id` and `audit_recorded`.
 
 **M2 — one "currently blocks" predicate.**
@@ -382,6 +390,58 @@ external approval.
   lease, `expected_release_at` is `null`, `lease_expired_at` gives the
   expiry, and `release` is `"recovery_sweep_reconciles_expired_lease"`.
   Requested shared keys are listed only when the predicate says they block.
+
+### Amendment 4 — truthful `audit_recorded` and backfill (Codex M3, 2026-10-18)
+
+The production `AuditLogger` returns the batch length **without writing**
+when it is disabled (the supported `audit_enabled: false` option). Amendment
+3 treated that return as a confirmed write, so a release with auditing off
+reported and persisted `audit_recorded = true` without any entry, and later
+enabling auditing never projected it. The shared logger's return convention
+is unchanged (other callers rely on it); the hold release no longer consults
+it while the logger is disabled.
+
+- The sidecar gains one more closed completion field,
+  `audit_unrecorded_reason`: `null`, `audit_disabled` or
+  `audit_write_failed`. Like `audit_recorded`, it is excluded from the
+  release ID, so the audit event ID is unchanged. The sidecar format has not
+  shipped, so this is not a stored-format change for any released build.
+- `audit_recorded = true` only after an **enabled** logger confirms exactly
+  one entry (written, or a retained entry with the same event ID). It then
+  clears the reason.
+- Auditing disabled (or no audit logger): the release completes,
+  `audit_recorded` stays `false`, the reason is `audit_disabled`, and the
+  release counts as settled, so there is no retry loop or failure count
+  while auditing is off.
+- An enabled logger that does not confirm the write: `audit_recorded`
+  stays `false`, the reason is `audit_write_failed`,
+  `audit_projection_failures` counts it, and recovery retries it.
+- The reason is the last attempt's result. A write-failed release that is
+  settled because auditing was then disabled keeps `audit_write_failed`;
+  neither reason ever claims an entry.
+- **Backfill:** once an enabled logger is configured (after the add-on
+  option is turned on and the add-on restarts, or in place), every release
+  with `audit_recorded = false` is no longer settled. The recovery sweep
+  finishes it through the same `_finish_hold_release` routine and writes the
+  missing entry with the event ID derived from the release ID and the
+  original `released_at` timestamp, then sets `audit_recorded = true`. The
+  sweep handles at most 8 candidates per 30 s pass, so a large backlog takes
+  several passes.
+- The sidecar rejects a reason together with `audit_recorded = true`, an
+  unknown reason, and a reason without `released_at`.
+- The receipt's `hold_release`, the `release_hold` result and the Ingress
+  result page show `audit_recorded` and `audit_unrecorded_reason`. The page
+  says "Audit entry: recorded" only when the flag is true; otherwise it says
+  "not recorded" with the reason.
+- **Retention limit (Codex delta residual, Low):** "exactly once" means one
+  entry within the audit logger's retained log (the live file and its one
+  `.1` rotation, 5 MiB each). If the process dies after the entry is
+  written but before `audit_recorded` is persisted, and enough other audit
+  traffic then rotates that entry out of both files before recovery runs,
+  recovery writes the same event ID and timestamp again. No hold is released
+  twice and nothing is dispatched; external archives should deduplicate by
+  `audit_event_id`. The nominal 30 s sweep does not bound recovery during
+  downtime, repeated failures or a backlog.
 
 **H1 (approval-page administrator role) — deferred to HAMCP-205: the /typed
 pages share the existing pages' identity check; the system-wide
@@ -405,13 +465,17 @@ deterministic fake clock and a fake sleep, and offline fixtures.
 | device reports just after the deadline | verified by the final read (would be manual review without it) |
 | device never matches | `observing` until the deadline; the first sweep after it does one more read, then manual review with `post_dispatch_evidence_deadline_expired` and an entity hold |
 | lock conflict | the second task's receipt names the blocker: task ID, state `observing`, expected release time and deadline |
-| hold release | Ingress admin approval required (403, 400 stale CSRF, direct call refused without the admin principal); readback recorded; hold cleared; audit entries; no dispatch; terminal outcome unchanged; mismatching readback recorded truthfully; interrupted release finished by `reconcile` |
+| hold release | Ingress approval with a user identity required (403 without Ingress or a user ID, 400 stale CSRF, direct call refused without the Ingress principal; the administrator role is not checked, HAMCP-205); readback recorded; hold cleared; audit entries; no dispatch; terminal outcome unchanged; mismatching readback recorded truthfully; interrupted release finished by `reconcile` |
 | restart mid-observation | process loss during the inline poll; a replacement service verifies after the claim expires, with no second dispatch |
 | F3 default | executor without the flag keeps the pre-read deadline check |
-| side-by-side review (amendment 2) | the review page and the release result show requested vs freshly read values per field with `same`/`DIFFERENT` and a verdict, before the form; a state change after review refuses the release (409) and changes nothing; a failed review read gives 503 with no form; no read without an admin |
+| side-by-side review (amendment 2) | the review page and the release result show requested vs freshly read values per field with `same`/`DIFFERENT` and a verdict, before the form; a state change after review refuses the release (409) and changes nothing; a failed review read gives 503 with no form; no read without Ingress and a user ID |
 | crash points (amendment 3, M1) | a crash after the decision, after the hold is cleared, after `released_at`, after the audit write and after `audit_recorded`, then a restart with a replacement service: exactly one audit entry with the stable ID, and a consistent, settled hold state |
 | audit failure (amendment 3, M1) | a failed audit write leaves `audit_recorded = false`; recovery retries and settles with one entry |
 | concurrent finishers (amendment 3, M1) | two threads finishing the same release write one audit entry |
+| audit disabled (amendment 4, M3) | Codex's probe through the real Ingress pages: 200, the page and receipt say `audit_recorded = false` with `audit_disabled`, no entry exists; re-enabled with a restart, recovery backfills exactly one entry and sets the flag; while disabled, sweeps and a same-ID replay neither retry, rewrite nor count failures; a disabled logger's `write_batch` is never consulted |
+| backfill (amendment 4, M3) | two releases with auditing off; enabling it lets the next sweep write one entry for each (event ID from the release ID, timestamp = `released_at`); repeated sweeps, a restart and a same-ID replay add none |
+| write failure (amendment 4, M3) | a failed write gives `false` with `audit_write_failed`; disabled before the retry it stays settled with no new failures; re-enabled, recovery backfills one entry |
+| sidecar consistency (amendment 4, M3) | a reason with `audit_recorded = true`, an unknown reason, or a reason without `released_at` is rejected as corrupt |
 | expired blocker (amendment 3, M2) | an expired, unreconciled lease is named (`expired_pending_recovery`); an active shared holder is not named; both call sites use the one predicate |
 
 Each mutation must make at least one test fail:
@@ -425,7 +489,11 @@ Each mutation must make at least one test fail:
 - (amendment 3, M1) release completion not serialized;
 - (amendment 3, M1) `audit_recorded` set without a confirmed write;
 - (amendment 3, M2) hints computed with a separate filter;
-- (amendment 3, M2) the lock check stops using the shared predicate.
+- (amendment 3, M2) the lock check stops using the shared predicate;
+- (Codex delta review) recovery treats an unaudited release as settled;
+- (amendment 4, M3) `audit_recorded = true` set with auditing disabled, so no
+  entry is persisted;
+- (amendment 4, M3) the logger's enabled flag is not checked.
 
 ## 9. HAMCP-162 overlap
 

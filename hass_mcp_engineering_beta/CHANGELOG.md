@@ -27,8 +27,9 @@ Builds on 2.4.1-beta.18.
   facts and readback, refuses if the state changed after review, records a
   fresh readback in an additive sidecar and exactly one audit entry (keyed by
   a stable `hold_release_id`, retried by recovery after a crash or failed
-  write, `audit_recorded` set only after a confirmed write), and never
-  dispatches. The outcome stays `manual_review_required`, reported as
+  write, `audit_recorded` set only after an enabled audit logger confirms the
+  write, otherwise `false` with `audit_disabled` or `audit_write_failed` and
+  backfilled by recovery once auditing is enabled), and never dispatches. The outcome stays `manual_review_required`, reported as
   `hold_released_state_matches` or `hold_released_state_differs`. The
   administrator-role check for every approval page, including `/typed`, is
   deferred to HAMCP-205.

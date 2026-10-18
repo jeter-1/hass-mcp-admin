@@ -41,11 +41,17 @@ HOLD_RELEASE_MODEL = "typed-hold-release-v1"
 HOLD_RELEASE_FIELDS = frozenset({
     "model", "task_id", "prepared_hash", "record_generation", "hold_key", "hold_generation",
     "authority_hash", "readback_hash", "readback_matches_requested_state",
-    "authorized_at", "released_at", "audit_recorded",
+    "authorized_at", "released_at", "audit_recorded", "audit_unrecorded_reason",
 })
 # The authorized decision; completion fields are excluded, so the release ID
 # (and the audit event ID derived from it) never changes while it finishes.
-HOLD_RELEASE_DECISION_FIELDS = HOLD_RELEASE_FIELDS - {"released_at", "audit_recorded"}
+HOLD_RELEASE_DECISION_FIELDS = HOLD_RELEASE_FIELDS - {
+    "released_at", "audit_recorded", "audit_unrecorded_reason"}
+# Why a completed release has no confirmed audit entry yet (Codex M3).
+# ``audit_disabled``: no enabled audit logger; settled until auditing is
+# enabled, then recovery backfills the entry. ``audit_write_failed``: the
+# enabled logger did not confirm the write; recovery retries it.
+HOLD_RELEASE_AUDIT_UNRECORDED_REASONS = frozenset({"audit_disabled", "audit_write_failed"})
 HOLD_RELEASE_AUDIT_MODEL = "typed-hold-release-audit-v1"
 MAX_HOLD_RELEASE_ITEMS = 100
 
@@ -477,6 +483,7 @@ class FanService:
             "released": release["released_at"] is not None,
             "hold_release_id": self.hold_release_id(release),
             "audit_recorded": release["audit_recorded"],
+            "audit_unrecorded_reason": release["audit_unrecorded_reason"],
             "authorized_at": release["authorized_at"],
             "released_at": release["released_at"],
             "readback_matches_requested_state": matches,
@@ -506,7 +513,10 @@ class FanService:
                     or type(value["hold_generation"]) is not int
                     or type(value["readback_matches_requested_state"]) is not bool
                     or type(value["audit_recorded"]) is not bool
-                    or (value["audit_recorded"] and value["released_at"] is None)):
+                    or (value["audit_recorded"] and value["released_at"] is None)
+                    or (value["audit_unrecorded_reason"] is not None
+                        and (value["audit_unrecorded_reason"] not in HOLD_RELEASE_AUDIT_UNRECORDED_REASONS
+                             or value["audit_recorded"] or value["released_at"] is None))):
                 raise ValueError
             for key in ("prepared_hash", "authority_hash", "readback_hash"):
                 validate_sha256(value[key], field_name=key)
@@ -627,13 +637,15 @@ class FanService:
 
     async def release_hold(self, task_id, *, record_generation, prepared_hash,
                            hold_binding, reviewed_readback_hash, authorized_principal):
-        """Release one manual-review hold on an Ingress administrator decision.
+        """Release one manual-review hold on an Ingress user's decision.
 
         The decision is the external approval of the reviewed readback. A
         fresh readback is recorded first and reported truthfully; it must
         equal the reviewed one, so the decision covers exactly the state that
         was shown. The task's outcome stays ``manual_review_required``. No
-        provider dispatch is reachable here.
+        provider dispatch is reachable here. The principal prefix records the
+        Ingress identity; it does not verify the administrator role
+        (deferred to HAMCP-205).
         """
         if (not isinstance(authorized_principal, str)
                 or not len(ADMIN_INGRESS_PREFIX) < len(authorized_principal) <= 180
@@ -657,7 +669,7 @@ class FanService:
             "authority_hash": digest({"principal": authorized_principal}),
             "readback_hash": readback_hash, "readback_matches_requested_state": matches,
             "authorized_at": self.now().isoformat(), "released_at": None,
-            "audit_recorded": False,
+            "audit_recorded": False, "audit_unrecorded_reason": None,
         }
         with self.transaction():
             # The read awaited; re-check the exact reviewed facts before the
@@ -675,6 +687,7 @@ class FanService:
                 "readback_matches_requested_state": matches,
                 "readback_evidence_hash": readback_hash,
                 "audit_recorded": release["audit_recorded"],
+                "audit_unrecorded_reason": release["audit_unrecorded_reason"],
                 "comparison": self._state_comparison(prepared.request, state),
                 "terminal_outcome": record.normalized_outcome, "dispatch": "none"}
 
@@ -688,6 +701,9 @@ class FanService:
         entry -> ``audit_recorded``. A crash or audit failure after any step
         leaves a state the next recovery pass completes; the audit entry's ID
         derives from the release ID, so a re-projection is deduplicated.
+        With auditing disabled the release completes with
+        ``audit_recorded=false`` and the entry is backfilled here once an
+        enabled logger is configured.
         """
         with self.transaction():
             release = self._load_release(task_id)
@@ -727,11 +743,23 @@ class FanService:
         return digest({"model": HOLD_RELEASE_MODEL,
                        "decision": {key: release[key] for key in HOLD_RELEASE_DECISION_FIELDS}})
 
+    def _audit_enabled(self):
+        # A disabled AuditLogger reports success without writing, so only an
+        # explicitly enabled logger can confirm an entry.
+        audit = self.executions.audit
+        return audit is not None and getattr(audit, "enabled", False) is True
+
+    def _audit_unrecorded(self, release, reason):
+        if release["audit_unrecorded_reason"] != reason:
+            release = {**release, "audit_unrecorded_reason": reason}
+            self._write_release(release)
+        return release
+
     def _audit_hold_release(self, task_id, release):
         """Project the completed release once; ``audit_recorded`` only after a confirmed write."""
+        if not self._audit_enabled():
+            return self._audit_unrecorded(release, "audit_disabled")
         audit = self.executions.audit
-        if audit is None:
-            return release
         prepared = self.load(task_id)
         record = self.executions.get(task_id)
         kind = self.executions.kind
@@ -764,8 +792,8 @@ class FanService:
         if written != 1:
             # Not recorded: recovery retries the same entry on its next pass.
             self.executions.audit_projection_failures += 1
-            return release
-        release = {**release, "audit_recorded": True}
+            return self._audit_unrecorded(release, "audit_write_failed")
+        release = {**release, "audit_recorded": True, "audit_unrecorded_reason": None}
         self._write_release(release)
         return release
 
@@ -792,7 +820,7 @@ class FanService:
             return self.receipt(task_id)
         release = self._load_release(task_id)
         if release is not None:
-            # An administrator decision exists: only finish it. No executor,
+            # A release decision exists: only finish it. No executor,
             # adapter or provider path is entered for a released hold.
             self._finish_hold_release(task_id)
             return self.receipt(task_id)
@@ -818,8 +846,10 @@ class FanService:
         if release is None:
             return self.locks.hold_settled(record, owned)
         # Settled once released and audited; a pending audit entry is retried.
+        # With auditing disabled it is settled without an entry (no retry
+        # loop); once auditing is enabled the sweep backfills the entry.
         return (release["released_at"] is not None and not owned
-                and (release["audit_recorded"] or self.executions.audit is None))
+                and (release["audit_recorded"] or not self._audit_enabled()))
 
     async def recover_once(self):
         # Bounded sweep; an active owner wins. Observation cannot turn a saved

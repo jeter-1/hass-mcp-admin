@@ -153,7 +153,12 @@ The audit entry is written exactly once: its event ID derives from a stable
 `hold_release_id` over the authorized decision, the audit logger deduplicates
 by that ID, and the sidecar's `audit_recorded` is set only after a confirmed
 write. A crash or a failed audit write at any step is finished by recovery
-without a second entry. The
+without a second entry. With auditing disabled, the release completes with
+`audit_recorded: false` and `audit_unrecorded_reason: audit_disabled` (a
+failed write reports `audit_write_failed`); once auditing is enabled again,
+recovery backfills the missing entry once and sets `audit_recorded`. The
+"exactly once" guarantee covers the retained audit log (the live file and its
+`.1` rotation). The
 task outcome stays `manual_review_required`, and the readback match is reported
 truthfully. Release never dispatches. Recovery may finish an interrupted release
 from the sidecar without any provider access. An invalid sidecar fails closed
