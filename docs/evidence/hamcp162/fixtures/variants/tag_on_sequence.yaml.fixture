@@ -1,0 +1,2 @@
+refs:
+  s: !include [a, b]

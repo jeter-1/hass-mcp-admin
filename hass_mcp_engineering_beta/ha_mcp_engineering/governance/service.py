@@ -20,6 +20,7 @@ import uuid
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from ..audit import AuditLogger
+from ..clients.paths import UnsafeRequestPathError, rest_path
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..errors import (
     DASHBOARD_ADMISSION_REFUSAL_CATEGORIES,
@@ -467,7 +468,7 @@ class AutomationGateway:
     async def get(self, automation_id: str) -> dict[str, Any] | None:
         value = await self.client.request(
             "GET",
-            f"/config/automation/config/{automation_id}",
+            rest_path("/config/automation/config/{}", automation_id),
             expected_statuses=frozenset({404}),
         )
         if isinstance(value, ExpectedHttpStatus) and value.status == 404:
@@ -485,9 +486,19 @@ class AutomationGateway:
 
     async def write(self, automation_id: str, config: dict[str, Any]) -> Any:
         try:
+            path = rest_path("/config/automation/config/{}", automation_id)
+        except UnsafeRequestPathError as exc:
+            raise ConfigurationMutationNotDispatchedError(
+                details={
+                    "operation": "automation_configuration_write",
+                    "reason": "invalid_identifier",
+                    "provider_response_received": False,
+                }
+            ) from exc
+        try:
             return await self.client.request(
                 "POST",
-                f"/config/automation/config/{automation_id}",
+                path,
                 body=configuration_write_config("automation", config),
             )
         except HomeAssistantApiError as exc:
@@ -506,7 +517,7 @@ class AutomationGateway:
             raise
 
     async def validate(self) -> Any:
-        return await self.client.request("POST", "/config/core/check_config")
+        return await self.client.request("POST", rest_path("/config/core/check_config"))
 
 
 class ChangeGovernanceService:

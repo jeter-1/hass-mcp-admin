@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, patch
 
 from jsonschema import validate
 from mcp.server.fastmcp import FastMCP
+from yarl import URL
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +63,7 @@ from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     _CoreVerificationAdapter,
 )
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E402
 from ha_mcp_engineering.clients.websocket import (  # noqa: E402
     HomeAssistantWebSocketClient,
@@ -325,6 +327,7 @@ class _RawJsonSnapshotSession(_ProbeSession):
         self.validation_payload = validation_payload
 
     def get(self, url, **_kwargs):
+        url = str(url)  # HAMCP-200: the transport passes a verified yarl URL.
         path = next(path for path in self.rest_payloads if url.endswith(path))
         return _RawJsonResponse(self.rest_payloads[path])
 
@@ -1783,7 +1786,7 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
 
         session = Session()
         result = await AiohttpCoreSnapshotSource(settings())._rest_json(
-            session, "/config"
+            session, rest_path("/config")
         )
 
         self.assertEqual(result, {"version": "2026.9.1"})
@@ -1819,7 +1822,7 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
             RuntimeError, "core_probe_response_oversized"
         ):
             await AiohttpCoreSnapshotSource(settings())._rest_json(
-                Session(), "/states"
+                Session(), rest_path("/states")
             )
 
     async def test_check_config_probe_uses_only_the_exact_read_only_endpoint(self):
@@ -1869,12 +1872,13 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
             session.calls,
             [
                 (
-                    configured.api_url + "/config/core/check_config",
+                    URL(configured.api_url + "/config/core/check_config"),
                     {
                         "headers": {
                             "Authorization": f"Bearer {configured.ha_token}",
                             "Content-Type": "application/json",
-                        }
+                        },
+                        "allow_redirects": False,
                     },
                 )
             ],
@@ -2928,20 +2932,24 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             {"ha_get_operation_status"},
         )
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 87)
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 30)
+        # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
+        # never a stock policy entry (30 -> 31).
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
         self.assertEqual(
             {
                 item.upstream_name
                 for item in policy.tools
                 if item.is_read_route or item.classification == "held_for_canary"
             },
-            set(DELEGATED_CORE_REQUIREMENTS) - {"ha_manage_blueprints"},
+            set(DELEGATED_CORE_REQUIREMENTS)
+            - {"ha_manage_blueprints", "ha_config_get_yaml"},
         )
         current = registry.by_version["8.5.0"].policy
         self.assertEqual(
             {item.upstream_name for item in current.tools
              if item.is_read_route or item.classification == "held_for_canary"},
-            set(DELEGATED_CORE_REQUIREMENTS) - {"ha_get_blueprint"},
+            set(DELEGATED_CORE_REQUIREMENTS)
+            - {"ha_get_blueprint", "ha_config_get_yaml"},
         )
         self.assertEqual(
             delegated_requirements("ha_manage_blueprints"),
@@ -3632,7 +3640,7 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
                 await release_provider.wait()
                 try:
                     await HomeAssistantRestClient(configured).request(
-                        "GET", "/states"
+                        "GET", rest_path("/states")
                     )
                 except Exception:
                     pass
@@ -3732,7 +3740,7 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
             async def __call__(self, _scope, receive, send):
                 await receive()
                 await HomeAssistantRestClient(configured).request(
-                    "GET", "/config"
+                    "GET", rest_path("/config")
                 )
                 first_provider_call_finished.set()
                 await continue_request.wait()

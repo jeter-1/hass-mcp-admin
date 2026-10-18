@@ -10,6 +10,7 @@ import re
 import time
 from typing import Any
 
+from ..clients.paths import rest_path
 from ..dependency.extraction import extract_document, resolve_blueprint_roles
 from ..dependency.provider import _read_blueprint
 from ..errors import AutomationNotFoundError, EntityNotFoundError, HomeAssistantTimeoutError
@@ -120,7 +121,7 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
         config_started = time.perf_counter()
         try:
             configuration = await self.rest_client.request(
-                "GET", f"/config/automation/config/{automation_id}"
+                "GET", rest_path("/config/automation/config/{}", automation_id)
             )
             if not isinstance(configuration, dict):
                 raise TypeError("automation configuration response is invalid")
@@ -169,7 +170,12 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
                 automation["disabled"] = bool(registry_match.get("disabled_by"))
                 try:
                     matched = await self.rest_client.request(
-                        "GET", f"/states/{registry_match.get('entity_id')}"
+                        "GET",
+                        rest_path(
+                            "/states/{}",
+                            registry_match.get("entity_id"),
+                            kinds=("entity_id",),
+                        ),
                     )
                 except EntityNotFoundError:
                     matched = None
@@ -287,7 +293,9 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
         async def fetch(entity_id):
             try:
                 async with semaphore:
-                    state = await self.rest_client.request("GET", f"/states/{entity_id}")
+                    state = await self.rest_client.request(
+                        "GET", rest_path("/states/{}", entity_id, kinds=("entity_id",))
+                    )
                 value = str(state.get("state", "")).lower() if isinstance(state, dict) else ""
                 status = "unavailable" if value == "unavailable" else "unknown" if value == "unknown" else "available"
                 return entity_id, status

@@ -1,0 +1,4 @@
+nk:
+  true: bool_true
+  "True": str_true
+  plain: plain_value

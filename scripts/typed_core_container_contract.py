@@ -11,6 +11,7 @@ from uuid import uuid4
 async def failure_contract(fan, power, rest, telemetry, kind, output, *, check, save, core_version="2026.9.3"):
     from ha_mcp_engineering.fan.contracts import FanRequest, digest
     from ha_mcp_engineering.power.contracts import PowerRequest
+    from ha_mcp_engineering.clients.paths import rest_path
 
     for family, service, entity in (
         ("fan", fan, "fan.hamcp_contract_fan"),
@@ -23,7 +24,7 @@ async def failure_contract(fan, power, rest, telemetry, kind, output, *, check, 
                 return FanRequest(**fields, percentage=50 if action == "turn_on" else None)
             return PowerRequest(**fields)
 
-        baseline = await rest.request("GET", "/states/" + entity)
+        baseline = await rest.request("GET", rest_path("/states/{}", entity, kinds=("entity_id",)))
         check(baseline["state"] == "off", "fault_fixture_not_off")
         initial_calls = baseline["attributes"].get("synthetic_service_calls")
         original_prepare = service.adapter.prepare
@@ -34,7 +35,7 @@ async def failure_contract(fan, power, rest, telemetry, kind, output, *, check, 
             prepared = await original_prepare(*args, **kwargs)
             if not injected:
                 injected = True
-                await rest.request("POST", "/states/" + entity, {
+                await rest.request("POST", rest_path("/states/{}", entity, kinds=("entity_id",)), {
                     "state": "on", "attributes": baseline["attributes"],
                 })
             return prepared
@@ -51,7 +52,7 @@ async def failure_contract(fan, power, rest, telemetry, kind, output, *, check, 
             save(output, f"{kind}-{family}-stale-refusal.json", refused)
         finally:
             service.adapter.prepare = original_prepare
-            await rest.request("POST", "/states/" + entity, {
+            await rest.request("POST", rest_path("/states/{}", entity, kinds=("entity_id",)), {
                 "state": "off", "attributes": baseline["attributes"],
             })
 
@@ -100,7 +101,7 @@ async def failure_contract(fan, power, rest, telemetry, kind, output, *, check, 
             check(any(event["event_type"] == "recovery_claimed" for event in
                       replacement.executions.get(uncertain_request.task_id).events),
                   "recovery_not_claimed")
-            readback = await rest.request("GET", "/states/" + entity)
+            readback = await rest.request("GET", rest_path("/states/{}", entity, kinds=("entity_id",)))
             check(readback["state"] == "on", "recovery_independent_state_mismatch")
             if initial_calls is not None:
                 check(readback["attributes"]["synthetic_service_calls"] == initial_calls + 1,
@@ -116,7 +117,7 @@ async def failure_contract(fan, power, rest, telemetry, kind, output, *, check, 
         restored = await service.control(restore_request)
         check(restored["state"] == "succeeded_verified" and restored["provider_attempt_count"] == 1,
               "recovery_restoration_failed")
-        readback = await rest.request("GET", "/states/" + entity)
+        readback = await rest.request("GET", rest_path("/states/{}", entity, kinds=("entity_id",)))
         check(readback["state"] == "off", "recovery_fixture_not_restored")
         if initial_calls is not None:
             check(readback["attributes"]["synthetic_service_calls"] == initial_calls + 2,
