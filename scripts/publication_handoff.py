@@ -166,46 +166,10 @@ def check_receipt(value, run_id, attempt):
     require(value["source_event"] in {"pull_request_target", "issue_comment"}, "receipt_event")
 
 
-def config_version(ref, run_git):
-    """Bind the bounded version spelling to one semantic root YAML field.
-
-    Compose nodes without constructing objects or expanding alias graphs.
-    This is eligibility, not full configuration or release validation. Import
-    the locked parser only here: production of receipts/claims remains stdlib.
-    """
-    text = run_git("show", f"{sha(ref)}:hass_mcp_engineering_beta/config.yaml")
-    require(len(text.encode("utf-8")) <= 65_536, "release_version_unavailable")
-    try:
-        import yaml
-    except ImportError as exc:
-        raise Refusal("release_version_parser_unavailable") from exc
-    try:
-        root = yaml.compose(text, Loader=yaml.SafeLoader)
-    except (yaml.YAMLError, RecursionError) as exc:
-        raise Refusal("release_version_unavailable") from exc
-    string_tag = "tag:yaml.org,2002:str"
-    require(isinstance(root, yaml.MappingNode) and root.tag == "tag:yaml.org,2002:map",
-            "release_version_unavailable")
-    # Merge and complex keys cannot supply implicit version authority. Inspect
-    # nodes before any constructor can discard duplicate or aliased root keys.
-    require(all(isinstance(key, yaml.ScalarNode) and key.tag == string_tag
-                for key, _ in root.value), "release_version_unavailable")
-    versions = [value for key, value in root.value if key.value == "version"]
-    require(len(versions) == 1 and isinstance(versions[0], yaml.ScalarNode)
-            and versions[0].tag == string_tag, "release_version_unavailable")
-    candidates = [line for line in text.splitlines()
-                  if re.match(r"^(?:version|[\"']version[\"'])[ \t]*:", line)]
-    require(len(candidates) == 1, "release_version_unavailable")
-    value = r"[0-9A-Za-z][0-9A-Za-z.+-]{0,63}"
-    match = re.fullmatch(rf"version:[ \t]*(?:\"({value})\"|'({value})'|({value}))[ \t]*",
-                         candidates[0])
-    require(match is not None, "release_version_unavailable")
-    version = next(item for item in match.groups() if item is not None)
-    require(version == versions[0].value, "release_version_unavailable")
-    return version
-
-
-def verify(run_id, attempt, authority, api=read_api, run_git=git):
+def verify(run_id, attempt, authority, api=read_api, run_git=git, *, version_of):
+    """Verify the handoff; ``version_of(ref, run_git)`` supplies the locked
+    YAML version reader from ``publication_handoff_verify.py``, so this module
+    and every write job that imports it stay standard-library only."""
     positive_id(run_id)
     positive_id(attempt)
     sha(authority)
@@ -255,7 +219,7 @@ def verify(run_id, attempt, authority, api=read_api, run_git=git):
         "actor", "triggering_actor", "repository", "head_repository")), "source_run_changed")
     require(not run_git("ls-tree", "--name-only", base, "--", ".release/next-version"),
             "unmaterialized_release")
-    previous_version, current_version = config_version(base, run_git), config_version(merge, run_git)
+    previous_version, current_version = version_of(base, run_git), version_of(merge, run_git)
     if previous_version == current_version:
         # Authenticated maintenance, including policy edits, has no publication
         # authority to transfer. Never emit a binding on this no-op path.
@@ -287,14 +251,11 @@ def guard(release, authority, run_git=git):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("produce", "verify", "guard"))
+    parser.add_argument("operation", choices=("produce", "guard"))
     parser.add_argument("--ready", type=Path)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--run-id", type=int)
-    parser.add_argument("--attempt", type=int)
     parser.add_argument("--authority")
     parser.add_argument("--release")
-    parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
     try:
         if args.operation == "produce":
@@ -302,12 +263,6 @@ def main():
             ready = json.loads(args.ready.read_text(), object_pairs_hook=unique_keys)
             result = produce(os.environ, ready)
             args.output.write_text(json.dumps(result, sort_keys=True) + "\n")
-        elif args.operation == "verify":
-            result = verify(args.run_id, args.attempt, args.authority)
-            if args.github_output:
-                with args.github_output.open("a") as output:
-                    for key, value in result.items():
-                        output.write(f"{key}={value}\n")
         else:
             guard(args.release, args.authority)
             result = {"status": "verified"}

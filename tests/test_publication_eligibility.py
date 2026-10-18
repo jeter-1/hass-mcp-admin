@@ -127,7 +127,7 @@ class PublicationEligibilityTests(unittest.TestCase):
             git("checkout", "main")
             if forged:
                 fixture.run["actor"] = {"login": "foreign"}
-            verified = handoff.verify(7, 1, merge, fixture.api, git)
+            verified = fixtures.handoff_verify.verify(7, 1, merge, fixture.api, git)
             environment = {**os.environ, **{
                 name: "" for name in self.jobs["detect-release"]["steps"][-1]["env"]}}
             environment.update({

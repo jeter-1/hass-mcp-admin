@@ -82,6 +82,16 @@ def named_step(job, name):
     return matches[0]
 
 
+def _step_materialized_policies(job):
+    """Return the policy scripts a job materializes from the workflow authority."""
+    names = set()
+    for step in run_steps(job):
+        match = re.search(r"for policy in ([A-Za-z0-9_. \\\n]+); do", step)
+        if match:
+            names.update(match.group(1).replace("\\", " ").split())
+    return names
+
+
 def step_names(job):
     return [step.get("name", "") for step in job.get("steps", [])]
 
@@ -1094,6 +1104,14 @@ else:
             helper = root / "scripts" / ANCESTOR_GUARD_PATH.name
             helper.parent.mkdir()
             shutil.copy2(ANCESTOR_GUARD_PATH, helper)
+            # HAMCP-204: the step runs the workflow-authority release script
+            # that the promote materialization step writes here.
+            policy = root / "publication-policy"
+            policy.mkdir()
+            shutil.copy2(
+                ROOT / "scripts" / "publication_github_release.py",
+                policy / "publication_github_release.py",
+            )
             (root / "python").symlink_to(sys.executable)
             fake_gh = root / "gh"
             fake_gh.write_text(
@@ -2242,13 +2260,17 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         self.assertEqual(publisher["id"], "publish_tags")
         publish_script = str(publisher["run"])
+        # HAMCP-204: the publisher runs from the policy directory that the
+        # promote materialization step wrote from the workflow authority.
         self.assertIn(
-            'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/'
-            'publish_registry_tags_guarded.py"',
+            'python "$RUNNER_TEMP/publication-policy/publish_registry_tags_guarded.py"',
             publish_script,
         )
-        self.assertIn('python "$publisher"', publish_script)
-        self.assertIn("$RUNNER_TEMP/publish_registry_tags_guarded.py", publish_script)
+        self.assertNotIn("git show", publish_script)
+        self.assertIn(
+            "publish_registry_tags_guarded.py",
+            _step_materialized_policies(self.promote),
+        )
         self.assertIn('--source-digest "$SOURCE_DIGEST"', publish_script)
         sha_target = '--target-tag "sha-${RELEASE_SHA}"'
         version_target = '--target-tag "$VERSION"'
@@ -2263,9 +2285,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         self.assertEqual(publisher["env"]["GHCR_TOKEN"], "${{ github.token }}")
         self.assertEqual(publisher["env"]["GHCR_USERNAME"], "${{ github.actor }}")
-        self.assertEqual(
-            publisher["env"]["WORKFLOW_AUTHORITY_SHA"], "${{ github.sha }}"
-        )
+        # The authority binding lives on the materialization step only.
+        self.assertNotIn("WORKFLOW_AUTHORITY_SHA", publisher["env"])
         self.assertTrue(GUARDED_PUBLISHER_PATH.is_file())
         publisher_source = GUARDED_PUBLISHER_PATH.read_text(encoding="utf-8")
         self.assertNotIn("If-None-Match", publisher_source)
@@ -2481,9 +2502,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "--target",
             "gh api",
             "HTTP 404",
-            "Immutable publication identity",
-            "OCI manifest digest",
-            "SLSA provenance and SBOM attestations: verified",
+            'python "$RUNNER_TEMP/publication-policy/publication_github_release.py" notes',
+            'python "$RUNNER_TEMP/publication-policy/publication_github_release.py" verify',
             "scripts/assert_protected_release_ancestor.sh",
             '"$promoted_tag" != "$RELEASE_SHA"',
             "github_release_created=true",
@@ -2535,7 +2555,9 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         self.assertEqual(
             failure["env"]["DIGEST"],
-            "${{ needs.promote.outputs.digest || needs.verify-image.outputs.digest }}",
+            "${{ needs.promote.outputs.digest || needs.verify-image.outputs.digest"
+            " || needs.build.outputs.digest"
+            " || needs.detect-release.outputs.recovery_source_digest }}",
         )
         self.assertEqual(
             failure["env"]["SOURCE_IMAGE_VERIFIED"],
@@ -2605,6 +2627,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             self.build["outputs"],
             {
                 "digest": "${{ steps.build.outputs.digest }}",
+                "push_outcome": "${{ steps.build.outcome }}",
                 "run_attempt": "${{ steps.claim_binding.outputs.run_attempt }}",
             },
         )
@@ -2950,6 +2973,352 @@ esac
             with self.subTest(mode=mode):
                 result = self.run_guard(mode)
                 self.assertEqual(result.returncode, 1)
+
+
+
+SUMMARY_BUILT = "sha256:" + "b" * 64
+SUMMARY_RECOVERED = "sha256:" + "c" * 64
+SUMMARY_RELEASE = "a" * 40
+SUMMARY_REPOSITORY = "synthetic.invalid/repository"
+
+
+def _resolve_summary_expression(expression, needs):
+    """Evaluate a summary ``${{ a || b || 'literal' }}`` env expression."""
+    body = expression.strip()
+    if not (body.startswith("${{") and body.endswith("}}")):
+        return body
+    for part in body[3:-2].strip().split(" || "):
+        part = part.strip()
+        if part.startswith("'"):
+            value = part.strip("'")
+        else:
+            bits = part.split(".")
+            if bits[0] != "needs":
+                raise AssertionError(f"unexpected summary expression {part!r}")
+            job = needs.get(bits[1], {})
+            if bits[2] == "result":
+                value = job.get("result", "")
+            else:
+                value = job.get("outputs", {}).get(bits[3], "")
+        if value:
+            return value
+    return ""
+
+
+def _summary_needs(**jobs):
+    needs = {
+        "detect-release": {"result": "success", "outputs": {"source_mode": "build"}},
+        "verify-release": {
+            "result": "success",
+            "outputs": {
+                "release_sha": SUMMARY_RELEASE,
+                "release_tag": "v2.2.0-rc.1",
+                "version": "2.2.0-rc.1",
+                "build_platforms": "linux/amd64,linux/arm64",
+            },
+        },
+        "claim": {"result": "success"},
+        "build": {
+            "result": "success",
+            "outputs": {"digest": SUMMARY_BUILT, "push_outcome": "success"},
+        },
+        "verify-image": {
+            "result": "success",
+            "outputs": {"digest": SUMMARY_BUILT, "source_image_verified": "true"},
+        },
+        "promote": {"result": "success", "outputs": {}},
+    }
+    for name, value in jobs.items():
+        needs[name.replace("_", "-")] = value
+    return needs
+
+
+class PublicationSummaryTruthTests(unittest.TestCase):
+    """HAMCP-204 L1: the summary reports only what job evidence proves."""
+
+    def run_summary(self, needs):
+        workflow = load_workflow(PUBLISH_PATH)
+        step = named_step(
+            workflow["jobs"]["summary"], "Write promotion and reconciliation summary"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory) / "summary.md"
+            env = {
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "IMAGE_REPOSITORY": SUMMARY_REPOSITORY,
+                "GITHUB_STEP_SUMMARY": str(summary),
+            }
+            env.update(
+                {
+                    key: _resolve_summary_expression(str(value), needs)
+                    for key, value in step["env"].items()
+                }
+            )
+            result = subprocess.run(
+                ["bash", "-c", str(step["run"])],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return summary.read_text(encoding="utf-8")
+
+    def test_verification_failure_after_push_reports_the_pushed_digest(self):
+        text = self.run_summary(
+            _summary_needs(
+                verify_image={"result": "failure", "outputs": {}},
+                promote={"result": "skipped", "outputs": {}},
+            )
+        )
+        self.assertNotIn("No source image was pushed", text)
+        self.assertIn(
+            "- source_image_published: true (the build push step recorded digest "
+            f"{SUMMARY_BUILT})",
+            text,
+        )
+        self.assertIn(
+            "- A digest-addressed source image was pushed without release tags and "
+            f"was not promoted: {SUMMARY_REPOSITORY}@{SUMMARY_BUILT}",
+            text,
+        )
+        self.assertIn("- First unsuccessful job: verify-image=failure", text)
+        self.assertIn("- Failed phase: digest-addressed source image verification.", text)
+        self.assertIn(f"- built_digest: {SUMMARY_BUILT}", text)
+        self.assertIn("- verified_digest: not-verified", text)
+        self.assertIn("- promoted_digest: not-bound", text)
+        self.assertIn(f"- OCI digest: {SUMMARY_BUILT}", text)
+        self.assertIn(
+            "- Job outcomes: verify-release=success, claim=success, build=success "
+            "(push step: success), verify-image=failure, promote=skipped",
+            text,
+        )
+
+    def test_promote_failure_before_tags_still_reports_the_pushed_digest(self):
+        text = self.run_summary(
+            _summary_needs(promote={"result": "failure", "outputs": {}})
+        )
+        self.assertNotIn("No source image was pushed", text)
+        self.assertIn("- source_image_published: true", text)
+        self.assertIn("- Failed phase: promotion before any final image tag was created.", text)
+        self.assertIn(f"{SUMMARY_REPOSITORY}@{SUMMARY_BUILT}", text)
+
+    def test_claim_failure_proves_no_push(self):
+        text = self.run_summary(
+            _summary_needs(
+                claim={"result": "failure"},
+                build={"result": "skipped", "outputs": {}},
+                verify_image={"result": "skipped", "outputs": {}},
+                promote={"result": "skipped", "outputs": {}},
+            )
+        )
+        self.assertIn(
+            "- source_image_published: false (the build push step did not run)", text
+        )
+        self.assertIn("- First unsuccessful job: claim=failure", text)
+        self.assertIn("- Failed phase: publication claim.", text)
+        self.assertIn("- No source image was pushed: the build push step did not run.", text)
+        self.assertIn("- built_digest: none-recorded", text)
+
+    def test_build_failure_without_a_digest_is_unknown_not_unpushed(self):
+        for outcome, rendered in (("failure", "failure"), ("", "unrecorded")):
+            with self.subTest(push_outcome=outcome or "missing"):
+                text = self.run_summary(
+                    _summary_needs(
+                        build={"result": "failure", "outputs": {"push_outcome": outcome}},
+                        verify_image={"result": "skipped", "outputs": {}},
+                        promote={"result": "skipped", "outputs": {}},
+                    )
+                )
+                self.assertNotIn("No source image was pushed", text)
+                self.assertIn(
+                    "- source_image_published: unknown (the build push step recorded "
+                    f"no digest (outcome: {rendered}))",
+                    text,
+                )
+                self.assertIn(
+                    "- Whether a source image was pushed is unknown: the build push "
+                    f"step recorded no digest (outcome: {rendered}).",
+                    text,
+                )
+                self.assertIn("- First unsuccessful job: build=failure", text)
+
+    def test_build_failure_before_the_push_step_proves_no_push(self):
+        text = self.run_summary(
+            _summary_needs(
+                build={"result": "failure", "outputs": {"push_outcome": "skipped"}},
+                verify_image={"result": "skipped", "outputs": {}},
+                promote={"result": "skipped", "outputs": {}},
+            )
+        )
+        self.assertIn("- source_image_published: false (the build push step did not run)", text)
+        self.assertIn("- No source image was pushed: the build push step did not run.", text)
+
+    def test_digest_recovery_reports_reuse_not_a_new_push(self):
+        text = self.run_summary(
+            _summary_needs(
+                detect_release={
+                    "result": "success",
+                    "outputs": {
+                        "source_mode": "resume_digest",
+                        "recovery_source_digest": SUMMARY_RECOVERED,
+                    },
+                },
+                build={"result": "success", "outputs": {"push_outcome": "skipped"}},
+                verify_image={"result": "failure", "outputs": {}},
+                promote={"result": "skipped", "outputs": {}},
+            )
+        )
+        self.assertIn("- source_image_published: false (recovery reuses", text)
+        self.assertIn("- source_image_reused: true", text)
+        self.assertIn("- No new source image was pushed: recovery reuses", text)
+        self.assertIn(f"- OCI digest: {SUMMARY_RECOVERED}", text)
+
+    def test_failure_after_tags_reports_tag_phase(self):
+        text = self.run_summary(
+            _summary_needs(
+                promote={
+                    "result": "failure",
+                    "outputs": {
+                        "digest": SUMMARY_BUILT,
+                        "image_published": "true",
+                        "image_publication_disposition": "created",
+                        "known_release_tags_created": "2",
+                    },
+                }
+            )
+        )
+        self.assertIn("- Failed phase: tag finalization or later verification.", text)
+        self.assertNotIn("No source image was pushed", text)
+        self.assertIn(f"- promoted_digest: {SUMMARY_BUILT}", text)
+
+    def test_complete_release_reports_promotion(self):
+        text = self.run_summary(
+            _summary_needs(
+                promote={
+                    "result": "success",
+                    "outputs": {"digest": SUMMARY_BUILT, "release_complete": "true"},
+                }
+            )
+        )
+        self.assertIn("### Engineering release promoted", text)
+        self.assertIn("- First unsuccessful job: none", text)
+        self.assertNotIn("Failed phase", text)
+
+
+RELEASE_SCRIPT_PATH = ROOT / "scripts" / "publication_github_release.py"
+
+
+class GitHubReleaseScriptTests(unittest.TestCase):
+    """HAMCP-204 M1: the reviewed release script replaces inline Python."""
+
+    TAG = "v2.2.0-rc.1"
+    TITLE = "Engineering 2.2.0-rc.1"
+    URL = "https://github.invalid/release/v2.2.0-rc.1"
+
+    def run_script(self, *arguments):
+        return subprocess.run(
+            [sys.executable, "-I", str(RELEASE_SCRIPT_PATH), *arguments],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+    def write_notes(self, directory):
+        notes = Path(directory) / "notes.md"
+        notes.write_text("# Notes\n\nCanonical text.\n\n\n", encoding="utf-8")
+        body = Path(directory) / "body.md"
+        result = self.run_script(
+            "notes", str(notes), str(body), "2.2.0-rc.1", "1" * 40, SUMMARY_RELEASE,
+            "2026-10-18T00:00:00Z", SUMMARY_BUILT, "linux/amd64,linux/arm64",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return body
+
+    def payload(self, body_path, **changes):
+        value = {
+            "tag_name": self.TAG,
+            "name": self.TITLE,
+            "html_url": self.URL,
+            "body": body_path.read_text(encoding="utf-8") + "\n",
+            "draft": False,
+            "prerelease": True,
+            "id": 42,
+            "published_at": "2026-10-18T00:00:01Z",
+        }
+        value.update(changes)
+        return value
+
+    def verify(self, directory, body, payload, prerelease="true"):
+        release = Path(directory) / "release.json"
+        release.write_text(json.dumps(payload), encoding="utf-8")
+        return self.run_script(
+            "verify", str(release), str(body), self.TAG, self.TITLE, self.URL, prerelease
+        )
+
+    def test_notes_append_the_exact_publication_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            body = self.write_notes(directory)
+            self.assertEqual(
+                body.read_bytes().decode("utf-8"),
+                "# Notes\n\nCanonical text.\n\n"
+                "## Immutable publication identity\n\n"
+                f"- Source main commit: `{'1' * 40}`\n"
+                f"- Release commit: `{SUMMARY_RELEASE}`\n"
+                f"- Version image: `{IMAGE}:2.2.0-rc.1`\n"
+                f"- Commit image: `{IMAGE}:sha-{SUMMARY_RELEASE}`\n"
+                f"- OCI manifest digest: `{SUMMARY_BUILT}`\n"
+                "- Build timestamp: `2026-10-18T00:00:00Z`\n"
+                "- Architectures: `linux/amd64,linux/arm64`\n"
+                "- SLSA provenance and SBOM attestations: verified\n",
+            )
+
+    def test_exact_release_verifies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            body = self.write_notes(directory)
+            result = self.verify(directory, body, self.payload(body))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            stable = self.verify(
+                directory, body, self.payload(body, prerelease=False), prerelease="false"
+            )
+            self.assertEqual(stable.returncode, 0, stable.stderr)
+
+    def test_each_mismatch_fails_closed(self):
+        cases = {
+            "tag": {"tag_name": "v2.2.0-rc.2"},
+            "title": {"name": "Engineering other"},
+            "url": {"html_url": "https://github.invalid/other"},
+            "body": {"body": "# Notes\n\nCanonical text.\n"},
+            "draft": {"draft": True},
+            "prerelease": {"prerelease": False},
+            "publication_identity": {"id": "42"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            body = self.write_notes(directory)
+            for failure, change in cases.items():
+                with self.subTest(failure=failure):
+                    result = self.verify(directory, body, self.payload(body, **change))
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(
+                        result.stderr.strip(),
+                        f"GitHub Release verification failed: {failure}",
+                    )
+            missing = self.payload(body)
+            del missing["published_at"]
+            result = self.verify(directory, body, missing)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("publication_identity", result.stderr)
+            result = self.verify(directory, body, [self.payload(body)])
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("tag, title, url, body, draft", result.stderr)
+
+    def test_invalid_prerelease_argument_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            body = self.write_notes(directory)
+            result = self.verify(directory, body, self.payload(body), prerelease="yes")
+            self.assertEqual(result.returncode, 2)
 
 
 if __name__ == "__main__":

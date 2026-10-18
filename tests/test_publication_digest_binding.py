@@ -468,6 +468,7 @@ class DigestHandoffWorkflowTests(unittest.TestCase):
             build["outputs"],
             {
                 "digest": "${{ steps.build.outputs.digest }}",
+                "push_outcome": "${{ steps.build.outcome }}",
                 "run_attempt": "${{ steps.claim_binding.outputs.run_attempt }}",
             },
         )

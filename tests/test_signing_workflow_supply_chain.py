@@ -5,11 +5,14 @@ permission must check out without persisted credentials and install only
 committed hash locks on an exact Python.  Signing jobs additionally hold no
 write token, run no general test or upstream-observation stack, install only
 the runtime lock, and receive their secret in exactly one step.  Write jobs in
-signing workflows run no Python at all.  Mutation tests prove each rule fails.
+signing workflows run no Python at all.  Image-publishing write jobs (HAMCP-204)
+install nothing and run Python only as allowlisted stdlib-only workflow-authority
+scripts.  Mutation tests prove each rule fails.
 """
 
 from __future__ import annotations
 
+import ast
 import copy
 import itertools
 import json
@@ -17,6 +20,7 @@ from pathlib import Path
 import re
 import shlex
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -95,28 +99,60 @@ SIGNING_JOB_ACTIONS = {
 }
 
 # Write jobs of a workflow that holds `packages: write` publish images (HAMCP-204).
-# They install nothing, not even a hash lock, run no release-validation stack,
-# and run Python only from workflow-authority files or inline standard input.
+# They install nothing, not even a hash lock, and run no release-validation
+# stack.  Owner decision (HAMCP-204 M1): they run Python only as the plain
+# ``python`` word executing an allowlisted, stdlib-only repository script that
+# the job materialized from the workflow-authority commit, by path, with no
+# interpreter option, no ``-c``/``-m`` and no code or data on standard input.
 PUBLISHING_TEST_STACK = GENERAL_TEST_STACK + (
     "compileall",
     "discover",
     "requirements.lock",
     "unit_test_shards",
 )
-PYTHON_WORD = re.compile(r"(?<![\w./$-])python(?:[0-9]+(?:\.[0-9]+)?)?(?![\w.-])")
+PUBLISHING_SCRIPTS = frozenset({
+    "publication_claim.py",
+    "publication_digest_binding.py",
+    "publication_github_release.py",
+    "publication_handoff.py",
+    "publish_registry_tags_guarded.py",
+    "validate_ci_provenance.py",
+    "validate_ready_authorization.py",
+})
 AUTHORITY_ENV = "${{ github.sha }}"
 POLICY_DIRECTORY = "$RUNNER_TEMP/publication-policy"
-POLICY_SCRIPT = re.compile(r'"\$RUNNER_TEMP/publication-policy/[A-Za-z0-9_]+\.py"')
+POLICY_SCRIPT_PATH = re.compile(r"\$RUNNER_TEMP/publication-policy/([A-Za-z0-9_]+\.py)")
 # The reviewed materialization: workflow-authority scripts into the policy directory.
 POLICY_MATERIALIZATION = (
     'mkdir -p "$RUNNER_TEMP/publication-policy"',
     'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/${policy}" '
     '> "$RUNNER_TEMP/publication-policy/${policy}"',
 )
-POLICY_INVOCATION = re.compile(
-    r'(?<![\w./$-])python(?:[0-9]+(?:\.[0-9]+)?)?[ \t]+' + POLICY_SCRIPT.pattern
+POLICY_LOOP = re.compile(r"for policy in ([A-Za-z0-9_. ]+); do")
+POLICY_INVOCATION = re.compile(r'python[ \t]+"' + POLICY_SCRIPT_PATH.pattern + '"')
+POLICY_INVOCATION_SCRIPT = re.compile(r'(?<![\w./$-])python[ \t]+"' + POLICY_SCRIPT_PATH.pattern + '"')
+# Every interpreter-like name (any case, any path or suffix, ``PYTHONPATH``
+# included) must belong to an approved invocation; any other fails closed.
+INTERPRETER_NAME = re.compile(r"python", re.IGNORECASE)
+# Words after which a simple command starts.  Anything else in front of the
+# interpreter (a pipe, ``exec``, ``env``, ``xargs``, an assignment) fails.
+COMMAND_START = {None, "&&", "||", ";", "!", "(", "{", "if", "elif", "then", "else", "do"}
+COMMAND_END = {"&&", "||", ";", ";;", "|", "|&", "&", ")"}
+PYTHON_CONTROL = ("site-packages", "sitecustomize", "usercustomize")
+# Package managers a publishing job may not run, by name or by path.
+PACKAGE_MANAGER = re.compile(
+    r"(?<![\w.-])(?:apt(?:-get)?|aptitude|dpkg|snap|yum|dnf|microdnf|rpm|apk|zypper|pacman"
+    r"|brew|conda|mamba|micromamba|npm|npx|yarn|pnpm|gem|cargo|pipx|uvx?|poetry|pipenv|pdm"
+    r"|hatch|easy_install|ensurepip|pip(?:[0-9]+(?:\.[0-9]+)?)?)(?![\w-])"
 )
-QUOTED_VARIABLE = re.compile(r'"\$([A-Za-z_][A-Za-z0-9_]*)"')
+PUBLISHING_JOB_ACTIONS = {
+    "actions/checkout",
+    "actions/setup-python",
+    "docker/setup-buildx-action",
+    "docker/setup-qemu-action",
+    "docker/login-action",
+    "docker/build-push-action",
+}
 
 # Reviewed exceptions.  HAMCP-204 split the publication `promote` job, so no
 # privileged job is exempt.  The set must match observed violations exactly so
@@ -430,64 +466,143 @@ def _publishes_packages(workflow: dict, job: dict) -> bool:
 
 
 def _authority_materialization(step: dict) -> str | None:
-    """Return the step text without its reviewed policy materialization, if any."""
+    """Return the step text without its reviewed policy materialization, if any.
+
+    The loop may name only allowlisted scripts, from the workflow authority.
+    """
     run = _run_text(step)
     env = step.get("env", {}) or {}
-    if env.get("WORKFLOW_AUTHORITY_SHA") != AUTHORITY_ENV or not all(
-        line in run for line in POLICY_MATERIALIZATION
+    loops = POLICY_LOOP.findall(run)
+    if (
+        env.get("WORKFLOW_AUTHORITY_SHA") != AUTHORITY_ENV
+        or not all(line in run for line in POLICY_MATERIALIZATION)
+        or len(loops) != 1
+        or not set(loops[0].split()) <= PUBLISHING_SCRIPTS
     ):
         return None
     for line in POLICY_MATERIALIZATION:
         run = run.replace(line, "")
-    return run
+    return POLICY_LOOP.sub("", run)
 
 
-def _runs_release_python(step: dict) -> bool:
-    """Return whether a step runs Python other than workflow-authority code.
+def _is_operator(word: str | None) -> bool:
+    return bool(word) and set(word) <= set("();<>|&")
 
-    Allowed forms are inline standard input (``python - ... <<'PY'``), a
-    materialized policy script (``python "$RUNNER_TEMP/publication-policy/x.py"``)
-    and a quoted variable that the same step wrote from the workflow authority
-    commit (``git show "${WORKFLOW_AUTHORITY_SHA}:scripts/x.py" > "$var"``).
-    Anything else, including ``python -m`` and release-checkout paths, fails.
+
+def _interpreter_word(word: str) -> bool:
+    """Whether a shell word names a Python interpreter, by name or by path."""
+    return bool(PYTHON_PROGRAM.fullmatch(word.lstrip("`").rsplit("/", 1)[-1]))
+
+
+def _approved_python(words: list[str], position: int) -> bool:
+    """Whether ``words[position]`` starts the one approved interpreter form.
+
+    ``python "$RUNNER_TEMP/publication-policy/<allowlisted>.py" args...`` at a
+    command start, with no interpreter option and no standard-input redirect,
+    heredoc, here-string or pipe into it.
     """
-    run = _run_text(step)
-    env = step.get("env", {}) or {}
-    for match in PYTHON_WORD.finditer(run):
-        rest = run[match.end():].lstrip(" \t")
-        if re.match(r"-(?:\s|$)", rest) or POLICY_SCRIPT.match(rest):
-            continue
-        variable = QUOTED_VARIABLE.match(rest)
-        if (
-            variable
-            and env.get("WORKFLOW_AUTHORITY_SHA") == AUTHORITY_ENV
-            and re.search(
-                r'git show "\$\{WORKFLOW_AUTHORITY_SHA\}:scripts/[A-Za-z0-9_]+\.py" > "\$'
-                + re.escape(variable.group(1))
-                + '"',
-                run,
-            )
-        ):
-            continue
-        return True
-    return False
+
+    if words[position] != "python":
+        return False  # python3, an absolute or relative path, `python, ...
+    if (words[position - 1] if position else None) not in COMMAND_START:
+        return False  # piped into, or run through exec/env/xargs/an assignment
+    after = words[position + 1 :]
+    command = list(itertools.takewhile(lambda word: not _is_operator(word), after))
+    try:
+        kind, script, consumed = _python_command(command)
+    except ValueError:
+        return False
+    match = POLICY_SCRIPT_PATH.fullmatch(script or "")
+    if kind != "script" or consumed or not match or match.group(1) not in PUBLISHING_SCRIPTS:
+        return False  # -c, -m, -, options, stdin, or a non-allowlisted path
+    simple = itertools.takewhile(lambda word: word not in COMMAND_END, after)
+    return not any(_is_operator(word) and word.startswith("<") for word in simple)
 
 
-def _publishing_violations(steps: list[dict], serialized: str) -> set[str]:
+def _runs_unreviewed_python(text: str) -> bool:
+    """Whether a publishing-job run script runs Python outside the approved form.
+
+    Interpreters are recognized by name or path (``python``, ``python3.12``,
+    ``/usr/bin/python3``, ``./venv/bin/python``) anywhere in a command line,
+    including nested shell text.  Inline ``-c`` code, ``-m``, standard input
+    (``-``, no script, ``<``, ``<<``, ``<<-``, ``<<<`` or a pipe) and options
+    fail; so does any interpreter name the parser cannot attribute.
+    """
+
+    text = re.sub(r"\\\n\s*", " ", text)
+    names = len(INTERPRETER_NAME.findall(text))
+    if not names:
+        return False
+    approved = 0
+    lines = text.split("\n")
+    index = 0
+    while index < len(lines):
+        chunk = lines[index]
+        index += 1
+        if not INTERPRETER_NAME.search(chunk):
+            continue
+        while True:
+            try:
+                words = _shell_words(chunk)
+                break
+            except ValueError:
+                if index >= len(lines):
+                    return True  # an unclosed quote cannot be attributed
+                chunk += "\n" + lines[index]
+                index += 1
+        for position, word in enumerate(words):
+            if not _interpreter_word(word):
+                continue
+            if not _approved_python(words, position):
+                return True
+            approved += 1
+    # A name inside a quoted word (``bash -c '...'``), an assignment, a
+    # comment or a non-interpreter word is never attributed to an approved run.
+    return names != approved
+
+
+def _shell_is_bash(value: object) -> bool:
+    return value is None or value == "bash"
+
+
+def _publishing_violations(workflow: dict, job: dict) -> set[str]:
     violations: set[str] = set()
+    steps = job.get("steps", [])
+    serialized = json.dumps(job)
     if any(marker in serialized for marker in PUBLISHING_TEST_STACK):
         violations.add("PUBLISHING_JOB_RUNS_TEST_STACK")
+    if any(marker in serialized for marker in PYTHON_CONTROL) or any(
+        INTERPRETER_NAME.search(str(name))
+        for scope in (workflow, job, *steps)
+        for name in (scope.get("env", {}) or {})
+    ):
+        violations.add("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON")
+    for scope in (workflow, job):
+        defaults = (scope.get("defaults", {}) or {}).get("run", {}) or {}
+        if not _shell_is_bash(defaults.get("shell")):
+            violations.add("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON")
     for step in steps:
-        installs = install_invocations(_run_text(step))
-        if installs is None or any(install.is_install for install in installs):
+        action = _action(step)
+        if action and action not in PUBLISHING_JOB_ACTIONS:
+            violations.add("PUBLISHING_JOB_EXTRA_ACTION")
+        if "run" in step and not _shell_is_bash(step.get("shell")):
+            violations.add("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON")
+        run = _run_text(step)
+        installs = install_invocations(run)
+        if (
+            installs is None
+            or any(install.is_install for install in installs)
+            or PACKAGE_MANAGER.search(run)
+        ):
             violations.add("PUBLISHING_JOB_INSTALLS_PACKAGES")
-        if _runs_release_python(step):
-            violations.add("PUBLISHING_JOB_RUNS_RELEASE_PYTHON")
-        # Only the reviewed materialization may write the policy directory.
+        if _runs_unreviewed_python(run):
+            violations.add("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON")
+        # Only the reviewed materialization may name the policy directory
+        # other than to run an allowlisted script from it.
         remainder = _authority_materialization(step)
-        text = _run_text(step) if remainder is None else remainder
+        text = run if remainder is None else remainder
         if POLICY_DIRECTORY in POLICY_INVOCATION.sub("", text):
-            violations.add("PUBLISHING_JOB_RUNS_RELEASE_PYTHON")
+            violations.add("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON")
     return violations
 
 
@@ -548,7 +663,7 @@ def job_violations(
         ):
             violations.add("WRITE_JOB_RUNS_PYTHON")
     if write and publishing_workflow:
-        violations |= _publishing_violations(steps, serialized)
+        violations |= _publishing_violations(workflow, job)
     return violations
 
 
@@ -941,7 +1056,7 @@ class PublishingJobGuardTests(unittest.TestCase):
                     "GENERAL_TEST_STACK",
                     "PUBLISHING_JOB_INSTALLS_PACKAGES",
                     "PUBLISHING_JOB_RUNS_TEST_STACK",
-                    "PUBLISHING_JOB_RUNS_RELEASE_PYTHON",
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
                 }
             },
         )
@@ -1022,7 +1137,7 @@ class PublishingJobGuardTests(unittest.TestCase):
                             jobs[job_name], run, env={"WORKFLOW_AUTHORITY_SHA": AUTHORITY_ENV}
                         )
                     )[job_name]
-                    self.assertIn("PUBLISHING_JOB_RUNS_RELEASE_PYTHON", found)
+                    self.assertIn("PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON", found)
 
     def test_policy_materialized_from_the_release_checkout_fails(self) -> None:
         for job_name in self.PUBLISHING_JOBS:
@@ -1037,24 +1152,40 @@ class PublishingJobGuardTests(unittest.TestCase):
                 )
             with self.subTest(job=job_name):
                 self.assertIn(
-                    "PUBLISHING_JOB_RUNS_RELEASE_PYTHON",
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
                     self._mutated(release_authority)[job_name],
                 )
 
-    def test_workflow_authority_python_forms_still_pass(self) -> None:
-        allowed = (
-            'python "$RUNNER_TEMP/publication-policy/publication_claim.py" resume',
+    def test_allowlisted_workflow_authority_scripts_still_pass(self) -> None:
+        for script in sorted(PUBLISHING_SCRIPTS):
+            run = f'python "$RUNNER_TEMP/publication-policy/{script}" --flag "$VALUE"'
+            with self.subTest(script=script):
+                self.assertFalse(_runs_unreviewed_python(run))
+        for job_name in self.PUBLISHING_JOBS:
+            with self.subTest(job=job_name):
+                self.assertEqual(
+                    self._mutated(
+                        lambda jobs, job_name=job_name: self._append(
+                            jobs[job_name],
+                            'if ! python "$RUNNER_TEMP/publication-policy/publication_handoff.py" '
+                            'guard --release "$R" --authority "$A" > "$RUNNER_TEMP/out"; then\n'
+                            "  exit 1\nfi",
+                        )
+                    ),
+                    {},
+                )
+
+    def test_former_inline_and_variable_python_allowances_now_fail(self) -> None:
+        # Pre-correction allowances: inline standard input and a quoted
+        # variable written by git show.  Neither is an allowlisted path.
+        for run in (
             "python - \"$x\" <<'PY'\nprint(1)\nPY",
             'publisher="$RUNNER_TEMP/p.py"\n'
             'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/publish_registry_tags_guarded.py" '
             '> "$publisher"\npython "$publisher" --help',
-        )
-        for run in allowed:
+        ):
             with self.subTest(run=run):
-                step = {"run": run, "env": {"WORKFLOW_AUTHORITY_SHA": AUTHORITY_ENV}}
-                self.assertFalse(_runs_release_python(step))
-        # The variable form needs the workflow-authority environment binding.
-        self.assertTrue(_runs_release_python({"run": allowed[2], "env": {}}))
+                self.assertTrue(_runs_unreviewed_python(run))
 
     def test_non_publishing_write_workflow_is_not_subject_to_publishing_rules(self) -> None:
         # A contents-write job elsewhere may run Python; adding packages: write
@@ -1068,7 +1199,7 @@ class PublishingJobGuardTests(unittest.TestCase):
         job["permissions"]["packages"] = "write"
         self.assertEqual(
             workflow_violations(PUBLISH, workflow),
-            {"claim": {"PUBLISHING_JOB_RUNS_RELEASE_PYTHON"}},
+            {"claim": {"PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON"}},
         )
 
     def test_reviewed_exception_mutation_fails_the_exact_match(self) -> None:
@@ -1428,6 +1559,362 @@ class PythonInterpreterGuardTests(unittest.TestCase):
         for name in SIGNING_WORKFLOWS:
             with self.subTest(workflow=name, guard="real"):
                 self.assertIn("UNHASHED_INSTALL", self._sign_with(name, probe))
+
+
+POLICY_SCRIPT = '"$RUNNER_TEMP/publication-policy/publication_claim.py"'
+# The surviving mutation from the Codex review of fc69da1 (R1), verbatim.
+CODEX_R1_PROBE = "/usr/bin/python3 scripts/validate_promotion_candidate.py --help"
+INTERPRETER_PATH_PROBES = (
+    CODEX_R1_PROBE,
+    f"/usr/bin/python3 {POLICY_SCRIPT} create",
+    f"/usr/bin/python {POLICY_SCRIPT} create",
+    f"./venv/bin/python {POLICY_SCRIPT} create",
+    f"venv/bin/python3.12 {POLICY_SCRIPT} create",
+    f"python3 {POLICY_SCRIPT} create",
+    f"python3.12 {POLICY_SCRIPT} create",
+    f"$(which python3) {POLICY_SCRIPT} create",
+    f'"$(command -v python)" {POLICY_SCRIPT} create',
+    f"`which python` {POLICY_SCRIPT} create",
+    'interpreter=/usr/bin/python3\n"$interpreter" -c "print(1)"',
+    "bash -c '/usr/bin/python3 scripts/validate_promotion_candidate.py --help'",
+    'sh -c "python -c 1"',
+)
+STDIN_PROBES = (
+    "python - < scripts/validate_promotion_candidate.py",
+    "python -",
+    "python",
+    "python -IS -",
+    "python <<'PY'\nprint(1)\nPY",
+    "python <<-PY\n\tprint(1)\n\tPY",
+    "python <<< 'print(1)'",
+    "python3 - <<'PY'\nprint(1)\nPY",
+    "/usr/bin/python3 - <<'PY'\nprint(1)\nPY",
+    "cat scripts/validate_promotion_candidate.py | python",
+    "cat scripts/validate_promotion_candidate.py | /usr/bin/python3 -",
+    "echo 'print(1)' |& python -",
+    f"python {POLICY_SCRIPT} create < scripts/payload",
+    f"python {POLICY_SCRIPT} create 0< scripts/payload",
+    f"python {POLICY_SCRIPT} create <<'PY'\nprint(1)\nPY",
+    f"python {POLICY_SCRIPT} create <<< 'print(1)'",
+    f"cat scripts/payload | python {POLICY_SCRIPT} create",
+)
+INLINE_PROBES = (
+    "python -c 'print(1)'",
+    "python -Ic 'print(1)'",
+    "python -I -c 'print(1)'",
+    "/usr/bin/python3 -c 'print(1)'",
+    "python -m json.tool x.json",
+    "python -Im json.tool x.json",
+    f"python -I {POLICY_SCRIPT} create",
+    f"python -- {POLICY_SCRIPT} create",
+    f"exec python {POLICY_SCRIPT} create",
+    f"env python {POLICY_SCRIPT} create",
+    f"PYTHONPATH=. python {POLICY_SCRIPT} create",
+    f"X=1 python {POLICY_SCRIPT} create",
+    "python scripts/publication_claim.py create",
+    'python "$RUNNER_TEMP/publication-policy/verify_publication_source_image.py"',
+    'python "$RUNNER_TEMP/publication-policy/../publication_claim.py"',
+    'python "$RUNNER_TEMP/elsewhere/publication_claim.py" create',
+    "# python is mentioned here",
+    'echo "run python later"',
+)
+PACKAGE_MANAGER_PROBES = (
+    "apt-get install -y jq",
+    "sudo apt install -y jq",
+    "/usr/bin/apt-get install -y jq",
+    "dpkg -i x.deb",
+    "npm ci",
+    "npx some-tool",
+    "pipx run some-tool",
+    "uv run some-tool",
+    "uvx some-tool",
+    "conda install x",
+    "brew install x",
+    "gem install x",
+    "cargo install x",
+    "poetry install",
+    "pip3 install x",
+)
+
+
+def _stdin_blind_approved_python(words: list[str], position: int) -> bool:
+    """Mutant: approves an allowlisted script whatever feeds its standard input."""
+
+    if words[position] != "python":
+        return False
+    command = list(itertools.takewhile(lambda word: not _is_operator(word), words[position + 1 :]))
+    try:
+        kind, script, consumed = _python_command(command)
+    except ValueError:
+        return False
+    match = POLICY_SCRIPT_PATH.fullmatch(script or "")
+    return kind == "script" and not consumed and bool(match) and match.group(1) in PUBLISHING_SCRIPTS
+
+
+
+def _stdlib_violations(path: Path) -> list[str]:
+    """Imports outside the standard library, or dynamic code loading, in a script."""
+
+    siblings = {Path(name).stem for name in PUBLISHING_SCRIPTS}
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found = []
+    for node in ast.walk(tree):
+        modules = []
+        if isinstance(node, ast.Import):
+            modules = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                found.append(f"relative import at line {node.lineno}")
+            modules = [node.module or ""]
+        for module in modules:
+            top = module.split(".", 1)[0]
+            if top in {"importlib", "runpy", "pkgutil", "zipimport", "site"}:
+                found.append(f"dynamic import machinery {module} at line {node.lineno}")
+            elif top not in sys.stdlib_module_names and top not in siblings:
+                found.append(f"non-stdlib import {module} at line {node.lineno}")
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {
+            "__import__", "exec", "eval", "compile",
+        }:
+            found.append(f"dynamic code {node.func.id} at line {node.lineno}")
+        if isinstance(node, ast.Attribute) and node.attr in {"executable", "path"} and (
+            isinstance(node.value, ast.Name) and node.value.id == "sys"
+        ):
+            found.append(f"sys.{node.attr} at line {node.lineno}")
+    return found
+
+
+def _sibling_imports(path: Path) -> set[str]:
+    siblings = {Path(name).stem for name in PUBLISHING_SCRIPTS} | {
+        item.stem for item in (ROOT / "scripts").glob("*.py")
+    }
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules |= {alias.name.split(".", 1)[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module.split(".", 1)[0])
+    return {module + ".py" for module in modules if module in siblings}
+
+
+class PublishingPythonInterpreterTests(unittest.TestCase):
+    """HAMCP-204 M1/M2: the approved Python form in image-publishing write jobs."""
+
+    PUBLISHING_JOBS = ("claim", "build", "promote")
+
+    def _with(self, job_name: str, run: str, **extra) -> set[str]:
+        workflow = copy.deepcopy(_load(PUBLISH))
+        workflow["jobs"][job_name]["steps"].append(
+            {"name": "mutation", "shell": "bash", "run": run, **extra}
+        )
+        return workflow_violations(PUBLISH, workflow).get(job_name, set())
+
+    def test_codex_r1_mutation_fails_in_promote(self) -> None:
+        # R1 verbatim: appended to the step before the digest binding step.
+        workflow = copy.deepcopy(_load(PUBLISH))
+        steps = workflow["jobs"]["promote"]["steps"]
+        bind = next(
+            index for index, step in enumerate(steps)
+            if step.get("name", "").startswith("Bind the promoted digest")
+        )
+        steps[bind - 1]["run"] = steps[bind - 1]["run"] + "\n" + CODEX_R1_PROBE + "\n\n"
+        self.assertEqual(
+            workflow_violations(PUBLISH, workflow),
+            {"promote": {"PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON"}},
+        )
+
+    def test_absolute_relative_and_substituted_interpreters_fail(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in INTERPRETER_PATH_PROBES:
+                with self.subTest(job=job_name, run=run):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON", self._with(job_name, run)
+                    )
+
+    def test_stdin_fed_python_fails(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in STDIN_PROBES:
+                with self.subTest(job=job_name, run=run):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON", self._with(job_name, run)
+                    )
+
+    def test_inline_module_option_and_unlisted_python_fails(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in INLINE_PROBES:
+                with self.subTest(job=job_name, run=run):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON", self._with(job_name, run)
+                    )
+
+    def test_allowlisted_script_by_path_still_passes(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in (
+                f"python {POLICY_SCRIPT} create --release \"$R\"",
+                f"python {POLICY_SCRIPT} create | tee \"$RUNNER_TEMP/out\"",
+                f"result=1\npython {POLICY_SCRIPT} create > \"$RUNNER_TEMP/out\" 2>&1",
+            ):
+                with self.subTest(job=job_name, run=run):
+                    self.assertEqual(self._with(job_name, run), set())
+
+    def test_python_shell_defaults_and_environment_fail(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            with self.subTest(job=job_name, form="shell: python"):
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                    self._with(job_name, "print(1)", shell="python"),
+                )
+            with self.subTest(job=job_name, form="shell: python {0}"):
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                    self._with(job_name, "print(1)", shell="python {0}"),
+                )
+            with self.subTest(job=job_name, form="step PYTHONPATH"):
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                    self._with(job_name, f"python {POLICY_SCRIPT}", env={"PYTHONPATH": "."}),
+                )
+            for scope in ("workflow", "job"):
+                workflow = copy.deepcopy(_load(PUBLISH))
+                target = workflow if scope == "workflow" else workflow["jobs"][job_name]
+                target["defaults"] = {"run": {"shell": "python"}}
+                with self.subTest(job=job_name, form=f"{scope} default shell"):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                        workflow_violations(PUBLISH, workflow)[job_name],
+                    )
+                workflow = copy.deepcopy(_load(PUBLISH))
+                target = workflow if scope == "workflow" else workflow["jobs"][job_name]
+                target.setdefault("env", {})["PYTHONSTARTUP"] = "scripts/x.py"
+                with self.subTest(job=job_name, form=f"{scope} PYTHONSTARTUP"):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                        workflow_violations(PUBLISH, workflow)[job_name],
+                    )
+            with self.subTest(job=job_name, form="site customization"):
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                    self._with(job_name, 'cp scripts/x "$TOOLCACHE/site-packages/x.pth"'),
+                )
+
+    def test_package_managers_and_extra_actions_fail(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in PACKAGE_MANAGER_PROBES:
+                with self.subTest(job=job_name, run=run):
+                    self.assertIn("PUBLISHING_JOB_INSTALLS_PACKAGES", self._with(job_name, run))
+            workflow = copy.deepcopy(_load(PUBLISH))
+            workflow["jobs"][job_name]["steps"].append(
+                {"uses": "astral-sh/setup-uv@" + "0" * 40}
+            )
+            with self.subTest(job=job_name, action="setup-uv"):
+                self.assertIn(
+                    "PUBLISHING_JOB_EXTRA_ACTION", workflow_violations(PUBLISH, workflow)[job_name]
+                )
+        # set -euo pipefail and other baseline words are not package managers.
+        self.assertIsNone(PACKAGE_MANAGER.search("set -euo pipefail; git show x > y"))
+
+    def test_materialization_names_only_allowlisted_scripts(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for extra in ("verify_publication_source_image.py", "validate_promotion_candidate.py"):
+                workflow = copy.deepcopy(_load(PUBLISH))
+                step = next(
+                    step for step in workflow["jobs"][job_name]["steps"]
+                    if _authority_materialization(step) is not None
+                )
+                step["run"] = step["run"].replace(
+                    "for policy in publication_handoff.py",
+                    f"for policy in {extra} publication_handoff.py",
+                )
+                with self.subTest(job=job_name, extra=extra):
+                    self.assertIn(
+                        "PUBLISHING_JOB_RUNS_UNREVIEWED_PYTHON",
+                        workflow_violations(PUBLISH, workflow)[job_name],
+                    )
+
+    def test_every_job_materializes_the_imports_of_the_scripts_it_runs(self) -> None:
+        jobs = _load(PUBLISH)["jobs"]
+        for job_name in self.PUBLISHING_JOBS:
+            steps = jobs[job_name]["steps"]
+            materialized = set()
+            run = set()
+            for step in steps:
+                loops = POLICY_LOOP.findall(_run_text(step))
+                if _authority_materialization(step) is not None:
+                    materialized |= set(loops[0].split())
+                run |= set(POLICY_INVOCATION_SCRIPT.findall(_run_text(step)))
+            with self.subTest(job=job_name):
+                self.assertTrue(run)
+                closure = set(run)
+                pending = list(run)
+                while pending:
+                    imports = _sibling_imports(ROOT / "scripts" / pending.pop())
+                    pending.extend(imports - closure)
+                    closure |= imports
+                self.assertLessEqual(closure, materialized)
+                self.assertLessEqual(materialized, PUBLISHING_SCRIPTS)
+
+    def test_allowlisted_scripts_import_only_the_standard_library(self) -> None:
+        for name in sorted(PUBLISHING_SCRIPTS):
+            with self.subTest(script=name):
+                self.assertEqual(_stdlib_violations(ROOT / "scripts" / name), [])
+
+    def test_stdlib_import_check_rejects_third_party_and_dynamic_imports(self) -> None:
+        for source in (
+            "import yaml\n",
+            "def f():\n    import yaml\n",
+            "from requests import get\n",
+            "import importlib\n",
+            "from importlib import import_module\n",
+            "import runpy\n",
+            "__import__('yaml')\n",
+            "exec('import yaml')\n",
+            "import sys\nsys.path.insert(0, '.')\n",
+            "import sys\nsys.executable\n",
+            "from . import sibling\n",
+            "import verify_publication_source_image\n",
+        ):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "candidate.py"
+                path.write_text(source, encoding="utf-8")
+                self.assertTrue(_stdlib_violations(path))
+        # The verifier that parses YAML stays outside the allowlist.
+        self.assertTrue(_stdlib_violations(ROOT / "scripts/publication_handoff_verify.py"))
+        self.assertNotIn("publication_handoff_verify.py", PUBLISHING_SCRIPTS)
+
+    def test_path_blind_parser_is_killed(self) -> None:
+        module = sys.modules[__name__]
+        blind = re.compile(r"(?<![\w./$-])python(?:[0-9]+(?:\.[0-9]+)?)?(?![\w.-])")
+        bare = lambda word: bool(PYTHON_PROGRAM.fullmatch(word))  # noqa: E731
+        with mock.patch.object(module, "INTERPRETER_NAME", blind), mock.patch.object(
+            module, "_interpreter_word", bare
+        ):
+            # Recognizing only bare words, counting with the fc69da1 lookbehind:
+            # the absolute-path probes and R1 pass unseen, bare python3 does not.
+            self.assertTrue(_runs_unreviewed_python(f"python3 {POLICY_SCRIPT} create"))
+            for run in (CODEX_R1_PROBE, f"/usr/bin/python3 {POLICY_SCRIPT} create",
+                        f"./venv/bin/python {POLICY_SCRIPT} create"):
+                with self.subTest(guard="path-blind", run=run):
+                    self.assertFalse(_runs_unreviewed_python(run))
+        for run in (CODEX_R1_PROBE, f"/usr/bin/python3 {POLICY_SCRIPT} create",
+                    f"./venv/bin/python {POLICY_SCRIPT} create"):
+            with self.subTest(guard="real", run=run):
+                self.assertTrue(_runs_unreviewed_python(run))
+
+    def test_stdin_blind_parser_is_killed(self) -> None:
+        module = sys.modules[__name__]
+        probes = (
+            f"python {POLICY_SCRIPT} create < scripts/payload",
+            f"python {POLICY_SCRIPT} create <<'PY'\nprint(1)\nPY",
+            f"python {POLICY_SCRIPT} create <<< 'print(1)'",
+            f"cat scripts/payload | python {POLICY_SCRIPT} create",
+        )
+        with mock.patch.object(module, "_approved_python", _stdin_blind_approved_python):
+            for run in probes:
+                with self.subTest(guard="stdin-blind", run=run):
+                    self.assertFalse(_runs_unreviewed_python(run))
+        for run in probes:
+            with self.subTest(guard="real", run=run):
+                self.assertTrue(_runs_unreviewed_python(run))
 
 
 # How each workflow binds the recorded revision to the verified attestation.

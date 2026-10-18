@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 try:
     import publication_handoff as handoff
+    import publication_handoff_verify as handoff_verify
     import publication_claim as claim
 finally:
     sys.path.pop(0)
@@ -113,7 +114,7 @@ class HandoffTests(unittest.TestCase):
                 "workflow_id": 8, "event": self.run["event"], "head_sha": self.run["head_sha"]}
 
     def verify(self):
-        return handoff.verify(7, 1, MERGE, self.api, self.git)
+        return handoff_verify.verify(7, 1, MERGE, self.api, self.git)
 
     def test_owner_ready_merge_round_trip_identifies_actual_merge_commit(self):
         env = {"GITHUB_REPOSITORY": handoff.REPOSITORY, "GITHUB_ACTOR": "jeter-1",
@@ -269,7 +270,7 @@ class HandoffTests(unittest.TestCase):
         for ref in (BASE, MERGE):
             self.git_data[("show", f"{ref}:hass_mcp_engineering_beta/config.yaml")] = text
         with patch.object(yaml.SafeLoader, "construct_object", side_effect=AssertionError("No constructors")):
-            self.assertEqual(handoff.config_version(BASE, self.git), expected)
+            self.assertEqual(handoff_verify.config_version(BASE, self.git), expected)
             self.assertEqual(self.verify(), {"release_action": "none"})
 
     def test_missing_parser_or_parser_failure_refuses_without_no_op(self):
@@ -392,19 +393,32 @@ class HandoffTests(unittest.TestCase):
             return value
 
         with self.assertRaises(ValueError):
-            handoff.verify(7, 1, MERGE, api, self.git)
+            handoff_verify.verify(7, 1, MERGE, api, self.git)
 
     def test_cli_redacts_malformed_evidence_but_preserves_fixed_refusal_category(self):
         for error, expected in ((ValueError("synthetic-private-marker"), "evidence missing"),
                                 (handoff.Refusal("artifact_digest_mismatch"), "artifact_digest_mismatch")):
             output = io.StringIO()
-            with patch.object(sys, "argv", ["publication_handoff.py", "verify"]), \
-                    patch.object(handoff, "verify", side_effect=error), redirect_stderr(output):
+            with patch.object(sys, "argv", ["publication_handoff_verify.py"]), \
+                    patch.object(handoff_verify, "verify", side_effect=error), redirect_stderr(output):
                 with self.assertRaises(SystemExit) as stopped:
-                    handoff.main()
+                    handoff_verify.main()
             self.assertEqual(stopped.exception.code, 1)
             self.assertIn(expected, output.getvalue())
             self.assertNotIn("synthetic-private-marker", output.getvalue())
+
+    def test_handoff_module_is_stdlib_and_only_the_read_only_verifier_parses_yaml(self):
+        # HAMCP-204: write jobs import publication_handoff; the locked YAML
+        # reader is reachable only through the detect-release entry point.
+        self.assertFalse(hasattr(handoff, "config_version"))
+        self.assertNotIn("yaml", (ROOT / "scripts/publication_handoff.py").read_text())
+        with self.assertRaises(TypeError):
+            handoff.verify(7, 1, MERGE, self.api, self.git)
+        with patch.object(sys, "argv", ["publication_handoff.py", "verify"]), \
+                redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as stopped:
+                handoff.main()
+        self.assertEqual(stopped.exception.code, 2)
 
     def test_real_git_merge_tree_and_wrong_parent(self):
         with tempfile.TemporaryDirectory() as directory:
