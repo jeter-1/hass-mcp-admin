@@ -1,113 +1,105 @@
 # Engineering 2.4.1-beta.18 release notes
 
-Engineering 2.4.1-beta.18 stops typed fan and power tasks from staying
-`observing` after a device that reports a few seconds late (HAMCP-192). It
-applies Josh's decisions 1–6 to the defects in
-[`HAMCP_192_OBSERVING_INVESTIGATION.md`](HAMCP_192_OBSERVING_INVESTIGATION.md).
-The design is in
-[`HAMCP_192_OBSERVING_FIX_DESIGN.md`](HAMCP_192_OBSERVING_FIX_DESIGN.md). It
-builds on beta.17 (HAMCP-200, typed Home Assistant routes) and beta.16
-(HAMCP-162).
+Engineering 2.4.1-beta.18 makes `get_server_health` much cheaper on a large
+plan store, and stops the 30 s recovery sweep from reading parent tasks it
+does not need (HAMCP-171). It builds on beta.17
+(HAMCP-200 typed REST routes), beta.16 (HAMCP-162), beta.15 (HAMCP-189
+PR B + C) and beta.14 (HAMCP-189 PR A).
 
-No tool, input schema, description, provider route, signed registry, HOLD,
-support window, workflow or stable-v1 change is included. The tool count is
-unchanged: 88 with `ha_config_get_yaml` admitted, otherwise 87. No new
-dispatch, service-call or fallback path is reachable. Acceptance:
-[`V2_4_1_BETA18_ACCEPTANCE.md`](V2_4_1_BETA18_ACCEPTANCE.md).
+The investigation is
+[`HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md`](HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md).
+Josh's 2026-10-18 decisions D1–D6 on HAMCP-171 apply. The exact rule is in
+[`HEALTH_PERFORMANCE.md`](HEALTH_PERFORMANCE.md#health-safety-verdict-cache-hamcp-171).
 
-**What was wrong (beta.15 and earlier, pre-existing since v2.3.0).** On
-`light.back_guest_room_lamp`, a turn_on and a turn_off each returned
-`observing` although the lamp changed about 2 s and 6 s after the provider
-response. The cause:
-- The service call is sent without waiting, then exactly one state read is
-  made. Any device that reports more than about 1 s later leaves the task
-  `observing`.
-- The task keeps the `entity:<id>` EXCLUSIVE lock under a 120 s lease. Both
-  the 30 s background sweep and a same-ID replay wait for that lease, so
-  resolution took about 2.5 minutes.
-- A new command on the same entity is refused as `lock_conflict` while the
-  task observes, and the receipt did not say which task blocks it.
-- The evidence deadline was checked before the read, so a device that
-  reported just before the deadline could still go to manual review.
-- A manual-review entity hold had no governed release.
+No signed registry, HOLD, support window, Core profile, probe fingerprint,
+persisted format (D6), workflow or stable-v1 change is included. No new
+write, reload, restart, deletion, service call or fallback path is reachable.
+The catalog stays at **88 tools (59 native, 29 delegated)**.
 
-## Changes
+**Live baseline (beta.16).** One health call took 36.5 s, of which 33.8 s
+(93%) waited for persisted-plan safety validation. Each call deserialized 437
+plans and 433 tasks, and `health_cache_hit_count` stayed at 0. The 30 s
+sweep deserialized about 7 task records per second, and 239 of 239 parent
+reads per pass were for children whose own status decided the outcome.
 
-All changes are in the shared typed fan service. `control_power`
-(`PowerService`) inherits every change from `control_fan` (`FanService`).
+**Within one health check (D5).** Each validation job memoizes the pure
+per-segment sanitizer scan. The memo is bound to the job's exact
+sensitive-value set, is bounded (65,536 segments of at most 4,096
+characters) and is discarded when the job ends. Results are identical to the
+unmemoized scan.
 
-1. **Bounded inline poll (decision 1).** After dispatch, the task reads the
-   entity at about 0, 1, 2, 4, 6, 8 and 10 s and stops at the first match:
-   at most 7 reads in about 10 s plus one read's latency. A match returns
-   `succeeded_verified` with the lock released. It is one observation attempt;
-   `attempt_count` reports the reads. Every read is the existing delegated
-   `ha_get_state` read. Recovery sweeps still make one read per pass.
-2. **30 s entity lease (decision 2).** Typed fan and power locks use a 30 s
-   lease renewed every 10 s (was 120 s). A task that yields `observing`
-   is re-read by the first sweep after the lease expires, about 40–70 s
-   after dispatch instead of about 150 s. The 120 s task claim is unchanged
-   and is yielded when the task leaves `observing`.
-3. **Deadline aligned with one final read (decision 3).** The typed services
-   opt into a new `final_read_at_deadline` executor flag. At or after the
-   180 s evidence deadline, one more read is made first: a match is
-   `succeeded_verified`; a mismatch goes to manual review with the existing
-   reason `post_dispatch_evidence_deadline_expired`. F3 governed executions
-   do not set the flag and keep their deadline behaviour exactly.
-4. **Blocking task named, no superseding (decision 4).** A new command on an
-   entity held by another task is still refused as `lock_conflict`, with no
-   superseding and no queueing. Its receipt now adds `blocking_tasks` (up to
-   4: task ID, lock key, holder state, conflict-hold flag, expected release
-   time, decision deadline and how it is released) and
-   `blocking_tasks_observed_at`.
-5. **Additive receipt hints (decision 5).** Once dispatch intent exists, the
-   receipt adds `observation_status`: why the task is still observing, the
-   earliest re-read time, the evidence deadline, `final_read_at_deadline:
-   true`, the observation attempts, and the last-observed and verified times.
-   A manual-review receipt adds `hold_release`. These fields are derived when
-   the receipt is built; nothing new is stored in the execution record.
-6. **Governed hold release (decision 6).** A manual-review task's entity hold
-   can be released through the add-on's Ingress panel at `/typed`, with the
-   same external-approval pattern as the F3 reconciliation page. There is no
-   MCP tool and no plan type.
-   - Only an authenticated Home Assistant administrator through Ingress can
-     open the page; anything else is 403 and causes no read.
-   - The review page reads the device once and shows the **requested** state
-     and the **freshly read** state side by side, field by field (`state`,
-     plus `percentage` for fan), with `same` or `DIFFERENT` and a verdict
-     line, above the release button (Josh's added requirement). If that read
-     fails, the page is 503 with no release button.
-   - The button carries a single-use token bound to the administrator, the
-     task record, the prepared operation hash, the exact hold and the
-     reviewed readback. A stale or reused token is 400.
-   - The release makes one more read. If the state changed after the
-     review, the release is refused (`<kind>_hold_release_state_changed`,
-     409) and nothing changes; review again.
-   - The release writes a durable sidecar
-     `<namespace>/hold-releases/<task_id>.json`, releases only that hold
-     through the same fenced primitive F3 uses, and writes one
-     `<kind>_hold_release_action` audit entry with `dispatch: "none"`.
-   - Release is allowed whether or not the read state matches the request
-     (confirmed by Josh). The receipt says `hold_released_state_matches` or
-     `hold_released_state_differs`. The task's terminal outcome stays
-     `manual_review_required`; it is never relabeled verified.
-   - Nothing is ever dispatched, and recovery never starts a release. A
-     release interrupted after its approval was recorded is finished by
-     recovery, without any provider access.
+**Between health checks (D1).** Health keeps, in process memory only, the
+verdict "these exact bytes passed the persisted-plan safety detector". A
+verdict is reused only when all of these match the record this call just read
+and parsed:
+- the canonical record filename;
+- `st_ino`, `st_size` and `st_mtime_ns`, from `fstat` of the handle whose
+  bytes were parsed, with the size equal to the bytes read;
+- the SHA-256 of those bytes;
+- the detector context (detector version and the configured sensitive
+  values, as a per-process keyed digest).
 
-## Compatibility and rollback
+Anything else validates fresh: a content change (even with the same size,
+inode and mtime), an inode, size or mtime change, a new record, a failed
+`fstat`, or a changed detector context. A deleted record's verdict is
+pruned. Any failed scan, storage error, quarantine or unexpected worker
+failure discards every verdict. Verdicts are empty at process start, are
+never persisted and are never used by an authoritative read, save, approval
+or execution path.
 
-- **Stored formats.** The declaration, execution record, lock record and
-  audit formats are unchanged. The only addition is the hold-release sidecar
-  (`typed-hold-release-v1`, closed fields, ≤ 4 KiB, strictly validated; an
-  invalid sidecar fails closed and keeps the hold).
-- **Rollback** is reinstalling the beta.17 artifact. Beta.17 reads every
-  record this release writes and ignores the sidecar directory. Its lease is
-  120 s again. For a task whose hold was released, beta.17 finds no owned
-  hold and counts one `recovery_failures` per sweep for that task; it never
-  dispatches.
-- **Receipts** gain only additive fields. `dispatched_at` stays the literal
-  `null`, and the HAMCP-181 outcome strings and dispatch facts are unchanged.
-- **HAMCP-200.** This release adds no Engineering REST or WebSocket call.
-  Every state read goes through the reviewed delegated `ha_get_state` tool,
-  which builds no Home Assistant URL, so the typed `Route` rules apply
-  unchanged.
+Every health call still reads and parses every record and runs the
+lifecycle, projection and fence checks. Tampered, corrupt and partially
+written records are detected exactly as before.
+
+**Deep re-scan.** `get_server_health(deep_storage_audit=true)` discards every
+verdict, re-validates every record and repopulates the cache. The input is
+optional and defaults to `false`. It is this release's only public
+descriptor change: the `get_server_health` input schema gains this one
+boolean and its description gains two lines documenting it. Every other
+descriptor is unchanged. The internal `deep_audit_plan_store`
+reconciliation also discards every verdict.
+
+**Reporting.** `governance.plan_store_scaling.safety_verdict_cache` reports:
+- the scope (`process_memory_only`) and `persisted: false`;
+- the key description and current entries;
+- the last run: `mode` (`cached` or `deep_rescan`), `hits`, `misses`,
+  `not_applicable` (pre-contract-v2 records) and `pruned`;
+- process totals: hits, misses, deep re-scans and invalidations.
+
+`health_cache_hit_count` now also counts async health calls that reused at
+least one verdict. No digest, path or key material is reported.
+
+**Recovery sweep.** The periodic orphan sweep reads the child's own status
+first. It reads the parent task only when the child exists and either has no
+dispatch intent (orphan cleanup) or is terminal with a recorded readiness
+fault. Each parent is read at most once per pass. Terminal, dispatched,
+fault-free children cost no parent read. The following are unchanged:
+- at-most-once dispatch, with no blind redispatch;
+- HAMCP-189's local-first expiry and durable cancel.
+
+A corrupt parent the sweep does not need is no longer read by the sweep.
+Health and every authoritative read still detect it.
+
+**Measured effect (synthetic 435-plan store, offline).**
+- Health: 23.0–24.0 s on beta.16, against 5.5 s for the first call (memo
+  only), 1.5 s for the following calls (435 of 435 verdicts reused) and
+  5.6 s for a deep re-scan.
+- The validation wait fell from 21.6 s to 4.0 s cold and 1.5 ms warm.
+- Sweep parent reads per pass fell from 239 to 0.
+- During a warm call, the event-loop echo p99 fell from 20.6 ms to 2.8 ms.
+- The longest single loop stall (about 0.5 s, from the existing synchronous
+  snapshot and assembly phases) is unchanged.
+- Projected live: about 9 s for the first and deep calls and about 3 s
+  after that (against 36.5 s).
+
+The tables and method are in
+[the acceptance contract](V2_4_1_BETA18_ACCEPTANCE.md#measured-effect).
+
+**Not included.** A separate validation process (D2, deferred), a direct
+`automations.yaml` read (D4) and the dependency index (D3, HAMCP-195).
+
+Downgrade: beta.17 reads every beta.18 record, since no persisted format
+changes. A downgraded server loses the verdict cache and the
+`deep_storage_audit` input, and health returns to pre-cache timing.
+
+Follow the [beta.18 acceptance contract](V2_4_1_BETA18_ACCEPTANCE.md).

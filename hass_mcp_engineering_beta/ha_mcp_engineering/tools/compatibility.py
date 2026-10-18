@@ -178,10 +178,14 @@ async def list_capabilities(status: str = "", category: str = "") -> str:
     )
 
 
-async def get_server_health(check_ha: bool = True) -> str:
+async def get_server_health(
+    check_ha: bool = True, deep_storage_audit: bool = False
+) -> str:
     """Return safe beta runtime, connectivity, audit, logging, and latency health.
 
     Set check_ha=False to skip the live read-only Home Assistant probe.
+    Set deep_storage_audit=True to discard the in-memory safety verdicts and
+    re-validate every persisted plan record (slower; read-only).
     """
     async def action():
         if not check_ha:
@@ -237,7 +241,9 @@ async def get_server_health(check_ha: bool = True) -> str:
                 # in its own secret-free health state. Core health remains
                 # available even when the optional provider is unavailable.
                 pass
-        return await HEALTH.async_snapshot(connection)
+        return await HEALTH.async_snapshot(
+            connection, deep_storage_audit=deep_storage_audit is True
+        )
 
     return await run_structured(
         "get_server_health",

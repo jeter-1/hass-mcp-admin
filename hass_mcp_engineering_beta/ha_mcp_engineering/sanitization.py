@@ -341,6 +341,31 @@ class _Emitted:
         self.text = text
 
 
+SEGMENT_MEMO_ENTRY_LIMIT = 65_536
+SEGMENT_MEMO_TEXT_LIMIT = 4_096
+
+
+class SegmentMemo:
+    """Memo of the default pass's pure segment scan for one job (HAMCP-171 D5).
+
+    ``_Sanitizer._sanitize_segment`` is a pure function of the segment text
+    and the known-secret tuple. A memo is bound to one secret tuple and is
+    owned by one caller job, which discards it at the end. It stores sanitized
+    segment text and categories, never a verdict, and it is bounded.
+    """
+
+    __slots__ = ("known_secrets", "hits", "misses", "_results")
+
+    def __init__(self, known_secrets: tuple[str, ...]) -> None:
+        self.known_secrets = tuple(secret for secret in known_secrets if secret)
+        self.hits = 0
+        self.misses = 0
+        self._results: dict[str, tuple[str, frozenset[str]]] = {}
+
+    def __len__(self) -> int:
+        return len(self._results)
+
+
 class _Sanitizer:
     def __init__(
         self,
@@ -349,6 +374,7 @@ class _Sanitizer:
         max_string: int | None,
         preserve_reference_markers: ReferenceMarkerRegistry | None = None,
         identity_markers_only: bool = False,
+        segment_memo: SegmentMemo | None = None,
     ) -> None:
         self.known_secrets = tuple(secret for secret in known_secrets if secret)
         self.max_string = max_string
@@ -360,6 +386,14 @@ class _Sanitizer:
         if type(identity_markers_only) is not bool:
             raise TypeError("identity_markers_only takes a bool")
         self.identity_markers_only = identity_markers_only
+        if segment_memo is not None and (
+            type(segment_memo) is not SegmentMemo
+            or identity_markers_only
+            or segment_memo.known_secrets != self.known_secrets
+        ):
+            # A memo is valid only for the default pass and its own secrets.
+            raise TypeError("segment_memo does not match this sanitizer")
+        self.segment_memo = segment_memo
         self.redacted_field_count = 0
         self.categories: set[str] = set()
         self.truncated_field_count = 0
@@ -447,6 +481,23 @@ class _Sanitizer:
             if index < len(markers):
                 rebuilt.append(markers[index])
         safe = "".join(rebuilt)
+        return safe, categories
+
+    def _segment(self, text: str) -> tuple[str, set[str]]:
+        memo = self.segment_memo
+        if memo is None:
+            return self._sanitize_segment(text)
+        cached = memo._results.get(text)
+        if cached is not None:
+            memo.hits += 1
+            return cached[0], set(cached[1])
+        safe, categories = self._sanitize_segment(text)
+        memo.misses += 1
+        if (
+            len(text) <= SEGMENT_MEMO_TEXT_LIMIT
+            and len(memo._results) < SEGMENT_MEMO_ENTRY_LIMIT
+        ):
+            memo._results[text] = (safe, frozenset(categories))
         return safe, categories
 
     def _replacement(self, match: re.Match[str], category: str, form: str) -> list[Any]:
@@ -541,7 +592,7 @@ class _Sanitizer:
         categories: set[str] = set()
         output: list[str] = []
         for index, part in enumerate(parts):
-            safe, detected = self._sanitize_segment(part)
+            safe, detected = self._segment(part)
             output.append(safe)
             categories.update(detected)
             if index < len(markers):
@@ -652,6 +703,7 @@ def sanitize_untrusted_data(
     max_string: int | None = None,
     preserve_reference_markers: ReferenceMarkerRegistry | None = None,
     identity_markers_only: bool = False,
+    segment_memo: SegmentMemo | None = None,
 ) -> SanitizationResult:
     """Recursively sanitize untrusted data, failing closed at each field.
 
@@ -666,6 +718,10 @@ def sanitize_untrusted_data(
     marker is replaced whole by ``MARKER_COLLISION``. The registry above
     keeps the reader's own markers by identity. The default pass is
     unchanged for every other caller.
+
+    ``segment_memo`` (default off, HAMCP-171 D5) reuses the default pass's
+    pure segment scan for identical text within one caller job. The result is
+    identical with or without it.
     """
 
     sanitizer = _Sanitizer(
@@ -673,6 +729,7 @@ def sanitize_untrusted_data(
         max_string=max_string,
         preserve_reference_markers=preserve_reference_markers,
         identity_markers_only=identity_markers_only,
+        segment_memo=segment_memo,
     )
     try:
         safe = sanitizer.sanitize(value)

@@ -1,32 +1,31 @@
 # Changelog
 
-## 2.4.1-beta.18 - Prompt verification of slow typed fan and power devices (HAMCP-192)
+## 2.4.1-beta.18 - Health verdict cache and sweep parent reads (HAMCP-171)
 
-Builds on 2.4.1-beta.17.
+Builds on 2.4.1-beta.17's typed, registered REST routes (HAMCP-200). Josh's 2026-10-18 decisions D1–D6 apply.
 
-- Poll the entity inline for about 10 seconds after a typed fan or power
-  dispatch (reads at about 0, 1, 2, 4, 6, 8 and 10 s, at most 7) and verify
-  on the first match. A device that reports a few seconds late is now
-  `succeeded_verified` in the original call instead of `observing`.
-- Shorten the typed fan/power entity lease from 120 s to 30 s, renewed every
-  10 s, so a task that does yield `observing` is re-read by the first sweep
-  after about 40-70 s.
-- Make one final read at or after the 180 s evidence deadline before any
-  manual-review decision (`final_read_at_deadline`, opt-in, used only by the
-  typed services). F3 governed executions are unchanged.
-- Keep `lock_conflict` with no superseding, and name the blocking task in the
-  receipt (`blocking_tasks`, `blocking_tasks_observed_at`).
-- Add derived, additive receipt hints: `observation_status` and, for manual
-  review, `hold_release`.
-- Add a governed hold release for a manual-review typed task on the Ingress
-  admin page `/typed`. It shows the requested and freshly read state side by
-  side, needs an administrator and a single-use token bound to the reviewed
-  facts and readback, refuses if the state changed after review, records a
-  fresh readback in an additive sidecar and one audit entry, and never
-  dispatches. The outcome stays `manual_review_required`, reported as
-  `hold_released_state_matches` or `hold_released_state_differs`.
-- Preserve the catalog, input schemas, signed registries, HOLD, support
-  window, existing persisted formats, workflows and stable v1.
+- Memoize the pure per-segment sanitizer scan within one health validation
+  job (D5). The memo is bounded, bound to the job's sensitive values and
+  discarded when the job ends.
+- Keep health safety verdicts in process memory between calls for unchanged
+  records only (D1). Key: canonical filename, `st_ino`, `st_size`,
+  `st_mtime_ns` (from `fstat` of the parsed handle), the SHA-256 of the
+  parsed bytes and the detector context. Any change, a new record, a failed
+  `fstat` or a key mismatch validates fresh. Any failed scan, storage error,
+  quarantine or unexpected worker failure discards every verdict. Verdicts
+  are never persisted, are empty at start and are never used by
+  authoritative paths.
+- Add the optional `get_server_health(deep_storage_audit=true)` input, which
+  bypasses and repopulates the cache. It and two description lines are the
+  only public descriptor change; the catalog stays at 88. The internal `deep_audit_plan_store` also
+  discards every verdict.
+- Report cache hits, misses, deep re-scans and invalidations under
+  `plan_store_scaling.safety_verdict_cache`. `health_cache_hit_count` now
+  counts async calls that reused verdicts.
+- Read a parent task in the periodic recovery sweep only for orphan cleanup
+  (no dispatch intent) or a terminal child with a recorded readiness fault.
+  Dispatch, redispatch, expiry and cancel behavior is unchanged.
+- No persisted-format (D6), registry, workflow or stable-v1 change.
 
 ## 2.4.1-beta.17 - Typed, registered routes for every Home Assistant REST call (HAMCP-200)
 

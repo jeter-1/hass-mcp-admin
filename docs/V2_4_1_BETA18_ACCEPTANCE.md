@@ -1,203 +1,250 @@
 # Engineering 2.4.1-beta.18 acceptance
 
-This contract covers HAMCP-192: typed fan and power tasks verify a slow
-device inline, re-read promptly, decide the deadline with a final read, name a
-blocking task, and offer a governed hold release. It builds on 2.4.1-beta.17
-(HAMCP-200). Release notes:
-[`V2_4_1_BETA18_RELEASE_NOTES.md`](V2_4_1_BETA18_RELEASE_NOTES.md).
+This contract covers HAMCP-171: the health safety verdict cache (D1), the
+per-job scan memo (D5) and the recovery sweep's parent reads. It builds on
+beta.17 (HAMCP-200 typed REST routes), beta.16 (HAMCP-162), beta.15
+(HAMCP-189 PR B + C) and beta.14 (HAMCP-189 PR A).
 
-**Release target.** This change goes into the next Engineering beta.
-- This PR was implemented on `2.4.1-beta.15`. HAMCP-162 (beta.16, PR #267)
-  and HAMCP-200 (beta.17, PR #274) merged to `main` first.
-- This PR merged `main` with a merge commit (no conflicts) and was staged as
-  `2.4.1-beta.18` by one owner-authorized run of
-  `scripts/promote_next_release.py --apply`, which consumed the declaration.
-  The beta.16 and beta.17 release notes and acceptance documents are
-  unchanged.
-
-The contract separates four stages:
-1. source and offline acceptance;
+It separates four stages:
+1. source and disposable acceptance;
 2. release CI;
 3. publication;
 4. installed Engineering acceptance.
 
-It authorizes none of the later stages.
+This document authorizes none of the later stages.
 
-## 1. Source and offline acceptance
+## 1. Source, review and CI
 
 Bind the following:
-- `2.4.1-beta.18` materialized in all three version authorities, with exact
-  acceptance and release-note resolution from `scripts/codex-context.py` and
-  no staged declaration left over;
-- the PR head SHA;
-- the passing PR `validate` run for that exact head;
-- the Evidence tier log named in the PR.
+- the investigation `docs/HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md`
+  (PR #276, merged at `7e223a0`);
+- Josh's 2026-10-18 decisions D1–D6 on HAMCP-171;
+- the exact rule in `docs/HEALTH_PERFORMANCE.md` ("Health safety verdict
+  cache (HAMCP-171)");
+- the original base `main` (2.4.1-beta.16 at `119be1b`), every later `main`
+  merge into the branch, and the final reviewed commit and tree.
 
-### Offline proof (`tests/test_hamcp192_observing_fix.py`, 23 tests)
+Earlier review does not cover changed code.
 
-The tests use a deterministic fake clock and fake sleep, a synthetic slow
-transport and the real gateway, provider, signed Core authority, shared F3
-executor, stores, locks and audit.
+Materialize 2.4.1-beta.18 in all three version authorities through the
+existing staging tool. Require exact acceptance and release-note resolution,
+with no staged declaration left over. Complete Full/Evidence on clean source
+and the bounded independent review.
 
-- `InlineVerificationTests` (2): a device that reports at +3 s or +8 s is
-  `succeeded_verified` inline with the lock released; the poll makes at most
-  7 reads in about 10 s.
-- `LeaseAndSweepTests` (2): a device that reports at +12 s yields
-  `observing`, and the first sweep after the 30 s lease reads and verifies
-  it; fan and power use the same 30 s lease.
-- `SlowDeviceTests` (1): a device that reports at +130 s is verified by a
-  sweep, with no hold.
-- `DeadlineFinalReadTests` (2): a device that reports just after the
-  deadline is verified by the final read; without the opt-in the shared
-  executor keeps its pre-read deadline check (F3 unchanged).
-- `NeverMatchingTests` (1): a device that never matches gets one more read
-  after the deadline, then manual review with
-  `post_dispatch_evidence_deadline_expired` and an entity hold.
-- `BlockingTaskTests` (2): the `lock_conflict` receipt names the observing
-  blocker (task, state, expected release, deadline) and a manual-review hold.
-- `HoldReleaseServiceTests` (8): a release without the Ingress administrator
-  principal is refused; a release records a readback, clears only the hold,
-  writes the audit entry and never dispatches (the service-call counter is
-  unchanged) and the outcome stays `manual_review_required`; a matching and
-  a differing readback are each reported truthfully; a failed readback or a
-  stale binding changes nothing; an interrupted release is finished by
-  recovery without provider access; the review returns the requested and
-  freshly read state side by side; a state change after review refuses the
-  release and changes nothing; an invalid sidecar fails closed.
-- `HoldReleaseIngressTests` (3): the Ingress release needs an administrator
-  (403 with no read otherwise) and a fresh single-use binding (400 when
-  stale); the review page shows the requested and freshly read values per
-  field with `same`/`DIFFERENT` and a verdict before the form, and the
-  result page repeats it for the recorded readback; a failed review read is
-  a 503 page with no form.
-- `RestartTests` (1): process loss during the inline poll; a replacement
-  service verifies after the claim expires, with no second dispatch.
-- `PowerInheritanceTests` (1): power verifies a slow light inline with the
-  same lease.
-
-The existing typed fan/power, HAMCP-175, HAMCP-181, HAMCP-200 path-safety,
-F3 recovery and approval-page suites pass unchanged except for the lease
-value and the injected poll sleep.
-
-### Mutation proof
-
-Each mutation was applied to a disposable copy of the source and the suite
-above was run against it. Each one must fail:
-1. The deadline checked before the final read.
-2. The lease left at 120 s.
-3. A release without approval (the principal check removed).
-4. A release that dispatches.
-5. The review page omitting the side-by-side comparison.
-
-## 2. Release CI and publication
+The review needs a security section covering:
+- fail-closed health: every call still reads, parses and fence-checks every
+  record, and validates every record without a matching verdict; tampered,
+  corrupt and partially written records are detected with and without the
+  cache and on a deep re-scan;
+- the cache key: canonical filename, `st_ino`, `st_size`, `st_mtime_ns` from
+  `fstat` of the parsed handle (size equal to the bytes read), SHA-256 of
+  the parsed bytes and the detector context;
+- invalidation: a whole-cache discard on any failed scan, storage error,
+  quarantine, unexpected worker failure (including an abandoned job's drained
+  failure) and the internal `deep_audit_plan_store`; verdicts recorded only
+  after the worker validates the whole pending set. Cancellation before worker
+  completion records no new verdicts for the unvalidated pending records.
+  Verdicts recorded after successful validation may safely survive later
+  cancellation or supersession; cancellation returns no successful health
+  response and does not continue lifecycle work;
+- process memory only: nothing persisted, empty at start, and no
+  authoritative read, save, approval or execution path consulting the cache;
+- bounded reporting with no digest, path or key material;
+- the one public descriptor change: `get_server_health` gains the optional
+  boolean `deep_storage_audit` (default `false`), and its description gains
+  two lines documenting it. Every other descriptor is unchanged and the
+  catalog stays at 88. The three F2 snapshot pins are updated for that
+  descriptor only. The two historical catalog-continuity tests keep their
+  baseline fixtures and strip exactly that property and those two lines
+  before comparing;
+- the sweep parent-read rule, with at-most-once dispatch, no blind
+  redispatch, HAMCP-189 local-first expiry and durable cancel unchanged;
+- zero new write, reload, restart, deletion, service-call, fallback or
+  forwarding reachability.
 
 Require exact-head CI before release acceptance. Pending or unavailable jobs
 are not passing evidence.
 
-Publication needs Josh's Ready authorization and the protected merge
+Preserve the following:
+- stable v1.1.2;
+- historical persisted fixtures and durable formats (D6: no stored-format
+  change);
+- probe fingerprints, the Core capability profiles, every owner-signed Core
+  registry entry and the signed ha-mcp registry;
+- the 8.6.0 HOLD and the support window;
+- the reviewed policy JSON and release registry JSON;
+- dependency locks, build inputs, pinned runners and workflow permissions.
+
+### Offline source evidence
+
+Run these against the exact released tree under Python 3.12 (mcp 1.30.0):
+- `tests/test_hamcp171_health_verdict_cache.py`;
+- `tests/test_hamcp171_sweep_parent_reads.py`;
+- `tests/test_governance_async_health.py`;
+- `tests/test_f3_orphan_child_recovery.py`.
+
+They must prove each of the following:
+- hits on unchanged records, with truthful counters;
+- misses on a same-size, same-mtime content change (the hash catches it),
+  and on inode, size and mtime changes, a new record, a deleted record
+  (pruned), a stat failure and a detector-context change;
+- tamper, corruption and partial writes detected with and without the
+  cache;
+- the deep re-scan bypasses and repopulates the cache, through the public
+  tool as well as the service;
+- whole-cache invalidation on worker failure, on an abandoned job's
+  failure and on the internal deep audit;
+- cancellation before worker completion records no new verdicts, even when
+  the abandoned worker later succeeds. Cancellation after successful validation
+  may retain the fully validated verdicts for reuse, but returns no health
+  response and performs no subsequent lifecycle work;
+- restart starts empty, and nothing is persisted;
+- memo equivalence, its refusal of mismatched secrets, and a fresh memo per
+  job;
+- no parent read for terminal dispatched children, while orphan cleanup and
+  terminal fault projection still read the parent and converge;
+- a corrupt parent the sweep does not read is still surfaced by health, with
+  no gateway call;
+- the owner loop stays responsive while the real CPU scanner runs.
+
+Run `docs/evidence/hamcp171-mutations/run_mutations.py`. Every mutation must
+fail at least one test, including the brief's three:
+- the cache ignores the content hash;
+- the cache survives a record change;
+- the sweep skips a needed parent read.
+
+The recorded run is in `docs/evidence/hamcp171-mutations/results.json`
+(Python 3.12.14, before the main merge/restage). Rerun all eight on the final
+merged candidate and retain its exact-head report with the PR evidence. The
+recorded baseline passed, and 8 of 8 mutations were killed, none by an import
+or syntax error.
+
+### Measured effect
+
+These are offline numbers from `docs/evidence/hamcp171-measurements/` (a
+synthetic store; see its README), not production. Both trees ran back to
+back on one host. The store has 435 plans, 240 of them applied, with a mean
+plan file of 37,024 bytes.
+
+| Health call | Wall | Validation wait | Verdicts |
+| --- | --- | --- | --- |
+| beta.16 base, three calls | 23.0 / 23.1 / 24.0 s | 21.6 / 21.7 / 22.5 s | none (`health_cache_hit_count` 0) |
+| head, first call (cold, memo only) | 5.5 s | 4.0 s | 0 hits / 435 misses |
+| head, second and third calls | 1.54 / 1.55 s | 1.5 ms | 435 hits / 0 misses |
+| head, `deep_storage_audit=true` | 5.6 s | 4.0 s | `deep_rescan`, 0 / 435 |
+| head, next plain call | 1.57 s | 1.9 ms | 435 / 0 |
+
+`health_cache_hit_count` went 0, 1, 2, 2, 3 across the five head calls. The
+other phases (snapshot about 0.45 s, projection 0.23 s, assembly 0.55 s and
+overlay 0.21 s) are unchanged.
+
+**Event-loop responsiveness during a health call.** A 1-byte loopback echo
+client and a 1 ms ticker ran on the owner loop during each call. When idle,
+the echo round trip had a median of 0.03 ms and a p99 of 0.07 ms.
+
+| During the call | Echo median | Echo p99 | Echo throughput | Longest loop gap |
+| --- | --- | --- | --- | --- |
+| beta.16 base | 0.16–0.18 ms | 20.6–22.7 ms | about 175/s for 23 s | 0.51–0.58 s |
+| head, cold or deep | 0.05–0.07 ms | 15.6–20.5 ms | about 490/s for 5.5 s | 0.53–0.59 s |
+| head, warm | 0.035–0.042 ms | 2.7–2.8 ms | about 1,570/s for 1.5 s | 0.56–0.58 s |
+
+Other requests stay responsive. The 22 s window of GIL contention from the
+validation worker shrinks to about 4 s on a cold or deep call and to none on
+a warm call. The longest single stall is unchanged at about 0.5 s. It comes
+from the existing synchronous snapshot and assembly phases on the loop, not
+from the worker, and this release does not change those phases.
+
+**Recovery sweep (five periodic passes).**
+
+| | Parent `task_repository.get` per pass | Pass time and loop stall |
+| --- | --- | --- |
+| beta.16 base | 240, 239, 239, 239, 239 | 0.205–0.245 s |
+| head | 0, 0, 0, 0, 0 | 0.122–0.124 s |
+
+**Projected production effect.** Live beta.16 took 36.5 s, of which 33.8 s
+was validation wait. Validation is about 1.54 times slower live than on this
+store (33.8 s against 21.9 s); the other phases take about 2.7 s live. The
+projection is:
+- the first health call after a restart, and every deep re-scan: about
+  2.7 s + 1.54 × 4.0 s ≈ 9 s;
+- following calls with unchanged records: about 3 s, plus fresh validation
+  of only the records that changed;
+- the sweep's 239 parent reads per 30 s (about 8 records per second, most
+  of the live 7/s task deserialization rate) fall to zero for terminal,
+  dispatched, fault-free children.
+
+Health itself still deserializes every task once per call, so subtract
+those reads in the live task-read check.
+
+## 2. Publication and recovery preparation
+
+Publication needs Josh's applicable Ready authorization and the protected merge
 handoff. Verify the following with the shipped verifiers:
 - the merged source;
 - v2.4.1-beta.18;
 - the immutable version and commit images;
 - provenance and SBOM.
 
-Never invent future image identities. Retain the beta.17 artifacts and the
-known-good earlier artifacts for recovery.
+Never invent future image identities. Retain the beta.17, beta.16, beta.15 and beta.14
+artifacts and the known-good beta.12 and beta.11 artifacts and options for
+recovery.
 
-The only new stored file is the additive hold-release sidecar. Beta.17
-reads every other record this change writes and ignores the sidecar
-directory. Rollback is reinstalling the beta.17 artifact (see the release
-notes for the effect on a released hold).
+No new persisted format is introduced, and beta.17 reads every beta.18
+record.
 
 ## 3. Installed Engineering
 
 All installed checks below are read-only unless a step names Josh's explicit
-authorization.
+authorization. Record timings, counters and modes only, never record
+content.
 
 1. **Installed-image binding.** Separately authorize installation of the
-   published Engineering artifact. Bind the running add-on to:
-   - the published image index digest;
-   - the v2.4.1-beta.18 tag;
-   - the protected `main` merge commit that contains this PR.
+   published Engineering artifact. Bind the running add-on to the published
+   image index digest, the v2.4.1-beta.18 tag and the protected `main` merge
+   commit. A source version alone does not prove the installed image.
+2. **Live catalog 88.** Enumerate the live catalog with a fresh protocol
+   enumeration: exactly 88 tools (59 native, 29 delegated).
+   `get_server_health` must show the reviewed schema with the optional
+   `deep_storage_audit` boolean and the two added description lines. Every
+   other descriptor must match beta.17.
+   Also compare Core signed selection, storage and audit health, F3
+   readiness and zero fallback.
+3. **Two consecutive health calls.** After the add-on has started, call
+   `get_server_health(check_ha=false)` twice in a row. Record each call's
+   wall time and `governance.plan_store_scaling.safety_verdict_cache`:
+   - the first call: `last_run.mode: cached`; misses up to the plan count
+     (all records validated fresh after a restart);
+   - the second call: `last_run.mode: cached`, `hits > 0` (close to the
+     plan count), few or no misses, and much faster than the first (the
+     beta.16 baseline is 36.5 s with 33.8 s of validation wait);
+   - `health_cache_hit_count` increases by one on the second call;
+   - `scope: process_memory_only` and `persisted: false`;
+   - storage health stays healthy, with the same plan and task counts on
+     both calls.
+4. **Deep re-scan.** Call `get_server_health(check_ha=false,
+   deep_storage_audit=true)`. It must report `last_run.mode: deep_rescan`,
+   `hits: 0`, misses equal to the plan count and `totals.deep_rescans`
+   increased by one, at full validation time (comparable to the first call
+   in step 3). A following plain call must again report hits.
+5. **Task-read rate.** Record
+   `governance.plan_store_scaling.task_navigation.records_deserialized` (and
+   `terminal_records_deserialized`) from `get_server_health(check_ha=false)`,
+   wait about 10 minutes with no other client activity, and record them
+   again. The rate must drop sharply from the beta.16 baseline of about 7
+   task records per second, which came from the 30 s sweep's parent reads.
+   Subtract the reads made by the two health calls themselves.
+6. **Recovery and canaries unchanged.**
+   - F3 readiness reports no new recovery fault and no orphaned child.
+   - Repeat the beta.16 read-only checks: one delegated read, one native read
+     and `get_core_log_history`, each exactly as on beta.16.
+   - Power, fan, dashboard and entity-metadata capabilities must report the
+     same admission as beta.16.
+   - With Josh's explicit authorization only, repeat the beta.6 power canary
+     and the beta.8 dashboard canary on the entity and test dashboard Josh
+     chooses. The outcomes must match beta.16.
 
-   A source version alone does not prove the installed image.
-2. **Catalog unchanged.** Compare the public descriptors with beta.17: the
-   same tool count (88 with `ha_config_get_yaml` admitted, otherwise 87),
-   input schemas and descriptions. Also compare:
-   - Core signed selection;
-   - storage and audit health;
-   - F3 readiness;
-   - zero fallback.
-3. **Health: no retained holds (read-only).** Call `get_server_health`.
-   For both `ordinary_power` and `ordinary_fan`, require:
-   - `configured: true`;
-   - `conflict_hold_count: 0` and `conflict_hold_task_count: 0`;
-   - `retained_lock_count: 0`;
-   - `nonterminal_tasks: 0` and `active_executions: 0`;
-   - `fallback_count: 0`;
-   - `recovery_failures` recorded (expected `0`).
-
-   Run it before the canary and again about 40 s after it. A nonzero hold
-   count before the canary is not a failure of this release: record the
-   task, do not start the canary on that entity, and follow step 5.
-4. **Live power canary on the slow-reporting lamp (needs Josh's explicit
-   authorization for these two physical actions).** The target is
-   `light.back_guest_room_lamp`, which reported 2–6 s late on beta.15.
-   1. Read its state with `get_entity`. Choose the action that changes it
-      (`turn_on` if `off`, `turn_off` if `on`).
-   2. Call `control_power` with that `entity_id`, `action` and a new
-      `operation_id`.
-   3. **Pass:** the first response itself has `state:
-      succeeded_verified` and `terminal: true`, with
-      `provider_attempt_count: 1`, `observation_status.observation_attempts:
-      1`, a non-null `observation_status.verified_at`, no
-      `observation_status.reason`, and an empty `retained_locks`. The task
-      must never report `observing`. Record the call's elapsed time
-      (expected about the lamp's reporting delay, at most about 10 s plus
-      one read).
-   4. Call `control_power` with the reverse action and a new
-      `operation_id` to restore the original state. The same pass criteria
-      apply.
-   5. Call `get_execution_task` for both task IDs and confirm
-      `state: succeeded_verified`, `provider_attempt_count: 1` and
-      `redispatch_prohibited: true`.
-   6. Repeat step 3: no retained holds or locks.
-
-   **Fail:** any `observing` response, a second dispatch, or a retained
-   lock or hold after the call. Stop and report the receipts; do not retry
-   with a new ID.
-5. **Exercising the hold release safely, if a hold ever appears.** This
-   step runs only when step 3 or a receipt shows a `manual_review_required`
-   task with an entity hold. It never dispatches, and it is the only way to
-   release such a hold.
-   1. Read the task with `get_execution_task`. Its `hold_release.procedure`
-      is `home_assistant_admin_ingress_typed_hold_release`. Note
-      `terminal_outcome`, `verification` and `retained_locks`.
-   2. As a Home Assistant administrator, open the add-on's Ingress panel
-      and go to `/typed`. Only held typed tasks are listed; open the task
-      (`/typed/power/<task_id>` or `/typed/fan/<task_id>`).
-   3. Read the **requested state** and **freshly read state** table. The
-      page made one read-only state read to build it. If any row says
-      `DIFFERENT`, the device is not in the requested state: check the
-      device physically before releasing. Releasing does not change the
-      device.
-   4. Select release. The decision is refused with no change if the
-      device's state changed after the review (409, state changed), if the
-      page was stale or the token reused (400), or if the read fails (409).
-      Reopen the review page and decide again.
-   5. On success, the result page shows the recorded readback compared with
-      the request, `Dispatch: none`, and `manual_review_required` as the
-      outcome. Confirm with `get_execution_task`: `hold_release.released:
-      true`, `outcome` `hold_released_state_matches` or
-      `hold_released_state_differs`, `dispatch: "none"`, and an empty
-      `retained_locks`. Confirm in `get_audit_log` one
-      `<kind>_hold_release_action` entry for the task.
-   6. Repeat step 3: the hold counts are `0`.
-
-   To prove the release path without a real hold, rely on the offline
-   proof (§1). Do not create a hold deliberately on a live device.
-6. **Deadline final read, blocker naming and interrupted-release recovery**
-   are proven offline only (§1).
+   No published tool may return `CoreRequirementUnmapped`. Any occurrence is
+   a stop condition.
 
 No push, CI trigger, signing, publication, installation or live action is
 authorized by source completion.

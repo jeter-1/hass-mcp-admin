@@ -10,12 +10,80 @@ inverse lock reporting reuse the same detached records. Fixed namespace bounds
 (1,024 F3 parents, 8,192 children, at most eight declared children per manifest)
 and the bounded recovery output remain enforced. No durable format changes.
 
-The explicit async diagnostic performs a fresh collection and safety validation
-even after an unchanged call; its aggregate rebuild/read counters describe that
-work. It does not use a previously healthy aggregate to skip current integrity
-inspection. The existing synchronous summary cache and synchronous repository
+The explicit async diagnostic performs a fresh collection on every call; its
+aggregate rebuild/read counters describe that work. It does not use a previously
+healthy aggregate to skip current integrity inspection. Since HAMCP-171 the
+persisted-plan safety detector reuses a per-record verdict only under the exact
+rule in [Health safety verdict cache (HAMCP-171)](#health-safety-verdict-cache-hamcp-171).
+The existing synchronous summary cache and synchronous repository
 APIs remain available, with their original default behavior. Historical warm-cache
 measurements below describe earlier increments, not current async read counts.
+
+## Health safety verdict cache (HAMCP-171)
+
+Owner decisions D1 and D5 (2026-10-18, register row HAMCP-171) set this rule.
+
+**Within one health check (D5).** Each validation job creates its own
+segment memo of the pure per-segment sanitizer scan. The memo is bound to the
+job's exact sensitive-value set, holds at most 65,536 segments of at most
+4,096 characters each, and is discarded when the job ends. Its results are
+identical to the unmemoized scan. It is not a cache between calls.
+
+**Between health checks (D1).** The async health diagnostic keeps, in process
+memory only, the verdict "this record's exact bytes passed the persisted-plan
+safety detector". A verdict is reused only when every part of its key matches
+the record this call just read and parsed:
+
+- the canonical record filename;
+- `st_ino`, `st_size` and `st_mtime_ns`, taken by `fstat` of the same open
+  handle whose bytes were parsed, with `st_size` equal to the byte count read;
+- the SHA-256 of those exact bytes; and
+- the detector context: a per-process keyed digest of the detector version and
+  the configured sensitive-value set.
+
+Anything else validates fresh: changed content (even with the same size, inode
+and mtime, because the hash differs), a changed inode, size or mtime, a new
+record, a failed `fstat`, a size that differs from the bytes read, or a changed
+detector context. A deleted record's verdict is pruned. Verdicts are recorded
+only after the worker validates the whole pending set successfully. Any failed
+scan, storage error, quarantine or unexpected worker failure (including an
+abandoned job's failure drained by the next reader) discards every cached
+verdict. Supersession and cancellation do not discard verdicts: a call
+cancelled before its worker finishes records none, and any verdict recorded
+before a later supersession remains bound to the exact bytes that passed.
+
+Every call still collects and parses every record, runs lifecycle, projection
+and fence checks, and validates each record that has no matching verdict, so
+tampered, corrupt and partially written records are detected exactly as
+before. The cache only skips re-running the detector on bytes it already
+passed. Verdicts are never persisted, are empty at process start, and are not
+used by any authoritative read, save, approval or execution path: those still
+validate the record they load.
+
+**Deep re-scan.** `get_server_health(deep_storage_audit=true)` clears the
+cache, re-validates every record, and repopulates it from that run. The input
+is optional and defaults to `false`. It and the two description lines that
+document it are the only public descriptor change, and the tool count is
+unchanged. The existing internal `deep_audit_plan_store`
+reconciliation also discards every verdict, so the next health call validates
+every record.
+
+**Reporting.** `governance.plan_store_scaling.safety_verdict_cache` reports
+the scope (`process_memory_only`), `persisted: false`, the key description,
+current entries, the last run (`mode` = `cached` or `deep_rescan`, `hits`,
+`misses`, `not_applicable` for pre-contract-v2 records, `pruned`) and process
+totals (hits, misses, deep re-scans, invalidations). `health_cache_hit_count`
+also counts async calls that reused at least one verdict. No record digest or
+key material is reported.
+
+**Recovery sweep.** The periodic orphan sweep reads each child's own status
+first. It reads the parent task only when the child exists and either has no
+dispatch intent (orphan cleanup) or is terminal with a recorded readiness
+fault (terminal projection); each parent is read at most once per pass.
+Terminal, dispatched, fault-free children cost no parent read. Dispatch,
+redispatch, expiry and cancellation behavior is unchanged. A corrupt parent
+that the sweep does not need is no longer read by the sweep; health and every
+authoritative read still detect it.
 
 Only detached plan safety validation uses the existing single pure worker. No
 repository or mutable runtime goes to a worker. Readers serialize under the

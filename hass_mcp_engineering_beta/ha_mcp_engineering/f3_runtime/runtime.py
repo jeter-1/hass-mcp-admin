@@ -5532,10 +5532,6 @@ class F3RuntimeIntegration:
                 break
             examined += 1
             public_task_id = declaration["public_task_id"]
-            if public_task_id not in parents:
-                parents[public_task_id] = self.service.task_repository.get(
-                    public_task_id
-                )
             record = self.children.get(declaration["child_id"])
             runtime = self.children.runtime(declaration["child_id"])
             cursor = self.children.recovery_cursor_for_declaration(
@@ -5547,17 +5543,30 @@ class F3RuntimeIntegration:
             ):
                 next_cursor = cursor
                 continue
+            fault_key = "recovery_child:" + declaration["child_id"]
+            with self._readiness_lock:
+                fault_revision = self._readiness_faults.get(fault_key)
+            # HAMCP-171: child status first. Both decisions below are false
+            # without reading the parent unless the child exists and either
+            # has no dispatch intent (orphan cleanup) or is terminal with a
+            # recorded fault (terminal projection); only then read it.
+            parent = None
+            if record is not None and (
+                record.dispatch_intent is None
+                or (fault_revision is not None and record.terminal)
+            ):
+                if public_task_id not in parents:
+                    parents[public_task_id] = (
+                        self.service.task_repository.get(public_task_id)
+                    )
+                parent = parents[public_task_id]
             pending = self._orphan_cleanup_pending(
-                parent=parents[public_task_id],
+                parent=parent,
                 declaration=declaration,
                 record=record,
                 runtime=runtime,
                 lock_records=lock_records,
             )
-            fault_key = "recovery_child:" + declaration["child_id"]
-            with self._readiness_lock:
-                fault_revision = self._readiness_faults.get(fault_key)
-            parent = parents[public_task_id]
             # Preserve existing orphan cleanup when it still has work. All
             # other known terminal faults use exact projection reconciliation,
             # including verified no-ops and pre-dispatch terminal outcomes.
