@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 from mcp.server.fastmcp import FastMCP
 from tests.same_thread_asgi_client import SameThreadAsgiTestClient
+from tests.support.process_isolation import restore_after_class
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
@@ -77,6 +78,7 @@ def _parse_sse(response) -> dict:
 class Rc2dev8RawPrevalidationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        restore_after_class(cls)
         cls.directory = tempfile.TemporaryDirectory()
         cls.audit_path = Path(cls.directory.name) / "audit.jsonl"
         fresh_server = FastMCP(

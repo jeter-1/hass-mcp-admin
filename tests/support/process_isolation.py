@@ -33,6 +33,9 @@ import warnings
 
 CATALOG_MODULE = "ha_mcp_engineering.capabilities"
 CATALOG_ATTRIBUTES = ("_DYNAMIC_UPSTREAM_CAPABILITIES", "_UPSTREAM_READ_GATEWAY_SUMMARY")
+# The registered FastMCP server is process-wide and caches one streamable HTTP
+# session manager, which the SDK lets run only once per instance.
+SERVER_MODULE, SERVER_ATTRIBUTE = "ha_mcp_engineering.tools.registry", "_SERVER"
 STATE_ATTRIBUTE = "_hamcp_process_isolation"
 MAX_LISTED = 10
 _MISSING = object()
@@ -83,6 +86,39 @@ class ModuleAttributeProbe:
         elif isinstance(original, list):
             original[:] = copy.deepcopy(value)
         setattr(module, self.attribute, original)
+
+
+class ObjectAttributeProbe:
+    """An attribute of a runtime module global, compared by identity only."""
+
+    def __init__(self, module, owner, attribute):
+        self.module, self.owner, self.attribute = module, owner, attribute
+        self.name = f"{module}.{owner}.{attribute}"
+
+    def capture(self):
+        owner = getattr(sys.modules.get(self.module), self.owner, None)
+        if owner is None:
+            return _MISSING
+        return owner, getattr(owner, self.attribute, _MISSING)
+
+    def changes(self, saved):
+        if saved is _MISSING:
+            return []
+        owner, value = saved
+        current = getattr(owner, self.attribute, _MISSING)
+        if current is value:
+            return []
+        return [f"{self.name}: {type(value).__name__} -> {type(current).__name__}"]
+
+    def restore(self, saved):
+        if saved is _MISSING:
+            return
+        owner, value = saved
+        if value is _MISSING:
+            if hasattr(owner, self.attribute):
+                delattr(owner, self.attribute)
+        else:
+            setattr(owner, self.attribute, value)
 
 
 def _catalog_entries(before, after):
@@ -292,6 +328,7 @@ class EventLoopProbe:
 PROBES = (
     ModuleAttributeProbe(CATALOG_MODULE, CATALOG_ATTRIBUTES[0], _catalog_entries),
     ModuleAttributeProbe(CATALOG_MODULE, CATALOG_ATTRIBUTES[1], _summary_keys),
+    ObjectAttributeProbe(SERVER_MODULE, SERVER_ATTRIBUTE, "_session_manager"),
     EnvironmentProbe(),
     WorkingDirectoryProbe(),
     SysPathProbe(),
@@ -355,6 +392,17 @@ class Guard:
             self.observer("module_leak", module, changes)
         return (f"test module {module!r} leaked process-wide state past its own tests "
                 f"(class or module fixtures); restored for later modules: " + "; ".join(changes))
+
+
+def restore_after_class(cls, probes=PROBES):
+    """Call first in ``setUpClass``: undo the class's process-wide changes.
+
+    The state is captured now and restored as a class cleanup, which runs after
+    ``tearDownClass`` and also when ``setUpClass`` fails part way.
+    """
+
+    snapshot = Guard(probes).capture()
+    cls.addClassCleanup(Guard.restore, snapshot)
 
 
 class _State:

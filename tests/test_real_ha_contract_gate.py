@@ -21,6 +21,7 @@ if str(ROOT / "tests") not in sys.path:
     sys.path.append(str(ROOT / "tests"))
 from support.support_window_matrix import rows as support_rows  # noqa: E402
 from support import core_bindings  # noqa: E402
+from support.process_isolation import restore_after_class  # noqa: E402
 PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 DEVICE_FIXTURE_ROOT = (
     ROOT
@@ -247,6 +248,7 @@ class _IndeterminateF2AcceptanceGateway(_F2AcceptanceGateway):
 class RealHomeAssistantDev14GateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        restore_after_class(cls)
         cls.source = CONTRACT_PATH.read_text(encoding="utf-8")
         cls.tree = ast.parse(cls.source, filename=str(CONTRACT_PATH))
         cls.functions = {
@@ -790,6 +792,7 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
 class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
+        restore_after_class(cls)
         spec = importlib.util.spec_from_file_location(
             "_real_ha_f2_runner_subject",
             CONTRACT_PATH,
@@ -1176,6 +1179,7 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
 class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        restore_after_class(cls)
         cls.ci = load_workflow(CI_PATH)
         cls.publish = load_workflow(PUBLISH_PATH)
         cls.source = CONTRACT_PATH.read_text(encoding="utf-8")
