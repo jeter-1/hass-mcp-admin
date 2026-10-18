@@ -203,6 +203,7 @@ class SharedOperationExecutor:
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Any] = asyncio.sleep,
         fault_hook: FaultHook | None = None,
+        final_read_at_deadline: bool = False,
     ):
         lock_timing.validate()
         executor_timing.validate()
@@ -216,6 +217,9 @@ class SharedOperationExecutor:
         self.monotonic = monotonic
         self.sleep = sleep
         self._fault_hook = fault_hook
+        # HAMCP-192 (typed fan/power only): never decide the evidence deadline
+        # before reading. One final read runs; a match still verifies.
+        self.final_read_at_deadline = final_read_at_deadline is True
         self._task_locks: dict[str, asyncio.Lock] = {}
 
     def _inject(self, stage: str) -> None:
@@ -1066,7 +1070,7 @@ class SharedOperationExecutor:
         record = self.execution_repository.get(identity.task_id)
         if record is None or record.dispatch_intent is None:
             raise OperationExecutorError("observation record is missing durable intent")
-        if self._deadline_expired(record):
+        if not self.final_read_at_deadline and self._deadline_expired(record):
             return self._manual_review(
                 claim,
                 identity,
@@ -1215,6 +1219,14 @@ class SharedOperationExecutor:
                 else:
                     self._release_safely(handle)
             else:
+                if self.final_read_at_deadline and self._deadline_expired(record):
+                    # The final read did not match: the deadline decides now.
+                    return self._manual_review(
+                        claim,
+                        identity,
+                        handle,
+                        reason_code="post_dispatch_evidence_deadline_expired",
+                    )
                 renewal_failure = self._renewal_failure_result(
                     claim, identity, handle
                 )

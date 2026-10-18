@@ -41,6 +41,9 @@ class Clock:
         return self.value
     def advance(self, seconds):
         self.value += timedelta(seconds=seconds)
+    async def sleep(self, seconds):
+        # HAMCP-192: the inline observation poll waits on this fake clock.
+        self.advance(seconds)
 
 
 class Core:
@@ -126,7 +129,7 @@ class FanTests(unittest.IsolatedAsyncioTestCase):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.clock=Clock();self.core=Core();self.transport=Transport()
         self.provider=FanProvider(self.transport, lambda:self.transport.authority)
-        self.service=FanService(self.tmp.name,self.provider,FanCoreAuthority(self.core),now=self.clock)
+        self.service=FanService(self.tmp.name,self.provider,FanCoreAuthority(self.core),now=self.clock, sleep=self.clock.sleep)
         self.addAsyncCleanup(self.service.close)
         self.telemetry,self.token=begin_request('synthetic-request')
         self.addCleanup(end_request,self.token)
@@ -244,7 +247,7 @@ class FanTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.transport.writes,1)
         self.assertTrue(all(value['task_id']==request.task_id for value in values));self.settled()
     async def test_separate_service_duplicate_defers_to_original_owner(self):
-        second = FanService(self.tmp.name, self.provider, FanCoreAuthority(self.core), now=self.clock)
+        second = FanService(self.tmp.name, self.provider, FanCoreAuthority(self.core), now=self.clock, sleep=self.clock.sleep)
         self.addAsyncCleanup(second.close)
         request = self.request(percentage=50)
         self.telemetry.ordinary_fan_binding = digest(request.model_dump())
@@ -324,7 +327,7 @@ class FanTests(unittest.IsolatedAsyncioTestCase):
         await self.service.close()
         with self.assertRaises(asyncio.CancelledError):await pending
         self.clock.advance(121);self.transport.before=None
-        replacement=FanService(self.tmp.name,self.provider,FanCoreAuthority(self.core),now=self.clock)
+        replacement=FanService(self.tmp.name,self.provider,FanCoreAuthority(self.core),now=self.clock, sleep=self.clock.sleep)
         await replacement.recover_once()
         self.assertEqual(replacement.receipt(request.task_id)['state'],'succeeded_verified')
         self.assertEqual(self.transport.writes,1);self.settled()

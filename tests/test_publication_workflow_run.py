@@ -11,6 +11,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,9 @@ from unittest import mock
 import yaml
 from tests import test_publication_handoff as h
 from tests import test_publication_source_verifier as f
+
+# HAMCP-204: the publication chain that replaced the single promote job.
+PUBLICATION_JOBS = ("verify-release", "claim", "build", "verify-image", "promote")
 
 
 class WorkflowRunProvenanceTests(unittest.TestCase):
@@ -41,11 +45,42 @@ class WorkflowRunProvenanceTests(unittest.TestCase):
         self.binding = json.loads(self.handoff.verify()["source_handoff"])
         self.claim = h.claim.identity(self.env, f.RELEASE_SHA, f.VERSION, json.dumps(self.binding))
         self.workflow = yaml.safe_load((h.ROOT / ".github/workflows/publish-rc-image.yml").read_text())
-        self.steps = self.workflow["jobs"]["promote"]["steps"]
+        # HAMCP-204: the former promote job is split; steps are located in
+        # whichever chain job now owns them, and each name must be unique.
+        self.jobs = self.workflow["jobs"]
+        self.steps = [(name, step) for name in PUBLICATION_JOBS
+                      for step in self.jobs[name]["steps"]]
+        # The provenance build job is derived from the workflow itself with the
+        # verifier's own rule, never hard-coded.
+        builders = f.builder_jobs(self.workflow)
+        self.assertEqual(len(builders), 1)
+        self.build_job = builders[0]
         self.build_count = 0
 
+    def located(self, name):
+        matches = [(job, step) for job, step in self.steps if step.get("name") == name]
+        self.assertEqual(len(matches), 1, name)
+        return matches[0]
+
     def step(self, name):
-        return next(step for step in self.steps if step.get("name") == name)
+        return self.located(name)[1]
+
+    def output_source(self, job, expression):
+        """Resolve a step env expression to the (job, step id, output) that sets it.
+
+        `steps.<id>.outputs.<x>` resolves within `job`; `needs.<job>.outputs.<x>`
+        follows that job's `outputs:` mapping, which must itself name a step of
+        that job, and the named job must be a declared dependency.
+        """
+        match = re.fullmatch(r"\$\{\{ (steps|needs)\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_]+) \}\}",
+                             expression)
+        self.assertIsNotNone(match, expression)
+        kind, owner, output = match.groups()
+        if kind == "needs":
+            self.assertIn(owner, self.jobs[job]["needs"])
+            return self.output_source(owner, self.jobs[owner]["outputs"][output])
+        self.assertEqual(sum(step.get("id") == owner for step in self.jobs[job]["steps"]), 1)
+        return job, owner, output
 
     def payload(self):
         return {
@@ -81,6 +116,7 @@ class WorkflowRunProvenanceTests(unittest.TestCase):
             "expected-version": f.VERSION, "expected-build-time": f.BUILD_TIME,
             "expected-run-id": f.RUN_ID, "expected-run-attempt": str(f.RUN_ATTEMPT),
             "expected-workflow-sha": f.WORKFLOW_SHA, "expected-event-name": event,
+            "expected-build-job": self.build_job,
             "expected-handoff": (json.dumps(self.binding if binding is None else binding)
                                  if event == "workflow_run" else ""),
         }
@@ -130,12 +166,17 @@ class WorkflowRunProvenanceTests(unittest.TestCase):
     def resolve(self, root, digest, mode):
         # Execute the workflow's actual source resolver. Recovery rejects any
         # build output, and the build action is gated by the same source mode.
-        build = self.step("Build release commit without a temporary tag")
+        build_job, build = self.located("Build release commit without a temporary tag")
+        self.assertEqual(build_job, self.build_job)
         self.assertEqual(build["if"], "needs.detect-release.outputs.source_mode == 'build'")
+        source_job, source_step = self.located("Resolve immutable source image")
+        # The built digest reaches the resolver only from the build step itself.
+        self.assertEqual(self.output_source(source_job, source_step["env"]["BUILT_DIGEST"]),
+                         (self.build_job, build["id"], "digest"))
         if mode == "build":
             self.build_count += 1
         output = root / (mode + "-source-output")
-        result = subprocess.run(["bash", "-c", self.step("Resolve immutable source image")["run"]],
+        result = subprocess.run(["bash", "-c", source_step["run"]],
                                 env={**os.environ, "SOURCE_MODE": mode,
                                      "BUILT_DIGEST": digest if mode == "build" else "",
                                      "RECOVERY_DIGEST": digest if mode == "resume_digest" else "",
@@ -265,7 +306,8 @@ class WorkflowRunProvenanceTests(unittest.TestCase):
         for key, bad in (("github_ref", "refs/heads/feature"), ("github_workflow_ref", "other"),
                          ("github_workflow_sha", h.HEAD), ("github_run_id", "999"),
                          ("github_run_attempt", "2"), ("github_actor", "other"),
-                         ("github_triggering_actor", "other"), ("github_repository", "foreign/repo")):
+                         ("github_triggering_actor", "other"), ("github_repository", "foreign/repo"),
+                         ("github_job", "verify-image"), ("github_job", "promote")):
             with self.subTest(key=key), tempfile.TemporaryDirectory() as tmp:
                 def mutate(slsa):
                     slsa["buildDefinition"]["internalParameters"][key] = bad
@@ -275,7 +317,9 @@ class WorkflowRunProvenanceTests(unittest.TestCase):
         for change in ({"expected-digest": "sha256:" + "0" * 64},
                        {"expected-release-sha": h.HEAD},
                        {"expected-run-attempt": "2"}, {"expected-run-id": "999"},
-                       {"expected-workflow-sha": h.HEAD}):
+                       {"expected-workflow-sha": h.HEAD},
+                       {"expected-build-job": "promote"},
+                       {"expected-build-job": "verify-image"}):
             with self.subTest(change=change), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 self.assertEqual(self.verify(root, self.evidence(root), overrides=change)[:2], (1, ""))
@@ -298,13 +342,27 @@ class WorkflowRunProvenanceTests(unittest.TestCase):
     def test_workflow_carries_verified_binding_through_claim_for_both_modes(self):
         detector = self.workflow["jobs"]["detect-release"]
         self.assertEqual(detector["outputs"]["source_handoff"], "${{ steps.handoff.outputs.source_handoff }}")
-        attempt = self.step("Consume create-only publication attempt authority")
+        attempt_job, attempt = self.located("Consume create-only publication attempt authority")
+        self.assertEqual(attempt_job, "claim")
+        self.assertEqual(attempt["id"], "attempt")
         self.assertEqual(attempt["env"]["SOURCE_HANDOFF"], "${{ needs.detect-release.outputs.source_handoff }}")
+        self.assertEqual(self.output_source(attempt_job, attempt["env"]["SOURCE_HANDOFF"]),
+                         ("detect-release", "handoff", "source_handoff"))
         self.assertIn('--handoff "$SOURCE_HANDOFF" --github-output "$GITHUB_OUTPUT"', attempt["run"])
         self.assertEqual(attempt["run"].count('--github-output "$GITHUB_OUTPUT"'), 2)
-        verifier = self.step("Verify digest-addressed image architectures and raw attestations anonymously")
-        self.assertEqual(verifier["env"]["EXPECTED_HANDOFF"], "${{ steps.attempt.outputs.source_handoff }}")
+        verifier_job, verifier = self.located(
+            "Verify digest-addressed image architectures and raw attestations anonymously")
+        self.assertEqual(verifier["env"]["EXPECTED_HANDOFF"], "${{ needs.claim.outputs.source_handoff }}")
+        # The verifier's handoff is exactly the claim step's binding output,
+        # carried across jobs only through the claim job's outputs mapping.
+        self.assertEqual(self.output_source(verifier_job, verifier["env"]["EXPECTED_HANDOFF"]),
+                         (attempt_job, attempt["id"], "source_handoff"))
         self.assertIn('--expected-handoff "$EXPECTED_HANDOFF"', verifier["run"])
+        # The provenance build job is resolved in the same job from the exact
+        # source workflow, then passed to the verifier.
+        self.assertEqual(self.output_source(verifier_job, verifier["env"]["EXPECTED_BUILD_JOB"]),
+                         (verifier_job, "build_job", "build_job"))
+        self.assertIn('--expected-build-job "$EXPECTED_BUILD_JOB"', verifier["run"])
 
 
 if __name__ == "__main__":

@@ -282,12 +282,21 @@ if sys.argv[1] == 'run':
 
     def test_publication_validation_lock_is_bound_to_workflow_not_recovery_source(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/publish-rc-image.yml").read_text())
-        step = next(s for s in workflow["jobs"]["promote"]["steps"]
-                    if s.get("name") == "Install release validation dependencies")
-        self.assertEqual(step["env"], {"WORKFLOW_AUTHORITY_SHA": "${{ github.sha }}"})
-        self.assertIn('git show "${WORKFLOW_AUTHORITY_SHA}:tests/requirements.lock"', step["run"])
-        self.assertIn('--require-hashes --only-binary=:all:', step["run"])
-        self.assertNotIn('requirements.txt', step["run"])
+        # HAMCP-204: only the two read-only verification jobs install the
+        # lock; the token-holding claim, build, and promote jobs install none.
+        installers = {name: [s for s in job.get("steps", [])
+                             if s.get("name") == "Install release validation dependencies"]
+                      for name, job in workflow["jobs"].items()}
+        self.assertEqual({name for name, steps in installers.items() if steps},
+                         {"verify-release", "verify-image"})
+        for name in ("verify-release", "verify-image"):
+            with self.subTest(job=name):
+                self.assertEqual(len(installers[name]), 1)
+                step = installers[name][0]
+                self.assertEqual(step["env"], {"WORKFLOW_AUTHORITY_SHA": "${{ github.sha }}"})
+                self.assertIn('git show "${WORKFLOW_AUTHORITY_SHA}:tests/requirements.lock"', step["run"])
+                self.assertIn('--require-hashes --only-binary=:all:', step["run"])
+                self.assertNotIn('requirements.txt', step["run"])
 
 
 class PublicationBuildInputsTests(unittest.TestCase):

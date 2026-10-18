@@ -21,6 +21,9 @@ from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
     SignedReleaseRegistry,
     TRUST_ANCHOR_KEY_ID,
 )
+from ha_mcp_engineering.capabilities import (  # noqa: E402
+    replace_dynamic_upstream_capabilities,
+)
 from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     McpDashboardHandshake,
     McpDashboardRead,
@@ -145,6 +148,9 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
         self.now = datetime(2026, 9, 2, 22, tzinfo=timezone.utc)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
+        # Each gateway publishes its catalog into the process-wide capability
+        # catalog; restore it so later modules see the static catalog only.
+        self.addCleanup(replace_dynamic_upstream_capabilities, (), {})
 
     def _registry(self, entry: dict | None) -> SignedReleaseRegistry:
         raw = self.signer.journal_raw(
