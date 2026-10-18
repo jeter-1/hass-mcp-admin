@@ -1,104 +1,177 @@
 # Engineering 2.4.1-beta.17 release notes
 
-Engineering 2.4.1-beta.17 makes `get_server_health` much cheaper on a large
-plan store, and stops the 30 s recovery sweep from reading parent tasks it
-does not need (HAMCP-171). It builds on beta.16 (HAMCP-162), beta.15
-(HAMCP-189 PR B + C) and beta.14 (HAMCP-189 PR A).
+Engineering 2.4.1-beta.17 makes every Home Assistant REST path safe by
+construction (HAMCP-200). The trigger was an `automation_id` that could
+traverse from `/api/config/automation/config/<id>` into other Home Assistant
+and Supervisor routes. Independent static-scan finding 7 covers path
+building and finding 15 the compatibility module's executable entry point.
+It builds on beta.16 (HAMCP-162, the optional `ha_config_get_yaml` read) and
+beta.15 (HAMCP-189).
 
-The investigation is
-[`HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md`](HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md).
-Josh's 2026-10-18 decisions D1–D6 on HAMCP-171 apply. The exact rule is in
-[`HEALTH_PERFORMANCE.md`](HEALTH_PERFORMANCE.md#health-safety-verdict-cache-hamcp-171).
+No tool, input schema, description, provider route, signed registry, HOLD,
+support window, persisted format, workflow or stable-v1 change is included. No
+new write, dispatch, service-call or fallback path is reachable. Acceptance:
+[`V2_4_1_BETA17_ACCEPTANCE.md`](V2_4_1_BETA17_ACCEPTANCE.md).
 
-No signed registry, HOLD, support window, Core profile, probe fingerprint,
-persisted format (D6), workflow or stable-v1 change is included. No new
-write, reload, restart, deletion, service call or fallback path is reachable.
-The catalog stays at **88 tools (59 native, 29 delegated)**.
+**Past exposure (corrected).** Before this change, a crafted identifier could
+make Engineering send token-bearing GET requests to other HA/Supervisor
+routes, including any GET-enabled webhook (which can trigger automations);
+no POST/PUT/DELETE/PATCH was reachable.
+- The HTTP method could not change. Three groups of POST builders take a
+  variable segment, and each was checked: the governed automation write
+  takes its ID from a persisted, hash-approved plan whose ID had already
+  passed `^[A-Za-z0-9_-]{1,128}$`; the configuration-resource write is
+  called only after the same validation; the approval-notification service
+  is operator configuration, validated at construction. The base package
+  has no Engineering Home Assistant REST PUT, PATCH or DELETE call.
+- A GET is not necessarily read-only. For example,
+  `../../../webhook/<webhook_id>` as an automation ID normalized to
+  `/core/api/webhook/<webhook_id>`. The Supervisor Core proxy forwards the
+  GET, and Core runs the webhook's automation when that webhook trigger
+  allows GET. This needed an existing webhook, its ID and a method/network
+  policy that allows the request. Other selected routes could disclose
+  states, attributes, history, configuration and permitted Supervisor
+  information available to the add-on's `homeassistant` role token.
+- Whether any deployed webhook allowed GET was not observed; no live access
+  was made. See "Checking your webhook triggers" below.
 
-**Live baseline (beta.16).** One health call took 36.5 s, of which 33.8 s
-(93%) waited for persisted-plan safety validation. Each call deserialized 437
-plans and 433 tasks, and `health_cache_hit_count` stayed at 0. The 30 s
-sweep deserialized about 7 task records per second, and 239 of 239 parent
-reads per pass were for children whose own status decided the outcome.
+The traversing GET sites were:
+- `get_automation_config`, which had no validation;
+- `get_history`, where the entity ID was not encoded in the query (query
+  injection; it did not change the URL path by itself);
+- `automation_reliability_analysis`, whose grammar allowed `..`;
+- automation IDs from Home Assistant that handoff and dependency analysis
+  forwarded.
 
-**Within one health check (D5).** Each validation job memoizes the pure
-per-segment sanitizer scan. The memo is bound to the job's exact
-sensitive-value set, is bounded (65,536 segments of at most 4,096
-characters) and is discarded when the job ends. Results are identical to the
-unmemoized scan.
+**Checking your webhook triggers.** In Home Assistant, a webhook trigger's
+allowed methods are set on the trigger itself: open the automation in
+**Settings → Automations & scenes**, open the **Webhook** trigger and its
+options (the gear or ⋮ next to the webhook ID). **Allowed HTTP methods**
+and **Only accessible from the local network** are listed there. In YAML
+they are the trigger's `allowed_methods:` and `local_only:` keys. The
+defaults are POST and PUT with `local_only: true`, so a trigger allows GET
+only when GET was added explicitly. To check, review each automation that
+has a webhook trigger, or search `automations.yaml` (and any packages) for
+`allowed_methods` lists that include `GET`. Engineering made no live check.
 
-**Between health checks (D1).** Health keeps, in process memory only, the
-verdict "these exact bytes passed the persisted-plan safety detector". A
-verdict is reused only when all of these match the record this call just read
-and parsed:
-- the canonical record filename;
-- `st_ino`, `st_size` and `st_mtime_ns`, from `fstat` of the handle whose
-  bytes were parsed, with the size equal to the bytes read;
-- the SHA-256 of those bytes;
-- the detector context (detector version and the configured sensitive
-  values, as a per-process keyed digest).
+**One typed route (M2).** Every Home Assistant REST request now carries a
+`Route` (`clients/paths.py`):
+- `rest_path(template, *values)` is the only way to obtain one. The
+  template must be one of the reviewed literals in the closed
+  `ROUTE_TEMPLATES` registry. Any other template, such as
+  `/states/sensor/extra`, `/webhook/{}` or a CI-harness-only route, is
+  refused as `unregistered_route`.
+- Each value passes the segment guard. It refuses the dot segments `.` and
+  `..`; `/`, `\`, NUL and control characters; `?` and `#`; every percent-
+  and multiply-encoded form of these; and non-string, empty, oversized or
+  undecodable values. Otherwise the value is encoded as one segment with
+  `safe=""`.
+- A `Route` cannot be constructed, subclassed, mutated, copied into a new
+  object or pickled. Only routes `rest_path` issued are accepted; a
+  `str.__new__` forgery is not.
+- The REST transport accepts nothing else. A plain string, even a fixed
+  one such as `"/states"`, and any value derived from a `Route` by a string
+  operation, is refused as `unbound_request_path` before any session,
+  credential, telemetry authorization or request exists.
 
-Anything else validates fresh: a content change (even with the same size,
-inode and mtime), an inode, size or mtime change, a new record, a failed
-`fstat`, or a changed detector context. A deleted record's verdict is
-pruned. Any failed scan, storage error, quarantine or unexpected worker
-failure discards every verdict. Verdicts are empty at process start, are
-never persisted and are never used by an authoritative read, save, approval
-or execution path.
+Before attaching the token, the transport also:
+- re-encodes the route from its bound template and values and refuses any
+  difference (`route_mismatch`);
+- builds the URL the way the HTTP client parses it, with requoting and
+  dot-segment normalization;
+- refuses the request unless the normalized URL keeps the configured
+  origin, the base path plus exactly the template's segments, the
+  template's query, and no fragment or userinfo.
 
-Every health call still reads and parses every record and runs the
-lifecycle, projection and fence checks. Tampered, corrupt and partially
-written records are detected exactly as before.
+Websockets have no path builder: every connection uses the one configured
+`websocket_url`, and identifiers travel in JSON messages.
 
-**Deep re-scan.** `get_server_health(deep_storage_audit=true)` discards every
-verdict, re-validates every record and repopulates the cache. The input is
-optional and defaults to `false`. It is this release's only public
-descriptor change: the `get_server_health` input schema gains this one
-boolean and its description gains two lines documenting it. Every other
-descriptor is unchanged. The internal `deep_audit_plan_store`
-reconciliation also discards every verdict.
+**Redirects are never followed.** The REST transport, the Core re-admission
+reader and the Supervisor self-information reader send requests with
+`allow_redirects=False`. In the REST transport a 3xx response is an
+`ha_api_error`; the two readers already treat any non-200 status as a
+failure. Before this change, the shared REST transport followed redirects.
 
-**Reporting.** `governance.plan_store_scaling.safety_verdict_cache` reports:
-- the scope (`process_memory_only`) and `persisted: false`;
-- the key description and current entries;
-- the last run: `mode` (`cached` or `deep_rescan`), `hits`, `misses`,
-  `not_applicable` (pre-contract-v2 records) and `pruned`;
-- process totals: hits, misses, deep re-scans and invalidations.
+**Tool-boundary grammars.** `identifiers.py` defines the grammars:
+- automation configuration ID: `[A-Za-z0-9_:-]{1,256}`;
+- script ID;
+- domain;
+- service;
+- entity ID: the existing bounded grammar.
 
-`health_cache_hit_count` now also counts async health calls that reused at
-least one verdict. No digest, path or key material is reported.
+`get_automation_config`, `get_entity`, `get_history` and
+`automation_reliability_analysis` check these before any provider or
+session is involved. An invalid value is refused as `invalid_request` with
+the message "The identifier is invalid." and details `reason:
+invalid_identifier` plus the field name. The refusal is audited as a
+failure and counts as an `invalid_request` error. No Home Assistant request
+is sent.
 
-**Recovery sweep.** The periodic orphan sweep reads the child's own status
-first. It reads the parent task only when the child exists and either has no
-dispatch intent (orphan cleanup) or is terminal with a recorded readiness
-fault. Each parent is read at most once per pass. Terminal, dispatched,
-fault-free children cost no parent read. The following are unchanged:
-- at-most-once dispatch, with no blind redispatch;
-- HAMCP-189's local-first expiry and durable cancel.
+Provider paths that take IDs read from Home Assistant behave as follows:
+- Handoff generation skips an unsafe automation or entity ID and reports
+  partial coverage.
+- Dependency analysis, impact analysis, incident correlation and the
+  automation-baseline capture refuse through the same guard.
+- Governed writes report the refusal as not dispatched, with reason
+  `invalid_identifier` and `provider_response_received: false`.
 
-A corrupt parent the sweep does not need is no longer read by the sweep.
-Health and every authoritative read still detect it.
+**Narrowed automation-ID grammar (disclosed).** Automation configuration IDs
+no longer accept `.`:
+- `automation_reliability_analysis` previously accepted dotted IDs other
+  than `automation.<object_id>`.
+- `capture_automation_baseline` previously percent-encoded any ID.
 
-**Measured effect (synthetic 435-plan store, offline).**
-- Health: 23.0–24.0 s on beta.16, against 5.5 s for the first call (memo
-  only), 1.5 s for the following calls (435 of 435 verdicts reused) and
-  5.6 s for a deep re-scan.
-- The validation wait fell from 21.6 s to 4.0 s cold and 1.5 ms warm.
-- Sweep parent reads per pass fell from 239 to 0.
-- During a warm call, the event-loop echo p99 fell from 20.6 ms to 2.8 ms.
-- The longest single loop stall (about 0.5 s, from the existing synchronous
-  snapshot and assembly phases) is unchanged.
-- Projected live: about 9 s for the first and deep calls and about 3 s
-  after that (against 36.5 s).
+The Home Assistant frontend creates numeric IDs, and YAML-authored IDs are
+usually identifiers. A configuration whose `id:` contains a dot can no
+longer be read by these tools. Its `automation.<object_id>` entity is
+unaffected.
 
-The tables and method are in
-[the acceptance contract](V2_4_1_BETA17_ACCEPTANCE.md#measured-effect).
+**Compatibility entry point removed (finding 15).** `tools/compatibility.py`
+no longer contains:
+- its own ASGI gateway;
+- token bucket;
+- audit writer;
+- `main()` and the `__main__` guard.
 
-**Not included.** A separate validation process (D2, deferred), a direct
-`automations.yaml` read (D4) and the dependency index (D3, HAMCP-195).
+That standalone server path bypassed the canonical application. The add-on
+still starts `python -m ha_mcp_engineering`. The compatibility tool
+functions themselves are unchanged apart from the guard.
 
-Downgrade: beta.16 reads every beta.17 record, since no persisted format
-changes. A downgraded server loses the verdict cache and the
-`deep_storage_audit` input, and health returns to beta.16 timing.
+**Secondary source scan.** The runtime type check is the control; the scan
+in `tests/test_hamcp200_path_safety.py` keeps the source honest. Over the
+Engineering package's AST it fails on:
+- an f-string, `+` or `%` concatenation, or `.format`, `.format_map`,
+  `.join` or `.replace` forming a Home Assistant path, base URL or
+  session-request argument;
+- a bound method of a route literal (`"/states/{}".format`);
+- a route-shaped prefix or template literal outside `rest_path`;
+- a `rest_path` template that is not a literal;
+- a client `.request` read without a call (an alias, `functools.partial` or
+  callback) and `getattr(x, "request")`;
+- a websocket connection to anything but the configured URL.
 
-Follow the [beta.17 acceptance contract](V2_4_1_BETA17_ACCEPTANCE.md).
+Three exempt sites are named and pinned. The runtime package uses exactly
+the `ROUTE_TEMPLATES` registry.
+
+The disposable-Core CI harnesses (`scripts/ha_mcp_850_container_acceptance.py`,
+`scripts/real_ha_contract_tests.py`,
+`scripts/typed_core_container_contract.py` and
+`scripts/alarmo_inspection_contract_acceptance.py`) call the same guarded
+transport, so every path there, including fixed ones such as `/config`, now
+binds through `rest_path`. The harness scan fails on a plain or built string
+path for any receiver, a keyword path, a `.request` alias, a computed
+template, or a `state_path`/`rest_path` binder whose body does not return
+`rest_path` with a literal template. Before this fix, the 8.5.0
+runtime-acceptance harness reported `synthetic_fan_unavailable` because its
+fan readiness probe was refused as an unbound path.
+
+Four routes only the harnesses need (creating a config entry, firing the
+contract event, and reloading automations or scripts) are not runtime
+routes. They live in `scripts/harness_routes.py`, outside the add-on image,
+with a separate sender. It sends exactly the URL the runtime client sent for
+them before, with the same headers, JSON body and disabled redirects. It
+accepts only those four literal routes, only a loopback (disposable) Core,
+and never runs inside an Engineering request. The runtime REST client
+refuses each of them before any request, including a forged `Route`. No
+file the Dockerfile copies into the image names them, and an isolated copy
+of the image package cannot import the harness module.

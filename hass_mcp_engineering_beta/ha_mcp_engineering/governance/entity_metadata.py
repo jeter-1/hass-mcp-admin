@@ -466,12 +466,13 @@ class EntityRegistryMetadataGateway:
         return value
 
     async def state_exists(self, entity_id: str) -> bool:
+        from ..clients.paths import rest_path
         from ..clients.rest import ExpectedHttpStatus
 
         validate_entity_id(entity_id)
         value = await self.rest_client.request(
             "GET",
-            f"/states/{entity_id}",
+            rest_path("/states/{}", entity_id, kinds=("entity_id",)),
             expected_statuses=frozenset({404}),
         )
         if isinstance(value, ExpectedHttpStatus) and value.status == 404:

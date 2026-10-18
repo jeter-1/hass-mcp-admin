@@ -1,242 +1,207 @@
 # Engineering 2.4.1-beta.17 acceptance
 
-This contract covers HAMCP-171: the health safety verdict cache (D1), the
-per-job scan memo (D5) and the recovery sweep's parent reads. It builds on
-beta.16 (HAMCP-162), beta.15 (HAMCP-189 PR B + C) and beta.14 (HAMCP-189
-PR A).
+This contract covers HAMCP-200: every Home Assistant REST path is a typed,
+registered route. It addresses independent static-scan findings 7 and 15 and
+Codex review findings M1 and M2, and builds on 2.4.1-beta.16 (HAMCP-162).
+Release notes:
+[`V2_4_1_BETA17_RELEASE_NOTES.md`](V2_4_1_BETA17_RELEASE_NOTES.md).
 
-It separates four stages:
-1. source and disposable acceptance;
+**Release target.** This change goes into the next Engineering beta.
+- This PR first staged and materialized `2.4.1-beta.16`. HAMCP-162 (PR #267)
+  merged that version to `main` first.
+- This PR then merged `main` with a merge commit and was restaged as
+  `2.4.1-beta.17` by one owner-authorized run of
+  `scripts/promote_next_release.py --apply`, which consumed the declaration.
+  HAMCP-162's beta.16 release notes and acceptance document are unchanged.
+
+The contract separates four stages:
+1. source and offline acceptance;
 2. release CI;
 3. publication;
 4. installed Engineering acceptance.
 
-This document authorizes none of the later stages.
+It authorizes none of the later stages.
 
-## 1. Source, review and CI
+## 1. Source and offline acceptance
 
 Bind the following:
-- the investigation `docs/HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md`
-  (PR #276, merged at `7e223a0`);
-- Josh's 2026-10-18 decisions D1–D6 on HAMCP-171;
-- the exact rule in `docs/HEALTH_PERFORMANCE.md` ("Health safety verdict
-  cache (HAMCP-171)");
-- the original base `main` (2.4.1-beta.16 at `119be1b`), every later `main`
-  merge into the branch, and the final reviewed commit and tree.
+- `2.4.1-beta.17` materialized in all three version authorities, with exact
+  acceptance and release-note resolution from `scripts/codex-context.py` and
+  no staged declaration left over;
+- the PR head SHA;
+- the passing PR `validate` run for that exact head;
+- the Evidence tier log named in the PR.
 
-Earlier review does not cover changed code.
+### Past-exposure determination (M1)
 
-Materialize 2.4.1-beta.17 in all three version authorities through the
-existing staging tool. Require exact acceptance and release-note resolution,
-with no staged declaration left over. Complete Full/Evidence on clean source
-and the bounded independent review.
+Before this change a crafted identifier could make Engineering send
+token-bearing GET requests to other HA/Supervisor routes, including any
+GET-enabled webhook (which can trigger automations); no POST/PUT/DELETE/PATCH
+was reachable. The POST builders with a variable segment took only
+pre-validated or operator-configured values. Whether any deployed webhook
+allowed GET was not observed. The release notes say where a webhook
+trigger's allowed methods are set and how to check them without Engineering.
 
-The review needs a security section covering:
-- fail-closed health: every call still reads, parses and fence-checks every
-  record, and validates every record without a matching verdict; tampered,
-  corrupt and partially written records are detected with and without the
-  cache and on a deep re-scan;
-- the cache key: canonical filename, `st_ino`, `st_size`, `st_mtime_ns` from
-  `fstat` of the parsed handle (size equal to the bytes read), SHA-256 of
-  the parsed bytes and the detector context;
-- invalidation: a whole-cache discard on any failed scan, storage error,
-  quarantine, unexpected worker failure (including an abandoned job's drained
-  failure) and the internal `deep_audit_plan_store`; verdicts recorded only
-  after the worker validates the whole pending set; nothing recorded by a
-  cancelled call;
-- process memory only: nothing persisted, empty at start, and no
-  authoritative read, save, approval or execution path consulting the cache;
-- bounded reporting with no digest, path or key material;
-- the one public descriptor change: `get_server_health` gains the optional
-  boolean `deep_storage_audit` (default `false`), and its description gains
-  two lines documenting it. Every other descriptor is unchanged and the
-  catalog stays at 88. The three F2 snapshot pins are updated for that
-  descriptor only. The two historical catalog-continuity tests keep their
-  baseline fixtures and strip exactly that property and those two lines
-  before comparing;
-- the sweep parent-read rule, with at-most-once dispatch, no blind
-  redispatch, HAMCP-189 local-first expiry and durable cancel unchanged;
-- zero new write, reload, restart, deletion, service-call, fallback or
-  forwarding reachability.
+### Offline proof (`tests/test_hamcp200_path_safety.py`, 59 tests)
+
+- `SegmentGuardTests` (8):
+  - 22 traversal variants are refused before encoding: `.` and `..`; `/`,
+    `\`, NUL, newline, `?` and `#`; single-, double- and triple-encoded
+    forms, including mixed case; a dotted ID.
+  - Non-string, empty, oversized and undecodable values are refused.
+  - Valid IDs encode as exactly one segment; typed entity and timestamp
+    segments allow only their grammar; query values cannot add parameters.
+  - Templates must be fixed source routes, and a well-formed template
+    outside `ROUTE_TEMPLATES` (`/webhook/{}`, `/states/sensor/extra`,
+    `/services/{}/{}` and others) is `unregistered_route`.
+  - Every plain string is refused as `unbound_request_path`, including a
+    registered static route such as `"/states"`, `str(route)`,
+    `route + ""` and non-string values.
+- `RouteForgeryTests` (5): a `Route` cannot be constructed or subclassed; a
+  `str.__new__(Route, ...)` forgery is not issued; an issued route cannot be
+  mutated, and copying returns the same object while pickling raises for
+  every protocol; every string operation yields a refused plain `str`;
+  attribute tampering with `object.__setattr__` is refused centrally.
+- `WebhookReachabilityTests` (4):
+  - No registered template names a webhook, and every template root is in
+    the reviewed set.
+  - For every template and every crafted webhook or traversal ID, the value
+    is refused or the URL stays exactly within its template.
+  - Crafted webhook IDs open zero client sessions, through `rest_path` or
+    as a raw path.
+  - The pre-fix normalization target is refused by the URL guard even when
+    the encoder is bypassed.
+- `IdentifierGrammarTests` (1): the tool-boundary grammars accept valid IDs
+  (numeric, UUID, underscore, mixed case, `legacy:import-01`) and refuse
+  every traversal variant.
+- `NormalizedRouteTests` (6): route text that disagrees with its binding is
+  `route_mismatch`; a route whose path normalizes into `/hassio/addons` is
+  refused; values are re-checked however the route was built; a forged
+  route never opens a session or attaches the token; 301, 302, 307 and 308
+  each raise `ha_api_error` with `allow_redirects=False`; a valid request
+  sends the exact template URL.
+- `RuntimeProbeTests` (2): eleven bypass forms (alias prefix, helper
+  wrapper, `.format`/`.format_map` aliases, a dynamic template, receiver and
+  `getattr` request aliases, `functools.partial`, a keyword path, an unsafe
+  binder and a static plain string) are each refused with zero sessions;
+  the same requests succeed only through `rest_path`.
+- `ProviderBoundaryTests` (4): the governed automation write and the
+  configuration-resource write backstop are not dispatched for unsafe IDs;
+  handoff skips unsafe Home Assistant-derived IDs and requests only the
+  valid URLs; impact exact-state refuses an unsafe entity, all with zero
+  requests.
+- `ToolRefusalTests` (7), through the full application (gateway, audit,
+  metrics): `get_automation_config`, `get_entity`, `get_history` and
+  `automation_reliability_analysis` each refuse traversal variants, and
+  `get_automation_config` and `get_entity` refuse crafted webhook IDs, as
+  `invalid_request` with "The identifier is invalid.". Each refusal has a
+  failure audit record, adds one `invalid_request` count, and opens zero
+  sessions. Valid automation IDs read the exact
+  `/api/config/automation/config/<id>` URL, and a valid `get_history`
+  entity is one encoded query value.
+- `SourceScanTests` (8): the Engineering package has no raw interpolated
+  request path; every named exemption is present; the runtime uses exactly
+  `ROUTE_TEMPLATES` and names or imports no harness route; websockets connect only
+  to the configured URL; the scanner flags each raw form and each Codex
+  counterexample, and accepts guarded forms.
+- `HarnessScriptTests` (3): every Home Assistant REST call in the
+  disposable-Core harness scripts binds through `rest_path` with a literal
+  runtime template or through `harness_request` with a literal harness
+  template; the harness sends each harness route exactly as many times as
+  before the move; the scanner flags the forms the transport refuses,
+  including a fixed raw `"/config"` and a non-harness `harness_request`.
+- `HarnessRouteIsolationTests` (3): the runtime and harness registries are
+  disjoint and `clients/paths.py` exposes no harness registry; `rest_path`
+  refuses every harness route; the runtime REST client refuses each harness
+  route as a plain string, a URL object and a forged `Route`, with zero
+  sessions and zero requests.
+- `HarnessSenderTests` (4): each harness route sends exactly
+  `http://127.0.0.1:8123/api<route>` with the same headers, JSON body and
+  disabled redirects as before; a non-harness route, a non-loopback Core or
+  a call inside an Engineering request is refused with zero sessions; a
+  redirect is an error, not followed; a timeout or connection failure
+  raises the runtime client's typed error.
+- `AddOnPackagingTests` (2): no file the Dockerfile copies names a harness
+  route, registry or sender; an isolated (`python -I`) copy of the image
+  package cannot import the harness module, and its `rest_path` refuses
+  every harness route.
+- `CompatibilityEntryPointTests` (2): `tools/compatibility.py` has no
+  `main`, gateway, token bucket, audit writer or `__main__` guard, and the
+  canonical `ha_mcp_engineering/__main__.py` remains.
+
+### Mutation proof
+
+Each mutation was applied to a disposable copy of the source and the suite
+above was run against it. Each one must fail:
+1. `require_route` accepting a plain `str` again.
+2. `is_route` dropping the issued-route registry check.
+3. Removing the re-encode comparison in `request_url`.
+4. Skipping the normalized URL comparison.
+5. Restoring the raw f-string in `get_automation_config`.
+6. Enabling redirects in the REST transport.
+7. Dropping the template-registry check.
+8. Allowing `Route` construction.
+9. The runtime registry check accepting the four harness routes again.
+10. Restoring a harness registry in `clients/paths.py`.
+11. Changing the harness URL (a trailing slash).
+12. Dropping the harness loopback check.
+13. Dropping the harness request-context check.
+14. Enabling redirects in the harness sender.
+15. Dropping the harness sender's typed timeout and connection errors.
+
+## 2. Release CI and publication
 
 Require exact-head CI before release acceptance. Pending or unavailable jobs
 are not passing evidence.
 
-Preserve the following:
-- stable v1.1.2;
-- historical persisted fixtures and durable formats (D6: no stored-format
-  change);
-- probe fingerprints, the Core capability profiles, every owner-signed Core
-  registry entry and the signed ha-mcp registry;
-- the 8.6.0 HOLD and the support window;
-- the reviewed policy JSON and release registry JSON;
-- dependency locks, build inputs, pinned runners and workflow permissions.
-
-### Offline source evidence
-
-Run these against the exact released tree under Python 3.12 (mcp 1.30.0):
-- `tests/test_hamcp171_health_verdict_cache.py`;
-- `tests/test_hamcp171_sweep_parent_reads.py`;
-- `tests/test_governance_async_health.py`;
-- `tests/test_f3_orphan_child_recovery.py`.
-
-They must prove each of the following:
-- hits on unchanged records, with truthful counters;
-- misses on a same-size, same-mtime content change (the hash catches it),
-  and on inode, size and mtime changes, a new record, a deleted record
-  (pruned), a stat failure and a detector-context change;
-- tamper, corruption and partial writes detected with and without the
-  cache;
-- the deep re-scan bypasses and repopulates the cache, through the public
-  tool as well as the service;
-- whole-cache invalidation on worker failure, on an abandoned job's
-  failure and on the internal deep audit, and no verdicts from a cancelled
-  call;
-- restart starts empty, and nothing is persisted;
-- memo equivalence, its refusal of mismatched secrets, and a fresh memo per
-  job;
-- no parent read for terminal dispatched children, while orphan cleanup and
-  terminal fault projection still read the parent and converge;
-- a corrupt parent the sweep does not read is still surfaced by health, with
-  no gateway call;
-- the owner loop stays responsive while the real CPU scanner runs.
-
-Run `docs/evidence/hamcp171-mutations/run_mutations.py`. Every mutation must
-fail at least one test, including the brief's three:
-- the cache ignores the content hash;
-- the cache survives a record change;
-- the sweep skips a needed parent read.
-
-The recorded run is in `docs/evidence/hamcp171-mutations/results.json`
-(Python 3.12.14, against this branch's runtime). The baseline passed, and
-8 of 8 mutations were killed, none by an import or syntax error.
-
-### Measured effect
-
-These are offline numbers from `docs/evidence/hamcp171-measurements/` (a
-synthetic store; see its README), not production. Both trees ran back to
-back on one host. The store has 435 plans, 240 of them applied, with a mean
-plan file of 37,024 bytes.
-
-| Health call | Wall | Validation wait | Verdicts |
-| --- | --- | --- | --- |
-| beta.16 base, three calls | 23.0 / 23.1 / 24.0 s | 21.6 / 21.7 / 22.5 s | none (`health_cache_hit_count` 0) |
-| head, first call (cold, memo only) | 5.5 s | 4.0 s | 0 hits / 435 misses |
-| head, second and third calls | 1.54 / 1.55 s | 1.5 ms | 435 hits / 0 misses |
-| head, `deep_storage_audit=true` | 5.6 s | 4.0 s | `deep_rescan`, 0 / 435 |
-| head, next plain call | 1.57 s | 1.9 ms | 435 / 0 |
-
-`health_cache_hit_count` went 0, 1, 2, 2, 3 across the five head calls. The
-other phases (snapshot about 0.45 s, projection 0.23 s, assembly 0.55 s and
-overlay 0.21 s) are unchanged.
-
-**Event-loop responsiveness during a health call.** A 1-byte loopback echo
-client and a 1 ms ticker ran on the owner loop during each call. When idle,
-the echo round trip had a median of 0.03 ms and a p99 of 0.07 ms.
-
-| During the call | Echo median | Echo p99 | Echo throughput | Longest loop gap |
-| --- | --- | --- | --- | --- |
-| beta.16 base | 0.16–0.18 ms | 20.6–22.7 ms | about 175/s for 23 s | 0.51–0.58 s |
-| head, cold or deep | 0.05–0.07 ms | 15.6–20.5 ms | about 490/s for 5.5 s | 0.53–0.59 s |
-| head, warm | 0.035–0.042 ms | 2.7–2.8 ms | about 1,570/s for 1.5 s | 0.56–0.58 s |
-
-Other requests stay responsive. The 22 s window of GIL contention from the
-validation worker shrinks to about 4 s on a cold or deep call and to none on
-a warm call. The longest single stall is unchanged at about 0.5 s. It comes
-from the existing synchronous snapshot and assembly phases on the loop, not
-from the worker, and this release does not change those phases.
-
-**Recovery sweep (five periodic passes).**
-
-| | Parent `task_repository.get` per pass | Pass time and loop stall |
-| --- | --- | --- |
-| beta.16 base | 240, 239, 239, 239, 239 | 0.205–0.245 s |
-| head | 0, 0, 0, 0, 0 | 0.122–0.124 s |
-
-**Projected production effect.** Live beta.16 took 36.5 s, of which 33.8 s
-was validation wait. Validation is about 1.54 times slower live than on this
-store (33.8 s against 21.9 s); the other phases take about 2.7 s live. The
-projection is:
-- the first health call after a restart, and every deep re-scan: about
-  2.7 s + 1.54 × 4.0 s ≈ 9 s;
-- following calls with unchanged records: about 3 s, plus fresh validation
-  of only the records that changed;
-- the sweep's 239 parent reads per 30 s (about 8 records per second, most
-  of the live 7/s task deserialization rate) fall to zero for terminal,
-  dispatched, fault-free children.
-
-Health itself still deserializes every task once per call, so subtract
-those reads in the live task-read check.
-
-## 2. Publication and recovery preparation
-
-Publication needs Josh's applicable Ready authorization and the protected merge
+Publication needs Josh's Ready authorization and the protected merge
 handoff. Verify the following with the shipped verifiers:
 - the merged source;
 - v2.4.1-beta.17;
 - the immutable version and commit images;
 - provenance and SBOM.
 
-Never invent future image identities. Retain the beta.16, beta.15 and beta.14
-artifacts and the known-good beta.12 and beta.11 artifacts and options for
-recovery.
+Never invent future image identities. Retain the beta.16 artifacts and the
+known-good earlier artifacts for recovery.
 
-No new persisted format is introduced, and beta.16 reads every beta.17
-record.
+No new persisted format is introduced, and beta.16 reads every record this
+change writes. Rollback is reinstalling the beta.16 artifact.
 
 ## 3. Installed Engineering
 
 All installed checks below are read-only unless a step names Josh's explicit
-authorization. Record timings, counters and modes only, never record
-content.
+authorization.
 
 1. **Installed-image binding.** Separately authorize installation of the
-   published Engineering artifact. Bind the running add-on to the published
-   image index digest, the v2.4.1-beta.17 tag and the protected `main` merge
-   commit. A source version alone does not prove the installed image.
-2. **Live catalog 88.** Enumerate the live catalog with a fresh protocol
-   enumeration: exactly 88 tools (59 native, 29 delegated).
-   `get_server_health` must show the reviewed schema with the optional
-   `deep_storage_audit` boolean and the two added description lines. Every
-   other descriptor must match beta.16.
-   Also compare Core signed selection, storage and audit health, F3
-   readiness and zero fallback.
-3. **Two consecutive health calls.** After the add-on has started, call
-   `get_server_health(check_ha=false)` twice in a row. Record each call's
-   wall time and `governance.plan_store_scaling.safety_verdict_cache`:
-   - the first call: `last_run.mode: cached`; misses up to the plan count
-     (all records validated fresh after a restart);
-   - the second call: `last_run.mode: cached`, `hits > 0` (close to the
-     plan count), few or no misses, and much faster than the first (the
-     beta.16 baseline is 36.5 s with 33.8 s of validation wait);
-   - `health_cache_hit_count` increases by one on the second call;
-   - `scope: process_memory_only` and `persisted: false`;
-   - storage health stays healthy, with the same plan and task counts on
-     both calls.
-4. **Deep re-scan.** Call `get_server_health(check_ha=false,
-   deep_storage_audit=true)`. It must report `last_run.mode: deep_rescan`,
-   `hits: 0`, misses equal to the plan count and `totals.deep_rescans`
-   increased by one, at full validation time (comparable to the first call
-   in step 3). A following plain call must again report hits.
-5. **Task-read rate.** Record
-   `governance.plan_store_scaling.task_navigation.records_deserialized` (and
-   `terminal_records_deserialized`) from `get_server_health(check_ha=false)`,
-   wait about 10 minutes with no other client activity, and record them
-   again. The rate must drop sharply from the beta.16 baseline of about 7
-   task records per second, which came from the 30 s sweep's parent reads.
-   Subtract the reads made by the two health calls themselves.
-6. **Recovery and canaries unchanged.**
-   - F3 readiness reports no new recovery fault and no orphaned child.
-   - Repeat the beta.16 read-only checks: one delegated read, one native read
-     and `get_core_log_history`, each exactly as on beta.16.
-   - Power, fan, dashboard and entity-metadata capabilities must report the
-     same admission as beta.16.
-   - With Josh's explicit authorization only, repeat the beta.6 power canary
-     and the beta.8 dashboard canary on the entity and test dashboard Josh
-     chooses. The outcomes must match beta.16.
+   published Engineering artifact. Bind the running add-on to:
+   - the published image index digest;
+   - the v2.4.1-beta.17 tag;
+   - the protected `main` merge commit that contains this PR.
 
-   No published tool may return `CoreRequirementUnmapped`. Any occurrence is
-   a stop condition.
+   A source version alone does not prove the installed image.
+2. **Catalog unchanged.** Compare the public descriptors with beta.16: the
+   same tool count (88 with `ha_config_get_yaml` admitted, otherwise 87),
+   input schemas and descriptions. Also compare:
+   - Core signed selection;
+   - storage and audit health;
+   - F3 readiness;
+   - zero fallback.
+3. **Live read-only path check.** Through the public connector:
+   1. List automations and choose one existing automation's configuration
+      ID.
+   2. Call `get_automation_config` with that ID. It returns that
+      automation's configuration.
+   3. Call `get_automation_config` with `../../hassio/addons`, then with
+      `../../../webhook/probe`. Each is refused as `invalid_request` with
+      "The identifier is invalid.".
+   4. Confirm that no Home Assistant request was sent: in `get_audit_log`,
+      the records for the step 3 calls have result `failure`, error code
+      `invalid_request` and an empty `ha_endpoint_categories` list. The
+      record for the valid read in step 2 lists `config/automation`.
+
+   No write, reload or other live action is part of this check.
+4. **Redirect refusal, route forgery, provider-derived ID handling and the
+   source scan** are proven offline only (§1).
 
 No push, CI trigger, signing, publication, installation or live action is
 authorized by source completion.

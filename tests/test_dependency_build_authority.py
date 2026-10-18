@@ -135,6 +135,7 @@ class _Network:
 
             def request(self, method, url, **_):
                 assert method == "GET"
+                url = str(url)  # HAMCP-200: the transport passes a verified yarl URL.
                 key = next((key for key in network.payloads
                             if key.startswith("/") and url.endswith(key)), None)
                 network.opened(key)

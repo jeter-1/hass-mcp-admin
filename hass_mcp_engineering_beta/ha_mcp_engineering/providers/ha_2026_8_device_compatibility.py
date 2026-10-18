@@ -7,6 +7,8 @@ from copy import deepcopy
 from types import MappingProxyType
 from typing import Any
 
+from ..clients.paths import rest_path
+
 
 ADAPTER_ID = "ha-get-device-composite-ha-2026.8-v1"
 EXACT_HA_VERSION = "2026.8.0"
@@ -104,7 +106,7 @@ async def adapt_ha_get_device_composite_result(
     device, device_id = candidate
 
     authorize_core_read()
-    runtime = await rest_client.request("GET", "/config")
+    runtime = await rest_client.request("GET", rest_path("/config"))
     if not isinstance(runtime, dict):
         raise CompositeDeviceCompatibilityError()
     runtime_version = runtime.get("version")

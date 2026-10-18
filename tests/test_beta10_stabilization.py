@@ -385,7 +385,9 @@ class Beta10ValidationTaxonomyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(coverage["failure_category"], "request_validation")
         self.assertFalse(coverage["upstream_attempted"])
         self.assertNotEqual(coverage["failure_category"], "provider_upstream_error")
-        self.assertEqual(payload["message"], "The request is invalid.")
+        # HAMCP-200: the shared entity-ID grammar refuses with the identifier message.
+        self.assertEqual(payload["message"], "The identifier is invalid.")
+        self.assertEqual(payload["details"]["reason"], "invalid_identifier")
         rest.assert_not_awaited()
 
     async def test_nonexistent_canonical_entity_remains_entity_not_found(self):

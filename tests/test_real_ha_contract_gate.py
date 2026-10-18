@@ -1421,7 +1421,8 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             "ha_mcp_tools/device_get",
             '"service": "turn_on"',
             '"service": "turn_off"',
-            '/states/{entity_id}',
+            # HAMCP-200: the direct-target readback binds the entity through the path guard.
+            'rest_path("/states/{}", entity_id, kinds=("entity_id",))',
             "primary_config_entry_id",
             "primary_id",
             "device_id",

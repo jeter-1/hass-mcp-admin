@@ -22,6 +22,7 @@ sys.path.insert(0, str(PRODUCTION_DIR))
 from ha_mcp_engineering.application import create_application, validate_settings  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger, AuditRecord  # noqa: E402
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E402
+from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import (  # noqa: E402
     ERROR_CATALOG,
@@ -344,7 +345,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             side_effect=asyncio.TimeoutError(),
         ):
             with self.assertRaises(HomeAssistantTimeoutError) as caught:
-                asyncio.run(client.request("GET", "/config"))
+                asyncio.run(client.request("GET", rest_path("/config")))
         self.assertEqual(caught.exception.code, ErrorCode.HA_TIMEOUT)
         self.assertTrue(caught.exception.retryable)
         self.assertNotIn(
@@ -358,7 +359,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             side_effect=aiohttp.ClientConnectionError("private endpoint detail"),
         ):
             with self.assertRaises(HomeAssistantUnavailableError) as caught:
-                asyncio.run(client.request("GET", "/config"))
+                asyncio.run(client.request("GET", rest_path("/config")))
         self.assertEqual(caught.exception.code, ErrorCode.HA_UNAVAILABLE)
         self.assertNotIn("private endpoint detail", json.dumps(caught.exception.details))
         self.assertNotIn(
@@ -374,7 +375,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
         ):
             result = asyncio.run(
                 client.request(
-                    "POST", "/config/automation/config/fixture"
+                    "POST", rest_path("/config/automation/config/{}", "fixture")
                 )
             )
         self.assertEqual(result, {"result": "ok"})
@@ -388,7 +389,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
         ):
             result = asyncio.run(
                 client.request(
-                    "POST", "/config/automation/config/fixture"
+                    "POST", rest_path("/config/automation/config/{}", "fixture")
                 )
             )
         self.assertIsNone(result)
@@ -403,7 +404,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             with self.assertRaises(AutomationNotFoundError) as caught:
                 asyncio.run(
                     client.request(
-                        "POST", "/config/automation/config/fixture"
+                        "POST", rest_path("/config/automation/config/{}", "fixture")
                     )
                 )
         self.assertIs(
