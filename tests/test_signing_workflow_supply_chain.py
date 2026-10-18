@@ -495,41 +495,143 @@ class GuardMutationTests(unittest.TestCase):
         self.assertIn("UNHASHED_INSTALL", found)
 
 
+# How each workflow binds the recorded revision to the verified attestation.
+ATTESTED_REVISION = {
+    RELEASE_REGISTRY: (
+        'print(provenance["workflow_sha"])',
+        'revision="$(cat "$RUNNER_TEMP/attested-revision.txt")"',
+    ),
+    COMPATIBILITY: (
+        '"revision": provenance["workflow_sha"]',
+        'revision="$(python -c \'import json, sys; print(json.load(open(sys.argv[1]))["revision"])\' '
+        '"$RUNNER_TEMP/attested.json")"',
+    ),
+}
+
+
+def provenance_violations(name: str, source: str) -> set[str]:
+    """Return why a workflow's image step would accept label-only evidence."""
+    violations: set[str] = set()
+    image = next(
+        step
+        for step in yaml.safe_load(source)["jobs"]["evidence"]["steps"]
+        if step.get("id") == "image"
+    )["run"]
+    for required in (
+        "python scripts/verify_upstream_image_provenance.py",
+        '--index-digest "$index_digest"',
+        '--source-commit "${{ steps.source.outputs.source_commit }}"',
+        '--version "$VERSION"',
+    ):
+        if required not in image:
+            violations.add("ATTESTATION_NOT_VERIFIED")
+    extracted, assigned = ATTESTED_REVISION[name]
+    assignments = [
+        line.strip()
+        for line in image.splitlines()
+        if re.match(r"\s*revision=", line)
+    ]
+    if extracted not in image or assignments != [assigned]:
+        violations.add("REVISION_NOT_ATTESTED")
+    if 'test "$label_revision" = "$revision"' not in image:
+        violations.add("LABEL_AGREEMENT_UNCHECKED")
+    # The revision is never taken from an image label.
+    if re.search(r'(?<![A-Za-z_])revision="\$\(docker image inspect', source):
+        violations.add("REVISION_FROM_LABEL")
+    # Annotation strings are only locators inside the verifier, never evidence.
+    for prohibited in (
+        '"slsa" in',
+        "spdx\" in",
+        "in-toto.io/predicate-type",
+        "vnd.docker.reference.type",
+    ):
+        if prohibited in source:
+            violations.add("ANNOTATION_AS_EVIDENCE")
+    if len(re.findall(r'imagetools inspect(?: --raw)? "\$tagged"', source)) != 1:
+        violations.add("TAG_RESOLVED_MORE_THAN_ONCE")
+    if (
+        'docker pull --platform linux/amd64 "$image"' in source
+        or 'docker image inspect "$image"' in source
+    ):
+        violations.add("MUTABLE_IMAGE_REFERENCE")
+    return violations
+
+
 class ProvenanceWorkflowTests(unittest.TestCase):
+    def _source(self, name: str) -> str:
+        return (WORKFLOWS / name).read_text(encoding="utf-8")
+
+    def _assert_mutation(self, name: str, old: str, new: str, expected: str) -> None:
+        source = self._source(name)
+        self.assertIn(old, source)
+        self.assertIn(expected, provenance_violations(name, source.replace(old, new)))
+
     def test_both_workflows_verify_attestation_payloads(self) -> None:
         for name in SIGNING_WORKFLOWS:
             with self.subTest(workflow=name):
-                source = (WORKFLOWS / name).read_text(encoding="utf-8")
-                image = next(
-                    step
-                    for step in _load(name)["jobs"]["evidence"]["steps"]
-                    if step.get("id") == "image"
-                )["run"]
-                self.assertIn("python scripts/verify_upstream_image_provenance.py", image)
-                self.assertIn('--index-digest "$index_digest"', image)
-                self.assertIn('--source-commit "${{ steps.source.outputs.source_commit }}"', image)
-                self.assertIn('--version "$VERSION"', image)
-                self.assertIn('provenance["workflow_sha"]', image)
-                self.assertIn('test "$label_revision" = "$revision"', image)
-                # Annotation strings and labels are never provenance evidence.
-                for prohibited in (
-                    '"slsa" in',
-                    "spdx\" in",
-                    "in-toto.io/predicate-type",
-                    "vnd.docker.reference.type",
-                ):
-                    self.assertNotIn(prohibited, source)
-                # The revision is never taken from an image label.
-                self.assertIsNone(
-                    re.search(r'(?<![A-Za-z_])revision="\$\(docker image inspect', source)
-                )
-                self.assertEqual(
-                    len(re.findall(r'imagetools inspect(?: --raw)? "\$tagged"', source)),
-                    1,
-                )
-                self.assertNotIn('docker pull --platform linux/amd64 "$image"', source)
-                self.assertNotIn('docker image inspect "$image"', source)
+                self.assertEqual(provenance_violations(name, self._source(name)), set())
 
+    def test_label_only_revision_fails(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            with self.subTest(workflow=name):
+                # Take the revision from the image label instead of the attestation.
+                self._assert_mutation(
+                    name,
+                    'label_revision="$(docker image inspect',
+                    'revision="$(docker image inspect',
+                    "REVISION_FROM_LABEL",
+                )
+                _, assigned = ATTESTED_REVISION[name]
+                self._assert_mutation(name, assigned, 'revision="unverified"', "REVISION_NOT_ATTESTED")
+                # A later reassignment cannot replace the attested revision.
+                self._assert_mutation(
+                    name,
+                    assigned,
+                    assigned + '\n          revision="$label_revision"',
+                    "REVISION_NOT_ATTESTED",
+                )
+                self._assert_mutation(
+                    name, 'provenance["workflow_sha"]', 'provenance["version"]', "REVISION_NOT_ATTESTED"
+                )
+
+    def test_dropping_verifier_or_label_agreement_fails(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            with self.subTest(workflow=name):
+                self._assert_mutation(
+                    name,
+                    "python scripts/verify_upstream_image_provenance.py",
+                    "true scripts/verify_upstream_image_provenance.py",
+                    "ATTESTATION_NOT_VERIFIED",
+                )
+                self._assert_mutation(
+                    name,
+                    '--source-commit "${{ steps.source.outputs.source_commit }}"',
+                    "",
+                    "ATTESTATION_NOT_VERIFIED",
+                )
+                self._assert_mutation(
+                    name,
+                    'test "$label_revision" = "$revision"',
+                    "true",
+                    "LABEL_AGREEMENT_UNCHECKED",
+                )
+
+    def test_annotation_strings_or_mutable_tags_as_evidence_fail(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            with self.subTest(workflow=name):
+                self._assert_mutation(
+                    name,
+                    'immutable="${UPSTREAM_IMAGE_REPOSITORY}@${index_digest}"',
+                    'immutable="${UPSTREAM_IMAGE_REPOSITORY}@${index_digest}"\n'
+                    '          grep -q "in-toto.io/predicate-type" "$inspect"',
+                    "ANNOTATION_AS_EVIDENCE",
+                )
+                self._assert_mutation(
+                    name,
+                    'docker pull --platform linux/amd64 "$immutable"',
+                    'docker pull --platform linux/amd64 "$image"',
+                    "MUTABLE_IMAGE_REFERENCE",
+                )
 
 if __name__ == "__main__":
     unittest.main()
