@@ -39,6 +39,7 @@ from ha_mcp_engineering.errors import HomeAssistantUnavailableError  # noqa: E40
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     PROVIDER_ID,
+    REDACTION_WARNING,
     UpstreamReadGateway,
 )
 from ha_mcp_engineering.request_context import (  # noqa: E402
@@ -3914,8 +3915,10 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(SECRET, encoded)
         self.assertEqual(value["metadata"]["completeness"], "partial")
         self.assertTrue(value["data"]["partial"])
+        # HAMCP-191 Finding 11: the applied redaction is disclosed first.
         self.assertEqual(
-            value["warnings"], ["The upstream search reported partial coverage."]
+            value["warnings"],
+            [REDACTION_WARNING, "The upstream search reported partial coverage."],
         )
 
     async def test_search_local_bounding_remains_partial(self):

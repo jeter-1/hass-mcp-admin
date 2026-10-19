@@ -20,6 +20,7 @@ from .models import (
     DependencyObligation,
     DynamicReference,
     evidence_id,
+    extraction_registry,
     obligation_fingerprint,
 )
 from .obligation_ledger import (
@@ -4461,14 +4462,23 @@ def _summary(relation: str) -> str:
     }.get(relation, f"Entity has a {relation} reference.")
 
 
+# The exact object is the only form a re-scan keeps by identity.
+_BOUNDED_REDACTED = "<redacted>"
+
+
 def _bounded(value: Any, limit: int = 160, secret: str = "") -> str | None:
     if value is None:
         return None
-    safe = redact_data(str(value), secret=secret, max_string=limit)
+    # HAMCP-191 D4: Engineering's truncation and markers join the bound
+    # identity record (the index build's, else the request's).
+    registry = extraction_registry()
+    safe = redact_data(str(value), secret=secret, max_string=limit, registry=registry)
     text = str(safe)
     for marker in ("authorization:", "bearer ", "/mcp"):
         if marker in text.lower():
-            return "<redacted>"
+            if registry is not None:
+                registry.register_output(_BOUNDED_REDACTED)
+            return _BOUNDED_REDACTED
     return text
 
 

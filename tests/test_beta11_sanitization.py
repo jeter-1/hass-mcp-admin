@@ -8,9 +8,14 @@ from unittest.mock import AsyncMock, patch
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
+
+import hamcp162_synthetic as syn  # noqa: E402
 
 from ha_mcp_engineering.sanitization import (  # noqa: E402
+    MARKER_COLLISION,
     SANITIZATION_FAILURE_MARKER,
+    ReferenceMarkerRegistry,
     SanitizationResult,
     _Sanitizer,
     sanitize_untrusted_data,
@@ -19,13 +24,14 @@ from ha_mcp_engineering.tools import compatibility  # noqa: E402
 
 
 SYNTHETIC_SETUP_CODE = "111-22-333"
-SYNTHETIC_MATTER_PAYLOAD = "MT:SYNTHETIC.BETA11.PAYLOAD"
+SYNTHETIC_MATTER_PAYLOAD = syn.matter_payload("SYNTHETIC.BETA11.PAYLOAD")
 SYNTHETIC_TOKEN = "synthetic-beta11-access-token-value"
 SYNTHETIC_API_KEY = "synthetic-beta11-api-key-value"
 SYNTHETIC_PASSWORD = "synthetic-beta11-password-value"
 SYNTHETIC_FLOW = "synthetic-beta11-login-flow-id"
 SYNTHETIC_WEBHOOK = "synthetic-beta11-webhook-secret"
-SYNTHETIC_JWT = "eyJzeW50aGV0aWM.eyJiZXRhMTEiOnRydWV9.c2lnbmF0dXJl"
+# Built at runtime (HAMCP-191 L2): no committed secret-shaped literal.
+SYNTHETIC_JWT = "ey" + "JzeW50aGV0aWM." + "ey" + "JiZXRhMTEiOnRydWV9." + "c2lnbmF0dXJl"
 
 
 class RecursiveSanitizerTests(unittest.TestCase):
@@ -127,10 +133,12 @@ class RecursiveSanitizerTests(unittest.TestCase):
 
     def test_password_in_url(self):
         result = self.sanitize(
-            f"https://synthetic-user:{SYNTHETIC_PASSWORD}@10.0.0.25/path"
+            syn.url("https", "synthetic-user", SYNTHETIC_PASSWORD, "10.0.0.25/path")
         )
         self.assert_removed(result, SYNTHETIC_PASSWORD, "synthetic-user")
-        self.assertIn("https://[REDACTED:url_credentials]@10.0.0.25/path", result.value)
+        self.assertIn(
+            syn.url("https", "[REDACTED:url_credentials]", None, "10.0.0.25/path"), result.value
+        )
 
     def test_token_query_parameter(self):
         result = self.sanitize(
@@ -152,12 +160,16 @@ class RecursiveSanitizerTests(unittest.TestCase):
             f"https://synthetic-user%3A{SYNTHETIC_PASSWORD}@10.0.0.25/path"
         )
         self.assert_removed(result, SYNTHETIC_PASSWORD, "synthetic-user")
-        self.assertIn("https://[REDACTED:url_credentials]@10.0.0.25", result.value)
+        self.assertIn(
+            syn.url("https", "[REDACTED:url_credentials]", None, "10.0.0.25"), result.value
+        )
 
     def test_multiline_traceback_with_credential_url(self):
         value = (
             "Traceback (most recent call last):\n"
-            f"  endpoint=https://user:{SYNTHETIC_PASSWORD}@10.0.0.25/private\n"
+            "  endpoint="
+            + syn.url("https", "user", SYNTHETIC_PASSWORD, "10.0.0.25/private")
+            + "\n"
             "RuntimeError: synthetic failure"
         )
         result = self.sanitize(value)
@@ -213,26 +225,40 @@ class RecursiveSanitizerTests(unittest.TestCase):
         result = self.sanitize(value)
         self.assert_removed(result, SYNTHETIC_SETUP_CODE, SYNTHETIC_API_KEY, SYNTHETIC_FLOW)
 
-    def test_already_redacted_content_is_unchanged(self):
+    def test_marker_shaped_input_is_not_trusted_as_redacted(self):
+        # HAMCP-191 D1/D2: input text never counts as already redacted
+        # (beta.19 kept this string unchanged); the whole string collides.
         value = "Authorization: [REDACTED:token]"
         result = self.sanitize(value)
-        self.assertEqual(result.value, value)
-        self.assertFalse(result.redaction_applied)
+        self.assertEqual(result.value, MARKER_COLLISION)
+        self.assertTrue(result.redaction_applied)
+        self.assertEqual(result.marker_collision_count, 1)
 
-    def test_sanitizer_is_idempotent(self):
+    def test_sanitizer_is_idempotent_through_the_identity_record(self):
+        # HAMCP-191 D4: a second pass keeps the first pass's markers only by
+        # object identity in the same request's record; without the record
+        # (beta.19 trusted the text) the re-scan collides.
         value = {
             "message": f"Bearer {SYNTHETIC_TOKEN} {SYNTHETIC_MATTER_PAYLOAD}",
             "entity_id": "sensor.beta11_fixture",
         }
-        first = self.sanitize(value).value
-        second = self.sanitize(first).value
+        registry = ReferenceMarkerRegistry()
+        first = self.sanitize(value, registry=registry).value
+        second = self.sanitize(first, registry=registry).value
         self.assertEqual(second, first)
+        unrecorded = self.sanitize(first).value
+        self.assertEqual(unrecorded["message"], MARKER_COLLISION)
+        self.assertEqual(unrecorded["entity_id"], "sensor.beta11_fixture")
 
     def test_sanitizer_failure_replaces_field(self):
         with patch.object(_Sanitizer, "_sanitize_string", side_effect=RuntimeError):
             result = self.sanitize({"message": SYNTHETIC_TOKEN})
         self.assertTrue(result.failed_closed)
-        self.assertEqual(result.value["message"], SANITIZATION_FAILURE_MARKER)
+        # HAMCP-191: key text runs the same scan; a key whose scan fails is
+        # withheld too (beta.19 wrote the raw key back).
+        self.assertEqual(
+            result.value, {SANITIZATION_FAILURE_MARKER: SANITIZATION_FAILURE_MARKER}
+        )
         self.assert_removed(result, SYNTHETIC_TOKEN)
         self.assertIn("sanitization_failure", result.redaction_categories)
 
@@ -310,7 +336,7 @@ class ErrorLogSanitizationIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ],
             "exception": (
                 "Traceback\n"
-                f"https://user:{SYNTHETIC_PASSWORD}@10.0.0.25/private"
+                + syn.url("https", "user", SYNTHETIC_PASSWORD, "10.0.0.25/private")
             ),
             "future_field": {
                 "login_flow_id": SYNTHETIC_FLOW,
