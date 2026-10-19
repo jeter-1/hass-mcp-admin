@@ -36,6 +36,7 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 from ha_mcp_engineering.governance.storage import ChangePlanRepository  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
+from tests.test_dev14_configuration_plans import plant_stored_record  # noqa: E402
 
 
 CURRENT = {
@@ -379,7 +380,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
             from ha_mcp_engineering.governance.models import ChangeSnapshot
             plan.snapshot = ChangeSnapshot(self.clock().isoformat(), copy.deepcopy(CURRENT), "legacy")
         plan.rollback.expected_current_fingerprint = "legacy"
-        self.repository.save(plan)
+        plant_stored_record(self, self.repository, plan)
         with self.assertRaises(GovernanceError) as raised:
             await self.service.rollback_change(created["plan_id"], "legacy-hash")
         self.assertEqual(raised.exception.code, ErrorCode.APPROVAL_AUTHORITY_MISMATCH)

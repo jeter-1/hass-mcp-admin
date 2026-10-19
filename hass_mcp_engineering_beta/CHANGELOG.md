@@ -17,7 +17,16 @@ Builds on 2.4.1-beta.19.
   through one allow-listed entry point. Every plan family (configuration,
   legacy automation, dashboard, backup, helper state, reload, restart) runs
   the strict detector before persisting or returning a new plan, and refuses
-  flagged text. Follow-up: HAMCP-207.
+  flagged text, the automation identifier included. Follow-up: HAMCP-207.
+- Write every governance plan record through one storage chokepoint
+  (`ChangePlanRepository.save`). It strict-sanitizes all new strings,
+  identifiers included, refuses on creation and in identity, configuration
+  and dispatch fields, and redacts in place in evidence, receipts, failures
+  and events. Dispatch and recovery state stays byte-exact in 72 exempt
+  schema paths whose formats cannot carry free text. Old stored content is
+  written back unchanged. Static and runtime writer-enumeration tests guard
+  the chokepoint, and flagged identifiers are withheld from response
+  metadata (review findings H1g, H2).
 - Add `sanitization` to `get_server_health` (`strict_marker_mode`,
   `marker_collisions`, `marker_collision_refusals`). Look-alike text can now
   block a governed edit, and each refusal is counted.
@@ -26,14 +35,16 @@ Builds on 2.4.1-beta.19.
   and server identity) on the generic delegated read, the held-read canary,
   the YAML reader and dashboard get/list; the delegated read also warns that
   the result is not complete.
-- Sanitize Core log history per line: a marker-like line collapses only
-  that line, with bounded `redacted_line_count`, `collided_line_count` and
+- Sanitize Core log history in two passes: every credential rule runs over
+  the whole window first (an LF or CRLF credential split across lines is
+  still redacted, and the line count is kept), then a marker-like line
+  collapses only that line (a CRLF line keeps its `\r`), with bounded `redacted_line_count`, `collided_line_count` and
   `redaction`. Structured-log redaction counters include the first pass.
 - Scan or withhold a key whose scan failed (never write the raw key back),
   count evidence truncation from a structural flag, and show
   `(authorization header withheld)` in incident correlation.
-- Ordinary data is byte-identical to beta.19 (69-sample corpus: 56
-  identical, 13 changed by decision, 0 unexpected). Preserve the catalog,
+- Ordinary data is byte-identical to beta.19 (80-sample corpus: 63
+  identical, 17 changed by decision, 0 unexpected). Preserve the catalog,
   input schemas, signed registries, HOLD, support window, persisted formats,
   workflows and stable v1.
 

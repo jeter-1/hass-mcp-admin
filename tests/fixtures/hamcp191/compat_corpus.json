@@ -6,9 +6,11 @@
     "python": "3.12.14"
   },
   "reasons": {
+    "CL1": "A marker-like Core log line collapses only itself (pass 2, per line); the base collapsed the whole window (owner per-line direction).",
     "D1": "Strict mode is the only mode: marker text that Engineering did not produce in this request is a collision (D1, D4).",
     "D2": "A collision replaces the whole string, not only the forged marker (D2).",
     "D3": "Ordinary prose that folds to a marker look-alike collides; accepted by the owner and counted in health (D3).",
+    "H3": "A Core log window is scanned whole (pass 1), as the base did, so a credential spanning a line break is still redacted; the redaction now keeps the line breaks it consumed, so the window keeps its line count; only the core_log_window entry point changes (Codex H3).",
     "P1": "A known secret wrapped in a forged marker is no longer trusted as a marker; the whole string becomes the collision marker (D1, D2). Beta.19 returned the secret.",
     "P2": "A forged marker no longer splits a credential anchor from its value; the whole string becomes the collision marker (D1, D2). Beta.19 returned the secret."
   },
@@ -378,6 +380,30 @@
     },
     {
       "base": {
+        "core_log_window": "\"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\\n2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\\n2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\\n\"",
+        "logbook.project": "\"[{\\\"name\\\":\\\"corpus\\\",\\\"message\\\":\\\"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\\\\n2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\\\\n2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\\\\n\\\"}]\"",
+        "redact_data": "\"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\\n2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\\n2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\\n\"",
+        "redact_untrusted_text": "\"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\\n2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\\n2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\\n\"",
+        "sanitize_untrusted_data": "{\"value\": \"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\\n2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\\n2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\\n\", \"redaction_applied\": false, \"redacted_field_count\": 0, \"redaction_categories\": [], \"truncated_field_count\": 0, \"failed_closed\": false}"
+      },
+      "class": "ordinary",
+      "id": "text_33",
+      "input": "\"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\\n2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\\n2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\\n\""
+    },
+    {
+      "base": {
+        "core_log_window": "\"ordinary\\r\\nHA **REDACTED**\\r\\n\\r\\nTraceback (most recent call last):\\r\\n  File \\\"core.py\\\"\\r\\n\"",
+        "logbook.project": "\"[{\\\"name\\\":\\\"corpus\\\",\\\"message\\\":\\\"ordinary\\\\r\\\\nHA **REDACTED**\\\\r\\\\n\\\\r\\\\nTraceback (most recent call last):\\\\r\\\\n  File \\\\\\\"core.py\\\\\\\"\\\\r\\\\n\\\"}]\"",
+        "redact_data": "\"ordinary\\r\\nHA **REDACTED**\\r\\n\\r\\nTraceback (most recent call last):\\r\\n  File \\\"core.py\\\"\\r\\n\"",
+        "redact_untrusted_text": "\"ordinary\\r\\nHA **REDACTED**\\r\\n\\r\\nTraceback (most recent call last):\\r\\n  File \\\"core.py\\\"\\r\\n\"",
+        "sanitize_untrusted_data": "{\"value\": \"ordinary\\r\\nHA **REDACTED**\\r\\n\\r\\nTraceback (most recent call last):\\r\\n  File \\\"core.py\\\"\\r\\n\", \"redaction_applied\": false, \"redacted_field_count\": 0, \"redaction_categories\": [], \"truncated_field_count\": 0, \"failed_closed\": false}"
+      },
+      "class": "ordinary",
+      "id": "text_34",
+      "input": "\"ordinary\\r\\nHA **REDACTED**\\r\\n\\r\\nTraceback (most recent call last):\\r\\n  File \\\"core.py\\\"\\r\\n\""
+    },
+    {
+      "base": {
         "logbook.project": "\"[{\\\"entity_id\\\":\\\"light.kitchen\\\",\\\"state\\\":\\\"on\\\",\\\"attributes\\\":{\\\"friendly_name\\\":\\\"Kitchen [main]\\\",\\\"brightness\\\":128,\\\"rgb_color\\\":[255,180,100],\\\"supported_features\\\":44,\\\"icon\\\":\\\"mdi:lightbulb\\\"},\\\"last_changed\\\":\\\"2026-09-01T01:02:03.456789+00:00\\\",\\\"context\\\":{\\\"id\\\":\\\"01J0000000000000000000000\\\",\\\"parent_id\\\":null,\\\"user_id\\\":null}}]\"",
         "redact_data": "{\"entity_id\": \"light.kitchen\", \"state\": \"on\", \"attributes\": {\"friendly_name\": \"Kitchen [main]\", \"brightness\": 128, \"rgb_color\": [255, 180, 100], \"supported_features\": 44, \"icon\": \"mdi:lightbulb\"}, \"last_changed\": \"2026-09-01T01:02:03.456789+00:00\", \"context\": {\"id\": \"01J0000000000000000000000\", \"parent_id\": null, \"user_id\": null}}",
         "sanitize_untrusted_data": "{\"value\": {\"entity_id\": \"light.kitchen\", \"state\": \"on\", \"attributes\": {\"friendly_name\": \"Kitchen [main]\", \"brightness\": 128, \"rgb_color\": [255, 180, 100], \"supported_features\": 44, \"icon\": \"mdi:lightbulb\"}, \"last_changed\": \"2026-09-01T01:02:03.456789+00:00\", \"context\": {\"id\": \"01J0000000000000000000000\", \"parent_id\": null, \"user_id\": null}}, \"redaction_applied\": false, \"redacted_field_count\": 0, \"redaction_categories\": [], \"truncated_field_count\": 0, \"failed_closed\": false}"
@@ -593,6 +619,59 @@
       "id": "redacted_ha_placeholder_assignment"
     },
     {
+      "base_sha256": {
+        "logbook.project": "sha256:8ca6c0a2dced96dcc54575c489930a284726440402665cfa02a474f421593da9",
+        "redact_data": "sha256:2afeb84397216f7fdc859dfc095099438b75a2edc1435b6cb15938928fe83b92",
+        "sanitize_untrusted_data": "sha256:83b552964b89d5d1eabc5f6bb7e9048a6da02a60f26109be04d3859109782abe"
+      },
+      "class": "redacted",
+      "id": "redacted_h1g_identifier_known_secret"
+    },
+    {
+      "base_sha256": {
+        "core_log_window": "sha256:2055f1ac5b01c62ab17b1772c3c3944369754ad5cf717804427dd8a5928ca52a",
+        "logbook.project": "sha256:6d30291aa784cbf3335ec3f6ff98f942af701225cb62e386dd54daf2260b0731",
+        "redact_data": "sha256:2055f1ac5b01c62ab17b1772c3c3944369754ad5cf717804427dd8a5928ca52a",
+        "redact_untrusted_text": "sha256:2055f1ac5b01c62ab17b1772c3c3944369754ad5cf717804427dd8a5928ca52a",
+        "sanitize_untrusted_data": "sha256:1e09d2e36fb95215449a10f9dad514d0c51ea03a78b7eb1f90236688afaee35b"
+      },
+      "class": "redacted",
+      "id": "redacted_h3_core_anchor_lf"
+    },
+    {
+      "base_sha256": {
+        "core_log_window": "sha256:da70c3b1b2ed43bff4e36a82f8cc19681a2abc340fd484f7b807a80fc3cbc9a1",
+        "logbook.project": "sha256:1c5830b05bd5b95a188fce80af322548337a45a3e0087298c88b1a967ad59268",
+        "redact_data": "sha256:da70c3b1b2ed43bff4e36a82f8cc19681a2abc340fd484f7b807a80fc3cbc9a1",
+        "redact_untrusted_text": "sha256:da70c3b1b2ed43bff4e36a82f8cc19681a2abc340fd484f7b807a80fc3cbc9a1",
+        "sanitize_untrusted_data": "sha256:8090088389769d91580d4214f7bfb1e619f4cf61fbf7ba9f1c39baff93602ba8"
+      },
+      "class": "redacted",
+      "id": "redacted_h3_core_anchor_crlf"
+    },
+    {
+      "base_sha256": {
+        "core_log_window": "sha256:4deb1f57d78d0a26460949429f25074b835fe00abafad26cd8a010052b3366b8",
+        "logbook.project": "sha256:917e782371b669d39bf61019e586ff6c09eee06193e4487baec577f732be56e5",
+        "redact_data": "sha256:4deb1f57d78d0a26460949429f25074b835fe00abafad26cd8a010052b3366b8",
+        "redact_untrusted_text": "sha256:4deb1f57d78d0a26460949429f25074b835fe00abafad26cd8a010052b3366b8",
+        "sanitize_untrusted_data": "sha256:989a22ee49702705f473dba42740bb59a7cf98ff88d113fa38d534946407d83a"
+      },
+      "class": "redacted",
+      "id": "redacted_h3_core_same_line_lf"
+    },
+    {
+      "base_sha256": {
+        "core_log_window": "sha256:b7489a30d849d7746f46add81637eff2ccea365fc646c002f595250198e75659",
+        "logbook.project": "sha256:b7a1f3cd9da20cfaf834f334161fa4ad8f5cadc065c6b2a7613459a9021c5a1f",
+        "redact_data": "sha256:b7489a30d849d7746f46add81637eff2ccea365fc646c002f595250198e75659",
+        "redact_untrusted_text": "sha256:b7489a30d849d7746f46add81637eff2ccea365fc646c002f595250198e75659",
+        "sanitize_untrusted_data": "sha256:b351fde4654def34a4f8d08f3791d9bee8fd96a3dae219318b32d4059229b50b"
+      },
+      "class": "redacted",
+      "id": "redacted_h3_core_same_line_crlf"
+    },
+    {
       "base_leaks_secret": true,
       "base_sha256": {
         "logbook.project": "sha256:0079a9f9f811934e1a8f644bd546a3364022c51566eb75f1d7b4cda802bee306",
@@ -734,6 +813,54 @@
       "class": "changed",
       "id": "lookalike_attribute_description",
       "reason": "D3"
+    },
+    {
+      "base_leaks_secret": true,
+      "base_sha256": {
+        "logbook.project": "sha256:97bc25c97d7b63d6f7e766f2f2915ba376666be06319b4b9e49e7346867df5c5",
+        "redact_data": "sha256:e7560abc54ca7679c09e1e6c0da69df6637157b69419759f74f03df4d04f8615",
+        "sanitize_untrusted_data": "sha256:9a8e89e4fe09a666358c42039990f7caf3b5d97437cc704d36fedf6d53bd36eb"
+      },
+      "class": "changed",
+      "id": "h1g_wrapped_identifier",
+      "reason": "P1"
+    },
+    {
+      "base_leaks_secret": true,
+      "base_sha256": {
+        "logbook.project": "sha256:38f119d7639bb0a925effde13deb7cce68b8304c5b5e5e6aad8bb18ddd58d8a7",
+        "redact_data": "sha256:613aec94be1f90a02f0ee4ce5c1b416bff801d0fb51cceaac3b3e079539a101a",
+        "sanitize_untrusted_data": "sha256:2d245deebc73ce5a40523fe2dc9c3f7c55829151146aaffe346108a3813bf3f6"
+      },
+      "class": "changed",
+      "id": "h2_wrapped_backup_evidence",
+      "reason": "P1"
+    },
+    {
+      "base_leaks_secret": false,
+      "base_sha256": {
+        "core_log_window": "sha256:af4c49bd3895b34b7bee739af38668b259d0aa884b35de27aa6eb75e772c5582",
+        "logbook.project": "sha256:d89cc7941a0341f7513213563ff6538a367197a856dd0a402a01ef8dbbda9f9b",
+        "redact_data": "sha256:af4c49bd3895b34b7bee739af38668b259d0aa884b35de27aa6eb75e772c5582",
+        "redact_untrusted_text": "sha256:af4c49bd3895b34b7bee739af38668b259d0aa884b35de27aa6eb75e772c5582",
+        "sanitize_untrusted_data": "sha256:08e0d29b23cd4c0cd9cb0df8f74909906f2352ba66546d4e7f5a1d6a748ebd19"
+      },
+      "class": "changed",
+      "id": "h3_core_quoted_multiline",
+      "reason": "H3"
+    },
+    {
+      "base_leaks_secret": false,
+      "base_sha256": {
+        "core_log_window": "sha256:5e7a2ffddd44cd308f98ce0e3b398aa323477fb99c1a133eb9d180beb828023e",
+        "logbook.project": "sha256:e1a2aed52b02dccb346c22d716c2a25ed72377238375a148b54b706a6d40e956",
+        "redact_data": "sha256:5e7a2ffddd44cd308f98ce0e3b398aa323477fb99c1a133eb9d180beb828023e",
+        "redact_untrusted_text": "sha256:5e7a2ffddd44cd308f98ce0e3b398aa323477fb99c1a133eb9d180beb828023e",
+        "sanitize_untrusted_data": "sha256:f5c11530d93450204ca1086cfe546c189a0230a1a25703f4882428e1f2d93f10"
+      },
+      "class": "changed",
+      "id": "cl1_core_collision_line",
+      "reason": "CL1"
     }
   ]
 }

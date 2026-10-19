@@ -64,14 +64,39 @@ like `[REDACTED:<category>]` as if Engineering had written it.
      version or location name.
    - A plan whose text the strict pass flags is refused with no plan
      written. Caller-context entries the strict pass would change are
-     dropped.
-5. **Health counters (D3).**
+     dropped. The automation identifier is part of that check (review
+     finding H1g).
+5. **One plan-persistence chokepoint (review findings H1g, H2).**
+   - Every write of a governance plan record passes one storage function
+     (`ChangePlanRepository.save`). It strict-sanitizes every new string,
+     identifiers and keys included. That covers:
+     - creation, updates and approvals;
+     - apply-time verification and backup evidence;
+     - receipts, failures and events;
+     - rollback plans;
+     - recovery writes.
+   - On creation, any finding refuses.
+   - On an update, a finding refuses in identity, configuration, snapshot
+     and dispatch fields. In evidence, receipts, failure information and
+     event text it is redacted in place.
+   - Dispatch and recovery state (plan and request ids, hashes,
+     fingerprints, timestamps, statuses) is kept byte-exact. It is limited
+     to 72 schema paths whose value formats cannot carry free text, and a
+     finding in one of them refuses the write.
+   - Old stored content is written back unchanged and re-read under D11.
+   - Static and runtime enumeration tests fail if any other writer appears.
+   - Identifiers echoed in response metadata are withheld when the strict
+     check flags them.
+   - beta.19 stored and returned a known secret used as an automation id,
+     and stored a wrapped known secret read back as backup verification
+     evidence.
+6. **Health counters (D3).**
    - `get_server_health` adds `sanitization` with `strict_marker_mode: true`,
      `marker_collisions` and `marker_collision_refusals`. These are process
      counts with no content.
    - Look-alike text can now block a governed edit whose path has a detector
      gate. Each such refusal is counted.
-6. **Truthful completeness (Finding 11).** When redaction applied anywhere
+7. **Truthful completeness (Finding 11).** When redaction applied anywhere
    in the response, including upstream warnings, hints and server
    identity, the generic delegated read, the held-read canary, the YAML
    reader and dashboard get/list report:
@@ -79,13 +104,16 @@ like `[REDACTED:<category>]` as if Engineering had written it.
    - a bounded `metadata.redaction` summary (categories with counts);
    - for the delegated read, the warning "Sensitive values in the untrusted
      upstream response were redacted; the result is not complete."
-7. **Per-line Core log sanitization (Josh's direction).**
-   `get_core_log_history` sanitizes each line on its own. A marker-like line
-   collapses only that line, and the response carries bounded
+8. **Core log sanitization in two passes (Josh's direction, review finding
+   H3).** `get_core_log_history` runs every credential rule over the whole
+   window first. A credential whose anchor and value sit on different lines
+   (LF or CRLF), or a quoted value spanning lines, is still redacted, and
+   the window keeps its line count. Marker look-alikes are then judged per
+   line: a marker-like line collapses only itself, and the response carries bounded
    `redacted_line_count` and `collided_line_count` values plus the
    `redaction` summary. Home Assistant's own `**REDACTED**` placeholder is
    not marker-shaped and passes unchanged.
-8. **Smaller fixes.**
+9. **Smaller fixes.**
    - Structured-log redaction counters include `log_event`'s first pass.
    - The raw-key failure branch scans the key or withholds it; it never
      writes the raw key back.
@@ -97,26 +125,36 @@ like `[REDACTED:<category>]` as if Engineering had written it.
 
 ## Visible changes
 
-- Ordinary data is unchanged. Of 69 corpus samples recorded on the exact
-  beta.19 base, 56 are byte-identical and 13 change by decision:
-  - P1 ×2 and P2 ×2: the base leaked; beta.20 does not;
+- Ordinary data is unchanged. Of 80 corpus samples recorded on the exact
+  beta.19 base, 63 are byte-identical and 17 change by decision:
+  - P1 ×4 and P2 ×2: the base leaked, and beta.20 does not. P1 includes the
+    review's identifier and backup-evidence shapes.
   - forged markers ×4 (D1);
   - a forged marker beside text (D2);
-  - look-alike prose ×4 (D3).
-  Log lines containing Home Assistant's `**REDACTED**` are byte-identical.
+  - look-alike prose ×4 (D3);
+  - a quoted Core log value spanning lines keeps the window's line count
+    (H3);
+  - a marker-like Core log line collides alone (CL1).
+  Log lines containing Home Assistant's `**REDACTED**`, and LF and CRLF
+  credentials split across Core log lines, are byte-identical to the base.
 - A marker-like Core log line becomes the collision marker on its own; the
   other lines of the window are kept. Lines split on `\n` only, so a `\r`
-  stays inside its line.
+  stays inside its line, and a collided CRLF line keeps it.
 - Plans whose text the strict pass flags (including look-alike prose in an
   automation title or description, or a configured known secret, which
   beta.19 stored raw) are refused instead of created.
+- New verification evidence, receipts or failure text that the strict pass
+  flags is stored redacted. An update that would change a plan's identity,
+  configuration or dispatch fields is refused with
+  `CHANGE_PLAN_STORAGE_ERROR`, and the stored record is left unchanged.
+- A flagged identifier is no longer echoed as `metadata.resource_id`.
 - A collided system-log or trace entry no longer correlates in reliability
   analysis.
 
 ## Compatibility and rollback
 
 - **Stored formats** are unchanged. Plans written by beta.19 re-read exactly
-  as before (D11).
+  as before (D11), and their old content is written back unchanged.
 - **Responses** gain only the additive health `sanitization` object,
   `metadata.redaction` and the Core log line counts. Redacted reads say
   `partial`. Look-alike untrusted text becomes the collision marker.

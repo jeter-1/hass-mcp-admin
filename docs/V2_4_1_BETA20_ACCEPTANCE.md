@@ -3,7 +3,8 @@
 This contract covers HAMCP-191: one shared sanitizer with identity-only
 redaction markers for every tool, D3 health counters, and truthful
 completeness when redaction applies. Stored plans keep beta.19's marker
-tolerance on re-read (D11); every plan family is strict at creation. It
+tolerance on re-read (D11); every plan family is strict at creation, and
+every plan write passes one storage chokepoint. It
 builds on 2.4.1-beta.19 (HAMCP-192).
 
 See also:
@@ -101,10 +102,10 @@ identifier and audit.
   A redaction in a dashboard warning or hint alone makes the response
   `partial`; the held-read canary carries the summary, also when its result
   is omitted.
-- Core logs are sanitized per line: a marker-like line and an anchor-split
-  line each collapse or redact only that line, with bounded
-  `redacted_line_count` and `collided_line_count`; an ordinary window is
-  unchanged.
+- Core logs are sanitized in two passes: credentials over the whole window,
+  then marker collisions per line. A marker-like line collapses only that
+  line, with bounded `redacted_line_count` and `collided_line_count`; an
+  ordinary window is unchanged.
 - `PlanCreationGateTests` (7) and `OperationalCreationGateTests` (3): the
   review's legacy-planning reproductions (title, provider current state,
   description, proposal and split anchor) are refused with nothing
@@ -120,14 +121,46 @@ identifier and audit.
 - An ordinary governed plan is approved and applied (useful authorized
   success).
 
+**`tests/test_hamcp191_plan_chokepoint.py` (20 tests):** the review's
+batch-2 reproductions, each a permanent test.
+- `IdentifierCreationTests` (5), H1g:
+  - A valid and an invalid automation id holding a known or wrapped secret
+    are refused before any Home Assistant read. Nothing is persisted, and
+    the id is neither returned nor echoed in `metadata.resource_id`.
+  - An ordinary id still creates a plan and is echoed.
+  - A plan id carrying a known secret is withheld from the echo, also with
+    no governance service.
+  - The repository refuses a secret-bearing target before any file exists.
+- `ApplyTimeEvidenceTests` (1), H2: a wrapped known secret read back as
+  backup verification evidence is stored redacted, with no second dispatch.
+- `ChokepointUnitTests` (5):
+  - an update redacts new evidence in place;
+  - an update refuses on identity paths and leaves the record unchanged;
+  - exempt values are scanned and refused, never rewritten;
+  - old stored marker content is kept, and only new content is screened;
+  - a refused recovery write is counted, and startup continues.
+- `ExemptSchemaTests` (4):
+  - every one of the 72 exempt paths resolves to a typed leaf or a pinned
+    mapping key;
+  - none of the 14 formats can carry free text;
+  - each enum accepts exactly its values;
+  - a JWT fits the request-id format, which is why exempt values are still
+    scanned.
+- `WriterInventoryTests` (2): every `save` call is in the committed table,
+  and storage writes go only through `save` and quarantine.
+- `RuntimeWriterSpyTests` (1): every plan write in seven governance suites,
+  spied through `os.replace` and `open`, was screened.
+- `CoreLogSpanningTests` (2), H3: credentials spanning LF and CRLF line
+  breaks are redacted, and a collision stays line-local across CRLF.
+
 **`tests/test_hamcp191_compatibility.py` (5 tests):**
 - It reruns `docs/evidence/hamcp191/generate_corpus.py compare` against the
   base-recorded fixture `tests/fixtures/hamcp191/compat_corpus.json`.
-- Of 69 samples, 56 are byte-identical and 13 changed by decision
-  (P1 ×2, P2 ×2, D1 ×4, D2, D3 ×4), with 0 unexpected.
+- Of 80 samples, 63 are byte-identical and 17 changed by decision
+  (P1 ×4, P2 ×2, D1 ×4, D2, D3 ×4, H3, CL1), with 0 unexpected.
 - The P1 and P2 samples leaked on the base and do not leak on the head.
-- Log lines holding Home Assistant's own `**REDACTED**` placeholder are
-  byte-identical.
+- Log lines holding Home Assistant's own `**REDACTED**` placeholder, and LF
+  and CRLF credentials split across Core log lines, are byte-identical.
 
 **Existing tests whose pins changed** are listed in the implementation
 notes, section 5.
@@ -235,7 +268,7 @@ authorization.
    or returning it, so a plan beta.20 creates holds no forged marker; the
    save-time gate itself is the tolerant re-scan and is not the creation
    gate.
-6. **Core log per-line behaviour (read-only).** Call `get_core_log_history`
+6. **Core log two-pass behaviour (read-only).** Call `get_core_log_history`
    with a small window. **Pass:** `completeness: partial`, integer
    `redacted_line_count` and `collided_line_count`, and lines holding Home
    Assistant's `**REDACTED**` shown unchanged. Record both counts; nonzero

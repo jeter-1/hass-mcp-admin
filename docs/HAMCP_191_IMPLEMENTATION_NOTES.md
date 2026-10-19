@@ -109,6 +109,8 @@ Each file is under a protected path and is named here as task scope.
 | `dependency/script_calls.py`, `dependency/script_sources.py` | D3: the refusal counter at the script X7 gates |
 | `providers/upstream_dashboard.py` | Finding 11: dashboard get/list report `partial` and `metadata.redaction` when redaction applied, including warnings, the hint and the upstream identity (Codex M1) |
 | `providers/core_logs.py` | Josh's direction after the Codex review: per-line Core log sanitization with bounded line counts (section 7). New to the pull request in the correction batch. |
+| `governance/storage.py` | Architect Direction A (section 8): the one plan-persistence chokepoint (`ChangePlanRepository.save` screens every new string), the exempt-field schema and the refusal type. New to the pull request in correction batch 2. |
+| `tools/governance.py` | Codex H1g (section 8): identifiers echoed in response metadata pass the strict check and are withheld when flagged. New to the pull request in correction batch 2. |
 
 `scripts/validate_addon_metadata.py` (not protected) carries the version
 through `promote_next_release.py --apply`.
@@ -143,10 +145,14 @@ the Dockerfile.
   - a 65,000-character opener run takes about 3 ms;
   - the folding (NFKC, casefold, confusable table) and the four decode rounds
     are unchanged.
-- **Core log reads (owner direction, section 7).** `CoreLogReader.evidence`
-  sanitizes each journal line on its own, in one pass over the list of
-  lines that shares one tally. A marker-like line collapses only that line
-  to the collision marker. The response carries bounded
+- **Core log reads (owner direction, section 7; Codex H3, section 8).**
+  `CoreLogReader.evidence` sanitizes the window in two passes
+  (`sanitize_log_lines`). Pass 1 runs every rule over the whole window, so a
+  credential spanning an LF or CRLF line break is still found; each
+  replacement keeps the line breaks it consumed. Pass 2 decides marker
+  look-alikes per original line: a marker-like line collapses only that
+  line to the collision marker (keeping its CRLF terminator half), and Home
+  Assistant's `**REDACTED**` lines stay byte-identical. The response carries bounded
   `redacted_line_count` and `collided_line_count` values and the
   `redaction` summary, and is always `partial`.
 - **Strict gate on every plan creation (Codex H1).** See D11 above and
@@ -184,8 +190,16 @@ the Dockerfile.
 exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
 `compare` on this tree writes `docs/evidence/hamcp191/corpus-comparison.json`.
 
-- **Result:** 69 samples. 56 are byte-identical (42 ordinary, 14 plain
-  redactions), 13 changed by decision, 0 unexpected.
+- **Result:** 80 samples. 63 are byte-identical (44 ordinary, 19 plain
+  redactions), 17 changed by decision, 0 unexpected.
+- **Correction batch 2 samples (section 8):** a `core_log_window` entry point
+  (the exported text of a complete Core log window: the base sanitized it
+  as one string, the head runs `sanitize_log_lines`); ordinary LF and CRLF
+  windows with Home Assistant's placeholder (byte-identical); Codex H3's LF
+  and CRLF anchor-split credentials and same-line controls (byte-identical:
+  the base also scanned the whole window, so H3 was a regression inside
+  this pull request, not relative to the base); Codex H1g's known-secret
+  identifier (redacted, byte-identical).
 - **Codex review and Home Assistant samples:** Home Assistant's own
   `**REDACTED**` placeholder in three log lines, a Core log window as a
   list of lines, and Codex's template sample stay byte-identical. The
@@ -208,6 +222,9 @@ exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
 | `forged_exact_marker`, `forged_marker_key`, `forged_encoded_marker`, `forged_fullwidth_marker` | D1 | A forged marker collides instead of being trusted by text |
 | `forged_marker_beside_text` | D2 | The whole string is replaced |
 | `lookalike_prose_parenthesized`, `lookalike_prose_truncated`, `lookalike_dashboard_markdown`, `lookalike_attribute_description` | D3 | Look-alike prose collides |
+| `h1g_wrapped_identifier`, `h2_wrapped_backup_evidence` | P1 | Codex H1g and H2 shapes: the base leaked the wrapped known secret; the head does not |
+| `h3_core_quoted_multiline` | H3 | A quoted value spanning lines is redacted as before; the window now keeps its line count (`core_log_window` only) |
+| `cl1_core_collision_line` | CL1 | A marker-like Core log line collapses alone; the base passed it through unchanged as plain text |
 
 **Tool-level output changes outside the corpus:**
 - `get_server_health` gains the additive
@@ -221,7 +238,7 @@ exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
 - `get_core_log_history` sanitizes each line independently and adds
   `redacted_line_count`, `collided_line_count` and `redaction`. Lines now
   split on `\n` only; a `\r` stays inside its line (before, `splitlines`
-  also split on it).
+  also split on it), and a collided CRLF line keeps it.
 - New plans whose caller-supplied or Home Assistant-derived text is
   strictly flagged are refused (section 7). Caller context entries the
   strict pass would change are dropped.
@@ -250,6 +267,22 @@ exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
 - `tests/test_beta11_sanitization.py`, `tests/test_automation_reliability_analysis.py`
   and `tests/test_hamcp171_health_verdict_cache.py` also build their
   secret-shaped inputs at runtime now (Codex L2); every value is unchanged.
+- Correction batch 2 (section 8), three existing non-protected test files
+  that planted deliberately unsafe or malformed records through
+  `repository.save`. The chokepoint now refuses that as new content, so they
+  plant the record as already-stored bytes through `plant_stored_record`,
+  which first asserts that `save` refuses and leaves the stored bytes
+  unchanged:
+  - `tests/test_dev14_configuration_plans.py` (2: the corrupt contract-v2
+    current and proposed configuration tests; the helper lives here);
+  - `tests/test_governance_async_health.py` (1);
+  - `tests/test_2_1a_beta2_operational_lifecycle.py` (1 test, 3 plants:
+    historical apply events with an empty or malformed request id and a
+    malformed timestamp).
+  The same change applies to `tests/test_beta25_external_approval.py`
+  (already in this pull request). Its beta.24 rollback-pending test plants
+  a legacy record whose `expected_current_fingerprint` is `"legacy"`, which
+  is not a sha256 value, so the exempt-field format check refuses it.
 
 ## 6. Mutations
 
@@ -346,3 +379,187 @@ rule redacts the value, as beta.19 did.
   correction head caught the old `test_beta25_external_approval` pin.
 - Strictly flagged caller-context entries are dropped.
 - Core log lines split on `\n` only.
+
+## 8. Codex delta corrections (review of `89d6ed4`)
+
+The delta review in `~/handoffs/hass-mcp-admin-HAMCP-191-review.md` reported
+three High findings: H1g, H2 and H3. Each was fixed structurally, following
+the architect's Direction A (one plan-persistence chokepoint) and Direction
+B (two Core log passes). Each reproduction is now a permanent test in
+`tests/test_hamcp191_plan_chokepoint.py`.
+
+**Direction A: one plan-persistence chokepoint (`governance/storage.py`).**
+- **One function.** Every write of a governance plan record goes through
+  `ChangePlanRepository.save`, which calls `_screen_new_content`, which calls
+  `sanitization.screen_plan_content`. That covers:
+  - creation, updates and approvals;
+  - apply-time verification and backup evidence;
+  - lifecycle and dispatch receipts, failure information and events;
+  - rollback plan creation;
+  - storage-recovery writes (`_recovery_save`).
+- **What is new.** A string equal to the stored record's string at the same
+  JSON path is old content. It is written back unchanged, and only D11
+  re-reads old content. Every other string, including keys and identifiers,
+  runs the strict scan, which applies:
+  - the known secrets;
+  - every credential rule;
+  - the marker look-alike collision.
+  A producer's own sanitized output objects are kept through the request's
+  identity record (`plan_output_registry`).
+- **Refuse or redact, per field:**
+
+  | Write | Field | Effect of a finding |
+  |---|---|---|
+  | Creation (no stored record) | any | refused: nothing is written |
+  | Update | `target`, `title`, `description`, `requested_by` | refused, stored record unchanged |
+  | Update | `proposed_config`, `current_config`, both normalized forms, `snapshot.config` (plan and each operation) | refused |
+  | Update | operation identity: `operation_id`, `depends_on`, `resource_type`, `action`, `target_id`, `helper_type` | refused |
+  | Update | `operational.family`, `operation`, `requested_name`, `provider` | refused |
+  | Update | any exempt dispatch or recovery field (below) | refused, never rewritten |
+  | Update | everything else: verification evidence, execution receipts, failure information, event and dispatch text, notes | redacted in place; the stored record and the caller's in-memory plan are the redacted form |
+
+  Refusing identity and hash-bound configuration keeps a redacted copy from
+  passing for the same approved plan. After the strict pass, a contract-v2+
+  record still passes the D11 stored-plan check over its whole content.
+- **Service mapping.**
+  - A creation refusal is `CONFIGURATION_VALIDATION_FAILED`
+    (`plan_contains_prohibited_sensitive_data`). Legacy creation is refused
+    earlier, by its strict input gate, now with the identifier.
+  - An update refusal is `CHANGE_PLAN_STORAGE_ERROR`
+    (`unsafe_persisted_configuration_plan`).
+  - A refused recovery write is counted (`recovery_refusals`), and startup
+    continues.
+  - Counters: `content_redactions`, `content_refusals`, `recovery_refusals`.
+  - No error carries content.
+- **Exempt-field schema.** These dispatch and recovery fields are kept
+  byte-exact:
+  - 72 schema paths (`EXEMPT_FIELDS`), each mapped to one of 14 value
+    formats (`EXEMPT_FORMATS`);
+  - the formats: plan id (32 hex), sha256, ISO timestamp, request id
+    (`request_context.REQUEST_ID_PATTERN`), approval challenge id, and nine
+    enums.
+
+  An exempt value is never rewritten:
+  - A value outside its format refuses the write.
+  - A value inside its format is still strict-scanned, and any finding
+    refuses. A JWT fits the request-id alphabet, which is why the scan is
+    kept.
+  - Non-string dispatch facts (counts, flags) are not strings and are not
+    rewritten.
+
+  Proof (`ExemptSchemaTests`):
+  - Every exempt path resolves through the model dataclasses to a `str` or
+    enum leaf, or to a pinned mapping key.
+  - No format accepts whitespace, brackets, quotes, `=`, `@`, `%`, `/`,
+    `+`, a forged marker, a bearer credential, an assignment or the empty
+    string.
+  - Each enum format accepts exactly its enum.
+- **Enumeration test.** It has two parts:
+  - **Static.** `WriterInventoryTests` parses the package:
+    - Every `.save(` call must be in the committed table. Exactly two
+      callers write plan records: `ChangeGovernanceService._save` and
+      `ChangePlanRepository._recovery_save`.
+    - `governance/storage.py` may write files only through `save` (`open`
+      mode `x`, then `os.replace`) and `_quarantine` (`os.replace` into the
+      quarantine directory).
+  - **Runtime.** `RuntimeWriterSpyTests` runs seven governance suites, which
+    create, approve, apply, verify, fail, roll back and recover every plan
+    family. While they run, it spies on `os.replace`, `builtins.open` and
+    `io.open`. A violation is either of:
+    - package code outside `ChangePlanRepository.save` opening a file for
+      writing in a plan root;
+    - a replaced plan file whose payload was not the screen's output.
+
+  A bypassing writer fails CI (mutations A1a and A1b).
+
+**H1g: identifiers.**
+- Legacy creation's strict input gate now includes `automation_id`. It runs
+  before any Home Assistant read, supersession or write, and the chokepoint
+  refuses a secret-bearing target at creation in any case.
+- Identifiers echoed in response metadata also pass the strict check
+  (`tools/governance.py` `_identifier_metadata`). A flagged `resource_id` is
+  withheld on success and on refusal, and it is also withheld when no
+  governance service is available (fail closed). The service's
+  plan-not-found details withhold a flagged plan id (`_identifier_details`).
+- Tests (`IdentifierCreationTests`), all through the registered tool:
+  - Codex's valid known-secret ID and invalid wrapped ID: both are refused,
+    no record or file is written, the ID is not echoed, and there are zero
+    provider writes.
+  - An ordinary ID is created and echoed.
+  - A known secret in a plan-id lookup is not echoed by `get`, `approve`,
+    `apply` or `rollback`.
+  - Metadata is withheld without a service.
+  - The repository refuses a secret target before any file exists.
+- Base evidence: the delta review's own probe (reviewer artifact
+  `creation_id_probe.py`, under `.artifacts/reviews/pr280-89d6ed4/`) showed
+  that the exact base persisted and echoed both IDs. On the previous head
+  `89d6ed4`, every `IdentifierCreationTests` reproduction fails, and only
+  the ordinary-ID control passes. This module cannot import on the base,
+  because it needs this pull request's family harness. Corpus sample
+  `h1g_wrapped_identifier` (P1) records the base sanitizer keeping the
+  wrapped ID.
+
+**H2: apply-time evidence.**
+- Fresh backup read-back evidence is new content on an update, so the
+  chokepoint redacts it in place before storage.
+- Dispatch facts are untouched, so a resumed apply reads back again and
+  never redispatches. The lifecycle evidence assignment Codex flagged uses
+  the same save.
+- Test (`ApplyTimeEvidenceTests`), through the real
+  `BackupAdministrationGateway`, synthetic provider I/O and real external
+  approval:
+  - The read-back carries a known secret wrapped in canonical marker
+    syntax, so verification stays required.
+  - The durable JSON, public `get_plan` and errors are clean, and the
+    evidence holds the collision marker.
+  - The attempt count is still one.
+  - A resumed apply does not redispatch.
+  - A clean read-back then completes the plan.
+- `ChokepointUnitTests` covers:
+  - in-place redaction of new evidence;
+  - refusal on identity paths with the record kept;
+  - exempt values refused, never rewritten;
+  - old stored marker content kept while only new content is screened;
+  - a refused recovery write counted while startup continues.
+
+**H3: Core logs in two passes (`sanitize_log_lines`).** See section 4.
+- Pass 1 scans the whole window, LF or CRLF, so an anchor and its value on
+  different lines, or a quoted value spanning lines, are redacted. The
+  replacement keeps the consumed line breaks.
+- Pass 2 decides marker look-alikes per original line. A look-alike formed
+  only across two lines collapses both; one no pair explains collapses the
+  window (fail closed).
+- Home Assistant `**REDACTED**` lines stay byte-identical, and
+  `redacted_line_count` and `collided_line_count` stay truthful.
+- Tests (`CoreLogSpanningTests`, behind the real `AuthenticatedMcpGateway`):
+  - LF anchor, CRLF anchor and quoted multi-line credentials are redacted,
+    with no secret anywhere in the serialized output.
+  - Same-line LF and CRLF controls.
+  - A CRLF window whose marker-like line collides alone: exact output, the
+    ordinary and placeholder lines intact, one collided line.
+- The exact base sanitized the window as one string and redacted these
+  cases; the regression was this pull request's earlier per-line split.
+
+**Narrowing to note.**
+- New plan content that the strict pass flags is refused or redacted
+  according to the table above.
+- A deliberately unsafe or malformed record can no longer be planted through
+  `save`. Four existing test files now plant such records as stored bytes
+  (section 5).
+
+**Limitations (outside Direction A).** These were reviewed and left
+unchanged:
+- `f3_dashboard` `DashboardArtifactStore` artifacts are strict-gated before
+  creation and are not plan records.
+- `ExecutionTaskRepository` task records hold dispatch state and their own
+  event text. They do not pass this chokepoint.
+- Entity IDs echoed in error details by `governance/entity_metadata.py` and
+  `impact/provider.py`, and execution-task IDs echoed by the
+  `get_execution_task` and `cancel_execution_task` tools (schema-bound to 32
+  hex characters, so only a hex-shaped known secret could appear), are not passed
+  through the identifier check. The tool-level entity, automation,
+  dashboard and plan identifiers are.
+- `tests/test_dev14_configuration_plans.py` is not in the committed-file
+  literal scan. This pull request adds only its `plant_stored_record`
+  helper, and the file's pre-existing main-branch fixtures carry
+  secret-shaped refusal inputs by design.

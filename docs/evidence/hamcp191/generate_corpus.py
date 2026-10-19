@@ -155,6 +155,16 @@ ORDINARY_VALUES: list[tuple[str, Any]] = [
     ]),
 ]
 
+# Complete Core log windows (each ends with a line break), LF and CRLF, with
+# Home Assistant's own placeholder: byte-identical through the Core log path.
+ORDINARY_TEXT += [
+    "2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\n"
+    "2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] "
+    "Setup data: **REDACTED**\n"
+    "2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\n",
+    "ordinary\r\nHA **REDACTED**\r\n\r\nTraceback (most recent call last):\r\n  File \"core.py\"\r\n",
+]
+
 
 def redacted_samples() -> list[tuple[str, Callable[[], tuple[Any, tuple[str, ...]]]]]:
     return [
@@ -177,6 +187,26 @@ def redacted_samples() -> list[tuple[str, Callable[[], tuple[Any, tuple[str, ...
         # assignment rule redacts the value, exactly as beta.19 did.
         ("ha_placeholder_assignment", lambda: (
             {"note": "Config entry data: {" + "'to" + "ken': '**REDACTED**'}"}, ()
+        )),
+        # Codex H1g: a known secret used as an automation identifier.
+        ("h1g_identifier_known_secret", lambda: (
+            {"automation_id": secret("h1g"), "title": "Porch light"}, (secret("h1g"),)
+        )),
+        # Codex H3: Core log credentials whose anchor and value span a line
+        # break (LF, CRLF). The base scanned the whole window too, so these
+        # are byte-identical; they guard against a per-line-only regression.
+        ("h3_core_anchor_lf", lambda: (
+            "ordinary\n" + syn.bearer("") + "\n" + secret("h3lf") + "\nHA **REDACTED**\n", ()
+        )),
+        ("h3_core_anchor_crlf", lambda: (
+            "ordinary\r\n" + syn.bearer("") + "\r\n" + secret("h3crlf") + "\r\nHA **REDACTED**\r\n", ()
+        )),
+        # Codex H3 controls: same-line credentials in a Core log window.
+        ("h3_core_same_line_lf", lambda: (
+            "ordinary\n" + syn.bearer(secret("h3s")) + "\nHA **REDACTED**\n", ()
+        )),
+        ("h3_core_same_line_crlf", lambda: (
+            "ordinary\r\n" + syn.bearer(secret("h3sc")) + "\r\nHA **REDACTED**\r\n", ()
         )),
     ]
 
@@ -213,6 +243,23 @@ def changed_samples() -> list[tuple[str, str, Callable[[], tuple[Any, tuple[str,
             {"friendly_name": "Kitchen [main]", "unit_of_measurement": "\u00b0C",
              "description": "Serial number <redacted>"}, ()
         )),
+        # Codex H1g and H2: a known secret wrapped in canonical marker syntax,
+        # as an invalid identifier and as backup read-back evidence.
+        ("h1g_wrapped_identifier", "P1", lambda: (
+            {"automation_id": "[REDACTED:" + grammar_secret("h1g") + "]"}, (grammar_secret("h1g"),)
+        )),
+        ("h2_wrapped_backup_evidence", "P1", lambda: (
+            {"operation_state": "[REDACTED:" + grammar_secret("h2") + "]", "backup_state": "idle"},
+            (grammar_secret("h2"),),
+        )),
+        # Codex H3: a quoted Core log credential value spanning lines.
+        ("h3_core_quoted_multiline", "H3", lambda: (
+            "ordinary\n" + "pass" + "word=\"ordinary-prefix\n" + secret("h3q") + "\"\nHA **REDACTED**\n", ()
+        )),
+        # Owner per-line direction (CL1): a marker-like line collapses only itself.
+        ("cl1_core_collision_line", "CL1", lambda: (
+            "ordinary\r\n" + FORGED + " " + secret("cl1") + "\r\nHA **REDACTED**\r\n", ()
+        )),
     ]
 
 
@@ -226,6 +273,11 @@ REASONS = {
     "D2": "A collision replaces the whole string, not only the forged marker (D2).",
     "D3": "Ordinary prose that folds to a marker look-alike collides; accepted by the owner and "
           "counted in health (D3).",
+    "H3": "A Core log window is scanned whole (pass 1), as the base did, so a credential spanning "
+          "a line break is still redacted; the redaction now keeps the line breaks it consumed, so "
+          "the window keeps its line count; only the core_log_window entry point changes (Codex H3).",
+    "CL1": "A marker-like Core log line collapses only itself (pass 2, per line); the base "
+           "collapsed the whole window (owner per-line direction).",
 }
 
 
@@ -250,6 +302,29 @@ def load(tree: Path):
     return sanitization, logging_config, logbook
 
 
+def core_log_window(sanitization, text: str, known: tuple[str, ...]) -> str | None:
+    """The exported log text of a complete Core log window, as the provider forms it.
+
+    The base sanitizes the window as one string (``providers/core_logs.py`` at
+    the base revision); the head runs ``sanitize_log_lines`` over its lines
+    (one whole-window credential pass, then per-line collision; H3, CL1).
+    ``None`` means the provider would fail closed.
+    """
+
+    lines = getattr(sanitization, "sanitize_log_lines", None)
+    if lines is None:
+        result = sanitization.sanitize_untrusted_data(text, known_secrets=known)
+        if result.failed_closed or not isinstance(result.value, str):
+            return None
+        return "".join(result.value.splitlines(keepends=True))
+    bodies = text.split("\n")
+    bodies.pop()
+    result = lines(bodies, known_secrets=known)
+    if result.failed_closed or not isinstance(result.value, list):
+        return None
+    return "".join(line + "\n" for line in result.value)
+
+
 def outputs(tree: Path, value: Any, known: tuple[str, ...]) -> dict[str, str]:
     sanitization, logging_config, logbook = load(tree)
     result = sanitization.sanitize_untrusted_data(value, known_secrets=known, max_string=2048)
@@ -266,6 +341,8 @@ def outputs(tree: Path, value: Any, known: tuple[str, ...]) -> dict[str, str]:
     }
     if isinstance(value, str):
         rendered["redact_untrusted_text"] = logging_config.redact_untrusted_text(value, secrets=known)
+    if isinstance(value, str) and value.endswith("\n"):
+        rendered["core_log_window"] = core_log_window(sanitization, value, known)
     # A logbook response is a list of records (objects); wrap scalars as a message.
     if isinstance(value, dict):
         rows = [value]

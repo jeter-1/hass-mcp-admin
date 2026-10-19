@@ -1212,6 +1212,7 @@ HAMCP191_CHANGED_FILES = (
     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/operational_lifecycle.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/health.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/impact/provider.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/incident/normalization.py",
@@ -1226,11 +1227,17 @@ HAMCP191_CHANGED_FILES = (
     "hass_mcp_engineering_beta/ha_mcp_engineering/request_context.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/routing.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/sanitization.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/version.py",
     "scripts/validate_addon_metadata.py",
+    "tests/test_2_1a_beta2_operational_lifecycle.py",
     "tests/test_automation_reliability_analysis.py",
     "tests/test_beta11_sanitization.py",
     "tests/test_beta25_external_approval.py",
+    # tests/test_dev14_configuration_plans.py is not listed: this PR adds
+    # only its plant_stored_record helper, and its pre-existing main-branch
+    # fixtures carry secret-shaped refusal inputs by design.
+    "tests/test_governance_async_health.py",
     "tests/test_hamcp162_yaml_reader.py",
     "tests/test_hamcp171_health_verdict_cache.py",
     "tests/test_readonly_upstream_gateway.py",

@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from tests import test_governance as fixtures
 from tests import test_f3_runtime_integration as f3_fixtures
 from tests import test_beta34_historical_policy_projection as historical_fixtures
-from tests.test_dev14_configuration_plans import PROPOSED_AUTOMATION
+from tests.test_dev14_configuration_plans import PROPOSED_AUTOMATION, plant_stored_record
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
 from ha_mcp_engineering.governance import service as service_module
 from ha_mcp_engineering.governance.models import PlanStatus
@@ -510,7 +510,7 @@ class AsyncF3HealthTests(unittest.IsolatedAsyncioTestCase):
             # A persisted unsafe current-writer record still refuses health.
             plan = fixture.repository.get(created["plan_id"])
             plan.description = "http://synthetic.invalid/mcp/synthetic-private-path"
-            fixture.repository.save(plan)
+            plant_stored_record(self, fixture.repository, plan)
             with self.assertRaises(GovernanceError) as error:
                 await service.async_health_summary()
             self.assertEqual(error.exception.code, ErrorCode.CHANGE_PLAN_STORAGE_ERROR)

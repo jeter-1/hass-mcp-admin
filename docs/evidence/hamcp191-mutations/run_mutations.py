@@ -10,7 +10,9 @@ Coverage: the six mutations of the HAMCP-191 brief (``U*``), design section 5
 ``M1``-``M18`` (several with variants), the D11 allow-list and tolerance
 mutations (``D11*``), the D3 and Finding 11 counters (``C*``), the Codex
 review's probes ``R1``/``R2`` and findings ``H1*``, ``M1*`` and ``L1``, and the
-owner's per-line Core log direction (``CL1``).
+owner's per-line Core log direction (``CL1``), Codex H3 (``H3``) and the
+Direction A plan-persistence chokepoint (``A*``; ``A1b`` runs only the
+runtime writer spy).
 
 ``M5`` as the design words it ("dedup by text instead of by type") is an
 equivalent mutant here and is listed with ``equivalent`` and its argument:
@@ -50,6 +52,7 @@ LOGBOOK = f"{E}/clients/logbook.py"
 SERVICE = f"{E}/governance/service.py"
 LOGGING = f"{E}/logging_config.py"
 CORE_LOGS = f"{E}/providers/core_logs.py"
+STORAGE = f"{E}/governance/storage.py"
 T_SHARED_FILE = "tests/test_hamcp191_shared_sanitizer.py"
 T_FAMILIES_FILE = "tests/test_hamcp191_families.py"
 
@@ -57,6 +60,19 @@ T_SHARED = "tests.test_hamcp191_shared_sanitizer"
 T_FAMILIES = "tests.test_hamcp191_families"
 T_COMPAT = "tests.test_hamcp191_compatibility"
 ALL = (T_SHARED, T_FAMILIES, T_COMPAT)
+T_CHOKEPOINT = "tests.test_hamcp191_plan_chokepoint"
+# The chokepoint module without its runtime spy, which only CHOKEPOINT_SPY runs.
+CHOKEPOINT = tuple(
+    f"{T_CHOKEPOINT}.{name}" for name in (
+        "ApplyTimeEvidenceTests", "ChokepointUnitTests", "CoreLogSpanningTests",
+        "ExemptSchemaTests", "IdentifierCreationTests", "WriterInventoryTests",
+    )
+)
+CHOKEPOINT_SPY = (f"{T_CHOKEPOINT}.RuntimeWriterSpyTests",)
+TEXT_START = (
+    "        validator = self.exempt(pattern)\n"
+    "        if validator is not None:\n"
+)
 
 
 def m(identifier, item, replacements, tests=ALL, *, equivalent=None):
@@ -73,7 +89,7 @@ def m(identifier, item, replacements, tests=ALL, *, equivalent=None):
 
 SCAN_START = "        categories: set[str] = set()\n        pieces: list[Any] = [value]\n"
 SCAN_COLLISION = (
-    "        if marker_like_text(value):\n"
+    "        if not self._LINE_WINDOW and marker_like_text(value):\n"
     "            categories.add(MARKER_COLLISION_CATEGORY)\n"
     "            return MARKER_COLLISION, frozenset(categories), True\n"
 )
@@ -148,8 +164,9 @@ MUTATIONS = [
             "            if part\n"
             "        ]\n"
         )),
-        (SAN, "        if marker_like_text(value):\n            categories.add(",
-         "        if marker_like_text(REDACTION_MARKER.sub(\"\", value)):\n            categories.add("),
+        (SAN, "        if not self._LINE_WINDOW and marker_like_text(value):\n            categories.add(",
+         "        if not self._LINE_WINDOW and marker_like_text(REDACTION_MARKER.sub(\"\", value)):\n"
+         "            categories.add("),
     ]),
     m("M2a-identity-false-accepted", "M2: allow identity_markers_only=False again", [(
         SAN,
@@ -311,7 +328,9 @@ MUTATIONS = [
     # Truthful counters (D3, Finding 11).
     m("C1-collision-counter-frozen", "D3: the collision health counter does not move", [(
         SAN,
+        "        safe = sanitizer._failure()\n    if sanitizer.marker_collision_count:\n        with _COUNTER_LOCK:\n"
         "            _COUNTERS[\"marker_collisions\"] += sanitizer.marker_collision_count\n",
+        "        safe = sanitizer._failure()\n    if sanitizer.marker_collision_count:\n        with _COUNTER_LOCK:\n"
         "            _COUNTERS[\"marker_collisions\"] += 0\n",
     )]),
     m("C2-refusal-counter-frozen", "D3: the refusal health counter does not move", [(
@@ -360,22 +379,20 @@ MUTATIONS = [
     )]),
     m("R2-collision-checked-after-truncation", "Review R2: marker text past the string limit is not detected", [(
         SAN,
-        "if marker_like_text(value):",
-        "if marker_like_text(value[:self.max_string]):",
+        "and marker_like_text(value):",
+        "and marker_like_text(value[:self.max_string]):",
     )]),
     # Codex review H1: every new plan passes the strict sanitizer.
     m("H1a-legacy-input-gate-bypassed", "H1: legacy automation planning skips the strict input gate", [(
         SERVICE,
         "        if persistence_safety_errors(\n"
         "            {\n"
-        "                \"plan_title\": title,\n"
-        "                \"plan_description\": description,\n"
-        "                \"persisted_text\"",
+        "                \"automation_id\": automation_id,\n"
+        "                \"plan_title\": title,\n",
         "        if False and persistence_safety_errors(\n"
         "            {\n"
-        "                \"plan_title\": title,\n"
-        "                \"plan_description\": description,\n"
-        "                \"persisted_text\"",
+        "                \"automation_id\": automation_id,\n"
+        "                \"plan_title\": title,\n",
     )]),
     m("H1b-legacy-current-gate-bypassed", "H1: the Home Assistant current automation is persisted unchecked", [(
         SERVICE,
@@ -462,37 +479,61 @@ MUTATIONS = [
         "    tally.add(first)\n    logger.log(",
         "    logger.log(",
     )]),
-    # Owner direction: Core log lines are sanitized independently.
-    m("CL1-core-log-whole-window", "Owner: the Core log window is sanitized as one string", [
-        (
-            CORE_LOGS,
-            "        sanitized = sanitize_untrusted_data(\n"
-            "            bodies, known_secrets=",
-            "        sanitized = sanitize_untrusted_data(\n"
-            "            text, known_secrets=",
-        ),
-        (
-            CORE_LOGS,
-            "        if (\n"
-            "            sanitized.failed_closed or not isinstance(sanitized.value, list)\n"
-            "            or len(sanitized.value) != len(bodies) or ending\n"
-            "            or not all(isinstance(line, str) for line in sanitized.value)\n"
-            "        ):\n",
-            "        if sanitized.failed_closed or not isinstance(sanitized.value, str):\n",
-        ),
-        (
-            CORE_LOGS,
-            "        collided_lines = sum(1 for line in sanitized.value if line == MARKER_COLLISION)\n"
-            "        redacted_lines = sum(1 for safe, line in zip(sanitized.value, bodies) if safe != line)\n",
-            "        collided_lines = int(sanitized.value == MARKER_COLLISION)\n"
-            "        redacted_lines = int(sanitized.redaction_applied)\n",
-        ),
-        (
-            CORE_LOGS,
-            "        safe_lines = [line + \"\\n\" for line in sanitized.value]\n",
-            "        safe_lines = sanitized.value.splitlines(keepends=True)\n",
-        ),
-    ]),
+    # Owner direction (CL1) and Codex H3: two passes over the Core log window.
+    m("CL1-core-log-whole-window-collision", "CL1: a marker-like line collapses the whole window", [(
+        SAN,
+        "        collided = [marker_like_text(line) for line in lines]\n",
+        "        collided = [marker_like_text(\"\\n\".join(lines))] * len(lines)\n",
+    )], tests=(*ALL, *CHOKEPOINT)),
+    m("H3-core-log-per-line-detection", "H3: credential rules run per line only", [(
+        SAN,
+        "        text, categories, _emitted = self._scan(\"\\n\".join(lines))\n"
+        "        safe = text.split(\"\\n\")\n",
+        "        scanned = [self._scan(line) for line in lines]\n"
+        "        safe = [item[0] for item in scanned]\n"
+        "        categories = set().union(*(item[1] for item in scanned))\n",
+    )], tests=(*ALL, *CHOKEPOINT)),
+    # Direction A: one plan-persistence chokepoint.
+    m("A1a-recovery-writer-bypasses-chokepoint", "A: restart recovery writes the record directly", [(
+        STORAGE,
+        "        try:\n            self.save(plan)\n        except PlanContentRefused:\n",
+        "        try:\n"
+        "            self._path_for_plan(plan).write_text(\n"
+        "                json.dumps(plan.to_dict(), sort_keys=True, separators=(\",\", \":\")),\n"
+        "                encoding=\"utf-8\",\n"
+        "            )\n"
+        "        except PlanContentRefused:\n",
+    )], tests=CHOKEPOINT),
+    m("A1b-service-writer-bypasses-chokepoint", "A: one service writer (applied plans) writes directly; runtime spy", [(
+        SERVICE,
+        "        try:\n            self.repository.save(plan)\n            self._update_projection_failure_index(plan)\n",
+        "        try:\n"
+        "            if plan.status == PlanStatus.APPLIED:\n"
+        "                self.repository._path_for_plan(plan).write_text(\n"
+        "                    json.dumps(plan.to_dict(), sort_keys=True, separators=(\",\", \":\")),\n"
+        "                    encoding=\"utf-8\",\n"
+        "                )\n"
+        "            else:\n"
+        "                self.repository.save(plan)\n"
+        "            self._update_projection_failure_index(plan)\n",
+    )], tests=CHOKEPOINT_SPY),
+    m("A2a-identifier-unscanned", "A/H1g: identifier fields skip the strict scan", [(
+        SAN, TEXT_START,
+        "        if pattern and pattern[-1] in {\"target_id\", \"automation_id\", \"operation_id\"}:\n"
+        "            return value\n" + TEXT_START,
+    )], tests=CHOKEPOINT),
+    m("A2b-exempt-field-unscanned", "A: a schema-exempt field is format-checked but not scanned", [(
+        SAN,
+        "            text, categories, _emitted = self._scan(value)\n"
+        "            if not validator(value) or categories or text != value:\n",
+        "            if not validator(value):\n",
+    )], tests=CHOKEPOINT),
+    m("A3-apply-evidence-unsanitized", "A/H2: an apply-time (verification) write is persisted unscreened", [(
+        STORAGE,
+        "                    self._screen_new_content(plan, path),\n",
+        "                    plan.to_dict() if plan.status == PlanStatus.VERIFICATION_REQUIRED\n"
+        "                    else self._screen_new_content(plan, path),\n",
+    )], tests=CHOKEPOINT),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)
@@ -536,6 +577,16 @@ def copy_tree(destination: Path) -> None:
         ignore=shutil.ignore_patterns(".git", ".artifacts", "__pycache__", "*.pyc"),
         symlinks=True,
     )
+    # The copy has no .git. Suites that read exact historical sources with
+    # ``git show <sha>:path`` get a throwaway repository whose only link to
+    # the real one is a read-only alternate object store.
+    objects = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-path", "objects"],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    subprocess.run(["git", "init", "-q", str(destination)], check=True)
+    alternates = destination / ".git" / "objects" / "info" / "alternates"
+    alternates.write_text(objects + "\n", encoding="utf-8")
 
 
 def main() -> int:
