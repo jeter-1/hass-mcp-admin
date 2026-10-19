@@ -23,7 +23,11 @@ pins the complete 39-package runtime closure, originally recorded for 2.2.0,
 including transitive httpx. Beta.11 updates only PyJWT from 2.14.0 to 2.15.0 for
 GHSA-42vr-xj54-vc7v; both runtime/test locks and the declared inventory agree.
 2.4.1-beta.11 updates only `mcp` from 1.28.1 to 1.30.0 for GHSA-84m7-p3x7-pcfv
-(CVE-2026-59951), with identical `Requires-Dist`, in both locks and the inventory. Only reviewed wheel hashes for the two architectures
+(CVE-2026-59951), with identical `Requires-Dist`, in both locks and the inventory.
+2.4.1-beta.22 updates `aiohttp` from 3.14.3 to 3.14.4 for GHSA-2g87-pp6c-29x5,
+CVE-2026-111063 and CVE-2026-111064, and `yarl` from 1.24.5 to 1.25.1, the new
+floor in aiohttp 3.14.4's `Requires-Dist`; no other package changes in either
+lock or the inventory. Only reviewed wheel hashes for the two architectures
 are admitted. Binary-only download refuses source distributions; hash-enforced,
 index-free installation uses those downloaded wheels. No source build, apt
 compiler toolchain or floating setuptools/Cython/wheel build environment remains.

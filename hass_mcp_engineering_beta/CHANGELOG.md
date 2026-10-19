@@ -1,8 +1,27 @@
 # Changelog
 
+## 2.4.1-beta.22 - aiohttp 3.14.4 dependency security release (HAMCP-211)
+
+Builds on 2.4.1-beta.21, which was superseded before publication and is not
+re-tagged or re-published. beta.22 is the first published beta with
+HAMCP-205's administrator verification.
+
+- Upgrade `aiohttp` from 3.14.3 to 3.14.4 for GHSA-2g87-pp6c-29x5,
+  CVE-2026-111063 and CVE-2026-111064, and `yarl` from 1.24.5 to 1.25.1 as
+  3.14.4 requires. `requirements.txt`, both hash locks and
+  `build-inputs.json` change; no other package changes.
+- Pin the inherited library behaviour on Engineering's transports: header
+  whitespace stripping on the identity check, the WebSocket byte ceiling and
+  fragment rules, single-attempt reads, and HAMCP-200 route guarding under
+  yarl 1.25.1's query parsing (`tests/test_hamcp211_aiohttp_3144_contract.py`).
+- No runtime code change. Preserve the catalog, input schemas, signed
+  registries, HOLD, support window, persisted formats, workflows and stable
+  v1 (which still pins `aiohttp==3.9.5`, reported to Josh).
+
 ## 2.4.1-beta.21 - Administrator verification for Ingress approval pages (HAMCP-205)
 
-Builds on 2.4.1-beta.20.
+Builds on 2.4.1-beta.20. Superseded before publication; first published in
+2.4.1-beta.22.
 
 - Require a Home Assistant administrator on all ten Ingress approval routes
   (plan, F3 and typed inboxes, reviews and decisions). One shared gate needs
