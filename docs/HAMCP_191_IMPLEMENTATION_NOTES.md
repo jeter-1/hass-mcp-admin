@@ -287,9 +287,14 @@ exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
 ## 6. Mutations
 
 `docs/evidence/hamcp191-mutations/run_mutations.py` applies each mutation to a
-disposable copy outside the repository and runs the three HAMCP-191 test
+disposable copy outside the repository and runs the HAMCP-191 test
 modules. Results are in `docs/evidence/hamcp191-mutations/results.json`:
-64 mutations, 63 killed, 0 survived, 1 equivalent (M5).
+70 mutations, 69 killed, 0 survived, 1 equivalent (M5).
+
+The copy is a throwaway git repository whose object store borrows this
+repository's objects through `objects/info/alternates`. The suites that
+read a historical revision with `git show` therefore run in it, while the
+real repository's HEAD and index stay out of reach.
 
 - **Brief:** U1 (trust a marker by text), U2 (skip the identity check), U3
   (collision before the rules), U4a/U4b (raw key written back), U5a–U5d
@@ -303,6 +308,30 @@ modules. Results are in `docs/evidence/hamcp191-mutations/results.json`:
   context filters reverted), M1a (dashboard warning and hint redaction not
   counted), M1b (canary summary dropped), L1 (first-pass tally dropped) and
   CL1 (Core log window sanitized as one string).
+- **Correction batch 2 (section 8):**
+  - A1a (restart recovery writes the record directly);
+  - A1b (one service writer writes applied plans directly; caught by the
+    runtime spy);
+  - A2a (identifiers unscanned);
+  - A2b (a schema-exempt field format-checked but not scanned);
+  - A3 (an apply-time write persisted unscreened);
+  - H3 (per-line-only credential detection).
+- **H1b and H1e after the chokepoint.** Once the repository refuses new
+  sensitive content, bypassing a creation gate no longer persists anything,
+  and the first batch-2 run reported both mutants as survivors. Neither is
+  equivalent, and each gained a test for the behavior only the gate
+  provides:
+  - H1b: the legacy gate refuses a secret-bearing current automation with
+    `AUTOMATION_VALIDATION_FAILED`, naming the current automation. The
+    chokepoint alone gives a generic `CONFIGURATION_VALIDATION_FAILED`.
+  - H1e: operational creation supersedes the prior plan before its first
+    save. Without the gate, a refused plan would first supersede a pending
+    plan for the same target, discarding its approval.
+    `test_a_refused_plan_never_supersedes_the_prior_plan` pins this, with an
+    ordinary replacement as the control.
+
+  Both tests also assert that the repository refused nothing
+  (`content_refusals == 0`).
 - **M5 as worded** ("dedup by text instead of by type") is an equivalent
   mutant. A string piece equal to marker text exists only when the original
   string held marker text, and `_scan` returns the collision before
@@ -462,13 +491,24 @@ B (two Core log passes). Each reproduction is now a permanent test in
     - `governance/storage.py` may write files only through `save` (`open`
       mode `x`, then `os.replace`) and `_quarantine` (`os.replace` into the
       quarantine directory).
-  - **Runtime.** `RuntimeWriterSpyTests` runs seven governance suites, which
-    create, approve, apply, verify, fail, roll back and recover every plan
-    family. While they run, it spies on `os.replace`, `builtins.open` and
-    `io.open`. A violation is either of:
+  - **Runtime.** `RuntimeWriterSpyTests` runs the 14 tests in `SPY_TESTS`.
+    While they run, it spies on `os.replace`, `builtins.open` and `io.open`.
+    A violation is either of:
     - package code outside `ChangePlanRepository.save` opening a file for
       writing in a plan root;
     - a replaced plan file whose payload was not the screen's output.
+
+    The spy also asserts its own coverage. Every one of the 27 entries in
+    `SPY_REQUIRED_WRITES`, a (package caller, operation, status) triple, must
+    be observed, and so must both plan writers.
+
+    The set comes from a profile. The spy first ran seven whole governance
+    suites (149 tests, about 1,240 s locally). CI cancelled the shard holding
+    it at the job's 20-minute limit (run 39195210311 on `f851ec0`). A
+    per-test profile of those suites recorded every package plan save, and
+    exactly these 27 triples were observed. The governed-rollback suite took
+    about 1,190 s and added none of its own. `SPY_TESTS` is the cheapest
+    covering set (about 6 s).
 
   A bypassing writer fails CI (mutations A1a and A1b).
 

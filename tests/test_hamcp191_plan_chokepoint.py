@@ -8,7 +8,7 @@
   and a resumed apply never redispatches.
 - Direction A: every plan-record write goes through
   ``ChangePlanRepository.save`` and its strict screen. A static inventory
-  and a runtime spy over the governance suites fail on a bypassing writer;
+  and a runtime spy over profiled governance tests fail on a bypassing writer;
   the exempt dispatch fields are proven unable to carry free text.
 - H3: Core-log credentials spanning LF or CRLF line breaks, and a quoted
   multiline value, are redacted on the authenticated MCP path.
@@ -614,16 +614,56 @@ class WriterInventoryTests(unittest.TestCase):
         self.assertLess(screens[0], opens[0])
 
 
-# Governance suites the runtime spy runs; together they create, approve,
-# apply, verify, fail, roll back and recover every plan family.
-SPY_SUITES = (
-    "test_hamcp191_families.GovernanceFamilyTests",
-    "test_hamcp191_families.PlanCreationGateTests",
-    "test_hamcp191_families.OperationalCreationGateTests",
-    "test_2_1a_operational_backup.OperationalBackupLifecycleTests",
-    "test_hamcp135_governed_rollback",
-    "test_dev14_configuration_plans",
-    "test_hamcp069a_entity_metadata_execution",
+# Plan writes the runtime spy must observe: (package caller, operation,
+# status). A profile of the seven governance suites the spy formerly ran
+# whole (149 tests, about 1,240 s) observed exactly these; the governed
+# rollback suite (about 1,190 s) added none of its own. SPY_TESTS is the
+# cheapest set of tests that still reaches every one, so the spy fits in
+# a CI shard and the coverage it claims is asserted, not assumed.
+SPY_REQUIRED_WRITES = {
+    ("ChangeGovernanceService._save", "configuration_plan", "applied"),
+    ("ChangeGovernanceService._save", "configuration_plan", "applying"),
+    ("ChangeGovernanceService._save", "configuration_plan", "approved"),
+    ("ChangeGovernanceService._save", "configuration_plan", "awaiting_approval"),
+    ("ChangeGovernanceService._save", "configuration_plan", "failed"),
+    ("ChangeGovernanceService._save", "configuration_plan", "superseded"),
+    ("ChangeGovernanceService._save", "configuration_plan", "verification_failed"),
+    ("ChangeGovernanceService._save", "configuration_plan", "verification_required"),
+    ("ChangeGovernanceService._save", "controlled_reload", "awaiting_approval"),
+    ("ChangeGovernanceService._save", "create_automation", "awaiting_approval"),
+    ("ChangeGovernanceService._save", "create_full_backup", "applied"),
+    ("ChangeGovernanceService._save", "create_full_backup", "applying"),
+    ("ChangeGovernanceService._save", "create_full_backup", "approved"),
+    ("ChangeGovernanceService._save", "create_full_backup", "awaiting_approval"),
+    ("ChangeGovernanceService._save", "create_full_backup", "expired"),
+    ("ChangeGovernanceService._save", "create_full_backup", "failed"),
+    ("ChangeGovernanceService._save", "create_full_backup", "rejected"),
+    ("ChangeGovernanceService._save", "create_full_backup", "verification_failed"),
+    ("ChangeGovernanceService._save", "create_full_backup", "verification_required"),
+    ("ChangeGovernanceService._save", "restart_home_assistant", "awaiting_approval"),
+    ("ChangeGovernanceService._save", "set_input_boolean_state", "awaiting_approval"),
+    ("ChangeGovernanceService._save", "update_automation", "applied"),
+    ("ChangeGovernanceService._save", "update_automation", "applying"),
+    ("ChangeGovernanceService._save", "update_automation", "approved"),
+    ("ChangeGovernanceService._save", "update_automation", "awaiting_approval"),
+    ("ChangePlanRepository._recovery_save", "configuration_plan", "failed"),
+    ("ChangePlanRepository._recovery_save", "create_full_backup", "verification_required"),
+}
+SPY_TESTS = (
+    "test_2_1a_operational_backup.OperationalBackupLifecycleTests.test_definitive_provider_failure_is_terminal_without_verification",
+    "test_2_1a_operational_backup.OperationalBackupLifecycleTests.test_existing_plan_contracts_do_not_gain_operational_fields",
+    "test_2_1a_operational_backup.OperationalBackupLifecycleTests.test_expired_and_rejected_approvals_never_dispatch",
+    "test_2_1a_operational_backup.OperationalBackupLifecycleTests.test_restart_recovery_requires_verification_without_dispatch",
+    "test_2_1a_operational_backup.OperationalBackupLifecycleTests.test_verification_failure_is_terminal_and_not_rollbackable",
+    "test_dev14_configuration_plans.ApplyTests.test_ambiguous_write_uses_semantic_readback_without_redispatch",
+    "test_dev14_configuration_plans.ApplyTests.test_category_enriched_update_applies_without_writing_metadata",
+    "test_dev14_configuration_plans.ApplyTests.test_real_readback_mismatch_retains_response_and_single_task",
+    "test_dev14_configuration_plans.PlanCreationTests.test_long_same_prefix_values_are_complete_and_distinct",
+    "test_dev14_configuration_plans.RestartRecoveryTests.test_restart_preserves_verified_receipt_and_never_resumes",
+    "test_hamcp069a_entity_metadata_execution.AuthorizationStageTests.test_readback_failure_keeps_the_task_observing",
+    "test_hamcp191_families.GovernanceFamilyTests.test_ordinary_plan_is_approved_and_applied",
+    "test_hamcp191_families.OperationalCreationGateTests.test_helper_state_plan",
+    "test_hamcp191_families.OperationalCreationGateTests.test_restart_and_reload_plans",
 )
 
 
@@ -639,6 +679,7 @@ class RuntimeWriterSpyTests(unittest.TestCase):
 
     def test_every_plan_write_in_the_governance_suites_was_screened(self):
         screened: set[str] = set()
+        observed: set[tuple[str, str, str]] = set()
         roots: set[Path] = set()
         violations: list[str] = []
         stats = {"saves": 0, "writes": 0}
@@ -661,6 +702,7 @@ class RuntimeWriterSpyTests(unittest.TestCase):
             if Path(caller.co_filename).resolve().is_relative_to(PACKAGE):
                 if caller.co_qualname not in PLAN_SAVE_CALLERS:
                     violations.append("save called from " + caller.co_qualname)
+                observed.add((caller.co_qualname, plan.operation.value, plan.status.value))
             stats["saves"] += 1
             return original_save(repository, plan)
 
@@ -707,7 +749,7 @@ class RuntimeWriterSpyTests(unittest.TestCase):
                     violations.append("unscreened plan payload")
             return result
 
-        suite = unittest.defaultTestLoader.loadTestsFromNames(SPY_SUITES)
+        suite = unittest.defaultTestLoader.loadTestsFromNames(SPY_TESTS)
         stream = io.StringIO()
         with patch.object(ChangePlanRepository, "__init__", init), patch.object(
             ChangePlanRepository, "save", save
@@ -717,8 +759,10 @@ class RuntimeWriterSpyTests(unittest.TestCase):
             result = unittest.TextTestRunner(stream=stream, verbosity=0).run(suite)
         failed = [str(test) for test, _ in (*result.failures, *result.errors)]
         self.assertEqual(failed, [], stream.getvalue()[-4000:])
-        self.assertGreater(result.testsRun, 50)
-        self.assertGreater(stats["writes"], 100)
+        self.assertEqual(result.testsRun, len(SPY_TESTS))
+        self.assertEqual(sorted(SPY_REQUIRED_WRITES - observed), [])
+        self.assertEqual({caller for caller, _operation, _status in observed}, PLAN_SAVE_CALLERS)
+        self.assertGreaterEqual(stats["writes"], len(SPY_REQUIRED_WRITES))
         self.assertGreaterEqual(stats["saves"], stats["writes"])
         self.assertEqual(violations, [])
 

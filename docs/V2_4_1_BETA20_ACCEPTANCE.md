@@ -93,7 +93,7 @@ holds secret-shaped text (`CommittedFileScanTests`).
 - `CommittedFileScanTests` (1): every file this PR changes, by glob or by
   the explicit `HAMCP191_CHANGED_FILES` list, holds no secret-shaped text.
 
-**`tests/test_hamcp191_families.py` (38 tests):** one injector per ranked
+**`tests/test_hamcp191_families.py` (39 tests):** one injector per ranked
 family: logs, delegated, logbook, analysis, dashboard, governance,
 identifier and audit.
 - Each drives a real call site offline with P1, P2 and an ordinary value.
@@ -106,13 +106,17 @@ identifier and audit.
   then marker collisions per line. A marker-like line collapses only that
   line, with bounded `redacted_line_count` and `collided_line_count`; an
   ordinary window is unchanged.
-- `PlanCreationGateTests` (7) and `OperationalCreationGateTests` (3): the
-  review's legacy-planning reproductions (title, provider current state,
-  description, proposal and split anchor) are refused with nothing
-  persisted or returned; caller-context entries the strict pass would change
-  are dropped; dashboard, configuration, backup, helper state, reload and
-  restart plans refuse flagged text before persisting; an ordinary legacy
-  plan is unchanged.
+- `PlanCreationGateTests` (7) and `OperationalCreationGateTests` (4):
+  - The review's legacy-planning reproductions are refused with nothing
+    persisted or returned. They cover the title, provider current state,
+    description, proposal and split anchor. A secret-bearing current
+    automation is refused with `AUTOMATION_VALIDATION_FAILED`.
+  - Caller-context entries that the strict pass would change are dropped.
+  - Dashboard, configuration, backup, helper state, reload and restart
+    plans refuse flagged text before persisting.
+  - A refused operational plan never supersedes the prior plan for its
+    target.
+  - An ordinary legacy plan is unchanged.
 - Structured-log redaction counters include `log_event`'s first pass.
 - An approval note's Engineering marker is shown intact in the plan view,
   and a forged note collides.
@@ -148,8 +152,10 @@ batch-2 reproductions, each a permanent test.
     scanned.
 - `WriterInventoryTests` (2): every `save` call is in the committed table,
   and storage writes go only through `save` and quarantine.
-- `RuntimeWriterSpyTests` (1): every plan write in seven governance suites,
-  spied through `os.replace` and `open`, was screened.
+- `RuntimeWriterSpyTests` (1): every plan write in the 14 profiled tests in
+  `SPY_TESTS`, spied through `os.replace` and `open`, was screened. All 27
+  required (caller, operation, status) writes and both plan writers were
+  observed.
 - `CoreLogSpanningTests` (2), H3: credentials spanning LF and CRLF line
   breaks are redacted, and a collision stays line-local across CRLF.
 
@@ -167,10 +173,11 @@ notes, section 5.
 
 ### Mutation proof
 
-`docs/evidence/hamcp191-mutations/run_mutations.py` applied 64 mutations,
-each to a disposable copy, and ran the three modules above. The committed
-`results.json` records 63 killed, 0 survived, and one equivalent (M5, as
-explained in the implementation notes, section 6). The mutations cover:
+`docs/evidence/hamcp191-mutations/run_mutations.py` applied 70 mutations,
+each to a disposable copy, and ran the HAMCP-191 modules above. The
+committed `results.json` records 69 killed, 0 survived, and one equivalent
+(M5, as explained in the implementation notes, section 6). The mutations
+cover:
 - a marker trusted by text;
 - the identity check skipped;
 - the collision decided before the rules;
@@ -184,7 +191,13 @@ explained in the implementation notes, section 6). The mutations cover:
 - the Codex review corrections: R1 and R2; each H1 creation gate bypassed
   (legacy input, legacy current state, legacy and backup caller context,
   dashboard input, operational plans); M1 warning and canary summaries;
-  the L1 first-pass tally; and Core logs sanitized as one window.
+  the L1 first-pass tally; and Core logs sanitized as one window;
+- correction batch 2:
+  - a recovery writer and one service writer bypassing the chokepoint (A1a
+    and A1b);
+  - identifiers, and a schema-exempt field, left unscanned (A2a and A2b);
+  - apply-time evidence persisted unscreened (A3);
+  - Core-log credential detection made per line only (H3).
 
 ## 2. Release CI and publication
 

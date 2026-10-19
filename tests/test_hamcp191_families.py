@@ -39,8 +39,9 @@ from ha_mcp_engineering import sanitization as S  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.capabilities import replace_dynamic_upstream_capabilities  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
-from ha_mcp_engineering.errors import GovernanceError  # noqa: E402
+from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.resources import persistence_safety_errors  # noqa: E402
+from ha_mcp_engineering.governance.models import PlanStatus  # noqa: E402
 from ha_mcp_engineering.governance.service import ChangeGovernanceService  # noqa: E402
 from ha_mcp_engineering.governance.storage import ChangePlanRepository  # noqa: E402
 from ha_mcp_engineering.logging_config import JsonFormatter, log_event, redact_data  # noqa: E402
@@ -710,7 +711,12 @@ class PlanCreationGateTests(_GovernanceHarness):
     async def test_legacy_provider_current_reproduction_is_refused_before_persist(self):
         wrapped = self.wrapped_access()
         self.gateway.configs["fixture"]["description"] = wrapped
-        await self.assert_refused(self.legacy(), self.access)
+        refused = await self.assert_refused(self.legacy(), self.access)
+        # The creation gate names the cause; the repository chokepoint, which
+        # would also refuse, gives only a generic validation failure (H1b).
+        self.assertEqual(refused.code, ErrorCode.AUTOMATION_VALIDATION_FAILED)
+        self.assertIn("current automation", refused.details["validation_errors"][0])
+        self.assertEqual(self.repository.content_refusals, 0)
 
     async def test_legacy_description_proposal_and_split_anchor_are_refused(self):
         wrapped = self.wrapped_access()
@@ -840,6 +846,31 @@ class OperationalCreationGateTests(FamilyAssertions, unittest.IsolatedAsyncioTes
         stored = self.repository.get(created["plan"]["plan_id"])
         self.assertEqual(stored.caller_context, {"ticket": "HAMCP-191"})
         self.assertNotIn(self.access, json.dumps(stored.to_dict(), default=str))
+
+    async def test_a_refused_plan_never_supersedes_the_prior_plan(self):
+        # Operational creation supersedes the prior plan before its first
+        # save, so only the strict creation gate keeps a refused plan from
+        # discarding a pending plan's approval (H1e); the chokepoint would
+        # refuse only after supersession.
+        from tests.test_2_1a_operational_backup import FakeOperationalGateway
+
+        service = self.service(operational_gateway=FakeOperationalGateway())
+        prior = (await service.create_backup_plan(backup_name="Nightly safe backup"))["plan"]["plan_id"]
+        await self.assert_refused_beside(
+            service.create_backup_plan(backup_name="Nightly safe backup", title=self.wrapped), prior,
+        )
+        self.assertEqual(self.repository.get(prior).status, PlanStatus.AWAITING_APPROVAL)
+        self.assertEqual(self.repository.content_refusals, 0)
+        # Control: an ordinary replacement does supersede it.
+        await service.create_backup_plan(backup_name="Nightly safe backup")
+        self.assertEqual(self.repository.get(prior).status, PlanStatus.SUPERSEDED)
+
+    async def assert_refused_beside(self, call, prior):
+        with self.assertRaises(GovernanceError) as raised:
+            await call
+        self.assertNotIn(self.access, json.dumps(raised.exception.details, default=str))
+        self.assertEqual(raised.exception.details.get("reason"), "plan_contains_prohibited_sensitive_data")
+        self.assertEqual([plan.plan_id for plan in self.repository.list()], [prior])
 
     async def test_helper_state_plan(self):
         from tests.test_beta37_exact_helper_state import FakeDependencyRiskReader, FakeHelperStateGateway
