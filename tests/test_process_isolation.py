@@ -5,12 +5,14 @@ Serial ``unittest discover``, ``check.ps1 -Parallel`` and CI shards all import
 every test module during discovery, so the hook is active in each of them
 before any test runs. The tests below prove that a leaking module is named and
 failed, that state a test leaves behind is reset before the next test, that
+nested in-place changes to the catalog are restored by identity and value, that
 the failure reaches CI's shard manifests as an unattributed fixture error, and
 that the hook is bound to the run executing this suite.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -36,6 +38,7 @@ SHARD_SCRIPT = ROOT / "scripts/unit_test_shards.py"
 SYNTHETIC_ENV = "HAMCP206_SYNTHETIC_LEAK"
 SYNTHETIC_VALUE = "synthetic-value-never-reported"
 SYNTHETIC_TOOL = "hamcp206_synthetic_leaked_tool"
+NESTED_TOOL = "hamcp206_synthetic_nested_tool"
 
 
 def _synthetic_module(name, **tests):
@@ -49,13 +52,20 @@ def _synthetic_module(name, **tests):
     return module
 
 
+def _calls(action):
+    def test(case):
+        action()
+    return test
+
+
 def _leak_catalog_and_env(cls):
     capabilities.replace_dynamic_upstream_capabilities(
         ({"name": SYNTHETIC_TOOL},), {"status": "synthetic"})
     os.environ[SYNTHETIC_ENV] = SYNTHETIC_VALUE
 
 
-class GuardTests(unittest.TestCase):
+class GuardHarness:
+    """Runs synthetic modules under a ``Guard`` bound to their own result."""
 
     def setUp(self):
         self.names = []
@@ -68,15 +78,18 @@ class GuardTests(unittest.TestCase):
         self.names.append(name)
         return _synthetic_module(name, **tests)
 
-    def run_guarded(self, *modules):
+    def run_guarded(self, *modules, probes=process_isolation.PROBES):
         suite = unittest.TestSuite(
             unittest.defaultTestLoader.loadTestsFromTestCase(module.Case) for module in modules)
         result = unittest.TestResult()
-        guard = process_isolation.Guard()
+        guard = process_isolation.Guard(probes)
         process_isolation.bind(guard, result)
         self.addCleanup(process_isolation.unbind, result)
         suite.run(result)
         return guard, result
+
+
+class GuardTests(GuardHarness, unittest.TestCase):
 
     def test_module_fixture_leak_fails_the_module_and_names_entries(self):
         leaker = self.module(
@@ -163,6 +176,195 @@ class GuardTests(unittest.TestCase):
         self.assertIsNotNone(state.process_result)
         self.assertIs(state.guards[id(state.process_result)], state.process_guard)
         self.assertIsNotNone(state.process_guard.baseline)
+
+
+class _Unrestorable:
+    """A probe whose restore cannot undo the change it reports."""
+
+    name = "synthetic"
+
+    def __init__(self):
+        self.value = 0
+
+    def capture(self):
+        return self.value
+
+    def changes(self, saved):
+        return [] if self.value == saved else [f"synthetic: {saved} -> {self.value}"]
+
+    def restore(self, saved):
+        pass
+
+
+class DeepRestoreTests(GuardHarness, unittest.TestCase):
+    """Nested in-place catalog changes are restored, not only detected (review F1)."""
+
+    def setUp(self):
+        super().setUp()
+        # Published inside this test, so the process guard resets it afterwards.
+        capabilities.replace_dynamic_upstream_capabilities(
+            ({"name": NESTED_TOOL,
+              "schema": {"type": "object", "properties": {"q": {"type": "string"}}},
+              "tags": ["read", {"scope": ["state"]}]},),
+            {"status": "original", "nested": {"counts": [1, 2]}})
+        self.held = self.containers()
+        self.expected = self.values()
+
+    @staticmethod
+    def containers():
+        """Every container code may hold, from the two globals inward."""
+
+        catalog = capabilities._DYNAMIC_UPSTREAM_CAPABILITIES
+        summary = capabilities._UPSTREAM_READ_GATEWAY_SUMMARY
+        entry = catalog[0]
+        return {"catalog": catalog, "summary": summary, "entry": entry,
+                "schema": entry["schema"], "properties": entry["schema"]["properties"],
+                "q": entry["schema"]["properties"]["q"], "tags": entry["tags"],
+                "tag": entry["tags"][1], "scope": entry["tags"][1]["scope"],
+                "nested": summary["nested"], "counts": summary["nested"]["counts"]}
+
+    @staticmethod
+    def values():
+        return copy.deepcopy((capabilities._DYNAMIC_UPSTREAM_CAPABILITIES,
+                              capabilities._UPSTREAM_READ_GATEWAY_SUMMARY))
+
+    def observe(self):
+        return self.containers(), self.values()
+
+    def assertPristine(self, observed):
+        containers, values = observed
+        self.assertEqual(set(containers), set(self.held))
+        for name, held in self.held.items():
+            self.assertIs(containers[name], held, f"{name} is no longer the original object")
+        self.assertEqual(values, self.expected)
+        self.assertEqual(values[0][0]["schema"]["type"], "object")
+
+    def test_review_reproduction_nested_mutation_is_restored_for_the_next_test(self):
+        observed, later = [], []
+
+        def mutate(case):
+            capabilities._DYNAMIC_UPSTREAM_CAPABILITIES[0]["schema"]["type"] = "leaked"
+
+        mutating = self.module("hamcp206_synthetic_nested_mutation", test_a_mutate=mutate,
+                               test_b_observe=lambda case: observed.append(self.observe()))
+        innocent = self.module("hamcp206_synthetic_after_nested",
+                               test_innocent=lambda case: later.append(self.observe()))
+        guard, result = self.run_guarded(mutating, innocent)
+
+        self.assertEqual(result.testsRun, 3)
+        self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+        self.assertEqual((guard.tests_reset, guard.leaks, guard.modules_checked), (1, [], 2))
+        self.assertPristine(observed[0])
+        self.assertPristine(later[0])
+        self.assertPristine(self.observe())
+
+    def test_fixture_nested_mutation_names_only_the_mutating_module(self):
+        seen = []
+
+        def leak(cls):
+            entry = capabilities._DYNAMIC_UPSTREAM_CAPABILITIES[0]
+            entry["schema"]["properties"]["q"]["type"] = "leaked"
+            entry["tags"][1]["scope"].append("write")
+            capabilities._UPSTREAM_READ_GATEWAY_SUMMARY["nested"]["counts"].append(3)
+
+        leaker = self.module("hamcp206_synthetic_nested_fixture",
+                             setUpClass=classmethod(leak), test_runs=lambda case: None)
+        following = [self.module(f"hamcp206_synthetic_nested_{name}",
+                                 test_sees=lambda case: seen.append(self.observe()))
+                     for name in ("next", "later")]
+        guard, result = self.run_guarded(leaker, *following)
+
+        self.assertEqual(result.failures, [])
+        self.assertEqual([str(holder) for holder, _ in result.errors],
+                         ["tearDownModule (hamcp206_synthetic_nested_fixture)"])
+        trace = result.errors[0][1]
+        self.assertIn(f"changed {NESTED_TOOL}", trace)
+        self.assertIn("keys changed: nested", trace)
+        self.assertNotIn("NOT restorable", trace)
+        self.assertEqual([module for module, _ in guard.leaks], ["hamcp206_synthetic_nested_fixture"])
+        self.assertEqual(guard.modules_checked, 3)
+        self.assertEqual(len(seen), 2)
+        for observed in seen:
+            self.assertPristine(observed)
+        self.assertPristine(self.observe())
+
+    def test_nested_shapes_and_held_references_are_restored_by_identity_and_value(self):
+        held = self.held
+        catalog = lambda: capabilities._DYNAMIC_UPSTREAM_CAPABILITIES  # noqa: E731
+        mutations = {
+            "dict_in_dict": lambda: catalog()[0]["schema"]["properties"]["q"].update(
+                type="leaked", extra=1),
+            "list_in_dict": lambda: catalog()[0]["tags"].insert(0, "write"),
+            "dict_in_list": lambda: catalog()[0]["tags"][1]["scope"].clear(),
+            "key_removed": lambda: catalog()[0].pop("schema"),
+            "held_reference": lambda: (held["q"].__setitem__("type", "leaked"),
+                                       held["counts"].append(3), held["entry"].clear()),
+            "summary_nested": lambda: capabilities._UPSTREAM_READ_GATEWAY_SUMMARY[
+                "nested"]["counts"].pop(),
+            "equal_inner_replacement": lambda: catalog()[0].__setitem__(
+                "schema", copy.deepcopy(held["schema"])),
+            "equal_global_replacement": lambda: setattr(
+                capabilities, "_DYNAMIC_UPSTREAM_CAPABILITIES", copy.deepcopy(held["catalog"])),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label):
+                observed = []
+                module = self.module(
+                    f"hamcp206_synthetic_shape_{label}",
+                    test_a_mutate=_calls(mutate),
+                    test_b_observe=lambda case: observed.append(self.observe()))
+                guard, result = self.run_guarded(module)
+                self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+                self.assertEqual((guard.tests_reset, guard.leaks), (1, []))
+                self.assertPristine(observed[0])
+                self.assertPristine(self.observe())
+
+    def test_probe_restores_shared_containers_by_identity_and_value(self):
+        shared, inner = {"k": [1]}, [2]
+        pair = (shared, inner)
+        value = {"a": shared, "b": shared, "t": pair}
+        holder = types.SimpleNamespace(value=value)
+        probe = process_isolation.ModuleAttributeProbe(__name__, "_PROBE_SUBJECT")
+        globals()["_PROBE_SUBJECT"] = value
+        self.addCleanup(globals().pop, "_PROBE_SUBJECT", None)
+        saved = probe.capture()
+        self.assertEqual(probe.changes(saved), [])
+
+        # Equal values, broken aliasing: detected by identity alone.
+        value["b"] = copy.deepcopy(shared)
+        self.assertEqual(value, saved[1])
+        self.assertEqual(probe.changes(saved), [f"{__name__}._PROBE_SUBJECT: changed"])
+        probe.restore(saved)
+        self.assertEqual(probe.changes(saved), [])
+        self.assertIs(value["b"], shared)
+
+        # Nested in-place changes through held references.
+        shared["k"].append(9)
+        inner.clear()
+        value["t"] = (copy.deepcopy(shared), inner)
+        self.assertTrue(probe.changes(saved))
+        probe.restore(saved)
+        self.assertIs(globals()["_PROBE_SUBJECT"], value)
+        self.assertIs(holder.value, value)
+        self.assertEqual([value[key] is shared for key in "ab"], [True, True])
+        self.assertIs(value["t"], pair)
+        self.assertEqual((value["t"][0] is shared, value["t"][1] is inner), (True, True))
+        self.assertEqual(value, {"a": {"k": [1]}, "b": {"k": [1]}, "t": ({"k": [1]}, [2])})
+        self.assertEqual(probe.changes(saved), [])
+
+    def test_unrestorable_leak_stays_with_the_module_that_caused_it(self):
+        stubborn = _Unrestorable()
+        leaker = self.module(
+            "hamcp206_synthetic_unrestorable",
+            setUpClass=classmethod(lambda cls: setattr(stubborn, "value", 1)),
+            test_runs=lambda case: None)
+        innocent = self.module("hamcp206_synthetic_inherits", test_runs=lambda case: None)
+        guard, result = self.run_guarded(leaker, innocent, probes=(stubborn,))
+        self.assertEqual([str(holder) for holder, _ in result.errors],
+                         ["tearDownModule (hamcp206_synthetic_unrestorable)"])
+        self.assertIn("NOT restorable", result.errors[0][1])
+        self.assertEqual([module for module, _ in guard.leaks], ["hamcp206_synthetic_unrestorable"])
+        self.assertEqual(guard.modules_checked, 2)
 
 
 INSTALLER = """

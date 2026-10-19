@@ -13,6 +13,9 @@ The hook therefore lives in unittest's own suite machinery, not in each module:
   before the first module started. A difference is reported as a
   ``tearDownModule (<module>)`` error naming the module and the leaked entries,
   then restored so the failure stays with the module that caused it.
+* Restoration is deep and keeps identity: the catalog globals are rewritten in
+  place, nested dicts and lists included, so code holding the global or any
+  value inside it sees the snapshot again (``ModuleAttributeProbe``).
 
 Only the result object of the outermost run is guarded. Suites that tests run
 internally (synthetic shard fixtures) are left alone unless a test binds its
@@ -51,8 +54,92 @@ def _listed(items):
     return shown + (f", ... and {len(items) - MAX_LISTED} more" if len(items) > MAX_LISTED else "")
 
 
+# Immutable leaves: compared by value only (equal ints or strings need not be the
+# same object). Every other value is either a container recorded below or an
+# opaque leaf compared by value and restored from its copy.
+_ATOMS = (str, bytes, int, float, complex, bool, type(None))
+
+
+class _Node:
+    """One value of a snapshot and, for a container, the nodes it held."""
+
+    __slots__ = ("value", "items", "copy")
+
+    def __init__(self, value):
+        self.value, self.items, self.copy = value, None, None
+
+
+def _structure(value, memo):
+    """Record ``value`` and the identity of every dict, list, tuple and set in it."""
+
+    node = memo.get(id(value))
+    if node is not None:
+        return node
+    node = memo[id(value)] = _Node(value)
+    if isinstance(value, dict):
+        node.items = [(key, _structure(item, memo)) for key, item in value.items()]
+    elif isinstance(value, list) or type(value) is tuple:
+        node.items = [_structure(item, memo) for item in value]
+    elif isinstance(value, set):
+        node.items = set(value)
+    elif not isinstance(value, _ATOMS):
+        node.copy = copy.deepcopy(value)
+    return node
+
+
+def _intact(node, current, seen):
+    """True when ``current`` still holds every recorded container by identity."""
+
+    value, items = node.value, node.items
+    if items is None:
+        return True
+    if current is not value:
+        return False
+    if id(node) in seen:
+        return True
+    seen.add(id(node))
+    if isinstance(value, set):
+        return value == items
+    if isinstance(value, dict):
+        return len(value) == len(items) and all(
+            key in value and _intact(child, value[key], seen) for key, child in items)
+    return len(value) == len(items) and all(
+        _intact(child, item, seen) for child, item in zip(items, value))
+
+
+def _restore(node, done):
+    """Write the recorded contents back into the recorded objects, innermost first."""
+
+    if id(node) in done:
+        return done[id(node)]
+    value, items = node.value, node.items
+    done[id(node)] = value
+    if isinstance(value, dict):
+        contents = [(key, _restore(child, done)) for key, child in items]
+        value.clear()
+        value.update(contents)
+    elif isinstance(value, list):
+        value[:] = [_restore(child, done) for child in items]
+    elif isinstance(value, set):
+        value.clear()
+        value.update(items)
+    elif type(value) is tuple:
+        contents = [_restore(child, done) for child in items]
+        if any(new is not old for new, old in zip(contents, value)):
+            value = done[id(node)] = tuple(contents)
+    elif node.copy is not None and value != node.copy:
+        # An opaque mutable leaf cannot be rewritten in place: reinstall its value.
+        value = done[id(node)] = copy.deepcopy(node.copy)
+    return value
+
+
 class ModuleAttributeProbe:
-    """A runtime module global, compared by identity and by value."""
+    """A runtime module global, compared and restored by identity and by value.
+
+    The snapshot records every container the global reaches. Restoring writes
+    the recorded contents back into those same objects, so code holding the
+    global or any dict or list inside it sees the original values again.
+    """
 
     def __init__(self, module, attribute, describe=None):
         self.module, self.attribute, self.describe = module, attribute, describe
@@ -63,29 +150,32 @@ class ModuleAttributeProbe:
         if module is None:
             return _MISSING
         value = getattr(module, self.attribute, _MISSING)
-        return value, copy.deepcopy(value)
+        if value is _MISSING:
+            return value, _MISSING, None
+        return value, copy.deepcopy(value), _structure(value, {})
 
     def changes(self, saved):
         module = sys.modules.get(self.module)
         if saved is _MISSING or module is None:
             return []
+        original, value, node = saved
         current = getattr(module, self.attribute, _MISSING)
-        if current is saved[0] and current == saved[1]:
+        if current is original and (node is None or (
+                current == value and _intact(node, current, set()))):
             return []
-        detail = self.describe(saved[1], current) if self.describe else "changed"
+        detail = self.describe(value, current) if self.describe else "changed"
         return [f"{self.name}: {detail}"]
 
     def restore(self, saved):
         module = sys.modules.get(self.module)
-        if saved is _MISSING or module is None:
+        if saved is _MISSING or module is None or not self.changes(saved):
             return
-        original, value = saved
-        if isinstance(original, dict):
-            original.clear()
-            original.update(copy.deepcopy(value))
-        elif isinstance(original, list):
-            original[:] = copy.deepcopy(value)
-        setattr(module, self.attribute, original)
+        _, _, node = saved
+        if node is None:
+            if hasattr(module, self.attribute):
+                delattr(module, self.attribute)
+            return
+        setattr(module, self.attribute, _restore(node, {}))
 
 
 class ObjectAttributeProbe:
@@ -122,17 +212,20 @@ class ObjectAttributeProbe:
 
 
 def _catalog_entries(before, after):
-    def names(value):
+    def entries(value):
         try:
-            return {str(item.get("name")) for item in value}
+            return {str(item.get("name")): item for item in value}
         except (TypeError, AttributeError):
-            return set()
-    added, removed = names(after) - names(before), names(before) - names(after)
+            return {}
+    old, new = entries(before), entries(after)
+    added, removed = set(new) - set(old), set(old) - set(new)
+    changed = {name for name in set(old) & set(new) if old[name] != new[name]}
     text = f"{len(before) if isinstance(before, tuple) else '?'} -> {len(after) if isinstance(after, tuple) else '?'} entries"
-    if added:
-        text += f"; added {_listed(added)}"
-    if removed:
-        text += f"; removed {_listed(removed)}"
+    for label, names in (("added", added), ("removed", removed), ("changed", changed)):
+        if names:
+            text += f"; {label} {_listed(names)}"
+    if not (added or removed or changed) and before == after:
+        text += "; an equal object replaced the catalog or a value inside it"
     return text
 
 
@@ -140,7 +233,9 @@ def _summary_keys(before, after):
     if not isinstance(before, dict) or not isinstance(after, dict):
         return "replaced"
     keys = {k for k in set(before) | set(after) if before.get(k, _MISSING) != after.get(k, _MISSING)}
-    return f"keys changed: {_listed(keys)}" if keys else "replaced by an equal object"
+    if keys:
+        return f"keys changed: {_listed(keys)}"
+    return "an equal object replaced the summary or a value inside it"
 
 
 class EnvironmentProbe:
@@ -390,8 +485,15 @@ class Guard:
         self.leaks.append((module, changes))
         if self.observer:
             self.observer("module_leak", module, changes)
-        return (f"test module {module!r} leaked process-wide state past its own tests "
-                f"(class or module fixtures); restored for later modules: " + "; ".join(changes))
+        message = (f"test module {module!r} leaked process-wide state past its own tests "
+                   f"(class or module fixtures); restored for later modules: " + "; ".join(changes))
+        residual = self.changes(self.baseline)
+        if residual:
+            # Compare later modules with the state they inherit, so the failure
+            # stays with this module instead of moving to an innocent one.
+            self.baseline = self.capture()
+            message += "; NOT restorable, later modules compared with it: " + "; ".join(residual)
+        return message
 
 
 def restore_after_class(cls, probes=PROBES):
