@@ -513,6 +513,9 @@ class SegmentMemo:
 
 class _Sanitizer:
     _PASS = "strict"
+    # HAMCP-191 H3: True only for the Core log window pass, which judges
+    # marker look-alikes per line and never merges markers across lines.
+    _LINE_WINDOW = False
 
     def __init__(
         self,
@@ -580,6 +583,9 @@ class _Sanitizer:
         self.truncated_field_count += 1
         return self._own(value[: self.max_string] + TRUNCATION_SUFFIX)
 
+    def _secret_replacement(self, match: re.Match[str]) -> list[Any]:
+        return [_Emitted(self._marker("token"))]
+
     def _replacement(self, match: re.Match[str], category: str, form: str) -> list[Any]:
         marker = _Emitted(self._marker(category))
         if form == "whole":
@@ -623,7 +629,7 @@ class _Sanitizer:
             pieces = self._apply(
                 pieces,
                 re.compile(re.escape(secret)),
-                lambda _match: [_Emitted(self._marker("token"))],
+                self._secret_replacement,
                 lambda: categories.add("token"),
             )
         rules = [*_SEGMENT_RULES, *((pattern, category, "prefix") for pattern, category in _SERIALIZED_PATTERNS)]
@@ -636,7 +642,7 @@ class _Sanitizer:
                 ),
                 lambda category=category: categories.add(category),
             )
-        if marker_like_text(value):
+        if not self._LINE_WINDOW and marker_like_text(value):
             categories.add(MARKER_COLLISION_CATEGORY)
             return MARKER_COLLISION, frozenset(categories), True
         # One marker per run of identical emitted markers separated only by
@@ -656,7 +662,9 @@ class _Sanitizer:
                 output.append(piece.text)
                 last = piece
             elif piece:
-                if last is not None and not piece.strip():
+                if last is not None and not piece.strip() and not (
+                    self._LINE_WINDOW and "\n" in piece
+                ):
                     gap.append(piece)
                 else:
                     output.extend(gap)
@@ -891,6 +899,70 @@ class _StoredPlanSanitizer(_Sanitizer):
         return self._truncate(deduplicated)
 
 
+class _LineWindowSanitizer(_Sanitizer):
+    """HAMCP-191 H3: one newline-delimited log window, in two passes.
+
+    Pass 1 runs every rule over the whole window, so a credential whose
+    anchor and value sit on different lines (LF or CRLF), or a quoted value
+    that spans lines, is still found. Each replacement keeps the line breaks
+    its match consumed, so the window keeps its line count, and markers on
+    different lines are never merged. Pass 2 judges marker look-alikes per
+    original line: a marker-like line becomes the collision marker alone and
+    its neighbours keep their pass-1 text. A look-alike that only forms
+    across lines collapses the lines that form it; one no pair of lines
+    explains collapses the window (fail closed).
+    """
+
+    _PASS = "line_window"
+    _LINE_WINDOW = True
+
+    @staticmethod
+    def _keep_line_breaks(consumed: str, pieces: list[Any]) -> list[Any]:
+        kept = sum(piece.count("\n") for piece in pieces if type(piece) is str)
+        missing = consumed.count("\n") - kept
+        return [*pieces, "\n" * missing] if missing > 0 else pieces
+
+    def _secret_replacement(self, match: re.Match[str]) -> list[Any]:
+        return self._keep_line_breaks(match.group(0), super()._secret_replacement(match))
+
+    def _replacement(self, match: re.Match[str], category: str, form: str) -> list[Any]:
+        return self._keep_line_breaks(match.group(0), super()._replacement(match, category, form))
+
+    def window(self, lines: list[str]) -> list[str]:
+        if any(type(line) is not str or "\n" in line for line in lines):
+            raise ValueError("line_window_input")
+        if not lines:
+            return []
+        # Pass 1: every rule over the whole window.
+        text, categories, _emitted = self._scan("\n".join(lines))
+        safe = text.split("\n")
+        if len(safe) != len(lines):
+            raise ValueError("line_window_shape")
+        # Pass 2: marker look-alikes per original line.
+        collided = [marker_like_text(line) for line in lines]
+        for index in range(1, len(lines)):
+            if not (collided[index - 1] or collided[index]) and marker_like_text(
+                lines[index - 1] + "\n" + lines[index]
+            ):
+                collided[index - 1] = collided[index] = True
+        if marker_like_text("\n".join("" if hit else line for hit, line in zip(collided, lines))):
+            collided = [True] * len(lines)
+        output: list[str] = []
+        for original, line, hit in zip(lines, safe, collided):
+            if hit:
+                self.marker_collision_count += 1
+                self.redacted_field_count += 1
+                output.append(MARKER_COLLISION)
+                continue
+            if line != original:
+                self.redacted_field_count += 1
+            output.append(line)
+        self.categories.update(categories)
+        if self.marker_collision_count:
+            self.categories.add(MARKER_COLLISION_CATEGORY)
+        return output
+
+
 def _result(sanitizer: _Sanitizer, value: Any) -> SanitizationResult:
     try:
         safe = sanitizer.sanitize(value)
@@ -988,4 +1060,34 @@ def sanitize_untrusted_data(
             segment_memo=segment_memo,
         ),
         value,
+    )
+
+
+def sanitize_log_lines(
+    lines: list[str], *, known_secrets: tuple[str, ...] = ()
+) -> SanitizationResult:
+    """Sanitize one Core log window given as its lines (HAMCP-191 H3).
+
+    ``value`` is the list of sanitized lines, one per input line. Counts are
+    per line: ``redacted_field_count`` counts changed or collided lines and
+    ``marker_collision_count`` counts collided lines. Any failure returns
+    ``failed_closed`` with no line content.
+    """
+
+    sanitizer = _LineWindowSanitizer(known_secrets=known_secrets, max_string=None)
+    try:
+        safe: Any = sanitizer.window(list(lines))
+    except Exception:
+        safe = None
+        sanitizer.failed_closed = True
+        sanitizer._record_field({"sanitization_failure"})
+    if sanitizer.marker_collision_count:
+        with _COUNTER_LOCK:
+            _COUNTERS["marker_collisions"] += sanitizer.marker_collision_count
+    return SanitizationResult(
+        value=safe,
+        redacted_field_count=sanitizer.redacted_field_count,
+        redaction_categories=tuple(sorted(sanitizer.categories)[:MAX_REDACTION_CATEGORIES]),
+        failed_closed=sanitizer.failed_closed,
+        marker_collision_count=sanitizer.marker_collision_count,
     )

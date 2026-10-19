@@ -24,7 +24,7 @@ from ..sanitization import (
     MARKER_COLLISION,
     MAX_REDACTION_COUNT,
     redaction_summary,
-    sanitize_untrusted_data,
+    sanitize_log_lines,
 )
 
 
@@ -174,13 +174,14 @@ class CoreLogReader(HomeAssistantRestClient):
             text = raw.decode("utf-8", errors="strict")
         except UnicodeDecodeError as exc:
             raise _failure(ErrorCode.PROVIDER_ERROR, "core_log_encoding_invalid") from exc
-        # HAMCP-191 owner direction: each journal line is sanitized on its
-        # own, so a marker-like line (Home Assistant writes "**REDACTED**"
-        # itself) collapses only that line to the collision marker, never
-        # the window. One pass over the list shares one tally.
+        # HAMCP-191 owner direction and H3: the credential rules run over the
+        # whole window, so an anchor and its value on different lines (LF or
+        # CRLF) are still redacted; marker look-alikes are judged per line,
+        # so a marker-like line collapses only itself, never the window, and
+        # Home Assistant's own "**REDACTED**" lines stay byte-identical.
         bodies = text.split("\n")
         ending = bodies.pop() if bodies else ""
-        sanitized = sanitize_untrusted_data(
+        sanitized = sanitize_log_lines(
             bodies, known_secrets=(*window.known_secrets, self.settings.ha_token, self.settings.access_secret),
         )
         if (

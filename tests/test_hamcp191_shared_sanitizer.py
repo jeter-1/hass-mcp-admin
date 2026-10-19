@@ -544,7 +544,10 @@ class UnitMatrixTests(unittest.TestCase):
 # T3: coverage of every sanitizer entry point.
 
 ENTRY_POINTS = frozenset(
-    {"sanitize_untrusted_data", "rescan_stored_plan", "redact_data", "redact_untrusted_text"}
+    {
+        "sanitize_untrusted_data", "rescan_stored_plan", "redact_data", "redact_untrusted_text",
+        "sanitize_log_lines",
+    }
 )
 
 # The eight ranked families of design section 2.
@@ -610,7 +613,7 @@ SANITIZER_SITES = {
     ("logging_config.py", "log_event", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_data", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_untrusted_text", "sanitize_untrusted_data"): (1, "audit"),
-    ("providers/core_logs.py", "CoreLogReader.evidence", "sanitize_untrusted_data"): (1, "logs"),
+    ("providers/core_logs.py", "CoreLogReader.evidence", "sanitize_log_lines"): (1, "logs"),
     ("providers/operational_lifecycle.py", "_safe_text", "sanitize_untrusted_data"): (1, "governance"),
     ("providers/upstream_dashboard.py", "UpstreamDashboardProvider._dashboard_metadata", "sanitize_untrusted_data"): (1, "dashboard"),
     ("providers/upstream_dashboard.py", "UpstreamDashboardProvider._safe_string", "sanitize_untrusted_data"): (1, "dashboard"),
