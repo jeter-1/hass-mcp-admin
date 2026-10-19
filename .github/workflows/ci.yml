@@ -190,7 +190,7 @@ jobs:
         shell: pwsh
         run: '[scriptblock]::Create((Get-Content -Raw "scripts/deploy-beta.ps1")) | Out-Null'
       - name: Validate add-on YAML
-        run: python -c "import pathlib,yaml; yaml.safe_load(pathlib.Path('hass_mcp_admin/config.yaml').read_text()); yaml.safe_load(pathlib.Path('hass_mcp_engineering_beta/config.yaml').read_text()); yaml.safe_load(pathlib.Path('repository.yaml').read_text())"
+        run: python -c "import pathlib,yaml; yaml.safe_load(pathlib.Path('hass_mcp_admin/retired-addon-config.yaml').read_text()); yaml.safe_load(pathlib.Path('hass_mcp_engineering_beta/config.yaml').read_text()); yaml.safe_load(pathlib.Path('repository.yaml').read_text())"
 
   unit_test_shards:
     name: unit tests shard ${{ matrix.shard }}
