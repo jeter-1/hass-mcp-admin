@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tests.support.process_isolation import restore_after_class
 from tests.test_beta_v2 import INITIALIZE_REQUEST, SECRET, beta_settings
 
 from ha_mcp_engineering.audit import (
@@ -369,6 +370,7 @@ class AuditRedactionInteractionTests(unittest.IsolatedAsyncioTestCase):
 class RoutedAuditFilteringTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        restore_after_class(cls)
         cls.tempdir = tempfile.TemporaryDirectory()
         cls.audit_path = Path(cls.tempdir.name) / "audit.jsonl"
         cls.environment = patch.dict(

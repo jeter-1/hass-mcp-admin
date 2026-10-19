@@ -535,8 +535,35 @@ class ConfigurationReverificationTests(unittest.IsolatedAsyncioTestCase):
             entered.set()
             await asyncio.Event().wait()
         tool = registered_tools(get_registered_server())['reverify_configuration_task']
-        with patch.object(self.gateway, 'read', side_effect=hung), patch.object(module, 'DEADLINE_SECONDS', .02), patch.object(governance.GOVERNANCE, 'require', return_value=self.service):
+        # The deadline is the module's own asyncio.timeout, made to expire only
+        # once the read hangs; no wall-clock budget can lapse earlier on a
+        # loaded host. A frozen module clock keeps the elapsed-time authority
+        # check from expiring first (HAMCP-206).
+        deadlines = []
+        real_asyncio = asyncio
+
+        class DeadlineRecorder:
+            def __getattr__(self, name):
+                return getattr(real_asyncio, name)
+
+            def timeout(self, delay):
+                deadline = real_asyncio.timeout(delay)
+                deadlines.append((delay, deadline))
+                return deadline
+
+        async def hung_past_deadline(*args):
+            self.assertEqual(len(deadlines), 1)
+            entered.set()
+            deadlines[0][1].reschedule(asyncio.get_running_loop().time())
+            await asyncio.Event().wait()
+        frozen_clock = SimpleNamespace(monotonic=lambda: 0.0)
+        with patch.object(self.gateway, 'read', side_effect=hung_past_deadline), \
+                patch.object(module, 'asyncio', DeadlineRecorder()), \
+                patch.object(module, 'time', frozen_clock), \
+                patch.object(governance.GOVERNANCE, 'require', return_value=self.service):
             result = json.loads(await tool.run(self.binding))
+        self.assertEqual([delay for delay, _ in deadlines], [module.DEADLINE_SECONDS])
+        self.assertTrue(entered.is_set())
         self.assertEqual(result['data']['status'], 'read_timeout')
         self.assertTrue(result['timing']['timeout_occurred'])
         self.assertEqual(result['timing']['retry_count'], 0)
