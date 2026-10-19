@@ -163,7 +163,8 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(warm.data["index"]["cache_hit"])
         self.assertEqual(provider.scan_count, 1)
 
-    async def test_cold_build_profile_has_bounded_request_breakdown(self):
+    @staticmethod
+    def _cold_build_fixture():
         states = [
             {
                 "entity_id": f"automation.fixture_{index}",
@@ -179,31 +180,75 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                     return states
                 return {"alias": path.rsplit("/", 1)[-1], "trigger": [], "action": []}
 
-        class WebSocket:
+        class WebSocketWithoutBatch:
             async def command(inner, payload):
                 return []
 
-        provider = DirectHaDependencyProvider(Rest(), WebSocket(), concurrency=2)
+        class WebSocket(WebSocketWithoutBatch):
+            async def command_batch(inner, payloads):
+                outcomes = []
+                for payload in payloads:
+                    if payload["type"] == "automation/config":
+                        internal_id = payload["entity_id"].replace("automation.fixture_", "fixture-")
+                        outcomes.append(
+                            (True, {"config": {"id": internal_id, "trigger": [], "action": []}})
+                        )
+                    else:
+                        outcomes.append((True, {}))
+                return outcomes
+
+        return Rest(), WebSocket(), WebSocketWithoutBatch()
+
+    async def test_cold_build_profile_has_bounded_request_breakdown(self):
+        rest, websocket, _ = self._cold_build_fixture()
+        provider = DirectHaDependencyProvider(rest, websocket, concurrency=2)
         started = time.perf_counter()
         result = await provider.scan()
         elapsed = time.perf_counter() - started
         self.assertLess(elapsed, 2.0)  # Fixture regression threshold, not the Pi gate.
         # B39-136-R3b added one bounded read: the running Home Assistant
         # version, which the reviewed template semantics must be admitted
-        # against. This pinned breakdown exists to make exactly that kind of
-        # change visible.
-        self.assertEqual(result.profile["request_count"], 6)
+        # against. HAMCP-209 replaced the per-automation stored-config reads
+        # with one loaded-configuration batch. This pinned breakdown exists to
+        # make exactly that kind of change visible.
+        self.assertEqual(result.profile["request_count"], 4)
+        self.assertEqual(
+            result.profile["request_count_by_operation"],
+            {
+                "entity_registry_inventory": 1,
+                "home_assistant_config": 1,
+                "loaded_automation_config_batch": 1,
+                "states_inventory": 1,
+            },
+        )
+        self.assertEqual(result.profile["automation_config_source"], "loaded_websocket")
+        self.assertEqual(result.profile["loaded_config_command_count"], 6)
+        self.assertLessEqual(result.profile["observed_max_concurrency"], 2)
+        self.assertFalse(result.profile["inventory_calls_duplicated"])
+
+    async def test_cold_build_without_loaded_source_reports_stored_breakdown(self):
+        rest, _, websocket = self._cold_build_fixture()
+        provider = DirectHaDependencyProvider(rest, websocket, concurrency=2)
+        result = await provider.scan()
+        # The failed batch attempt is counted, and every automation is read
+        # from stored configuration with the reason reported.
+        self.assertEqual(result.profile["request_count"], 7)
         self.assertEqual(
             result.profile["request_count_by_operation"],
             {
                 "automation_config": 3,
                 "entity_registry_inventory": 1,
                 "home_assistant_config": 1,
+                "loaded_automation_config_batch": 1,
                 "states_inventory": 1,
             },
         )
+        self.assertEqual(result.profile["automation_config_source"], "stored_rest")
+        self.assertEqual(
+            result.profile["stored_config_fallback_reasons"],
+            {"loaded_source_unavailable": 3},
+        )
         self.assertLessEqual(result.profile["observed_max_concurrency"], 2)
-        self.assertFalse(result.profile["inventory_calls_duplicated"])
 
     async def test_cursor_continuation_is_under_100ms_and_never_rebuilds(self):
         provider = FakeProvider(scan([finding(path=f"$.trigger[{i}].entity_id", source_id=str(i)) for i in range(3)]))
