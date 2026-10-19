@@ -231,11 +231,16 @@ def _timestamp_sort(value: str | None) -> tuple[int, float]:
     return (0, parsed.astimezone(timezone.utc).timestamp())
 
 
+# HAMCP-191 X2: a reviewed non-marker constant. This helper never emits
+# redaction-marker text, so a later strict pass has nothing to trust by text.
+AUTHORIZATION_WITHHELD = "(authorization header withheld)"
+
+
 def _bounded_text(value: Any) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     text = re.sub(
         r"(?i)\bauthorization\s*:\s*\S+(?:\s+\S+)?",
-        "[REDACTED:header]",
+        AUTHORIZATION_WITHHELD,
         text,
     )
     return text[:MAX_SUMMARY_CHARS] or "Bounded evidence was observed."

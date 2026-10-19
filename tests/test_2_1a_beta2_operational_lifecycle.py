@@ -86,6 +86,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
     load_reviewed_upstream_release_registry,
 )
+from tests.test_dev14_configuration_plans import plant_stored_record  # noqa: E402
 
 
 UPSTREAM_ADDON_SLUG = "abcdef12_ha_mcp"
@@ -2310,7 +2311,7 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 result_status="failed",
             )
         )
-        self.repository.save(persisted)
+        plant_stored_record(self, self.repository, persisted)
         self.clock.advance(seconds=1)
         await self.apply_as("anonymous-f1-request-b", plan)
 
@@ -2351,7 +2352,7 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
         )
-        self.repository.save(persisted)
+        plant_stored_record(self, self.repository, persisted)
 
         metrics = self.service.health_summary()[
             "operational_administration"
@@ -2386,7 +2387,7 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     result_status="failed",
                 )
             )
-        taskless_repository.save(taskless_plan)
+        plant_stored_record(self, taskless_repository, taskless_plan)
         self.assertEqual(
             taskless_service.health_summary()[
                 "operational_administration"

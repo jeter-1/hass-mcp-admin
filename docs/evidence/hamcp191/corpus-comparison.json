@@ -1,0 +1,212 @@
+{
+  "base_revision": "3c4c27b702a0be33ad5f55868377eb4197d4ef38",
+  "byte_identical": 68,
+  "changed_by_decision": [
+    {
+      "base_leaks_secret": true,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "A known secret wrapped in a forged marker is no longer trusted as a marker; the whole string becomes the collision marker (D1, D2). Beta.19 returned the secret.",
+      "head_leaks_secret": false,
+      "id": "p1_wrapped_known_secret",
+      "reason": "P1"
+    },
+    {
+      "base_leaks_secret": true,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "A known secret wrapped in a forged marker is no longer trusted as a marker; the whole string becomes the collision marker (D1, D2). Beta.19 returned the secret.",
+      "head_leaks_secret": false,
+      "id": "p1_wrapped_known_secret_key",
+      "reason": "P1"
+    },
+    {
+      "base_leaks_secret": true,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "A forged marker no longer splits a credential anchor from its value; the whole string becomes the collision marker (D1, D2). Beta.19 returned the secret.",
+      "head_leaks_secret": false,
+      "id": "p2_anchor_split_bearer",
+      "reason": "P2"
+    },
+    {
+      "base_leaks_secret": true,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "A forged marker no longer splits a credential anchor from its value; the whole string becomes the collision marker (D1, D2). Beta.19 returned the secret.",
+      "head_leaks_secret": false,
+      "id": "p2_anchor_split_webhook",
+      "reason": "P2"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "Strict mode is the only mode: marker text that Engineering did not produce in this request is a collision (D1, D4).",
+      "head_leaks_secret": false,
+      "id": "forged_exact_marker",
+      "reason": "D1"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "A collision replaces the whole string, not only the forged marker (D2).",
+      "head_leaks_secret": false,
+      "id": "forged_marker_beside_text",
+      "reason": "D2"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "Strict mode is the only mode: marker text that Engineering did not produce in this request is a collision (D1, D4).",
+      "head_leaks_secret": false,
+      "id": "forged_marker_key",
+      "reason": "D1"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "Strict mode is the only mode: marker text that Engineering did not produce in this request is a collision (D1, D4).",
+      "head_leaks_secret": false,
+      "id": "forged_encoded_marker",
+      "reason": "D1"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "Strict mode is the only mode: marker text that Engineering did not produce in this request is a collision (D1, D4).",
+      "head_leaks_secret": false,
+      "id": "forged_fullwidth_marker",
+      "reason": "D1"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "Ordinary prose that folds to a marker look-alike collides; accepted by the owner and counted in health (D3).",
+      "head_leaks_secret": false,
+      "id": "lookalike_prose_parenthesized",
+      "reason": "D3"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "Ordinary prose that folds to a marker look-alike collides; accepted by the owner and counted in health (D3).",
+      "head_leaks_secret": false,
+      "id": "lookalike_prose_truncated",
+      "reason": "D3"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "Ordinary prose that folds to a marker look-alike collides; accepted by the owner and counted in health (D3).",
+      "head_leaks_secret": false,
+      "id": "lookalike_dashboard_markdown",
+      "reason": "D3"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "Ordinary prose that folds to a marker look-alike collides; accepted by the owner and counted in health (D3).",
+      "head_leaks_secret": false,
+      "id": "lookalike_attribute_description",
+      "reason": "D3"
+    },
+    {
+      "base_leaks_secret": true,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "A known secret wrapped in a forged marker is no longer trusted as a marker; the whole string becomes the collision marker (D1, D2). Beta.19 returned the secret.",
+      "head_leaks_secret": false,
+      "id": "h1g_wrapped_identifier",
+      "reason": "P1"
+    },
+    {
+      "base_leaks_secret": true,
+      "changed_entry_points": [
+        "logbook.project",
+        "redact_data",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "A known secret wrapped in a forged marker is no longer trusted as a marker; the whole string becomes the collision marker (D1, D2). Beta.19 returned the secret.",
+      "head_leaks_secret": false,
+      "id": "h2_wrapped_backup_evidence",
+      "reason": "P1"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "core_log_window"
+      ],
+      "explanation": "A Core log window is scanned whole (pass 1), as the base did, so a credential spanning a line break is still redacted; the redaction now keeps the line breaks it consumed, so the window keeps its line count; only the core_log_window entry point changes (Codex H3).",
+      "head_leaks_secret": false,
+      "id": "h3_core_quoted_multiline",
+      "reason": "H3"
+    },
+    {
+      "base_leaks_secret": false,
+      "changed_entry_points": [
+        "core_log_window",
+        "logbook.project",
+        "redact_data",
+        "redact_untrusted_text",
+        "sanitize_untrusted_data"
+      ],
+      "explanation": "A marker-like Core log line collapses only itself (pass 2, per line); the base collapsed the whole window (owner per-line direction).",
+      "head_leaks_secret": false,
+      "id": "cl1_core_collision_line",
+      "reason": "CL1"
+    }
+  ],
+  "sample_count": 85,
+  "unexpected": []
+}

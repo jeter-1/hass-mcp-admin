@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 from ..sanitization import sanitize_untrusted_data
 from .extraction import extract_document_with_obligations
-from .script_calls import extract_script_calls, MAX_CALLS
+from .script_calls import _refused, extract_script_calls, MAX_CALLS
 from .models import (
     DependencyFinding, DynamicReference, SourceCoverageItem,
     dynamic_reference_fingerprint,
@@ -114,7 +114,7 @@ async def collect_script_diagnostics(
         valid = (
             registry_complete and row.get("platform") == "script"
             and isinstance(key, str) and _KEY.fullmatch(key)
-            and not sanitize_untrusted_data([entity, key], known_secrets=(secret,)).redaction_applied
+            and not _refused(sanitize_untrusted_data([entity, key], known_secrets=(secret,)))
         )
         if not valid or (entity in identities and identities[entity] != key):
             identities[entity] = None

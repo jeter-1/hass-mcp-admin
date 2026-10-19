@@ -25,7 +25,7 @@ from ..providers.supervisor_self import (
     SelfAddonIdentityError,
     SupervisorSelfAddonIdentity,
 )
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import ReferenceMarkerRegistry, sanitize_untrusted_data
 from .config_validation import normalize_configuration_validation
 
 
@@ -265,8 +265,11 @@ class OperationalLifecycleGateway:
                 "checked_at": checked_at,
                 "failure_category": "configuration_check_failed",
             }
+        # HAMCP-191 D4: one identity record for both bounding passes of this
+        # check, so the second keeps the first's markers by identity.
+        registry = ReferenceMarkerRegistry()
         status, evidence = normalize_configuration_validation(
-            raw, known_secrets=self.sensitive_values
+            raw, known_secrets=self.sensitive_values, registry=registry
         )
         reason = evidence.get("reason")
         if status == "valid":
@@ -282,6 +285,7 @@ class OperationalLifecycleGateway:
             evidence,
             known_secrets=self.sensitive_values,
             max_string=500,
+            registry=registry,
         )
         return {
             "status": normalized,

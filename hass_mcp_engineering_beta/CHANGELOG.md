@@ -1,5 +1,62 @@
 # Changelog
 
+## 2.4.1-beta.20 - Shared sanitizer with identity-only redaction markers (HAMCP-191)
+
+Builds on 2.4.1-beta.19.
+
+- Use one strict sanitizer for every tool. Every rule runs first, then any
+  string that still looks like a redaction marker (including keys and
+  encoded or folded spellings) is replaced as a whole by
+  `[REDACTED:redaction_marker_collision]`. This closes the P1 (secret
+  wrapped in a forged marker) and P2 (anchor split by a forged marker) leaks.
+- Keep only the markers Engineering produced in the same request, checked by
+  object identity against a per-request record (approval review, plan views,
+  impact, integrity, reliability, gateway-withheld evidence and the audit
+  sink). A byte-identical upstream copy collides.
+- Keep beta.19's marker tolerance only for the re-scan of stored plans (D11),
+  through one allow-listed entry point. Every plan family (configuration,
+  legacy automation, dashboard, backup, helper state, reload, restart) runs
+  the strict detector before persisting or returning a new plan, and refuses
+  flagged text, the automation identifier included. Follow-up: HAMCP-207.
+- Write every governance plan record through one storage chokepoint
+  (`ChangePlanRepository.save`). It strict-sanitizes all new strings,
+  identifiers included, refuses on creation and in identity, configuration
+  and dispatch fields, and redacts in place in evidence, receipts, failures
+  and events. Dispatch and recovery state stays byte-exact in 72 exempt
+  schema paths whose formats cannot carry free text. Old stored content is
+  written back unchanged. Static and runtime writer-enumeration tests guard
+  the chokepoint, and flagged identifiers are withheld from response
+  metadata (review findings H1g, H2).
+- Screen the inbound request ID once at request start and replace a
+  token-shaped or known-secret ID with an Engineering-generated one,
+  counted in health as `request_id_replacements` (review finding H4).
+  Screen every caller-supplied governance-tool identifier at the tool
+  boundary before any tool work, refusing with `INVALID_REQUEST` and no echo
+  (review finding H1g-residual). Gate dashboard `url_path` and the caller ID
+  before any read, and write the dashboard artifact only after the plan
+  passes the strict gate (review finding M2). Run the D11 stored-plan
+  re-check for contract-v1 records too (review finding L3).
+- Add `sanitization` to `get_server_health` (`strict_marker_mode`,
+  `marker_collisions`, `marker_collision_refusals`). Look-alike text can now
+  block a governed edit, and each refusal is counted.
+- Report `completeness: partial` with a bounded `metadata.redaction` summary
+  when redaction applied anywhere in the response (including warnings, hints
+  and server identity) on the generic delegated read, the held-read canary,
+  the YAML reader and dashboard get/list; the delegated read also warns that
+  the result is not complete.
+- Sanitize Core log history in two passes: every credential rule runs over
+  the whole window first (an LF or CRLF credential split across lines is
+  still redacted, and the line count is kept), then a marker-like line
+  collapses only that line (a CRLF line keeps its `\r`), with bounded `redacted_line_count`, `collided_line_count` and
+  `redaction`. Structured-log redaction counters include the first pass.
+- Scan or withhold a key whose scan failed (never write the raw key back),
+  count evidence truncation from a structural flag, and show
+  `(authorization header withheld)` in incident correlation.
+- Ordinary data is byte-identical to beta.19 (85-sample corpus: 68
+  identical, 17 changed by decision, 0 unexpected). Preserve the catalog,
+  input schemas, signed registries, HOLD, support window, persisted formats,
+  workflows and stable v1.
+
 ## 2.4.1-beta.19 - Prompt verification of slow typed fan and power devices (HAMCP-192)
 
 Builds on 2.4.1-beta.18.

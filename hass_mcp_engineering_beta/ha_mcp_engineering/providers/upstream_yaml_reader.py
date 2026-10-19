@@ -1652,6 +1652,10 @@ def project_success(
     )
     redacted += sealed
     categories |= sealed_categories
+    if redacted:
+        # HAMCP-191 Finding 11: a redacted read is partial, never complete.
+        partial = True
+        fields["completeness"] = "partial"
     summary, _count, _categories = seal(
         {"redaction": {"redacted_field_count": redacted, "categories": sorted(categories)}},
         known_secrets,

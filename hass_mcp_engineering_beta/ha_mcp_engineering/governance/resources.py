@@ -16,7 +16,12 @@ from ..clients.paths import UnsafeRequestPathError, rest_path
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import AuthorizationError, HomeAssistantApiError
-from ..sanitization import SegmentMemo, sanitize_untrusted_data
+from ..sanitization import (
+    SegmentMemo,
+    record_marker_collision_refusal,
+    rescan_stored_plan,
+    sanitize_untrusted_data,
+)
 from .normalize import (
     AUTOMATION_VERIFICATION_NORMALIZATION_VERSION,
     AutomationVerificationNormalizationError,
@@ -1229,6 +1234,7 @@ def persistence_safety_errors(
     sensitive_values: tuple[str, ...] = (),
     *,
     segment_memo: SegmentMemo | None = None,
+    stored_plan: bool = False,
 ) -> list[str]:
     """Detect secret material without returning or persisting a redacted copy.
 
@@ -1237,15 +1243,29 @@ def persistence_safety_errors(
     recursive sanitizer is used only as a detector; any redaction or sanitation
     failure makes the value ineligible for plan persistence.  A caller-owned
     ``segment_memo`` only reuses identical segment scans within one job.
+
+    Write-time request input is always checked in strict mode.  Only the
+    re-scan of an already persisted plan passes ``stored_plan=True``: a
+    persisted plan has lost the in-memory identity of Engineering's own
+    markers, so it keeps the pre-HAMCP-191 marker tolerance (owner decision
+    D11; removal tracked by HAMCP-207).
     """
 
     errors: list[str] = []
-    sanitized = sanitize_untrusted_data(
-        value,
-        known_secrets=sensitive_values,
-        segment_memo=segment_memo,
-    )
+    if stored_plan:
+        sanitized = rescan_stored_plan(
+            value,
+            known_secrets=sensitive_values,
+            segment_memo=segment_memo,
+        )
+    else:
+        sanitized = sanitize_untrusted_data(
+            value,
+            known_secrets=sensitive_values,
+            segment_memo=segment_memo,
+        )
     if sanitized.failed_closed or sanitized.redaction_applied:
+        record_marker_collision_refusal(sanitized)
         errors.append(
             "secret-bearing, webhook, or other prohibited sensitive data "
             "cannot be persisted in a change plan"
