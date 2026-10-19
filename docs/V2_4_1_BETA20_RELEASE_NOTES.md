@@ -90,13 +90,35 @@ like `[REDACTED:<category>]` as if Engineering had written it.
    - beta.19 stored and returned a known secret used as an automation id,
      and stored a wrapped known secret read back as backup verification
      evidence.
-6. **Health counters (D3).**
+   - The D11 re-check of old content runs for every plan contract version,
+     contract v1 included (review finding L3).
+6. **Caller identifiers and request IDs (review findings H4, H1g-residual,
+   M2).**
+   - The inbound request ID is screened once, at request start. A
+     well-formed ID that the strict sanitizer flags (a JWT, a Matter
+     payload, a `name:value` assignment or a configured secret) is replaced
+     by an Engineering-generated ID. Execution tasks, audit records and the
+     `x-request-id` response header then carry only the generated ID.
+     `get_server_health` counts replacements (`request_id_replacements`);
+     the original value is never kept.
+   - Every caller-supplied identifier of every governance tool (entity,
+     automation, add-on, dashboard, plan, task and request IDs, operation
+     and patch identity, labels, categories, areas and status filters) is
+     screened at the tool boundary before any tool work. A flagged
+     identifier is refused with `INVALID_REQUEST` and the fixed reason
+     `identifier_contains_prohibited_sensitive_data`, with nothing echoed.
+     This closes the helper-state and entity-metadata `no_change` replies,
+     which echoed `target_id`.
+   - Dashboard update planning gates `url_path` and the caller ID before
+     any read, and writes its dashboard artifact only after the plan passes
+     the strict creation gate, so a refused plan leaves no artifact.
+7. **Health counters (D3).**
    - `get_server_health` adds `sanitization` with `strict_marker_mode: true`,
      `marker_collisions` and `marker_collision_refusals`. These are process
      counts with no content.
    - Look-alike text can now block a governed edit whose path has a detector
      gate. Each such refusal is counted.
-7. **Truthful completeness (Finding 11).** When redaction applied anywhere
+8. **Truthful completeness (Finding 11).** When redaction applied anywhere
    in the response, including upstream warnings, hints and server
    identity, the generic delegated read, the held-read canary, the YAML
    reader and dashboard get/list report:
@@ -104,7 +126,7 @@ like `[REDACTED:<category>]` as if Engineering had written it.
    - a bounded `metadata.redaction` summary (categories with counts);
    - for the delegated read, the warning "Sensitive values in the untrusted
      upstream response were redacted; the result is not complete."
-8. **Core log sanitization in two passes (Josh's direction, review finding
+9. **Core log sanitization in two passes (Josh's direction, review finding
    H3).** `get_core_log_history` runs every credential rule over the whole
    window first. A credential whose anchor and value sit on different lines
    (LF or CRLF), or a quoted value spanning lines, is still redacted, and
@@ -113,7 +135,7 @@ like `[REDACTED:<category>]` as if Engineering had written it.
    `redacted_line_count` and `collided_line_count` values plus the
    `redaction` summary. Home Assistant's own `**REDACTED**` placeholder is
    not marker-shaped and passes unchanged.
-9. **Smaller fixes.**
+10. **Smaller fixes.**
    - Structured-log redaction counters include `log_event`'s first pass.
    - The raw-key failure branch scans the key or withholds it; it never
      writes the raw key back.
@@ -125,8 +147,8 @@ like `[REDACTED:<category>]` as if Engineering had written it.
 
 ## Visible changes
 
-- Ordinary data is unchanged. Of 80 corpus samples recorded on the exact
-  beta.19 base, 63 are byte-identical and 17 change by decision:
+- Ordinary data is unchanged. Of 85 corpus samples recorded on the exact
+  beta.19 base, 68 are byte-identical and 17 change by decision:
   - P1 ×4 and P2 ×2: the base leaked, and beta.20 does not. P1 includes the
     review's identifier and backup-evidence shapes.
   - forged markers ×4 (D1);
@@ -148,6 +170,15 @@ like `[REDACTED:<category>]` as if Engineering had written it.
   configuration or dispatch fields is refused with
   `CHANGE_PLAN_STORAGE_ERROR`, and the stored record is left unchanged.
 - A flagged identifier is no longer echoed as `metadata.resource_id`.
+- A governance tool call whose identifier the strict sanitizer flags is
+  refused with `INVALID_REQUEST` (`identifier_contains_prohibited_sensitive_data`)
+  before any tool work. beta.19 either created the plan, returned
+  `no_change` with the identifier, or refused with a family-specific code.
+- A token-shaped inbound `x-request-id` is replaced: the response header,
+  audit records and execution tasks carry an Engineering-generated ID, and
+  `get_server_health` `sanitization.request_id_replacements` counts it.
+- An update to a contract-v1 plan whose unchanged stored text fails the D11
+  re-check is refused, as contract-v2+ updates already were.
 - A collided system-log or trace entry no longer correlates in reliability
   analysis.
 
@@ -155,8 +186,10 @@ like `[REDACTED:<category>]` as if Engineering had written it.
 
 - **Stored formats** are unchanged. Plans written by beta.19 re-read exactly
   as before (D11), and their old content is written back unchanged.
-- **Responses** gain only the additive health `sanitization` object,
-  `metadata.redaction` and the Core log line counts. Redacted reads say
+- **Responses** gain only the additive health `sanitization` object
+  (including `request_id_replacements`), `metadata.redaction` and the Core
+  log line counts. A governance tool refuses a sensitive identifier with
+  `INVALID_REQUEST`. Redacted reads say
   `partial`. Look-alike untrusted text becomes the collision marker.
 - **Rollback** is reinstalling the beta.19 artifact, which reads every record
   this release writes. Rolling back restores the P1 and P2 leaks.

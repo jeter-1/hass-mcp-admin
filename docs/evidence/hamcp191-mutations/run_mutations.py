@@ -10,9 +10,17 @@ Coverage: the six mutations of the HAMCP-191 brief (``U*``), design section 5
 ``M1``-``M18`` (several with variants), the D11 allow-list and tolerance
 mutations (``D11*``), the D3 and Finding 11 counters (``C*``), the Codex
 review's probes ``R1``/``R2`` and findings ``H1*``, ``M1*`` and ``L1``, and the
-owner's per-line Core log direction (``CL1``), Codex H3 (``H3``) and the
+owner's per-line Core log direction (``CL1``), Codex H3 (``H3``), the
 Direction A plan-persistence chokepoint (``A*``; ``A1b`` runs only the
-runtime writer spy).
+runtime writer spy) and correction batch 3 (``B3*``: Antigravity H4,
+H1g-residual, M2 and L3).
+
+``R3a`` and ``R3b`` reproduce the two mutations the Antigravity delta review
+ran by name (``R3a-chokepoint-bypass-on-update``,
+``R3b-exempt-field-smuggle-prefix-match``). The reviewer's exact patches were
+not retained, so these are reconstructions from the names: the update path
+skips the strict screen, and an exempt format validator matches a prefix
+instead of the whole value.
 
 ``M5`` as the design words it ("dedup by text instead of by type") is an
 equivalent mutant here and is listed with ``equivalent`` and its argument:
@@ -53,6 +61,8 @@ SERVICE = f"{E}/governance/service.py"
 LOGGING = f"{E}/logging_config.py"
 CORE_LOGS = f"{E}/providers/core_logs.py"
 STORAGE = f"{E}/governance/storage.py"
+REQUEST_CONTEXT = f"{E}/request_context.py"
+GOVERNANCE_TOOLS = f"{E}/tools/governance.py"
 T_SHARED_FILE = "tests/test_hamcp191_shared_sanitizer.py"
 T_FAMILIES_FILE = "tests/test_hamcp191_families.py"
 
@@ -69,6 +79,7 @@ CHOKEPOINT = tuple(
     )
 )
 CHOKEPOINT_SPY = (f"{T_CHOKEPOINT}.RuntimeWriterSpyTests",)
+T_BATCH3 = "tests.test_hamcp191_batch3"
 TEXT_START = (
     "        validator = self.exempt(pattern)\n"
     "        if validator is not None:\n"
@@ -534,6 +545,52 @@ MUTATIONS = [
         "                    plan.to_dict() if plan.status == PlanStatus.VERIFICATION_REQUIRED\n"
         "                    else self._screen_new_content(plan, path),\n",
     )], tests=CHOKEPOINT),
+    # Antigravity delta review mutations (reconstructed from their names).
+    m("R3a-chokepoint-bypass-on-update", "R3a: an update skips the strict screen", [(
+        STORAGE,
+        "        creation = baseline is None\n",
+        "        creation = baseline is None\n"
+        "        if not creation:\n"
+        "            return record\n",
+    )], tests=(*CHOKEPOINT, T_BATCH3)),
+    m("R3b-exempt-field-smuggle-prefix-match", "R3b: an exempt format validator matches a prefix", [(
+        STORAGE,
+        "    return lambda value: pattern.fullmatch(value) is not None\n",
+        "    return lambda value: pattern.match(value) is not None\n",
+    )], tests=CHOKEPOINT),
+    # Correction batch 3.
+    m("B3-H4-request-id-unscreened", "H4: the inbound request ID is adopted unscreened", [(
+        REQUEST_CONTEXT,
+        "    replaced = request_id == candidate and not request_id_is_safe(\n",
+        "    replaced = False and not request_id_is_safe(\n",
+    )], tests=(T_BATCH3,)),
+    m("B3-H1g-helper-boundary-skipped", "H1g-residual: one tool skips the identifier boundary", [(
+        GOVERNANCE_TOOLS,
+        "        _screened(\n            \"create_helper_state_plan\",\n",
+        "        (lambda _operation, _arguments, action: action)(\n"
+        "            \"create_helper_state_plan\",\n",
+    )], tests=(T_BATCH3,)),
+    m("B3-M2a-artifact-before-gate", "M2: the dashboard artifact is written before the plan gate", [(
+        SERVICE,
+        "        self._require_strict_new_plan(plan)\n"
+        "        try:\n"
+        "            artifact = self.dashboard_artifacts.create(proposal)\n",
+        "        try:\n"
+        "            artifact = self.dashboard_artifacts.create(proposal)\n"
+        "            self._require_strict_new_plan(plan)\n",
+    )], tests=(T_BATCH3,)),
+    m("B3-M2b-preread-gate-misses-caller", "M2: the pre-read gate omits url_path and the caller ID", [(
+        SERVICE,
+        "                \"url_path\": url_path,\n"
+        "                \"requested_by\": current_caller_id(),\n",
+        "",
+    )], tests=(T_BATCH3,)),
+    m("B3-L3-v1-gate-restored", "L3: the D11 re-check runs only for contract v2+", [(
+        STORAGE,
+        "            unsafe = bool(\n                persistence_safety_errors(\n",
+        "            unsafe = plan.contract_version >= 2 and bool(\n"
+        "                persistence_safety_errors(\n",
+    )], tests=(T_BATCH3,)),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

@@ -27,6 +27,15 @@ Builds on 2.4.1-beta.19.
   written back unchanged. Static and runtime writer-enumeration tests guard
   the chokepoint, and flagged identifiers are withheld from response
   metadata (review findings H1g, H2).
+- Screen the inbound request ID once at request start and replace a
+  token-shaped or known-secret ID with an Engineering-generated one,
+  counted in health as `request_id_replacements` (review finding H4).
+  Screen every caller-supplied governance-tool identifier at the tool
+  boundary before any tool work, refusing with `INVALID_REQUEST` and no echo
+  (review finding H1g-residual). Gate dashboard `url_path` and the caller ID
+  before any read, and write the dashboard artifact only after the plan
+  passes the strict gate (review finding M2). Run the D11 stored-plan
+  re-check for contract-v1 records too (review finding L3).
 - Add `sanitization` to `get_server_health` (`strict_marker_mode`,
   `marker_collisions`, `marker_collision_refusals`). Look-alike text can now
   block a governed edit, and each refusal is counted.
@@ -43,7 +52,7 @@ Builds on 2.4.1-beta.19.
 - Scan or withhold a key whose scan failed (never write the raw key back),
   count evidence truncation from a structural flag, and show
   `(authorization header withheld)` in incident correlation.
-- Ordinary data is byte-identical to beta.19 (80-sample corpus: 63
+- Ordinary data is byte-identical to beta.19 (85-sample corpus: 68
   identical, 17 changed by decision, 0 unexpected). Preserve the catalog,
   input schemas, signed registries, HOLD, support window, persisted formats,
   workflows and stable v1.

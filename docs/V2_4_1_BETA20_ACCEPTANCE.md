@@ -125,9 +125,9 @@ identifier and audit.
 - An ordinary governed plan is approved and applied (useful authorized
   success).
 
-**`tests/test_hamcp191_plan_chokepoint.py` (20 tests):** the review's
+**`tests/test_hamcp191_plan_chokepoint.py` (21 tests):** the review's
 batch-2 reproductions, each a permanent test.
-- `IdentifierCreationTests` (5), H1g:
+- `IdentifierCreationTests` (6), H1g:
   - A valid and an invalid automation id holding a known or wrapped secret
     are refused before any Home Assistant read. Nothing is persisted, and
     the id is neither returned nor echoed in `metadata.resource_id`.
@@ -135,6 +135,11 @@ batch-2 reproductions, each a permanent test.
   - A plan id carrying a known secret is withheld from the echo, also with
     no governance service.
   - The repository refuses a secret-bearing target before any file exists.
+  - The strict identifier scan alone refuses a forged-marker target that
+    the D11 stored-plan check tolerates (batch 3, after L3).
+  - Through the tool, a secret-bearing automation id is now refused by the
+    batch-3 identifier boundary with `INVALID_REQUEST`; a direct service
+    call still gets `AUTOMATION_VALIDATION_FAILED`.
 - `ApplyTimeEvidenceTests` (1), H2: a wrapped known secret read back as
   backup verification evidence is stored redacted, with no second dispatch.
 - `ChokepointUnitTests` (5):
@@ -159,12 +164,47 @@ batch-2 reproductions, each a permanent test.
 - `CoreLogSpanningTests` (2), H3: credentials spanning LF and CRLF line
   breaks are redacted, and a collision stays line-local across CRLF.
 
+**`tests/test_hamcp191_batch3.py` (23 tests):** the batch-3 review
+reproductions (H4, H1g-residual, M2, L3), each a permanent test.
+- `RequestIdScreenTests` (4), H4: ordinary request ids pass unchanged.
+  Token-shaped ids, and ids equal to a configured secret, are replaced by an
+  Engineering-generated id and counted in `request_id_replacements`; the
+  value is never recorded. Malformed ids are regenerated without counting.
+- `ExecutionTaskRequestIdTests` (3), H4: `apply_change_plan` under a JWT
+  request id, and `cancel_execution_task` under three token shapes, leave
+  no copy on disk or in `get_execution_task` and `list_execution_tasks`.
+  An ordinary request id is recorded unchanged.
+- `GatewayRequestIdTests` (3), H4: through the authenticated gateway, a
+  token-shaped or configured-secret `x-request-id` header is replaced and
+  an ordinary one is kept.
+- `HelperStateNoChangeTests` (2) and `EntityMetadataNoChangeTests` (2),
+  H1g-residual: a secret-bearing `entity_id` is refused before the service
+  is called, so the `no_change` shortcut never echoes it. An ordinary id
+  still returns `no_change`.
+- `IdentifierBoundaryEnumerationTests` (3), H1g-residual:
+  - every input of every governance tool is classified as an identifier or
+    not, and the classification is exact;
+  - each identifier input, holding a known secret and holding a JWT, is
+    refused with `INVALID_REQUEST`, a fixed reason and no echo, before any
+    service call;
+  - ordinary identifiers reach the service.
+- `DashboardArtifactOrderTests` (4), M2: a secret caller id or `url_path` is
+  refused before any read or artifact. A plan-gate refusal after the read
+  leaves no artifact. An ordinary plan writes exactly one artifact, bound by
+  its payload hash.
+- `ContractV1StoredPlanTests` (2), L3: an unchanged secret in a contract-v1
+  record is refused on update and the record bytes are kept; an ordinary v1
+  record still updates.
+
 **`tests/test_hamcp191_compatibility.py` (5 tests):**
 - It reruns `docs/evidence/hamcp191/generate_corpus.py compare` against the
   base-recorded fixture `tests/fixtures/hamcp191/compat_corpus.json`.
-- Of 80 samples, 63 are byte-identical and 17 changed by decision
+- Of 85 samples, 68 are byte-identical and 17 changed by decision
   (P1 ×4, P2 ×2, D1 ×4, D2, D3 ×4, H3, CL1), with 0 unexpected.
 - The P1 and P2 samples leaked on the base and do not leak on the head.
+- The five batch-3 samples (ordinary identifiers; JWT and known-secret
+  request ids; known-secret entity id and dashboard `url_path`) are
+  recorded on the base.
 - Log lines holding Home Assistant's own `**REDACTED**` placeholder, and LF
   and CRLF credentials split across Core log lines, are byte-identical.
 
@@ -173,9 +213,9 @@ notes, section 5.
 
 ### Mutation proof
 
-`docs/evidence/hamcp191-mutations/run_mutations.py` applied 70 mutations,
+`docs/evidence/hamcp191-mutations/run_mutations.py` applied 77 mutations,
 each to a disposable copy, and ran the HAMCP-191 modules above. The
-committed `results.json` records 69 killed, 0 survived, and one equivalent
+committed `results.json` records 76 killed, 0 survived, and one equivalent
 (M5, as explained in the implementation notes, section 6). The mutations
 cover:
 - a marker trusted by text;
@@ -197,7 +237,15 @@ cover:
     and A1b);
   - identifiers, and a schema-exempt field, left unscanned (A2a and A2b);
   - apply-time evidence persisted unscreened (A3);
-  - Core-log credential detection made per line only (H3).
+  - Core-log credential detection made per line only (H3);
+- the batch-2 review's R3a (chokepoint bypassed on update) and R3b (exempt
+  format prefix-matched), reconstructed from their names;
+- correction batch 3:
+  - the request id left unscreened (B3-H4);
+  - the identifier boundary skipped for one tool (B3-H1g);
+  - the dashboard artifact written before the gate, and the pre-read gate
+    missing the caller id (B3-M2a and B3-M2b);
+  - the contract-v2 condition on the D11 re-check restored (B3-L3).
 
 ## 2. Release CI and publication
 

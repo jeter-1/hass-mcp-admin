@@ -97,10 +97,10 @@ Each file is under a protected path and is named here as task scope.
 
 | File | Why |
 |---|---|
-| `request_context.py` | D4: `RequestTelemetry.sanitizer_registry` (a new record per request) |
-| `routing.py` | D4: the request audit write passes the request's record |
+| `request_context.py` | D4: `RequestTelemetry.sanitizer_registry` (a new record per request). Correction batch 3 (H4, section 9): the inbound request ID is screened once at request start |
+| `routing.py` | D4: the request audit write passes the request's record. Correction batch 3 (H4): both gateway entry points pass the known secrets to the request-start screen |
 | `models/responses.py` | X1: `dump_json_with_truncation` returns a structural truncation flag |
-| `health.py` | D3: the `sanitization` counters in `get_server_health` |
+| `health.py` | D3: the `sanitization` counters in `get_server_health`; correction batch 3 adds `request_id_replacements` (H4) |
 | `governance/resources.py` | D11 `stored_plan` flag; D3 refusal counter at the persistence gate |
 | `governance/config_validation.py`, `governance/operational_lifecycle.py` | D4: the two bounding passes of one check share a record |
 | `f3_dashboard/semantic_diff.py` | D4: the `<redacted>` preview is one registered constant |
@@ -110,7 +110,7 @@ Each file is under a protected path and is named here as task scope.
 | `providers/upstream_dashboard.py` | Finding 11: dashboard get/list report `partial` and `metadata.redaction` when redaction applied, including warnings, the hint and the upstream identity (Codex M1) |
 | `providers/core_logs.py` | Josh's direction after the Codex review: per-line Core log sanitization with bounded line counts (section 7). New to the pull request in the correction batch. |
 | `governance/storage.py` | Architect Direction A (section 8): the one plan-persistence chokepoint (`ChangePlanRepository.save` screens every new string), the exempt-field schema and the refusal type. New to the pull request in correction batch 2. |
-| `tools/governance.py` | Codex H1g (section 8): identifiers echoed in response metadata pass the strict check and are withheld when flagged. New to the pull request in correction batch 2. |
+| `tools/governance.py` | Codex H1g (section 8): identifiers echoed in response metadata pass the strict check and are withheld when flagged. New to the pull request in correction batch 2. Correction batch 3 (H1g-residual, section 9): the tool-boundary identifier screen. |
 
 `scripts/validate_addon_metadata.py` (not protected) carries the version
 through `promote_next_release.py --apply`.
@@ -190,8 +190,14 @@ the Dockerfile.
 exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
 `compare` on this tree writes `docs/evidence/hamcp191/corpus-comparison.json`.
 
-- **Result:** 80 samples. 63 are byte-identical (44 ordinary, 19 plain
+- **Result:** 85 samples. 68 are byte-identical (45 ordinary, 23 plain
   redactions), 17 changed by decision, 0 unexpected.
+- **Correction batch 3 samples (section 9):** ordinary request IDs, entity
+  IDs, `url_path`, caller ID and labels (byte-identical), and a JWT request
+  ID, a known-secret request ID, a known-secret entity ID and a
+  known-secret dashboard `url_path` (redacted, byte-identical). The
+  request-start, tool-boundary and pre-read screens decide on these
+  sanitizer outcomes, so no sanitizer output changes in batch 3.
 - **Correction batch 2 samples (section 8):** a `core_log_window` entry point
   (the exported text of a complete Core log window: the base sanitized it
   as one string, the head runs `sanitize_log_lines`); ordinary LF and CRLF
@@ -289,7 +295,7 @@ exact base. Its fixture is `tests/fixtures/hamcp191/compat_corpus.json`, and
 `docs/evidence/hamcp191-mutations/run_mutations.py` applies each mutation to a
 disposable copy outside the repository and runs the HAMCP-191 test
 modules. Results are in `docs/evidence/hamcp191-mutations/results.json`:
-70 mutations, 69 killed, 0 survived, 1 equivalent (M5).
+77 mutations, 76 killed, 0 survived, 1 equivalent (M5).
 
 The copy is a throwaway git repository whose object store borrows this
 repository's objects through `objects/info/alternates`. The suites that
@@ -316,6 +322,21 @@ real repository's HEAD and index stay out of reach.
   - A2b (a schema-exempt field format-checked but not scanned);
   - A3 (an apply-time write persisted unscreened);
   - H3 (per-line-only credential detection).
+- **Batch-2 review probes:** R3a (the chokepoint bypassed on update) and R3b
+  (an exempt format prefix-matched instead of fully matched). The reviewer's
+  exact patches were not retained, so both are reconstructed from their
+  names.
+- **Correction batch 3 (section 9):** B3-H4 (the request id left
+  unscreened), B3-H1g (the identifier boundary skipped for
+  `create_helper_state_plan`), B3-M2a (the dashboard artifact written before
+  the plan gate), B3-M2b (the pre-read gate missing the caller id) and B3-L3
+  (the contract-v2 condition on the D11 re-check restored).
+- **A2a after L3.** Once the D11 stored-plan check also ran for contract-v1
+  records, it caught the known secret in the existing repository test on its
+  own, and the first batch-3 run reported A2a as a survivor. It is not
+  equivalent: D11 tolerates a forged marker, and only the strict identifier
+  scan refuses it.
+  `test_strict_identifier_scan_refuses_a_forged_marker_target` pins this.
 - **H1b and H1e after the chokepoint.** Once the repository refuses new
   sensitive content, bypassing a creation gate no longer persists anything,
   and the first batch-2 run reported both mutants as survivors. Neither is
@@ -588,11 +609,14 @@ B (two Core log passes). Each reproduction is now a permanent test in
   (section 5).
 
 **Limitations (outside Direction A).** These were reviewed and left
-unchanged:
+unchanged in batch 2:
 - `f3_dashboard` `DashboardArtifactStore` artifacts are strict-gated before
-  creation and are not plan records.
+  creation and are not plan records. (The Antigravity review found the
+  gate incomplete; corrected in section 9, M2.)
 - `ExecutionTaskRepository` task records hold dispatch state and their own
-  event text. They do not pass this chokepoint.
+  event text. They do not pass this chokepoint. (The Antigravity review
+  found that a request ID reached them unscreened; corrected in section 9,
+  H4.)
 - Entity IDs echoed in error details by `governance/entity_metadata.py` and
   `impact/provider.py`, and execution-task IDs echoed by the
   `get_execution_task` and `cancel_execution_task` tools (schema-bound to 32
@@ -603,3 +627,110 @@ unchanged:
   literal scan. This pull request adds only its `plant_stored_record`
   helper, and the file's pre-existing main-branch fixtures carry
   secret-shaped refusal inputs by design.
+
+## 9. Antigravity delta corrections (correction batch 3, review of `7e0c86f`)
+
+The Antigravity delta review (`~/handoffs/hass-mcp-admin-HAMCP-191-antigravity-review.md`)
+reported H4 and H1g-residual (High), M2 (Medium) and L3 (Low). Each
+reproduction is now a permanent test in `tests/test_hamcp191_batch3.py`, and
+each fix has a mutation (section 6).
+
+**H4: the inbound request ID is screened once, at request start.**
+- `REQUEST_ID_PATTERN` admits JWTs, Matter payloads, `name:value`
+  assignments and configured secrets. Before this batch an unscreened ID
+  reached `ExecutionTaskRepository` (`execution_request_id`,
+  `lifecycle_events[*].request_id`) and the `get_execution_task` and
+  `list_execution_tasks` responses.
+- `request_context.begin_request(candidate, known_secrets=...)` now runs
+  the strict sanitizer (`request_id_is_safe`) over a well-formed inbound ID.
+  A failing ID is replaced by an Engineering-generated ID (`uuid4().hex`)
+  before anything else reads the request context. Nothing keeps the
+  original value. The replacement is recorded only as:
+  - `RequestTelemetry.inbound_request_id_replaced` (a flag);
+  - `request_id_replacements` in the `get_server_health` `sanitization`
+    block (a process counter).
+- The gateway passes `access_secret` and `ha_token` (the governance
+  `sensitive_values`) on both entry points: an ordinary request and the
+  inbound-denial path. The `x-request-id` response header carries the
+  generated ID.
+- A malformed ID was already regenerated by `normalize_request_id`. It is
+  not counted as a replacement. An ordinary ID passes unchanged.
+- Every other `begin_request()` caller generates its own ID, and
+  `reverify_configuration_task`'s caller-supplied `request_id` is screened
+  at the tool boundary (H1g-residual).
+- Tests: `RequestIdScreenTests`, `ExecutionTaskRequestIdTests` (the apply
+  and cancel reproductions, through the real backup lifecycle; the token
+  is absent from the plan root, the execution-task files, the audit log,
+  `get_execution_task` and `list_execution_tasks`), and
+  `GatewayRequestIdTests` (the real `AuthenticatedMcpGateway`).
+
+**H1g-residual: identifiers are screened at the tool boundary.**
+- `tools/governance.py` `IDENTIFIER_INPUTS` lists every caller-supplied
+  identifier of every governance tool. It covers entity, automation,
+  add-on, dashboard, plan, task, plan-hash and request IDs; configuration
+  operation identity; patch identity and paths; labels; categories (keys
+  and values); areas; and the status filters.
+- `screen_identifiers` runs before any tool work (`_screened` wraps each
+  tool's action). It applies the strict sanitizer with the governance
+  `sensitive_values`. A finding refuses with `INVALID_REQUEST` and the fixed
+  details `{"reason": "identifier_contains_prohibited_sensitive_data"}`.
+  Nothing is echoed, and the service is never called.
+- This closes the `no_change` shortcuts that echoed `target_id` before the
+  strict creation gate: `create_helper_state_plan` (already in the desired
+  state) and `create_entity_metadata_plan` (already satisfied).
+- **Refusal code.** A secret-bearing identifier is now refused at the
+  boundary with `INVALID_REQUEST` instead of the service's own code (for
+  example `AUTOMATION_VALIDATION_FAILED` for a legacy automation ID). The
+  service gates are unchanged and still refuse when called directly.
+  `tests/test_hamcp191_plan_chokepoint.py` asserts both.
+- Free text and configuration (`title`, `description`, `name`, `aliases`,
+  `approval_note`, `proposed_config`, patch `value`, `caller_context`) are
+  not identifiers. No early return echoes them, and the creation gate and
+  the plan chokepoint screen them as before.
+- Tests:
+  - `HelperStateNoChangeTests` and `EntityMetadataNoChangeTests`: both
+    reproductions are refused with nothing echoed, the service is not
+    called, and no plan exists. Ordinary identifiers still return
+    `no_change` with their `target_id`.
+  - `IdentifierBoundaryEnumerationTests`:
+    - Every tool's signature parameters and nested TypedDict keys are
+      classified exactly once, as identifier or non-identifier, and the
+      served entity-metadata schema has no extra input.
+    - For every identifier path, a known secret and a JWT (as a list item
+      or mapping key and value where the input is a list or mapping) are
+      refused before any service call.
+    - Ordinary arguments reach the service.
+
+**M2: no orphaned dashboard artifact.**
+- The dashboard pre-read strict gate now also covers `url_path` and the
+  caller ID (`requested_by`). A secret there is refused before any
+  dashboard read, plan or artifact.
+- The artifact is written only after the complete plan passes the strict
+  creation gate. The plan binds the payload hash that
+  `private_proposal_projection` yields, and the hash the store returns is
+  checked against it.
+- **Residual.** If the artifact write succeeds and the following plan save
+  (`_record`) fails on storage I/O, the artifact remains under a plan ID
+  that no plan record references. It holds only content that passed the
+  pre-read gate and the strict plan gate. Every content-based refusal
+  happens before the write.
+- Tests (`DashboardArtifactOrderTests`): a caller ID or `url_path` secret
+  is refused with zero reads and no plan or artifact. A forced plan-gate
+  refusal after the read leaves no artifact. An ordinary plan writes exactly
+  one artifact bound to the plan.
+
+**L3: the D11 re-check runs for every contract version.** The
+`plan.contract_version >= 2` condition is removed from
+`ChangePlanRepository._screen_new_content`. `ContractV1StoredPlanTests`
+plants a contract-v1 record holding a known secret in an unchanged string.
+An update is refused (`creation=False`), the refusal is counted, and the
+stored bytes are unchanged. An ordinary v1 record still updates.
+
+**Main merge (`0c21062`).** `origin/main` `a1236c4` (HAMCP-206, PR #279,
+test isolation) merged without conflicts. Its leak guard
+(`tests/support/process_isolation.py`) runs around every test. Its probes
+cover the catalog globals, the server session manager, the environment,
+the working directory, `sys.path`, `sys.modules`, warning filters, logging
+and the event loop. The batch-3 tests restore every request context they
+open. The `request_id_replacements` counter is a monotonic health counter,
+which the probes do not track, and the tests assert deltas only.

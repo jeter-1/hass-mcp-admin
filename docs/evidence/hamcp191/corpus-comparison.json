@@ -1,6 +1,6 @@
 {
   "base_revision": "3c4c27b702a0be33ad5f55868377eb4197d4ef38",
-  "byte_identical": 63,
+  "byte_identical": 68,
   "changed_by_decision": [
     {
       "base_leaks_secret": true,
@@ -207,6 +207,6 @@
       "reason": "CL1"
     }
   ],
-  "sample_count": 80,
+  "sample_count": 85,
   "unexpected": []
 }

@@ -153,6 +153,18 @@ ORDINARY_VALUES: list[tuple[str, Any]] = [
         "2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline",
         "",
     ]),
+    # Correction batch 3: ordinary request IDs and caller identifiers pass
+    # the request-start and tool-boundary screens unchanged (H4, H1g-residual,
+    # M2), so the sanitizer must leave them byte-identical.
+    ("b3_ordinary_identifiers", {
+        "request_id": "hamcp191-request.01:a",
+        "uuid_request_id": "8f14e45f-ceea-467a-9575-4f1b1a7c4c3e",
+        "entity_id": "input_boolean.porch_light",
+        "target_id": "light.porch",
+        "url_path": "main-operations",
+        "requested_by": "mcp-requester",
+        "labels": ["night", "outdoor"],
+    }),
 ]
 
 # Complete Core log windows (each ends with a line break), LF and CRLF, with
@@ -207,6 +219,20 @@ def redacted_samples() -> list[tuple[str, Callable[[], tuple[Any, tuple[str, ...
         )),
         ("h3_core_same_line_crlf", lambda: (
             "ordinary\r\n" + syn.bearer(secret("h3sc")) + "\r\nHA **REDACTED**\r\n", ()
+        )),
+        # Correction batch 3: the decisions the request-start screen (H4), the
+        # tool-boundary identifier screen (H1g-residual) and the dashboard
+        # pre-read gate (M2) take rest on these sanitizer outcomes.
+        ("b3_request_id_jwt", lambda: ({"request_id": syn.jwt("hamcp191 corpus b3 request")}, ())),
+        ("b3_request_id_known_secret", lambda: (
+            {"request_id": secret("b3request")}, (secret("b3request"),)
+        )),
+        ("b3_entity_id_known_secret", lambda: (
+            {"entity_id": "input_boolean." + secret("b3entity").lower()}, (secret("b3entity").lower(),)
+        )),
+        ("b3_dashboard_url_path_known_secret", lambda: (
+            {"url_path": secret("b3url").lower(), "requested_by": "mcp-requester"},
+            (secret("b3url").lower(),),
         )),
     ]
 

@@ -493,6 +493,16 @@
       "input": "[\"2026-10-18 08:00:01.000 INFO (MainThread) [homeassistant.setup] Setting up synthetic\", \"2026-10-18 08:00:02.000 WARNING (MainThread) [homeassistant.components.synthetic] Setup data: **REDACTED**\", \"2026-10-18 08:00:03.000 ERROR (MainThread) [homeassistant.components.zha] Device offline\", \"\"]"
     },
     {
+      "base": {
+        "logbook.project": "\"[{\\\"request_id\\\":\\\"hamcp191-request.01:a\\\",\\\"uuid_request_id\\\":\\\"8f14e45f-ceea-467a-9575-4f1b1a7c4c3e\\\",\\\"entity_id\\\":\\\"input_boolean.porch_light\\\",\\\"target_id\\\":\\\"light.porch\\\",\\\"url_path\\\":\\\"main-operations\\\",\\\"requested_by\\\":\\\"mcp-requester\\\",\\\"labels\\\":[\\\"night\\\",\\\"outdoor\\\"]}]\"",
+        "redact_data": "{\"request_id\": \"hamcp191-request.01:a\", \"uuid_request_id\": \"8f14e45f-ceea-467a-9575-4f1b1a7c4c3e\", \"entity_id\": \"input_boolean.porch_light\", \"target_id\": \"light.porch\", \"url_path\": \"main-operations\", \"requested_by\": \"mcp-requester\", \"labels\": [\"night\", \"outdoor\"]}",
+        "sanitize_untrusted_data": "{\"value\": {\"request_id\": \"hamcp191-request.01:a\", \"uuid_request_id\": \"8f14e45f-ceea-467a-9575-4f1b1a7c4c3e\", \"entity_id\": \"input_boolean.porch_light\", \"target_id\": \"light.porch\", \"url_path\": \"main-operations\", \"requested_by\": \"mcp-requester\", \"labels\": [\"night\", \"outdoor\"]}, \"redaction_applied\": false, \"redacted_field_count\": 0, \"redaction_categories\": [], \"truncated_field_count\": 0, \"failed_closed\": false}"
+      },
+      "class": "ordinary",
+      "id": "b3_ordinary_identifiers",
+      "input": "{\"request_id\": \"hamcp191-request.01:a\", \"uuid_request_id\": \"8f14e45f-ceea-467a-9575-4f1b1a7c4c3e\", \"entity_id\": \"input_boolean.porch_light\", \"target_id\": \"light.porch\", \"url_path\": \"main-operations\", \"requested_by\": \"mcp-requester\", \"labels\": [\"night\", \"outdoor\"]}"
+    },
+    {
       "base_sha256": {
         "logbook.project": "sha256:5384555a52af32c8ec251afd7ac17f6aac8473e2bd31c3ac2f4ee1687c8a8111",
         "redact_data": "sha256:44b4a88126e7af455121a4bac94b4fc2e80ba5e81d9e2feb3121c4e54c6395ef",
@@ -670,6 +680,42 @@
       },
       "class": "redacted",
       "id": "redacted_h3_core_same_line_crlf"
+    },
+    {
+      "base_sha256": {
+        "logbook.project": "sha256:d4a0779659603223d5d48144426859b477846467a642b547125b1c9ae3a2e86b",
+        "redact_data": "sha256:4b4bb3deb30bf23a902c41011837c7755f7f639b3857704104b59c8d240514fd",
+        "sanitize_untrusted_data": "sha256:271d6d0bf8f69ba1ebb4bdfb1d165e8e6187d094fe805b0a7be1c3aa959ae9c3"
+      },
+      "class": "redacted",
+      "id": "redacted_b3_request_id_jwt"
+    },
+    {
+      "base_sha256": {
+        "logbook.project": "sha256:d4a0779659603223d5d48144426859b477846467a642b547125b1c9ae3a2e86b",
+        "redact_data": "sha256:4b4bb3deb30bf23a902c41011837c7755f7f639b3857704104b59c8d240514fd",
+        "sanitize_untrusted_data": "sha256:271d6d0bf8f69ba1ebb4bdfb1d165e8e6187d094fe805b0a7be1c3aa959ae9c3"
+      },
+      "class": "redacted",
+      "id": "redacted_b3_request_id_known_secret"
+    },
+    {
+      "base_sha256": {
+        "logbook.project": "sha256:29da501cd46f43f59198aa0e5ba5bcf22aed273c8852ab7e30ee8888e471f489",
+        "redact_data": "sha256:c0fb43635852e16750ac8723f51da129d29651b6a16732f2a68a0400817405aa",
+        "sanitize_untrusted_data": "sha256:759b2ee90cf8f5a073ef8a05418dd298c1ad12d56999000539139a5b6d18f79b"
+      },
+      "class": "redacted",
+      "id": "redacted_b3_entity_id_known_secret"
+    },
+    {
+      "base_sha256": {
+        "logbook.project": "sha256:90211c5fb7a3fddc3dc35bed8ff15e6a3805c4fb9623bda0f635771adace83c6",
+        "redact_data": "sha256:ba2a912bbf6b3776a29c8c9e730d03e51b91fbf382f0d647c7164055edd9d162",
+        "sanitize_untrusted_data": "sha256:98a609c05706dad4b5e27db9cd9dc6a8c2650e3c541af2bc8127d12c143d3e5f"
+      },
+      "class": "redacted",
+      "id": "redacted_b3_dashboard_url_path_known_secret"
     },
     {
       "base_leaks_secret": true,
