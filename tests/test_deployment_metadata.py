@@ -1,6 +1,7 @@
 import copy
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -385,29 +386,31 @@ class AddonMetadataValidationTests(unittest.TestCase):
         full = set(VALIDATOR.RETIREMENT_TRANSITION_PATHS)
         renamed = {"hass_mcp_admin/retired-addon-config.yaml", "hass_mcp_admin/README.md"}
         for paths in (full, renamed):
-            self.assertTrue(allowed(paths, base_discoverable=True, head_discoverable=False))
+            self.assertTrue(allowed(
+                paths, base_discoverable=True, head_discoverable=False, content_preserved=True
+            ))
         refused = (
-            (full | {"hass_mcp_admin/server.py"}, True, False),
-            ({"hass_mcp_admin/README.md"}, False, False),
-            (full, True, True),
-            (set(), True, False),
+            (full | {"hass_mcp_admin/server.py"}, True, False, True),
+            ({"hass_mcp_admin/README.md"}, False, False, True),
+            (full, True, True, True),
+            (set(), True, False, True),
+            (full, True, False, False),
         )
-        for paths, base, head in refused:
-            with self.subTest(paths=sorted(paths), base=base, head=head):
-                self.assertFalse(allowed(paths, base_discoverable=base, head_discoverable=head))
+        for paths, base, head, content in refused:
+            with self.subTest(paths=sorted(paths), base=base, head=head, content=content):
+                self.assertFalse(allowed(
+                    paths, base_discoverable=base, head_discoverable=head, content_preserved=content
+                ))
 
     def test_retirement_transition_requires_a_discoverable_base(self):
         paths = set(VALIDATOR.RETIREMENT_TRANSITION_PATHS)
-        with patch.object(VALIDATOR, "ref_has_path", return_value=True) as base:
-            report = VALIDATOR.validate_repository(ROOT, base_ref="HEAD", paths=paths)
-        base.assert_called_once_with(ROOT, "HEAD", "hass_mcp_admin/config.yaml")
-        self.assertTrue(report.production_changed)
-        self.assertTrue(report.stable_retirement_transition)
-        with patch.object(VALIDATOR, "ref_has_path", return_value=False), \
+        with patch.object(VALIDATOR, "ref_has_path", return_value=False) as base, \
+                patch.object(VALIDATOR, "retirement_content_preserved", return_value=True), \
                 self.assertRaisesRegex(
                     VALIDATOR.MetadataValidationError, "Production add-on files were modified"
                 ):
             VALIDATOR.validate_repository(ROOT, base_ref="HEAD", paths=paths)
+        base.assert_called_once_with(ROOT, "HEAD", "hass_mcp_admin/config.yaml")
 
     def test_staged_release_allows_feature_pr_to_keep_advertised_version(self):
         declaration = ROOT / VALIDATOR.NEXT_VERSION_PATH
@@ -486,6 +489,191 @@ class AddonMetadataValidationTests(unittest.TestCase):
         )
         self.assertEqual(report.production_version, "1.1.2")
         self.assertEqual(report.beta_version, VALIDATOR.BETA_VERSION)
+
+
+class StableRetirementTransitionContentTests(unittest.TestCase):
+    """HAMCP-203 M1: the one-time retirement allows a byte-exact rename only.
+
+    Each case builds a disposable Git repository whose base holds the original
+    stable ``config.yaml`` and runs the real validator CLI against that base.
+    """
+
+    RETIRED = "hass_mcp_admin/retired-addon-config.yaml"
+    ORIGINAL = "hass_mcp_admin/config.yaml"
+    ENGINEERING = (
+        "hass_mcp_engineering_beta/config.yaml",
+        "hass_mcp_engineering_beta/ha_mcp_engineering/version.py",
+        "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
+    )
+    REFUSED = "Production add-on files were modified"
+
+    def setUp(self):
+        retired = (ROOT / self.RETIRED).read_bytes()
+        self.assertTrue(retired.startswith(VALIDATOR.RETIREMENT_HEADER))
+        self.original = retired[len(VALIDATOR.RETIREMENT_HEADER):]
+        self.assertIn(b"  - homeassistant_config:ro\n", self.original)
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.repo = Path(temp.name)
+        self.git("init", "--quiet")
+        self.git("config", "core.autocrlf", "false")
+        stable = self.git("ls-files", "hass_mcp_admin", cwd=ROOT).splitlines()
+        for path in stable + list(self.ENGINEERING):
+            if path in (self.RETIRED, "hass_mcp_admin/README.md"):
+                continue
+            self.write(path, (ROOT / path).read_bytes())
+        self.write(self.ORIGINAL, self.original)
+        self.base = self.commit("base: shipped stable v1")
+
+    def git(self, *args, cwd=None):
+        return subprocess.run(
+            [
+                "git", "-c", "user.name=HAMCP-203 test", "-c", "user.email=test@example.invalid",
+                "-c", "commit.gpgsign=false", *args,
+            ],
+            cwd=cwd or self.repo, check=True, capture_output=True, text=True,
+        ).stdout
+
+    def write(self, path, data):
+        target = self.repo / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+
+    def commit(self, message):
+        self.git("add", "--all")
+        self.git("commit", "--quiet", "--allow-empty", "-m", message)
+        return self.git("rev-parse", "HEAD").strip()
+
+    def retire(self, config=None, readme=True):
+        self.git("mv", self.ORIGINAL, self.RETIRED)
+        self.write(self.RETIRED, VALIDATOR.RETIREMENT_HEADER + self.original if config is None else config)
+        if readme:
+            self.write("hass_mcp_admin/README.md", (ROOT / "hass_mcp_admin/README.md").read_bytes())
+        return self.commit("retire stable v1")
+
+    def run_cli(self, base):
+        return subprocess.run(
+            [
+                sys.executable, str(ROOT / "scripts/validate_addon_metadata.py"),
+                "--repo-root", str(self.repo), "--base-ref", base,
+            ],
+            capture_output=True, text=True, check=False,
+        )
+
+    def assert_allowed(self, base):
+        result = self.run_cli(base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Stable v1 retirement transition: allowed", result.stdout)
+
+    def assert_refused(self, base):
+        result = self.run_cli(base)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(self.REFUSED, result.stderr)
+        self.assertNotIn("transition: allowed", result.stdout)
+
+    def test_exact_rename_with_header_and_new_readme_is_allowed(self):
+        self.retire()
+        self.assert_allowed(self.base)
+
+    def test_exact_rename_without_readme_is_allowed(self):
+        self.retire(readme=False)
+        self.assert_allowed(self.base)
+
+    def test_codex_reproduction_mount_ro_to_rw_is_refused(self):
+        self.retire(VALIDATOR.RETIREMENT_HEADER + self.original.replace(
+            b"homeassistant_config:ro", b"homeassistant_config:rw"
+        ))
+        self.assert_refused(self.base)
+
+    def test_any_other_config_change_is_refused(self):
+        header = VALIDATOR.RETIREMENT_HEADER
+        mutations = {
+            "added_key": self.original + b"host_network: true\n",
+            "removed_arch": self.original.replace(b"  - armv7\n", b""),
+            "init_flag": self.original.replace(b"init: false", b"init: true"),
+            "option_value": self.original.replace(b"rate_limit_burst: 25", b"rate_limit_burst: 26"),
+            "destructive_list": self.original.replace(b"    - lock.unlock\n", b""),
+            "port_description": self.original.replace(b"point your Cloudflare", b"point any"),
+            "trailing_whitespace": self.original + b"\n",
+            "crlf_committed": self.original.replace(b"\n", b"\r\n"),
+        }
+        for name, content in mutations.items():
+            with self.subTest(name=name):
+                self.assertNotEqual(content, self.original)
+                self.git("reset", "--quiet", "--hard", self.base)
+                self.retire(header + content)
+                self.assert_refused(self.base)
+
+    def test_header_alterations_are_refused(self):
+        header = VALIDATOR.RETIREMENT_HEADER
+        variants = {
+            "no_header": self.original,
+            "header_comments_out_mount": header + self.original.replace(
+                b"  - homeassistant_config:ro\n", b"#  - homeassistant_config:ro\n"
+            ),
+            "header_absorbs_mount": header.rstrip(b"\n") + b"\n# map:\n#   - homeassistant_config:ro\n\n"
+            + self.original.replace(b"map:\n  - homeassistant_config:ro\n", b""),
+            "header_reworded": header.replace(b"Do not", b"Feel free to") + self.original,
+            "header_appends_key": header + b"host_network: true\n" + self.original,
+            "header_twice": header + header + self.original,
+            "header_after_content": self.original + header,
+        }
+        for name, content in variants.items():
+            with self.subTest(name=name):
+                self.git("reset", "--quiet", "--hard", self.base)
+                self.retire(content)
+                self.assert_refused(self.base)
+
+    def test_any_other_stable_path_is_refused(self):
+        for name, path, data in (
+            ("runtime_edit", "hass_mcp_admin/server.py", None),
+            ("new_file", "hass_mcp_admin/NOTES.md", b"retired\n"),
+        ):
+            with self.subTest(name=name):
+                self.git("reset", "--quiet", "--hard", self.base)
+                self.git("clean", "--quiet", "-fdx")
+                self.git("mv", self.ORIGINAL, self.RETIRED)
+                self.write(self.RETIRED, VALIDATOR.RETIREMENT_HEADER + self.original)
+                current = (self.repo / path).read_bytes() if data is None else b""
+                self.write(path, current + (data or b"# unauthorized\n"))
+                self.commit("retire plus extra")
+                self.assert_refused(self.base)
+
+    def test_uncommitted_or_staged_config_changes_are_refused(self):
+        self.retire()
+        exact = (self.repo / self.RETIRED).read_bytes()
+        rw = exact.replace(b"homeassistant_config:ro", b"homeassistant_config:rw")
+        self.write(self.RETIRED, rw)
+        self.assert_refused(self.base)
+        self.git("add", self.RETIRED)
+        self.write(self.RETIRED, exact)
+        self.assert_refused(self.base)
+
+    def test_checkout_line_ending_translation_is_not_a_change(self):
+        self.retire()
+        self.git("config", "core.autocrlf", "true")
+        (self.repo / self.RETIRED).unlink()
+        self.git("checkout", "--", self.RETIRED)
+        self.assertIn(b"\r\n", (self.repo / self.RETIRED).read_bytes())
+        self.assert_allowed(self.base)
+
+    def test_existing_retired_paths_in_base_are_refused(self):
+        self.write(self.RETIRED, VALIDATOR.RETIREMENT_HEADER + self.original)
+        base = self.commit("base already holds the retired name")
+        self.git("rm", "--quiet", self.ORIGINAL)
+        self.commit("drop the discoverable config")
+        self.assert_refused(base)
+
+    def test_post_merge_edits_are_refused_and_unchanged_tree_passes(self):
+        merged = self.retire()
+        result = self.run_cli(merged)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("transition: allowed", result.stdout)
+        self.write(self.RETIRED, (self.repo / self.RETIRED).read_bytes().replace(
+            b"homeassistant_config:ro", b"homeassistant_config:rw"
+        ))
+        self.commit("post-merge edit")
+        self.assert_refused(merged)
 
 
 class UnreleasedRcIntegrityTests(unittest.TestCase):

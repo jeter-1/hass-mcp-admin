@@ -29,11 +29,21 @@ RETIRED_DIR = "hass_mcp_admin"
 RETIRED_CONFIG_PATH = Path(RETIRED_DIR, "retired-addon-config.yaml")
 DISCOVERABLE_CONFIG_PATH = Path(RETIRED_DIR, "config.yaml")
 SUPERVISOR_CONFIG_SUFFIXES = (".yaml", ".yml", ".json")
+RETIRED_README_PATH = Path(RETIRED_DIR, "README.md")
 RETIREMENT_TRANSITION_PATHS = frozenset({
     DISCOVERABLE_CONFIG_PATH.as_posix(),
     RETIRED_CONFIG_PATH.as_posix(),
-    f"{RETIRED_DIR}/README.md",
+    RETIRED_README_PATH.as_posix(),
 })
+# The only content the retirement may add to the old config.yaml. The renamed
+# file must equal this header followed by the base config, byte for byte.
+RETIREMENT_HEADER = (
+    b"# RETIRED (HAMCP-203): stable v1 is not a Home Assistant add-on any more.\n"
+    b"# This file was config.yaml. It is renamed so the Supervisor's add-on store\n"
+    b'# discovery (glob "**/config.*") cannot find, list, or install it. Do not\n'
+    b"# rename it back. Values are kept as the last shipped v1.1.2 metadata. See README.md.\n"
+    b"\n"
+)
 BETA_VERSION = "2.4.1-beta.19"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 NEXT_VERSION_PATH = Path(".release/next-version")
@@ -307,6 +317,19 @@ def run_git(repo_root: Path, *args: str) -> str:
     return result.stdout
 
 
+def run_git_bytes(repo_root: Path, *args: str, stdin: bytes | None = None) -> bytes:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo_root,
+        input=stdin,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        raise MetadataValidationError("Git metadata validation failed")
+    return result.stdout
+
+
 def discoverable_retired_configs(repo_root: Path) -> list[str]:
     """Files under the retired directory that Supervisor store discovery would find."""
     return sorted(
@@ -325,7 +348,11 @@ def ref_has_path(repo_root: Path, ref: str, path: str) -> bool:
 
 
 def is_stable_retirement_transition(
-    production_paths: set[str], *, base_discoverable: bool, head_discoverable: bool
+    production_paths: set[str],
+    *,
+    base_discoverable: bool,
+    head_discoverable: bool,
+    content_preserved: bool,
 ) -> bool:
     """Allow only the one-time change that removes stable v1 from discovery."""
     return (
@@ -333,7 +360,40 @@ def is_stable_retirement_transition(
         and production_paths <= RETIREMENT_TRANSITION_PATHS
         and base_discoverable
         and not head_discoverable
+        and content_preserved
     )
+
+
+def retirement_content_preserved(repo_root: Path, base_ref: str) -> bool:
+    """True only for an exact rename of the base config plus the RETIRED header.
+
+    The committed, staged, and working-tree versions of the renamed config must
+    all be the base ``config.yaml`` blob with ``RETIREMENT_HEADER`` prepended,
+    and the renamed config and README must be new in this change. Object ids
+    are compared after Git's own clean conversion, so a checkout's line-ending
+    translation is neither a false refusal nor a way to hide a change.
+    """
+    retired = RETIRED_CONFIG_PATH.as_posix()
+    if any(
+        ref_has_path(repo_root, base_ref, path)
+        for path in (retired, RETIRED_README_PATH.as_posix())
+    ):
+        return False
+    try:
+        base = run_git_bytes(
+            repo_root, "cat-file", "blob", f"{base_ref}:{DISCOVERABLE_CONFIG_PATH.as_posix()}"
+        )
+        expected = run_git_bytes(
+            repo_root, "hash-object", "--no-filters", "--stdin", stdin=RETIREMENT_HEADER + base
+        ).strip()
+        observed = (
+            run_git_bytes(repo_root, "rev-parse", "--verify", f"HEAD:{retired}").strip(),
+            run_git_bytes(repo_root, "rev-parse", "--verify", f":{retired}").strip(),
+            run_git_bytes(repo_root, "hash-object", f"--path={retired}", "--", retired).strip(),
+        )
+    except MetadataValidationError:
+        return False
+    return bool(expected) and all(oid == expected for oid in observed)
 
 
 def changed_paths(repo_root: Path, base_ref: str) -> set[str]:
@@ -517,12 +577,15 @@ def validate_repository(
         and path not in NON_RELEASE_BETA_PATHS
         for path in path_set
     )
+    base_discoverable = production_changed and ref_has_path(
+        repo_root, base_ref, DISCOVERABLE_CONFIG_PATH.as_posix()
+    )
     retirement_transition = production_changed and is_stable_retirement_transition(
         production_paths,
-        base_discoverable=ref_has_path(
-            repo_root, base_ref, DISCOVERABLE_CONFIG_PATH.as_posix()
-        ),
+        base_discoverable=base_discoverable,
         head_discoverable=bool(discoverable),
+        content_preserved=base_discoverable
+        and retirement_content_preserved(repo_root, base_ref),
     )
     if production_changed and not retirement_transition:
         raise MetadataValidationError("Production add-on files were modified")
