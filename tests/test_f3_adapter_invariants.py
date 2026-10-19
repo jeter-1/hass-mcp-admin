@@ -119,7 +119,7 @@ class F3AdapterIsolationTests(unittest.TestCase):
         self.assertEqual(SERVER_VERSION, advertised_version)
         self.assertEqual(beta_config["version"], advertised_version)
         self.assertEqual(stable_config["version"], "1.1.2")
-        self.assertIn("aiohttp==3.14.3", requirements)
+        self.assertIn("aiohttp==3.14.4", requirements)
         self.assertIn("cryptography==50.0.0", requirements)
 
     def test_exact_upstream_release_accounting_is_unchanged(self):

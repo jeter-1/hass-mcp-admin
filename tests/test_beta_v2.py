@@ -492,7 +492,7 @@ class AddonIsolationTests(unittest.TestCase):
             beta,
             [
                 "mcp==1.30.0",
-                "aiohttp==3.14.3",
+                "aiohttp==3.14.4",
                 "uvicorn==0.51.0",
                 "starlette==1.3.1",
                 "PyYAML==6.0.2",
