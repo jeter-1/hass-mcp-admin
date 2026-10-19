@@ -7,12 +7,35 @@ from mcp.server.fastmcp.tools.base import Tool
 from mcp.types import ToolAnnotations
 
 from ..entity_ids import ENTITY_ID_PATTERN, MAX_ENTITY_ID_LENGTH
+from ..errors import ErrorCode, GovernanceError
 from ..request_context import current_telemetry
 
 from ..governance import GOVERNANCE
 from ..sanitization import sanitize_untrusted_data
 from ..tool_framework import run_structured
 from .compatibility import SETTINGS
+
+
+def _known_secrets() -> tuple[str, ...] | None:
+    try:
+        return tuple(GOVERNANCE.require().sensitive_values)
+    except Exception:
+        return None
+
+
+def _identifier_is_safe(value: Any, known_secrets: tuple[str, ...]) -> bool:
+    """True only when the strict sanitizer leaves the value unchanged."""
+
+    try:
+        result = sanitize_untrusted_data(value, known_secrets=known_secrets)
+    except Exception:
+        return False
+    return (
+        not result.failed_closed
+        and not result.redaction_applied
+        and type(result.value) is type(value)
+        and result.value == value
+    )
 
 
 def _identifier_metadata(**fields: Any) -> dict[str, Any]:
@@ -24,23 +47,109 @@ def _identifier_metadata(**fields: Any) -> dict[str, Any]:
     withheld. Fixed metadata values are not caller input.
     """
 
-    try:
-        known_secrets = tuple(GOVERNANCE.require().sensitive_values)
-    except Exception:
+    known_secrets = _known_secrets()
+    if known_secrets is None:
         return {}
-    safe: dict[str, Any] = {}
-    for key, value in fields.items():
-        try:
-            result = sanitize_untrusted_data(value, known_secrets=known_secrets)
-        except Exception:
-            continue
-        if (
-            not result.redaction_applied
-            and type(result.value) is type(value)
-            and result.value == value
-        ):
-            safe[key] = value
-    return safe
+    return {
+        key: value
+        for key, value in fields.items()
+        if _identifier_is_safe(value, known_secrets)
+    }
+
+
+#: HAMCP-191 H1g-residual: the caller-supplied identifier inputs of every
+#: governance tool, screened once at the tool boundary before any tool work.
+#: ``name[].field`` selects one field of each item of a list input; a whole
+#: list or mapping input is screened with its keys. Every other input is a
+#: closed literal, a bounded number, an opaque server-issued cursor, or free
+#: text and configuration that the plan persistence chokepoint screens.
+IDENTIFIER_INPUTS: dict[str, tuple[str, ...]] = {
+    "create_backup_plan": (),
+    "create_reload_plan": (),
+    "create_helper_state_plan": ("entity_id",),
+    "create_entity_metadata_plan": (
+        "entity_id",
+        "area_id",
+        "add_labels",
+        "remove_labels",
+        "categories",
+    ),
+    "create_addon_restart_plan": ("addon_slug",),
+    "create_home_assistant_restart_plan": (),
+    "create_change_plan": ("operation", "automation_id"),
+    "create_configuration_plan": (
+        "operations[].operation_id",
+        "operations[].resource_type",
+        "operations[].action",
+        "operations[].target_id",
+        "operations[].helper_type",
+        "operations[].depends_on",
+    ),
+    "create_dashboard_update_plan": (
+        "url_path",
+        "patch_operations[].operation_id",
+        "patch_operations[].operation",
+        "patch_operations[].path",
+    ),
+    "get_change_plan": ("plan_id",),
+    "list_change_plans": ("status",),
+    "get_execution_task": ("task_id",),
+    "list_execution_tasks": ("state", "terminal_outcome", "plan_id"),
+    "cancel_execution_task": ("task_id",),
+    "reverify_configuration_task": ("task_id", "expected_plan_hash", "request_id"),
+    "approve_change_plan": ("plan_id", "expected_plan_hash"),
+    "apply_change_plan": ("plan_id", "expected_plan_hash"),
+    "rollback_change": ("plan_id", "expected_plan_hash"),
+}
+
+IDENTIFIER_REFUSAL_REASON = "identifier_contains_prohibited_sensitive_data"
+
+
+def _identifier_values(arguments: Any, path: str) -> list[Any]:
+    if not isinstance(arguments, dict):
+        return []
+    name, _, field = path.partition("[].")
+    value = arguments.get(name)
+    if not field:
+        return [] if value is None else [value]
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [
+        item[field]
+        for item in value
+        if isinstance(item, dict) and item.get(field) is not None
+    ]
+
+
+def screen_identifiers(operation: str, arguments: Any) -> None:
+    """Refuse a request whose identifier inputs the strict sanitizer would change.
+
+    The refusal carries one fixed reason and never the identifier, so no
+    early-return or error path of the tool can echo it.
+    """
+
+    known_secrets = _known_secrets() or ()
+    for path in IDENTIFIER_INPUTS[operation]:
+        for value in _identifier_values(arguments, path):
+            if not _identifier_is_safe(value, known_secrets):
+                raise GovernanceError(
+                    ErrorCode.INVALID_REQUEST,
+                    details={"reason": IDENTIFIER_REFUSAL_REASON},
+                )
+
+
+def _screened(operation: str, arguments: Any, action):
+    """Run ``action`` only after the boundary identifier screen passes.
+
+    ``arguments`` is the tool's own ``locals()`` (its inputs), or the raw
+    argument object of a tool that receives one.
+    """
+
+    def screened():
+        screen_identifiers(operation, arguments)
+        return action()
+
+    return screened
 
 
 class ConfigurationOperation(TypedDict):
@@ -95,9 +204,13 @@ async def create_backup_plan(
     return await run_structured(
         "create_backup_plan",
         "Created a governed backup proposal without dispatching backup creation.",
-        lambda: GOVERNANCE.require().create_backup_plan(
-            backup_name=backup_name,
-            expiration_minutes=expiration_minutes,
+        _screened(
+            "create_backup_plan",
+            locals(),
+            lambda: GOVERNANCE.require().create_backup_plan(
+                backup_name=backup_name,
+                expiration_minutes=expiration_minutes,
+            ),
         ),
         metadata={
             "resource_type": "backup",
@@ -126,9 +239,13 @@ async def create_reload_plan(
     return await run_structured(
         "create_reload_plan",
         "Created a governed controlled-reload proposal without dispatching it.",
-        lambda: GOVERNANCE.require().create_reload_plan(
-            reload_target=reload_target,
-            expiration_minutes=expiration_minutes,
+        _screened(
+            "create_reload_plan",
+            locals(),
+            lambda: GOVERNANCE.require().create_reload_plan(
+                reload_target=reload_target,
+                expiration_minutes=expiration_minutes,
+            ),
         ),
         metadata={
             "resource_type": "reload_domain",
@@ -161,10 +278,14 @@ async def create_helper_state_plan(
     return await run_structured(
         "create_helper_state_plan",
         "Created or resolved one exact governed input-boolean state proposal.",
-        lambda: GOVERNANCE.require().create_helper_state_plan(
-            entity_id=entity_id,
-            desired_state=desired_state,
-            expiration_minutes=expiration_minutes,
+        _screened(
+            "create_helper_state_plan",
+            locals(),
+            lambda: GOVERNANCE.require().create_helper_state_plan(
+                entity_id=entity_id,
+                desired_state=desired_state,
+                expiration_minutes=expiration_minutes,
+            ),
         ),
         metadata={
             "resource_type": "input_boolean",
@@ -195,9 +316,13 @@ async def create_addon_restart_plan(
     return await run_structured(
         "create_addon_restart_plan",
         "Created a governed add-on restart proposal without dispatching it.",
-        lambda: GOVERNANCE.require().create_addon_restart_plan(
-            addon_slug=addon_slug,
-            expiration_minutes=expiration_minutes,
+        _screened(
+            "create_addon_restart_plan",
+            locals(),
+            lambda: GOVERNANCE.require().create_addon_restart_plan(
+                addon_slug=addon_slug,
+                expiration_minutes=expiration_minutes,
+            ),
         ),
         metadata={
             "resource_type": "addon",
@@ -219,10 +344,14 @@ async def create_home_assistant_restart_plan(
     return await run_structured(
         "create_home_assistant_restart_plan",
         "Created a governed Home Assistant restart proposal without dispatching it.",
-        lambda: (
-            GOVERNANCE.require().create_home_assistant_restart_plan(
-                expiration_minutes=expiration_minutes,
-            )
+        _screened(
+            "create_home_assistant_restart_plan",
+            locals(),
+            lambda: (
+                GOVERNANCE.require().create_home_assistant_restart_plan(
+                    expiration_minutes=expiration_minutes,
+                )
+            ),
         ),
         metadata={
             "resource_type": "home_assistant",
@@ -250,14 +379,18 @@ async def create_change_plan(
     return await run_structured(
         "create_change_plan",
         "Created a dry-run automation change plan without writing to Home Assistant.",
-        lambda: GOVERNANCE.require().create_plan(
-            title=title,
-            description=description,
-            operation=operation,
-            automation_id=automation_id,
-            proposed_config=proposed_config,
-            expiration_minutes=expiration_minutes,
-            caller_context=caller_context,
+        _screened(
+            "create_change_plan",
+            locals(),
+            lambda: GOVERNANCE.require().create_plan(
+                title=title,
+                description=description,
+                operation=operation,
+                automation_id=automation_id,
+                proposed_config=proposed_config,
+                expiration_minutes=expiration_minutes,
+                caller_context=caller_context,
+            ),
         ),
         metadata={
             "resource_type": "automation",
@@ -283,12 +416,16 @@ async def create_configuration_plan(
     return await run_structured(
         "create_configuration_plan",
         "Created a bounded ordered configuration plan without writing to Home Assistant.",
-        lambda: GOVERNANCE.require().create_configuration_plan(
-            title=title,
-            description=description,
-            operations=operations,
-            expiration_minutes=expiration_minutes,
-            caller_context=caller_context,
+        _screened(
+            "create_configuration_plan",
+            locals(),
+            lambda: GOVERNANCE.require().create_configuration_plan(
+                title=title,
+                description=description,
+                operations=operations,
+                expiration_minutes=expiration_minutes,
+                caller_context=caller_context,
+            ),
         ),
         metadata={"resource_type": "configuration_plan"},
         response_limit=SETTINGS.response_size_limit,
@@ -315,12 +452,16 @@ async def create_dashboard_update_plan(
     return await run_structured(
         "create_dashboard_update_plan",
         "Created a governed dashboard update proposal without dispatching it.",
-        lambda: GOVERNANCE.require().create_dashboard_update_plan(
-            title=title,
-            description=description,
-            url_path=url_path,
-            patch_operations=patch_operations,
-            expiration_minutes=expiration_minutes,
+        _screened(
+            "create_dashboard_update_plan",
+            locals(),
+            lambda: GOVERNANCE.require().create_dashboard_update_plan(
+                title=title,
+                description=description,
+                url_path=url_path,
+                patch_operations=patch_operations,
+                expiration_minutes=expiration_minutes,
+            ),
         ),
         metadata={
             "resource_type": "dashboard",
@@ -343,12 +484,16 @@ async def get_change_plan(
     return await run_structured(
         "get_change_plan",
         "Returned the requested governed change plan.",
-        lambda: GOVERNANCE.require().get_plan_observability(
-            plan_id,
-            detail_section=detail_section,
-            cursor=cursor,
-            page_size=page_size,
-            response_limit=SETTINGS.response_size_limit,
+        _screened(
+            "get_change_plan",
+            locals(),
+            lambda: GOVERNANCE.require().get_plan_observability(
+                plan_id,
+                detail_section=detail_section,
+                cursor=cursor,
+                page_size=page_size,
+                response_limit=SETTINGS.response_size_limit,
+            ),
         ),
         metadata={
             "resource_type": "change_plan",
@@ -363,7 +508,11 @@ async def list_change_plans(status: str = "", limit: int = 20) -> str:
     return await run_structured(
         "list_change_plans",
         "Returned bounded governed change-plan summaries.",
-        lambda: GOVERNANCE.require().list_plans(status=status, limit=limit),
+        _screened(
+            "list_change_plans",
+            locals(),
+            lambda: GOVERNANCE.require().list_plans(status=status, limit=limit),
+        ),
         response_limit=SETTINGS.response_size_limit,
     )
 
@@ -389,10 +538,14 @@ async def get_execution_task(
     return await run_structured(
         "get_execution_task",
         "Returned the requested durable execution task.",
-        lambda: _get_execution_task(task_id),
+        _screened(
+            "get_execution_task",
+            locals(),
+            lambda: _get_execution_task(task_id),
+        ),
         metadata={
             "resource_type": "execution_task",
-            "resource_id": task_id,
+            **_identifier_metadata(resource_id=task_id),
         },
         response_limit=SETTINGS.response_size_limit,
     )
@@ -422,11 +575,15 @@ async def list_execution_tasks(
     return await run_structured(
         "list_execution_tasks",
         "Returned bounded durable execution-task summaries.",
-        lambda: GOVERNANCE.require().list_execution_tasks(
-            state=state,
-            terminal_outcome=terminal_outcome,
-            plan_id=plan_id,
-            limit=limit,
+        _screened(
+            "list_execution_tasks",
+            locals(),
+            lambda: GOVERNANCE.require().list_execution_tasks(
+                state=state,
+                terminal_outcome=terminal_outcome,
+                plan_id=plan_id,
+                limit=limit,
+            ),
         ),
         metadata={"resource_type": "execution_task"},
         response_limit=SETTINGS.response_size_limit,
@@ -446,10 +603,14 @@ async def cancel_execution_task(
     return await run_structured(
         "cancel_execution_task",
         "Processed the bounded pre-dispatch task cancellation request.",
-        lambda: GOVERNANCE.require().cancel_execution_task(task_id),
+        _screened(
+            "cancel_execution_task",
+            locals(),
+            lambda: GOVERNANCE.require().cancel_execution_task(task_id),
+        ),
         metadata={
             "resource_type": "execution_task",
-            "resource_id": task_id,
+            **_identifier_metadata(resource_id=task_id),
         },
         response_limit=SETTINGS.response_size_limit,
     )
@@ -466,8 +627,12 @@ async def approve_change_plan(
     return await run_structured(
         "approve_change_plan",
         "Requested external administrator approval bound to the exact plan content.",
-        lambda: GOVERNANCE.require().approve(
-            plan_id, expected_plan_hash, approval_note
+        _screened(
+            "approve_change_plan",
+            locals(),
+            lambda: GOVERNANCE.require().approve(
+                plan_id, expected_plan_hash, approval_note
+            ),
         ),
         metadata={
             "resource_type": "change_plan",
@@ -482,7 +647,11 @@ async def apply_change_plan(plan_id: str, expected_plan_hash: str = "") -> str:
     return await run_structured(
         "apply_change_plan",
         "Processed the approved governed configuration change.",
-        lambda: GOVERNANCE.require().apply(plan_id, expected_plan_hash),
+        _screened(
+            "apply_change_plan",
+            locals(),
+            lambda: GOVERNANCE.require().apply(plan_id, expected_plan_hash),
+        ),
         metadata={
             "resource_type": "change_plan",
             **_identifier_metadata(resource_id=plan_id),
@@ -502,7 +671,11 @@ async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
     return await run_structured(
         "rollback_change",
         "Processed the governed rollback lifecycle step.",
-        lambda: GOVERNANCE.require().rollback_change(plan_id, expected_plan_hash),
+        _screened(
+            "rollback_change",
+            locals(),
+            lambda: GOVERNANCE.require().rollback_change(plan_id, expected_plan_hash),
+        ),
         metadata={
             "resource_type": "change_plan",
             **_identifier_metadata(resource_id=plan_id),
@@ -543,7 +716,8 @@ async def reverify_configuration_task(
     return await run_structured(
         "reverify_configuration_task",
         "Processed the supplementary configuration verification request.",
-        action, metadata=metadata, response_limit=SETTINGS.response_size_limit,
+        _screened("reverify_configuration_task", locals(), action),
+        metadata=metadata, response_limit=SETTINGS.response_size_limit,
     )
 
 
@@ -650,7 +824,11 @@ async def _entity_metadata_plan(arguments: Any) -> str:
         "create_entity_metadata_plan",
         "Created or resolved one governed entity registry metadata proposal "
         "without dispatching it.",
-        lambda: GOVERNANCE.require().create_entity_metadata_plan(arguments),
+        _screened(
+            "create_entity_metadata_plan",
+            arguments,
+            lambda: GOVERNANCE.require().create_entity_metadata_plan(arguments),
+        ),
         metadata={
             "resource_type": "entity_registry_metadata",
             "operation": "update_entity_registry_metadata",

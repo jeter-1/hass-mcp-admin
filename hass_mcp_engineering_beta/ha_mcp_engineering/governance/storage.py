@@ -813,8 +813,9 @@ class ChangePlanRepository:
         configuration, snapshot or exempt dispatch path refuses it and any
         other finding is redacted in place, with ``plan`` rebuilt from the
         stored form so a caller's response equals the record. After the
-        strict pass, a contract-v2+ record must also pass the D11 stored-plan
-        check over its whole content, which only old content can need.
+        strict pass, every record (any contract version, HAMCP-191 L3) must
+        also pass the D11 stored-plan check over its whole content, which
+        only old content can need.
         Raises ``PlanContentRefused``; never returns content in an error.
         """
 
@@ -840,8 +841,9 @@ class ChangePlanRepository:
         value = screen.value
         try:
             # Stored-plan re-scan: D11 exception (HAMCP-207). New content is
-            # strict-clean here; only old content can rely on D11.
-            unsafe = plan.contract_version >= 2 and bool(
+            # strict-clean here; only old content can rely on D11. It runs
+            # for every contract version (HAMCP-191 L3).
+            unsafe = bool(
                 persistence_safety_errors(
                     value, known_secrets, stored_plan=True
                 )

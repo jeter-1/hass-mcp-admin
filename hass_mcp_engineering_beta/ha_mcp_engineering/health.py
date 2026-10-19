@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .observability import METRICS
+from .request_context import request_id_replacement_count
 from .sanitization import marker_collision_health
 from .capabilities import (
     BETA_NATIVE_CAPABILITIES,
@@ -125,7 +126,13 @@ class HealthRegistry:
             },
             # HAMCP-191 D3: how often look-alike marker text was replaced or
             # blocked a governed path, since process start. Counts only.
-            "sanitization": {"strict_marker_mode": True, **marker_collision_health()},
+            # HAMCP-191 H4: inbound request IDs replaced after failing the
+            # strict scan (a count; the rejected values are never kept).
+            "sanitization": {
+                "strict_marker_mode": True,
+                **marker_collision_health(),
+                "request_id_replacements": request_id_replacement_count(),
+            },
             "recent_error_counts": metrics["recent_error_counts"],
             "domain_outcome_counts": metrics["domain_outcome_counts"],
             "provider_routing": {

@@ -55,7 +55,12 @@ from ..f3_dashboard.errors import (
 )
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
 from ..f3_dashboard.semantic_diff import REDACTED_PREVIEW
-from ..f3_dashboard.serialization import public_proposal_projection
+from ..f3_dashboard.constants import ARTIFACT_SCHEMA
+from ..f3_dashboard.json_codec import engineering_sha256
+from ..f3_dashboard.serialization import (
+    private_proposal_projection,
+    public_proposal_projection,
+)
 from .historical_policy import (
     HISTORICAL_POLICY_PROJECTION_MODEL,
     HISTORICAL_POLICY_PROJECTION_PROFILES,
@@ -4369,14 +4374,17 @@ class ChangeGovernanceService:
             raise GovernanceError(
                 ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED
             )
-        # HAMCP-191 H1: the caller's title, description and patch values are
-        # persisted with the plan, so they pass the strict sanitizer before
-        # any Home Assistant read or persistence.
+        # HAMCP-191 H1/M2: the caller's title, description, patch values,
+        # dashboard url_path and caller ID are persisted with the plan and
+        # its artifact, so they pass the strict sanitizer before any Home
+        # Assistant read or persistence.
         if persistence_safety_errors(
             {
                 "plan_title": title,
                 "plan_description": description,
                 "patch_operations": patch_operations,
+                "url_path": url_path,
+                "requested_by": current_caller_id(),
             },
             self.sensitive_values,
         ):
@@ -4476,10 +4484,12 @@ class ChangeGovernanceService:
         # MCP plan output strips proposed_config, while the authenticated
         # review page renders every exact declared before/after value inertly.
         public_projection["approval_projection"] = approval_projection
-        try:
-            artifact = self.dashboard_artifacts.create(proposal)
-        except DashboardFoundationError:
-            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from None
+        # HAMCP-191 M2: the artifact is written only after the complete new
+        # plan passes the strict creation gate, so a refused plan leaves no
+        # artifact behind. The plan binds the payload hash the store computes.
+        artifact_payload_sha256 = engineering_sha256(
+            private_proposal_projection(proposal)
+        )
 
         elevated = proposal.risk.manual_review_required or (
             proposal.risk.disposition.value != "standard_review"
@@ -4513,8 +4523,8 @@ class ChangeGovernanceService:
             ],
         )
         baseline = {
-            "artifact_schema": artifact.schema,
-            "artifact_payload_sha256": artifact.payload_sha256,
+            "artifact_schema": ARTIFACT_SCHEMA,
+            "artifact_payload_sha256": artifact_payload_sha256,
             "proposal_sha256": proposal.proposal_sha256,
             "current_upstream_config_hash": (
                 proposal.raw_evidence.upstream_config_hash
@@ -4654,6 +4664,16 @@ class ChangeGovernanceService:
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        self._require_strict_new_plan(plan)
+        try:
+            artifact = self.dashboard_artifacts.create(proposal)
+        except DashboardFoundationError:
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from None
+        if (artifact.schema, artifact.payload_sha256) != (
+            ARTIFACT_SCHEMA,
+            artifact_payload_sha256,
+        ):
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
         self._record(plan, "dashboard_update_plan_created", "success")
         self._supersede_prior(plan)
         return self._public(plan)

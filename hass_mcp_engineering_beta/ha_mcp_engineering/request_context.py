@@ -5,11 +5,12 @@ from __future__ import annotations
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 import re
+import threading
 import time
 from typing import Callable
 import uuid
 
-from .sanitization import ReferenceMarkerRegistry
+from .sanitization import ReferenceMarkerRegistry, sanitize_untrusted_data
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 
@@ -45,6 +46,9 @@ class RequestTelemetry:
     provider_partial_count: int = 0
     provider_failure_count: int = 0
     caller_id: str = "anonymous"
+    # HAMCP-191 H4: the inbound X-Request-ID failed the strict scan and was
+    # replaced by an Engineering-generated ID. The rejected value is never kept.
+    inbound_request_id_replaced: bool = False
     ordinary_fan_binding: str | None = field(default=None, repr=False)
     ordinary_power_binding: str | None = field(default=None, repr=False)
     audit_context: dict[str, object] = field(default_factory=dict)
@@ -136,14 +140,55 @@ class RequestTelemetry:
 _REQUEST: ContextVar[RequestTelemetry | None] = ContextVar("engineering_request", default=None)
 
 
+# HAMCP-191 H4: process count of inbound request IDs replaced because they
+# failed the strict scan. A count only; no ID is ever recorded.
+_REPLACEMENT_LOCK = threading.Lock()
+_REQUEST_ID_REPLACEMENTS = 0
+
+
 def normalize_request_id(candidate: str | None) -> str:
     if candidate and REQUEST_ID_PATTERN.fullmatch(candidate):
         return candidate
     return uuid.uuid4().hex
 
 
-def begin_request(candidate: str | None = None) -> tuple[RequestTelemetry, Token]:
-    telemetry = RequestTelemetry(request_id=normalize_request_id(candidate))
+def request_id_is_safe(candidate: str, known_secrets: tuple[str, ...] = ()) -> bool:
+    """Whether a well-formed request ID passes the strict scan (HAMCP-191 H4).
+
+    The request-ID alphabet admits token-shaped values (a JWT, a Matter
+    payload, a ``name:value`` assignment or a configured secret). The ID is
+    copied into execution tasks, plans, audit, logs and responses, so it is
+    screened once, here, against every credential rule and the known secrets.
+    """
+
+    result = sanitize_untrusted_data(candidate, known_secrets=known_secrets)
+    return not (result.failed_closed or result.redaction_applied)
+
+
+def request_id_replacement_count() -> int:
+    """Inbound request IDs replaced since process start, for the health payload."""
+
+    with _REPLACEMENT_LOCK:
+        return _REQUEST_ID_REPLACEMENTS
+
+
+def begin_request(
+    candidate: str | None = None,
+    *,
+    known_secrets: tuple[str, ...] = (),
+) -> tuple[RequestTelemetry, Token]:
+    global _REQUEST_ID_REPLACEMENTS
+    request_id = normalize_request_id(candidate)
+    replaced = request_id == candidate and not request_id_is_safe(
+        request_id, tuple(secret for secret in known_secrets if secret)
+    )
+    if replaced:
+        request_id = uuid.uuid4().hex
+        with _REPLACEMENT_LOCK:
+            _REQUEST_ID_REPLACEMENTS += 1
+    telemetry = RequestTelemetry(
+        request_id=request_id, inbound_request_id_replaced=replaced
+    )
     return telemetry, _REQUEST.set(telemetry)
 
 

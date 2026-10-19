@@ -279,6 +279,13 @@ class AuthenticatedMcpGateway:
         )
         self.audit = audit
         self.prefix = f"/{settings.access_secret}"
+        # HAMCP-191 H4: the inbound request ID is screened against the same
+        # known secrets the governance service persists plans against.
+        self._known_secrets = tuple(
+            secret
+            for secret in (settings.access_secret, getattr(settings, "ha_token", ""))
+            if secret
+        )
         self._initial_catalog_reconciliation_required = bool(
             require_initial_catalog_reconciliation
         )
@@ -472,7 +479,10 @@ class AuthenticatedMcpGateway:
         }
 
     async def _reject_inbound(self, scope, send, denial):
-        telemetry, token = begin_request(bounded_request_id(scope.get("headers")))
+        telemetry, token = begin_request(
+            bounded_request_id(scope.get("headers")),
+            known_secrets=self._known_secrets,
+        )
         try:
             telemetry.error_code = ErrorCode.INVALID_REQUEST.value
             telemetry.result_status = "failure"
@@ -512,7 +522,9 @@ class AuthenticatedMcpGateway:
         if denial is not None:
             return await self._reject_inbound(scope, send, denial)
         path = scope.get("path", "")
-        telemetry, context_token = begin_request(self._header(scope, b"x-request-id"))
+        telemetry, context_token = begin_request(
+            self._header(scope, b"x-request-id"), known_secrets=self._known_secrets
+        )
         request_id = telemetry.request_id
         client_ip = self._client_ip(scope)
         caller_id = self._caller_id(client_ip)
