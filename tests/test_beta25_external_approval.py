@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
 
+sys.path.insert(0, str(Path(__file__).parent))
+from approval_identity_support import admin_verifier  # noqa: E402
 from ha_mcp_engineering.approval_web import create_approval_application  # noqa: E402
 from ha_mcp_engineering.application import _serve, validate_settings  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
@@ -456,7 +458,7 @@ class IngressBoundaryTests(ExternalApprovalTestCase):
     async def _client(self, *, peer="172.30.32.2"):
         import httpx
 
-        app = create_approval_application(RuntimeShim(self.service))
+        app = create_approval_application(RuntimeShim(self.service), administrator_verifier=admin_verifier())
         transport = httpx.ASGITransport(app=app, client=(peer, 12345))
         return httpx.AsyncClient(
             transport=transport,
@@ -574,8 +576,13 @@ class IngressBoundaryTests(ExternalApprovalTestCase):
                 data=values,
                 headers={"X-Remote-User-Id": "<script>fake</script>"},
             )
-            self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.repository.get(created["plan_id"]).approval.approver_principal, "home_assistant_admin_ingress")
+            # HAMCP-205 (absorbs HAMCP-199): a malformed identity is refused,
+            # never recorded as an anonymous default approver.
+            self.assertEqual(response.status_code, 403)
+            self.assertIn("Approver identity missing", response.text)
+        approval = self.repository.get(created["plan_id"]).approval
+        self.assertEqual(approval.state, ApprovalState.EXTERNAL_PENDING)
+        self.assertNotIn("fake", str(approval.approver_principal))
 
 
 class MetadataBoundaryTests(unittest.TestCase):

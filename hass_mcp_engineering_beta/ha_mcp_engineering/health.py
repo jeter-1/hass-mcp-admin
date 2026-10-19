@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .approval_identity import approval_identity_health
 from .observability import METRICS
 from .capabilities import (
     BETA_NATIVE_CAPABILITIES,
@@ -117,6 +118,9 @@ class HealthRegistry:
             ),
             "dynamic_upstream_tool_count": len(dynamic_upstream_capabilities()),
             "audit": self.audit.state() if self.audit else {"enabled": False, "configured": False},
+            # HAMCP-205: refused Ingress approval attempts (no identity, not an
+            # administrator, role lookup failed) since process start. Counts only.
+            "approval_identity": approval_identity_health(),
             "logging": {
                 "structured": True,
                 "level": self.settings.log_level if self.settings else "unknown",

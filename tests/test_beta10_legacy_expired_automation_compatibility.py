@@ -12,6 +12,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
+sys.path.insert(0, str(Path(__file__).parent))
+from approval_identity_support import admin_verifier  # noqa: E402
 from ha_mcp_engineering.approval_web import (  # noqa: E402
     create_approval_application,
 )
@@ -313,7 +315,7 @@ class LegacyExpiredAutomationCompatibilityTests(
 
         import httpx
 
-        app = create_approval_application(RuntimeShim(recovered))
+        app = create_approval_application(RuntimeShim(recovered), administrator_verifier=admin_verifier())
         transport = httpx.ASGITransport(
             app=app, client=("172.30.32.2", 12345)
         )

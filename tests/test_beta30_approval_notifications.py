@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
 
+sys.path.insert(0, str(Path(__file__).parent))
+from approval_identity_support import admin_verifier  # noqa: E402
 from ha_mcp_engineering.approval_web import create_approval_application  # noqa: E402
 from ha_mcp_engineering.application import validate_settings  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
@@ -357,7 +359,7 @@ class NotificationGovernanceTests(unittest.IsolatedAsyncioTestCase):
 
         created = await self.create()
         self.service.approve(created["plan_id"], created["plan_hash"])
-        app = create_approval_application(_RuntimeShim(self.service))
+        app = create_approval_application(_RuntimeShim(self.service), administrator_verifier=admin_verifier())
         transport = httpx.ASGITransport(
             app=app, client=("172.30.32.2", 12345)
         )
@@ -473,7 +475,7 @@ class IngressNavigationTests(unittest.IsolatedAsyncioTestCase):
     async def client(self, service):
         import httpx
 
-        app = create_approval_application(_RuntimeShim(service))
+        app = create_approval_application(_RuntimeShim(service), administrator_verifier=admin_verifier())
         transport = httpx.ASGITransport(
             app=app, client=("172.30.32.2", 12345)
         )
@@ -529,7 +531,7 @@ class IngressNavigationTests(unittest.IsolatedAsyncioTestCase):
     async def test_non_ingress_denial_does_not_render_internal_navigation(self):
         import httpx
 
-        app = create_approval_application(_RuntimeShim(_NavigationService()))
+        app = create_approval_application(_RuntimeShim(_NavigationService()), administrator_verifier=admin_verifier())
         transport = httpx.ASGITransport(
             app=app, client=("127.0.0.1", 12345)
         )
