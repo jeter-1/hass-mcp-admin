@@ -629,8 +629,9 @@ SANITIZER_SITES = {
     ("reliability/provider.py", "DirectHaReliabilityProvider._collect_system_log", "sanitize_untrusted_data"): (1, "logs"),
     ("reliability/provider.py", "DirectHaReliabilityProvider._collect_traces.fetch", "sanitize_untrusted_data"): (1, "analysis"),
     ("reliability/provider.py", "DirectHaReliabilityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),
+    ("request_context.py", "request_id_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
     ("tools/compatibility.py", "get_error_log.action", "sanitize_untrusted_data"): (1, "logs"),
-    ("tools/governance.py", "_identifier_metadata", "sanitize_untrusted_data"): (1, "identifier"),
+    ("tools/governance.py", "_identifier_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
     ("trace_normalization.py", "fetch_normalized_trace_list", "sanitize_untrusted_data"): (1, "analysis"),
 }
 
@@ -1006,7 +1007,8 @@ class MarkerCollisionHealthTests(unittest.TestCase):
 
     def test_health_payload_carries_the_counters(self):
         source = (PACKAGE / "health.py").read_text(encoding="utf-8")
-        self.assertIn('"sanitization": {"strict_marker_mode": True, **marker_collision_health()}', source)
+        self.assertIn('"strict_marker_mode": True,\n                **marker_collision_health(),\n'
+                      '                "request_id_replacements": request_id_replacement_count(),', source)
         self.assertIs(H.marker_collision_health, S.marker_collision_health)
         self.assertEqual(set(S.marker_collision_health()), {"marker_collisions", "marker_collision_refusals"})
 
@@ -1256,6 +1258,8 @@ class CommittedFileScanTests(unittest.TestCase):
         })
         self.assertIn(Path(__file__).resolve(), files)
         self.assertIn((ROOT / "tests/test_beta11_sanitization.py").resolve(), files)
+        # Correction batch 3's tests are scanned through the glob.
+        self.assertIn((ROOT / "tests/test_hamcp191_batch3.py").resolve(), files)
         self.assertEqual(syn.scan(files), [])
 
 

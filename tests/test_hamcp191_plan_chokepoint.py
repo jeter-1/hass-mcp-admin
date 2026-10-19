@@ -124,12 +124,30 @@ class IdentifierCreationTests(_GovernanceHarness):
                 rendered = await self.create_through_tool(automation_id)
                 result = json.loads(rendered)
                 self.assertFalse(result["success"])
-                self.assertEqual(result["error_code"], ErrorCode.AUTOMATION_VALIDATION_FAILED.value)
+                # Batch 3: the tool-boundary identifier screen refuses first.
+                self.assertEqual(result["error_code"], ErrorCode.INVALID_REQUEST.value)
+                self.assertEqual(
+                    result["details"],
+                    {"reason": governance_tools.IDENTIFIER_REFUSAL_REASON},
+                )
                 self.assertNotIn(secret, rendered)
                 self.assertNotIn("resource_id", result.get("metadata", {}))
                 self.assertEqual(self.repository.list(), [])
                 self.assertEqual(plan_files(self.repository.root), [])
                 self.assertEqual(self.gateway.writes, 0)
+                # The service gate behind the boundary still refuses a
+                # direct call without echo.
+                with self.assertRaises(GovernanceError) as raised:
+                    await self.service.create_plan(
+                        title="ordinary",
+                        description="ordinary",
+                        operation="create_automation",
+                        automation_id=automation_id,
+                        proposed_config=self.proposed(),
+                    )
+                self.assertEqual(raised.exception.code, ErrorCode.AUTOMATION_VALIDATION_FAILED)
+                self.assertNotIn(secret, json.dumps(raised.exception.details))
+                self.assertEqual(plan_files(self.repository.root), [])
 
     async def test_ordinary_automation_id_is_created_and_echoed(self):
         rendered = await run_tool(
@@ -190,6 +208,31 @@ class IdentifierCreationTests(_GovernanceHarness):
         self.assertEqual(self.repository.content_refusals - before, 1)
         self.assertFalse((self.repository.root / ("f" * 32 + ".json")).exists())
         self.assertNotIn(self.access, disk_text(self.repository.root))
+
+    async def test_strict_identifier_scan_refuses_a_forged_marker_target(self):
+        # Batch 3: since L3 the D11 stored-plan check also runs for this
+        # contract-v1 record and catches a known secret on its own. A forged
+        # marker is tolerated by D11 (stored_plan=True), so only the strict
+        # identifier scan refuses this target.
+        forged = "[REDACTED:access_secret]"
+        self.assertEqual(
+            ST.persistence_safety_errors(
+                {"target": {"target_id": forged}}, (), stored_plan=True
+            ),
+            [],
+        )
+        created = await self.create()
+        stored = self.repository.get(created["plan_id"])
+        fresh = M.ChangePlan.from_dict(
+            {**stored.to_dict(), "plan_id": "e" * 32,
+             "target": {"target_type": "automation", "target_id": forged}}
+        )
+        before = self.repository.content_refusals
+        with self.assertRaises(PlanContentRefused) as raised:
+            self.repository.save(fresh)
+        self.assertTrue(raised.exception.creation)
+        self.assertEqual(self.repository.content_refusals - before, 1)
+        self.assertFalse((self.repository.root / ("e" * 32 + ".json")).exists())
 
 
 # ---------------------------------------------------------------------------
