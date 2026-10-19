@@ -15,6 +15,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from tests.same_thread_asgi_client import SameThreadAsgiTestClient
+from tests.support.process_isolation import restore_after_class
 import yaml
 
 
@@ -743,6 +744,7 @@ class ToolParityTests(unittest.TestCase):
 class BetaApplicationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        restore_after_class(cls)
         class SyntheticCoreSource:
             async def capture_core_snapshot(self):
                 return core_snapshot(
