@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import copy
-from typing import Callable
+from typing import Any, Callable, Iterator
 from bisect import insort
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timedelta, timezone
 from heapq import merge
 from itertools import islice
@@ -16,13 +18,21 @@ import os
 from pathlib import Path
 import re
 import threading
+from ..request_context import current_telemetry
+from ..sanitization import ReferenceMarkerRegistry, screen_plan_content
 from .models import (
+    ApprovalActionKind,
     ApprovalPolicyClass,
+    ApprovalState,
     ChangeOperation,
     ChangePlan,
+    PhysicalConsequence,
     PlanStatus,
+    RiskDelta,
+    RiskLevel,
     StepExecutionStatus,
 )
+from .resources import persistence_safety_errors
 
 
 PLAN_ID = re.compile(r"^[a-f0-9]{32}$")
@@ -75,6 +85,219 @@ class ChangePlanStorageError(RuntimeError):
 
 class PlanHealthSnapshotSuperseded(ChangePlanStorageError):
     """A cooperative health read lost its optimistic source fence."""
+
+
+class PlanContentRefused(ChangePlanStorageError):
+    """The plan-content chokepoint refused a write; nothing was stored.
+
+    ``creation`` is true when no record for the plan existed yet. The
+    exception carries no record content.
+    """
+
+    def __init__(self, *, creation: bool) -> None:
+        super().__init__("Governance plan content refused")
+        self.creation = creation
+
+
+# HAMCP-191 Direction A: the plan-content chokepoint.
+#
+# Every write of a governance plan record goes through
+# ``ChangePlanRepository.save`` and therefore through
+# ``ChangePlanRepository._screen_new_content``. Content equal to the stored
+# record at the same JSON path is old and is written back unchanged; all
+# other string content, identifiers and keys included, passes the strict
+# sanitizer before it reaches disk.
+#
+# Exempt dispatch/recovery fields are defined by schema path and value
+# format, not by text. Each format's alphabet excludes whitespace, brackets,
+# quotes, ``=``, ``@`` and ``%``, so an exempt field cannot carry free text,
+# an assignment, a URL credential or a marker. An exempt value is never
+# rewritten: a value outside its format, or one in which the strict pass or
+# a known secret finds anything, refuses the write instead.
+_HEX32 = re.compile(r"[a-f0-9]{32}")
+_SHA256 = re.compile(r"[a-f0-9]{64}")
+_TIMESTAMP = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
+    r"(?:\.[0-9]{1,6})?(?:Z|[+-][0-9]{2}:[0-9]{2})?"
+)
+# request_context.REQUEST_ID_PATTERN, the only accepted caller request id.
+_REQUEST_ID = re.compile(r"[A-Za-z0-9._:-]{8,128}")
+# secrets.token_urlsafe(24) approval challenge identifiers.
+_CHALLENGE_ID = re.compile(r"[A-Za-z0-9_-]{16,64}")
+
+
+def _matches(pattern: re.Pattern[str]) -> Callable[[str], bool]:
+    return lambda value: pattern.fullmatch(value) is not None
+
+
+def _member(*enums: Any) -> Callable[[str], bool]:
+    allowed = frozenset(item.value for enum in enums for item in enum)
+    return lambda value: value in allowed
+
+
+EXEMPT_FORMATS: dict[str, Callable[[str], bool]] = {
+    "plan_id": _matches(_HEX32),
+    "sha256": _matches(_SHA256),
+    "timestamp": _matches(_TIMESTAMP),
+    "request_id": _matches(_REQUEST_ID),
+    "challenge_id": _matches(_CHALLENGE_ID),
+    "plan_status": _member(PlanStatus),
+    "change_operation": _member(ChangeOperation),
+    "risk_level": _member(RiskLevel),
+    "approval_state": _member(ApprovalState),
+    "policy_class": _member(ApprovalPolicyClass),
+    "risk_delta": _member(RiskDelta),
+    "physical_consequence": _member(PhysicalConsequence),
+    "approval_action_kind": _member(ApprovalActionKind),
+    "step_status": _member(StepExecutionStatus),
+}
+
+_ACK = ("approval", "elevated_risk_acknowledgement")
+_OP = ("operations", "*")
+EXEMPT_FIELDS: dict[tuple[str, ...], str] = {
+    ("plan_id",): "plan_id",
+    ("caller_context", "rollback_source_plan_id"): "plan_id",
+    **{
+        path: "timestamp"
+        for path in (
+            ("created_at",), ("updated_at",), ("expires_at",), ("applied_at",),
+            ("approval", "approved_at"), ("approval", "consumed_at"),
+            ("approval", "approval_expires_at"),
+            ("approval", "challenge_requested_at"),
+            ("approval", "challenge_expires_at"),
+            ("approval", "csrf_issued_at"),
+            (*_ACK, "challenge_requested_at"), (*_ACK, "challenge_expires_at"),
+            (*_ACK, "granted_at"), (*_ACK, "consumed_at"),
+            (*_ACK, "csrf_issued_at"),
+            ("snapshot", "captured_at"), ("verification", "checked_at"),
+            ("rollback", "requested_at"), ("rollback", "approved_at"),
+            ("rollback", "rolled_back_at"), ("events", "*", "timestamp"),
+            (*_OP, "snapshot", "captured_at"),
+            (*_OP, "verification", "checked_at"),
+            ("operational", "verification", "checked_at"),
+            (*_OP, "execution_receipt", "provider_response_recorded_at"),
+        )
+    },
+    **{
+        path: "sha256"
+        for path in (
+            ("current_state_fingerprint",), ("proposed_config_hash",),
+            ("post_apply_fingerprint",),
+            ("approval", "bound_plan_hash"), ("approval", "csrf_digest"),
+            ("approval", "policy_decision_hash"),
+            (*_ACK, "bound_plan_hash"), (*_ACK, "policy_decision_hash"),
+            (*_ACK, "csrf_digest"),
+            ("policy_decision", "policy_subject_hash"),
+            ("policy_decision", "policy_decision_hash"),
+            ("snapshot", "fingerprint"),
+            ("verification", "desired_fingerprint"),
+            ("verification", "actual_fingerprint"),
+            ("rollback", "expected_current_fingerprint"),
+            (*_OP, "current_state_fingerprint"), (*_OP, "proposed_config_hash"),
+            (*_OP, "semantic_projection_hash"), (*_OP, "post_apply_fingerprint"),
+            (*_OP, "snapshot", "fingerprint"),
+            (*_OP, "verification", "desired_fingerprint"),
+            (*_OP, "verification", "actual_fingerprint"),
+            *(
+                (*_OP, "execution_receipt", f"{stage}_{side}_fingerprint")
+                for stage in ("raw", "normalized", "binding")
+                for side in ("approved", "observed")
+            ),
+            (*_OP, "execution_receipt", "resulting_fingerprint"),
+        )
+    },
+    ("apply_request_id",): "request_id",
+    ("rollback", "request_id"): "request_id",
+    ("events", "*", "request_id"): "request_id",
+    ("approval", "challenge_id"): "challenge_id",
+    (*_ACK, "challenge_id"): "challenge_id",
+    ("status",): "plan_status",
+    ("operation",): "change_operation",
+    ("risk", "level"): "risk_level",
+    (*_OP, "risk", "level"): "risk_level",
+    ("approval", "state"): "approval_state",
+    (*_ACK, "state"): "approval_state",
+    (*_ACK, "kind"): "approval_action_kind",
+    ("policy_decision", "policy_class"): "policy_class",
+    ("policy_decision", "risk_delta"): "risk_delta",
+    ("policy_decision", "physical_consequence"): "physical_consequence",
+    (*_OP, "execution_status"): "step_status",
+}
+
+# On an update, a finding on these paths refuses the write: identity,
+# hash-bound configuration and the rollback snapshot must stay exact, so a
+# redacted copy would not be the same plan. Every other new content field
+# (evidence, receipts, failure information, events, notes, verification and
+# dispatch text) is redacted in place. On creation every finding refuses.
+REFUSE_ON_UPDATE: tuple[tuple[str, ...], ...] = (
+    ("target",), ("title",), ("description",), ("requested_by",),
+    ("proposed_config",), ("current_config",),
+    ("normalized_proposed_config",), ("normalized_current_config",),
+    ("snapshot", "config"),
+    (*_OP, "operation_id"), (*_OP, "depends_on"), (*_OP, "resource_type"),
+    (*_OP, "action"), (*_OP, "target_id"), (*_OP, "helper_type"),
+    (*_OP, "proposed_config"), (*_OP, "current_config"),
+    (*_OP, "normalized_proposed_config"), (*_OP, "normalized_current_config"),
+    (*_OP, "snapshot", "config"),
+    ("operational", "family"), ("operational", "operation"),
+    ("operational", "requested_name"), ("operational", "provider"),
+)
+
+
+def exempt_format(pattern: tuple[str, ...]) -> Callable[[str], bool] | None:
+    name = EXEMPT_FIELDS.get(pattern)
+    return EXEMPT_FORMATS[name] if name is not None else None
+
+
+def _refuses_on_update(pattern: tuple[str, ...]) -> bool:
+    return pattern in EXEMPT_FIELDS or any(
+        pattern[: len(prefix)] == prefix for prefix in REFUSE_ON_UPDATE
+    )
+
+
+_PLAN_OUTPUT_REGISTRY: ContextVar[ReferenceMarkerRegistry | None] = ContextVar(
+    "plan_output_registry", default=None
+)
+
+
+@contextmanager
+def bind_plan_output_registry(
+    registry: ReferenceMarkerRegistry,
+) -> Iterator[ReferenceMarkerRegistry]:
+    """Name the identity record of a producer's own output for its saves.
+
+    Without one, the chokepoint uses the current request's registry.
+    """
+
+    token = _PLAN_OUTPUT_REGISTRY.set(registry)
+    try:
+        yield registry
+    finally:
+        _PLAN_OUTPUT_REGISTRY.reset(token)
+
+
+@contextmanager
+def plan_output_registry() -> Iterator[ReferenceMarkerRegistry]:
+    """A fresh identity record for producer output written in this block.
+
+    A producer that sanitizes new plan content itself passes the yielded
+    registry to that pass and saves inside the block, so the chokepoint
+    keeps those exact output objects. The request's own record (or an outer
+    block's) stays consulted, read-only.
+    """
+
+    with bind_plan_output_registry(
+        ReferenceMarkerRegistry(inherits=_plan_output_registry())
+    ) as registry:
+        yield registry
+
+
+def _plan_output_registry() -> ReferenceMarkerRegistry | None:
+    registry = _PLAN_OUTPUT_REGISTRY.get()
+    if registry is not None:
+        return registry
+    telemetry = current_telemetry()
+    return telemetry.sanitizer_registry if telemetry is not None else None
 
 
 _PLAN_NAVIGATION_FIELDS = (
@@ -155,6 +378,10 @@ class ChangePlanRepository:
         self.retention_days = retention_days
         self.corruption_count = 0
         self.write_failures = 0
+        self.content_redactions = 0
+        self.content_refusals = 0
+        self.recovery_refusals = 0
+        self._known_secrets: Callable[[], tuple[str, ...]] = tuple
         self._lock = threading.RLock()
         self._entries: dict[str, PlanNavigationEntry] = {}
         self._ordered_keys: list[tuple[float, str]] = []
@@ -558,6 +785,86 @@ class ChangePlanRepository:
             )
         return self._path(plan.plan_id)
 
+    def bind_known_secrets(
+        self, known_secrets: Callable[[], tuple[str, ...]]
+    ) -> None:
+        """Give the chokepoint the governance service's known secrets."""
+
+        self._known_secrets = known_secrets
+
+    def _stored_record(self, path: Path) -> dict[str, Any] | None:
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError):
+            # An unreadable baseline proves nothing old: all content is new.
+            return None
+        return value if isinstance(value, dict) else None
+
+    def _screen_new_content(
+        self, plan: ChangePlan, path: Path
+    ) -> dict[str, Any]:
+        """HAMCP-191 Direction A: the one plan-persistence chokepoint.
+
+        Strict-sanitizes all new string content of the record about to be
+        stored and returns the record to write. On creation any finding
+        refuses the write; on an update a finding on an identity,
+        configuration, snapshot or exempt dispatch path refuses it and any
+        other finding is redacted in place, with ``plan`` rebuilt from the
+        stored form so a caller's response equals the record. After the
+        strict pass, every record (any contract version, HAMCP-191 L3) must
+        also pass the D11 stored-plan check over its whole content, which
+        only old content can need.
+        Raises ``PlanContentRefused``; never returns content in an error.
+        """
+
+        record = plan.to_dict()
+        baseline = self._stored_record(path)
+        creation = baseline is None
+        known_secrets = tuple(
+            value for value in self._known_secrets() if value
+        )
+        registry = _plan_output_registry()
+        screen = screen_plan_content(
+            record,
+            baseline=baseline,
+            source=asdict(plan) if registry is not None else None,
+            known_secrets=known_secrets,
+            registry=registry,
+            exempt=exempt_format,
+            refuse=(lambda pattern: True) if creation else _refuses_on_update,
+        )
+        if screen.refused:
+            self.content_refusals += 1
+            raise PlanContentRefused(creation=creation)
+        value = screen.value
+        try:
+            # Stored-plan re-scan: D11 exception (HAMCP-207). New content is
+            # strict-clean here; only old content can rely on D11. It runs
+            # for every contract version (HAMCP-191 L3).
+            unsafe = bool(
+                persistence_safety_errors(
+                    value, known_secrets, stored_plan=True
+                )
+            )
+        except Exception:
+            unsafe = True
+        if unsafe:
+            self.content_refusals += 1
+            raise PlanContentRefused(creation=creation)
+        if screen.redaction_applied:
+            try:
+                rebuilt = ChangePlan.from_dict(value)
+            except Exception as exc:
+                self.content_refusals += 1
+                raise PlanContentRefused(creation=creation) from exc
+            for item in fields(ChangePlan):
+                setattr(plan, item.name, getattr(rebuilt, item.name))
+            value = plan.to_dict()
+            self.content_redactions += 1
+        return value
+
     def save(self, plan: ChangePlan) -> None:
         path = self._path_for_plan(plan)
         other = (
@@ -568,9 +875,6 @@ class ChangePlanRepository:
         temporary = path.with_suffix(
             f".tmp-{os.getpid()}-{threading.get_ident()}"
         )
-        payload = json.dumps(
-            plan.to_dict(), sort_keys=True, separators=(",", ":")
-        )
         try:
             with self._lock:
                 self._ensure_navigation_index()
@@ -578,6 +882,11 @@ class ChangePlanRepository:
                     raise ChangePlanStorageError(
                         "Ambiguous governance record identifier"
                     )
+                payload = json.dumps(
+                    self._screen_new_content(plan, path),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
                 with open(temporary, "x", encoding="utf-8") as handle:
                     handle.write(payload)
                     handle.flush()
@@ -820,8 +1129,8 @@ class ChangePlanRepository:
                         ),
                     }
                 plan.updated_at = timestamp
-                self.save(plan)
-                recovered += 1
+                if self._recovery_save(plan):
+                    recovered += 1
                 continue
             if plan.contract_version >= 2:
                 attempted_write_count = 0
@@ -1020,8 +1329,8 @@ class ChangePlanRepository:
                     "completed_operation_count": completed_operation_count,
                 }
                 plan.updated_at = timestamp
-                self.save(plan)
-                recovered += 1
+                if self._recovery_save(plan):
+                    recovered += 1
                 continue
 
             # Contract-v1 restart recovery is intentionally unchanged.
@@ -1031,9 +1340,20 @@ class ChangePlanRepository:
                 "error_code": "automation_apply_failed",
                 "reason": "An incomplete apply was detected after server restart.",
             }
-            self.save(plan)
-            recovered += 1
+            if self._recovery_save(plan):
+                recovered += 1
         return recovered
+
+    def _recovery_save(self, plan: ChangePlan) -> bool:
+        """A refused recovery write leaves that record as stored; startup
+        continues with the next record."""
+
+        try:
+            self.save(plan)
+        except PlanContentRefused:
+            self.recovery_refusals += 1
+            return False
+        return True
 
     def health(self, *, validated: bool = False) -> dict[str, int | str | bool]:
         with self._lock:

@@ -459,12 +459,22 @@ def _bounded_json(output: str, limit: int) -> str:
 
 
 def dump_json(data: Any, limit: int = MAX_CHARS) -> str:
+    return dump_json_with_truncation(data, limit)[0]
+
+
+def dump_json_with_truncation(data: Any, limit: int = MAX_CHARS) -> tuple[str, bool]:
+    """Render ``data`` and say structurally whether the size bound cut it.
+
+    HAMCP-191 X1: the flag comes from the branch taken, never from searching
+    the rendered text, which upstream data can contain.
+    """
+
     if type(limit) is not int or limit < 2:
         raise ValueError("response bound must be an integer of at least two")
     output = json.dumps(data, indent=2, default=str)
     if len(output) <= limit:
-        return output
+        return output, False
     compact = _compact_json(data)
     if len(compact) <= limit:
-        return compact
-    return _bounded_json(output, limit)
+        return compact, False
+    return _bounded_json(output, limit), True

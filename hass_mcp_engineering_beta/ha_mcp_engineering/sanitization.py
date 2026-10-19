@@ -5,15 +5,20 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 import re
+import threading
 import unicodedata
-from typing import Any
+from typing import Any, Iterable
 from urllib.parse import unquote
 
 
+# The marker grammar Engineering emits. HAMCP-191: no pass trusts input text
+# of this shape; it is only the form of the markers the sanitizer writes.
 REDACTION_MARKER = re.compile(r"\[REDACTED:[a-z0-9_]+\]")
-REPEATED_REDACTION_MARKER = re.compile(
+# HAMCP-191 D11: only the stored-plan re-scan still reads these by text.
+_STORED_PLAN_REPEATED_MARKER = re.compile(
     r"(\[REDACTED:([a-z0-9_]+)\])(?:\s*\1)+"
 )
+TRUNCATION_SUFFIX = "...<truncated>"
 MAX_REDACTION_CATEGORIES = 16
 SANITIZATION_FAILURE_MARKER = "[REDACTED:sanitization_failure]"
 
@@ -134,14 +139,28 @@ _SEGMENT_RULES = (
 )
 
 
-# HAMCP-162 H3: redaction-marker look-alikes in untrusted text. Under
-# ``identity_markers_only`` text never decides that something is already
-# redacted; text that a client could read as an Engineering marker is
-# replaced whole by this marker instead.
+# HAMCP-162 H3 / HAMCP-191 D1, D2: redaction-marker look-alikes in untrusted
+# text. Text never decides that something is already redacted; text that a
+# client could read as an Engineering marker is replaced whole by this marker.
 MARKER_COLLISION_CATEGORY = "redaction_marker_collision"
 MARKER_COLLISION = "[REDACTED:redaction_marker_collision]"
 MAX_MARKER_DECODE_ROUNDS = 4
-_MARKER_LIKE = re.compile(r"[\[(<{][\W_]*(?:redacted|truncated)")
+# An opener followed by ``[\W_]*`` and a keyword, found in linear time: only
+# the start of each maximal non-word run is tried (the lookbehind), the run is
+# taken whole (possessive), and the run must hold an opener. The plain
+# ``[\[(<{][\W_]*(?:redacted|truncated)`` backtracks quadratically on long
+# opener runs, which untrusted text and 64 KiB templates can supply.
+_MARKER_RUN = re.compile(r"(?<![\W_])[\W_]++(?=redacted|truncated)")
+_MARKER_OPENERS = frozenset("[(<{")
+
+
+def _marker_run_present(folded: str) -> bool:
+    return any(
+        not _MARKER_OPENERS.isdisjoint(match.group())
+        for match in _MARKER_RUN.finditer(folded)
+    )
+
+
 _MARKER_FOLD = str.maketrans(
     {
         # Opening and closing bracket and colon look-alikes NFKC keeps.
@@ -170,6 +189,10 @@ def _marker_fold(text: str) -> str:
     # NFKC builds so their combining marks can be dropped. The look-alike
     # table applies before normalization and again before and after casefold
     # (NFKC and casefold map some look-alikes, such as U+03F9, off the table).
+    if text.isascii():
+        # HAMCP-191: the same result for ASCII, where the table, NFKC, NFD and
+        # the format/combining filter are all identities and casefold is lower.
+        return text.lower()
     folded = text.translate(_MARKER_FOLD)
     folded = unicodedata.normalize("NFD", unicodedata.normalize("NFKC", folded))
     folded = "".join(
@@ -190,7 +213,7 @@ def marker_like_text(text: str) -> bool:
 
     value = text
     for _round in range(MAX_MARKER_DECODE_ROUNDS + 1):
-        if _MARKER_LIKE.search(_marker_fold(value)):
+        if _marker_run_present(_marker_fold(value)):
             return True
         decoded = unquote(value, errors="replace")
         if decoded == value:
@@ -251,20 +274,62 @@ class EngineeringMarker:
 
 
 class ReferenceMarkerRegistry:
-    """The markers one YAML read minted, held by object identity (H2, H3).
+    """The markers one request produced, held by object identity (H2, H3).
 
     The opt-in exemption trusts a value only when it is the very object this
     registry minted: never a type alone, a mapping shape or a marker-shaped
     string. Upstream data, a truncation shell or a copy cannot be
     registered. Holding each marker keeps its ``id`` from being reused while
     the registry lives.
+
+    HAMCP-191 D4 adds the request's identity record of output strings: the
+    exact ``str`` objects a strict pass given this registry produced that
+    carry an Engineering marker or the truncation suffix. A later pass given
+    the same registry keeps such an object as it is; equal text from anywhere
+    else, a copy or a slice is a different object and is scanned. One
+    registry serves one request (one tool invocation or one audit record)
+    or one cached dependency snapshot; it is passed explicitly and never
+    stored globally.
+
+    Each output records the known secrets the pass that produced it
+    replaced. A later pass with a secret that pass did not have keeps the
+    object only when that secret does not occur in it; otherwise the string
+    is scanned like any other, so identity never skips a secret check.
     """
 
-    __slots__ = ("_minted", "_emitted")
+    __slots__ = ("_minted", "_emitted", "_outputs", "_inherits")
 
-    def __init__(self) -> None:
+    def __init__(self, *, inherits: "ReferenceMarkerRegistry | None" = None) -> None:
         self._minted: dict[int, ReferenceMarker] = {}
         self._emitted: dict[int, EngineeringMarker] = {}
+        self._outputs: dict[int, tuple[str, frozenset[str]]] = {}
+        # A long-lived record (a cached dependency snapshot's) consulted
+        # read-only, so one request's outputs never grow it.
+        self._inherits = inherits
+
+    def register_output(
+        self, value: str, known_secrets: Iterable[str] = ()
+    ) -> str:
+        if type(value) is not str:
+            raise TypeError("register_output takes an exact str")
+        self._outputs[id(value)] = (
+            value,
+            frozenset(secret for secret in known_secrets if secret),
+        )
+        return value
+
+    def output(self, value: Any, known_secrets: Iterable[str] = ()) -> bool:
+        if type(value) is not str:
+            return False
+        entry = self._outputs.get(id(value))
+        if entry is None or entry[0] is not value:
+            return self._inherits is not None and self._inherits.output(
+                value, known_secrets
+            )
+        return not any(
+            secret and secret not in entry[1] and secret in value
+            for secret in known_secrets
+        )
 
     def mint(self, *, kind: str, name: str, default_redacted: bool = False) -> ReferenceMarker:
         marker = ReferenceMarker(kind=kind, name=name, default_redacted=default_redacted)
@@ -290,10 +355,85 @@ class SanitizationResult:
     redaction_categories: tuple[str, ...]
     truncated_field_count: int = 0
     failed_closed: bool = False
+    marker_collision_count: int = 0
 
     @property
     def redaction_applied(self) -> bool:
         return self.redacted_field_count > 0
+
+
+# HAMCP-191 Finding 11: redaction makes a response partial, never complete,
+# and the evidence of it is bounded counts and category names, never values.
+MAX_REDACTION_COUNT = 1_000_000
+
+
+class RedactionTally:
+    """Bounded redaction evidence accumulated over one response's passes."""
+
+    __slots__ = ("redacted_field_count", "categories", "marker_collision_count")
+
+    def __init__(self) -> None:
+        self.redacted_field_count = 0
+        self.categories: set[str] = set()
+        self.marker_collision_count = 0
+
+    def add(self, result: SanitizationResult) -> SanitizationResult:
+        self.redacted_field_count += result.redacted_field_count
+        self.categories.update(result.redaction_categories)
+        self.marker_collision_count += result.marker_collision_count
+        return result
+
+    @property
+    def applied(self) -> bool:
+        return self.redacted_field_count > 0
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "redacted_field_count": min(
+                self.redacted_field_count, MAX_REDACTION_COUNT
+            ),
+            "categories": sorted(self.categories)[:MAX_REDACTION_CATEGORIES],
+            "category_count": len(self.categories),
+            "marker_collision_count": min(
+                self.marker_collision_count, MAX_REDACTION_COUNT
+            ),
+        }
+
+
+def redaction_summary(result: SanitizationResult) -> dict[str, Any] | None:
+    """The bounded Finding 11 evidence for one pass, or None if nothing was redacted."""
+
+    tally = RedactionTally()
+    tally.add(result)
+    return tally.summary() if tally.applied else None
+
+
+# HAMCP-191 D3: process health counters for marker collisions. They count
+# events, never decide anything, and hold no data.
+_COUNTER_LOCK = threading.Lock()
+_COUNTERS = {"marker_collisions": 0, "marker_collision_refusals": 0}
+
+
+def record_marker_collision_refusal(result: SanitizationResult) -> bool:
+    """Count a refusal a gate made because of a marker collision (D3).
+
+    Returns whether ``result`` carried a collision; a gate calls it on the
+    result it refuses, so the count is how often look-alike text blocked a
+    governed path.
+    """
+
+    collided = result.marker_collision_count > 0
+    if collided:
+        with _COUNTER_LOCK:
+            _COUNTERS["marker_collision_refusals"] += 1
+    return collided
+
+
+def marker_collision_health() -> dict[str, int]:
+    """The D3 counters since process start, for the health payload."""
+
+    with _COUNTER_LOCK:
+        return dict(_COUNTERS)
 
 
 def normalize_key(key: Any) -> str:
@@ -346,34 +486,44 @@ SEGMENT_MEMO_TEXT_LIMIT = 4_096
 
 
 class SegmentMemo:
-    """Memo of the default pass's pure segment scan for one job (HAMCP-171 D5).
+    """Memo of one pass's pure string scan for one job (HAMCP-171 D5).
 
-    ``_Sanitizer._sanitize_segment`` is a pure function of the segment text
-    and the known-secret tuple. A memo is bound to one secret tuple and is
-    owned by one caller job, which discards it at the end. It stores sanitized
-    segment text and categories, never a verdict, and it is bounded.
+    The scan is a pure function of the string text and the known-secret
+    tuple. A memo is bound to one secret tuple and to one pass (the strict
+    pass, or the D11 stored-plan re-scan) and is owned by one caller job,
+    which discards it at the end. It stores the scanned text, its categories and whether it carries an
+    emitted marker, never a verdict, and it is bounded. The identity record
+    is consulted before the memo, so a memo hit never trusts text.
     """
 
-    __slots__ = ("known_secrets", "hits", "misses", "_results")
+    __slots__ = ("known_secrets", "hits", "misses", "_results", "_pass")
 
     def __init__(self, known_secrets: tuple[str, ...]) -> None:
         self.known_secrets = tuple(secret for secret in known_secrets if secret)
         self.hits = 0
         self.misses = 0
-        self._results: dict[str, tuple[str, frozenset[str]]] = {}
+        self._results: dict[str, tuple[Any, ...]] = {}
+        # The pass the memo serves, bound on first use: the strict scan and
+        # the D11 stored-plan segment scan never share a memo.
+        self._pass: str | None = None
 
     def __len__(self) -> int:
         return len(self._results)
 
 
 class _Sanitizer:
+    _PASS = "strict"
+    # HAMCP-191 H3: True only for the Core log window pass, which judges
+    # marker look-alikes per line and never merges markers across lines.
+    _LINE_WINDOW = False
+
     def __init__(
         self,
         *,
         known_secrets: tuple[str, ...],
         max_string: int | None,
         preserve_reference_markers: ReferenceMarkerRegistry | None = None,
-        identity_markers_only: bool = False,
+        registry: ReferenceMarkerRegistry | None = None,
         segment_memo: SegmentMemo | None = None,
     ) -> None:
         self.known_secrets = tuple(secret for secret in known_secrets if secret)
@@ -383,21 +533,26 @@ class _Sanitizer:
         ):
             raise TypeError("preserve_reference_markers takes a ReferenceMarkerRegistry")
         self.minted_markers = preserve_reference_markers
-        if type(identity_markers_only) is not bool:
-            raise TypeError("identity_markers_only takes a bool")
-        self.identity_markers_only = identity_markers_only
+        if registry is not None and type(registry) is not ReferenceMarkerRegistry:
+            raise TypeError("registry takes a ReferenceMarkerRegistry")
+        self.registry = registry
         if segment_memo is not None and (
             type(segment_memo) is not SegmentMemo
-            or identity_markers_only
             or segment_memo.known_secrets != self.known_secrets
         ):
-            # A memo is valid only for the default pass and its own secrets.
+            # A memo is valid only for its own secrets.
             raise TypeError("segment_memo does not match this sanitizer")
+        if segment_memo is not None:
+            if segment_memo._pass is None:
+                segment_memo._pass = self._PASS
+            elif segment_memo._pass != self._PASS:
+                raise TypeError("segment_memo serves another sanitizer pass")
         self.segment_memo = segment_memo
         self.redacted_field_count = 0
         self.categories: set[str] = set()
         self.truncated_field_count = 0
         self.failed_closed = False
+        self.marker_collision_count = 0
 
     @staticmethod
     def _normalize_key(key: Any) -> str:
@@ -406,6 +561,13 @@ class _Sanitizer:
     @staticmethod
     def _marker(category: str) -> str:
         return f"[REDACTED:{category}]"
+
+    def _own(self, text: str) -> str:
+        # D4: an Engineering-produced string carrying a marker joins this
+        # request's identity record, so a later pass keeps it by identity.
+        if self.registry is not None:
+            self.registry.register_output(text, self.known_secrets)
+        return text
 
     def _category_for_key(self, key: str, path: tuple[str, ...]) -> str | None:
         return key_category(key, path)
@@ -419,86 +581,10 @@ class _Sanitizer:
         if self.max_string is None or len(value) <= self.max_string:
             return value
         self.truncated_field_count += 1
-        return value[: self.max_string] + "...<truncated>"
+        return self._own(value[: self.max_string] + TRUNCATION_SUFFIX)
 
-    def _replace(
-        self,
-        text: str,
-        pattern: re.Pattern[str],
-        category: str,
-        replacement,
-        categories: set[str],
-    ) -> str:
-        def replace(match: re.Match[str]) -> str:
-            categories.add(category)
-            return replacement(match)
-
-        parts = REDACTION_MARKER.split(text)
-        markers = REDACTION_MARKER.findall(text)
-        output: list[str] = []
-        for index, part in enumerate(parts):
-            output.append(pattern.sub(replace, part))
-            if index < len(markers):
-                output.append(markers[index])
-        return "".join(output)
-
-    def _sanitize_segment(self, text: str) -> tuple[str, set[str]]:
-        categories: set[str] = set()
-        safe = text
-        for secret in self.known_secrets:
-            if secret in safe:
-                safe = safe.replace(secret, self._marker("token"))
-                categories.add("token")
-
-        for pattern, category, form in _SEGMENT_RULES:
-            safe = self._replace(
-                safe,
-                pattern,
-                category,
-                lambda match, category=category, form=form: "".join(
-                    piece if type(piece) is str else piece.text
-                    for piece in self._replacement(match, category, form)
-                ),
-                categories,
-            )
-        # Earlier rules introduce markers. Resplit before scanning serialized
-        # assignments so a later rule cannot interpret or partially rewrite a
-        # marker that was just emitted.
-        parts = REDACTION_MARKER.split(safe)
-        markers = REDACTION_MARKER.findall(safe)
-        rebuilt: list[str] = []
-        for index, part in enumerate(parts):
-            for pattern, category in _SERIALIZED_PATTERNS:
-                part = self._replace(
-                    part,
-                    pattern,
-                    category,
-                    lambda match, category=category: match.group(1)
-                    + self._marker(category),
-                    categories,
-                )
-            rebuilt.append(part)
-            if index < len(markers):
-                rebuilt.append(markers[index])
-        safe = "".join(rebuilt)
-        return safe, categories
-
-    def _segment(self, text: str) -> tuple[str, set[str]]:
-        memo = self.segment_memo
-        if memo is None:
-            return self._sanitize_segment(text)
-        cached = memo._results.get(text)
-        if cached is not None:
-            memo.hits += 1
-            return cached[0], set(cached[1])
-        safe, categories = self._sanitize_segment(text)
-        memo.misses += 1
-        if (
-            len(text) <= SEGMENT_MEMO_TEXT_LIMIT
-            and len(memo._results) < SEGMENT_MEMO_ENTRY_LIMIT
-        ):
-            memo._results[text] = (safe, frozenset(categories))
-        return safe, categories
+    def _secret_replacement(self, match: re.Match[str]) -> list[Any]:
+        return [_Emitted(self._marker("token"))]
 
     def _replacement(self, match: re.Match[str], category: str, form: str) -> list[Any]:
         marker = _Emitted(self._marker(category))
@@ -526,24 +612,24 @@ class _Sanitizer:
             output.append(piece[position:])
         return output
 
-    def _strict_string(self, value: str) -> str:
-        """H3: scan the whole untrusted string; trust no marker by its text.
+    def _scan(self, value: str) -> tuple[str, frozenset[str], bool]:
+        """H3/HAMCP-191: every rule over the whole string, then the collision.
 
-        Text that could read as an Engineering marker is replaced whole.
-        Every other string runs through every rule; a marker a rule emits is
-        an ``_Emitted`` piece, which later rules skip by type, never by text.
+        Known-secret replacement and every free-text and serialized rule run
+        first and record their categories; a marker a rule emits is an
+        ``_Emitted`` piece, which later rules skip by type, never by text.
+        Only then is the original string judged: text that could read as an
+        Engineering marker makes the whole string the collision marker, with
+        the collision recorded in addition to every category found.
         """
 
-        if marker_like_text(value):
-            self._record_field({MARKER_COLLISION_CATEGORY})
-            return MARKER_COLLISION
         categories: set[str] = set()
         pieces: list[Any] = [value]
         for secret in self.known_secrets:
             pieces = self._apply(
                 pieces,
                 re.compile(re.escape(secret)),
-                lambda _match: [_Emitted(self._marker("token"))],
+                self._secret_replacement,
                 lambda: categories.add("token"),
             )
         rules = [*_SEGMENT_RULES, *((pattern, category, "prefix") for pattern, category in _SERIALIZED_PATTERNS)]
@@ -556,14 +642,18 @@ class _Sanitizer:
                 ),
                 lambda category=category: categories.add(category),
             )
-        self._record_field(categories)
+        if not self._LINE_WINDOW and marker_like_text(value):
+            categories.add(MARKER_COLLISION_CATEGORY)
+            return MARKER_COLLISION, frozenset(categories), True
         # One marker per run of identical emitted markers separated only by
-        # whitespace, as the default pass does; decided by type, not text.
+        # whitespace; decided by type, not text.
         output: list[str] = []
         last: _Emitted | None = None
         gap: list[str] = []
+        emitted = False
         for piece in pieces:
             if type(piece) is _Emitted:
+                emitted = True
                 if last is not None and last.text == piece.text and not "".join(gap).strip():
                     gap = []
                     continue
@@ -572,7 +662,9 @@ class _Sanitizer:
                 output.append(piece.text)
                 last = piece
             elif piece:
-                if last is not None and not piece.strip():
+                if last is not None and not piece.strip() and not (
+                    self._LINE_WINDOW and "\n" in piece
+                ):
                     gap.append(piece)
                 else:
                     output.extend(gap)
@@ -580,29 +672,43 @@ class _Sanitizer:
                     output.append(piece)
                     last = None
         output.extend(gap)
-        return self._truncate("".join(output))
+        return "".join(output), frozenset(categories), emitted
+
+    def _scan_memo(self, value: str) -> tuple[str, frozenset[str], bool]:
+        memo = self.segment_memo
+        if memo is None:
+            return self._scan(value)
+        cached = memo._results.get(value)
+        if cached is not None:
+            memo.hits += 1
+            return cached
+        result = self._scan(value)
+        memo.misses += 1
+        if (
+            len(value) <= SEGMENT_MEMO_TEXT_LIMIT
+            and len(memo._results) < SEGMENT_MEMO_ENTRY_LIMIT
+        ):
+            memo._results[value] = result
+        return result
 
     def _sanitize_string(self, value: str) -> str:
-        if self.identity_markers_only:
-            return self._strict_string(value)
-        # Existing markers are immutable delimiters. Only the text between them
-        # is scanned, so repeat sanitation is deterministic and idempotent.
-        parts = REDACTION_MARKER.split(value)
-        markers = REDACTION_MARKER.findall(value)
-        categories: set[str] = set()
-        output: list[str] = []
-        for index, part in enumerate(parts):
-            safe, detected = self._segment(part)
-            output.append(safe)
-            categories.update(detected)
-            if index < len(markers):
-                output.append(markers[index])
-        self._record_field(categories)
-        # Overlapping key-aware and free-text detections may identify the same
-        # original value. Preserve one stable marker without weakening either
-        # detection pass or changing idempotence.
-        deduplicated = REPEATED_REDACTION_MARKER.sub(r"\1", "".join(output))
-        return self._truncate(deduplicated)
+        """The only string path (HAMCP-191 D1): trust no marker by its text.
+
+        A string this request's identity record holds is Engineering's own
+        output: it is bounded again but never rescanned or recounted. Every
+        other string, equal text included, runs ``_scan``.
+        """
+
+        if self.registry is not None and self.registry.output(value, self.known_secrets):
+            return self._truncate(value)
+        text, categories, emitted = self._scan_memo(value)
+        self._record_field(set(categories))
+        if MARKER_COLLISION_CATEGORY in categories:
+            self.marker_collision_count += 1
+            return self._own(MARKER_COLLISION)
+        if emitted:
+            text = self._own(text)
+        return self._truncate(text)
 
     def _preserved(self, value: Any) -> bool:
         return self.minted_markers is not None and self.minted_markers.minted(value)
@@ -612,11 +718,11 @@ class _Sanitizer:
         # look-alike mapping is ordinary data.
         if not self._preserved(value):
             self._record_field({"reference_marker"})
-            return REFERENCE_MARKER_DENIED
+            return self._own(REFERENCE_MARKER_DENIED)
         if value.valid():
             return value
         self._record_field({"reference_malformed"})
-        return REFERENCE_MALFORMED
+        return self._own(REFERENCE_MALFORMED)
 
     def _engineering_marker(self, value: Any) -> Any:
         # H3: registry identity only; an unregistered marker or a subclass is
@@ -629,14 +735,18 @@ class _Sanitizer:
         ):
             return value
         self._record_field({MARKER_COLLISION_CATEGORY})
-        return MARKER_COLLISION
+        self.marker_collision_count += 1
+        return self._own(MARKER_COLLISION)
 
-    def _key_text(self, raw_key: Any, key_category: str | None) -> str:
-        # The default pass keeps a sensitive key's own text; under H3 every
-        # key string passes the scan.
-        if key_category and not self.identity_markers_only:
-            return str(raw_key)
+    def _key_text(self, raw_key: Any) -> str:
+        # H3/HAMCP-191: every key string passes the scan, a sensitive key's
+        # own text included.
         return self._sanitize_string(str(raw_key))
+
+    def _failure(self) -> str:
+        self.failed_closed = True
+        self._record_field({"sanitization_failure"})
+        return self._own(SANITIZATION_FAILURE_MARKER)
 
     def sanitize(self, value: Any, path: tuple[str, ...] = ()) -> Any:
         if type(value) is ReferenceMarker:
@@ -644,28 +754,31 @@ class _Sanitizer:
         if isinstance(value, ReferenceMarker):
             # A subclass is never preserved and never rendered through repr.
             self._record_field({"reference_marker"})
-            return REFERENCE_MARKER_DENIED
+            return self._own(REFERENCE_MARKER_DENIED)
         if isinstance(value, EngineeringMarker):
             return self._engineering_marker(value)
         if isinstance(value, Mapping):
             safe: dict[str, Any] = {}
             for raw_key, item in value.items():
                 key = self._normalize_key(raw_key)
+                safe_key: str | None = None
                 try:
                     key_category = self._category_for_key(key, path)
+                    safe_key = self._key_text(raw_key)
                     if self._preserved(item):
-                        safe[self._key_text(raw_key, key_category)] = self._reference_marker(item)
+                        safe[safe_key] = self._reference_marker(item)
                         continue
                     if key_category:
-                        safe[self._key_text(raw_key, key_category)] = self._marker(key_category)
+                        safe[safe_key] = self._own(self._marker(key_category))
                         self._record_field({key_category})
                     else:
-                        safe_key = self._sanitize_string(str(raw_key))
                         safe[safe_key] = self.sanitize(item, (*path, key))
                 except Exception:
-                    self.failed_closed = True
-                    safe[str(raw_key)] = SANITIZATION_FAILURE_MARKER
-                    self._record_field({"sanitization_failure"})
+                    # HAMCP-191: the key is written only as its scanned text;
+                    # a key that never finished its scan is withheld.
+                    if safe_key is None:
+                        safe_key = self._own(SANITIZATION_FAILURE_MARKER)
+                    safe[safe_key] = self._failure()
             return safe
         if isinstance(value, list):
             return [self._sanitize_item(item, (*path, "item")) for item in value]
@@ -675,25 +788,228 @@ class _Sanitizer:
             try:
                 return self._sanitize_string(value)
             except Exception:
-                self.failed_closed = True
-                self._record_field({"sanitization_failure"})
-                return SANITIZATION_FAILURE_MARKER
+                return self._failure()
         if value is None or isinstance(value, (bool, int, float)):
             return value
         try:
             return self._sanitize_string(repr(value))
         except Exception:
-            self.failed_closed = True
-            self._record_field({"sanitization_failure"})
-            return SANITIZATION_FAILURE_MARKER
+            return self._failure()
 
     def _sanitize_item(self, item: Any, path: tuple[str, ...]) -> Any:
         try:
             return self.sanitize(item, path)
         except Exception:
-            self.failed_closed = True
-            self._record_field({"sanitization_failure"})
-            return SANITIZATION_FAILURE_MARKER
+            return self._failure()
+
+
+class _StoredPlanSanitizer(_Sanitizer):
+    """HAMCP-191 D11: the re-scan of a stored change plan, and nothing else.
+
+    A stored plan has been through ``ChangePlan.to_dict()`` and the plan
+    database, so no string in it is the object Engineering produced and the
+    identity record cannot hold it. Until HAMCP-207 persists that identity,
+    this pass keeps beta.19's marker tolerance for stored plans only: text
+    between canonical ``[REDACTED:<category>]`` markers is scanned by every
+    rule, the markers themselves are kept and not counted, and look-alike
+    text is not judged. Every other part of the strict sanitizer (key text,
+    reference markers, failure handling, truncation) is unchanged. Only the
+    allow-listed stored-plan call sites may use it (``rescan_stored_plan``).
+    """
+
+    _PASS = "stored_plan"
+
+    def _replace(self, text: str, pattern: re.Pattern[str], category: str, replacement, categories: set[str]) -> str:
+        def replace(match: re.Match[str]) -> str:
+            categories.add(category)
+            return replacement(match)
+
+        parts = REDACTION_MARKER.split(text)
+        markers = REDACTION_MARKER.findall(text)
+        output: list[str] = []
+        for index, part in enumerate(parts):
+            output.append(pattern.sub(replace, part))
+            if index < len(markers):
+                output.append(markers[index])
+        return "".join(output)
+
+    def _segment_scan(self, text: str) -> tuple[str, frozenset[str]]:
+        categories: set[str] = set()
+        safe = text
+        for secret in self.known_secrets:
+            if secret in safe:
+                safe = safe.replace(secret, self._marker("token"))
+                categories.add("token")
+        for pattern, category, form in _SEGMENT_RULES:
+            safe = self._replace(
+                safe,
+                pattern,
+                category,
+                lambda match, category=category, form=form: "".join(
+                    piece if type(piece) is str else piece.text
+                    for piece in self._replacement(match, category, form)
+                ),
+                categories,
+            )
+        # Resplit so a serialized rule never rewrites a marker just emitted.
+        parts = REDACTION_MARKER.split(safe)
+        markers = REDACTION_MARKER.findall(safe)
+        rebuilt: list[str] = []
+        for index, part in enumerate(parts):
+            for pattern, category in _SERIALIZED_PATTERNS:
+                part = self._replace(
+                    part,
+                    pattern,
+                    category,
+                    lambda match, category=category: match.group(1) + self._marker(category),
+                    categories,
+                )
+            rebuilt.append(part)
+            if index < len(markers):
+                rebuilt.append(markers[index])
+        return "".join(rebuilt), frozenset(categories)
+
+    def _segment(self, text: str) -> tuple[str, frozenset[str]]:
+        memo = self.segment_memo
+        if memo is None:
+            return self._segment_scan(text)
+        cached = memo._results.get(text)
+        if cached is not None:
+            memo.hits += 1
+            return cached
+        result = self._segment_scan(text)
+        memo.misses += 1
+        if len(text) <= SEGMENT_MEMO_TEXT_LIMIT and len(memo._results) < SEGMENT_MEMO_ENTRY_LIMIT:
+            memo._results[text] = result
+        return result
+
+    def _sanitize_string(self, value: str) -> str:
+        parts = REDACTION_MARKER.split(value)
+        markers = REDACTION_MARKER.findall(value)
+        categories: set[str] = set()
+        output: list[str] = []
+        for index, part in enumerate(parts):
+            safe, detected = self._segment(part)
+            output.append(safe)
+            categories.update(detected)
+            if index < len(markers):
+                output.append(markers[index])
+        self._record_field(categories)
+        deduplicated = _STORED_PLAN_REPEATED_MARKER.sub(r"\1", "".join(output))
+        return self._truncate(deduplicated)
+
+
+class _LineWindowSanitizer(_Sanitizer):
+    """HAMCP-191 H3: one newline-delimited log window, in two passes.
+
+    Pass 1 runs every rule over the whole window, so a credential whose
+    anchor and value sit on different lines (LF or CRLF), or a quoted value
+    that spans lines, is still found. Each replacement keeps the line breaks
+    its match consumed, so the window keeps its line count, and markers on
+    different lines are never merged. Pass 2 judges marker look-alikes per
+    original line: a marker-like line becomes the collision marker alone and
+    its neighbours keep their pass-1 text (a CRLF line keeps its terminator).
+    A look-alike that only forms
+    across lines collapses the lines that form it; one no pair of lines
+    explains collapses the window (fail closed).
+    """
+
+    _PASS = "line_window"
+    _LINE_WINDOW = True
+
+    @staticmethod
+    def _keep_line_breaks(consumed: str, pieces: list[Any]) -> list[Any]:
+        kept = sum(piece.count("\n") for piece in pieces if type(piece) is str)
+        missing = consumed.count("\n") - kept
+        return [*pieces, "\n" * missing] if missing > 0 else pieces
+
+    def _secret_replacement(self, match: re.Match[str]) -> list[Any]:
+        return self._keep_line_breaks(match.group(0), super()._secret_replacement(match))
+
+    def _replacement(self, match: re.Match[str], category: str, form: str) -> list[Any]:
+        return self._keep_line_breaks(match.group(0), super()._replacement(match, category, form))
+
+    def window(self, lines: list[str]) -> list[str]:
+        if any(type(line) is not str or "\n" in line for line in lines):
+            raise ValueError("line_window_input")
+        if not lines:
+            return []
+        # Pass 1: every rule over the whole window.
+        text, categories, _emitted = self._scan("\n".join(lines))
+        safe = text.split("\n")
+        if len(safe) != len(lines):
+            raise ValueError("line_window_shape")
+        # Pass 2: marker look-alikes per original line.
+        collided = [marker_like_text(line) for line in lines]
+        for index in range(1, len(lines)):
+            if not (collided[index - 1] or collided[index]) and marker_like_text(
+                lines[index - 1] + "\n" + lines[index]
+            ):
+                collided[index - 1] = collided[index] = True
+        if marker_like_text("\n".join("" if hit else line for hit, line in zip(collided, lines))):
+            collided = [True] * len(lines)
+        output: list[str] = []
+        for original, line, hit in zip(lines, safe, collided):
+            if hit:
+                self.marker_collision_count += 1
+                self.redacted_field_count += 1
+                # The line's own CRLF terminator half is kept, never content.
+                output.append(MARKER_COLLISION + ("\r" if original.endswith("\r") else ""))
+                continue
+            if line != original:
+                self.redacted_field_count += 1
+            output.append(line)
+        self.categories.update(categories)
+        if self.marker_collision_count:
+            self.categories.add(MARKER_COLLISION_CATEGORY)
+        return output
+
+
+def _result(sanitizer: _Sanitizer, value: Any) -> SanitizationResult:
+    try:
+        safe = sanitizer.sanitize(value)
+    except Exception:
+        safe = sanitizer._failure()
+    if sanitizer.marker_collision_count:
+        with _COUNTER_LOCK:
+            _COUNTERS["marker_collisions"] += sanitizer.marker_collision_count
+    categories = tuple(sorted(sanitizer.categories)[:MAX_REDACTION_CATEGORIES])
+    return SanitizationResult(
+        value=safe,
+        redacted_field_count=sanitizer.redacted_field_count,
+        redaction_categories=categories,
+        truncated_field_count=sanitizer.truncated_field_count,
+        failed_closed=sanitizer.failed_closed,
+        marker_collision_count=sanitizer.marker_collision_count,
+    )
+
+
+def rescan_stored_plan(
+    value: Any,
+    *,
+    known_secrets: tuple[str, ...] = (),
+    max_string: int | None = None,
+    segment_memo: SegmentMemo | None = None,
+) -> SanitizationResult:
+    """Re-scan a stored change plan with beta.19 marker tolerance (D11).
+
+    The one reviewed exception to the strict-only pass. It exists because a
+    stored plan carries Engineering's own markers (truncated review
+    projections, redacted approval notes, bounded validation evidence) as
+    rebuilt strings that no identity record can hold. New plans are
+    sanitized strictly when they are created; this pass only re-reads what
+    Engineering stored. HAMCP-207 removes it. A code-derived test pins the
+    exact call sites allowed to use it.
+    """
+
+    return _result(
+        _StoredPlanSanitizer(
+            known_secrets=known_secrets,
+            max_string=max_string,
+            segment_memo=segment_memo,
+        ),
+        value,
+    )
 
 
 def sanitize_untrusted_data(
@@ -702,46 +1018,290 @@ def sanitize_untrusted_data(
     known_secrets: tuple[str, ...] = (),
     max_string: int | None = None,
     preserve_reference_markers: ReferenceMarkerRegistry | None = None,
-    identity_markers_only: bool = False,
+    identity_markers_only: bool = True,
     segment_memo: SegmentMemo | None = None,
+    registry: ReferenceMarkerRegistry | None = None,
 ) -> SanitizationResult:
     """Recursively sanitize untrusted data, failing closed at each field.
+
+    HAMCP-191 D1: the strict pass is the only pass, for every caller. No
+    input text counts as already redacted. Every string, key text included,
+    runs every rule; text that could read as a redaction or truncation marker
+    is then replaced whole by ``MARKER_COLLISION`` (D2), with the collision
+    counted in addition to every category the rules found.
+    ``identity_markers_only`` remains for HAMCP-162 call sites and accepts
+    only ``True``.
+
+    ``registry`` (D4) is the request's identity record. Strings this pass
+    produces that carry a marker or the truncation suffix are registered in
+    it, and a string it already holds is kept as Engineering's own output,
+    by object identity only. Without it, Engineering's own earlier output is
+    scanned like any other text.
 
     ``preserve_reference_markers`` (default off) takes the registry of one
     YAML read. It keeps a marker that registry minted, by object identity,
     whose name still matches the minting grammar, even under a sensitive
     key. Only the HAMCP-162 YAML reader passes it.
 
-    ``identity_markers_only`` (default off, HAMCP-162 H3) stops treating
-    marker-shaped input text as already redacted: every string, key text
-    included, passes every rule, and text that could read as a redaction
-    marker is replaced whole by ``MARKER_COLLISION``. The registry above
-    keeps the reader's own markers by identity. The default pass is
-    unchanged for every other caller.
-
-    ``segment_memo`` (default off, HAMCP-171 D5) reuses the default pass's
-    pure segment scan for identical text within one caller job. The result is
-    identical with or without it.
+    ``segment_memo`` (default off, HAMCP-171 D5) reuses the pure string scan
+    for identical text within one caller job. The result is identical with
+    or without it.
     """
 
-    sanitizer = _Sanitizer(
-        known_secrets=known_secrets,
-        max_string=max_string,
-        preserve_reference_markers=preserve_reference_markers,
-        identity_markers_only=identity_markers_only,
-        segment_memo=segment_memo,
+    if type(identity_markers_only) is not bool:
+        raise TypeError("identity_markers_only takes a bool")
+    if not identity_markers_only:
+        # D1: the marker-trusting default mode is retired.
+        raise TypeError("identity_markers_only=False is no longer supported")
+    return _result(
+        _Sanitizer(
+            known_secrets=known_secrets,
+            max_string=max_string,
+            preserve_reference_markers=preserve_reference_markers,
+            registry=registry,
+            segment_memo=segment_memo,
+        ),
+        value,
     )
+
+
+def sanitize_log_lines(
+    lines: list[str], *, known_secrets: tuple[str, ...] = ()
+) -> SanitizationResult:
+    """Sanitize one Core log window given as its lines (HAMCP-191 H3).
+
+    ``value`` is the list of sanitized lines, one per input line. Counts are
+    per line: ``redacted_field_count`` counts changed or collided lines and
+    ``marker_collision_count`` counts collided lines. Any failure returns
+    ``failed_closed`` with no line content.
+    """
+
+    sanitizer = _LineWindowSanitizer(known_secrets=known_secrets, max_string=None)
     try:
-        safe = sanitizer.sanitize(value)
+        safe: Any = sanitizer.window(list(lines))
     except Exception:
+        safe = None
         sanitizer.failed_closed = True
         sanitizer._record_field({"sanitization_failure"})
-        safe = SANITIZATION_FAILURE_MARKER
-    categories = tuple(sorted(sanitizer.categories)[:MAX_REDACTION_CATEGORIES])
+    if sanitizer.marker_collision_count:
+        with _COUNTER_LOCK:
+            _COUNTERS["marker_collisions"] += sanitizer.marker_collision_count
     return SanitizationResult(
         value=safe,
         redacted_field_count=sanitizer.redacted_field_count,
-        redaction_categories=categories,
-        truncated_field_count=sanitizer.truncated_field_count,
+        redaction_categories=tuple(sorted(sanitizer.categories)[:MAX_REDACTION_CATEGORIES]),
         failed_closed=sanitizer.failed_closed,
+        marker_collision_count=sanitizer.marker_collision_count,
+    )
+
+
+_ABSENT = object()
+
+
+@dataclass(frozen=True)
+class PlanContentScreen:
+    """One plan-record screen: the record to store and what was found.
+
+    ``findings`` holds the schema paths (list positions as ``"*"``) whose new
+    content the strict pass changed, never the content. ``refused`` is set
+    when a finding sits on a path the caller's policy refuses, on a key, or
+    when an exempt value contains a known secret; ``failed`` when the screen
+    itself failed. Either way the caller must not store the record.
+    """
+
+    value: Any
+    findings: tuple[tuple[str, ...], ...]
+    categories: tuple[str, ...]
+    refused: bool
+    failed: bool
+
+    @property
+    def redaction_applied(self) -> bool:
+        return bool(self.findings)
+
+
+class _PlanContentSanitizer(_Sanitizer):
+    """HAMCP-191 Direction A: the strict pass over NEW plan-record content.
+
+    Content equal to the stored baseline at the same JSON path is the
+    record's old content: it is written back unchanged and never rescanned
+    here (re-reading old content is D11's job). Every other string, a key or
+    an identifier included, runs the strict ``_scan`` unless it is the very
+    object the request's identity record holds. An exempt dispatch value
+    whose schema validator accepts it is scanned but never rewritten: a
+    finding on it refuses the write.
+    """
+
+    _PASS = "plan_content"
+
+    def __init__(
+        self,
+        *,
+        known_secrets: tuple[str, ...],
+        registry: ReferenceMarkerRegistry | None,
+        exempt: Any,
+        refuse: Any,
+    ) -> None:
+        super().__init__(known_secrets=known_secrets, max_string=None, registry=registry)
+        self.exempt = exempt
+        self.refuse = refuse
+        self.findings: set[tuple[str, ...]] = set()
+        self.refused = False
+
+    def _own(self, text: str) -> str:
+        # The stored record is rebuilt from JSON; identity cannot survive it.
+        return text
+
+    def _finding(self, pattern: tuple[str, ...], *, refuse: bool = False) -> None:
+        self.findings.add(pattern)
+        if refuse or self.refuse(pattern):
+            self.refused = True
+
+    def _text(self, value: str, source: Any, pattern: tuple[str, ...]) -> str:
+        validator = self.exempt(pattern)
+        if validator is not None:
+            # Exempt by schema: never rewritten, so dispatch and recovery
+            # state stays byte-exact. A value outside the field's format
+            # refuses the write; one inside it is still strictly scanned (a
+            # JWT fits the request-id alphabet) and any finding refuses too.
+            text, categories, _emitted = self._scan(value)
+            if not validator(value) or categories or text != value:
+                self._record_field(set(categories) or {"redacted"})
+                self._finding(pattern, refuse=True)
+            return value
+        if (
+            self.registry is not None
+            and type(source) is str
+            and source == value
+            and self.registry.output(source, self.known_secrets)
+        ):
+            return value
+        text, categories, emitted = self._scan(value)
+        if not categories and text == value:
+            return value
+        self._record_field(set(categories) or {"redacted"})
+        self._finding(pattern)
+        if MARKER_COLLISION_CATEGORY in categories:
+            self.marker_collision_count += 1
+            return MARKER_COLLISION
+        return text
+
+    def screen(
+        self,
+        value: Any,
+        old: Any,
+        source: Any,
+        pattern: tuple[str, ...],
+        keys: tuple[str, ...],
+    ) -> Any:
+        if old is not _ABSENT and type(old) is type(value) and old == value:
+            return value
+        if isinstance(value, dict):
+            old_map = old if isinstance(old, dict) else None
+            source_map = source if isinstance(source, dict) else None
+            safe: dict[str, Any] = {}
+            for key, item in value.items():
+                if type(key) is not str:
+                    raise TypeError("plan record keys are strings")
+                child = (*pattern, key)
+                normalized = normalize_key(key)
+                if old_map is not None and key in old_map:
+                    safe_key = key
+                    old_item = old_map[key]
+                else:
+                    text, categories, _emitted = self._scan(key)
+                    if categories or text != key:
+                        # A key is structure; it is refused, never rewritten.
+                        self._record_field(set(categories) or {"redacted"})
+                        self._finding(child, refuse=True)
+                    safe_key = key
+                    old_item = _ABSENT
+                source_item = source_map.get(key, _ABSENT) if source_map is not None else _ABSENT
+                category = key_category(normalized, keys)
+                changed = not (
+                    old_item is not _ABSENT and type(old_item) is type(item) and old_item == item
+                )
+                if (
+                    category
+                    and changed
+                    and self.exempt(child) is None
+                    and item not in (None, "", [], {})
+                ):
+                    self._record_field({category})
+                    self._finding(child)
+                    safe[safe_key] = self._marker(category)
+                    continue
+                safe[safe_key] = self.screen(item, old_item, source_item, child, (*keys, normalized))
+            if len(safe) != len(value):
+                raise ValueError("plan_content_key_collision")
+            return safe
+        if isinstance(value, list):
+            old_list = old if isinstance(old, list) else None
+            source_list = source if isinstance(source, (list, tuple)) else None
+            return [
+                self.screen(
+                    item,
+                    old_list[index] if old_list is not None and index < len(old_list) else _ABSENT,
+                    source_list[index] if source_list is not None and index < len(source_list) else _ABSENT,
+                    (*pattern, "*"),
+                    (*keys, "item"),
+                )
+                for index, item in enumerate(value)
+            ]
+        if isinstance(value, str):
+            return self._text(value, source, pattern)
+        if value is None or type(value) in (bool, int, float):
+            return value
+        raise TypeError("plan records hold JSON values only")
+
+
+def screen_plan_content(
+    record: dict[str, Any],
+    *,
+    baseline: dict[str, Any] | None,
+    source: Any = None,
+    known_secrets: tuple[str, ...] = (),
+    registry: ReferenceMarkerRegistry | None = None,
+    exempt: Any = lambda pattern: None,
+    refuse: Any = lambda pattern: True,
+) -> PlanContentScreen:
+    """Strict-screen the new content of one plan record (HAMCP-191 A).
+
+    ``record`` is the JSON form about to be stored; ``baseline`` the JSON
+    form already stored (``None`` for a new record, so all of it is new).
+    ``source`` is the identity-preserving form of the same record, used only
+    to recognize strings this request's ``registry`` produced. ``exempt``
+    maps a schema path to a validator for dispatch values kept byte-exact;
+    ``refuse`` says whether a finding on a path refuses the write instead of
+    redacting it. Any screen failure fails closed with no value.
+    """
+
+    sanitizer = _PlanContentSanitizer(
+        known_secrets=tuple(known_secrets),
+        registry=registry,
+        exempt=exempt,
+        refuse=refuse,
+    )
+    try:
+        if type(record) is not dict:
+            raise TypeError("plan record is a mapping")
+        safe = sanitizer.screen(
+            record,
+            _ABSENT if baseline is None else baseline,
+            _ABSENT if source is None else source,
+            (),
+            (),
+        )
+        failed = False
+    except Exception:
+        safe, failed = None, True
+    if sanitizer.marker_collision_count:
+        with _COUNTER_LOCK:
+            _COUNTERS["marker_collisions"] += sanitizer.marker_collision_count
+    return PlanContentScreen(
+        value=safe,
+        findings=tuple(sorted(sanitizer.findings)),
+        categories=tuple(sorted(sanitizer.categories)[:MAX_REDACTION_CATEGORIES]),
+        refused=sanitizer.refused or failed,
+        failed=failed,
     )

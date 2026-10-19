@@ -21,6 +21,11 @@ from .models import (
 )
 
 
+# The preview Engineering shows for a withheld value. Review projections keep
+# it only as this exact object, registered in the request's identity record
+# (HAMCP-191 D4); equal dashboard text collides.
+REDACTED_PREVIEW = "<redacted>"
+
 _SENSITIVE_FIELD_FRAGMENTS = (
     "token",
     "password",
@@ -53,7 +58,9 @@ def summarize_value(*, present: bool, value: Any, path: str) -> ValueSummary:
         return ValueSummary("untrusted_data", "number", True, False, False, repr(value))
     if isinstance(value, str):
         if _sensitive_path(path) or _looks_secret(value):
-            return ValueSummary("untrusted_data", "string", True, True, False, "<redacted>")
+            return ValueSummary(
+                "untrusted_data", "string", True, True, False, REDACTED_PREVIEW
+            )
         truncated = len(value) > MAX_DIFF_PREVIEW_CHARS
         preview = value[:MAX_DIFF_PREVIEW_CHARS]
         return ValueSummary("untrusted_data", "string", True, False, truncated, preview)

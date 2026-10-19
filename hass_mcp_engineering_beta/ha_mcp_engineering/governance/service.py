@@ -37,7 +37,13 @@ from ..request_context import (
     current_caller_id,
     current_request_id,
 )
-from ..sanitization import SegmentMemo, sanitize_untrusted_data
+from ..sanitization import (
+    ReferenceMarkerRegistry,
+    SegmentMemo,
+    record_marker_collision_refusal,
+    rescan_stored_plan,
+    sanitize_untrusted_data,
+)
 from ..f3_dashboard.approval_projection import (
     build_dashboard_approval_projection,
     validate_dashboard_approval_projection,
@@ -48,7 +54,13 @@ from ..f3_dashboard.errors import (
     ProviderAuthorityUnavailableError,
 )
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
-from ..f3_dashboard.serialization import public_proposal_projection
+from ..f3_dashboard.semantic_diff import REDACTED_PREVIEW
+from ..f3_dashboard.constants import ARTIFACT_SCHEMA
+from ..f3_dashboard.json_codec import engineering_sha256
+from ..f3_dashboard.serialization import (
+    private_proposal_projection,
+    public_proposal_projection,
+)
 from .historical_policy import (
     HISTORICAL_POLICY_PROJECTION_MODEL,
     HISTORICAL_POLICY_PROJECTION_PROFILES,
@@ -130,9 +142,11 @@ from ..f3_runtime.dispatch_facts import (
 from .storage import (
     ChangePlanRepository,
     ChangePlanStorageError,
+    PlanContentRefused,
     PlanHealthSnapshotSuperseded,
     PlanRecordEvidence,
     is_terminal_plan,
+    plan_output_registry,
 )
 from .task_models import (
     ExecutionTask,
@@ -616,6 +630,11 @@ class ChangeGovernanceService:
             "manual_review_terminalization_count": 0,
             "failure_count": 0,
         }
+        # HAMCP-191 A: the plan-content chokepoint reads the current known
+        # secrets at every save, recovery writes included.
+        bind_known_secrets = getattr(self.repository, "bind_known_secrets", None)
+        if bind_known_secrets is not None:
+            bind_known_secrets(lambda: self.sensitive_values)
         self.repository.cleanup(now=self.now())
         self.repository.recover_incomplete(self._timestamp())
         self.task_repository.cleanup(now=self.now())
@@ -1660,6 +1679,26 @@ class ChangeGovernanceService:
     ) -> ApprovalActionRecord | None:
         return plan.approval.elevated_risk_acknowledgement
 
+    def _identifier_details(self, **identifiers: Any) -> dict[str, Any]:
+        """HAMCP-191 H1g: caller identifiers echoed in error details.
+
+        An identifier the strict input check refuses (a known secret or
+        secret-bearing text, even one that fits the identifier format) is
+        withheld (omitted); an ordinary identifier is echoed unchanged.
+        """
+
+        safe: dict[str, Any] = {}
+        for key, value in identifiers.items():
+            try:
+                unsafe = bool(
+                    persistence_safety_errors({key: value}, self.sensitive_values)
+                )
+            except Exception:
+                unsafe = True
+            if not unsafe:
+                safe[key] = value
+        return safe
+
     def _load(self, plan_id: str) -> ChangePlan:
         try:
             plan = self.repository.get(plan_id)
@@ -1668,7 +1707,8 @@ class ChangeGovernanceService:
         if plan is None:
             METRICS.record_classified_outcome("change_plan_not_found")
             raise GovernanceError(
-                ErrorCode.CHANGE_PLAN_NOT_FOUND, details={"resource_id": plan_id}
+                ErrorCode.CHANGE_PLAN_NOT_FOUND,
+                details=self._identifier_details(resource_id=plan_id),
             )
         self._require_v2_persisted_plan_safe(plan)
         if plan.policy_decision is not None:
@@ -1686,7 +1726,7 @@ class ChangeGovernanceService:
             METRICS.record_classified_outcome("change_plan_not_found")
             raise GovernanceError(
                 ErrorCode.CHANGE_PLAN_NOT_FOUND,
-                details={"resource_id": plan_id},
+                details=self._identifier_details(resource_id=plan_id),
             )
         self._require_v2_persisted_plan_safe(plan)
         if plan.policy_decision is not None:
@@ -2226,13 +2266,51 @@ class ChangeGovernanceService:
             }
 
     def _save(self, plan: ChangePlan) -> None:
+        """Persist through the repository's plan-content chokepoint.
+
+        HAMCP-191 A: ``ChangePlanRepository.save`` strict-sanitizes all new
+        content and applies the D11 stored-plan check; a refused creation is
+        a validation failure, a refused update a storage failure. Neither
+        echoes content.
+        """
+
         plan.updated_at = self._timestamp()
-        self._require_v2_persisted_plan_safe(plan)
         try:
             self.repository.save(plan)
             self._update_projection_failure_index(plan)
+        except PlanContentRefused as exc:
+            if exc.creation:
+                raise GovernanceError(
+                    ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                    details={"reason": "plan_contains_prohibited_sensitive_data"},
+                ) from None
+            raise GovernanceError(
+                ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+                details={"reason": "unsafe_persisted_configuration_plan"},
+            ) from None
         except ChangePlanStorageError as exc:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from exc
+
+    def _require_strict_new_plan(self, plan: ChangePlan) -> None:
+        """HAMCP-191 H1: a new operational plan passes the strict sanitizer.
+
+        The save-time gate is the tolerant D11 stored-plan re-scan, so it
+        cannot be the creation gate. Every operational family (backup,
+        helper state, reload and restarts) checks its complete new record
+        here, before any supersession, persistence or response, so Home
+        Assistant text such as a version, location name or dependency
+        profile cannot reach the store wrapped or marker-like.
+        """
+
+        try:
+            unsafe = bool(persistence_safety_errors(plan.to_dict(), self.sensitive_values))
+        except Exception:
+            unsafe = True
+        if unsafe:
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={"reason": "plan_contains_prohibited_sensitive_data"},
+            )
 
     def _require_v2_persisted_plan_safe(self, plan: ChangePlan) -> None:
         """Reject any unsafe contract-v2 record without echoing its contents.
@@ -2969,7 +3047,8 @@ class ChangeGovernanceService:
                 == "f3_child_sequence"
             ):
                 self._project_f3_operational_block(value, task, facts)
-            sanitized = sanitize_untrusted_data(
+            # Stored-plan re-scan: D11 exception (HAMCP-207).
+            sanitized = rescan_stored_plan(
                 value,
                 known_secrets=self.sensitive_values,
             )
@@ -2978,6 +3057,7 @@ class ChangeGovernanceService:
                 or sanitized.redaction_applied
                 or not isinstance(sanitized.value, dict)
             ):
+                record_marker_collision_refusal(sanitized)
                 raise GovernanceError(
                     ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
                     details={
@@ -3588,7 +3668,10 @@ class ChangeGovernanceService:
                 "rollback_available": False,
             },
             rollback=ChangeRollback(available=False, status="unavailable"),
-            caller_context=sanitize_context(caller_context),
+            caller_context=_sanitize_configuration_caller_context(
+                caller_context,
+                known_secrets=self.sensitive_values,
+            ),
             contract_version=OPERATIONAL_PLAN_CONTRACT_VERSION,
             plan_family="operational_administration",
             operational=operational,
@@ -3596,6 +3679,7 @@ class ChangeGovernanceService:
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        self._require_strict_new_plan(plan)
         self._supersede_prior(plan)
         self._record(plan, "operational_backup_plan_created", "success")
         return {
@@ -3826,6 +3910,7 @@ class ChangeGovernanceService:
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        self._require_strict_new_plan(plan)
         self._supersede_prior(plan)
         self._record(
             plan,
@@ -4116,6 +4201,7 @@ class ChangeGovernanceService:
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        self._require_strict_new_plan(plan)
         self._supersede_prior(plan)
         self._record(
             plan,
@@ -4160,7 +4246,44 @@ class ChangeGovernanceService:
                 ErrorCode.AUTOMATION_VALIDATION_FAILED,
                 details={"validation_errors": ["The proposal contains prohibited sensitive data."]},
             )
+        # HAMCP-191 H1: every caller-supplied field this plan persists passes
+        # the strict sanitizer before any Home Assistant read or persistence.
+        # The stored-plan re-scan (D11) tolerates marker-shaped text, so it
+        # cannot be the creation gate.  The persisted (truncated) text is
+        # checked as well as the full input.  H1g: the automation identifier
+        # becomes the plan target and is echoed, so it is checked here too,
+        # before the Home Assistant read; an invalid identifier is persisted
+        # as a validation-failed plan, so schema rejection is not a gate.
+        if persistence_safety_errors(
+            {
+                "automation_id": automation_id,
+                "plan_title": title,
+                "plan_description": description,
+                "persisted_text": [title[:160], description[:1000]],
+                "proposed_config": proposed_config,
+            },
+            self.sensitive_values,
+        ):
+            raise GovernanceError(
+                ErrorCode.AUTOMATION_VALIDATION_FAILED,
+                details={"validation_errors": ["The proposal contains prohibited sensitive data."]},
+            )
         current = await self.gateway.get(automation_id) if valid else None
+        if current is not None and persistence_safety_errors(
+            current, self.sensitive_values
+        ):
+            # The before-value is persisted verbatim and returned in the plan.
+            raise GovernanceError(
+                ErrorCode.AUTOMATION_VALIDATION_FAILED,
+                details={
+                    "resource_id": automation_id,
+                    "validation_errors": [
+                        "The current automation contains prohibited "
+                        "sensitive data and cannot be persisted in a "
+                        "change plan."
+                    ],
+                },
+            )
         failure_code = ErrorCode.AUTOMATION_VALIDATION_FAILED
         if valid and change_operation == ChangeOperation.CREATE_AUTOMATION and current is not None:
             errors.append("automation_id already exists")
@@ -4213,7 +4336,9 @@ class ChangeGovernanceService:
                 available=False,
                 status=("not_yet_available" if change_operation == ChangeOperation.UPDATE_AUTOMATION else "unavailable_for_create"),
             ),
-            caller_context=sanitize_context(caller_context, self.sensitive_values),
+            caller_context=_sanitize_configuration_caller_context(
+                caller_context, known_secrets=self.sensitive_values
+            ),
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
@@ -4248,6 +4373,24 @@ class ChangeGovernanceService:
         ):
             raise GovernanceError(
                 ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED
+            )
+        # HAMCP-191 H1/M2: the caller's title, description, patch values,
+        # dashboard url_path and caller ID are persisted with the plan and
+        # its artifact, so they pass the strict sanitizer before any Home
+        # Assistant read or persistence.
+        if persistence_safety_errors(
+            {
+                "plan_title": title,
+                "plan_description": description,
+                "patch_operations": patch_operations,
+                "url_path": url_path,
+                "requested_by": current_caller_id(),
+            },
+            self.sensitive_values,
+        ):
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={"reason": "dashboard_contains_prohibited_sensitive_data"},
             )
         try:
             proposal = await build_dashboard_update(
@@ -4319,10 +4462,15 @@ class ChangeGovernanceService:
                 details=exc.diagnostic_details(),
             ) from None
         public_projection = public_proposal_projection(proposal)
+        # HAMCP-191 D4: the semantic diff's withheld-value preview is
+        # Engineering's own marker, kept by object identity only.
+        review_registry = ReferenceMarkerRegistry()
+        review_registry.register_output(REDACTED_PREVIEW)
         sanitation = sanitize_untrusted_data(
             public_projection,
             known_secrets=self.sensitive_values,
             max_string=512,
+            registry=review_registry,
         )
         if sanitation.failed_closed:
             raise GovernanceError(
@@ -4336,10 +4484,12 @@ class ChangeGovernanceService:
         # MCP plan output strips proposed_config, while the authenticated
         # review page renders every exact declared before/after value inertly.
         public_projection["approval_projection"] = approval_projection
-        try:
-            artifact = self.dashboard_artifacts.create(proposal)
-        except DashboardFoundationError:
-            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from None
+        # HAMCP-191 M2: the artifact is written only after the complete new
+        # plan passes the strict creation gate, so a refused plan leaves no
+        # artifact behind. The plan binds the payload hash the store computes.
+        artifact_payload_sha256 = engineering_sha256(
+            private_proposal_projection(proposal)
+        )
 
         elevated = proposal.risk.manual_review_required or (
             proposal.risk.disposition.value != "standard_review"
@@ -4373,8 +4523,8 @@ class ChangeGovernanceService:
             ],
         )
         baseline = {
-            "artifact_schema": artifact.schema,
-            "artifact_payload_sha256": artifact.payload_sha256,
+            "artifact_schema": ARTIFACT_SCHEMA,
+            "artifact_payload_sha256": artifact_payload_sha256,
             "proposal_sha256": proposal.proposal_sha256,
             "current_upstream_config_hash": (
                 proposal.raw_evidence.upstream_config_hash
@@ -4514,6 +4664,16 @@ class ChangeGovernanceService:
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        self._require_strict_new_plan(plan)
+        try:
+            artifact = self.dashboard_artifacts.create(proposal)
+        except DashboardFoundationError:
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from None
+        if (artifact.schema, artifact.payload_sha256) != (
+            ARTIFACT_SCHEMA,
+            artifact_payload_sha256,
+        ):
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
         self._record(plan, "dashboard_update_plan_created", "success")
         self._supersede_prior(plan)
         return self._public(plan)
@@ -5263,7 +5423,8 @@ class ChangeGovernanceService:
                 operation.pop("dry_run_results", None)
         if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
             return value
-        sanitized = sanitize_untrusted_data(
+        # Stored-plan re-scan: D11 exception (HAMCP-207).
+        sanitized = rescan_stored_plan(
             value,
             known_secrets=self.sensitive_values,
         )
@@ -5272,6 +5433,7 @@ class ChangeGovernanceService:
             or sanitized.redaction_applied
             or not isinstance(sanitized.value, dict)
         ):
+            record_marker_collision_refusal(sanitized)
             raise GovernanceError(
                 ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
                 details={
@@ -6461,51 +6623,55 @@ class ChangeGovernanceService:
             self.now() + APPROVAL_CHALLENGE_TTL,
             datetime.fromisoformat(plan.expires_at),
         ).isoformat()
-        sanitized_note = sanitize_untrusted_data(
-            approval_note[:500],
-            known_secrets=self.sensitive_values,
-            max_string=500,
-        ).value
-        plan.approval = ChangeApproval(
-            state=ApprovalState.EXTERNAL_PENDING,
-            authority_version=APPROVAL_AUTHORITY_VERSION,
-            channel=APPROVAL_CHANNEL,
-            bound_plan_hash=calculated,
-            approval_kind=approval_kind,
-            challenge_id=secrets.token_urlsafe(24),
-            challenge_requested_at=requested_at,
-            challenge_expires_at=challenge_expires,
-            challenge_plan_version=plan.plan_version,
-            challenge_target_type=plan.target_type,
-            challenge_target_id=plan.target_id,
-            challenge_operation=plan.operation.value,
-            challenge_risk_level=plan.risk.level.value,
-            request_note=sanitized_note if isinstance(sanitized_note, str) and sanitized_note else None,
-            policy_decision_hash=decision.policy_decision_hash,
-            policy_class=decision.policy_class.value,
-            bundle_state="pending_plan_approval",
-            elevated_risk_acknowledgement=(
-                ApprovalActionRecord(
-                    kind=(
-                        ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                    ),
-                    authority_version=APPROVAL_AUTHORITY_VERSION,
-                    bound_plan_hash=calculated,
-                    policy_decision_hash=(
-                        decision.policy_decision_hash
-                    ),
-                    policy_class=decision.policy_class.value,
-                    risk_delta=decision.risk_delta.value,
-                    physical_consequence=(
-                        decision.physical_consequence.value
-                    ),
-                )
-                if ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                in decision.required_acknowledgements
-                else None
-            ),
-        )
-        self._record(plan, "external_approval_requested", "success")
+        # HAMCP-191 A: the sanitized note is Engineering's own output; the
+        # plan-content chokepoint keeps that exact object (D4 identity).
+        with plan_output_registry() as note_registry:
+            sanitized_note = sanitize_untrusted_data(
+                approval_note[:500],
+                known_secrets=self.sensitive_values,
+                max_string=500,
+                registry=note_registry,
+            ).value
+            plan.approval = ChangeApproval(
+                state=ApprovalState.EXTERNAL_PENDING,
+                authority_version=APPROVAL_AUTHORITY_VERSION,
+                channel=APPROVAL_CHANNEL,
+                bound_plan_hash=calculated,
+                approval_kind=approval_kind,
+                challenge_id=secrets.token_urlsafe(24),
+                challenge_requested_at=requested_at,
+                challenge_expires_at=challenge_expires,
+                challenge_plan_version=plan.plan_version,
+                challenge_target_type=plan.target_type,
+                challenge_target_id=plan.target_id,
+                challenge_operation=plan.operation.value,
+                challenge_risk_level=plan.risk.level.value,
+                request_note=sanitized_note if isinstance(sanitized_note, str) and sanitized_note else None,
+                policy_decision_hash=decision.policy_decision_hash,
+                policy_class=decision.policy_class.value,
+                bundle_state="pending_plan_approval",
+                elevated_risk_acknowledgement=(
+                    ApprovalActionRecord(
+                        kind=(
+                            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+                        ),
+                        authority_version=APPROVAL_AUTHORITY_VERSION,
+                        bound_plan_hash=calculated,
+                        policy_decision_hash=(
+                            decision.policy_decision_hash
+                        ),
+                        policy_class=decision.policy_class.value,
+                        risk_delta=decision.risk_delta.value,
+                        physical_consequence=(
+                            decision.physical_consequence.value
+                        ),
+                    )
+                    if ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+                    in decision.required_acknowledgements
+                    else None
+                ),
+            )
+            self._record(plan, "external_approval_requested", "success")
         return self._approval_pending_response(plan)
 
     def _approval_pending_response(self, plan: ChangePlan) -> dict[str, Any]:
@@ -6799,7 +6965,8 @@ class ChangeGovernanceService:
         for item in plan.dry_run_results.get("changed_fields", [])[:50]:
             if not isinstance(item, dict):
                 continue
-            sanitized = sanitize_untrusted_data(
+            # Stored-plan re-scan: D11 exception (HAMCP-207).
+            sanitized = rescan_stored_plan(
                 item,
                 known_secrets=self.sensitive_values,
                 max_string=500,
@@ -6861,7 +7028,8 @@ class ChangeGovernanceService:
                 in plan.policy_decision.required_acknowledgements
             ),
             "request_note": str(
-                sanitize_untrusted_data(
+                # Stored-plan re-scan: D11 exception (HAMCP-207).
+                rescan_stored_plan(
                     plan.approval.request_note or "",
                     known_secrets=self.sensitive_values,
                     max_string=500,
@@ -7041,7 +7209,8 @@ class ChangeGovernanceService:
                 "Operations execute in order and stop on first failure; "
                 "successful earlier operations are not automatically rolled back."
             )
-        sanitized = sanitize_untrusted_data(
+        # Stored-plan re-scan: D11 exception (HAMCP-207).
+        sanitized = rescan_stored_plan(
             summary,
             known_secrets=self.sensitive_values,
         ).value
@@ -14389,8 +14558,12 @@ def _require_safe_persisted_plan(
     if plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
         return
     try:
+        # Stored-plan re-scan: D11 exception (HAMCP-207).
         unsafe = bool(persistence_safety_errors(
-            plan.to_dict(), sensitive_values, segment_memo=segment_memo
+            plan.to_dict(),
+            sensitive_values,
+            segment_memo=segment_memo,
+            stored_plan=True,
         ))
     except Exception:
         unsafe = True

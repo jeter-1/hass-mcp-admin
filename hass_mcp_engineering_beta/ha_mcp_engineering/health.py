@@ -7,6 +7,8 @@ from typing import Any
 
 from .approval_identity import approval_identity_health
 from .observability import METRICS
+from .request_context import request_id_replacement_count
+from .sanitization import marker_collision_health
 from .capabilities import (
     BETA_NATIVE_CAPABILITIES,
     CAPABILITIES,
@@ -125,6 +127,15 @@ class HealthRegistry:
                 "structured": True,
                 "level": self.settings.log_level if self.settings else "unknown",
                 "redaction_filter": True,
+            },
+            # HAMCP-191 D3: how often look-alike marker text was replaced or
+            # blocked a governed path, since process start. Counts only.
+            # HAMCP-191 H4: inbound request IDs replaced after failing the
+            # strict scan (a count; the rejected values are never kept).
+            "sanitization": {
+                "strict_marker_mode": True,
+                **marker_collision_health(),
+                "request_id_replacements": request_id_replacement_count(),
             },
             "recent_error_counts": metrics["recent_error_counts"],
             "domain_outcome_counts": metrics["domain_outcome_counts"],

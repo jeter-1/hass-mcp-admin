@@ -1606,7 +1606,9 @@ class AuditTests(unittest.IsolatedAsyncioTestCase):
         transport.respond = lambda tool, args: ok(payload({"password": s, "broker": "b"}, args["yaml_path"]))
         serialized, record = await self.audited(gateway, {"yaml_path": "mqtt"})
         self.assertEqual(record["tool_name"], TOOL)
-        self.assertEqual(record["result_status"], "success")
+        # HAMCP-191 Finding 11: the redacted password makes the read partial
+        # (beta.19 recorded "success").
+        self.assertEqual(record["result_status"], "partial")
         self.assertEqual(record["parameters"]["provider"], "upstream_read_gateway")
         self.assertEqual(record["parameters"]["classification"], "automatic_read")
         self.assertEqual(record["parameters"]["argument_fields"], ["yaml_path"])
@@ -2000,7 +2002,9 @@ class MarkerProvenanceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(rendered["pin"], {"env_var_ref": "SYNTHETIC_PIN", "default_redacted": True})
                 self.assertEqual(rendered["list"], [{"secret_ref": "other_pw"}])
                 self.assertNotIn("1234", json.dumps(rendered))
-                self.assertEqual(result["data"]["completeness"], "complete")
+                # HAMCP-191 Finding 11: the withheld env default is a
+                # redaction, so the read is partial (beta.19: "complete").
+                self.assertEqual(result["data"]["completeness"], "partial")
 
 
 def decoded_texts(text: str) -> list[str]:
@@ -2115,10 +2119,11 @@ class RedactionMarkerIdentityTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(result.value, expected)
                     self.assert_secret_absent(result.value, ACCESS_KNOWN)
                     self.assertFalse(result.failed_closed)
-        # A sensitive key's own text passes the scan too (default keeps it raw).
+        # A sensitive key's own text passes the scan too. HAMCP-191 D1: the
+        # default is the strict pass, so it no longer keeps that text raw.
         odd = "~token~"
         default = sanitize_untrusted_data({odd: "x"}, known_secrets=(odd,))
-        self.assertEqual(default.value, {odd: "[REDACTED:token]"})
+        self.assertEqual(default.value, {"[REDACTED:token]": "[REDACTED:token]"})
         strict = sanitize_untrusted_data({odd: "x"}, known_secrets=(odd,), identity_markers_only=True)
         self.assertEqual(strict.value, {"[REDACTED:token]": "[REDACTED:token]"})
         strict = sanitize_untrusted_data({"[REDACTED:x] token": "x"}, identity_markers_only=True)
@@ -2156,12 +2161,13 @@ class RedactionMarkerIdentityTests(unittest.IsolatedAsyncioTestCase):
                                          identity_markers_only=True)
         self.assertEqual(result.value, "Bearer [REDACTED:token]")
 
-    def test_default_mode_is_unchanged_for_other_callers(self):
+    def test_default_mode_is_the_strict_pass_for_every_caller(self):
         # Pinned so any change to the shared default is a visible decision.
-        self.assertEqual(sanitize_untrusted_data("[REDACTED:abc] x").value, "[REDACTED:abc] x")
+        # HAMCP-191 D1 made it: beta.19 kept "[REDACTED:abc] x" unchanged.
+        self.assertEqual(sanitize_untrusted_data("[REDACTED:abc] x").value, MARKER_COLLISION)
         self.assertEqual(sanitize_untrusted_data({"token": "v"}).value, {"token": "[REDACTED:token]"})
         self.assertEqual(sanitize_untrusted_data(f"[REDACTED:token] {KNOWN}", known_secrets=(KNOWN,)).value,
-                         "[REDACTED:token]")
+                         MARKER_COLLISION)
         self.assertEqual(
             sanitize_untrusted_data(EngineeringMarker(y.CREDENTIAL_MARKER)).value, MARKER_COLLISION)
         with self.assertRaises(TypeError):

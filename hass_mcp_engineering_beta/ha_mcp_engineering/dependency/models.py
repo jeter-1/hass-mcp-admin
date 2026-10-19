@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 import hashlib
 import json
-from typing import Any, TYPE_CHECKING
+from typing import Any, Iterator, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .script_sources import ScriptDiagnostics
 
-from ..sanitization import sanitize_untrusted_data
+from ..request_context import current_telemetry
+from ..sanitization import ReferenceMarkerRegistry, sanitize_untrusted_data
 from .semantic_registry import ReviewedCoreSemantics
 
 
@@ -50,6 +53,35 @@ MAX_OBLIGATION_CONTEXT_AGGREGATE_BYTES = 1_024
 MAX_OBLIGATION_TEXT_BYTES = 256
 
 
+# HAMCP-191 D4: the identity record for strings extraction bounds. A
+# dependency index build binds one registry for the snapshot it publishes, so
+# a later analysis re-scan keeps Engineering's own truncation suffix and
+# markers by object identity; outside a build, extraction uses the current
+# request's registry. Equal text from anywhere else is scanned and collides.
+_SANITIZER_REGISTRY: ContextVar[ReferenceMarkerRegistry | None] = ContextVar(
+    "dependency_sanitizer_registry", default=None
+)
+
+
+@contextmanager
+def bind_sanitizer_registry(
+    registry: ReferenceMarkerRegistry,
+) -> Iterator[ReferenceMarkerRegistry]:
+    token = _SANITIZER_REGISTRY.set(registry)
+    try:
+        yield registry
+    finally:
+        _SANITIZER_REGISTRY.reset(token)
+
+
+def extraction_registry() -> ReferenceMarkerRegistry | None:
+    registry = _SANITIZER_REGISTRY.get()
+    if registry is not None:
+        return registry
+    telemetry = current_telemetry()
+    return telemetry.sanitizer_registry if telemetry is not None else None
+
+
 def _evidence_digest(value: str) -> str:
     """Return a deterministic stand-in that preserves drift detection."""
 
@@ -75,7 +107,9 @@ def _bounded_evidence_values(
     dropped: list[str] = []
     for index, value in enumerate(values):
         original = value if isinstance(value, str) else str(value)
-        safe = sanitize_untrusted_data(original).value
+        safe = sanitize_untrusted_data(
+            original, registry=extraction_registry()
+        ).value
         if not isinstance(safe, str) or safe != original:
             safe = _evidence_digest(original)
             detail_lost = True
@@ -105,7 +139,7 @@ def _bounded_evidence_text(value: str | None) -> tuple[str | None, bool]:
     if value is None:
         return None, False
     original = value if isinstance(value, str) else str(value)
-    safe = sanitize_untrusted_data(original).value
+    safe = sanitize_untrusted_data(original, registry=extraction_registry()).value
     if not isinstance(safe, str) or safe != original:
         return _evidence_digest(original), True
     if len(safe.encode("utf-8")) > MAX_OBLIGATION_TEXT_BYTES:
@@ -560,6 +594,11 @@ class DependencyIndexSnapshot:
     semantic_evidence: ReviewedCoreSemantics | None = field(default=None, repr=False, compare=False)
     # Diagnostic-only partition; never consumed by helper execution binding.
     script_diagnostics: ScriptDiagnostics | None = field(default=None, repr=False, compare=False)
+    # HAMCP-191 D4: the identity record of the strings this build bounded;
+    # analysis re-scans of the snapshot pass it. Never fingerprinted.
+    sanitizer_registry: ReferenceMarkerRegistry | None = field(
+        default=None, repr=False, compare=False
+    )
 
 
 def obligation_material(item: DependencyObligation) -> dict[str, Any]:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import record_marker_collision_refusal, sanitize_untrusted_data
 from .constants import (
     CANONICAL_OPERATION_ID,
     MAX_DASHBOARD_APPROVAL_PROJECTION_BYTES,
@@ -321,6 +321,7 @@ def validate_dashboard_approval_projection(
         )
     sanitation = sanitize_untrusted_data(projection, known_secrets=known_secrets)
     if sanitation.failed_closed or sanitation.redaction_applied:
+        record_marker_collision_refusal(sanitation)
         raise _failure(
             "Dashboard approval projection contains protected data",
             reason="approval_projection_contains_protected_data",
