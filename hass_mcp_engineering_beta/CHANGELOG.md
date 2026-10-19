@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.4.1-beta.21 - Administrator verification for Ingress approval pages (HAMCP-205)
+
+Builds on 2.4.1-beta.20.
+
+- Require a Home Assistant administrator on all ten Ingress approval routes
+  (plan, F3 and typed inboxes, reviews and decisions). One shared gate needs
+  exactly one well-formed `X-Remote-User-Id` and reads the fixed, read-only
+  `config/auth/list` command on every request, with no caching. A missing
+  identity or non-administrator is refused with 403, and a failed or
+  ambiguous lookup with 503, before any governance, F3, typed-service, CSRF
+  or device access. Absorbs HAMCP-199.
+- Treat an inactive user, the owner included, and a system-generated account
+  as not an administrator (review L1).
+- Remove the anonymous default approver. Governance refuses a missing or
+  anonymous principal with `external_approval_invalid`, and a stored
+  anonymous approval is refused at apply and rollback with
+  `external_approval_required` and reason
+  `anonymous_approval_requires_reapproval`; re-plan and approve as a
+  verified administrator.
+- Add `approval_identity` to `get_server_health` (refusal counts by reason,
+  no user IDs).
+- Preserve the catalog, input schemas, signed registries, HOLD, support
+  window, persisted formats, workflows and stable v1.
+
 ## 2.4.1-beta.20 - Shared sanitizer with identity-only redaction markers (HAMCP-191)
 
 Builds on 2.4.1-beta.19.

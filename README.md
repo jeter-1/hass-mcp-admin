@@ -1,5 +1,17 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.21** requires a Home Assistant administrator on every
+Ingress approval page (HAMCP-205). On every review and decision it looks up the
+requesting user's role through Home Assistant's read-only `config/auth/list`
+and fails closed when the identity is missing or the lookup fails. Inactive
+users never decide. The anonymous default approver is removed: an approval
+stored under the anonymous principal must be re-approved by planning the change
+again. `get_server_health` counts refusals by reason.
+Read the [2.4.1-beta.21 release notes](docs/V2_4_1_BETA21_RELEASE_NOTES.md) and
+[2.4.1-beta.21 acceptance contract](docs/V2_4_1_BETA21_ACCEPTANCE.md).
+
+It builds on beta.20 below.
+
 Engineering **2.4.1-beta.20** gives every tool one shared sanitizer with
 identity-only redaction markers (HAMCP-191). Every rule runs first, then any
 untrusted string that still looks like a redaction marker is replaced as a
@@ -197,7 +209,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.20 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.21 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
