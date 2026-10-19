@@ -313,6 +313,15 @@ WebSocket peer):
   - duplicate or unknown ids and an early close are malformed;
   - withdrawn dispatch authority stops sending.
 
+One existing test changes. `test_rc2dev4_release_hardening`
+`test_cold_build_profile_has_bounded_request_breakdown` pinned the old
+per-automation breakdown (3 `automation_config` reads, 6 requests). It now pins
+the loaded breakdown: 4 requests, one `loaded_automation_config_batch`. A new
+sibling test pins the stored-only case: a client without `command_batch` gives
+7 requests, including the counted batch attempt, and
+`loaded_source_unavailable: 3`. CI shard 5 found this pin in run 39286251867.
+The focused module set used locally had missed it.
+
 Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`,
 `results.json`): 11 of 11 are killed and none survive.
 
