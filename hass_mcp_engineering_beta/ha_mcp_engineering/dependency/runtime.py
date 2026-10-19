@@ -117,6 +117,14 @@ class DependencyAnalysisRuntime:
             raise RuntimeError("Dependency analysis is not configured")
         return self.service
 
+    def note_automation_write(self, automation_id: str) -> None:
+        """HAMCP-209: journal a governed write until its reload is verified."""
+
+        if self.service:
+            note = getattr(self.service.index.provider, "note_automation_write", None)
+            if callable(note):
+                note(automation_id)
+
     def invalidate(self, reason: str = "configuration_changed") -> None:
         if self.service:
             self.service.index.invalidate(reason)

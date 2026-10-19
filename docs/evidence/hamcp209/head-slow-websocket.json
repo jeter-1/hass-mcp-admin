@@ -1,0 +1,33 @@
+{
+  "automation_config_rest_reads": 0,
+  "automation_config_source": "loaded_websocket",
+  "automation_coverage": {
+    "completeness": "complete",
+    "failed_item_count": 0
+  },
+  "automations": 113,
+  "average_request_queue_wait_ms": 0.0,
+  "build_running_when_write_issued": true,
+  "build_wall_ms": 1439.3,
+  "concurrent_write_ms": 300.6,
+  "core_lock_wait_max_ms": 0.0,
+  "cumulative_queue_wait_ms": 0,
+  "idle_write_ms": 300.7,
+  "index_waiter_ms": 1345.8,
+  "label": "head-slow-websocket",
+  "maximum_single_request_queue_wait_ms": 0.0,
+  "modelled_seconds_per_serialized_read": 0.2994,
+  "parse_seconds_per_automation": 0.00265,
+  "request_count": 4,
+  "request_count_by_operation": {
+    "entity_registry_inventory": 1,
+    "home_assistant_config": 1,
+    "loaded_automation_config_batch": 1,
+    "states_inventory": 1
+  },
+  "scan_wall_ms": 1347.133,
+  "synthetic": true,
+  "websocket_batch_commands": 226,
+  "websocket_batch_connections": 1,
+  "websocket_seconds_per_command": 0.005
+}

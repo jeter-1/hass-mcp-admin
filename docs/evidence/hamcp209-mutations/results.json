@@ -1,0 +1,259 @@
+{
+  "baseline": {
+    "log": "baseline.log",
+    "modules": [
+      "tests.test_hamcp209_fast_dependency_index"
+    ],
+    "returncode": 0,
+    "seconds": 4.4,
+    "summary": "OK"
+  },
+  "mutation_count": 11,
+  "killed": 11,
+  "survived": [],
+  "python": "3.12.14",
+  "results": [
+    {
+      "id": "M1-per-automation-rest-loop-restored",
+      "design_item": "brief: the per-automation REST loop restored (request-count test must fail)",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            if reason is None and not pending:\n",
+          "            if False:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M1-per-automation-rest-loop-restored.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_113_automations_use_one_connection_and_no_per_automation_read (tests.test_hamcp209_fast_dependency_index.BoundedRequestTests.test_113_automations_use_one_connection_and_no_per_automation_read)"
+      ],
+      "seconds": 1.4
+    },
+    {
+      "id": "M2a-missing-automation-reported-complete",
+      "design_item": "brief: a missing automation (loaded config not found) read as an empty, complete config",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "                or not isinstance(search_result, dict)\n            ):\n                return None, \"loaded_config_unreadable\"\n",
+          "                or not isinstance(search_result, dict)\n            ):\n                return {\"id\": internal_id}, None\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M2a-missing-automation-reported-complete.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_partial_coverage_matches_stored_path (tests.test_hamcp209_fast_dependency_index.CoverageTests.test_partial_coverage_matches_stored_path)"
+      ],
+      "seconds": 3.6
+    },
+    {
+      "id": "M2b-pending-written-automation-never-checked",
+      "design_item": "design 4: a written automation absent from the loaded inventory reported as complete",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        for key in sorted(set(pending_snapshot) - inventory_ids):\n",
+          "        for key in ():\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M2b-pending-written-automation-never-checked.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_deleted_pending_automation_clears_on_404 (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_deleted_pending_automation_clears_on_404)"
+      ],
+      "seconds": 4.4
+    },
+    {
+      "id": "M2c-pending-not-loaded-reported-unavailable",
+      "design_item": "design 4: with no other automation, a written-not-loaded automation is partial, not unavailable",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            if results or pending_not_loaded or journal_overflow\n",
+          "            if results or journal_overflow\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M2c-pending-not-loaded-reported-unavailable.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_written_automation_not_loaded_is_partial_with_empty_inventory (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_written_automation_not_loaded_is_partial_with_empty_inventory)"
+      ],
+      "seconds": 4.5
+    },
+    {
+      "id": "M3-silent-fallback",
+      "design_item": "brief: the stored fallback is reported, never silent",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            fallback_reasons[reason] += 1\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M3-silent-fallback.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_unreadable_loaded_and_stored_automation_is_partial (tests.test_hamcp209_fast_dependency_index.CoverageTests.test_unreadable_loaded_and_stored_automation_is_partial)"
+      ],
+      "seconds": 3.5
+    },
+    {
+      "id": "M4-journal-ignored",
+      "design_item": "design 4: a pending write is read from stale loaded config",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            pending = journal_key in pending_snapshot or journal_overflow\n",
+          "            pending = False\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M4-journal-ignored.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_journal_overflow_compares_every_candidate_until_clean (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_journal_overflow_compares_every_candidate_until_clean)"
+      ],
+      "seconds": 4.4
+    },
+    {
+      "id": "M5-blueprint-search-ignored",
+      "design_item": "design 2: a blueprint instance is read from substituted loaded config",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            if blueprints or \"use_blueprint\" in config:\n",
+          "            if \"use_blueprint\" in config:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M5-blueprint-search-ignored.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_blueprint_loaded_form_is_never_used (tests.test_hamcp209_fast_dependency_index.ExtractionParityTests.test_blueprint_loaded_form_is_never_used)"
+      ],
+      "seconds": 3.6
+    },
+    {
+      "id": "M6-identity-unchecked",
+      "design_item": "design 2: a loaded config for another id is accepted",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            if str(config.get(\"id\")) != str(internal_id):\n",
+          "            if False:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M6-identity-unchecked.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_per_automation_reason_is_reported (tests.test_hamcp209_fast_dependency_index.FallbackReportingTests.test_each_per_automation_reason_is_reported)"
+      ],
+      "seconds": 4.2
+    },
+    {
+      "id": "M7-allowlist-open",
+      "design_item": "security: the batch admits any command",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py",
+      "replacements": [
+        [
+          "    if type(payload) is not dict:\n        return False\n    command_type",
+          "    return True\n    command_type"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M7-allowlist-open.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_only_fixed_read_shapes_are_admitted (tests.test_hamcp209_fast_dependency_index.BatchAllowlistTests.test_only_fixed_read_shapes_are_admitted)"
+      ],
+      "seconds": 0.8
+    },
+    {
+      "id": "M8-governed-write-not-journaled",
+      "design_item": "design 4: the governed automation write skips the journal",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+      "replacements": [
+        [
+          "        DEPENDENCY_ANALYSIS.note_automation_write(automation_id)\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M8-governed-write-not-journaled.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_automation_gateway_journals_before_dispatch (tests.test_hamcp209_fast_dependency_index.GovernedWriteHookTests.test_automation_gateway_journals_before_dispatch)"
+      ],
+      "seconds": 4.2
+    },
+    {
+      "id": "M9-resource-write-not-journaled",
+      "design_item": "design 4: the resource automation write skips the journal",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
+      "replacements": [
+        [
+          "            DEPENDENCY_ANALYSIS.note_automation_write(resource_id)\n",
+          "            pass\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M9-resource-write-not-journaled.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_resource_gateway_journals_automation_only (tests.test_hamcp209_fast_dependency_index.GovernedWriteHookTests.test_resource_gateway_journals_automation_only)"
+      ],
+      "seconds": 4.2
+    }
+  ]
+}

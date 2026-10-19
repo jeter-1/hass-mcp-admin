@@ -16,6 +16,8 @@ import time
 from typing import Any
 
 from ..clients.paths import rest_path
+from ..clients.rest import ExpectedHttpStatus
+from ..clients.websocket import batch_command_allowed
 from ..facilitation import EvidenceReference
 from ..observability import METRICS
 from ..logging_config import redact_data
@@ -56,6 +58,28 @@ from .models import (
 
 
 MAX_AUTOMATION_SOURCES = 1_000
+# HAMCP-209: governed automation writes awaiting verified reload agreement.
+MAX_PENDING_AUTOMATION_WRITES = 256
+LOADED_AUTOMATION_SOURCE = "loaded_websocket"
+STORED_AUTOMATION_SOURCE = "stored_rest"
+LOADED_FALLBACK_REASONS = frozenset({
+    "blueprint_instance",
+    "loaded_entity_unavailable",
+    "loaded_config_unreadable",
+    "loaded_identity_mismatch",
+    "pending_write_reload",
+    "loaded_source_unavailable",
+})
+# A stored read for these reasons is exact regardless of reload timing.
+_STABLE_LOADED_REASONS = frozenset({
+    "blueprint_instance",
+    "loaded_entity_unavailable",
+    "loaded_identity_mismatch",
+})
+
+
+def _canonical(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
 MAX_LABEL_REGISTRY_ENTRIES = 1_000
@@ -165,6 +189,36 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         self.secret = secret
         self.concurrency = max(1, min(concurrency, 10))
         self.timeout = max(1.0, min(timeout, 120.0))
+        self._pending_writes: dict[str, int] = {}
+        self._pending_write_sequence = 0
+        self._pending_write_overflow = False
+
+    def note_automation_write(self, automation_id: Any) -> None:
+        """Record a governed write so loaded config is verified until reloaded.
+
+        Home Assistant reloads the automation after the write response, so the
+        loaded configuration may briefly predate the write. The stored read is
+        used for a journaled automation until loaded and stored agree.
+        """
+
+        key = str(automation_id)
+        self._pending_write_sequence += 1
+        if key in self._pending_writes or len(self._pending_writes) < MAX_PENDING_AUTOMATION_WRITES:
+            self._pending_writes[key] = self._pending_write_sequence
+        else:
+            self._pending_write_overflow = True
+
+    def _settle_pending_writes(
+        self, snapshot: dict[str, int], sequence: int, overflow: bool,
+        verified: set[str], overflow_verified: bool,
+    ) -> None:
+        """Clear only entries verified by this build and not rewritten since."""
+
+        for key in verified:
+            if key in snapshot and self._pending_writes.get(key) == snapshot[key]:
+                del self._pending_writes[key]
+        if overflow and overflow_verified and self._pending_write_sequence == sequence:
+            self._pending_write_overflow = False
 
     @property
     def available(self) -> bool:
@@ -393,11 +447,82 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     limit_exceeded=True,
                 )
             )
-        async def fetch_automation(state):
+        # HAMCP-209 (D3/D4): read each automation's LOADED configuration over
+        # one pipelined WebSocket connection instead of one serialized REST
+        # read (lock + full automations.yaml parse) per automation. The stored
+        # REST read remains only for the reported cases in LOADED_FALLBACK_REASONS.
+        pending_snapshot = dict(self._pending_writes)
+        pending_sequence = self._pending_write_sequence
+        journal_overflow = self._pending_write_overflow
+        source_counts: Counter[str] = Counter()
+        fallback_reasons: Counter[str] = Counter()
+        verified_pending: set[str] = set()
+        loaded: dict[str, tuple[Any, Any]] = {}
+        loaded_source_failure: str | None = None
+        loaded_command_count = 0
+        loaded_connection_count = 0
+        loaded_entities = []
+        for state in automations:
             attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
-            internal_id = attrs.get("id")
-            if not internal_id:
-                return state, None, "automation_id_missing"
+            entity_id = state.get("entity_id")
+            if (
+                attrs.get("id")
+                and state.get("state") != "unavailable"
+                and batch_command_allowed({"type": "automation/config", "entity_id": entity_id})
+            ):
+                loaded_entities.append(entity_id)
+        if loaded_entities:
+            payloads = []
+            for entity_id in loaded_entities:
+                payloads.append({"type": "automation/config", "entity_id": entity_id})
+                payloads.append(
+                    {"type": "search/related", "item_type": "automation", "item_id": entity_id}
+                )
+            loaded_command_count = len(payloads)
+            loaded_connection_count = 1
+            try:
+                outcomes = await request(
+                    "loaded_automation_config_batch",
+                    lambda: self.websocket_client.command_batch(payloads),
+                )
+                if not isinstance(outcomes, list) or len(outcomes) != len(payloads):
+                    raise TypeError("loaded configuration batch is incomplete")
+                for index, entity_id in enumerate(loaded_entities):
+                    loaded[entity_id] = (outcomes[2 * index], outcomes[2 * index + 1])
+            except Exception:
+                loaded.clear()
+                loaded_source_failure = "loaded_source_unavailable"
+
+        def loaded_route(state, internal_id) -> tuple[dict[str, Any] | None, str | None]:
+            """Return the loaded config, or the reported reason to read stored."""
+
+            if state.get("state") == "unavailable":
+                return None, "loaded_entity_unavailable"
+            if loaded_source_failure is not None:
+                return None, loaded_source_failure
+            outcome = loaded.get(state.get("entity_id"))
+            if outcome is None:
+                return None, "loaded_config_unreadable"
+            (config_ok, config_result), (search_ok, search_result) = outcome
+            if (
+                not config_ok
+                or not isinstance(config_result, dict)
+                or not isinstance(config_result.get("config"), dict)
+                or not search_ok
+                or not isinstance(search_result, dict)
+            ):
+                return None, "loaded_config_unreadable"
+            config = config_result["config"]
+            blueprints = search_result.get("automation_blueprint", [])
+            if not isinstance(blueprints, list):
+                return None, "loaded_config_unreadable"
+            if blueprints or "use_blueprint" in config:
+                return None, "blueprint_instance"
+            if str(config.get("id")) != str(internal_id):
+                return None, "loaded_identity_mismatch"
+            return config, None
+
+        async def fetch_stored(internal_id):
             try:
                 config = await request(
                     "automation_config",
@@ -407,13 +532,104 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     queued=True,
                 )
                 if not isinstance(config, dict):
-                    return state, None, "automation_config_invalid"
-                return state, config, None
+                    return None, "automation_config_invalid"
+                return config, None
             except Exception:
-                return state, None, "automation_config_unreadable"
+                return None, "automation_config_unreadable"
+
+        async def fetch_automation(state):
+            attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
+            internal_id = attrs.get("id")
+            if not internal_id:
+                return state, None, "automation_id_missing"
+            journal_key = str(internal_id)
+            pending = journal_key in pending_snapshot or journal_overflow
+            config, reason = loaded_route(state, internal_id)
+            if reason is None and not pending:
+                source_counts["loaded_websocket"] += 1
+                return state, config, None
+            stored, failure = await fetch_stored(internal_id)
+            if reason is None:
+                # A governed write is pending: the reload may not have run yet.
+                if failure is None and _canonical(stored) == _canonical(config):
+                    verified_pending.add(journal_key)
+                    source_counts["loaded_websocket"] += 1
+                    return state, config, None
+                reason = "pending_write_reload"
+            elif failure is None and reason in _STABLE_LOADED_REASONS:
+                # The stale loaded entity routes here until its reload lands,
+                # after which loaded == stored; the stored read is exact now.
+                verified_pending.add(journal_key)
+            fallback_reasons[reason] += 1
+            source_counts["stored_rest"] += 1
+            return state, stored, failure
 
         auto_started = time.perf_counter()
         results = await asyncio.gather(*(fetch_automation(state) for state in automations))
+
+        # A journaled write whose automation is absent from the loaded
+        # inventory was either deleted (stored 404) or is not loaded yet.
+        inventory_ids = {
+            str(state.get("attributes", {}).get("id"))
+            for state in [*automations, *automation_inventory_overflow]
+            if isinstance(state.get("attributes"), dict) and state["attributes"].get("id")
+        }
+        pending_not_loaded = 0
+        for key in sorted(set(pending_snapshot) - inventory_ids):
+            try:
+                stored = await request(
+                    "automation_config",
+                    lambda key=key: self.rest_client.request(
+                        "GET", rest_path("/config/automation/config/{}", key),
+                        expected_statuses=frozenset({404}),
+                    ),
+                    queued=True,
+                )
+            except Exception:
+                stored = None
+            if isinstance(stored, ExpectedHttpStatus) and stored.status == 404:
+                verified_pending.add(key)
+                continue
+            pending_not_loaded += 1
+            bounded_key = _bounded_provider_identity(key, secret=self.secret)
+            automation_read_failures.append(
+                AutomationReadFailure(
+                    source_id=bounded_key,
+                    source_entity_id=None,
+                    reason_code="automation_pending_reload_not_loaded",
+                )
+            )
+            obligations.append(
+                make_coverage_failure_obligation(
+                    source_type="automation",
+                    source_id=bounded_key,
+                    source_entity_id=None,
+                    config_path="$",
+                    relation="other_structured_reference",
+                    reason_code="automation_pending_reload_not_loaded",
+                )
+            )
+        overflow_verified = journal_overflow and not fallback_reasons.get(
+            "pending_write_reload"
+        ) and loaded_source_failure is None and not pending_not_loaded
+        if journal_overflow:
+            # Identities beyond the journal cap are unknown; a written
+            # automation that is not loaded yet cannot be ruled out.
+            obligations.append(
+                make_coverage_failure_obligation(
+                    source_type="automation",
+                    source_id="dependency_provider",
+                    source_entity_id=None,
+                    config_path="$",
+                    relation="other_structured_reference",
+                    reason_code="pending_write_journal_overflow",
+                )
+            )
+        self._settle_pending_writes(
+            pending_snapshot, pending_sequence, journal_overflow,
+            verified_pending, overflow_verified,
+        )
+
         failed = 0
         automation_call_documents = []
         blueprint_failures = 0
@@ -810,6 +1026,22 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         findings.extend(ledger_findings)
         dynamic = ledger_dynamic
 
+        # HAMCP-209: the index records which configuration source it used.
+        if source_counts["loaded_websocket"] and source_counts["stored_rest"]:
+            automation_config_source = "mixed"
+        elif source_counts["stored_rest"]:
+            automation_config_source = STORED_AUTOMATION_SOURCE
+        elif source_counts["loaded_websocket"]:
+            automation_config_source = LOADED_AUTOMATION_SOURCE
+        else:
+            automation_config_source = "none"
+        automation_source_policy = (
+            f"automation_config_source={automation_config_source}; "
+            f"loaded={source_counts['loaded_websocket']}; "
+            f"stored={source_counts['stored_rest']}; "
+            "stored fallback reasons: "
+            + (", ".join(f"{key}={count}" for key, count in sorted(fallback_reasons.items())) or "none")
+        )
         automation_coverage_failure_sources = {
             item.source_id
             for item in obligations
@@ -824,13 +1056,25 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             "complete"
             if automation_failed_items == 0
             else "partial"
-            if results
+            if results or pending_not_loaded or journal_overflow
             else "unavailable"
         )
         automation_warnings: list[str] = []
         if failed:
             automation_warnings.append(
                 f"{failed} automation configuration(s) could not be read."
+            )
+        if pending_not_loaded:
+            automation_warnings.append(
+                f"{pending_not_loaded} written automation(s) are stored but not loaded yet."
+            )
+        if journal_overflow:
+            automation_warnings.append(
+                "Pending-write journal overflowed; an automation written but not loaded yet cannot be ruled out."
+            )
+        if loaded_source_failure is not None:
+            automation_warnings.append(
+                "Loaded automation configuration was unavailable; stored configuration was read instead."
             )
         if automation_inventory_overflow_count:
             automation_warnings.append(
@@ -840,6 +1084,8 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             0,
             len(automation_coverage_failure_sources)
             - failed
+            - pending_not_loaded
+            - (1 if journal_overflow else 0)
             - (1 if automation_inventory_overflow_count else 0),
         )
         if bounded_failures:
@@ -852,6 +1098,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 automation_status, sum(item.source_type == "automation" for item in findings), automation_failed_items,
                 automation_warnings,
                 (time.perf_counter() - auto_started) * 1000,
+                policy=automation_source_policy,
                 obligation_ledger_completeness=automation_status,
                 obligation_ledger_failed_item_count=(
                     automation_failed_items
@@ -939,6 +1186,20 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     key: round(value, 3) for key, value in sorted(request_time_ms.items())
                 },
                 "automation_count": len(automations),
+                "automation_config_source": automation_config_source,
+                "automation_config_source_counts": {
+                    LOADED_AUTOMATION_SOURCE: source_counts["loaded_websocket"],
+                    STORED_AUTOMATION_SOURCE: source_counts["stored_rest"],
+                },
+                "stored_config_fallback_reasons": dict(sorted(fallback_reasons.items())),
+                "loaded_config_connection_count": loaded_connection_count,
+                "loaded_config_command_count": loaded_command_count,
+                "pending_write_journal": {
+                    "pending_at_build": len(pending_snapshot),
+                    "overflow_at_build": journal_overflow,
+                    "verified_cleared": len(verified_pending & set(pending_snapshot)),
+                    "not_loaded": pending_not_loaded,
+                },
                 "script_diagnostics": script_diagnostics.profile if script_diagnostics is not None else {},
                 "dependency_obligation_count": len(obligations),
                 "dependency_coverage_failure_count": sum(

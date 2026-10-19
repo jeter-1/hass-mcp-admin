@@ -1,0 +1,78 @@
+{
+  "synthetic": true,
+  "fixture": "tests/hamcp209_fixtures.py generated_automations(113); docs/evidence/hamcp209/measure.py",
+  "model": {
+    "parse_seconds_per_automation": 0.00265,
+    "modelled_seconds_per_serialized_read": 0.2994,
+    "rationale": "Core 2026.10.x REST GET takes mutation_lock and re-parses automations.yaml; cost per automation chosen so one read is ~0.30 s at N=113, as observed live (HAMCP-171)."
+  },
+  "live_reference_hamcp171": {
+    "build_seconds": [
+      33.7,
+      41.5
+    ],
+    "average_queue_wait_seconds": 15.6,
+    "maximum_queue_wait_seconds": 33,
+    "write_after_restart_seconds": [
+      35,
+      44
+    ]
+  },
+  "before": {
+    "build_wall_ms": 34780.8,
+    "request_count": 116,
+    "automation_config_rest_reads": 113,
+    "websocket_batch_connections": 0,
+    "websocket_batch_commands": 0,
+    "average_request_queue_wait_ms": 15066.53,
+    "maximum_single_request_queue_wait_ms": 31873.946,
+    "core_lock_wait_max_ms": 2405.2,
+    "idle_write_ms": 300.6,
+    "concurrent_write_ms": 2705.0,
+    "index_waiter_ms": 34491.2,
+    "automation_coverage": {
+      "completeness": "complete",
+      "failed_item_count": 0
+    }
+  },
+  "after": {
+    "build_wall_ms": 416.0,
+    "request_count": 4,
+    "automation_config_rest_reads": 0,
+    "websocket_batch_connections": 1,
+    "websocket_batch_commands": 226,
+    "average_request_queue_wait_ms": 0.0,
+    "maximum_single_request_queue_wait_ms": 0.0,
+    "core_lock_wait_max_ms": 0.0,
+    "idle_write_ms": 300.6,
+    "concurrent_write_ms": 323.4,
+    "index_waiter_ms": 323.3,
+    "automation_coverage": {
+      "completeness": "complete",
+      "failed_item_count": 0
+    }
+  },
+  "after_websocket_10x_slower": {
+    "build_wall_ms": 1439.3,
+    "request_count": 4,
+    "automation_config_rest_reads": 0,
+    "websocket_batch_connections": 1,
+    "websocket_batch_commands": 226,
+    "average_request_queue_wait_ms": 0.0,
+    "maximum_single_request_queue_wait_ms": 0.0,
+    "core_lock_wait_max_ms": 0.0,
+    "idle_write_ms": 300.7,
+    "concurrent_write_ms": 300.6,
+    "index_waiter_ms": 1345.8,
+    "automation_coverage": {
+      "completeness": "complete",
+      "failed_item_count": 0
+    }
+  },
+  "model_validation": "The base run reproduces the live build (34.8 s vs 33.7-41.5 s) and queue wait (avg 15.1 s / max 31.9 s vs 15.6 s / ~33 s).",
+  "projected_live_effect": [
+    "Index build: from ~34-42 s to the inventory reads plus one pipelined WebSocket batch (226 commands, window 16) over in-memory config; modelled 0.4 s, 1.4 s with a 10x slower per-command cost. Live WebSocket per-command latency is unmeasured here (no live access); the acceptance live check records it.",
+    "REST automation_config reads per build: 113 -> 0 when every automation is loaded, non-blueprint, and has no pending write; each blueprint instance, unavailable entity, identity mismatch or pending write still costs one reported stored read.",
+    "A write issued during the post-restart prewarm: Core lock wait goes from up to 8 queued whole-file reads (2.7 s modelled) to none (300.6 ms = idle write); a write that waits for the index goes from the whole build (34.5 s modelled; 35-44 s live) to the batch build (0.3-1.3 s modelled)."
+  ]
+}

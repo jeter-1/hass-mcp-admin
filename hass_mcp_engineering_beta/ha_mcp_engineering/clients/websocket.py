@@ -1,6 +1,7 @@
 """Observable Home Assistant WebSocket transport with safe error mapping."""
 
 import asyncio
+import re
 import time
 from typing import Any
 
@@ -17,6 +18,31 @@ from ..errors import (
 from ..observability import METRICS
 from ..request_context import current_telemetry
 from .single_read import SINGLE_READ, MAX_READ_BYTES, session_options
+
+# HAMCP-209: the only commands a pipelined batch may carry. Both are in-memory
+# reads of one loaded automation; anything else is refused before dispatch.
+BATCH_WINDOW = 16
+MAX_BATCH_COMMANDS = 2_048
+_BATCH_COMMAND_KEYS = {
+    "automation/config": frozenset({"type", "entity_id"}),
+    "search/related": frozenset({"type", "item_type", "item_id"}),
+}
+_AUTOMATION_ENTITY = re.compile(r"automation\.[a-z0-9_]{1,245}\Z", re.ASCII)
+
+
+def batch_command_allowed(payload: Any) -> bool:
+    """Admit only the fixed loaded-automation read shapes."""
+
+    if type(payload) is not dict:
+        return False
+    command_type = payload.get("type")
+    keys = _BATCH_COMMAND_KEYS.get(command_type) if isinstance(command_type, str) else None
+    if keys is None or frozenset(payload) != keys:
+        return False
+    if command_type == "search/related" and payload.get("item_type") != "automation":
+        return False
+    identity = payload.get("entity_id", payload.get("item_id"))
+    return isinstance(identity, str) and _AUTOMATION_ENTITY.fullmatch(identity) is not None
 
 
 class HomeAssistantWebSocketClient:
@@ -305,3 +331,132 @@ class HomeAssistantWebSocketClient:
             # Complete attempt timing once without altering normal call behavior.
             if SINGLE_READ.get():
                 record()
+
+    async def command_batch(self, payloads: list[dict]) -> list[tuple[bool, Any]]:
+        """Pipeline fixed read-only commands over one authenticated connection.
+
+        Returns one ``(success, result_or_error_code)`` pair per payload, in
+        order. Per-command errors stay per command; transport, authentication,
+        timeout or protocol failures raise and invalidate the whole batch.
+        """
+
+        category = "websocket_batch"
+        payloads = list(payloads)
+        if len(payloads) > MAX_BATCH_COMMANDS or not all(
+            batch_command_allowed(payload) for payload in payloads
+        ):
+            raise HomeAssistantApiError(
+                details={**self._error_details(category), "reason": "command_not_allowed"}
+            )
+        if not payloads:
+            return []
+        telemetry = current_telemetry()
+
+        def authorize() -> None:
+            if telemetry is not None and not telemetry.authorize_core_dispatch():
+                telemetry.error_code = ErrorCode.PROVIDER_UNAVAILABLE.value
+                raise HomeAssistantUnavailableError(
+                    details=self._error_details(category)
+                )
+
+        authorize()
+        started = time.perf_counter()
+        if telemetry:
+            telemetry.begin_ha_attempt(started)
+        timeout = aiohttp.ClientTimeout(total=self.settings.ha_timeout_seconds)
+        websocket_timeout = aiohttp.ClientWSTimeout(
+            ws_receive=self.settings.ha_timeout_seconds,
+            ws_close=self.settings.ha_timeout_seconds,
+        )
+        results: list[tuple[bool, Any] | None] = [None] * len(payloads)
+
+        def malformed() -> HomeAssistantApiError:
+            self._set_error(ErrorCode.HA_API_ERROR)
+            return HomeAssistantApiError(
+                details={
+                    **self._error_details(category, provider_response_received=True),
+                    "reason": "malformed_response",
+                }
+            )
+
+        timed_out = False
+        try:
+            async with aiohttp.ClientSession(timeout=timeout, **session_options()) as session:
+                async with session.ws_connect(
+                    self.settings.websocket_url, timeout=websocket_timeout
+                ) as websocket:
+                    message = await websocket.receive_json()
+                    if message.get("type") != "auth_required":
+                        self._set_error(ErrorCode.HA_API_ERROR)
+                        raise HomeAssistantApiError(details=self._error_details(category))
+                    await websocket.send_json(
+                        {"type": "auth", "access_token": self.settings.ha_token}
+                    )
+                    message = await websocket.receive_json()
+                    if message.get("type") != "auth_ok":
+                        self._set_error(ErrorCode.AUTHORIZATION_FAILURE)
+                        raise AuthorizationError(details=self._error_details(category))
+                    sent = 0
+                    received = 0
+                    while received < len(payloads):
+                        while sent < len(payloads) and sent - received < BATCH_WINDOW:
+                            # Authority may be withdrawn mid-batch; never send past it.
+                            authorize()
+                            await websocket.send_json({"id": sent + 1, **payloads[sent]})
+                            sent += 1
+                        message = await websocket.receive_json()
+                        if type(message) is not dict:
+                            raise malformed()
+                        if message.get("type") != "result":
+                            continue
+                        message_id = message.get("id")
+                        if (
+                            type(message_id) is not int
+                            or not 1 <= message_id <= sent
+                            or results[message_id - 1] is not None
+                        ):
+                            raise malformed()
+                        received += 1
+                        if message.get("success") is True:
+                            results[message_id - 1] = (True, message.get("result"))
+                            continue
+                        error = message.get("error")
+                        error_code = (
+                            str(error.get("code", "")).lower()[:64]
+                            if isinstance(error, dict) else ""
+                        )
+                        if error_code in {"unauthorized", "forbidden"}:
+                            self._set_error(ErrorCode.AUTHORIZATION_FAILURE)
+                            raise AuthorizationError(
+                                details=self._error_details(
+                                    category, provider_response_received=True
+                                )
+                            )
+                        results[message_id - 1] = (False, error_code or "error")
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            timed_out = True
+            self._set_error(ErrorCode.HA_TIMEOUT)
+            raise HomeAssistantTimeoutError(
+                details=self._error_details(category)
+            ) from exc
+        except aiohttp.WSServerHandshakeError as exc:
+            status = int(exc.status)
+            if status in {401, 403}:
+                self._set_error(ErrorCode.AUTHORIZATION_FAILURE)
+                raise AuthorizationError(
+                    details=self._error_details(category, status=status)
+                ) from exc
+            self._set_error(ErrorCode.HA_API_ERROR)
+            raise HomeAssistantApiError(
+                details=self._error_details(category, status=status)
+            ) from exc
+        except (aiohttp.ClientConnectionError, OSError) as exc:
+            self._set_error(ErrorCode.HA_UNAVAILABLE)
+            raise HomeAssistantUnavailableError(
+                details=self._error_details(category)
+            ) from exc
+        except (TypeError, ValueError) as exc:
+            raise malformed() from exc
+        finally:
+            self._record(started, category, timeout=timed_out)
+        return [item for item in results if item is not None]
