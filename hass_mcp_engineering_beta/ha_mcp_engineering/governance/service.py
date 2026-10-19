@@ -205,20 +205,31 @@ from .semantic_projection import (
 APPROVAL_AUTHORITY_VERSION = 3
 APPROVAL_CHANNEL = "home_assistant_ingress"
 APPROVAL_CHALLENGE_TTL = timedelta(minutes=60)
-DEFAULT_APPROVER_PRINCIPAL = "home_assistant_admin_ingress"
+# The anonymous principal that Ingress decisions recorded before HAMCP-205
+# when Home Assistant forwarded no user ID. Nothing records it any more; it is
+# kept only to recognize those stored decisions, which never authorize
+# dispatch (owner decision, HAMCP-205): the plan must be re-approved by a
+# verified administrator.
+LEGACY_ANONYMOUS_APPROVER_PRINCIPAL = "home_assistant_admin_ingress"
+ANONYMOUS_APPROVAL_REAPPROVAL_REASON = "anonymous_approval_requires_reapproval"
 
 
 def principal_separation_proven(principal: str) -> bool:
     """Return whether an Ingress decision names a distinct identified principal.
 
-    HAMCP-184 F-02: the anonymous fallback principal records that a Home
+    HAMCP-184 F-02: the legacy anonymous principal records that a Home
     Assistant administrator decided through the separate Ingress channel, but
     it does not identify which administrator, so principal separation is not
-    proven. Approval eligibility is unchanged (see
-    ``_external_principal_authority_valid``).
+    proven.
     """
 
-    return principal != DEFAULT_APPROVER_PRINCIPAL
+    return principal != LEGACY_ANONYMOUS_APPROVER_PRINCIPAL
+
+
+def legacy_anonymous_approval(approval: Any) -> bool:
+    """Return whether a stored decision names the legacy anonymous principal."""
+
+    return approval.approver_principal == LEGACY_ANONYMOUS_APPROVER_PRINCIPAL
 
 
 def principal_separation_status(approval: Any) -> dict[str, Any]:
@@ -231,9 +242,7 @@ def principal_separation_status(approval: Any) -> dict[str, Any]:
     """
 
     evaluated = approval.principal_separation_enforced is not None
-    anonymous = (
-        evaluated and approval.approver_principal == DEFAULT_APPROVER_PRINCIPAL
-    )
+    anonymous = evaluated and legacy_anonymous_approval(approval)
     enforced = (
         (approval.principal_separation_enforced is True and not anonymous)
         if evaluated
@@ -7284,6 +7293,15 @@ class ChangeGovernanceService:
             self._require_policy_snapshot(plan)
             self._require_configuration_projection(plan)
             self._require_dashboard_approval_projection(plan)
+            # HAMCP-205: every decision names the verified administrator. A
+            # missing or anonymous principal is refused, never defaulted.
+            if (
+                not approver_principal
+                or approver_principal == LEGACY_ANONYMOUS_APPROVER_PRINCIPAL
+            ):
+                self._reject_external_decision(
+                    plan, ErrorCode.EXTERNAL_APPROVAL_INVALID
+                )
             calculated = self.plan_hash(plan)
             approval = plan.approval
             (
@@ -7346,7 +7364,7 @@ class ChangeGovernanceService:
             else:
                 approval.csrf_digest = None
                 approval.csrf_issued_at = None
-            principal = (approver_principal or DEFAULT_APPROVER_PRINCIPAL)[:160]
+            principal = approver_principal[:160]
             if (
                 active_action
                 == ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
@@ -7369,15 +7387,6 @@ class ChangeGovernanceService:
                 )
             if decision == "approve":
                 if active_action == ApprovalActionKind.PLAN_APPROVAL.value:
-                    if (
-                        plan.policy_decision.policy_class
-                        == ApprovalPolicyClass.ELEVATED_ADMIN
-                        and principal == DEFAULT_APPROVER_PRINCIPAL
-                    ):
-                        self._reject_external_decision(
-                            plan,
-                            ErrorCode.APPROVAL_PRINCIPAL_MISMATCH,
-                        )
                     approval.state = ApprovalState.APPROVED
                     approval.approved_at = self._timestamp()
                     approval.approval_expires_at = plan.expires_at
@@ -12251,24 +12260,33 @@ class ChangeGovernanceService:
 
     @staticmethod
     def _external_principal_authority_valid(plan: ChangePlan) -> bool:
-        """Return the unchanged principal eligibility of an Ingress decision.
+        """Return whether an Ingress decision names an identified principal.
 
-        HAMCP-184 F-02 changes reporting only. An identified principal records
-        ``True``. The anonymous fallback principal records ``False`` and stays
-        eligible exactly where it was accepted before: standard-class plans.
-        Elevated plans already refuse it when the decision is made.
+        HAMCP-205 (owner decision): only a decision recorded for an
+        identified administrator authorizes dispatch. A stored decision by the
+        legacy anonymous principal never does, whatever its recorded
+        separation flag (``False`` since HAMCP-184, ``True`` before it) or
+        policy class; the plan must be re-approved.
         """
 
         approval = plan.approval
-        if approval.principal_separation_enforced is True:
-            return True
         return bool(
-            approval.principal_separation_enforced is False
-            and approval.approver_principal == DEFAULT_APPROVER_PRINCIPAL
-            and plan.policy_decision is not None
-            and plan.policy_decision.policy_class
-            == ApprovalPolicyClass.STANDARD_ADMIN
+            approval.principal_separation_enforced is True
+            and not legacy_anonymous_approval(approval)
         )
+
+    @staticmethod
+    def _approval_refusal_details(
+        plan: ChangePlan, error: ErrorCode
+    ) -> dict[str, Any] | None:
+        """Name the re-approval needed by a legacy anonymous approval."""
+
+        if (
+            error == ErrorCode.EXTERNAL_APPROVAL_REQUIRED
+            and legacy_anonymous_approval(plan.approval)
+        ):
+            return {"reason": ANONYMOUS_APPROVAL_REAPPROVAL_REASON}
+        return None
 
     def _valid_external_approval(
         self, plan: ChangePlan, approval_kind: str
@@ -12280,7 +12298,9 @@ class ChangeGovernanceService:
     ) -> None:
         error = self._approval_requirement_error(plan, approval_kind)
         if error is not None:
-            self._reject_apply(plan, error)
+            self._reject_apply(
+                plan, error, details=self._approval_refusal_details(plan, error)
+            )
 
     def _consume_approval_bundle(self, plan: ChangePlan) -> None:
         """Consume every granted action at the existing dispatch boundary."""
@@ -12804,7 +12824,10 @@ class ChangeGovernanceService:
                 )
                 raise GovernanceError(
                     error,
-                    details={"hash_validation": hash_validation},
+                    details={
+                        "hash_validation": hash_validation,
+                        **(self._approval_refusal_details(plan, error) or {}),
+                    },
                 )
             if not expected_plan_hash or plan.approval.bound_plan_hash != calculated:
                 self._record(plan, "rollback_failed", "rejected", error_code=ErrorCode.APPROVAL_HASH_MISMATCH.value)

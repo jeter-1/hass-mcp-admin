@@ -254,7 +254,10 @@ approval credential. See [`EXTERNAL_APPROVAL.md`](EXTERNAL_APPROVAL.md).
 Since HAMCP-184 (2.4.1-beta.12) `principal_separation_enforced` is `true` only
 for a decision by an Ingress-identified administrator. A decision under the
 anonymous fallback principal (no `X-Remote-User-Id`) reports `false` with reason
-`anonymous_fallback_principal`; its standard-class eligibility is unchanged.
+`anonymous_fallback_principal`. Since HAMCP-205 such a stored approval is
+ineligible: apply and rollback refuse it with `external_approval_required` and
+reason `anonymous_approval_requires_reapproval`, and governance records no new
+anonymous decision.
 
 ## Beta 24 ingress and execution hardening
 

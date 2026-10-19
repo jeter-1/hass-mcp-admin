@@ -11,6 +11,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
+sys.path.insert(0, str(Path(__file__).parent))
+from approval_identity_support import admin_verifier  # noqa: E402
 from ha_mcp_engineering.approval_web import (  # noqa: E402
     _page,
     _render_review,
@@ -184,7 +186,7 @@ class ApprovalThemeTests(unittest.TestCase):
                 )
 
     def test_review_routes_forms_and_hidden_authority_fields_are_unchanged(self):
-        app = create_approval_application(object())
+        app = create_approval_application(object(), administrator_verifier=admin_verifier())
         routes = {
             route.path: frozenset(route.methods or ())
             for route in app.routes

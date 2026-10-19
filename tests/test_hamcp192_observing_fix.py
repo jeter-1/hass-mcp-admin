@@ -23,6 +23,8 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 
 import httpx
 
+sys.path.insert(0, str(Path(__file__).parent))
+from approval_identity_support import admin_verifier  # noqa: E402
 from ha_mcp_engineering.approval_web import create_approval_application
 from ha_mcp_engineering.audit import AuditLogger
 from ha_mcp_engineering.f3.locks import DurableLockStore, LockConflict
@@ -524,7 +526,7 @@ class HoldReleaseServiceTests(ObservingFixture):
 class HoldReleaseIngressTests(ObservingFixture):
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        app = create_approval_application(object(), typed_services={"fan": lambda: self.service})
+        app = create_approval_application(object(), typed_services={"fan": lambda: self.service}, administrator_verifier=admin_verifier())
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app, client=("172.30.32.2", 12345)),
             base_url="http://typed-ingress.local", headers=ADMIN_HEADERS)
@@ -892,7 +894,7 @@ class HoldReleaseExactlyOnceTests(ObservingFixture):
     async def test_codex_m3_probe_disabled_audit_through_ingress_then_backfill(self):
         self.audit.enabled = False  # the supported audit_enabled=false option
         request = await self.held_task()
-        app = create_approval_application(object(), typed_services={"fan": lambda: self.service})
+        app = create_approval_application(object(), typed_services={"fan": lambda: self.service}, administrator_verifier=admin_verifier())
         path = f"/typed/fan/{request.task_id}"
         async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app, client=("172.30.32.2", 1)),
