@@ -7,6 +7,8 @@ configuration, one request or a small bounded number) and D4 (no direct read of
 `automations.yaml` or any configuration file).
 
 Base: `origin/main` `a1236c407aff5203e37328aea43b2b2fa48180f2` (2.4.1-beta.19).
+After HAMCP-191 (PR #280, 2.4.1-beta.20) merged, `main` `538a7c7` was merged
+into this branch (merge commit `78a2595`, no conflicts) and parity was rechecked.
 
 ## 1. Problem
 
@@ -271,6 +273,8 @@ WebSocket peer):
   identical index views and fingerprints on both fixture sets: 21 findings,
   26 obligations and 7 dynamic references; 339 findings and 452 obligations.
   REST configuration reads drop from 6 to 2 and from 113 to 0.
+  The recheck against `538a7c7` (beta.20) after the `main` merge is also
+  identical, with the same fingerprints (`recheck_after_main_merge`).
 - **Bounded requests** (`BoundedRequestTests`): 113 automations use one
   WebSocket connection with 226 commands, no `automation_config` REST read, and
   at most 5 provider requests in total. Unavailable and id-less candidates are

@@ -9,8 +9,9 @@ Design and Part 1 verification:
 [`HAMCP_209_FAST_DEPENDENCY_INDEX_DESIGN.md`](HAMCP_209_FAST_DEPENDENCY_INDEX_DESIGN.md).
 
 **Release target.** This PR was implemented on `2.4.1-beta.19` (`a1236c4`).
-HAMCP-191 (beta.20, PR #280) and HAMCP-205 (beta.21, PR #281) are expected to
-merge to `main` first. This PR then merges `main` with merge commits and
+HAMCP-191 (beta.20, PR #280) merged first and was merged into this branch
+with a merge commit (`78a2595`, no conflicts). HAMCP-205 (beta.21, PR #281)
+is expected to merge next. This PR then merges `main` again and
 stages the next beta through one owner-authorized run of
 `scripts/promote_next_release.py --apply`. If the version materialized at that
 time is not beta.22, these documents are renamed to match before Ready.
@@ -61,8 +62,8 @@ boundaries. Client tests use a loopback WebSocket peer.
   (6).
 
 Cross-tree parity (`docs/evidence/hamcp209/parity.py`, `parity.json`): the
-beta.19 provider and this tree give identical views and fingerprints on both
-fixture sets.
+beta.19 and beta.20 providers and this tree give identical views and
+fingerprints on both fixture sets.
 
 ### Mutation proof
 
