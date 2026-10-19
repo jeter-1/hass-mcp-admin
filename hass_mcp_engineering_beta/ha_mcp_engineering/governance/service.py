@@ -1674,6 +1674,26 @@ class ChangeGovernanceService:
     ) -> ApprovalActionRecord | None:
         return plan.approval.elevated_risk_acknowledgement
 
+    def _identifier_details(self, **identifiers: Any) -> dict[str, Any]:
+        """HAMCP-191 H1g: caller identifiers echoed in error details.
+
+        An identifier the strict input check refuses (a known secret or
+        secret-bearing text, even one that fits the identifier format) is
+        withheld (omitted); an ordinary identifier is echoed unchanged.
+        """
+
+        safe: dict[str, Any] = {}
+        for key, value in identifiers.items():
+            try:
+                unsafe = bool(
+                    persistence_safety_errors({key: value}, self.sensitive_values)
+                )
+            except Exception:
+                unsafe = True
+            if not unsafe:
+                safe[key] = value
+        return safe
+
     def _load(self, plan_id: str) -> ChangePlan:
         try:
             plan = self.repository.get(plan_id)
@@ -1682,7 +1702,8 @@ class ChangeGovernanceService:
         if plan is None:
             METRICS.record_classified_outcome("change_plan_not_found")
             raise GovernanceError(
-                ErrorCode.CHANGE_PLAN_NOT_FOUND, details={"resource_id": plan_id}
+                ErrorCode.CHANGE_PLAN_NOT_FOUND,
+                details=self._identifier_details(resource_id=plan_id),
             )
         self._require_v2_persisted_plan_safe(plan)
         if plan.policy_decision is not None:
@@ -1700,7 +1721,7 @@ class ChangeGovernanceService:
             METRICS.record_classified_outcome("change_plan_not_found")
             raise GovernanceError(
                 ErrorCode.CHANGE_PLAN_NOT_FOUND,
-                details={"resource_id": plan_id},
+                details=self._identifier_details(resource_id=plan_id),
             )
         self._require_v2_persisted_plan_safe(plan)
         if plan.policy_decision is not None:

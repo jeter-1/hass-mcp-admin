@@ -190,7 +190,7 @@ class CoreLogReader(HomeAssistantRestClient):
             or not all(isinstance(line, str) for line in sanitized.value)
         ):
             raise _failure(ErrorCode.PROVIDER_ERROR, "core_log_sanitization_failed")
-        collided_lines = sum(1 for line in sanitized.value if line == MARKER_COLLISION)
+        collided_lines = sum(1 for line in sanitized.value if line.removesuffix("\r") == MARKER_COLLISION)
         redacted_lines = sum(1 for safe, line in zip(sanitized.value, bodies) if safe != line)
         # Export only complete sanitized lines. JSON's ASCII escaping bounds
         # serialized UTF-8 bytes, including non-ASCII and control characters.

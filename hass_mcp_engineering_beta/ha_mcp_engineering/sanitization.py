@@ -908,7 +908,8 @@ class _LineWindowSanitizer(_Sanitizer):
     its match consumed, so the window keeps its line count, and markers on
     different lines are never merged. Pass 2 judges marker look-alikes per
     original line: a marker-like line becomes the collision marker alone and
-    its neighbours keep their pass-1 text. A look-alike that only forms
+    its neighbours keep their pass-1 text (a CRLF line keeps its terminator).
+    A look-alike that only forms
     across lines collapses the lines that form it; one no pair of lines
     explains collapses the window (fail closed).
     """
@@ -952,7 +953,8 @@ class _LineWindowSanitizer(_Sanitizer):
             if hit:
                 self.marker_collision_count += 1
                 self.redacted_field_count += 1
-                output.append(MARKER_COLLISION)
+                # The line's own CRLF terminator half is kept, never content.
+                output.append(MARKER_COLLISION + ("\r" if original.endswith("\r") else ""))
                 continue
             if line != original:
                 self.redacted_field_count += 1
@@ -1157,12 +1159,13 @@ class _PlanContentSanitizer(_Sanitizer):
 
     def _text(self, value: str, source: Any, pattern: tuple[str, ...]) -> str:
         validator = self.exempt(pattern)
-        if validator is not None and validator(value):
+        if validator is not None:
             # Exempt by schema: never rewritten, so dispatch and recovery
-            # state stays byte-exact. It is still strictly scanned (a JWT fits
-            # the request-id alphabet); any finding refuses the write.
+            # state stays byte-exact. A value outside the field's format
+            # refuses the write; one inside it is still strictly scanned (a
+            # JWT fits the request-id alphabet) and any finding refuses too.
             text, categories, _emitted = self._scan(value)
-            if categories or text != value:
+            if not validator(value) or categories or text != value:
                 self._record_field(set(categories) or {"redacted"})
                 self._finding(pattern, refuse=True)
             return value
@@ -1177,7 +1180,7 @@ class _PlanContentSanitizer(_Sanitizer):
         if not categories and text == value:
             return value
         self._record_field(set(categories) or {"redacted"})
-        self._finding(pattern, refuse=validator is not None)
+        self._finding(pattern)
         if MARKER_COLLISION_CATEGORY in categories:
             self.marker_collision_count += 1
             return MARKER_COLLISION
