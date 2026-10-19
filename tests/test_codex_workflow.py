@@ -96,7 +96,7 @@ class RepositoryFixture:
 - Access production systems
 """,
         )
-        self.write("hass_mcp_admin/config.yaml", 'version: "1.1.2"\n')
+        self.write("hass_mcp_admin/retired-addon-config.yaml", 'version: "1.1.2"\n')
         self.write("hass_mcp_engineering_beta/config.yaml", 'version: "2.0.0-rc2-dev1"\n')
         self.write(
             "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -228,7 +228,7 @@ print('fixture metadata validation passed')
         )
         self.write("hass_mcp_admin/__init__.py", "")
         self.write("hass_mcp_admin/example.py", "VALUE = 1\n")
-        self.write("hass_mcp_admin/config.yaml", 'version: "1.1.2"\n')
+        self.write("hass_mcp_admin/retired-addon-config.yaml", 'version: "1.1.2"\n')
         self.write("hass_mcp_engineering_beta/__init__.py", "")
         self.write("hass_mcp_engineering_beta/config.yaml", 'version: "2.0.0-test"\n')
         self.write("tests/__init__.py", "")

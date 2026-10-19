@@ -334,7 +334,7 @@ function Test-EvidenceSnapshotConsistency {
 function Get-ProtectedPathLabel {
     param([string]$Path)
     if ($Path.StartsWith("hass_mcp_admin/", [StringComparison]::Ordinal)) {
-        return "stable v1.1.2"
+        return "retired stable v1.1.2"
     }
     if ($Path.StartsWith("hass_mcp_engineering_beta/ha_mcp_engineering/", [StringComparison]::Ordinal)) {
         return "Engineering runtime"
@@ -724,6 +724,7 @@ try {
         $metadataPaths = @(
             "repository.yaml",
             "hass_mcp_admin/config.yaml",
+            "hass_mcp_admin/retired-addon-config.yaml",
             "hass_mcp_engineering_beta/config.yaml"
         )
         if ($Area -eq "Metadata" -or @($fastChangedPaths | Where-Object { $_ -in $metadataPaths }).Count -gt 0) {

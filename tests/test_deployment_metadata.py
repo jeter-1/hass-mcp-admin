@@ -2,6 +2,7 @@ import copy
 import importlib.util
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -215,7 +216,7 @@ class VersionComparisonTests(unittest.TestCase):
 
 class AddonMetadataValidationTests(unittest.TestCase):
     def setUp(self):
-        self.production = VALIDATOR.read_yaml(ROOT / "hass_mcp_admin" / "config.yaml")
+        self.production = VALIDATOR.read_yaml(ROOT / "hass_mcp_admin" / "retired-addon-config.yaml")
         self.beta = VALIDATOR.read_yaml(
             ROOT / "hass_mcp_engineering_beta" / "config.yaml"
         )
@@ -353,13 +354,60 @@ class AddonMetadataValidationTests(unittest.TestCase):
             self.validate(production=production)
 
     def test_production_changes_are_rejected(self):
-        with self.assertRaises(VALIDATOR.MetadataValidationError):
-            VALIDATOR.validate_repository(
-                ROOT,
-                base_ref="origin/main",
-                deployed_version="2.0.0-beta.2",
-                paths={"hass_mcp_admin/config.yaml"},
-            )
+        for path in ("hass_mcp_admin/server.py", "hass_mcp_admin/Dockerfile"):
+            with self.subTest(path=path), self.assertRaisesRegex(
+                VALIDATOR.MetadataValidationError, "Production add-on files were modified"
+            ):
+                VALIDATOR.validate_repository(
+                    ROOT,
+                    base_ref="origin/main",
+                    deployed_version="2.0.0-beta.2",
+                    paths={path},
+                )
+
+    def test_retired_stable_v1_is_not_discoverable(self):
+        self.assertEqual(VALIDATOR.discoverable_retired_configs(ROOT), [])
+        self.assertTrue((ROOT / VALIDATOR.RETIRED_CONFIG_PATH).is_file())
+
+    def test_reintroduced_stable_v1_config_is_rejected(self):
+        for name in ("config.yaml", "config.yml", "config.json", "nested/config.yaml"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                config = Path(temp, "hass_mcp_admin", name)
+                config.parent.mkdir(parents=True)
+                config.write_text("slug: hass_mcp_admin\n", encoding="utf-8")
+                with self.assertRaisesRegex(
+                    VALIDATOR.MetadataValidationError, "must not be discoverable"
+                ):
+                    VALIDATOR.validate_repository(Path(temp), base_ref="HEAD", paths=set())
+
+    def test_retirement_transition_is_one_time_and_exact(self):
+        allowed = VALIDATOR.is_stable_retirement_transition
+        full = set(VALIDATOR.RETIREMENT_TRANSITION_PATHS)
+        renamed = {"hass_mcp_admin/retired-addon-config.yaml", "hass_mcp_admin/README.md"}
+        for paths in (full, renamed):
+            self.assertTrue(allowed(paths, base_discoverable=True, head_discoverable=False))
+        refused = (
+            (full | {"hass_mcp_admin/server.py"}, True, False),
+            ({"hass_mcp_admin/README.md"}, False, False),
+            (full, True, True),
+            (set(), True, False),
+        )
+        for paths, base, head in refused:
+            with self.subTest(paths=sorted(paths), base=base, head=head):
+                self.assertFalse(allowed(paths, base_discoverable=base, head_discoverable=head))
+
+    def test_retirement_transition_requires_a_discoverable_base(self):
+        paths = set(VALIDATOR.RETIREMENT_TRANSITION_PATHS)
+        with patch.object(VALIDATOR, "ref_has_path", return_value=True) as base:
+            report = VALIDATOR.validate_repository(ROOT, base_ref="HEAD", paths=paths)
+        base.assert_called_once_with(ROOT, "HEAD", "hass_mcp_admin/config.yaml")
+        self.assertTrue(report.production_changed)
+        self.assertTrue(report.stable_retirement_transition)
+        with patch.object(VALIDATOR, "ref_has_path", return_value=False), \
+                self.assertRaisesRegex(
+                    VALIDATOR.MetadataValidationError, "Production add-on files were modified"
+                ):
+            VALIDATOR.validate_repository(ROOT, base_ref="HEAD", paths=paths)
 
     def test_staged_release_allows_feature_pr_to_keep_advertised_version(self):
         declaration = ROOT / VALIDATOR.NEXT_VERSION_PATH

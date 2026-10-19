@@ -457,7 +457,7 @@ class FakeIncidentService:
 class AddonIsolationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.production = yaml.safe_load((PRODUCTION_DIR / "config.yaml").read_text())
+        cls.production = yaml.safe_load((PRODUCTION_DIR / "retired-addon-config.yaml").read_text())
         cls.beta = yaml.safe_load((BETA_DIR / "config.yaml").read_text())
 
     def test_production_metadata_remains_v1_1_2(self):
