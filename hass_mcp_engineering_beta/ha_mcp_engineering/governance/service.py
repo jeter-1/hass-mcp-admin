@@ -137,9 +137,11 @@ from ..f3_runtime.dispatch_facts import (
 from .storage import (
     ChangePlanRepository,
     ChangePlanStorageError,
+    PlanContentRefused,
     PlanHealthSnapshotSuperseded,
     PlanRecordEvidence,
     is_terminal_plan,
+    plan_output_registry,
 )
 from .task_models import (
     ExecutionTask,
@@ -623,6 +625,11 @@ class ChangeGovernanceService:
             "manual_review_terminalization_count": 0,
             "failure_count": 0,
         }
+        # HAMCP-191 A: the plan-content chokepoint reads the current known
+        # secrets at every save, recovery writes included.
+        bind_known_secrets = getattr(self.repository, "bind_known_secrets", None)
+        if bind_known_secrets is not None:
+            bind_known_secrets(lambda: self.sensitive_values)
         self.repository.cleanup(now=self.now())
         self.repository.recover_incomplete(self._timestamp())
         self.task_repository.cleanup(now=self.now())
@@ -2233,11 +2240,28 @@ class ChangeGovernanceService:
             }
 
     def _save(self, plan: ChangePlan) -> None:
+        """Persist through the repository's plan-content chokepoint.
+
+        HAMCP-191 A: ``ChangePlanRepository.save`` strict-sanitizes all new
+        content and applies the D11 stored-plan check; a refused creation is
+        a validation failure, a refused update a storage failure. Neither
+        echoes content.
+        """
+
         plan.updated_at = self._timestamp()
-        self._require_v2_persisted_plan_safe(plan)
         try:
             self.repository.save(plan)
             self._update_projection_failure_index(plan)
+        except PlanContentRefused as exc:
+            if exc.creation:
+                raise GovernanceError(
+                    ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                    details={"reason": "plan_contains_prohibited_sensitive_data"},
+                ) from None
+            raise GovernanceError(
+                ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+                details={"reason": "unsafe_persisted_configuration_plan"},
+            ) from None
         except ChangePlanStorageError as exc:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from exc
 
@@ -4200,9 +4224,13 @@ class ChangeGovernanceService:
         # the strict sanitizer before any Home Assistant read or persistence.
         # The stored-plan re-scan (D11) tolerates marker-shaped text, so it
         # cannot be the creation gate.  The persisted (truncated) text is
-        # checked as well as the full input.
+        # checked as well as the full input.  H1g: the automation identifier
+        # becomes the plan target and is echoed, so it is checked here too,
+        # before the Home Assistant read; an invalid identifier is persisted
+        # as a validation-failed plan, so schema rejection is not a gate.
         if persistence_safety_errors(
             {
+                "automation_id": automation_id,
                 "plan_title": title,
                 "plan_description": description,
                 "persisted_text": [title[:160], description[:1000]],
@@ -6554,51 +6582,55 @@ class ChangeGovernanceService:
             self.now() + APPROVAL_CHALLENGE_TTL,
             datetime.fromisoformat(plan.expires_at),
         ).isoformat()
-        sanitized_note = sanitize_untrusted_data(
-            approval_note[:500],
-            known_secrets=self.sensitive_values,
-            max_string=500,
-        ).value
-        plan.approval = ChangeApproval(
-            state=ApprovalState.EXTERNAL_PENDING,
-            authority_version=APPROVAL_AUTHORITY_VERSION,
-            channel=APPROVAL_CHANNEL,
-            bound_plan_hash=calculated,
-            approval_kind=approval_kind,
-            challenge_id=secrets.token_urlsafe(24),
-            challenge_requested_at=requested_at,
-            challenge_expires_at=challenge_expires,
-            challenge_plan_version=plan.plan_version,
-            challenge_target_type=plan.target_type,
-            challenge_target_id=plan.target_id,
-            challenge_operation=plan.operation.value,
-            challenge_risk_level=plan.risk.level.value,
-            request_note=sanitized_note if isinstance(sanitized_note, str) and sanitized_note else None,
-            policy_decision_hash=decision.policy_decision_hash,
-            policy_class=decision.policy_class.value,
-            bundle_state="pending_plan_approval",
-            elevated_risk_acknowledgement=(
-                ApprovalActionRecord(
-                    kind=(
-                        ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                    ),
-                    authority_version=APPROVAL_AUTHORITY_VERSION,
-                    bound_plan_hash=calculated,
-                    policy_decision_hash=(
-                        decision.policy_decision_hash
-                    ),
-                    policy_class=decision.policy_class.value,
-                    risk_delta=decision.risk_delta.value,
-                    physical_consequence=(
-                        decision.physical_consequence.value
-                    ),
-                )
-                if ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                in decision.required_acknowledgements
-                else None
-            ),
-        )
-        self._record(plan, "external_approval_requested", "success")
+        # HAMCP-191 A: the sanitized note is Engineering's own output; the
+        # plan-content chokepoint keeps that exact object (D4 identity).
+        with plan_output_registry() as note_registry:
+            sanitized_note = sanitize_untrusted_data(
+                approval_note[:500],
+                known_secrets=self.sensitive_values,
+                max_string=500,
+                registry=note_registry,
+            ).value
+            plan.approval = ChangeApproval(
+                state=ApprovalState.EXTERNAL_PENDING,
+                authority_version=APPROVAL_AUTHORITY_VERSION,
+                channel=APPROVAL_CHANNEL,
+                bound_plan_hash=calculated,
+                approval_kind=approval_kind,
+                challenge_id=secrets.token_urlsafe(24),
+                challenge_requested_at=requested_at,
+                challenge_expires_at=challenge_expires,
+                challenge_plan_version=plan.plan_version,
+                challenge_target_type=plan.target_type,
+                challenge_target_id=plan.target_id,
+                challenge_operation=plan.operation.value,
+                challenge_risk_level=plan.risk.level.value,
+                request_note=sanitized_note if isinstance(sanitized_note, str) and sanitized_note else None,
+                policy_decision_hash=decision.policy_decision_hash,
+                policy_class=decision.policy_class.value,
+                bundle_state="pending_plan_approval",
+                elevated_risk_acknowledgement=(
+                    ApprovalActionRecord(
+                        kind=(
+                            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+                        ),
+                        authority_version=APPROVAL_AUTHORITY_VERSION,
+                        bound_plan_hash=calculated,
+                        policy_decision_hash=(
+                            decision.policy_decision_hash
+                        ),
+                        policy_class=decision.policy_class.value,
+                        risk_delta=decision.risk_delta.value,
+                        physical_consequence=(
+                            decision.physical_consequence.value
+                        ),
+                    )
+                    if ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+                    in decision.required_acknowledgements
+                    else None
+                ),
+            )
+            self._record(plan, "external_approval_requested", "success")
         return self._approval_pending_response(plan)
 
     def _approval_pending_response(self, plan: ChangePlan) -> dict[str, Any]:

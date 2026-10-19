@@ -546,7 +546,7 @@ class UnitMatrixTests(unittest.TestCase):
 ENTRY_POINTS = frozenset(
     {
         "sanitize_untrusted_data", "rescan_stored_plan", "redact_data", "redact_untrusted_text",
-        "sanitize_log_lines",
+        "sanitize_log_lines", "screen_plan_content",
     }
 )
 
@@ -590,6 +590,7 @@ SANITIZER_SITES = {
     ("governance/service.py", "ChangeGovernanceService.approve", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService.create_dashboard_update_plan", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "_sanitize_configuration_caller_context", "sanitize_untrusted_data"): (1, "governance"),
+    ("governance/storage.py", "ChangePlanRepository._screen_new_content", "screen_plan_content"): (1, "governance"),
     ("handoff/provider.py", "EngineeringHandoffProvider._automation_configs", "sanitize_untrusted_data"): (1, "analysis"),
     ("handoff/provider.py", "EngineeringHandoffProvider._automation_configs.one", "sanitize_untrusted_data"): (1, "analysis"),
     ("handoff/provider.py", "EngineeringHandoffProvider._states.one", "sanitize_untrusted_data"): (1, "analysis"),
@@ -629,6 +630,7 @@ SANITIZER_SITES = {
     ("reliability/provider.py", "DirectHaReliabilityProvider._collect_traces.fetch", "sanitize_untrusted_data"): (1, "analysis"),
     ("reliability/provider.py", "DirectHaReliabilityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),
     ("tools/compatibility.py", "get_error_log.action", "sanitize_untrusted_data"): (1, "logs"),
+    ("tools/governance.py", "_identifier_metadata", "sanitize_untrusted_data"): (1, "identifier"),
     ("trace_normalization.py", "fetch_normalized_trace_list", "sanitize_untrusted_data"): (1, "analysis"),
 }
 

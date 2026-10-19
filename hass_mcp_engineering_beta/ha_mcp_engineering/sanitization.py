@@ -1091,3 +1091,214 @@ def sanitize_log_lines(
         failed_closed=sanitizer.failed_closed,
         marker_collision_count=sanitizer.marker_collision_count,
     )
+
+
+_ABSENT = object()
+
+
+@dataclass(frozen=True)
+class PlanContentScreen:
+    """One plan-record screen: the record to store and what was found.
+
+    ``findings`` holds the schema paths (list positions as ``"*"``) whose new
+    content the strict pass changed, never the content. ``refused`` is set
+    when a finding sits on a path the caller's policy refuses, on a key, or
+    when an exempt value contains a known secret; ``failed`` when the screen
+    itself failed. Either way the caller must not store the record.
+    """
+
+    value: Any
+    findings: tuple[tuple[str, ...], ...]
+    categories: tuple[str, ...]
+    refused: bool
+    failed: bool
+
+    @property
+    def redaction_applied(self) -> bool:
+        return bool(self.findings)
+
+
+class _PlanContentSanitizer(_Sanitizer):
+    """HAMCP-191 Direction A: the strict pass over NEW plan-record content.
+
+    Content equal to the stored baseline at the same JSON path is the
+    record's old content: it is written back unchanged and never rescanned
+    here (re-reading old content is D11's job). Every other string, a key or
+    an identifier included, runs the strict ``_scan`` unless it is the very
+    object the request's identity record holds. An exempt dispatch value
+    whose schema validator accepts it is scanned but never rewritten: a
+    finding on it refuses the write.
+    """
+
+    _PASS = "plan_content"
+
+    def __init__(
+        self,
+        *,
+        known_secrets: tuple[str, ...],
+        registry: ReferenceMarkerRegistry | None,
+        exempt: Any,
+        refuse: Any,
+    ) -> None:
+        super().__init__(known_secrets=known_secrets, max_string=None, registry=registry)
+        self.exempt = exempt
+        self.refuse = refuse
+        self.findings: set[tuple[str, ...]] = set()
+        self.refused = False
+
+    def _own(self, text: str) -> str:
+        # The stored record is rebuilt from JSON; identity cannot survive it.
+        return text
+
+    def _finding(self, pattern: tuple[str, ...], *, refuse: bool = False) -> None:
+        self.findings.add(pattern)
+        if refuse or self.refuse(pattern):
+            self.refused = True
+
+    def _text(self, value: str, source: Any, pattern: tuple[str, ...]) -> str:
+        validator = self.exempt(pattern)
+        if validator is not None and validator(value):
+            # Exempt by schema: never rewritten, so dispatch and recovery
+            # state stays byte-exact. It is still strictly scanned (a JWT fits
+            # the request-id alphabet); any finding refuses the write.
+            text, categories, _emitted = self._scan(value)
+            if categories or text != value:
+                self._record_field(set(categories) or {"redacted"})
+                self._finding(pattern, refuse=True)
+            return value
+        if (
+            self.registry is not None
+            and type(source) is str
+            and source == value
+            and self.registry.output(source, self.known_secrets)
+        ):
+            return value
+        text, categories, emitted = self._scan(value)
+        if not categories and text == value:
+            return value
+        self._record_field(set(categories) or {"redacted"})
+        self._finding(pattern, refuse=validator is not None)
+        if MARKER_COLLISION_CATEGORY in categories:
+            self.marker_collision_count += 1
+            return MARKER_COLLISION
+        return text
+
+    def screen(
+        self,
+        value: Any,
+        old: Any,
+        source: Any,
+        pattern: tuple[str, ...],
+        keys: tuple[str, ...],
+    ) -> Any:
+        if old is not _ABSENT and type(old) is type(value) and old == value:
+            return value
+        if isinstance(value, dict):
+            old_map = old if isinstance(old, dict) else None
+            source_map = source if isinstance(source, dict) else None
+            safe: dict[str, Any] = {}
+            for key, item in value.items():
+                if type(key) is not str:
+                    raise TypeError("plan record keys are strings")
+                child = (*pattern, key)
+                normalized = normalize_key(key)
+                if old_map is not None and key in old_map:
+                    safe_key = key
+                    old_item = old_map[key]
+                else:
+                    text, categories, _emitted = self._scan(key)
+                    if categories or text != key:
+                        # A key is structure; it is refused, never rewritten.
+                        self._record_field(set(categories) or {"redacted"})
+                        self._finding(child, refuse=True)
+                    safe_key = key
+                    old_item = _ABSENT
+                source_item = source_map.get(key, _ABSENT) if source_map is not None else _ABSENT
+                category = key_category(normalized, keys)
+                changed = not (
+                    old_item is not _ABSENT and type(old_item) is type(item) and old_item == item
+                )
+                if (
+                    category
+                    and changed
+                    and self.exempt(child) is None
+                    and item not in (None, "", [], {})
+                ):
+                    self._record_field({category})
+                    self._finding(child)
+                    safe[safe_key] = self._marker(category)
+                    continue
+                safe[safe_key] = self.screen(item, old_item, source_item, child, (*keys, normalized))
+            if len(safe) != len(value):
+                raise ValueError("plan_content_key_collision")
+            return safe
+        if isinstance(value, list):
+            old_list = old if isinstance(old, list) else None
+            source_list = source if isinstance(source, (list, tuple)) else None
+            return [
+                self.screen(
+                    item,
+                    old_list[index] if old_list is not None and index < len(old_list) else _ABSENT,
+                    source_list[index] if source_list is not None and index < len(source_list) else _ABSENT,
+                    (*pattern, "*"),
+                    (*keys, "item"),
+                )
+                for index, item in enumerate(value)
+            ]
+        if isinstance(value, str):
+            return self._text(value, source, pattern)
+        if value is None or type(value) in (bool, int, float):
+            return value
+        raise TypeError("plan records hold JSON values only")
+
+
+def screen_plan_content(
+    record: dict[str, Any],
+    *,
+    baseline: dict[str, Any] | None,
+    source: Any = None,
+    known_secrets: tuple[str, ...] = (),
+    registry: ReferenceMarkerRegistry | None = None,
+    exempt: Any = lambda pattern: None,
+    refuse: Any = lambda pattern: True,
+) -> PlanContentScreen:
+    """Strict-screen the new content of one plan record (HAMCP-191 A).
+
+    ``record`` is the JSON form about to be stored; ``baseline`` the JSON
+    form already stored (``None`` for a new record, so all of it is new).
+    ``source`` is the identity-preserving form of the same record, used only
+    to recognize strings this request's ``registry`` produced. ``exempt``
+    maps a schema path to a validator for dispatch values kept byte-exact;
+    ``refuse`` says whether a finding on a path refuses the write instead of
+    redacting it. Any screen failure fails closed with no value.
+    """
+
+    sanitizer = _PlanContentSanitizer(
+        known_secrets=tuple(known_secrets),
+        registry=registry,
+        exempt=exempt,
+        refuse=refuse,
+    )
+    try:
+        if type(record) is not dict:
+            raise TypeError("plan record is a mapping")
+        safe = sanitizer.screen(
+            record,
+            _ABSENT if baseline is None else baseline,
+            _ABSENT if source is None else source,
+            (),
+            (),
+        )
+        failed = False
+    except Exception:
+        safe, failed = None, True
+    if sanitizer.marker_collision_count:
+        with _COUNTER_LOCK:
+            _COUNTERS["marker_collisions"] += sanitizer.marker_collision_count
+    return PlanContentScreen(
+        value=safe,
+        findings=tuple(sorted(sanitizer.findings)),
+        categories=tuple(sorted(sanitizer.categories)[:MAX_REDACTION_CATEGORIES]),
+        refused=sanitizer.refused or failed,
+        failed=failed,
+    )

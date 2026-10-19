@@ -10,8 +10,37 @@ from ..entity_ids import ENTITY_ID_PATTERN, MAX_ENTITY_ID_LENGTH
 from ..request_context import current_telemetry
 
 from ..governance import GOVERNANCE
+from ..sanitization import sanitize_untrusted_data
 from ..tool_framework import run_structured
 from .compatibility import SETTINGS
+
+
+def _identifier_metadata(**fields: Any) -> dict[str, Any]:
+    """HAMCP-191 H1g: caller identifiers echoed in response metadata.
+
+    Each one passes the strict sanitizer with the governance known secrets;
+    one the sanitizer would change is withheld (omitted), on success and on
+    refusal alike. Without a governance service every identifier is
+    withheld. Fixed metadata values are not caller input.
+    """
+
+    try:
+        known_secrets = tuple(GOVERNANCE.require().sensitive_values)
+    except Exception:
+        return {}
+    safe: dict[str, Any] = {}
+    for key, value in fields.items():
+        try:
+            result = sanitize_untrusted_data(value, known_secrets=known_secrets)
+        except Exception:
+            continue
+        if (
+            not result.redaction_applied
+            and type(result.value) is type(value)
+            and result.value == value
+        ):
+            safe[key] = value
+    return safe
 
 
 class ConfigurationOperation(TypedDict):
@@ -139,7 +168,7 @@ async def create_helper_state_plan(
         ),
         metadata={
             "resource_type": "input_boolean",
-            "resource_id": entity_id,
+            **_identifier_metadata(resource_id=entity_id),
             "operation": "set_input_boolean_state",
         },
         response_limit=SETTINGS.response_size_limit,
@@ -230,7 +259,10 @@ async def create_change_plan(
             expiration_minutes=expiration_minutes,
             caller_context=caller_context,
         ),
-        metadata={"resource_type": "automation", "resource_id": automation_id},
+        metadata={
+            "resource_type": "automation",
+            **_identifier_metadata(resource_id=automation_id),
+        },
         response_limit=SETTINGS.response_size_limit,
     )
 
@@ -292,7 +324,7 @@ async def create_dashboard_update_plan(
         ),
         metadata={
             "resource_type": "dashboard",
-            "resource_id": url_path,
+            **_identifier_metadata(resource_id=url_path),
             "operation": "update_dashboard",
         },
         response_limit=SETTINGS.response_size_limit,
@@ -318,7 +350,10 @@ async def get_change_plan(
             page_size=page_size,
             response_limit=SETTINGS.response_size_limit,
         ),
-        metadata={"resource_type": "change_plan", "resource_id": plan_id},
+        metadata={
+            "resource_type": "change_plan",
+            **_identifier_metadata(resource_id=plan_id),
+        },
         response_limit=SETTINGS.response_size_limit,
     )
 
@@ -434,7 +469,10 @@ async def approve_change_plan(
         lambda: GOVERNANCE.require().approve(
             plan_id, expected_plan_hash, approval_note
         ),
-        metadata={"resource_type": "change_plan", "resource_id": plan_id},
+        metadata={
+            "resource_type": "change_plan",
+            **_identifier_metadata(resource_id=plan_id),
+        },
         response_limit=SETTINGS.response_size_limit,
     )
 
@@ -445,7 +483,10 @@ async def apply_change_plan(plan_id: str, expected_plan_hash: str = "") -> str:
         "apply_change_plan",
         "Processed the approved governed configuration change.",
         lambda: GOVERNANCE.require().apply(plan_id, expected_plan_hash),
-        metadata={"resource_type": "change_plan", "resource_id": plan_id},
+        metadata={
+            "resource_type": "change_plan",
+            **_identifier_metadata(resource_id=plan_id),
+        },
         response_limit=SETTINGS.response_size_limit,
     )
 
@@ -462,7 +503,10 @@ async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
         "rollback_change",
         "Processed the governed rollback lifecycle step.",
         lambda: GOVERNANCE.require().rollback_change(plan_id, expected_plan_hash),
-        metadata={"resource_type": "change_plan", "resource_id": plan_id},
+        metadata={
+            "resource_type": "change_plan",
+            **_identifier_metadata(resource_id=plan_id),
+        },
         response_limit=SETTINGS.response_size_limit,
     )
 
