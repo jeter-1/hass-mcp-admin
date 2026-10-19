@@ -281,10 +281,15 @@ new records display the same truth. Plans with no Ingress decision report
 `null` with reason `no_external_approver_exists`. Audit records carry only
 `approval_principal_present` and execution tasks carry no separation claim.
 
-This is reporting only. Eligibility is unchanged: a standard-class decision
-from the anonymous fallback principal remains valid for apply, and elevated
-plan approval still refuses the anonymous fallback with
-`approval_principal_mismatch`.
+Since HAMCP-205 the anonymous fallback principal is no longer an approver.
+Every approval page verifies a Home Assistant administrator before any
+decision, and governance refuses a missing or anonymous principal with
+`external_approval_invalid` without recording a decision. A stored approval
+under the anonymous principal is ineligible for every risk class: apply and
+rollback refuse it with `external_approval_required` and
+`details.reason: anonymous_approval_requires_reapproval`, before any dispatch,
+and record only the usual refusal. To proceed, plan the change again and
+approve the new plan as a verified administrator.
 
 For an elevated bundle the panel exposes only plan approval first. After that
 POST succeeds, a new challenge requires an explicit elevated-risk
@@ -300,9 +305,8 @@ handoffs.
 ## Apply and rollback enforcement
 
 Apply requires every prior governance gate plus authority version `3`, the
-external Ingress channel and principal, the unchanged principal eligibility
-(an identified administrator, or the anonymous fallback for standard class
-only), the exact challenge-bound plan and policy hashes, the required ordered action set,
+external Ingress channel and principal, an Ingress-identified administrator
+principal (never the anonymous fallback; HAMCP-205), the exact challenge-bound plan and policy hashes, the required ordered action set,
 same-administrator confirmation for elevated policy, approval kind `apply`,
 unexpired and unconsumed approval, and a non-rejected plan. Without that record,
 `apply_change_plan` returns `external_approval_required` before a Home Assistant

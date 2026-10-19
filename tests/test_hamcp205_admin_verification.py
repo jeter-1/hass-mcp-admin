@@ -39,6 +39,8 @@ from ha_mcp_engineering.approval_web import (  # noqa: E402
 from ha_mcp_engineering.audit import AuditRecord  # noqa: E402
 from ha_mcp_engineering.clients.single_read import SINGLE_READ  # noqa: E402
 from ha_mcp_engineering.governance.models import ApprovalState  # noqa: E402
+from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
+from ha_mcp_engineering.governance import service as governance_service  # noqa: E402
 from ha_mcp_engineering.health import HealthRegistry  # noqa: E402
 from tests.approval_identity_support import StaticAdministratorVerifier  # noqa: E402
 from tests.test_beta25_external_approval import (  # noqa: E402
@@ -47,6 +49,9 @@ from tests.test_beta25_external_approval import (  # noqa: E402
 )
 import tests.test_f3_runtime_integration as f3  # noqa: E402
 import tests.test_hamcp192_observing_fix as observing  # noqa: E402
+from tests.test_hamcp184_principal_separation_honesty import (  # noqa: E402
+    plant_anonymous_decision,
+)
 
 
 ADMIN, USER = "admin-hamcp205", "user-hamcp205"
@@ -164,6 +169,10 @@ class AdministratorVerdictTests(unittest.TestCase):
             (user_row(group_ids=["system-users"]), NOT_ADMINISTRATOR),
             (user_row(group_ids=["system-read-only"]), NOT_ADMINISTRATOR),
             (user_row(is_active=False), NOT_ADMINISTRATOR),
+            # L1: an inactive owner is never an Ingress approver, although
+            # Core's is_admin still calls it an administrator.
+            (user_row(is_owner=True, is_active=False), NOT_ADMINISTRATOR),
+            (user_row(is_owner=True, is_active=False, group_ids=[]), NOT_ADMINISTRATOR),
             # Integration/system accounts are never Ingress approvers.
             (user_row(system_generated=True), NOT_ADMINISTRATOR),
             (user_row(system_generated=True, is_owner=True), NOT_ADMINISTRATOR),
@@ -667,6 +676,131 @@ class TypedHoldReleaseAdministratorTests(CounterIsolation, observing.ObservingFi
             self.assertEqual((await client.post(path + "/release", data=form)).status_code, 503)
             self.assertEqual(self.held(request.task_id), [True])
         self.assertEqual(self.refusals(), {"identity_missing": 0, "not_administrator": 1, "lookup_failed": 1})
+
+
+class AnonymousApproverRemovalTests(ExternalApprovalTestCase):
+    """Owner cleanup: no anonymous default approver, and no stored anonymous
+    approval authorizes dispatch; the plan must be re-approved."""
+
+    IDENTIFIED = "home_assistant_admin_ingress:user-1"
+
+    def audit_events(self):
+        return [json.loads(line) for line in self.audit_path.read_text().splitlines()]
+
+    def assert_only_refusal_recorded(self, plan_id, before, event, error_code):
+        """The stored plan changed only by one appended refusal event."""
+
+        after = self.repository.get(plan_id).to_dict()
+        added = after["events"][len(before["events"]):]
+        self.assertEqual(after["events"][:len(before["events"])], before["events"])
+        self.assertEqual(
+            [(item["event"], item.get("error_code")) for item in added],
+            [(event, error_code)],
+        )
+        self.assertEqual(
+            {k: v for k, v in after.items() if k != "events"},
+            {k: v for k, v in before.items() if k != "events"},
+        )
+
+    async def approved_then_planted(self, *, recorded_flag, description="After"):
+        created = await self.create(description=description)
+        await self.grant(created, principal=self.IDENTIFIED)
+        plant_anonymous_decision(
+            self.repository, created["plan_id"], recorded_flag=recorded_flag
+        )
+        return created
+
+    def test_governance_has_no_default_principal(self):
+        source = Path(governance_service.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("DEFAULT_APPROVER_PRINCIPAL", source)
+        self.assertFalse(hasattr(governance_service, "DEFAULT_APPROVER_PRINCIPAL"))
+        # The removed fallback was ``(approver_principal or DEFAULT_...)``.
+        self.assertNotRegex(source, r"\(\s*approver_principal\s+or\s")
+
+    async def test_stored_anonymous_approval_is_refused_at_apply_with_reapprove_reason(self):
+        for recorded_flag in (False, True):
+            with self.subTest(recorded_flag=recorded_flag):
+                created = await self.approved_then_planted(
+                    recorded_flag=recorded_flag, description=f"After {recorded_flag}"
+                )
+                self.assertIs(
+                    self.service.get_plan(created["plan_id"])["apply_allowed"], False
+                )
+                before = self.repository.get(created["plan_id"]).to_dict()
+                events = len(self.audit_events())
+                reads, writes = self.gateway.reads, self.gateway.writes
+                with self.assertRaises(GovernanceError) as raised:
+                    await self.service.apply(created["plan_id"], created["plan_hash"])
+                self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
+                self.assertEqual(
+                    raised.exception.details,
+                    {"reason": "anonymous_approval_requires_reapproval"},
+                )
+                # No dispatch, no read, no state change beyond the refusal record.
+                self.assertEqual((self.gateway.reads, self.gateway.writes), (reads, writes))
+                self.assert_only_refusal_recorded(
+                    created["plan_id"], before,
+                    "change_apply_rejected", "external_approval_required",
+                )
+                self.assertIsNone(
+                    self.service.task_repository.get_for_plan(created["plan_id"])
+                )
+                added = self.audit_events()[events:]
+                self.assertEqual(
+                    [(r.get("event"), r.get("error_code")) for r in added],
+                    [("change_apply_rejected", "external_approval_required")],
+                )
+
+    async def test_stored_anonymous_rollback_approval_is_refused_with_reapprove_reason(self):
+        created = await self.create()
+        await self.grant(created, principal=self.IDENTIFIED)
+        await self.service.apply(created["plan_id"], created["plan_hash"])
+        rollback = await self.service.rollback_change(created["plan_id"])
+        rollback_created = {"plan_id": created["plan_id"], "plan_hash": rollback["plan_hash"]}
+        await self.grant(rollback_created, kind="rollback", principal=self.IDENTIFIED)
+        plant_anonymous_decision(self.repository, created["plan_id"], recorded_flag=False)
+        before = self.repository.get(created["plan_id"]).to_dict()
+        writes = self.gateway.writes
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.rollback_change(created["plan_id"], rollback["plan_hash"])
+        self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
+        self.assertEqual(
+            raised.exception.details["reason"], "anonymous_approval_requires_reapproval"
+        )
+        self.assertEqual(self.gateway.writes, writes)
+        self.assert_only_refusal_recorded(
+            created["plan_id"], before, "rollback_failed", "external_approval_required"
+        )
+
+    async def test_reapproval_by_a_verified_administrator_applies(self):
+        stale = await self.approved_then_planted(recorded_flag=False)
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(stale["plan_id"], stale["plan_hash"])
+        # Re-approval: the same change planned again and approved by a
+        # verified administrator. The stored anonymous plan is superseded.
+        fresh = await self.create()
+        await self.grant(fresh, principal=self.IDENTIFIED)
+        applied = await self.service.apply(fresh["plan_id"], fresh["plan_hash"])
+        self.assertEqual(applied["status"], "applied")
+        self.assertEqual(self.gateway.writes, 1)
+        record = self.repository.get(fresh["plan_id"])
+        self.assertEqual(record.approval.approver_principal, self.IDENTIFIED)
+        self.assertIs(record.approval.principal_separation_enforced, True)
+        self.assertNotEqual(
+            self.repository.get(stale["plan_id"]).status.value, "applied"
+        )
+
+    async def test_service_refuses_a_missing_or_anonymous_principal(self):
+        for principal in ("", None, "home_assistant_admin_ingress"):
+            with self.subTest(principal=principal):
+                created = await self.create(description=f"After {principal!r}")
+                with self.assertRaises(GovernanceError) as raised:
+                    await self.grant(created, principal=principal)
+                self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_INVALID)
+                record = self.repository.get(created["plan_id"])
+                self.assertEqual(record.approval.state, ApprovalState.EXTERNAL_PENDING)
+                self.assertIsNone(record.approval.approver_principal)
+        self.assertEqual(self.gateway.writes, 0)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,8 @@ visibility or a remembered result:
   fixed admin-only WebSocket command ``config/auth/list``, and recomputed with
   Core's own ``User.is_admin`` rule (Core 2026.10.x
   ``homeassistant/auth/models.py``: ``is_owner or (is_active and
-  "system-admin" in group_ids)``);
+  "system-admin" in group_ids)``), made stricter in one place: an inactive
+  user, the owner included, is never an administrator;
 - anything other than one positive, unambiguous administrator result refuses.
 
 The command is source text with no caller data, so no request value can choose
@@ -78,7 +79,8 @@ def administrator_principal(user_id: str) -> str:
 
 
 def administrator_verdict(result: Any, user_id: str) -> AdministratorVerdict:
-    """Apply Core's ``is_admin`` rule to one ``config/auth/list`` result."""
+    """Apply Core's ``is_admin`` rule, restricted to active users, to one
+    ``config/auth/list`` result."""
 
     failed = AdministratorVerdict.LOOKUP_FAILED
     if type(result) is not list or len(result) > MAX_USERS:
@@ -104,9 +106,12 @@ def administrator_verdict(result: Any, user_id: str) -> AdministratorVerdict:
     if row["system_generated"]:
         # Integration/system accounts never decide through Ingress.
         return AdministratorVerdict.NOT_ADMINISTRATOR
-    if row["is_owner"] or (
-        row["is_active"] and HOME_ASSISTANT_ADMIN_GROUP in group_ids
-    ):
+    if not row["is_active"]:
+        # Defense in depth (HAMCP-205 L1): an inactive user, the owner
+        # included, never decides, although Core's is_admin keeps an inactive
+        # owner an administrator.
+        return AdministratorVerdict.NOT_ADMINISTRATOR
+    if row["is_owner"] or HOME_ASSISTANT_ADMIN_GROUP in group_ids:
         return AdministratorVerdict.ADMINISTRATOR
     return AdministratorVerdict.NOT_ADMINISTRATOR
 

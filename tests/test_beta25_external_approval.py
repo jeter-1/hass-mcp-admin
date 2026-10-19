@@ -186,7 +186,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
                 plan_id=created["plan_id"], challenge_id=pending["challenge_id"],
                 expected_plan_hash=created["plan_hash"], approval_kind="apply",
                 csrf_nonce=pending["challenge_id"], decision="approve",
-                approver_principal="home_assistant_admin_ingress",
+                approver_principal="home_assistant_admin_ingress:user-1",
             )
         self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_INVALID)
 
@@ -199,7 +199,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
                 "plan_id": created["plan_id"], "challenge_id": pending["challenge_id"],
                 "expected_plan_hash": created["plan_hash"], "approval_kind": "apply",
                 "csrf_nonce": csrf, "decision": "approve",
-                "approver_principal": "home_assistant_admin_ingress",
+                "approver_principal": "home_assistant_admin_ingress:user-1",
             }
             arguments[field] = value
             with self.assertRaises(GovernanceError):
@@ -259,7 +259,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
             await self.service.decide_external_approval(
                 plan_id=created["plan_id"], challenge_id=first["challenge_id"],
                 expected_plan_hash=created["plan_hash"], approval_kind="apply", csrf_nonce=old_csrf,
-                decision="approve", approver_principal="home_assistant_admin_ingress",
+                decision="approve", approver_principal="home_assistant_admin_ingress:user-1",
             )
 
     async def test_superseding_plan_invalidates_existing_challenge(self):
@@ -283,7 +283,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
         await reloaded.decide_external_approval(
             plan_id=created["plan_id"], challenge_id=pending["challenge_id"],
             expected_plan_hash=created["plan_hash"], approval_kind="apply", csrf_nonce=csrf,
-            decision="approve", approver_principal="home_assistant_admin_ingress",
+            decision="approve", approver_principal="home_assistant_admin_ingress:user-1",
         )
         await reloaded.apply(created["plan_id"], created["plan_hash"])
         recovered = ChangeGovernanceService(self.repository, self.gateway, now=self.clock)
@@ -303,7 +303,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
         await self.service.decide_external_approval(
             plan_id=rejected["plan_id"], challenge_id=pending["challenge_id"],
             expected_plan_hash=rejected["plan_hash"], approval_kind="apply", csrf_nonce=csrf,
-            decision="reject", approver_principal="home_assistant_admin_ingress",
+            decision="reject", approver_principal="home_assistant_admin_ingress:user-1",
         )
         rejected_reload = ChangeGovernanceService(self.repository, self.gateway, now=self.clock)
         self.assertEqual(rejected_reload.get_plan(rejected["plan_id"])["status"], "rejected")
@@ -413,7 +413,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
                     plan_id=created["plan_id"], challenge_id=pending["challenge_id"],
                     expected_plan_hash=created["plan_hash"], approval_kind="apply",
                     csrf_nonce=csrf, decision=value,
-                    approver_principal="home_assistant_admin_ingress",
+                    approver_principal="home_assistant_admin_ingress:user-1",
                 )
             except GovernanceError as exc:
                 return exc.code
@@ -431,13 +431,13 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
                 plan_id=created["plan_id"], challenge_id=pending["challenge_id"],
                 expected_plan_hash=created["plan_hash"], approval_kind="apply",
                 csrf_nonce="wrong", decision="approve",
-                approver_principal="home_assistant_admin_ingress",
+                approver_principal="home_assistant_admin_ingress:user-1",
             )
         await self.service.decide_external_approval(
             plan_id=created["plan_id"], challenge_id=pending["challenge_id"],
             expected_plan_hash=created["plan_hash"], approval_kind="apply",
             csrf_nonce=csrf, decision="approve",
-            approver_principal="home_assistant_admin_ingress",
+            approver_principal="home_assistant_admin_ingress:user-1",
         )
         await self.service.apply(created["plan_id"], created["plan_hash"])
         health = self.service.health_summary()

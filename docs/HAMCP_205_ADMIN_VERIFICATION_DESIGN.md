@@ -74,7 +74,10 @@ Supervisor versions.
 - Core's rule is `User.is_admin` (`auth/models.py:92-96`):
   `is_owner or (is_active and any(group.id == GROUP_ID_ADMIN))`, where
   `GROUP_ID_ADMIN = "system-admin"` (`auth/const.py:9`). Engineering applies
-  this rule to the row whose `id` exactly matches the forwarded user ID.
+  this rule to the row whose `id` exactly matches the forwarded user ID, with
+  one stricter step (review L1, defense in depth): an inactive user is never an
+  administrator, so an inactive owner is refused although Core's `is_admin`
+  still returns true for it.
 - No narrower read-only endpoint returns another user's role. `auth/current_user`
   describes only the caller, which here is Engineering's own principal.
 
@@ -196,21 +199,32 @@ The counters are counts only, with no user IDs.
    and the role exists only over WebSocket. The lookup therefore uses one fixed,
    data-free WebSocket command constant, pinned by a source test. Adding a
    WebSocket command registry is out of scope here.
-2. **Governance still has the anonymous fallback, but it is unreachable.**
-   - `governance/service.py` still contains
-     `approver_principal or DEFAULT_APPROVER_PRINCIPAL` in
-     `decide_external_approval`.
-   - That method is called only from the Ingress app, which now always passes a
-     verified principal, so the fallback cannot be reached from any approval
-     page.
-   - Removing it inside governance was deferred for three reasons:
-     - the file is protected and outside this brief's named files;
-     - HAMCP-191 (#280) has open changes to the same file, in other regions;
-     - HAMCP-184's tests create historical anonymous records through that path,
-       and replacing them must respect the persisted-fixture provenance rules.
-   - Historical anonymous standard-class approvals keep their HAMCP-184
-     eligibility (`_external_principal_authority_valid`). Josh decides whether
-     they should be made ineligible.
+2. **Anonymous default approver removed (owner cleanup, after HAMCP-191).**
+   Josh decided that stored anonymous approvals become ineligible. In
+   `governance/service.py`:
+   - `DEFAULT_APPROVER_PRINCIPAL` and the `approver_principal or ...` fallback
+     are gone. `decide_external_approval` refuses a missing principal or the
+     legacy anonymous literal `home_assistant_admin_ingress` with
+     `external_approval_invalid` before any challenge is consumed, so no new
+     anonymous decision can be recorded.
+   - `_external_principal_authority_valid` no longer accepts a stored
+     anonymous approval for any risk class.
+   - A plan whose stored approval names the anonymous principal (whatever its
+     recorded `principal_separation_enforced` flag says) is refused at apply
+     and at rollback with `external_approval_required` and
+     `details.reason: anonymous_approval_requires_reapproval`. The refusal
+     happens before any dispatch, snapshot, approval consumption or task. The
+     only state change is the existing refusal record: one
+     `change_apply_rejected` plan event and audit entry for apply, one
+     `rollback_failed` audit entry for rollback.
+   - An approved plan cannot be approved twice, so re-approval means planning
+     the change again (the new plan supersedes the old one) and approving it on
+     the Ingress page as a verified administrator.
+   - Stored records are not rewritten. Plan reads still project the anonymous
+     principal truthfully (`principal_separation_enforced: false`, reason
+     `anonymous_fallback_principal`). HAMCP-184's tests now plant such records
+     with plain repository saves instead of deciding through the removed
+     fallback.
 3. **Lowercase header forgery.** This upstream residual risk is inferred, not
    executed (see Part 1, section 1).
 4. **Role lookup cost.** Every page view and decision makes one Core WebSocket
@@ -246,4 +260,8 @@ Mutations (all killed; the runner copies the worktree per mutant):
 - trusting the identity header instead of the lookup;
 - accepting the default principal again;
 - caching the role in the verifier;
-- caching the role in the gate.
+- caching the role in the gate;
+- accepting a stored anonymous approval again (owner cleanup);
+- restoring the anonymous decision fallback in governance;
+- dropping the re-approve reason from the apply refusal;
+- treating an inactive owner as an administrator (L1).
