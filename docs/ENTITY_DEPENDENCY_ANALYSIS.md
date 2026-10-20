@@ -29,14 +29,17 @@ entity is analyzed normally because stale references may remain.
 | Blueprint role resolution | complete or partial | Read-only blueprint mount, safe paths, YAML `!input` resolution |
 | Entity current state | transitional direct | Exact entity state requires direct HA REST; no fallback or Standard MCP claim |
 | Entity registry | transitional direct | HA WebSocket entity registry |
-| Scripts (introduced in 2.4.0-beta.1) | partial or unavailable | Admitted internal `ha_config_get_script`; exact registry identity, bounded per-script stored configuration |
+| Scripts (introduced in 2.4.0-beta.1; loaded source HAMCP-212) | partial or unavailable | Loaded configuration via fixed read-only `script/config`/`search/related` on the shared HAMCP-209 batch; admitted internal `ha_config_get_script` for counted stored fallbacks; exact registry identity |
 | Scenes, groups, template source, dashboards | unavailable | No reliable complete configuration adapter yet |
 | Static YAML/packages/custom integrations | outside coverage | No arbitrary filesystem or `.storage` scan |
 
 Direct inventory and automation evidence is labeled `direct_ha_api`. Script
-configuration is labeled `upstream_read_gateway`, with the actual upstream version
-and reviewed contract fingerprint in the existing coverage policy metadata. No
-second connector or client-selected provider is required.
+configuration read from Core's loaded configuration (HAMCP-212) is labeled
+`direct_ha_api`; a script read from the stored delegated route is labeled
+`upstream_read_gateway`, with the actual upstream version and reviewed contract
+fingerprint in the existing coverage policy metadata. Each script's path evidence
+names its own source; a mixed build's coverage provider joins both. No second
+connector or client-selected provider is required.
 
 ### Script diagnostics — introduced in 2.4.0-beta.1
 
@@ -50,8 +53,7 @@ reader and its same-session catalog, Core and upstream authority checks.
 
 Known readable scripts can yield exact findings while overall script coverage
 remains partial. State/registry discovery cannot enumerate all stored or
-package-defined scripts, and the reviewed REST-backed reader reads `scripts.yaml`.
-There is no loaded-config WebSocket or filesystem fallback. Empty discovery and
+package-defined scripts. Empty discovery and
 zero matches do not establish global absence. Provider errors, truncation,
 sanitization and unreadable neighbors remain explicit gaps. Failure counts include
 source-level gap events and per-document failures, not unique failed script counts.
@@ -64,6 +66,37 @@ overflow belongs to scripts. An inventory limit discloses that the exact omitted
 identity count is unknown. Requests and cumulative read timing appear under
 `delegated_script_configuration` in the scan profile; they count gateway read
 attempts, not all internal transport requests.
+
+#### Loaded script configuration — HAMCP-212
+
+Owner decisions D3/D4 apply to scripts: Engineering reads Core's loaded script
+configuration through the API with bounded requests and never reads a
+configuration file. Each available, identity-verified script candidate adds two
+fixed read-only commands to the single HAMCP-209 loaded-config batch connection
+(`loaded_config_batch`, at most 16 in flight): `script/config` and
+`search/related` with `item_type: script`. A plain loaded script needs no
+delegated read. The stored delegated read remains for these counted reasons,
+reported in `script_stored_config_fallback_reasons` and the coverage policy:
+
+| Reason | Cause | Partial |
+| --- | --- | --- |
+| `blueprint_instance` | Core reports a script blueprint; loaded config is the substituted body, so the stored `use_blueprint` input form is analyzed | no |
+| `blueprint_reference_nested` | Core's recursive search reports a blueprint through a targeted script | no |
+| `loaded_entity_unavailable` | The script is unavailable (Core's `UnavailableScriptEntity`) or registry-only | no |
+| `loaded_config_unreadable` | A per-command error, malformed config or malformed search result | yes |
+| `loaded_source_unavailable` | The whole batch failed (it also covers automations) | yes |
+| `loaded_source_unsupported` | The WebSocket client has no batch support; the pre-HAMCP-212 path | no |
+| `pending_write_reload` | A governed write is journaled and Core's loaded config does not yet match stored | no |
+
+A failed loaded read is reported as partial (`loaded_config_unavailable: N`) even
+when the stored read succeeds. A package script that has no stored entry is
+analyzed from loaded configuration. A governed script write is journaled before
+dispatch; a journaled script that is written but not loaded is disclosed as
+`pending_write_unreconciled`. Health `last_build_profile` reports
+`script_config_source`, `script_config_source_counts`,
+`script_stored_config_fallback_reasons`, `script_loaded_config_unavailable`,
+`script_pending_write_journal` and `loaded_script_command_count`. See
+`docs/HAMCP_212_LOADED_SCRIPT_CONFIG_DESIGN.md`.
 
 Only `entity_dependency_analysis` consumes this diagnostic partition. Automation,
 blueprint, helper consequence/lock, impact, integrity, incident and handoff evidence

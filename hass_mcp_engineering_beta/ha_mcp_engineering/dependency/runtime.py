@@ -125,6 +125,13 @@ class DependencyAnalysisRuntime:
             if callable(note):
                 note(automation_id)
 
+    def note_script_write(self, script_id: str) -> None:
+        """HAMCP-212: journal a governed script write until its reload is verified."""
+        if self.service:
+            note = getattr(self.service.index.provider, "note_script_write", None)
+            if callable(note):
+                note(script_id)
+
     def invalidate(self, reason: str = "configuration_changed") -> None:
         if self.service:
             self.service.index.invalidate(reason)

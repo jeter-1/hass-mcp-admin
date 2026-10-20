@@ -188,7 +188,11 @@ class EntityDependencyAnalysisService:
              "source_id": item.source_id, "source_entity_id": item.source_entity_id,
              "target_entity_id": item.target_entity_id, "relation": item.relation,
              "config_path": item.config_path,
-             "provider": "upstream_read_gateway" if item.source_type == "script" else "direct_ha_api"}
+             # HAMCP-212: a script's evidence names the source it was read from.
+             "provider": (
+                 (diagnostic.provider_for(item.source_id) if diagnostic else "upstream_read_gateway")
+                 if item.source_type == "script" else "direct_ha_api"
+             )}
             for item in analysis_findings if item.evidence_id in path_ids
         ]
         data = {
@@ -231,7 +235,7 @@ class EntityDependencyAnalysisService:
                 "gaps": graph_gaps,
                 "path_evidence": sorted(path_evidence, key=lambda item: item["evidence_id"]),
                 "configuration_providers": list(dict.fromkeys(
-                    [provider for provider in ("direct_ha_api", diagnostic.coverage.provider) if provider != "none"]
+                    [provider for provider in ("direct_ha_api", *diagnostic.coverage.provider.split("+")) if provider != "none"]
                 )) if diagnostic else [],
                 "script_provider_policy": diagnostic.coverage.policy if diagnostic else None,
                 "limitations": diagnostic.coverage.warnings[:10] if diagnostic else [],

@@ -219,7 +219,7 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 "effect_display_service_registry": 1,
                 "entity_registry_inventory": 1,
                 "home_assistant_config": 1,
-                "loaded_automation_config_batch": 1,
+                "loaded_config_batch": 1,
                 "states_inventory": 1,
             },
         )
