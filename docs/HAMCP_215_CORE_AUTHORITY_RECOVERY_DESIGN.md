@@ -180,8 +180,9 @@ All constants live in `ha_core_readmission/runtime.py`.
   - **Trade-off.** Every lifecycle-socket movement now waits one confirmation
     interval (about 15–18 s) before authority returns. This includes the
     reconnect after a Core update or restart. Previously authority returned on
-    the immediate reprobe. This is the hysteresis the brief requires;
-    shortening it is an owner decision.
+    the immediate reprobe. This is the hysteresis the brief requires.
+    **Josh accepted this delay on 2026-10-20**; Core-backed tools refuse
+    during it.
 - **Startup is unchanged.** First admission after process start publishes on
   the first complete verification, because no previously admitted authority is
   being restored. A startup failure is logged and paced by the same backoff.

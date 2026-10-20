@@ -1,7 +1,9 @@
 # Engineering 2.4.1-beta.26 acceptance
 
 This contract covers HAMCP-215: recovery and visibility for Home Assistant Core
-authority (break-fix). It builds on 2.4.1-beta.25 (HAMCP-212).
+authority (break-fix). It builds on 2.4.1-beta.25 (HAMCP-212). It also covers
+HAMCP-217, folded in by Josh: `certifi` 2026.7.22 → 2026.10.19 for
+GHSA-6q48-6c7w-9gw2.
 
 See also:
 - Release notes:
@@ -27,6 +29,10 @@ Bind the following:
 - Josh's HAMCP-215 objective: recover Core authority automatically after
   transient failures, never fail silently, and keep fail-closed behavior
   during uncertainty;
+- Josh's 2026-10-20 decisions:
+  - fold in HAMCP-217 (the certifi bump);
+  - accept the confirmation wait before Core authority returns after a
+    lifecycle-watcher socket move (see **Accepted restoration delay**);
 - `2.4.1-beta.26` materialized in all three version authorities, with exact
   acceptance and release-note resolution from `scripts/codex-context.py` and
   no staged declaration left over;
@@ -59,10 +65,47 @@ Preserve the following:
 - probe fingerprints, Core capability profiles, owner-signed Core registry
   entries and the signed ha-mcp registry;
 - the HOLD and the support window;
-- workflows and dependencies.
+- workflows;
+- every dependency except `certifi`.
 
 The health `recovery` object and the three new counters are the only
 public-surface change. They are additive and authorized by the task.
+
+### Dependency (HAMCP-217)
+
+- `certifi==2026.10.19` with the single `py3-none-any` hash
+  `42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b` must
+  appear in both `hass_mcp_engineering_beta/requirements.lock` and
+  `tests/requirements.lock`.
+- `build-inputs.json` must record `certifi: 2026.10.19` and the new
+  `runtime_lock_sha256`.
+- `build_inputs.py source` must pass with 39 distributions.
+- No other pin or hash changes.
+- `requirements.txt` is unchanged.
+- CI's `pip-audit --strict` on the runtime lock must report no known
+  vulnerabilities.
+- `tests/test_hamcp217_certifi_20261019_contract.py` (11 tests) pins:
+  - the removal of the `emSign ECC Root CA - G3` root;
+  - the retained unaffected emSign roots;
+  - the exact bundle trust, `CERT_REQUIRED` and hostname checking of each
+    Engineering httpx path;
+  - refusal of a root outside the bundle, with zero requests and a positive
+    control;
+  - the aiohttp boundary (aiohttp does not read certifi).
+- The test lock's `urllib3` 2.7.0 findings (PYSEC-2026-4175/4176/4177) are
+  pre-existing. They are outside this release under the 2026-10-19 owner
+  decision and are not in the image.
+
+### Accepted restoration delay
+
+After any lifecycle-watcher socket move, including a Home Assistant Core
+restart or update, Core authority returns only after one confirmation
+interval, about 15–18 s once Core is reachable. Core-backed tools refuse
+during that wait. Josh accepted this on 2026-10-20. Acceptance treats a
+refusal in that window as expected, not as a defect, provided the following
+hold:
+- health shows `recovery_state: confirming`;
+- authority returns without restarting Engineering.
 
 ### Offline proof
 
@@ -161,7 +204,8 @@ transient.
       `core_catalog_tools_withdrawn`.
    4. Once Core is back, health should pass through `confirming` with
       `confirmations_required: 2`, then reach `restored` with
-      `last_restored_at` set. The log should contain
+      `last_restored_at` set. Expect the accepted wait of about 15–18 s
+      between Core being reachable and restoration. The log should contain
       `core_authority_recovery_attempt`,
       `core_authority_recovery_confirming`, `core_authority_restored` and
       `core_catalog_tools_restored`.

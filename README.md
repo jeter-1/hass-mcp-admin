@@ -13,7 +13,10 @@ Every verification failure, retirement, catalog withdrawal, recovery attempt
 and restoration is now a bounded WARNING log event. Health's
 `home_assistant_core_authority.recovery` reports the recovery state, the last
 failure reason and time, and the next attempt. Fail-closed behavior during
-recovery is unchanged. No tool, schema, permission or descriptor changes (88
+recovery is unchanged. After a Core restart or update, Core-backed tools refuse
+for about 15–18 s until the confirmation completes; Josh accepted this delay.
+The release also bumps `certifi` to 2026.10.19 for GHSA-6q48-6c7w-9gw2
+(HAMCP-217). No tool, schema, permission or descriptor changes (88
 tools, 89 with the optional YAML reader). Read the
 [2.4.1-beta.26 release notes](docs/V2_4_1_BETA26_RELEASE_NOTES.md) and
 [2.4.1-beta.26 acceptance contract](docs/V2_4_1_BETA26_ACCEPTANCE.md).

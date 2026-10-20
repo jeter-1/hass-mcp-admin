@@ -29,9 +29,14 @@ Builds on 2.4.1-beta.25.
   restoration times, and confirmations. Add the counters `recovery_attempts`,
   `recovery_confirmations` and `authority_restorations`.
 - A lifecycle-socket movement, including the reconnect after a Core restart,
-  now waits one confirmation interval before authority returns. No tool,
-  schema, descriptor, permission, workflow, stored-format or dependency
-  change.
+  now waits one confirmation interval (about 15–18 s) before authority returns.
+  Core-backed tools refuse during it. Josh accepted this on 2026-10-20.
+- Bump `certifi` 2026.7.22 → 2026.10.19 in both hashed locks and
+  `build-inputs.json` for GHSA-6q48-6c7w-9gw2 (HAMCP-217, folded in). The bundle
+  loses only the `emSign ECC Root CA - G3` root. There are no transitive
+  changes. `tests/test_hamcp217_certifi_20261019_contract.py` pins the
+  Engineering httpx trust.
+- No tool, schema, descriptor, permission, workflow or stored-format change.
 
 ## 2.4.1-beta.25 - Loaded script configuration (HAMCP-212)
 
