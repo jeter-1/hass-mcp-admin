@@ -1,20 +1,22 @@
-# Engineering 2.4.1-beta.22 acceptance
+# Engineering 2.4.1-beta.23 acceptance
 
 This contract covers HAMCP-209. The dependency index is built from Home
 Assistant's loaded automation configuration with a bounded number of requests,
 and falls back to stored reads only where it reports doing so. Coverage and
 partial reporting stay truthful. Release notes:
-[`V2_4_1_BETA22_RELEASE_NOTES.md`](V2_4_1_BETA22_RELEASE_NOTES.md).
+[`V2_4_1_BETA23_RELEASE_NOTES.md`](V2_4_1_BETA23_RELEASE_NOTES.md).
 Design and Part 1 verification:
 [`HAMCP_209_FAST_DEPENDENCY_INDEX_DESIGN.md`](HAMCP_209_FAST_DEPENDENCY_INDEX_DESIGN.md).
 
-**Release target.** This PR was implemented on `2.4.1-beta.19` (`a1236c4`).
-HAMCP-191 (beta.20, PR #280) merged first and was merged into this branch
-with a merge commit (`78a2595`, no conflicts). HAMCP-205 (beta.21, PR #281)
-is expected to merge next. This PR then merges `main` again and
-stages the next beta through one owner-authorized run of
-`scripts/promote_next_release.py --apply`. If the version materialized at that
-time is not beta.22, these documents are renamed to match before Ready.
+**Release target.** This PR follows 2.4.1-beta.22 (HAMCP-211, PR #284).
+- It was implemented on `2.4.1-beta.19` (`a1236c4`).
+- It merged `main` with merge commits only: `538a7c7` (HAMCP-191, beta.20) at
+  `78a2595`, then `c618884` (HAMCP-205 beta.21 and HAMCP-211 beta.22) at
+  `969086e`. Neither merge had a textual conflict.
+- beta.21 was superseded before publication (see the beta.22 notes), so
+  beta.22 is the predecessor for catalog comparison and rollback.
+- It was staged as `2.4.1-beta.23` by one owner-authorized run of
+  `scripts/promote_next_release.py --apply`, which consumed the declaration.
 
 The contract separates four stages:
 1. source and offline acceptance;
@@ -27,7 +29,7 @@ It authorizes none of the later stages.
 ## 1. Source and offline acceptance
 
 Bind the following:
-- `2.4.1-beta.22` materialized in all three version authorities, with exact
+- `2.4.1-beta.23` materialized in all three version authorities, with exact
   acceptance and release-note resolution from `scripts/codex-context.py` and
   no staged declaration left over;
 - the PR head SHA;
@@ -103,14 +105,14 @@ are not passing evidence.
 Publication needs Josh's Ready authorization and the protected merge
 handoff. Verify the following with the shipped verifiers:
 - the merged source;
-- v2.4.1-beta.22;
+- v2.4.1-beta.23;
 - the immutable version and commit images;
 - provenance and SBOM.
 
-Never invent future image identities. Retain the beta.21 artifacts and the
+Never invent future image identities. Retain the beta.22 artifacts and the
 known-good earlier artifacts for recovery.
 
-No stored format changes. Rollback is reinstalling the beta.21 artifact.
+No stored format changes. Rollback is reinstalling the beta.22 artifact.
 
 ## 3. Installed Engineering
 
@@ -120,11 +122,11 @@ authorization.
 1. **Installed-image binding.** Separately authorize installation of the
    published Engineering artifact. Bind the running add-on to:
    - the published image index digest;
-   - the v2.4.1-beta.22 tag;
+   - the v2.4.1-beta.23 tag;
    - the protected `main` merge commit that contains this PR.
 
    A source version alone does not prove the installed image.
-2. **Catalog unchanged.** Compare the public descriptors with beta.21: the
+2. **Catalog unchanged.** Compare the public descriptors with beta.22: the
    same tool count, input schemas and descriptions. Also compare:
    - Core signed selection;
    - storage and audit health;
@@ -149,7 +151,7 @@ authorization.
    Record `build_wall_clock_ms` (expected a few seconds at most, against
    33.7–41.5 s on beta.16–19), `request_count`,
    `maximum_single_request_queue_wait_ms` and the index coverage. Coverage must
-   not be worse than the last beta.21 build: the same or fewer automation
+   not be worse than the last beta.22 build: the same or fewer automation
    failures. Package-defined automations that were unreadable before may now
    be covered.
 4. **Write right after a restart (needs Josh's explicit authorization for the

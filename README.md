@@ -1,5 +1,18 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.23** builds the dependency index from the automation
+configuration Home Assistant has loaded (HAMCP-209). One WebSocket connection
+with two fixed, read-only commands per automation replaces one serialized REST
+fetch per automation. On a synthetic 113-automation model the build drops from
+34.8 s and 116 requests to 0.42 s and 4 requests, and a write during the build
+from 2.7 s to 0.32 s. Blueprint instances, unavailable or unreadable entries
+and writes Home Assistant has not reloaded keep the stored read, and each
+such fallback is counted with its reason. No tool, schema or route changes.
+Read the [2.4.1-beta.23 release notes](docs/V2_4_1_BETA23_RELEASE_NOTES.md) and
+[2.4.1-beta.23 acceptance contract](docs/V2_4_1_BETA23_ACCEPTANCE.md).
+
+It builds on beta.22 below.
+
 Engineering **2.4.1-beta.22** is a dependency security release (HAMCP-211).
 It upgrades `aiohttp` to 3.14.4 for GHSA-2g87-pp6c-29x5, CVE-2026-111063 and
 CVE-2026-111064, with the `yarl` 1.25.1 upgrade that 3.14.4 requires. beta.21
@@ -220,7 +233,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.22 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.23 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

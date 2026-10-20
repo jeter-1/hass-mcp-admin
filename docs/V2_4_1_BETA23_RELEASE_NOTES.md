@@ -1,6 +1,6 @@
-# Engineering 2.4.1-beta.22 release notes
+# Engineering 2.4.1-beta.23 release notes
 
-Engineering 2.4.1-beta.22 builds the dependency index from the automation
+Engineering 2.4.1-beta.23 builds the dependency index from the automation
 configuration Home Assistant has **loaded**. It no longer makes one serialized
 REST fetch per automation (HAMCP-209, break-fix). This applies Josh's
 HAMCP-171 decisions D3 (prefer Home Assistant's API for the loaded
@@ -9,11 +9,15 @@ of `automations.yaml` or any configuration file).
 
 The design, with the Part 1 verification against the pinned Core source, is
 in [`HAMCP_209_FAST_DEPENDENCY_INDEX_DESIGN.md`](HAMCP_209_FAST_DEPENDENCY_INDEX_DESIGN.md).
-Acceptance: [`V2_4_1_BETA22_ACCEPTANCE.md`](V2_4_1_BETA22_ACCEPTANCE.md).
+Acceptance: [`V2_4_1_BETA23_ACCEPTANCE.md`](V2_4_1_BETA23_ACCEPTANCE.md).
+
+beta.23 follows 2.4.1-beta.22 (HAMCP-211, the aiohttp 3.14.4 security
+release) and includes everything in it, including HAMCP-205's administrator
+verification. It adds no dependency change: both hashed locks are beta.22's.
 
 No tool, input schema, description, provider route, signed registry, HOLD,
 support window, workflow or stable-v1 change is included. The tool catalog
-and every public descriptor are unchanged from beta.21.
+and every public descriptor are unchanged from beta.22.
 
 **What was wrong (beta.16–beta.19 live).**
 - Index builds took 33.7–41.5 s on 113 automations.
@@ -84,7 +88,7 @@ incremental hashing; the design note gives the reasons.
 
 ## Measured effect (synthetic 113-automation model)
 
-| | beta.19 base | beta.22 |
+| | beta.19 base | beta.23 |
 | --- | --- | --- |
 | Build wall time | 34.8 s | 0.42 s |
 | Provider requests | 116 | 4 |
@@ -112,7 +116,7 @@ views and snapshot fingerprints.
   - Out-of-band edits that Home Assistant has not reloaded are reported as
     loaded, which is the configuration that runs.
 - **Stored formats.** No stored format changes. The journal is in memory only.
-- **Rollback** is reinstalling the beta.21 artifact, which returns to the
+- **Rollback** is reinstalling the beta.22 artifact, which returns to the
   per-automation REST reads and their slow builds. No state needs migration.
 - **HAMCP-200.** Every REST call still goes through the typed `Route`. The two
   WebSocket commands are fixed and read-only. No write, service call, reload

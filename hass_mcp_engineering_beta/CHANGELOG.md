@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.4.1-beta.23 - Dependency index from Home Assistant's loaded automation config (HAMCP-209)
+
+Builds on 2.4.1-beta.22.
+
+- Build the dependency index from the loaded automation configuration over
+  one authenticated WebSocket connection: two fixed, read-only commands per
+  automation (`automation/config`, `search/related`), at most 16 in flight,
+  enforced by an allowlist in the client. No per-automation
+  `automation_config` REST read on the normal path (HAMCP-171 D3; no config
+  file read, D4).
+- Keep the stored REST read for blueprint instances, unavailable,
+  unreadable or mismatched entries, writes not yet reloaded and a failed
+  loaded source, and report every such fallback with its reason in the
+  coverage policy and build profile.
+- Journal governed automation writes before dispatch (cap 256, overflow
+  reported) so a written-but-not-reloaded automation is partial, never
+  silently stale.
+- Add additive build-profile fields. No tool, input schema, description,
+  provider route, signed registry, HOLD, support window, persisted format,
+  workflow or stable-v1 change.
+
 ## 2.4.1-beta.22 - aiohttp 3.14.4 dependency security release (HAMCP-211)
 
 Builds on 2.4.1-beta.21, which was superseded before publication and is not
