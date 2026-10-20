@@ -60,11 +60,17 @@ The report contains:
   include:
   - an unreadable storage location;
   - one failed read;
-  - a malformed field;
+  - a malformed, missing or out-of-range field, reported per field
+    (`invalid_field:<pointer>`);
+  - a truncated name or error text (`truncated_field:<pointer>`);
   - a list cap;
   - the response budget;
-  - redaction.
-- When one read fails, the signals that depend on it are `unknown`.
+  - redaction;
+  - an encryption key that could not be positively read
+    (`encryption_key_unknown`).
+- Each health signal declares the inputs it depends on (`depends_on`). If any
+  of them is unreadable or partial, the signal is `unknown`, with
+  `evidence_complete: false` and the inputs named in `unreadable_inputs`.
 - When both reads fail, the call returns `analysis_unavailable`.
 - A permission failure, or a change of Core authority between reads, fails
   closed.
@@ -93,8 +99,13 @@ The report contains:
   - never projects it;
   - reports only `encryption_configured`;
   - uses the key for that one response as a known secret in the shared strict
-    sanitizer (HAMCP-191), so a backup name or error that contains it is
-    withheld.
+    sanitizer (HAMCP-191), so a backup name or error that contains it, in
+    any letter case, is withheld;
+  - fails closed when the key cannot be positively read (the config read
+    failed, or the key field is missing or malformed): every name and error
+    text is withheld, free-form identifiers are replaced by stable aliases
+    such as `withheld#1`, and only structured facts (dates, sizes, flags,
+    fixed location ids, versions) are shown.
 - **Untrusted text.**
   - Backup names, error text and every identifier pass through the shared
     sanitizer.

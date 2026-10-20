@@ -13,9 +13,13 @@ Builds on 2.4.1-beta.23.
 - Read only Core's `backup/config/info` and `backup/info` over the existing
   admin WebSocket authority. No create, restore, delete, download or settings
   path exists.
-- Report `partial`, with reasons, whenever a read, location or field cannot be
-  read or text is redacted. The encryption key is never returned; it is a
-  per-response known secret for the shared sanitizer.
+- Report `partial`, with per-field reasons, whenever a read, location or
+  field cannot be read, is out of range or truncated, or text is redacted.
+  Each health signal names the inputs it depends on and is `unknown` when any
+  of them is unreadable.
+- Never return the encryption key; it is a per-response known secret for the
+  shared sanitizer. When the key cannot be positively read, withhold every
+  name and error text and alias free-form identifiers.
 - Map the tool to `core.basic_websocket_read` in the Core gate. Static tools
   60 (was 59); advertised catalog 88 (was 87), or 89 with the optional YAML
   reader. Every existing descriptor, signed registry, HOLD, support window,

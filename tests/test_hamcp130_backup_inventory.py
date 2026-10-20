@@ -858,6 +858,515 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             core.finish.assert_called_once()
 
 
+def key_paths(value, path="$"):
+    """JSON paths of every string that contains the synthetic key."""
+
+    if isinstance(value, str):
+        return [path] if KEY in value else []
+    if isinstance(value, list):
+        return [p for i, item in enumerate(value) for p in key_paths(item, f"{path}[{i}]")]
+    if isinstance(value, dict):
+        return [p for k, item in value.items() for p in key_paths(item, f"{path}.{k}")]
+    return []
+
+
+def key_bearing_info():
+    """``backup/info`` with the synthetic key in every upstream text field."""
+
+    values = info([
+        backup("b1", 0.4, name="Before upgrade " + KEY,
+               agents={"hassio.local": {"protected": True, "size": 5_000},
+                       "hassio." + KEY: {"protected": True, "size": 6_000}},
+               addons=(("Mosquitto " + KEY, "core_mosquitto"), (None, KEY)),
+               failed_addons=(KEY,), failed_agents=("hassio." + KEY,)),
+        backup(KEY, 2, name=KEY),
+    ], attempted=at(0.4), completed=at(0.39),
+        event={"manager_state": "create_backup", "stage": None, "state": "failed", "reason": KEY.lower()})
+    values["agent_errors"] = {"hassio.synthetic_nas": "Mount error " + KEY,
+                              "cloud." + KEY: KEY}
+    return values
+
+
+def key_unknown_configs():
+    """Every way the encryption key can fail to be positively known."""
+
+    def malformed(mutate):
+        value = config(password=KEY, attempted=at(0.4), completed=at(0.39))
+        mutate(value)
+        return value
+
+    return [
+        ("timeout", HomeAssistantTimeoutError(KEY)),
+        ("api_error", HomeAssistantApiError(KEY)),
+        ("unavailable", HomeAssistantUnavailableError(KEY)),
+        ("generic_exception", RuntimeError(KEY)),
+        ("config_empty", {"config": {}}),
+        ("config_null", {"config": None}),
+        ("result_not_a_mapping", ["config", KEY]),
+        ("create_backup_missing", malformed(lambda v: v["config"].pop("create_backup"))),
+        ("create_backup_not_a_mapping", malformed(lambda v: v["config"].update(create_backup=KEY))),
+        ("password_field_missing", malformed(lambda v: v["config"]["create_backup"].pop("password"))),
+        ("password_not_a_string", malformed(lambda v: v["config"]["create_backup"].update(password=[KEY]))),
+        ("password_number", malformed(lambda v: v["config"]["create_backup"].update(password=7))),
+    ]
+
+
+async def serve_through_gateway(values):
+    """One ``tools/call`` through the authenticated gateway with audit and logs captured."""
+
+    import io
+    import logging
+
+    service, client, core, _, token = setup(values)
+    end_request(token)
+    core.acquire = Mock(return_value=object())
+    core.consume = Mock(return_value=())
+    core.revalidate = Mock(return_value=True)
+    core.finish = Mock(return_value=True)
+    core.release = Mock(return_value=True)
+
+    async def app(scope, receive, send):
+        rpc = json.loads((await receive())["body"])
+        tool = registered_tools(get_registered_server())["get_backup_inventory"]
+        rendered = await tool.run(rpc["params"]["arguments"])
+        result = {"jsonrpc": "2.0", "id": rpc["id"],
+                  "result": {"content": [{"type": "text", "text": rendered}], "isError": False}}
+        await send({"type": "http.response.start", "status": 200,
+                    "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": json.dumps(result).encode()})
+
+    capture = io.StringIO()
+    handler = logging.StreamHandler(capture)
+    handler.setLevel(logging.DEBUG)
+    root = logging.getLogger()
+    previous = root.level
+    root.addHandler(handler)
+    root.setLevel(logging.DEBUG)
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            audit_path = Path(directory) / "audit.jsonl"
+            config_ = settings(audit_path=str(audit_path))
+            gateway = AuthenticatedMcpGateway(app, config_, AuditLogger(str(audit_path), config_.access_secret),
+                                              core_runtime=core)
+            with patch.object(BACKUP_INVENTORY, "service", service), patch.object(public, "SETTINGS", config_):
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=gateway),
+                                             base_url="http://127.0.0.1:8100") as http:
+                    response = await http.post(f"/{config_.access_secret}/mcp", json={
+                        "jsonrpc": "2.0", "id": "synthetic-request", "method": "tools/call",
+                        "params": {"name": "get_backup_inventory", "arguments": {"limit": 5}}})
+            audit = audit_path.read_text()
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(previous)
+    data = json.loads(response.json()["result"]["content"][0]["text"])
+    return response.text, data, audit, capture.getvalue(), client
+
+
+class KeyUnknownTests(Base):
+    """H1: no upstream text is shown unless the encryption key is positively known."""
+
+    def assert_withheld(self, report, label):
+        rendered = json.dumps(report) + json.dumps(self.telemetry.audit_context, default=str)
+        self.assertEqual(key_paths(report), [], label)
+        self.assertNotIn(KEY, rendered, label)
+        self.assertNotIn(KEY.lower(), rendered.lower(), label)
+        self.assertEqual(report["completeness"], "partial", label)
+        reasons = {o["reason"] for o in report["omissions"]}
+        self.assertIn("encryption_key_unknown", reasons, label)
+        self.assertIn("encryption_key_unknown:backup.name", reasons, label)
+        self.assertIn("encryption_key_unknown:info.agent_errors.error", reasons, label)
+        self.assertEqual(self.telemetry.result_status, "partial", label)
+
+    async def test_every_key_unknown_variant_withholds_all_free_text(self):
+        for label, config_value in key_unknown_configs():
+            values = {"backup/config/info": config_value, "backup/info": key_bearing_info()}
+            report = await self.run_inventory(values)
+            self.assert_withheld(report, label)
+            backups = {b["date"]: b for b in report["backups"]}
+            self.assertEqual(len(backups), 2, label)
+            newest = report["backups"][0]
+            # Free text is withheld, not digested or partially shown.
+            self.assertIsNone(newest["name"], label)
+            self.assertEqual(newest["addons"], [], label)
+            self.assertEqual(newest["failed_addons"], ["withheld"], label)
+            self.assertIsNone(report["summary"]["last_action"]["reason"], label)
+            for error in report["recent_failures"]:
+                self.assertIsNone(error.get("error"), label)
+            # Identifiers that structure the report become opaque aliases;
+            # fixed vocabulary and structured facts stay.
+            self.assertTrue(all(b["backup_id"].startswith("withheld#") for b in report["backups"]), label)
+            locations = {loc["location_id"]: loc for loc in newest["locations"]}
+            self.assertEqual(set(locations), {"hassio.local", "hassio.withheld#1"}, label)
+            self.assertEqual(locations["hassio.withheld#1"]["storage_class"], "network_storage", label)
+            self.assertEqual(locations["hassio.withheld#1"]["size_bytes"], 6_000, label)
+            self.assertEqual(newest["failed_location_ids"], ["hassio.withheld#1"], label)
+            self.assertEqual(newest["homeassistant_version"], "2026.10.1", label)
+            self.assertEqual(newest["date"], iso_of(0.4), label)
+            self.assertIs(newest["protected"], True, label)
+            self.assertEqual(report["summary"]["backup_count"], 2, label)
+            self.assertEqual(report["summary"]["manager_state"], "idle", label)
+            table = {loc["location_id"] for loc in report["summary"]["storage_locations"]}
+            self.assertIn("cloud.withheld#2", table, label)
+            self.assertIn("withheld", report["definitions"])
+
+    async def test_key_unknown_aliases_are_stable_and_never_collide(self):
+        values = {"backup/config/info": HomeAssistantTimeoutError("t"), "backup/info": key_bearing_info()}
+        values["backup/info"]["backups"].append(backup("withheld#1", 3))
+        report = await self.run_inventory(values)
+        ids = [b["backup_id"] for b in report["backups"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(i.startswith("withheld#") for i in ids))
+        newest = report["backups"][0]
+        self.assertEqual(newest["failed_location_ids"][0],
+                         next(loc["location_id"] for loc in newest["locations"]
+                              if loc["location_id"] != "hassio.local"))
+
+    async def test_known_key_control_shows_sanitized_text(self):
+        for label, password in (("encrypted", KEY), ("not_encrypted", None), ("empty", "")):
+            values = {"backup/config/info": config(password=password, attempted=at(0.4), completed=at(0.39)),
+                      "backup/info": key_bearing_info() if password else info(
+                          [backup("b1", 0.4, name="Synthetic nightly")], attempted=at(0.4), completed=at(0.39))}
+            report = await self.run_inventory(values)
+            self.assertNotIn(KEY, json.dumps(report), label)
+            reasons = {o["reason"] for o in report["omissions"]}
+            self.assertFalse(any(r.startswith("encryption_key_unknown") for r in reasons), label)
+            if password:
+                self.assertTrue(report["backups"][0]["name"].startswith("Before upgrade "), label)
+                self.assertEqual(report["recent_failures"][0]["kind"], "last_backup_action_failed")
+                errors = [f for f in report["recent_failures"] if f["kind"] == "storage_location_unreadable"]
+                self.assertTrue(any(f["error"] and f["error"].startswith("Mount error ") for f in errors), label)
+            else:
+                self.assertEqual(report["backups"][0]["name"], "Synthetic nightly", label)
+                self.assertEqual(report["completeness"], "complete", label)
+
+    async def test_known_key_in_another_case_is_withheld(self):
+        values = {"backup/config/info": config(password=KEY, attempted=at(0.4), completed=at(0.39)),
+                  "backup/info": key_bearing_info()}
+        values["backup/info"]["backups"].append(backup("b9", 3, name="Nightly " + KEY.upper()))
+        report = await self.run_inventory(values)
+        rendered = json.dumps(report).casefold()
+        self.assertNotIn(KEY.casefold(), rendered)
+        self.assertIsNone(report["summary"]["last_action"]["reason"])
+        self.assertIsNone(next(b for b in report["backups"] if b["date"] == iso_of(3) and b["backup_id"] == "b9")["name"])
+        self.assertIn("redacted_by_policy", {o["reason"] for o in report["omissions"]})
+
+    async def test_key_unknown_through_gateway_audit_and_logs(self):
+        cases = [(label, value) for label, value in key_unknown_configs()]
+        for label, config_value in cases:
+            values = {"backup/config/info": config_value, "backup/info": key_bearing_info()}
+            response, data, audit, logs, client = await serve_through_gateway(values)
+            self.assertTrue(data["success"], label)
+            self.assertEqual(data["data"]["completeness"], "partial", label)
+            self.assertEqual(key_paths(data), [], label)
+            for surface, text in (("response", response), ("audit", audit), ("logs", logs)):
+                self.assertNotIn(KEY, text, (label, surface))
+                self.assertNotIn(KEY.lower(), text.lower(), (label, surface))
+            self.assertEqual([p["type"] for p in client.calls], ["backup/config/info", "backup/info"], label)
+
+    async def test_gateway_failures_with_key_in_exceptions_never_leak(self):
+        known = config(password=KEY, attempted=at(0.4), completed=at(0.39))
+        cases = [
+            ("info_failure", {"backup/config/info": known, "backup/info": HomeAssistantApiError(KEY)}),
+            ("both_failed", {"backup/config/info": HomeAssistantApiError(KEY),
+                             "backup/info": HomeAssistantApiError(KEY)}),
+            ("permission_config", {"backup/config/info": AuthorizationError(KEY), "backup/info": key_bearing_info()}),
+            ("permission_info", {"backup/config/info": known, "backup/info": AuthorizationError(KEY)}),
+        ]
+        for label, values in cases:
+            response, data, audit, logs, _ = await serve_through_gateway(values)
+            for surface, text in (("response", response), ("audit", audit), ("logs", logs)):
+                self.assertNotIn(KEY, text, (label, surface))
+            self.assertEqual(key_paths(data), [], label)
+
+
+def iso_of(days):
+    return (NOW - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+
+
+class FieldValidityTests(Base):
+    """M1: every missing, invalid, out-of-range or truncated field is an omission."""
+
+    def reasons(self, report):
+        return {o["reason"]: o["count"] for o in report["omissions"]}
+
+    async def assert_partial_with(self, mutate, reason, count=None):
+        values = healthy()
+        mutate(values)
+        report = await self.run_inventory(values)
+        self.assertEqual(report["completeness"], "partial", reason)
+        self.assertIn(reason, self.reasons(report), (reason, report["omissions"]))
+        if count is not None:
+            self.assertEqual(self.reasons(report)[reason], count)
+        return report
+
+    async def test_reviewer_malformed_backup_fields(self):
+        first = lambda v: v["backup/info"]["backups"][0]  # noqa: E731
+        report = await self.assert_partial_with(
+            lambda v: first(v)["agents"]["hassio.local"].update(size="not-an-integer"),
+            "invalid_field:backup.agents.size")
+        self.assertIsNone(report["backups"][0]["size_bytes"])
+        report = await self.assert_partial_with(
+            lambda v: first(v)["agents"]["hassio.local"].update(protected="not-a-boolean"),
+            "invalid_field:backup.agents.protected")
+        self.assertIsNone(report["backups"][0]["protected"])
+        for field in ("homeassistant_included", "database_included"):
+            report = await self.assert_partial_with(lambda v: first(v).update({field: "not-a-boolean"}),
+                                                    "invalid_field:backup." + field)
+            self.assertEqual(report["backups"][0]["content_scope"], "unknown")
+            sig = signals(report)["no_full_backup_within_threshold"]
+            self.assertEqual((sig["status"], sig["evidence_complete"]), ("unknown", False))
+            self.assertIn("recent_backup_content", sig["unreadable_inputs"])
+
+    async def test_reviewer_unreadable_failed_addon_is_still_a_failure(self):
+        report = await self.assert_partial_with(
+            lambda v: v["backup/info"]["backups"][0].update(failed_addons=[{"slug": "bad slug with spaces"}]),
+            "invalid_field:backup.failed_addons")
+        self.assertEqual(report["backups"][0]["failed_addons"], ["withheld"])
+        self.assertEqual(report["backups"][0]["content_scope"], "partial")
+        self.assertEqual(signals(report)["newest_backup_incomplete"]["status"], "observed")
+
+    async def test_reviewer_truncated_failed_locations(self):
+        report = await self.assert_partial_with(
+            lambda v: v["backup/info"]["backups"][0].update(
+                failed_agent_ids=[f"hassio.x{i}" for i in range(35)]),
+            "failed_agent_ids_not_listed", 35 - c.MAX_LOCATIONS)
+        self.assertEqual(len(report["backups"][0]["failed_location_ids"]), c.MAX_LOCATIONS)
+
+    async def test_failed_addons_cap_is_the_addon_limit(self):
+        report = await self.assert_partial_with(
+            lambda v: v["backup/info"]["backups"][0].update(
+                failed_addons=[{"slug": f"addon_{i}"} for i in range(c.MAX_ADDONS_PER_BACKUP + 2)]),
+            "failed_addons_not_listed", 2)
+        self.assertEqual(len(report["backups"][0]["failed_addons"]), c.MAX_ADDONS_PER_BACKUP)
+
+    async def test_reviewer_malformed_config_fields(self):
+        create = lambda v: v["backup/config/info"]["config"]["create_backup"]  # noqa: E731
+        report = await self.assert_partial_with(lambda v: create(v).update(include_database="not-a-boolean"),
+                                                "invalid_field:create_backup.include_database")
+        self.assertIsNone(report["automatic_backups"]["includes"]["database"])
+        await self.assert_partial_with(lambda v: create(v).update(include_all_addons=None),
+                                       "invalid_field:create_backup.include_all_addons")
+        await self.assert_partial_with(lambda v: create(v).update(include_addons=["bad slug"]),
+                                       "invalid_field:create_backup.include_addons")
+        await self.assert_partial_with(
+            lambda v: v["backup/config/info"]["config"].update(next_automatic_backup_additional="no"),
+            "invalid_field:next_automatic_backup_additional")
+        await self.assert_partial_with(
+            lambda v: v["backup/config/info"]["config"].update(agents={"hassio.local": {"protected": "yes"}}),
+            "invalid_field:agents.protected")
+        await self.assert_partial_with(
+            lambda v: v["backup/config/info"]["config"].update(agents=None), "invalid_field:agents")
+        await self.assert_partial_with(
+            lambda v: v["backup/config/info"]["config"].update(retention=None), "invalid_field:retention")
+        await self.assert_partial_with(
+            lambda v: v["backup/config/info"]["config"]["schedule"].pop("time"), "invalid_field:schedule.time")
+
+    async def test_reviewer_invalid_date(self):
+        report = await self.assert_partial_with(
+            lambda v: v["backup/info"]["backups"][0].update(date="invalid"), "invalid_field:backup.date")
+        self.assertIsNone(report["backups"][0]["date"])
+
+    async def test_missing_nullable_fields_differ_from_null(self):
+        first = lambda v: v["backup/info"]["backups"][0]  # noqa: E731
+        for field in ("homeassistant_version", "with_automatic_settings"):
+            values = healthy()
+            first(values)[field] = None
+            report = await self.run_inventory(values)
+            self.assertEqual(report["completeness"], "complete", (field, report["omissions"]))
+            await self.assert_partial_with(lambda v: first(v).pop(field), "invalid_field:backup." + field)
+        await self.assert_partial_with(lambda v: first(v).update(with_automatic_settings="yes"),
+                                       "invalid_field:backup.with_automatic_settings")
+
+    async def test_invalid_agent_error_entries_are_omissions(self):
+        await self.assert_partial_with(
+            lambda v: v["backup/info"].update(agent_errors={"bad id": "x"}),
+            "invalid_field:info.agent_errors.location_id")
+        await self.assert_partial_with(
+            lambda v: v["backup/info"].update(agent_errors={"hassio.nas": 7}),
+            "invalid_field:info.agent_errors.error")
+
+    async def test_invalid_event_fields_are_omissions(self):
+        event = {"manager_state": "create_backup", "stage": None, "state": "synthetic", "reason": None}
+        await self.assert_partial_with(lambda v: v["backup/info"].update(last_action_event=event),
+                                       "invalid_field:info.last_action_event.state")
+        event = {"manager_state": "synthetic"}
+        await self.assert_partial_with(lambda v: v["backup/info"].update(last_action_event=event),
+                                       "invalid_field:info.last_action_event.manager_state")
+
+    async def test_truncated_name_is_partial(self):
+        report = await self.assert_partial_with(
+            lambda v: v["backup/info"]["backups"][0].update(name="N" * (c.MAX_NAME + 40)),
+            "truncated_field:backup.name")
+        self.assertLess(len(report["backups"][0]["name"]), c.MAX_NAME + 40)
+        # A name exactly at the limit is not truncated.
+        values = healthy()
+        values["backup/info"]["backups"][0]["name"] = "N" * c.MAX_NAME
+        self.assertEqual((await self.run_inventory(values))["completeness"], "complete")
+
+    async def test_truncated_error_text_is_partial(self):
+        await self.assert_partial_with(
+            lambda v: v["backup/info"].update(agent_errors={"hassio.nas": "E" * (c.MAX_ERROR_TEXT + 1)}),
+            "truncated_field:info.agent_errors.error")
+
+    async def test_truncated_report_lists_are_partial(self):
+        values = healthy()
+        values["backup/info"]["backups"] = [backup(f"b{i:02d}", i + 1, failed_folders=("media",))
+                                            for i in range(c.MAX_FAILURES + 5)]
+        report = await self.run_inventory(values)
+        self.assertEqual(len(report["recent_failures"]), c.MAX_FAILURES)
+        self.assertEqual(report["recent_failure_count"], c.MAX_FAILURES + 5)
+        self.assertIn({"reason": "recent_failures_not_listed", "count": 5}, report["omissions"])
+        values = healthy()
+        values["backup/info"]["backups"] = [
+            backup(f"b{k}", k + 1, agents={f"hassio.nas_{k}_{i}": {"protected": False, "size": 1}
+                                           for i in range(20)}) for k in range(2)]
+        report = await self.run_inventory(values)
+        self.assertEqual(len(report["summary"]["storage_locations"]), c.MAX_LOCATIONS)
+        # 40 locations holding backups plus the configured hassio.local.
+        self.assertIn({"reason": "storage_locations_not_listed", "count": 41 - c.MAX_LOCATIONS},
+                      report["omissions"])
+
+    async def test_healthy_empty_and_unscheduled_stay_complete(self):
+        for label, values in (
+                ("healthy", healthy()),
+                ("empty", {"backup/config/info": config(), "backup/info": info()}),
+                ("unscheduled", {"backup/config/info": config(recurrence="never"), "backup/info": info()})):
+            report = await self.run_inventory(values)
+            self.assertEqual(report["completeness"], "complete", (label, report["omissions"]))
+            self.assertEqual(report["omissions"], [], label)
+            for item in report["health_signals"]:
+                self.assertTrue(item["evidence_complete"], (label, item))
+                self.assertEqual(item["unreadable_inputs"], [], (label, item))
+
+
+class SignalInputTests(Base):
+    """M2: a signal is never decided from inputs that were not fully read."""
+
+    def assert_unknown(self, report, name, *inputs):
+        sig = signals(report)[name]
+        self.assertEqual(sig["status"], "unknown", sig)
+        self.assertFalse(sig["evidence_complete"], sig)
+        for item in inputs:
+            self.assertIn(item, sig["unreadable_inputs"], sig)
+            self.assertIn(item, sig["depends_on"], sig)
+            self.assertIn(item, sig["fact"], sig)
+
+    def assert_consistent(self, report):
+        for sig in report["health_signals"]:
+            self.assertTrue(sig["depends_on"], sig)
+            self.assertEqual(sig["evidence_complete"], not sig["unreadable_inputs"], sig)
+            self.assertLessEqual(set(sig["unreadable_inputs"]), set(sig["depends_on"]), sig)
+            if sig["unreadable_inputs"]:
+                self.assertEqual(sig["status"], "unknown", sig)
+
+    async def mutated(self, mutate):
+        values = healthy()
+        mutate(values)
+        report = await self.run_inventory(values)
+        self.assert_consistent(report)
+        self.assertEqual(report["completeness"], "partial")
+        return report
+
+    async def test_reviewer_unreadable_backup_list(self):
+        report = await self.mutated(lambda v: v["backup/info"].update(backups=None))
+        for name in ("no_backups", "no_full_backup_within_threshold", "newest_backup_only_on_this_host",
+                     "newest_backup_no_confirmed_offsite_copy", "newest_backup_incomplete"):
+            self.assert_unknown(report, name, "backup_list")
+
+    async def test_reviewer_unreadable_location_errors(self):
+        report = await self.mutated(lambda v: v["backup/info"].update(agent_errors=None))
+        self.assert_unknown(report, "storage_location_unreadable", "location_errors")
+        self.assert_unknown(report, "no_backups", "backup_list")
+
+    async def test_reviewer_unreadable_date(self):
+        report = await self.mutated(lambda v: v["backup/info"]["backups"][0].update(date="invalid"))
+        for name in ("no_full_backup_within_threshold", "newest_backup_only_on_this_host",
+                     "newest_backup_no_confirmed_offsite_copy", "newest_backup_incomplete"):
+            self.assert_unknown(report, name, "backup_dates")
+        self.assertEqual(signals(report)["no_backups"]["status"], "not_observed")
+
+    async def test_reviewer_unreadable_schedule_days(self):
+        report = await self.mutated(lambda v: v["backup/config/info"]["config"]["schedule"].update(
+            recurrence="custom_days", days="invalid"))
+        self.assert_unknown(report, "automatic_backups_not_scheduled", "schedule")
+        self.assert_unknown(report, "last_completed_automatic_backup_stale", "schedule")
+
+    async def test_unreadable_recurrence_and_schedule(self):
+        report = await self.mutated(lambda v: v["backup/config/info"]["config"]["schedule"].update(
+            recurrence="hourly"))
+        self.assert_unknown(report, "automatic_backups_not_scheduled", "schedule")
+        report = await self.mutated(lambda v: v["backup/config/info"]["config"].update(schedule=None))
+        self.assert_unknown(report, "automatic_backups_not_scheduled", "schedule")
+
+    async def test_unreadable_automatic_times(self):
+        report = await self.mutated(lambda v: v["backup/info"].update(last_completed_automatic_backup="x"))
+        self.assert_unknown(report, "last_automatic_backup_not_completed", "automatic_times")
+        self.assert_unknown(report, "last_completed_automatic_backup_stale", "automatic_times")
+        self.assertEqual(report["automatic_backups"]["last_result"], "unknown")
+
+    async def test_manager_state_is_an_input_only_when_it_decides(self):
+        def failed_attempt(v):
+            v["backup/info"].update(attempted=None)
+            for source in (v["backup/info"], v["backup/config/info"]["config"]):
+                source["last_attempted_automatic_backup"] = at(0.1)
+                source["last_completed_automatic_backup"] = at(1.1)
+            v["backup/info"]["state"] = "synthetic_state"
+        report = await self.mutated(failed_attempt)
+        self.assert_unknown(report, "last_automatic_backup_not_completed", "manager_state")
+        # A completed attempt does not depend on the manager state.
+        report = await self.mutated(lambda v: v["backup/info"].update(state="synthetic_state"))
+        sig = signals(report)["last_automatic_backup_not_completed"]
+        self.assertEqual((sig["status"], sig["evidence_complete"]), ("not_observed", True))
+        self.assertEqual(sig["depends_on"], ["automatic_times"])
+
+    async def test_unreadable_locations_of_newest_backup(self):
+        report = await self.mutated(lambda v: v["backup/info"]["backups"][0].update(agents={}))
+        self.assert_unknown(report, "newest_backup_only_on_this_host", "newest_backup_locations")
+        self.assert_unknown(report, "newest_backup_no_confirmed_offsite_copy", "newest_backup_locations")
+        report = await self.mutated(lambda v: v["backup/info"]["backups"][0].update(
+            agents={"bad id": {"protected": False, "size": 1}}))
+        self.assert_unknown(report, "newest_backup_only_on_this_host", "newest_backup_locations")
+
+    async def test_unreadable_failures_of_newest_backup(self):
+        report = await self.mutated(lambda v: v["backup/info"]["backups"][0].update(failed_agent_ids=None))
+        self.assert_unknown(report, "newest_backup_incomplete", "newest_backup_failures")
+
+    async def test_location_error_or_unread_records_make_listing_unknown(self):
+        report = await self.mutated(lambda v: v["backup/info"].update(agent_errors={"cloud.cloud": "x"}))
+        self.assert_unknown(report, "no_backups", "backup_list")
+        self.assertEqual(signals(report)["storage_location_unreadable"]["status"], "observed")
+        report = await self.mutated(lambda v: v["backup/info"]["backups"].append("not a record"))
+        self.assert_unknown(report, "no_backups", "backup_list")
+
+    async def test_failed_sources_make_their_inputs_unknown(self):
+        values = healthy()
+        values["backup/info"] = HomeAssistantTimeoutError("t")
+        report = await self.run_inventory(values)
+        self.assert_consistent(report)
+        for name in ("no_backups", "no_full_backup_within_threshold", "newest_backup_only_on_this_host",
+                     "newest_backup_no_confirmed_offsite_copy", "newest_backup_incomplete"):
+            self.assert_unknown(report, name, "backup_list")
+        self.assert_unknown(report, "storage_location_unreadable", "location_errors")
+        values = healthy()
+        values["backup/config/info"] = HomeAssistantTimeoutError("t")
+        report = await self.run_inventory(values)
+        self.assert_consistent(report)
+        self.assert_unknown(report, "automatic_backups_not_scheduled", "schedule")
+        self.assert_unknown(report, "last_completed_automatic_backup_stale", "schedule")
+
+    async def test_complete_inputs_decide_every_signal(self):
+        report = await self.run_inventory()
+        self.assert_consistent(report)
+        self.assertEqual({s["signal"]: s["status"] for s in report["health_signals"]}, {
+            "no_backups": "not_observed", "no_full_backup_within_threshold": "not_observed",
+            "newest_backup_only_on_this_host": "observed",
+            "newest_backup_no_confirmed_offsite_copy": "observed",
+            "last_automatic_backup_not_completed": "not_observed",
+            "automatic_backups_not_scheduled": "not_observed",
+            "last_completed_automatic_backup_stale": "not_observed",
+            "storage_location_unreadable": "not_observed", "newest_backup_incomplete": "not_observed"})
+
+
 class SampleTests(unittest.IsolatedAsyncioTestCase):
     async def test_committed_sample_matches_generator(self):
         import importlib.util

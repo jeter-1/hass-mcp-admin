@@ -8,7 +8,11 @@ modified. The machinery is the HAMCP-191 runner's, reduced to one module.
 
 The two brief mutations are ``F*`` (a failed read reported as complete) and
 ``N*`` (the newest-full-backup logic picking a partial); ``S*`` and ``W*``
-probe the sanitizer's known-secret seeding and the fixed read contract.
+probe the sanitizer's known-secret seeding and the fixed read contract. The
+correction batch adds ``H*`` (free text shown while the encryption key is
+not positively known), ``M1*`` (a missing, invalid or truncated field not
+recorded), ``M2*`` (a health signal decided from inputs not fully read) and
+the reviewer's ``R1`` (provider error text reflected as a source reason).
 
 Usage:
     python docs/evidence/hamcp130-mutations/run_mutations.py \
@@ -54,7 +58,7 @@ MUTATIONS = [
      "replacements": [(SERVICE, 'telemetry.result_status = "partial" if result["completeness"] != "complete" else "success"',
                        'telemetry.result_status = "success"')]},
     {"id": "F5-unreadable-location-not-an-omission", "design_item": "brief: a failed read reported as complete",
-     "replacements": [(PROJECTION, '    if errors:\n        p.omit("storage_location_unreadable", len(errors))\n', '')]},
+     "replacements": [(PROJECTION, '        p.omit("storage_location_unreadable", error_count)\n', '')]},
     {"id": "F6-record-cap-silent", "design_item": "brief: a failed read reported as complete",
      "replacements": [(PROJECTION, '            p.omit("backup_records_not_read", len(items) - c.MAX_BACKUP_RECORDS)',
                        '            pass')]},
@@ -79,8 +83,8 @@ MUTATIONS = [
      "replacements": [(REPORT, 'newest_full = next((b for b in dated if b["content_scope"] == "full"), None)',
                        'newest_full = next((b for b in reversed(dated) if b["content_scope"] == "full"), None)')]},
     {"id": "S1-key-not-a-known-secret", "design_item": "encryption key withheld from user text",
-     "replacements": [(SERVICE, 'projector = Projector(known_secrets=self.known_secrets + ((key,) if key else ()))',
-                       'projector = Projector(known_secrets=self.known_secrets)')]},
+     "replacements": [(SERVICE, 'projector = Projector(known_secrets=self.known_secrets + ((key,) if key else ()),',
+                       'projector = Projector(known_secrets=self.known_secrets,')]},
     {"id": "S2-redaction-not-partial", "design_item": "redaction makes the report partial",
      "replacements": [(REPORT, 'and not p.omissions and redaction is None)', 'and not p.omissions)')]},
     {"id": "W1-extra-command", "design_item": "only the two fixed reads",
@@ -89,6 +93,63 @@ MUTATIONS = [
     {"id": "W2-info-command-changed", "design_item": "only the two fixed reads",
      "replacements": [(CONTRACTS, 'INFO_COMMAND = MappingProxyType({"type": "backup/info"})',
                        'INFO_COMMAND = MappingProxyType({"type": "backup/details"})')]},
+    {"id": "H1-key-unknown-treated-as-known", "design_item": "H1: key not positively known fails closed",
+     "replacements": [(SERVICE, 'key_known=key_known)', 'key_known=True)')]},
+    {"id": "H2-text-shown-while-key-unknown", "design_item": "H1: key not positively known fails closed",
+     "replacements": [(PROJECTION, '        if not self.key_known:\n            self.omit("encryption_key_unknown:" + pointer)\n'
+                                   '            return None\n        sanitized = self.tally.add(',
+                       '        sanitized = self.tally.add(')]},
+    {"id": "H3-identifiers-shown-while-key-unknown", "design_item": "H1: key not positively known fails closed",
+     "replacements": [(PROJECTION, 'if not self.key_known and (structured is None', 'if False and (structured is None')]},
+    {"id": "H4-missing-key-field-as-no-key", "design_item": "H1: key not positively known fails closed",
+     "replacements": [(SERVICE, 'if type(create) is not dict or "password" not in create:', 'if type(create) is not dict:'),
+                      (SERVICE, 'password = create["password"]', 'password = create.get("password")')]},
+    {"id": "H5-invalid-key-field-as-no-key", "design_item": "H1: key not positively known fails closed",
+     "replacements": [(SERVICE, '    if type(password) is str:\n        return True, password or None\n    return False, None',
+                       '    return True, password if type(password) is str and password else None')]},
+    {"id": "H6-case-variant-guard-removed", "design_item": "H1: no key text anywhere",
+     "replacements": [(PROJECTION, '        folded = value.casefold()\n'
+                                   '        return any(secret in folded for secret in self._folded_secrets)',
+                       '        return False')]},
+    {"id": "M1a-truncation-ignored", "design_item": "M1: truncated input makes the report partial",
+     "replacements": [(PROJECTION, '            self.omit("truncated_field:" + pointer)', '            pass')]},
+    {"id": "M1b-invalid-size-silent", "design_item": "M1: invalid field makes the report partial",
+     "replacements": [(PROJECTION, '            if size is None:\n                bad("agents.size")',
+                       '            if size is None:\n                pass')]},
+    {"id": "M1c-failed-list-cap-silent", "design_item": "M1: truncated input makes the report partial",
+     "replacements": [(PROJECTION, '            p.omit(key + "_not_listed", len(value) - cap)', '            pass')]},
+    {"id": "M1d-failed-addons-capped-at-location-limit", "design_item": "M1: truncated input makes the report partial",
+     "replacements": [(PROJECTION, 'failed_addons = failed_list("failed_addons", SLUG, c.MAX_ADDONS_PER_BACKUP)',
+                       'failed_addons = failed_list("failed_addons", SLUG, c.MAX_LOCATIONS)')]},
+    {"id": "M1e-failure-list-cap-silent", "design_item": "M1: truncated input makes the report partial",
+     "replacements": [(REPORT, '        p.omit("recent_failures_not_listed", failure_count - c.MAX_FAILURES)\n', '')]},
+    {"id": "M1f-missing-nullable-field-as-null", "design_item": "M1: missing field makes the report partial",
+     "replacements": [(PROJECTION, 'version = raw.get("homeassistant_version", MISSING)',
+                       'version = raw.get("homeassistant_version")')]},
+    {"id": "M1g-invalid-required-bool-silent", "design_item": "M1: invalid field makes the report partial",
+     "replacements": [(PROJECTION, '    value = _bool(raw.get(key))\n    if value is None:\n        p.invalid(pointer, *inputs)\n',
+                       '    value = _bool(raw.get(key))\n')]},
+    {"id": "M2a-partial-inputs-decided-as-complete", "design_item": "M2: signals on unreadable inputs",
+     "replacements": [(REPORT, '    if missing:\n        status, fact = "unknown"', '    if False:\n        status, fact = "unknown"'),
+                      (REPORT, '"evidence_complete": not missing,', '"evidence_complete": True,')]},
+    {"id": "M2b-partial-inputs-decided", "design_item": "M2: signals on unreadable inputs",
+     "replacements": [(REPORT, '    if missing:\n        status, fact = "unknown"', '    if False:\n        status, fact = "unknown"')]},
+    {"id": "M2c-failed-info-inputs-readable", "design_item": "M2: signals on unreadable inputs",
+     "replacements": [(REPORT, '        unreadable |= {"backup_list", "backup_dates", "location_errors", "manager_state"}\n',
+                       '        pass\n')]},
+    {"id": "M2d-invalid-date-not-an-input", "design_item": "M2: signals on unreadable inputs",
+     "replacements": [(REPORT, '        unreadable.add("backup_dates")\n', '        pass\n')]},
+    {"id": "M2e-location-error-listing-readable", "design_item": "M2: signals on unreadable inputs",
+     "replacements": [(PROJECTION, '        p.omit("storage_location_unreadable", error_count)\n        p.unreadable.add("backup_list")\n',
+                       '        p.omit("storage_location_unreadable", error_count)\n')]},
+    {"id": "M2f-manager-state-never-an-input", "design_item": "M2: signals on unreadable inputs",
+     "replacements": [(REPORT, '    if "automatic_times" not in unreadable and needs_manager_state(attempted, completed):',
+                       '    if False:')]},
+    {"id": "M2g-schedule-not-an-input-when-invalid", "design_item": "M2: signals on unreadable inputs",
+     "replacements": [(PROJECTION, '            p.invalid("schedule.days", "schedule")', '            p.invalid("schedule.days")')]},
+    {"id": "R1-provider-error-message-reflected", "design_item": "reviewer: provider text never in a reason",
+     "replacements": [(SERVICE, 'except HomeAssistantApiError:\n            reason = "command_failed"',
+                       'except HomeAssistantApiError as exc:\n            reason = str(exc)')]},
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

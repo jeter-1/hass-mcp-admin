@@ -186,12 +186,28 @@ Any of the following makes it **partial**, with a reason:
 
 - an unreadable source;
 - a per-location `agent_errors` entry;
-- a malformed or out-of-contract field;
+- a malformed, missing, wrong-type or out-of-range field
+  (`invalid_field:<pointer>`, for example `invalid_field:backup.size`);
+- a truncated free-text field (`truncated_field:<pointer>`);
 - a dropped record;
 - more than 500 backup records;
-- a list cap reached;
+- a list cap reached, including per-backup and report lists
+  (`failed_addons_not_listed`, `storage_locations_not_listed`,
+  `recent_failures_not_listed`, `location_errors_not_listed`);
 - a response-budget trim;
-- redaction.
+- redaction;
+- an encryption key that is not positively known (§3.4,
+  `encryption_key_unknown`).
+
+Validity is tracked **per field**. A field that is required by Core's contract
+and absent is invalid; a field Core declares nullable is valid when it is
+`null` and invalid when it is absent or of the wrong type. An invalid field is
+shown as `null` (never coerced into a plausible value) and also marks the
+signal input it feeds as unreadable (§3.3). Omission reasons stay bounded at
+40, with counts.
+
+Caller paging (`limit`) is not an omission: `more_backups_not_listed` states
+it, and every backup was still read.
 
 If one source fails, the other still answers and the report is partial; signals
 that depend on the missing source become `unknown` with
@@ -227,8 +243,44 @@ this.
 
 ### 3.3 Health signals (facts, not alarms)
 
-Each signal is `{signal, status, threshold, fact, evidence_complete}`, where
-`status` is `observed`, `not_observed`, `not_applicable` or `unknown`.
+Each signal is
+`{signal, status, threshold, fact, evidence_complete, depends_on, unreadable_inputs}`,
+where `status` is `observed`, `not_observed`, `not_applicable` or `unknown`.
+
+Each signal declares the inputs it depends on. If **any** of them is
+unreadable or partial, the signal is `unknown`, `evidence_complete` is
+`false`, `unreadable_inputs` names them and the fact says what could not be
+read. The rule is deliberately strict: no signal is concluded from partial
+inputs, even where a one-sided argument would allow it.
+
+| Input | Unreadable when |
+|---|---|
+| `backup_list` | `backup/info` failed; the backups value is not a list; a record was unreadable or beyond the 500-record cap; any `agent_errors` entry (a location could not be listed) |
+| `backup_dates` | `backup/info` failed, or any backup date is missing or invalid |
+| `recent_backup_content` | A backup within 7 days has an invalid content field |
+| `newest_backup_locations` | The newest backup's agents are missing or malformed |
+| `newest_backup_failures` | The newest backup's failed add-ons, agents or folders are malformed |
+| `schedule` | `backup/config/info` failed, or recurrence or days are invalid |
+| `automatic_times` | A last attempted/completed time is invalid in a present source, or absent from all |
+| `manager_state` | `backup/info` failed, or the manager or event state is invalid |
+| `location_errors` | `backup/info` failed, or `agent_errors` is not a mapping |
+
+| Signal | `depends_on` |
+|---|---|
+| `no_backups` | backup_list |
+| `no_full_backup_within_threshold` | backup_list, backup_dates, recent_backup_content |
+| `newest_backup_only_on_this_host` | backup_list, backup_dates, newest_backup_locations |
+| `newest_backup_no_confirmed_offsite_copy` | backup_list, backup_dates, newest_backup_locations |
+| `last_automatic_backup_not_completed` | automatic_times, plus manager_state when it decides the result |
+| `automatic_backups_not_scheduled` | schedule |
+| `last_completed_automatic_backup_stale` | schedule, plus automatic_times when scheduled or when the schedule is unreadable |
+| `storage_location_unreadable` | location_errors |
+| `newest_backup_incomplete` | backup_list, backup_dates, newest_backup_failures |
+
+`manager_state` and `automatic_times` are declared only where they can change
+the outcome, so an unreadable manager state does not hide a result that the
+recorded times already decide. Truncating an *output* list does not make an
+input unreadable, because every record was still read.
 
 | Signal | Observed when | Threshold |
 |---|---|---|
@@ -257,6 +309,32 @@ other agents are off-host, but Core does not attest where they are.
   `encryption_configured`.
 - Effect: a backup name, error text or identifier that contains the key is
   redacted or withheld, and the report becomes partial.
+- The shared sanitizer matches known secrets case-sensitively. The projector
+  therefore also withholds (`redacted_by_policy`) any value that contains the
+  key in another letter case.
+
+**Key not positively known: fail closed.** The key is known only when the
+config read completed, `create_backup` is a mapping and `password` is present
+and is either `null` or a string. In every other case (the config read timed
+out, failed, was unavailable or not permitted; the config, `create_backup` or
+`password` is missing or of the wrong type) the key could be anywhere in the
+info payload, so:
+
+- every free-text field (backup, add-on and folder names, error text) is
+  withheld and reported as `encryption_key_unknown:<pointer>`;
+- free-form identifiers (backup ids, non-fixed location ids, add-on slugs,
+  failed agent ids, stage and reason codes) are replaced by stable,
+  per-response aliases such as `withheld#1` or `hassio.withheld#2`, which keep
+  the storage class and never collide, so cross-references and the storage
+  signals still work;
+- structured facts are shown: dates, sizes, flags, fixed location ids
+  (`hassio.local`, `backup.local`, `cloud.cloud`) and CalVer Home Assistant
+  versions;
+- the report is partial with `encryption_key_unknown`.
+
+Tests cover twelve key-unknown variants and check the response, errors, audit
+records and DEBUG logs for the planted key, including through the served
+gateway.
 
 Disclosed trade-off:
 
@@ -300,7 +378,7 @@ they are withheld.
 
 ## 5. Validation
 
-- `tests/test_hamcp130_backup_inventory.py`: 48 tests.
+- `tests/test_hamcp130_backup_inventory.py`: 79 tests.
   - Six fixture scenarios: local only; local + cloud (+ network storage);
     failed automatic backup; encrypted; partial backups; empty.
   - Also: in progress, never attempted or unscheduled, custom days, Core
@@ -318,15 +396,36 @@ they are withheld.
     annotations and schema, served-tool raw-argument rejection, gateway
     pre-SDK rejection with audit privacy, gateway positive audit, and sample
     drift.
+  - Key unknown (`KeyUnknownTests`): twelve config-failure and
+    malformed-key variants withhold all free text; aliases are stable and
+    collision-free; a known-key control shows sanitized text; a key in another
+    case is withheld; gateway, audit and DEBUG-log capture; source exceptions
+    carrying the key never leak.
+  - Field validity (`FieldValidityTests`): malformed size, protected and
+    include flags; an unreadable failed add-on; failed-agent and add-on caps;
+    malformed config fields; invalid dates; missing versus `null` for nullable
+    fields; agent-error and event fields; truncated names, error text and
+    report lists; healthy, empty and unscheduled fixtures stay complete.
+  - Signal inputs (`SignalInputTests`): the reviewer's reproductions
+    (`backups: null`, `agent_errors: null`, an invalid date, `custom_days`
+    with invalid days) plus each declared input; every `unknown` signal names
+    its unreadable inputs, and complete inputs decide every signal.
 - `tests/test_hamcp191_shared_sanitizer.py`: the two new `SANITIZER_SITES`.
 - Count and catalog assertions in existing suites: 59 → 60, 87 → 88 and
   88 → 89.
-- Mutations (`docs/evidence/hamcp130-mutations/`): **17 of 17 killed**, none
-  by an import error, against a 48-test baseline (`results.json`).
+- Mutations (`docs/evidence/hamcp130-mutations/`): **38 of 38 killed**, none
+  by an import or syntax error, against a 79-test baseline (`results.json`).
   - F1 to F7: a failed read reported as complete.
   - N1 to N6: newest-full picks a partial.
   - S1 and S2: sanitizer.
   - W1 and W2: fixed reads.
+  - H1 to H6: the key treated as known after a failed read, free text or
+    identifiers shown while the key is unknown, a missing or malformed
+    `password` field treated as "no key", and the case-variant guard removed.
+  - M1a to M1g: truncation ignored, invalid fields coerced or not recorded,
+    list caps silently applied.
+  - M2a to M2g: a signal computed as complete from partial inputs.
+  - R1: a provider error message reflected into the response.
 
 ## 6. Protected-file list (finalized)
 
@@ -384,6 +483,10 @@ This PR stages **beta.24** on the assumption that #283 takes beta.23 first. If
 - `full` cannot attest that every installed add-on was included (§3.2).
 - Off-site is confirmed only for Home Assistant Cloud (§3.3).
 - Over-redaction is possible with a very short user encryption key (§3.4).
+- When the key is not positively known, all free text is withheld, so names
+  and error text are unavailable until the config read succeeds (§3.4).
+- Signals are `unknown` whenever any declared input is unreadable, even where
+  a one-sided argument could still conclude (§3.3).
 - Signals reflect what Core records. Archive integrity is not verified, and no
   download or restore test is performed.
 - Thresholds are fixed constants, stated in every response, and not

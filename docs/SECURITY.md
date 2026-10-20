@@ -622,8 +622,13 @@ and runtime tests pin the two commands. `backup/config/info` returns the backup
 encryption key in plaintext. The key is never projected: the report carries
 only an `encryption_configured` flag, and the key seeds that one response's
 shared strict sanitizer (HAMCP-191) as a known secret, so user text that
-contains it is withheld. Backup names, error text and identifiers pass through
-the same sanitizer, and any redaction makes the report partial. The tool is
+contains it, in any letter case, is withheld. When the key cannot be
+positively read (a failed config read, or a missing or malformed key field),
+the tool fails closed: every name and error text is withheld, free-form
+identifiers are replaced by per-response aliases, only structured facts are
+shown and the report is partial with `encryption_key_unknown`. Backup names,
+error text and identifiers pass through the same sanitizer, and any redaction
+makes the report partial. The tool is
 mapped to `core.basic_websocket_read` in the HAMCP-164 Core gate. See the
 [design](HAMCP_130_BACKUP_INVENTORY_DESIGN.md). Stable v1.1.2 is unchanged.
 

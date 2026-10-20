@@ -25,13 +25,25 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _encryption_key(raw: Any) -> str | None:
-    """The stored key, only so the sanitizer can withhold it from text."""
+def _encryption_key(raw: Any, read_complete: bool) -> tuple[bool, str | None]:
+    """(key_known, key): the stored key, only so the sanitizer can withhold it.
 
-    config = raw.get("config") if type(raw) is dict else None
+    The key is known only when the configuration was read and its field is
+    present and either null or a string. A failed read, a malformed
+    configuration or a missing or invalid field leaves it unknown, and the
+    projector then withholds all upstream text (projection.py).
+    """
+
+    config = raw.get("config") if read_complete and type(raw) is dict else None
     create = config.get("create_backup") if type(config) is dict else None
-    password = create.get("password") if type(create) is dict else None
-    return password if type(password) is str and password else None
+    if type(create) is not dict or "password" not in create:
+        return False, None
+    password = create["password"]
+    if password is None:
+        return True, None
+    if type(password) is str:
+        return True, password or None
+    return False, None
 
 
 class BackupInventoryService:
@@ -103,8 +115,9 @@ class BackupInventoryService:
         sources: list[dict] = []
 
         raw_config = await self._read(c.CONFIG_COMMAND, "backup_config", authority, sources)
-        key = _encryption_key(raw_config)
-        projector = Projector(known_secrets=self.known_secrets + ((key,) if key else ()))
+        key_known, key = _encryption_key(raw_config, sources[-1]["status"] == "complete")
+        projector = Projector(known_secrets=self.known_secrets + ((key,) if key else ()),
+                              key_known=key_known)
         del key
         config = project_config(projector, raw_config) if sources[-1]["status"] == "complete" else None
         del raw_config

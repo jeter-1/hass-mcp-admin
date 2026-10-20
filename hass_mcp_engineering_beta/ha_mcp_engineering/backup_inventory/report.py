@@ -2,8 +2,10 @@
 
 Health signals are facts with their thresholds stated, never alarms. Each
 has a status of ``observed``, ``not_observed``, ``not_applicable`` or
-``unknown``; ``evidence_complete`` is false when a source, location or field
-the signal depends on could not be read.
+``unknown`` and declares the inputs it is decided from (``depends_on``). When
+a source, location or field behind any of those inputs could not be fully
+read, the signal is ``unknown`` with ``evidence_complete`` false and the
+inputs named in ``unreadable_inputs``; it is never decided from partial input.
 """
 
 from __future__ import annotations
@@ -12,31 +14,34 @@ from datetime import datetime
 from typing import Any
 
 from . import contracts as c
-from .projection import Projector, age_days, classify, iso, parse_time, storage_class
+from .projection import OMISSION_LIMIT, Projector, age_days, classify, iso, parse_time, storage_class
 
 
-def _time(p: Projector, *values: Any, pointer: str) -> tuple[datetime | None, bool]:
-    """First present value; (parsed, readable)."""
+def _automatic_time(manager: dict | None, config: dict | None, key: str) -> tuple[bool, datetime | None]:
+    """Both sources carry Core's stored value; (readable, parsed).
 
-    for value in values:
-        if value is None:
-            continue
-        parsed = parse_time(value)
-        if parsed is None:
-            p.omit("invalid_field:" + pointer)
-            return None, False
-        return parsed, True
-    return None, True
+    Readable only when at least one source was read and every source read
+    holds a readable value; then the first present value is used.
+    """
+
+    present = [source[key] for source in (manager, config) if source is not None]
+    if not present or not all(readable for readable, _ in present):
+        return False, None
+    return True, next((value for _, value in present if value is not None), None)
 
 
-def automatic_result(attempted, completed, readable, manager_state, last_action) -> str:
+def needs_manager_state(attempted, completed) -> bool:
+    """Only an attempt not followed by a completion is decided by the manager state."""
+
+    return attempted is not None and (completed is None or completed < attempted)
+
+
+def automatic_result(attempted, completed, manager_state, last_action) -> str:
     """Core sets ``last_attempted`` when an automatic backup starts and
     ``last_completed`` only when it finished with no location error
     (backup/manager.py), so "not completed" is the truthful label for an
     attempt that was not followed by a completion."""
 
-    if not readable:
-        return "unknown"
     if attempted is None:
         return "completed" if completed is not None else "never_attempted"
     if completed is not None and completed >= attempted:
@@ -47,9 +52,21 @@ def automatic_result(attempted, completed, readable, manager_state, last_action)
     return "not_completed"
 
 
-def _signal(name, status, threshold, fact, complete):
-    return {"signal": name, "status": status, "threshold": threshold,
-            "fact": fact, "evidence_complete": complete}
+def _signal(name, threshold, depends_on, unreadable, decide):
+    """A signal is decided only from inputs that were fully read.
+
+    Any declared input that could not be fully read makes the signal
+    ``unknown`` with ``evidence_complete`` false and names the input.
+    """
+
+    missing = [item for item in depends_on if item in unreadable]
+    if missing:
+        status, fact = "unknown", "Not established: " + ", ".join(missing) + " could not be fully read."
+    else:
+        status, fact = decide()
+    return {"signal": name, "status": status, "threshold": threshold, "fact": fact,
+            "evidence_complete": not missing, "depends_on": list(depends_on),
+            "unreadable_inputs": missing}
 
 
 def build(
@@ -80,15 +97,30 @@ def build(
     for backup in backups:
         backup["content_scope"] = classify(backup, installation)
 
-    listing_complete = info_ok and not errors and not any(
-        key in p.omissions for key in ("backup_records_not_read", "backup_record_unreadable")
-    )
     dated = [b for b in backups if b["_date"] is not None]
     newest = dated[0] if dated else None
     oldest = dated[-1] if dated else None
     # The newest backup whose content Core attests as full. A newer partial
     # or unknown-scope backup never stands in for it.
     newest_full = next((b for b in dated if b["content_scope"] == "full"), None)
+    full_days = c.FULL_BACKUP_MAX_AGE_DAYS
+
+    # Signal inputs that could not be fully read: from projection, from a
+    # failed source, and from invalid fields of the backups a signal uses.
+    unreadable = set(p.unreadable)
+    if not info_ok:
+        unreadable |= {"backup_list", "backup_dates", "location_errors", "manager_state"}
+    if not config_ok:
+        unreadable.add("schedule")
+    if any("date" in b["_invalid"] for b in backups):
+        unreadable.add("backup_dates")
+    if any("content" in b["_invalid"] and b["age_days"] <= full_days for b in dated):
+        unreadable.add("recent_backup_content")
+    if newest is not None and ("locations" in newest["_invalid"]
+                               or any(loc["location_id"] is None for loc in newest["locations"])):
+        unreadable.add("newest_backup_locations")
+    if newest is not None and "failures" in newest["_invalid"]:
+        unreadable.add("newest_backup_failures")
 
     def brief(backup):
         if backup is None:
@@ -135,19 +167,25 @@ def build(
             location(location_id)["selected_for_automatic_backups"] = True
     for item in locations.values():
         item["storage_class"] = storage_class(item["location_id"])
-    storage = sorted(locations.values(), key=lambda item: item["location_id"])[:c.MAX_LOCATIONS]
+    storage = sorted(locations.values(), key=lambda item: item["location_id"])
+    if len(storage) > c.MAX_LOCATIONS:
+        p.omit("storage_locations_not_listed", len(storage) - c.MAX_LOCATIONS)
+        storage = storage[:c.MAX_LOCATIONS]
 
     # Automatic backups.
-    attempted, attempted_ok = _time(
-        p, manager and manager["_last_attempted"],
-        config and config["_last_attempted"], pointer="last_attempted_automatic_backup")
-    completed, completed_ok = _time(
-        p, manager and manager["_last_completed"],
-        config and config["_last_completed"], pointer="last_completed_automatic_backup")
-    readable = (info_ok or config_ok) and attempted_ok and completed_ok
-    result = automatic_result(attempted, completed, readable,
-                              manager and manager["manager_state"],
-                              manager and manager["last_action"])
+    attempted_ok, attempted = _automatic_time(manager, config, "_last_attempted")
+    completed_ok, completed = _automatic_time(manager, config, "_last_completed")
+    if not (attempted_ok and completed_ok):
+        unreadable.add("automatic_times")
+    # The manager state is an input only when it decides the result.
+    automatic_inputs = ["automatic_times"]
+    if "automatic_times" not in unreadable and needs_manager_state(attempted, completed):
+        automatic_inputs.append("manager_state")
+    if any(item in unreadable for item in automatic_inputs):
+        result = "unknown"
+    else:
+        result = automatic_result(attempted, completed, manager["manager_state"] if manager else None,
+                                  manager["last_action"] if manager else None)
     automatic = {
         "configured": config["configured"] if config_ok else None,
         "schedule": config["schedule"] if config_ok else None,
@@ -183,117 +221,103 @@ def build(
                 "failed_folders": backup["failed_folders"],
             })
     failure_count = len(failures)
-    failures = failures[:c.MAX_FAILURES]
+    if failure_count > c.MAX_FAILURES:
+        p.omit("recent_failures_not_listed", failure_count - c.MAX_FAILURES)
+        failures = failures[:c.MAX_FAILURES]
 
-    # Health signals.
-    full_days = c.FULL_BACKUP_MAX_AGE_DAYS
+    # Health signals. Each declares the inputs it is decided from.
     signals = []
-    if not info_ok:
-        signals.append(_signal("no_backups", "unknown", None, "The backup list could not be read.", False))
-    else:
-        signals.append(_signal(
-            "no_backups", "observed" if not backups else "not_observed", None,
-            f"{len(backups)} backup(s) found in readable storage locations.", listing_complete))
 
-    if not info_ok:
-        status, fact = "unknown", "The backup list could not be read."
-    elif newest_full is not None and newest_full["age_days"] <= full_days:
-        status, fact = "not_observed", f"Newest full backup is {newest_full['age_days']} day(s) old."
-    elif any(b["content_scope"] == "unknown" and b["age_days"] is not None
-             and b["age_days"] <= full_days for b in dated):
-        status, fact = "unknown", "A recent backup's content scope could not be established."
-    elif newest_full is not None:
-        status, fact = "observed", f"Newest full backup is {newest_full['age_days']} day(s) old."
-    else:
-        status, fact = "observed", "No full backup was found."
-    signals.append(_signal("no_full_backup_within_threshold", status,
-                           {"max_age_days": full_days}, fact, listing_complete))
+    signals.append(_signal(
+        "no_backups", None, ["backup_list"], unreadable,
+        lambda: ("observed" if not backups else "not_observed",
+                 f"{len(backups)} backup(s) found in readable storage locations.")))
 
-    if newest is None:
-        signals.append(_signal("newest_backup_only_on_this_host",
-                               "unknown" if not info_ok else "not_applicable", None,
-                               "No dated backup was found.", listing_complete))
-        signals.append(_signal("newest_backup_no_confirmed_offsite_copy",
-                               "unknown" if not info_ok else "not_applicable", None,
-                               "No dated backup was found.", listing_complete))
-    else:
-        where = offsite(newest)
-        known = all(loc["location_id"] is not None for loc in newest["locations"])
-        signals.append(_signal(
-            "newest_backup_only_on_this_host",
-            "observed" if where == "none" else "not_observed", None,
-            "Storage classes of the newest backup: "
-            + (", ".join(sorted({loc["storage_class"] for loc in newest["locations"]})) or "none") + ".",
-            listing_complete and known))
-        signals.append(_signal(
-            "newest_backup_no_confirmed_offsite_copy",
-            "not_observed" if where == "confirmed" else "observed", None,
-            "Off-site is confirmed only for Home Assistant Cloud; network storage and "
-            "other integration agents are off-host but Core does not attest their site.",
-            listing_complete and known))
+    def no_full():
+        if newest_full is not None and newest_full["age_days"] <= full_days:
+            return "not_observed", f"Newest full backup is {newest_full['age_days']} day(s) old."
+        if any(b["content_scope"] == "unknown" and b["age_days"] <= full_days for b in dated):
+            return "unknown", "A recent backup's content scope could not be established."
+        if newest_full is not None:
+            return "observed", f"Newest full backup is {newest_full['age_days']} day(s) old."
+        return "observed", "No full backup was found."
 
-    if result == "unknown":
-        status = "unknown"
-    else:
-        status = "observed" if result == "not_completed" else "not_observed"
-    signals.append(_signal("last_automatic_backup_not_completed", status, None,
-                           f"Last automatic backup result: {result}.", readable))
+    signals.append(_signal(
+        "no_full_backup_within_threshold", {"max_age_days": full_days},
+        ["backup_list", "backup_dates", "recent_backup_content"], unreadable, no_full))
+
+    newest_inputs = ["backup_list", "backup_dates", "newest_backup_locations"]
+
+    def only_here():
+        if newest is None:
+            return "not_applicable", "No dated backup was found."
+        return ("observed" if offsite(newest) == "none" else "not_observed",
+                "Storage classes of the newest backup: "
+                + (", ".join(sorted({loc["storage_class"] for loc in newest["locations"]})) or "none") + ".")
+
+    def no_offsite():
+        if newest is None:
+            return "not_applicable", "No dated backup was found."
+        return ("not_observed" if offsite(newest) == "confirmed" else "observed",
+                "Off-site is confirmed only for Home Assistant Cloud; network storage and "
+                "other integration agents are off-host but Core does not attest their site.")
+
+    signals.append(_signal("newest_backup_only_on_this_host", None, newest_inputs, unreadable, only_here))
+    signals.append(_signal("newest_backup_no_confirmed_offsite_copy", None, newest_inputs,
+                           unreadable, no_offsite))
+
+    signals.append(_signal(
+        "last_automatic_backup_not_completed", None, automatic_inputs, unreadable,
+        lambda: ("observed" if result == "not_completed" else "not_observed",
+                 f"Last automatic backup result: {result}.")))
 
     schedule = config["schedule"] if config_ok else None
     recurrence = schedule["recurrence"] if schedule else None
-    if recurrence is None:
-        signals.append(_signal("automatic_backups_not_scheduled", "unknown", None,
-                               "The automatic-backup schedule could not be read.", False))
-    else:
-        unscheduled = recurrence == "never" or (recurrence == "custom_days" and not schedule["days"])
-        signals.append(_signal("automatic_backups_not_scheduled",
-                               "observed" if unscheduled else "not_observed", None,
-                               f"Schedule recurrence: {recurrence}.", True))
+    scheduled = "schedule" not in unreadable and not (
+        recurrence == "never" or (recurrence == "custom_days" and not schedule["days"]))
+    signals.append(_signal(
+        "automatic_backups_not_scheduled", None, ["schedule"], unreadable,
+        lambda: ("not_observed" if scheduled else "observed", f"Schedule recurrence: {recurrence}.")))
 
-    if recurrence is None or not readable:
-        signals.append(_signal("last_completed_automatic_backup_stale", "unknown",
-                               {"max_age_days": c.AUTOMATIC_MAX_AGE_DAYS}, "Inputs could not be read.", False))
-    elif recurrence not in c.AUTOMATIC_MAX_AGE_DAYS or (recurrence == "custom_days" and not schedule["days"]):
-        signals.append(_signal("last_completed_automatic_backup_stale", "not_applicable",
-                               {"max_age_days": c.AUTOMATIC_MAX_AGE_DAYS},
-                               "No automatic schedule is configured.", True))
-    else:
-        limit_days = c.AUTOMATIC_MAX_AGE_DAYS[recurrence]
+    def stale():
+        if not scheduled:
+            return "not_applicable", "No automatic schedule is configured."
         age = age_days(completed, now)
-        stale = age is None or age > limit_days
-        signals.append(_signal(
-            "last_completed_automatic_backup_stale", "observed" if stale else "not_observed",
-            {"max_age_days": limit_days, "recurrence": recurrence},
-            "No automatic backup has completed." if age is None
-            else f"Last completed automatic backup is {age} day(s) old.", True))
+        return ("observed" if age is None or age > c.AUTOMATIC_MAX_AGE_DAYS[recurrence] else "not_observed",
+                "No automatic backup has completed." if age is None
+                else f"Last completed automatic backup is {age} day(s) old.")
 
-    if not info_ok:
-        signals.append(_signal("storage_location_unreadable", "unknown", None,
-                               "The backup list could not be read.", False))
-    else:
-        signals.append(_signal("storage_location_unreadable",
-                               "observed" if errors else "not_observed", None,
-                               f"{len(errors)} storage location(s) reported a read error.", True))
+    stale_threshold = ({"max_age_days": c.AUTOMATIC_MAX_AGE_DAYS[recurrence], "recurrence": recurrence}
+                       if scheduled else {"max_age_days": c.AUTOMATIC_MAX_AGE_DAYS})
+    # The completion time is an input only when a schedule is configured.
+    signals.append(_signal(
+        "last_completed_automatic_backup_stale", stale_threshold,
+        ["schedule", "automatic_times"] if scheduled or "schedule" in unreadable else ["schedule"],
+        unreadable, stale))
 
-    if newest is None:
-        signals.append(_signal("newest_backup_incomplete",
-                               "unknown" if not info_ok else "not_applicable", None,
-                               "No dated backup was found.", listing_complete))
-    else:
+    error_count = manager["location_error_count"] if manager else None
+    signals.append(_signal(
+        "storage_location_unreadable", None, ["location_errors"], unreadable,
+        lambda: ("observed" if error_count else "not_observed",
+                 f"{error_count} storage location(s) reported a read error.")))
+
+    def incomplete():
+        if newest is None:
+            return "not_applicable", "No dated backup was found."
         parts = [newest["failed_location_ids"], newest["failed_addons"], newest["failed_folders"]]
-        if any(part is None for part in parts):
-            status = "unknown"
-        else:
-            status = "observed" if any(parts) else "not_observed"
-        signals.append(_signal("newest_backup_incomplete", status, None,
-                               "Failed locations, add-ons or folders recorded for the newest backup.",
-                               status != "unknown"))
+        return ("observed" if any(parts) else "not_observed",
+                "Failed locations, add-ons or folders recorded for the newest backup.")
+
+    signals.append(_signal(
+        "newest_backup_incomplete", None, ["backup_list", "backup_dates", "newest_backup_failures"],
+        unreadable, incomplete))
 
     listed = backups[:limit]
     for backup in backups:
         backup.pop("_date", None)
+        backup.pop("_invalid", None)
     omissions = [{"reason": reason, "count": count}
-                 for reason, count in sorted(p.omissions.items())][:40]
+                 for reason, count in sorted(p.omissions.items())][:OMISSION_LIMIT]
     redaction = p.tally.summary() if p.tally.applied else None
     complete = (all(source["status"] == "complete" for source in sources)
                 and not p.omissions and redaction is None)
@@ -314,6 +338,10 @@ def build(
                      "failed. Core does not report whether every installed add-on was included."),
             "off_site": ("Confirmed only for Home Assistant Cloud. Network storage and other "
                          "integration agents are off-host; Core does not attest their site."),
+            "withheld": ("While the backup encryption key cannot be read, no upstream text can be "
+                         "checked for it: names and error text are withheld, and backup and "
+                         "storage-location identifiers are replaced by per-response aliases such "
+                         "as withheld#1 or hassio.withheld#1 that keep the storage class."),
         },
         "installation": installation,
         "summary": {

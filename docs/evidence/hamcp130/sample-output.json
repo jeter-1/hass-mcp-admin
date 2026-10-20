@@ -29,7 +29,8 @@
  },
  "definitions": {
   "full": "Home Assistant configuration and database included, every Core-known folder included on a Supervisor installation, and no add-on or folder failed. Core does not report whether every installed add-on was included.",
-  "off_site": "Confirmed only for Home Assistant Cloud. Network storage and other integration agents are off-host; Core does not attest their site."
+  "off_site": "Confirmed only for Home Assistant Cloud. Network storage and other integration agents are off-host; Core does not attest their site.",
+  "withheld": "While the backup encryption key cannot be read, no upstream text can be checked for it: names and error text are withheld, and backup and storage-location identifiers are replaced by per-response aliases such as withheld#1 or hassio.withheld#1 that keep the storage class."
  },
  "installation": "supervisor",
  "summary": {
@@ -170,7 +171,11 @@
    "status": "not_observed",
    "threshold": null,
    "fact": "2 backup(s) found in readable storage locations.",
-   "evidence_complete": true
+   "evidence_complete": true,
+   "depends_on": [
+    "backup_list"
+   ],
+   "unreadable_inputs": []
   },
   {
    "signal": "no_full_backup_within_threshold",
@@ -179,35 +184,62 @@
     "max_age_days": 7
    },
    "fact": "Newest full backup is 1.2 day(s) old.",
-   "evidence_complete": true
+   "evidence_complete": true,
+   "depends_on": [
+    "backup_list",
+    "backup_dates",
+    "recent_backup_content"
+   ],
+   "unreadable_inputs": []
   },
   {
    "signal": "newest_backup_only_on_this_host",
    "status": "not_observed",
    "threshold": null,
    "fact": "Storage classes of the newest backup: home_assistant_cloud, local.",
-   "evidence_complete": true
+   "evidence_complete": true,
+   "depends_on": [
+    "backup_list",
+    "backup_dates",
+    "newest_backup_locations"
+   ],
+   "unreadable_inputs": []
   },
   {
    "signal": "newest_backup_no_confirmed_offsite_copy",
    "status": "not_observed",
    "threshold": null,
    "fact": "Off-site is confirmed only for Home Assistant Cloud; network storage and other integration agents are off-host but Core does not attest their site.",
-   "evidence_complete": true
+   "evidence_complete": true,
+   "depends_on": [
+    "backup_list",
+    "backup_dates",
+    "newest_backup_locations"
+   ],
+   "unreadable_inputs": []
   },
   {
    "signal": "last_automatic_backup_not_completed",
    "status": "observed",
    "threshold": null,
    "fact": "Last automatic backup result: not_completed.",
-   "evidence_complete": true
+   "evidence_complete": true,
+   "depends_on": [
+    "automatic_times",
+    "manager_state"
+   ],
+   "unreadable_inputs": []
   },
   {
    "signal": "automatic_backups_not_scheduled",
    "status": "not_observed",
    "threshold": null,
    "fact": "Schedule recurrence: daily.",
-   "evidence_complete": true
+   "evidence_complete": true,
+   "depends_on": [
+    "schedule"
+   ],
+   "unreadable_inputs": []
   },
   {
    "signal": "last_completed_automatic_backup_stale",
@@ -217,21 +249,36 @@
     "recurrence": "daily"
    },
    "fact": "Last completed automatic backup is 1.2 day(s) old.",
-   "evidence_complete": true
+   "evidence_complete": true,
+   "depends_on": [
+    "schedule",
+    "automatic_times"
+   ],
+   "unreadable_inputs": []
   },
   {
    "signal": "storage_location_unreadable",
    "status": "not_observed",
    "threshold": null,
    "fact": "0 storage location(s) reported a read error.",
-   "evidence_complete": true
+   "evidence_complete": true,
+   "depends_on": [
+    "location_errors"
+   ],
+   "unreadable_inputs": []
   },
   {
    "signal": "newest_backup_incomplete",
    "status": "not_observed",
    "threshold": null,
    "fact": "Failed locations, add-ons or folders recorded for the newest backup.",
-   "evidence_complete": true
+   "evidence_complete": true,
+   "depends_on": [
+    "backup_list",
+    "backup_dates",
+    "newest_backup_failures"
+   ],
+   "unreadable_inputs": []
   }
  ],
  "backups": [

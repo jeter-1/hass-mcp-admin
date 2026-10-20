@@ -40,7 +40,10 @@ The review needs a security section covering:
 - zero new write, dispatch, service-call, fallback or forwarding reachability
   (design §4);
 - the plaintext encryption key in `backup/config/info`: never projected, used
-  only as a per-response known secret (design §3.4);
+  only as a per-response known secret, and when it is not positively known
+  every free-text field is withheld and identifiers are aliased (design §3.4);
+- per-field completeness and the declared inputs of each health signal
+  (design §3.1 and §3.3);
 - sanitizer coverage of names, error text and identifiers;
 - the HAMCP-164 Core gate mapping.
 
@@ -57,19 +60,28 @@ Preserve the following:
 
 No test reaches a live system.
 
-- `tests/test_hamcp130_backup_inventory.py` (48 tests) uses synthetic
+- `tests/test_hamcp130_backup_inventory.py` (79 tests) uses synthetic
   fixtures modeled on Core 2026.10.1's response shapes. It covers:
   - six scenarios: local only; local + cloud; failed automatic backup;
     encrypted; partial backups; empty;
   - summary and health-signal logic;
   - partial reporting when a source fails;
   - sanitizer coverage;
+  - twelve key-unknown variants, with the planted key absent from the
+    response, errors, audit and DEBUG logs;
+  - per-field validity, truncation and list caps;
+  - every signal `unknown` when a declared input is unreadable, and decided
+    when all are complete;
   - a static and runtime no-write-path check;
   - Core-gate mapping, registration and audit privacy;
   - sample drift.
-- Mutations: 17 of 17 killed (`docs/evidence/hamcp130-mutations/`), including:
+- Mutations: 38 of 38 killed (`docs/evidence/hamcp130-mutations/`), including:
   - a failed read reported as complete (F1 to F7);
-  - newest-full picking a partial (N1 to N6).
+  - newest-full picking a partial (N1 to N6);
+  - free text or identifiers shown while the key is unknown (H1 to H6);
+  - truncation or an invalid field not making the report partial (M1a to
+    M1g);
+  - a signal decided from partial inputs (M2a to M2g).
 - Count suites: 59 → 60 static tools, 87 → 88 advertised and 88 → 89 with the
   optional YAML reader admitted.
 
