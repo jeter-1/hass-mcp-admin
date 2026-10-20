@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.4.1-beta.26 - Core authority recovery and visibility (HAMCP-215)
+
+Builds on 2.4.1-beta.25.
+
+- Retry a failed Core verification with bounded exponential backoff and ±20%
+  jitter: 20 s, doubling, capped at 240 s. This replaces the fixed 300 s
+  `failure_retry`.
+- Restore transiently withdrawn authority only after
+  `CORE_RECOVERY_CONFIRMATIONS = 2` consecutive complete verifications by the
+  supervisor, spaced about 15 s apart, with the same version and admitted
+  capability set. A retirement within 600 s of a restoration needs 3, at
+  doubled spacing. Any failure, connection move, or version or capability-set
+  change restarts the count. On-demand verification during recovery is
+  refused and does not count.
+- Keep a complete but unadmitted observation retired
+  (`recovery_state: incompatible`). Re-check it every reconciliation interval
+  without backoff.
+- Log `core_authority_verification_failed`, `core_authority_retired`,
+  `core_authority_capabilities_withdrawn`, `core_catalog_tools_withdrawn`,
+  `core_catalog_tools_restored`, `core_authority_recovery_attempt`,
+  `core_authority_recovery_confirming`, `core_authority_recovery_reset` and
+  `core_authority_restored` at WARNING, and `core_authority_recovery_scheduled`
+  at INFO. Each carries a bounded reason or detail and an `at` timestamp. Probe
+  failures are classified into closed `core_probe_*` details.
+- Add `home_assistant_core_authority.recovery` to health, with recovery state,
+  failure reason, detail and time, retirement, attempt, next-attempt and
+  restoration times, and confirmations. Add the counters `recovery_attempts`,
+  `recovery_confirmations` and `authority_restorations`.
+- A lifecycle-socket movement, including the reconnect after a Core restart,
+  now waits one confirmation interval before authority returns. No tool,
+  schema, descriptor, permission, workflow, stored-format or dependency
+  change.
+
 ## 2.4.1-beta.25 - Loaded script configuration (HAMCP-212)
 
 Builds on 2.4.1-beta.24.

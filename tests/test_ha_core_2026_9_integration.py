@@ -2489,8 +2489,13 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(old_authority)
         old_generation = runtime.health_snapshot()["current_generation"]
 
+        # HAMCP-215 hysteresis: after a connection retirement one spaced
+        # confirmation precedes republication; keep that spacing short here.
         supervisor = asyncio.create_task(
-            runtime.supervise(interval_seconds=3_600)
+            runtime.supervise(
+                interval_seconds=3_600, confirmation_seconds=0.01,
+                jitter=lambda: 0.5,
+            )
         )
         try:
             await asyncio.wait_for(source.monitor_started.wait(), timeout=1)
@@ -2507,11 +2512,17 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(runtime.acquire(("core.basic_rest_read",)))
 
             source.release_reprobe.set()
-            for _ in range(20):
-                await asyncio.sleep(0)
-                observation = runtime.current_observation
-                if observation is not None and observation.version == "2026.9.1":
-                    break
+            async with asyncio.timeout(2):
+                while runtime.health_snapshot()["recovery"]["confirmations"] < 1:
+                    await asyncio.sleep(0)
+            # The first complete re-verification does not publish yet.
+            self.assertIsNone(runtime.acquire(("core.basic_rest_read",)))
+            async with asyncio.timeout(2):
+                while True:
+                    observation = runtime.current_observation
+                    if observation is not None and observation.version == "2026.9.1":
+                        break
+                    await asyncio.sleep(0.001)
             observation = runtime.current_observation
             self.assertIsNotNone(observation)
             self.assertEqual(observation.version, "2026.9.1")
@@ -2571,6 +2582,14 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             runtime.health_snapshot()["recent_events"],
         )
 
+        # HAMCP-215 hysteresis: the first complete re-verification after a
+        # connection retirement confirms; the second consecutive one publishes.
+        await runtime.reconcile_once("identity_or_connection_change")
+        self.assertIsNone(runtime.current_observation)
+        self.assertIsNone(runtime.acquire(("core.basic_rest_read",)))
+        self.assertEqual(
+            runtime.health_snapshot()["recovery"]["recovery_state"], "confirming"
+        )
         await runtime.reconcile_once("identity_or_connection_change")
         observation = runtime.current_observation
         self.assertIsNotNone(observation)

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import random
+import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Any, Callable
 
@@ -19,7 +22,12 @@ from .models import (
     canonical_json,
     fingerprint,
 )
-from .observation import CoreObservationCollector, CoreSnapshotSource
+from ..logging_config import get_logger, log_event
+from .observation import (
+    PROBE_FAILURE_DETAILS,
+    CoreObservationCollector,
+    CoreSnapshotSource,
+)
 from .profiles import CORE_RUNTIME_CAPABILITY_PROFILES, compiled_exact_authority
 from .routes import delegated_provider_compatibility, f3_requirements
 from .registry import CoreReleaseRegistry
@@ -30,6 +38,39 @@ from .models import CORE_IDENTITY
 CORE_RECONCILIATION_INTERVAL_SECONDS = 300.0
 CORE_MONITOR_ATTACHMENT_TIMEOUT_SECONDS = 30.0
 MAX_CORE_AUDIT_EVENTS = 32
+# HAMCP-215 recovery pacing. A failed verification is retried after a bounded,
+# jittered exponential backoff instead of one fixed reconciliation interval.
+CORE_RECOVERY_RETRY_BASE_SECONDS = 20.0
+CORE_RECOVERY_RETRY_CAP_SECONDS = 240.0
+CORE_RECOVERY_RETRY_JITTER = 0.2
+CORE_RECOVERY_MAX_BACKOFF_LEVEL = 8
+# Hysteresis: authority withdrawn by a transient failure is republished only
+# after consecutive complete verifications spaced by the confirmation delay. A
+# retirement soon after a restoration is a flap and needs one more, slower.
+CORE_RECOVERY_CONFIRMATIONS = 2
+CORE_RECOVERY_CONFIRMATION_SECONDS = 15.0
+CORE_RECOVERY_FLAP_WINDOW_SECONDS = 600.0
+CORE_RECOVERY_FLAP_CONFIRMATIONS = 3
+CORE_RECOVERY_STATES = frozenset({
+    "initializing", "stable", "retrying", "backing_off", "confirming",
+    "restored", "incompatible",
+})
+_RECOVERY_REASONS = frozenset({
+    "core_connection_changed", "core_lifecycle_monitor_unavailable",
+    "core_observed_version_changed", "core_registry_authority_changed",
+    "core_authority_incompatible", "core_generation_replaced",
+})
+# Only supervisor-paced attempts may count toward recovery confirmation. An
+# on-demand caller (for example mutation pre-dispatch) during recovery is
+# refused without publishing and cannot shorten the confirmation spacing.
+_RECOVERY_CONFIRMATION_TRIGGERS = frozenset({
+    "periodic", "identity_or_connection_change", "failure_retry",
+})
+logger = get_logger("core_authority")
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat(timespec="seconds") if value is not None else None
 _AUDIT_TRIGGERS = frozenset({
     "startup", "startup_retry", "periodic", "identity_or_connection_change",
     "mutation_pre_dispatch", "mutation_verification", "failure_retry",
@@ -99,7 +140,37 @@ class CoreRuntime:
             "catalog_withdrawals": 0,
             "catalog_restorations": 0,
             "audit_write_failures": 0,
+            "recovery_attempts": 0,
+            "recovery_confirmations": 0,
+            "authority_restorations": 0,
         }
+        self._monotonic: Callable[[], float] = time.monotonic
+        self._reset_recovery_locked()
+
+    def _reset_recovery_locked(self) -> None:
+        """Clear HAMCP-215 recovery bookkeeping at one configure boundary."""
+
+        # Whether the published generation admits any capability.
+        self._admitted = False
+        self._admitted_capabilities: frozenset[str] = frozenset()
+        self._recovery_active = False
+        self._recovery_state = "initializing"
+        self._consecutive_failures = 0
+        self._recovery_confirmations = 0
+        self._recovery_required = CORE_RECOVERY_CONFIRMATIONS
+        self._recovery_confirmation_key: tuple[Any, ...] | None = None
+        self._backoff_level = 0
+        self._flap_count = 0
+        self._last_failure_reason: str | None = None
+        self._last_failure_detail: str | None = None
+        self._last_failure_at: datetime | None = None
+        self._retired_at: datetime | None = None
+        self._last_attempt_at: datetime | None = None
+        self._next_recovery_attempt_at: datetime | None = None
+        self._last_retry_delay_seconds: float | None = None
+        self._last_restored_at: datetime | None = None
+        self._last_restored_monotonic: float | None = None
+        self._monitor_failure_detail: str | None = None
 
     def configure(
         self,
@@ -150,6 +221,7 @@ class CoreRuntime:
             self._events = ()
             for key in self._counters:
                 self._counters[key] = 0
+            self._reset_recovery_locked()
             self._configured = True
 
     @property
@@ -172,13 +244,21 @@ class CoreRuntime:
             if listener not in self._listeners:
                 self._listeners.append(listener)
 
-    def request_reconciliation(self, *, connection_changed: bool = False) -> None:
+    def request_reconciliation(
+        self,
+        *,
+        connection_changed: bool = False,
+        reason: str = "core_connection_changed",
+        detail: str | None = None,
+    ) -> None:
         source = self._source
         listeners: tuple[Callable[[], None], ...] = ()
         monitor_to_cancel: asyncio.Task[None] | None = None
+        records: list[tuple[int, str, str, dict[str, Any]]] = []
         if connection_changed:
             with self._lock:
                 had_observation = self._observation is not None or self._initialized
+                was_admitted = self._admitted
                 self._connection_epoch += 1
                 monitor_to_cancel = self._connection_monitor_task
                 self._connection_monitor_task = None
@@ -190,9 +270,30 @@ class CoreRuntime:
                 )
                 self._observation = None
                 self._initialized = False
-                self._last_material_change_at = datetime.now(timezone.utc)
+                now = datetime.now(timezone.utc)
+                self._last_material_change_at = now
+                self._admitted = False
+                self._admitted_capabilities = frozenset()
                 if retired_generation is not None:
                     self._counters["retirements"] += 1
+                    if was_admitted or self._recovery_active:
+                        # A connection-level movement is transient until a
+                        # complete re-verification proves otherwise.
+                        self._enter_recovery_locked(now)
+                    records.append(self._retirement_record_locked(
+                        reason, retired_generation, now, detail=detail,
+                        admitted=was_admitted,
+                    ))
+                elif self._recovery_active and self._recovery_confirmations:
+                    # A movement inside the confirmation window restarts the
+                    # consecutive verification count.
+                    self._enter_recovery_locked(now)
+                    records.append(self._recovery_record_locked(
+                        "core_authority_recovery_reset",
+                        "Home Assistant Core connection moved during recovery confirmation",
+                        now,
+                        reason=reason if reason in _RECOVERY_REASONS else "other",
+                    ))
                 self._append_event_locked(
                     "core_connection_changed",
                     "core_connection_changed",
@@ -217,6 +318,7 @@ class CoreRuntime:
                     # Source lifecycle bookkeeping cannot preserve authority
                     # after the connection itself has moved.
                     pass
+        self._emit(records)
         self._reprobe_event.set()
         for listener in listeners:
             listener()
@@ -233,12 +335,25 @@ class CoreRuntime:
             collection_token = (
                 registry.collection_token() if registry and registry.enabled else None
             )
+            records: list[tuple[int, str, str, dict[str, Any]]] = []
             with self._lock:
                 prior_observation = self._observation
                 connection_epoch = self._connection_epoch
                 self._counters["verification_attempts"] += 1
                 if trigger != "startup":
                     self._counters["reprobes"] += 1
+                attempt_at = datetime.now(timezone.utc)
+                self._last_attempt_at = attempt_at
+                if self._recovery_active or trigger == "failure_retry":
+                    self._counters["recovery_attempts"] += 1
+                    self._recovery_state = "retrying"
+                    self._next_recovery_attempt_at = None
+                    records.append(self._recovery_record_locked(
+                        "core_authority_recovery_attempt",
+                        "Home Assistant Core authority recovery attempt started",
+                        attempt_at,
+                    ))
+            self._emit(records)
             observation = await collector.collect()
             if registry and registry.enabled and observation.version is not None:
                 # A newly observed Core version cannot keep the preceding
@@ -262,9 +377,20 @@ class CoreRuntime:
                 # A failed or incomplete observation cannot leave the prior
                 # monitored generation usable.  Retire it just as an observed
                 # socket movement would, then retry from a fresh source epoch.
-                self.request_reconciliation(connection_changed=True)
+                detail = (
+                    self._monitor_failure_detail
+                    if observation.reason_code == "observation_complete"
+                    and self._monitor_failure_detail is not None
+                    else self._failure_detail(collector, observation)
+                )
+                self.request_reconciliation(
+                    connection_changed=True,
+                    reason="core_lifecycle_monitor_unavailable",
+                    detail=detail,
+                )
                 self._audit_early_failure(
-                    trigger, observation, "core_lifecycle_monitor_unavailable"
+                    trigger, observation, "core_lifecycle_monitor_unavailable",
+                    detail=detail,
                 )
                 return self.health_snapshot()
             if newly_attached:
@@ -293,6 +419,10 @@ class CoreRuntime:
             )
             now = datetime.now(timezone.utc)
             failure_reason = None
+            confirmation_pending = False
+            listeners: tuple[Callable[[], None], ...] = ()
+            audit_sink = None
+            audit_event = None
             with self._lock:
                 if connection_epoch != self._connection_epoch:
                     failure_reason = "core_connection_generation_stale"
@@ -307,7 +437,43 @@ class CoreRuntime:
                 ):
                     self._reprobe_event.set()
                     failure_reason = "core_registry_changed_during_selection"
-                if failure_reason is None:
+                if failure_reason is None and self._recovery_active:
+                    # Hysteresis: after a transient withdrawal, publish again
+                    # only after consecutive complete verifications admit the
+                    # same version and reviewed contracts. Each confirmation is
+                    # a full probe; nothing earlier is replayed or cached.
+                    admitted_preview = self._coordinator.preview_admitted(
+                        observation, authority
+                    )
+                    if admitted_preview:
+                        key = (observation.version, admitted_preview)
+                        if trigger not in _RECOVERY_CONFIRMATION_TRIGGERS:
+                            pass
+                        elif key == self._recovery_confirmation_key:
+                            self._recovery_confirmations += 1
+                        else:
+                            self._recovery_confirmation_key = key
+                            self._recovery_confirmations = 1
+                        if (
+                            trigger not in _RECOVERY_CONFIRMATION_TRIGGERS
+                            or key != self._recovery_confirmation_key
+                            or self._recovery_confirmations < self._recovery_required
+                        ):
+                            confirmation_pending = True
+                            self._counters["recovery_confirmations"] += 1
+                            self._recovery_state = "confirming"
+                            self._append_event_locked(
+                                "core_reconciliation",
+                                "core_recovery_confirmation_pending",
+                                None,
+                            )
+                            records = [self._recovery_record_locked(
+                                "core_authority_recovery_confirming",
+                                "Home Assistant Core verified; confirming stability before restoring authority",
+                                now,
+                                trigger=trigger if trigger in _AUDIT_TRIGGERS else "other",
+                            )]
+                if failure_reason is None and not confirmation_pending:
                     # Publish the decision generation and its exact observation
                     # under one runtime lock.  Routes and health must never see a
                     # new generation paired with the prior observation.
@@ -319,10 +485,11 @@ class CoreRuntime:
                         # A change during coordinator publication must differ from
                         # this token at the final health/use-time synchronization.
                         self._published_registry_token = selected_registry_token
-                    if result.published and any(
+                    admitted_now = bool(result.published and any(
                         item.disposition.admitted
                         for item in result.generation.decisions
-                    ):
+                    ))
+                    if admitted_now:
                         self._counters["verification_successes"] += 1
                     else:
                         self._counters["verification_failures"] += 1
@@ -334,6 +501,10 @@ class CoreRuntime:
                         self._last_material_change_at = now
                         if prior_observation is not None:
                             self._counters["retirements"] += 1
+                    records = self._record_publication_locked(
+                        result, observation, collector, admitted_now, changed,
+                        prior_observation is not None, now,
+                    )
                     self._append_event_locked(
                         "core_reconciliation",
                         result.reason_code,
@@ -358,19 +529,119 @@ class CoreRuntime:
             if failure_reason is not None:
                 self._audit_early_failure(trigger, observation, failure_reason)
                 return self.health_snapshot()
+            self._emit(records)
             for listener in listeners:
                 listener()
             self._write_audit(audit_sink, audit_event)
             return self.health_snapshot()
 
+    def _record_publication_locked(
+        self,
+        result: Any,
+        observation: CoreObservation,
+        collector: Any,
+        admitted_now: bool,
+        changed: bool,
+        replaced: bool,
+        now: datetime,
+    ) -> list[tuple[int, str, str, dict[str, Any]]]:
+        """Update recovery state after one coordinator publication."""
+
+        records: list[tuple[int, str, str, dict[str, Any]]] = []
+        if not result.published:
+            return records
+        was_admitted = self._admitted
+        previous = self._admitted_capabilities
+        current = frozenset(
+            item.capability_id
+            for item in result.generation.decisions
+            if item.disposition.admitted
+        )
+        self._admitted = admitted_now
+        self._admitted_capabilities = current
+        if admitted_now:
+            restoring = (
+                self._recovery_active or self._recovery_state == "incompatible"
+            )
+            failed_attempts = self._consecutive_failures
+            confirmations = self._recovery_confirmations
+            self._consecutive_failures = 0
+            self._backoff_level = 0
+            self._recovery_confirmations = 0
+            self._recovery_confirmation_key = None
+            self._next_recovery_attempt_at = None
+            if restoring:
+                outage = (
+                    max(0.0, (now - self._retired_at).total_seconds())
+                    if self._retired_at is not None else None
+                )
+                self._recovery_active = False
+                self._recovery_state = "restored"
+                self._counters["authority_restorations"] += 1
+                self._last_restored_at = now
+                self._last_restored_monotonic = self._monotonic()
+                records.append(self._recovery_record_locked(
+                    "core_authority_restored",
+                    "Home Assistant Core authority restored after complete re-verification",
+                    now,
+                    admitted_count=len(current),
+                    failed_attempts=failed_attempts,
+                    verified_confirmations=max(1, confirmations),
+                    outage_seconds=round(outage, 3) if outage is not None else None,
+                ))
+            elif self._recovery_state not in {"restored", "stable"}:
+                self._recovery_state = "stable"
+            if changed and replaced and previous and not previous <= current:
+                records.append(self._recovery_record_locked(
+                    "core_authority_capabilities_withdrawn",
+                    "Home Assistant Core authority withdrew some capabilities",
+                    now,
+                    withdrawn_count=len(previous - current),
+                    admitted_count=len(current),
+                ))
+            return records
+        complete = bool(
+            observation.identity_agrees
+            and observation.reason_code == "observation_complete"
+        )
+        if complete:
+            # The exact Core was observed but no reviewed contract admits it.
+            # Keep it withdrawn and re-check it on the reconciliation interval.
+            reason = "core_authority_incompatible"
+            detail = result.generation.disposition.value
+            self._recovery_state = "incompatible"
+        else:
+            reason = (
+                observation.reason_code
+                if observation.reason_code in _OBSERVATION_REASONS else "other"
+            )
+            detail = self._failure_detail(collector, observation)
+            if was_admitted:
+                self._enter_recovery_locked(now)
+        if was_admitted and changed:
+            records.append(self._retirement_record_locked(
+                reason, result.previous_generation, now, detail=detail,
+                admitted=True,
+            ))
+        records.append(self._record_failure_locked(reason, detail, now))
+        return records
+
     def _audit_early_failure(
-        self, trigger: str, observation: CoreObservation, reason: str
+        self,
+        trigger: str,
+        observation: CoreObservation,
+        reason: str,
+        *,
+        detail: str | None = None,
     ) -> None:
         """Capture one attempted refusal, then invoke the sink outside the lock."""
         phase = _EARLY_FAILURE_PHASES[reason]
         with self._lock:
             self._counters["verification_failures"] += 1
             self._append_event_locked("core_reconciliation", reason, None)
+            record = self._record_failure_locked(
+                reason, detail, datetime.now(timezone.utc), phase=phase
+            )
             sink = self._audit_sink
             event = {
                 "event": "home_assistant_core_authority_reconciliation_failed",
@@ -391,7 +662,110 @@ class CoreRuntime:
                     "fallback_count": 0,
                 },
             }
+        self._emit([record])
         self._write_audit(sink, event)
+
+    @staticmethod
+    def _failure_detail(collector: Any, observation: CoreObservation) -> str:
+        detail = getattr(collector, "last_failure_detail", None)
+        if detail in PROBE_FAILURE_DETAILS:
+            return detail
+        reason = observation.reason_code
+        return reason if reason in _OBSERVATION_REASONS else "other"
+
+    def _record_failure_locked(
+        self,
+        reason: str,
+        detail: str | None,
+        now: datetime,
+        *,
+        phase: str | None = None,
+    ) -> tuple[int, str, str, dict[str, Any]]:
+        """Count one failed verification; consecutive confirmation restarts."""
+
+        self._consecutive_failures += 1
+        self._recovery_confirmations = 0
+        self._recovery_confirmation_key = None
+        self._last_failure_reason = reason
+        self._last_failure_detail = detail
+        self._last_failure_at = now
+        if self._recovery_state != "incompatible":
+            self._recovery_state = "backing_off"
+        return self._recovery_record_locked(
+            "core_authority_verification_failed",
+            "Home Assistant Core authority verification failed",
+            now,
+            reason=reason,
+            detail=detail,
+            phase=phase,
+        )
+
+    def _enter_recovery_locked(self, now: datetime) -> None:
+        """Arm hysteresis after admitted authority was withdrawn transiently."""
+
+        if not self._recovery_active:
+            restored = self._last_restored_monotonic
+            flap = (
+                restored is not None
+                and self._monotonic() - restored < CORE_RECOVERY_FLAP_WINDOW_SECONDS
+            )
+            self._flap_count = self._flap_count + 1 if flap else 0
+            self._recovery_required = (
+                CORE_RECOVERY_FLAP_CONFIRMATIONS if flap
+                else CORE_RECOVERY_CONFIRMATIONS
+            )
+            self._backoff_level = max(
+                self._backoff_level,
+                min(self._flap_count, CORE_RECOVERY_MAX_BACKOFF_LEVEL),
+            )
+            self._retired_at = now
+            self._recovery_active = True
+        self._recovery_confirmations = 0
+        self._recovery_confirmation_key = None
+        self._recovery_state = "retrying"
+
+    def _retirement_record_locked(
+        self,
+        reason: str,
+        generation: int | None,
+        now: datetime,
+        *,
+        detail: str | None = None,
+        admitted: bool,
+    ) -> tuple[int, str, str, dict[str, Any]]:
+        return self._recovery_record_locked(
+            "core_authority_retired",
+            "Home Assistant Core authority retired; Core-backed tools are withheld",
+            now,
+            reason=reason if reason in _RECOVERY_REASONS | _OBSERVATION_REASONS else "other",
+            detail=detail,
+            generation=generation,
+            admitted=admitted,
+        )
+
+    def _recovery_record_locked(
+        self,
+        event: str,
+        message: str,
+        now: datetime,
+        *,
+        level: int = logging.WARNING,
+        **fields: Any,
+    ) -> tuple[int, str, str, dict[str, Any]]:
+        context = {
+            **{key: value for key, value in fields.items() if value is not None},
+            "recovery_state": self._recovery_state,
+            "consecutive_failures": self._consecutive_failures,
+            "confirmations": self._recovery_confirmations,
+            "confirmations_required": self._recovery_required,
+            "at": _iso(now),
+        }
+        return level, event, message, context
+
+    @staticmethod
+    def _emit(records: list[tuple[int, str, str, dict[str, Any]]]) -> None:
+        for level, event, message, context in records:
+            log_event(logger, level, event, message, context=context)
 
     def _write_audit(self, sink: Any, event: dict[str, Any] | None) -> None:
         if sink is None or event is None:
@@ -423,19 +797,32 @@ class CoreRuntime:
         *,
         interval_seconds: float = CORE_RECONCILIATION_INTERVAL_SECONDS,
         sleep: Callable[[float], Any] = asyncio.sleep,
+        retry_base_seconds: float = CORE_RECOVERY_RETRY_BASE_SECONDS,
+        retry_cap_seconds: float = CORE_RECOVERY_RETRY_CAP_SECONDS,
+        confirmation_seconds: float = CORE_RECOVERY_CONFIRMATION_SECONDS,
+        jitter: Callable[[], float] = random.random,
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("Core reconciliation interval must be positive")
+        if retry_base_seconds <= 0 or retry_cap_seconds <= 0 or confirmation_seconds <= 0:
+            raise ValueError("Core recovery delays must be positive")
+        cap = min(retry_cap_seconds, interval_seconds)
         retry = False
         try:
             while True:
                 if retry:
                     # Failure/monitor retirement can itself set the wakeup.
-                    # Coalesce those hints during one existing reconciliation
-                    # interval instead of creating an immediate retry chain.
+                    # Coalesce those hints during one bounded, jittered backoff
+                    # delay instead of creating an immediate retry chain.
                     # External changes still retire authority synchronously;
                     # after recovery they resume waking the supervisor at once.
-                    await sleep(interval_seconds)
+                    delay = self._schedule_recovery_attempt(
+                        base=retry_base_seconds,
+                        cap=cap,
+                        confirmation=min(confirmation_seconds, cap),
+                        sample=jitter(),
+                    )
+                    await sleep(delay)
                     trigger = "failure_retry"
                 else:
                     try:
@@ -447,9 +834,19 @@ class CoreRuntime:
                         trigger = "periodic"
                 self._reprobe_event.clear()
                 snapshot = await self.reconcile_once(trigger)
-                retry = not (
-                    snapshot["initialized"] and snapshot["identity_agreement"]
-                )
+                with self._lock:
+                    recovering = (
+                        self._recovery_active
+                        and self._recovery_state != "incompatible"
+                    )
+                    retry = recovering or not (
+                        snapshot["initialized"] and snapshot["identity_agreement"]
+                    )
+                    if not retry and self._recovery_state == "incompatible":
+                        # Incompatibility stays withdrawn; keep re-checking it.
+                        self._next_recovery_attempt_at = datetime.now(
+                            timezone.utc
+                        ) + timedelta(seconds=interval_seconds)
         finally:
             with self._lock:
                 monitor_task = self._connection_monitor_task
@@ -460,6 +857,51 @@ class CoreRuntime:
             if monitor_task is not None:
                 monitor_task.cancel()
                 await asyncio.gather(monitor_task, return_exceptions=True)
+
+    def _schedule_recovery_attempt(
+        self, *, base: float, cap: float, confirmation: float, sample: float
+    ) -> float:
+        """Choose and publish the next bounded recovery delay."""
+
+        try:
+            unit = min(1.0, max(0.0, float(sample)))
+        except (TypeError, ValueError):
+            unit = 0.5
+        with self._lock:
+            confirming = (
+                self._recovery_active and self._recovery_confirmations > 0
+            )
+            if confirming:
+                spacing = confirmation * (2 ** min(
+                    self._flap_count, CORE_RECOVERY_MAX_BACKOFF_LEVEL
+                ))
+                delay = min(cap, spacing * (1 + CORE_RECOVERY_RETRY_JITTER * unit))
+                self._recovery_state = "confirming"
+            else:
+                level = min(self._backoff_level, CORE_RECOVERY_MAX_BACKOFF_LEVEL)
+                delay = min(
+                    cap,
+                    base * (2 ** level)
+                    * (1 + CORE_RECOVERY_RETRY_JITTER * (2 * unit - 1)),
+                )
+                self._backoff_level = min(
+                    level + 1, CORE_RECOVERY_MAX_BACKOFF_LEVEL
+                )
+                if self._recovery_state != "incompatible":
+                    self._recovery_state = "backing_off"
+            now = datetime.now(timezone.utc)
+            self._last_retry_delay_seconds = round(delay, 3)
+            self._next_recovery_attempt_at = now + timedelta(seconds=delay)
+            record = self._recovery_record_locked(
+                "core_authority_recovery_scheduled",
+                "Home Assistant Core authority recovery attempt scheduled",
+                now,
+                level=logging.INFO,
+                delay_seconds=round(delay, 3),
+                next_attempt_at=_iso(self._next_recovery_attempt_at),
+            )
+        self._emit([record])
+        return delay
 
     async def _ensure_connection_monitor(
         self,
@@ -515,6 +957,12 @@ class CoreRuntime:
             return_when=asyncio.FIRST_COMPLETED,
         )
         attached = ready_wait in done and ready_wait.result()
+        # The source deliberately discards watcher exception text; only
+        # whether attachment ended or timed out is a bounded diagnostic.
+        self._monitor_failure_detail = (
+            "core_lifecycle_monitor_attach_failed" if done
+            else "core_lifecycle_monitor_attach_timeout"
+        )
         if not ready_wait.done():
             ready_wait.cancel()
             await asyncio.gather(ready_wait, return_exceptions=True)
@@ -531,6 +979,8 @@ class CoreRuntime:
                 and self._connection_monitor_epoch == epoch
                 and epoch == self._connection_epoch
             )
+            if current:
+                self._monitor_failure_detail = None
         return True, current, current
 
     async def _supervise_connection_changes(
@@ -581,14 +1031,32 @@ class CoreRuntime:
             self._published_registry_token = None
             self._observation = None
             self._initialized = False
-            self._last_material_change_at = datetime.now(timezone.utc)
-            if retired is not None:
-                self._counters["retirements"] += 1
+            now = datetime.now(timezone.utc)
+            self._last_material_change_at = now
+            records = self._material_retirement_locked(
+                retired, "core_observed_version_changed", now
+            )
             self._append_event_locked("core_authority_changed", "core_observed_version_changed", retired)
             listeners = tuple(self._listeners)
+        self._emit(records)
         for listener in listeners:
             listener()
         return True
+
+    def _material_retirement_locked(
+        self, retired: int | None, reason: str, now: datetime
+    ) -> list[tuple[int, str, str, dict[str, Any]]]:
+        """Withdraw for changed authority material; re-evaluate without hysteresis."""
+
+        was_admitted = self._admitted
+        self._admitted = False
+        self._admitted_capabilities = frozenset()
+        if retired is None:
+            return []
+        self._counters["retirements"] += 1
+        return [self._retirement_record_locked(
+            reason, retired, now, admitted=was_admitted
+        )]
 
     def _sync_registry_authority(self) -> None:
         """Withdraw moved/expired authority synchronously; never admit here."""
@@ -605,11 +1073,14 @@ class CoreRuntime:
             retired = self._coordinator.retire_current_generation()
             self._published_registry_token = None
             self._initialized = False
-            self._last_material_change_at = datetime.now(timezone.utc)
-            if retired is not None:
-                self._counters["retirements"] += 1
+            now = datetime.now(timezone.utc)
+            self._last_material_change_at = now
+            records = self._material_retirement_locked(
+                retired, "core_registry_authority_changed", now
+            )
             self._append_event_locked("core_authority_changed", "core_registry_authority_changed", retired)
             listeners = tuple(self._listeners)
+        self._emit(records)
         self._reprobe_event.set()
         for listener in listeners:
             listener()
@@ -898,6 +1369,19 @@ class CoreRuntime:
         with self._lock:
             key = "catalog_restorations" if restored else "catalog_withdrawals"
             self._counters[key] += count
+            record = (
+                self._recovery_record_locked(
+                    "core_catalog_tools_restored" if restored
+                    else "core_catalog_tools_withdrawn",
+                    "Core-backed delegated tools restored to the catalog" if restored
+                    else "Core-backed delegated tools withdrawn from the catalog",
+                    datetime.now(timezone.utc),
+                    count=count,
+                )
+                if count else None
+            )
+        if record is not None:
+            self._emit([record])
 
     def _plan_is_current_locked(self, created_at: str | None) -> bool:
         cutoff = self._last_material_change_at
@@ -961,6 +1445,22 @@ class CoreRuntime:
             },
         }
 
+    def _recovery_projection_locked(self) -> dict[str, Any]:
+        return {
+            "recovery_state": self._recovery_state,
+            "consecutive_failures": self._consecutive_failures,
+            "last_failure_reason": self._last_failure_reason,
+            "last_failure_detail": self._last_failure_detail,
+            "last_failure_at": _iso(self._last_failure_at),
+            "retired_at": _iso(self._retired_at),
+            "last_attempt_at": _iso(self._last_attempt_at),
+            "next_recovery_attempt_at": _iso(self._next_recovery_attempt_at),
+            "retry_delay_seconds": self._last_retry_delay_seconds,
+            "confirmations": self._recovery_confirmations,
+            "confirmations_required": self._recovery_required,
+            "last_restored_at": _iso(self._last_restored_at),
+        }
+
     def health_snapshot(self) -> dict[str, Any]:
         self._sync_registry_authority()
         with self._lock:
@@ -990,6 +1490,7 @@ class CoreRuntime:
                     for item in decisions
                 ],
                 "counters": dict(self._counters),
+                "recovery": self._recovery_projection_locked(),
                 "release_registry": self._release_registry.snapshot() if self._release_registry else None,
                 "recent_events": [dict(item) for item in self._events],
                 "fallback_count": 0,
@@ -1013,6 +1514,7 @@ class CoreRuntime:
                     self._observation and self._observation.identity_agrees
                 ),
                 "counters": dict(self._counters),
+                "recovery": self._recovery_projection_locked(),
                 "release_registry": self._release_registry.snapshot() if self._release_registry else None,
                 "recent_event_count": len(self._events),
                 "fallback_count": 0,
@@ -1027,6 +1529,14 @@ CORE_READMISSION = CoreRuntime()
 __all__ = [
     "CORE_READMISSION",
     "CORE_RECONCILIATION_INTERVAL_SECONDS",
+    "CORE_RECOVERY_CONFIRMATIONS",
+    "CORE_RECOVERY_CONFIRMATION_SECONDS",
+    "CORE_RECOVERY_FLAP_CONFIRMATIONS",
+    "CORE_RECOVERY_FLAP_WINDOW_SECONDS",
+    "CORE_RECOVERY_RETRY_BASE_SECONDS",
+    "CORE_RECOVERY_RETRY_CAP_SECONDS",
+    "CORE_RECOVERY_RETRY_JITTER",
+    "CORE_RECOVERY_STATES",
     "CoreRouteAuthority",
     "CoreRuntime",
 ]

@@ -1,5 +1,25 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.26** is a break-fix for Home Assistant Core
+authority (HAMCP-215). After a transient verification failure, Core authority
+now recovers on its own:
+- a bounded, jittered backoff (20 s doubling to a 240 s cap) replaces the
+  fixed 300 s retry;
+- authority returns only after 2 consecutive complete re-verifications about
+  15 s apart, or 3 when it flaps;
+- the catalog, the YAML reader and the dependency index then resume.
+
+Every verification failure, retirement, catalog withdrawal, recovery attempt
+and restoration is now a bounded WARNING log event. Health's
+`home_assistant_core_authority.recovery` reports the recovery state, the last
+failure reason and time, and the next attempt. Fail-closed behavior during
+recovery is unchanged. No tool, schema, permission or descriptor changes (88
+tools, 89 with the optional YAML reader). Read the
+[2.4.1-beta.26 release notes](docs/V2_4_1_BETA26_RELEASE_NOTES.md) and
+[2.4.1-beta.26 acceptance contract](docs/V2_4_1_BETA26_ACCEPTANCE.md).
+
+It builds on beta.25 below.
+
 Engineering **2.4.1-beta.25** reads script configuration from what Home
 Assistant has loaded (HAMCP-212, fast dependency index part 2). The index
 build's single WebSocket batch adds two fixed, read-only commands per available
@@ -267,7 +287,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.25 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.26 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
