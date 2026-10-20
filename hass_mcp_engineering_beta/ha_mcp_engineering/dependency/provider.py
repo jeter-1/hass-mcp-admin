@@ -60,6 +60,8 @@ from .models import (
 MAX_AUTOMATION_SOURCES = 1_000
 # HAMCP-209: governed automation writes awaiting verified reload agreement.
 MAX_PENDING_AUTOMATION_WRITES = 256
+# HAMCP-212: governed script writes, journaled the same way.
+MAX_PENDING_SCRIPT_WRITES = 256
 LOADED_AUTOMATION_SOURCE = "loaded_websocket"
 STORED_AUTOMATION_SOURCE = "stored_rest"
 LOADED_FALLBACK_REASONS = frozenset({
@@ -90,6 +92,20 @@ _UNVERIFIED_LOADED_REASONS = frozenset({
 LOADED_CONFIG_UNAVAILABLE = "loaded_config_unavailable"
 # HAMCP-209 (M2): a journaled write this build could not account for.
 PENDING_WRITE_UNRECONCILED = "pending_write_unreconciled"
+
+
+def _script_source_profile(diagnostics, overflow_count: int) -> dict[str, Any]:
+    """HAMCP-212: script source counts beside the automation ones."""
+
+    profile = diagnostics.profile if diagnostics is not None else {}
+    journal = profile.get("pending_write_journal", {})
+    return {
+        "script_config_source": profile.get("script_config_source", "none"),
+        "script_config_source_counts": dict(profile.get("script_config_source_counts", {})),
+        "script_stored_config_fallback_reasons": dict(profile.get("stored_config_fallback_reasons", {})),
+        "script_loaded_config_unavailable": profile.get(LOADED_CONFIG_UNAVAILABLE, 0),
+        "script_pending_write_journal": {**journal, "overflow_write_count": overflow_count},
+    }
 
 
 def _canonical(value: Any) -> str:
@@ -634,6 +650,10 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         self._pending_write_sequence = 0
         self._pending_write_overflow = False
         self._pending_write_overflow_count = 0
+        self._pending_script_writes: dict[str, int] = {}
+        self._pending_script_write_sequence = 0
+        self._pending_script_write_overflow = False
+        self._pending_script_write_overflow_count = 0
 
     def note_automation_write(self, automation_id: Any) -> None:
         """Record a governed write so loaded config is verified until reloaded.
@@ -654,6 +674,29 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         else:
             self._pending_write_overflow = True
             self._pending_write_overflow_count += 1
+
+    def note_script_write(self, script_id: Any) -> None:
+        """HAMCP-212: journal a governed script write until its reload is verified.
+
+        Home Assistant reloads scripts after the write response, so the loaded
+        configuration may briefly predate the write. Same bounds and sticky
+        overflow as note_automation_write.
+        """
+
+        key = str(script_id)
+        self._pending_script_write_sequence += 1
+        if key in self._pending_script_writes or len(self._pending_script_writes) < MAX_PENDING_SCRIPT_WRITES:
+            self._pending_script_writes[key] = self._pending_script_write_sequence
+        else:
+            self._pending_script_write_overflow = True
+            self._pending_script_write_overflow_count += 1
+
+    def _settle_pending_script_writes(
+        self, snapshot: dict[str, int], verified: set[str],
+    ) -> None:
+        for key in verified:
+            if key in snapshot and self._pending_script_writes.get(key) == snapshot[key]:
+                del self._pending_script_writes[key]
 
     def _settle_pending_writes(
         self, snapshot: dict[str, int], verified: set[str],
@@ -910,6 +953,35 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         loaded_command_count = 0
         loaded_connection_count = 0
         loaded_entities = []
+        # HAMCP-212: script configurations ride the same batch. Identity comes
+        # from the registry before any read; the reader is created once here.
+        from .script_sources import (
+            LoadedScriptSource, create_script_reader, select_script_candidates,
+        )
+        script_pending_snapshot = dict(self._pending_script_writes)
+        script_journal_overflow = self._pending_script_write_overflow
+        script_journal_overflow_count = self._pending_script_write_overflow_count
+        script_selection = None
+        script_reader = None
+        script_entities: list[str] = []
+        loaded_scripts: dict[str, tuple[Any, Any]] = {}
+        if self.script_reader_factory is not None:
+            script_selection = select_script_candidates(
+                states, registry, registry_complete=entity_registry_complete, secret=self.secret,
+            )
+            script_reader = create_script_reader(self.script_reader_factory)
+            if script_reader is not None:
+                script_states = {
+                    state.get("entity_id"): state for state in states if isinstance(state, dict)
+                }
+                for entity_id, _key in script_selection.candidates:
+                    state = script_states.get(entity_id)
+                    if (
+                        state is not None
+                        and state.get("state") != "unavailable"
+                        and batch_command_allowed({"type": "script/config", "entity_id": entity_id})
+                    ):
+                        script_entities.append(entity_id)
         for state in automations:
             attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
             entity_id = state.get("entity_id")
@@ -922,27 +994,45 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         command_batch = getattr(self.websocket_client, "command_batch", None)
         if not callable(command_batch):
             loaded_source_failure = "loaded_source_unsupported"
-        elif loaded_entities:
+        elif loaded_entities or script_entities:
             payloads = []
             for entity_id in loaded_entities:
                 payloads.append({"type": "automation/config", "entity_id": entity_id})
                 payloads.append(
                     {"type": "search/related", "item_type": "automation", "item_id": entity_id}
                 )
+            for entity_id in script_entities:
+                payloads.append({"type": "script/config", "entity_id": entity_id})
+                payloads.append(
+                    {"type": "search/related", "item_type": "script", "item_id": entity_id}
+                )
             loaded_command_count = len(payloads)
             loaded_connection_count = 1
             try:
                 outcomes = await request(
-                    "loaded_automation_config_batch",
+                    "loaded_config_batch",
                     lambda: command_batch(payloads),
                 )
                 if not isinstance(outcomes, list) or len(outcomes) != len(payloads):
                     raise TypeError("loaded configuration batch is incomplete")
                 for index, entity_id in enumerate(loaded_entities):
                     loaded[entity_id] = (outcomes[2 * index], outcomes[2 * index + 1])
+                offset = 2 * len(loaded_entities)
+                for index, entity_id in enumerate(script_entities):
+                    loaded_scripts[entity_id] = (
+                        outcomes[offset + 2 * index], outcomes[offset + 2 * index + 1],
+                    )
             except Exception:
                 loaded.clear()
+                loaded_scripts.clear()
                 loaded_source_failure = "loaded_source_unavailable"
+        loaded_script_source = LoadedScriptSource(
+            outcomes=loaded_scripts,
+            available=frozenset(script_entities),
+            failure=loaded_source_failure,
+            pending=script_pending_snapshot,
+            overflow=script_journal_overflow,
+        )
 
         def loaded_route(state, internal_id) -> tuple[dict[str, Any] | None, str | None]:
             """Return the loaded config, or the reported reason to read stored."""
@@ -1729,9 +1819,14 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         if self.script_reader_factory is not None:
             script_diagnostics = await collect_script_diagnostics(
                 states, registry, registry_complete=entity_registry_complete,
-                reader_factory=self.script_reader_factory, secret=self.secret,
+                reader_factory=lambda: script_reader, secret=self.secret,
                 concurrency=self.concurrency,
                 automation_documents=tuple(automation_call_documents),
+                selection=script_selection,
+                loaded=loaded_script_source,
+            )
+            self._settle_pending_script_writes(
+                script_pending_snapshot, loaded_script_source.verified,
             )
             request_counts["delegated_script_configuration"] += script_diagnostics.profile["read_attempts"]
             request_time_ms["delegated_script_configuration"] += script_diagnostics.profile["read_time_ms"]
@@ -1758,6 +1853,10 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 LOADED_CONFIG_UNAVAILABLE: len(unverified_loaded),
                 "loaded_config_connection_count": loaded_connection_count,
                 "loaded_config_command_count": loaded_command_count,
+                "loaded_script_command_count": 2 * len(script_entities) if loaded_command_count else 0,
+                **_script_source_profile(
+                    script_diagnostics, script_journal_overflow_count,
+                ),
                 "effect_display_registry": (
                     effect_display_registry.sources
                     if effect_display_registry is not None

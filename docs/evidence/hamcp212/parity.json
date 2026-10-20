@@ -1,0 +1,386 @@
+{
+  "base": "f69bf8cca4e4d6a1af9c4fdfd95476f62d7c601b (2.4.1-beta.24, every script read delegated)",
+  "base_tree": {
+    "generated_113_5": {
+      "attribution": {
+        "climate.synthetic_hall": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "input_boolean.synthetic_guest": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "light.synthetic_bulk_0000": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "light.synthetic_bulk_0004": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "light.synthetic_hall": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "light.synthetic_kitchen": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "script.synthetic_script_blueprint": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "script.synthetic_script_plain": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "script.synthetic_script_templated": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        }
+      },
+      "delegated_script_reads": 5,
+      "delegated_script_reads_by_entity": {
+        "script.synthetic_bulk_script_00": 1,
+        "script.synthetic_bulk_script_01": 1,
+        "script.synthetic_bulk_script_02": 1,
+        "script.synthetic_bulk_script_03": 1,
+        "script.synthetic_bulk_script_04": 1
+      },
+      "script_call_finding_count": 0,
+      "script_config_source_counts": "stored_delegated only (pre-HAMCP-212)",
+      "script_coverage_provider": "upstream_read_gateway",
+      "script_dynamic_reference_count": 0,
+      "script_finding_count": 5,
+      "script_stored_config_fallback_reasons": {},
+      "snapshot_fingerprint": "4a773504efe98f8cc64edb25844e41a3a7e94316f0d92fe3c91b13d6a888ce6d",
+      "view_sha256": "380f11597c1f3cc7237e6182cab4a8e9a02961105927927fa9552eca3571f752"
+    },
+    "representative": {
+      "attribution": {
+        "climate.synthetic_hall": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [
+            "upstream_read_gateway"
+          ],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "input_boolean.synthetic_guest": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "light.synthetic_bulk_0000": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "light.synthetic_bulk_0004": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "light.synthetic_hall": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [
+            "upstream_read_gateway"
+          ],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "light.synthetic_kitchen": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [
+            "upstream_read_gateway"
+          ],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "script.synthetic_script_blueprint": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "script.synthetic_script_plain": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        },
+        "script.synthetic_script_templated": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+        }
+      },
+      "delegated_script_reads": 8,
+      "delegated_script_reads_by_entity": {
+        "script.synthetic_script_blueprint": 1,
+        "script.synthetic_script_caller": 1,
+        "script.synthetic_script_categorized": 1,
+        "script.synthetic_script_dynamic": 1,
+        "script.synthetic_script_nested_caller": 1,
+        "script.synthetic_script_plain": 1,
+        "script.synthetic_script_templated": 1,
+        "script.synthetic_script_unavailable": 1
+      },
+      "script_call_finding_count": 3,
+      "script_config_source_counts": "stored_delegated only (pre-HAMCP-212)",
+      "script_coverage_provider": "upstream_read_gateway",
+      "script_dynamic_reference_count": 1,
+      "script_finding_count": 12,
+      "script_stored_config_fallback_reasons": {},
+      "snapshot_fingerprint": "7c95ffc698f3cb4780d08d1c3ab90d748f9357d71d85525e09d231605b78baab",
+      "view_sha256": "854a43ed1682317eccfa06519c462f2c65f839f7297a4dc6cc41d32e13823dfd"
+    }
+  },
+  "head": "HAMCP-212 working tree (loaded script source)",
+  "head_tree": {
+    "generated_113_5": {
+      "attribution": {
+        "climate.synthetic_hall": {
+          "configuration_providers": [
+            "direct_ha_api"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=loaded_websocket; loaded=5; stored=0; stored fallback reasons: none"
+        },
+        "input_boolean.synthetic_guest": {
+          "configuration_providers": [
+            "direct_ha_api"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=loaded_websocket; loaded=5; stored=0; stored fallback reasons: none"
+        },
+        "light.synthetic_bulk_0000": {
+          "configuration_providers": [
+            "direct_ha_api"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=loaded_websocket; loaded=5; stored=0; stored fallback reasons: none"
+        },
+        "light.synthetic_bulk_0004": {
+          "configuration_providers": [
+            "direct_ha_api"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=loaded_websocket; loaded=5; stored=0; stored fallback reasons: none"
+        },
+        "light.synthetic_hall": {
+          "configuration_providers": [
+            "direct_ha_api"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=loaded_websocket; loaded=5; stored=0; stored fallback reasons: none"
+        },
+        "light.synthetic_kitchen": {
+          "configuration_providers": [
+            "direct_ha_api"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=loaded_websocket; loaded=5; stored=0; stored fallback reasons: none"
+        },
+        "script.synthetic_script_blueprint": {
+          "configuration_providers": [
+            "direct_ha_api"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=loaded_websocket; loaded=5; stored=0; stored fallback reasons: none"
+        },
+        "script.synthetic_script_plain": {
+          "configuration_providers": [
+            "direct_ha_api"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=loaded_websocket; loaded=5; stored=0; stored fallback reasons: none"
+        },
+        "script.synthetic_script_templated": {
+          "configuration_providers": [
+            "direct_ha_api"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=loaded_websocket; loaded=5; stored=0; stored fallback reasons: none"
+        }
+      },
+      "delegated_script_reads": 0,
+      "delegated_script_reads_by_entity": {},
+      "script_call_finding_count": 0,
+      "script_config_source_counts": {
+        "loaded_websocket": 5,
+        "stored_delegated": 0
+      },
+      "script_coverage_provider": "direct_ha_api",
+      "script_dynamic_reference_count": 0,
+      "script_finding_count": 5,
+      "script_stored_config_fallback_reasons": {},
+      "snapshot_fingerprint": "4a773504efe98f8cc64edb25844e41a3a7e94316f0d92fe3c91b13d6a888ce6d",
+      "view_sha256": "380f11597c1f3cc7237e6182cab4a8e9a02961105927927fa9552eca3571f752"
+    },
+    "representative": {
+      "attribution": {
+        "climate.synthetic_hall": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [
+            "direct_ha_api"
+          ],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=mixed; loaded=5; stored=3; stored fallback reasons: blueprint_instance=1, blueprint_reference_nested=1, loaded_entity_unavailable=1"
+        },
+        "input_boolean.synthetic_guest": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=mixed; loaded=5; stored=3; stored fallback reasons: blueprint_instance=1, blueprint_reference_nested=1, loaded_entity_unavailable=1"
+        },
+        "light.synthetic_bulk_0000": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=mixed; loaded=5; stored=3; stored fallback reasons: blueprint_instance=1, blueprint_reference_nested=1, loaded_entity_unavailable=1"
+        },
+        "light.synthetic_bulk_0004": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=mixed; loaded=5; stored=3; stored fallback reasons: blueprint_instance=1, blueprint_reference_nested=1, loaded_entity_unavailable=1"
+        },
+        "light.synthetic_hall": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [
+            "upstream_read_gateway"
+          ],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=mixed; loaded=5; stored=3; stored fallback reasons: blueprint_instance=1, blueprint_reference_nested=1, loaded_entity_unavailable=1"
+        },
+        "light.synthetic_kitchen": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [
+            "direct_ha_api"
+          ],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=mixed; loaded=5; stored=3; stored fallback reasons: blueprint_instance=1, blueprint_reference_nested=1, loaded_entity_unavailable=1"
+        },
+        "script.synthetic_script_blueprint": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=mixed; loaded=5; stored=3; stored fallback reasons: blueprint_instance=1, blueprint_reference_nested=1, loaded_entity_unavailable=1"
+        },
+        "script.synthetic_script_plain": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=mixed; loaded=5; stored=3; stored fallback reasons: blueprint_instance=1, blueprint_reference_nested=1, loaded_entity_unavailable=1"
+        },
+        "script.synthetic_script_templated": {
+          "configuration_providers": [
+            "direct_ha_api",
+            "upstream_read_gateway"
+          ],
+          "path_evidence_providers": [],
+          "script_provider_policy": "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback; script_config_source=mixed; loaded=5; stored=3; stored fallback reasons: blueprint_instance=1, blueprint_reference_nested=1, loaded_entity_unavailable=1"
+        }
+      },
+      "delegated_script_reads": 3,
+      "delegated_script_reads_by_entity": {
+        "script.synthetic_script_blueprint": 1,
+        "script.synthetic_script_nested_caller": 1,
+        "script.synthetic_script_unavailable": 1
+      },
+      "script_call_finding_count": 3,
+      "script_config_source_counts": {
+        "loaded_websocket": 5,
+        "stored_delegated": 3
+      },
+      "script_coverage_provider": "direct_ha_api+upstream_read_gateway",
+      "script_dynamic_reference_count": 1,
+      "script_finding_count": 12,
+      "script_stored_config_fallback_reasons": {
+        "blueprint_instance": 1,
+        "blueprint_reference_nested": 1,
+        "loaded_entity_unavailable": 1
+      },
+      "snapshot_fingerprint": "7c95ffc698f3cb4780d08d1c3ab90d748f9357d71d85525e09d231605b78baab",
+      "view_sha256": "854a43ed1682317eccfa06519c462f2c65f839f7297a4dc6cc41d32e13823dfd"
+    }
+  },
+  "result": "IDENTICAL",
+  "synthetic": true
+}

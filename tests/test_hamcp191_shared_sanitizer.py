@@ -580,7 +580,7 @@ SANITIZER_SITES = {
     ("dependency/provider.py", "_EffectDisplayFilter._clean", "redact_data"): (1, "analysis"),
     ("dependency/script_calls.py", "extract_script_calls", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/script_calls.py", "extract_script_calls.add", "sanitize_untrusted_data"): (1, "analysis"),
-    ("dependency/script_sources.py", "collect_script_diagnostics", "sanitize_untrusted_data"): (1, "analysis"),
+    ("dependency/script_sources.py", "select_script_candidates", "sanitize_untrusted_data"): (1, "analysis"),
     ("f3_dashboard/approval_projection.py", "validate_dashboard_approval_projection", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/config_validation.py", "normalize_configuration_validation", "sanitize_untrusted_data"): (2, "governance"),
     ("governance/operational_lifecycle.py", "OperationalLifecycleGateway.configuration_validation", "sanitize_untrusted_data"): (1, "governance"),

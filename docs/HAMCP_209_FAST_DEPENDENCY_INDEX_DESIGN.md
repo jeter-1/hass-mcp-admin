@@ -261,6 +261,8 @@ support window; stable v1.
 
 - Scripts still use the delegated `upstream_read_gateway` reader. Moving them
   to `script/config` is a provider-routing change.
+  Done in HAMCP-212: see
+  [`HAMCP_212_LOADED_SCRIPT_CONFIG_DESIGN.md`](HAMCP_212_LOADED_SCRIPT_CONFIG_DESIGN.md).
 - Automations without an `id` keep `automation_id_missing`.
 - No `automation_reloaded` subscription.
 
