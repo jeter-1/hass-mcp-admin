@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.4.1-beta.24 - Read-only backup inventory (HAMCP-130)
+
+Builds on 2.4.1-beta.23.
+
+- Add `get_backup_inventory`, a read-only tool that reports Home Assistant
+  backups: per backup, its date, size, content scope, protection flag, Home
+  Assistant version, add-ons, folders, database flag and storage locations;
+  a summary with the newest full backup and confirmed off-site copies; the
+  automatic-backup schedule, retention, last attempt, last completion and
+  result; recent failures; and nine health signals with stated thresholds.
+- Read only Core's `backup/config/info` and `backup/info` over the existing
+  admin WebSocket authority. No create, restore, delete, download or settings
+  path exists.
+- Report `partial`, with per-field reasons, whenever a read, location or
+  field cannot be read, is out of range or truncated, or text is redacted.
+  Each health signal names the inputs it depends on and is `unknown` when any
+  of them is unreadable.
+- Show an invalid field or list as `null`, never as an empty list, validate
+  the schedule time strictly, and keep `omissions` to exactly 40 entries
+  with an `omissions_not_listed` marker and a full reason count. A signal is
+  `unknown` only when an input is unreadable, and then never claims complete
+  evidence; a last action event without its required state is unreadable.
+- Never return the encryption key; it is a per-response known secret for the
+  shared sanitizer. When the key cannot be positively read, withhold every
+  name and error text and alias free-form identifiers. A transformed copy of
+  a known key (encoded or split across names) is an accepted residual; see
+  `docs/SECURITY.md`.
+- Map the tool to `core.basic_websocket_read` in the Core gate. Static tools
+  60 (was 59); advertised catalog 88 (was 87), or 89 with the optional YAML
+  reader. Every existing descriptor, signed registry, HOLD, support window,
+  persisted format, workflow and stable v1 is unchanged.
+
 ## 2.4.1-beta.23 - Dependency index from Home Assistant's loaded automation config (HAMCP-209)
 
 Builds on 2.4.1-beta.22.

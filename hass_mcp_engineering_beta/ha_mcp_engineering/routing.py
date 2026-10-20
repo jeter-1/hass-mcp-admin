@@ -786,6 +786,21 @@ class AuthenticatedMcpGateway:
                         send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
                     )
                     return
+            if tool_name == "get_backup_inventory":
+                from .backup_inventory.contracts import validate_arguments as validate_backup_inventory
+                try:
+                    validate_backup_inventory(raw_parameters)
+                except ValueError:
+                    telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                    failure = FailureResponse(
+                        operation="get_backup_inventory", error="InvalidBackupInventoryRequest",
+                        error_code=telemetry.error_code, message="Invalid backup inventory arguments.",
+                        retryable=False, request_id=request_id,
+                    )
+                    await self._respond_mcp_tool_result(
+                        send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
+                    )
+                    return
             if tool_name == "capture_automation_baseline":
                 from .audit_baseline.capture_contracts import validate_arguments, CaptureError
                 try:
@@ -1077,7 +1092,7 @@ class AuthenticatedMcpGateway:
                         "upstream_attempted": False,
                     }
                     resource_ids = {}
-                elif tool_name not in {"get_integration_inspection", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
+                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -1263,6 +1278,15 @@ class AuthenticatedMcpGateway:
                         "provider": "engineering", "fallback": "none",
                     }
                     resource_ids = {}
+                elif tool_name == "get_backup_inventory":
+                    # Only the bounded limit is retained; rejected keys and
+                    # malformed values are never copied into the audit.
+                    audit_parameters = {
+                        "profile": "backup-inventory-read-v1",
+                        "limit": parameters.get("limit", 25) if type(parameters.get("limit", 25)) is int and 1 <= parameters.get("limit", 25) <= 50 else None,
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
                 elif tool_name == "run_held_read_canary":
                     # Canary arguments and upstream result content are
                     # untrusted and may contain sensitive Home Assistant data.
@@ -1348,6 +1372,7 @@ class AuthenticatedMcpGateway:
                             "run_held_read_canary",
                             "get_core_log_history",
                             "get_integration_inspection",
+                            "get_backup_inventory",
                             "capture_automation_baseline",
                             "dashboard_integrity_analysis",
                         }

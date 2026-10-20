@@ -176,6 +176,7 @@ class RC1PublicContractTests(unittest.TestCase):
                         *BETA26_TOOL_NAMES,
                         "dashboard_integrity_analysis",
                         "get_integration_inspection",
+                        "get_backup_inventory",
                         "capture_automation_baseline",
                         "get_core_log_history",
                         "reverify_configuration_task",
@@ -431,7 +432,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 59)
+        self.assertEqual(len(classifications), 60)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

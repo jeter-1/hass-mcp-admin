@@ -728,7 +728,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 59)
+        self.assertEqual(health["registered_tool_count"], 60)
         helper_provider = health["governance"][
             "operational_administration"
         ]["helper_state_provider"]
