@@ -20,6 +20,7 @@ from ha_mcp_engineering.clients.websocket import HomeAssistantWebSocketClient
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime
 from ha_mcp_engineering.governance.helper_dependency import HelperDependencyRiskService
 from ha_mcp_engineering.governance.helper_dependency import home_assistant_version_admission
+from ha_mcp_engineering.ha_core_readmission.runtime import CORE_RECOVERY_FLAP_CONFIRMATIONS
 from ha_mcp_engineering.errors import HomeAssistantUnavailableError
 from ha_mcp_engineering.dependency.index import DependencyFenceError
 from ha_mcp_engineering.dependency import semantic_registry as registry_module
@@ -375,7 +376,12 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
         await self.registry_case.registry.refresh()
         self.source.version = "2026.9.3"
         self.network.payloads["/config"]["version"] = "2026.9.3"
-        await self.core.reconcile_once("synthetic_version_change")
+        # HAMCP-215: the retired generation restores only after the bounded
+        # recovery confirmations from a supervisor-paced trigger.
+        for _ in range(CORE_RECOVERY_FLAP_CONFIRMATIONS):
+            await self.core.reconcile_once("identity_or_connection_change")
+            if self.core.initialized:
+                break
         self.registry_case.assert_admitted(self.core)
         result = await self.service.apply(plan["plan_id"], plan["plan_hash"])
         self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
