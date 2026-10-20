@@ -6,6 +6,8 @@ has a status of ``observed``, ``not_observed``, ``not_applicable`` or
 a source, location or field behind any of those inputs could not be fully
 read, the signal is ``unknown`` with ``evidence_complete`` false and the
 inputs named in ``unreadable_inputs``; it is never decided from partial input.
+``unknown`` is produced only that way (``_signal``), so every unknown signal
+names what it lacks.
 """
 
 from __future__ import annotations
@@ -52,11 +54,20 @@ def automatic_result(attempted, completed, manager_state, last_action) -> str:
     return "not_completed"
 
 
+DECIDED = ("observed", "not_observed", "not_applicable")
+# Prefixes of per-field omission reasons. The bounded ledger lists aggregate
+# reasons (sources, caps, trimming) before them.
+FIELD_REASONS = ("invalid_field", "truncated_field", "encryption_key_unknown")
+
+
 def _signal(name, threshold, depends_on, unreadable, decide):
     """A signal is decided only from inputs that were fully read.
 
     Any declared input that could not be fully read makes the signal
-    ``unknown`` with ``evidence_complete`` false and names the input.
+    ``unknown`` with ``evidence_complete`` false and names the input. This
+    is the only source of ``unknown``: a decider that cannot decide from
+    fully read inputs is a defect, and the response fails rather than
+    reporting an unknown signal as complete evidence.
     """
 
     missing = [item for item in depends_on if item in unreadable]
@@ -64,6 +75,8 @@ def _signal(name, threshold, depends_on, unreadable, decide):
         status, fact = "unknown", "Not established: " + ", ".join(missing) + " could not be fully read."
     else:
         status, fact = decide()
+        if status not in DECIDED:
+            raise RuntimeError("health signal undecided from fully read inputs")
     return {"signal": name, "status": status, "threshold": threshold, "fact": fact,
             "evidence_complete": not missing, "depends_on": list(depends_on),
             "unreadable_inputs": missing}
@@ -84,10 +97,10 @@ def build(
 
     # Installation kind from Core agent naming: ``hassio.*`` agents exist only
     # with the Supervisor; ``backup.local`` only without it.
-    seen = {loc["location_id"] for b in backups for loc in b["locations"]}
+    seen = {loc["location_id"] for b in backups for loc in b["locations"] or ()}
     seen |= {item["location_id"] for item in errors}
     if config_ok:
-        seen |= set(config["location_ids"]) | set(config["location_overrides"])
+        seen |= set(config["location_ids"] or ()) | set(config["location_overrides"] or ())
     if any(type(item) is str and item.startswith("hassio.") for item in seen):
         installation = "supervisor"
     elif "backup.local" in seen:
@@ -96,6 +109,10 @@ def build(
         installation = "unknown"
     for backup in backups:
         backup["content_scope"] = classify(backup, installation)
+        if backup["content_scope"] == "unknown" and "content" not in backup["_invalid"]:
+            # Every content field was read; only the installation kind,
+            # which decides whether folders are required, is unknown.
+            p.omit("content_scope_not_established")
 
     dated = [b for b in backups if b["_date"] is not None]
     newest = dated[0] if dated else None
@@ -114,9 +131,12 @@ def build(
         unreadable.add("schedule")
     if any("date" in b["_invalid"] for b in backups):
         unreadable.add("backup_dates")
-    if any("content" in b["_invalid"] and b["age_days"] <= full_days for b in dated):
+    # A recent backup whose content scope cannot be established, from an
+    # invalid content field or an unknown installation kind.
+    if any(b["age_days"] <= full_days and ("content" in b["_invalid"] or b["content_scope"] == "unknown")
+           for b in dated):
         unreadable.add("recent_backup_content")
-    if newest is not None and ("locations" in newest["_invalid"]
+    if newest is not None and ("locations" in newest["_invalid"] or newest["locations"] is None
                                or any(loc["location_id"] is None for loc in newest["locations"])):
         unreadable.add("newest_backup_locations")
     if newest is not None and "failures" in newest["_invalid"]:
@@ -128,14 +148,19 @@ def build(
         return {"backup_id": backup["backup_id"], "name": backup["name"],
                 "date": backup["date"], "age_days": backup["age_days"],
                 "content_scope": backup["content_scope"],
-                "storage_classes": sorted({loc["storage_class"] for loc in backup["locations"]})}
+                "storage_classes": (None if backup["locations"] is None else
+                                    sorted({loc["storage_class"] for loc in backup["locations"]}))}
 
     def offsite(backup):
         if backup is None:
             return None
+        if backup["locations"] is None:
+            return "unknown"
         classes = {loc["storage_class"] for loc in backup["locations"]}
         if "home_assistant_cloud" in classes:
             return "confirmed"
+        if any(loc["location_id"] is None for loc in backup["locations"]):
+            return "unknown"
         if classes - {"local"}:
             return "off_host_not_confirmed_off_site"
         return "none"
@@ -151,7 +176,7 @@ def build(
         })
 
     for backup in backups:
-        for loc in backup["locations"]:
+        for loc in backup["locations"] or ():
             if loc["location_id"] is None:
                 continue
             item = location(loc["location_id"])
@@ -163,7 +188,7 @@ def build(
         if error["location_id"] is not None:
             location(error["location_id"])["read_error"] = True
     if config_ok:
-        for location_id in config["location_ids"]:
+        for location_id in config["location_ids"] or ():
             location(location_id)["selected_for_automatic_backups"] = True
     for item in locations.values():
         item["storage_class"] = storage_class(item["location_id"])
@@ -236,8 +261,6 @@ def build(
     def no_full():
         if newest_full is not None and newest_full["age_days"] <= full_days:
             return "not_observed", f"Newest full backup is {newest_full['age_days']} day(s) old."
-        if any(b["content_scope"] == "unknown" and b["age_days"] <= full_days for b in dated):
-            return "unknown", "A recent backup's content scope could not be established."
         if newest_full is not None:
             return "observed", f"Newest full backup is {newest_full['age_days']} day(s) old."
         return "observed", "No full backup was found."
@@ -316,17 +339,12 @@ def build(
     for backup in backups:
         backup.pop("_date", None)
         backup.pop("_invalid", None)
-    omissions = [{"reason": reason, "count": count}
-                 for reason, count in sorted(p.omissions.items())][:OMISSION_LIMIT]
-    redaction = p.tally.summary() if p.tally.applied else None
-    complete = (all(source["status"] == "complete" for source in sources)
-                and not p.omissions and redaction is None)
-    return {
+    return finish(p, {
         "schema": c.SCHEMA,
-        "completeness": "complete" if complete else "partial",
-        "omissions": omissions,
-        "omission_reason_count": len(p.omissions),
-        "redaction": redaction,
+        "completeness": None,
+        "omissions": None,
+        "omission_reason_count": None,
+        "redaction": p.tally.summary() if p.tally.applied else None,
         "sources": sources,
         "thresholds": {
             "full_backup_max_age_days": full_days,
@@ -363,4 +381,30 @@ def build(
         "recent_failure_count": failure_count,
         "health_signals": signals,
         "backups": listed,
-    }
+    })
+
+
+def finish(p: Projector, result: dict) -> dict:
+    """The omission ledger and completeness, from every omission so far.
+
+    Run again after any later change (service.py byte trimming), so the
+    listed entries never exceed ``OMISSION_LIMIT`` and the reason count is
+    exact. When more reasons exist than fit, the last entry is
+    ``omissions_not_listed`` with the number of reasons not listed.
+    """
+
+    reasons = sorted(p.omissions.items(), key=lambda item: (
+        ":" in item[0] and item[0].split(":", 1)[0] in FIELD_REASONS, item[0]))
+    omissions = [{"reason": reason, "count": count} for reason, count in reasons]
+    if len(omissions) > OMISSION_LIMIT:
+        omissions = omissions[:OMISSION_LIMIT - 1] + [
+            {"reason": "omissions_not_listed", "count": len(omissions) - (OMISSION_LIMIT - 1)}]
+    sources, redaction = result["sources"], result["redaction"]
+    complete = (all(source["status"] == "complete" for source in sources)
+                and not p.omissions and redaction is None)
+    result.update({
+        "completeness": "complete" if complete else "partial",
+        "omissions": omissions,
+        "omission_reason_count": len(reasons),
+    })
+    return result

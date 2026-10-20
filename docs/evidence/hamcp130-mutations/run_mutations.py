@@ -13,6 +13,11 @@ correction batch adds ``H*`` (free text shown while the encryption key is
 not positively known), ``M1*`` (a missing, invalid or truncated field not
 recorded), ``M2*`` (a health signal decided from inputs not fully read) and
 the reviewer's ``R1`` (provider error text reflected as a source reason).
+Correction batch 2 adds ``M1h``-``M1n`` (lax clock-time validation, invalid
+lists shown as empty, the omission ledger over its bound or with a stale
+count), ``M2h``-``M2n`` (an unknown signal reported with complete evidence,
+unknown content scope or a missing event state decided as conclusive) and the
+delta reviewer's ``R2`` (an identifier alias returning the original value).
 
 Usage:
     python docs/evidence/hamcp130-mutations/run_mutations.py \
@@ -147,9 +152,55 @@ MUTATIONS = [
                        '    if False:')]},
     {"id": "M2g-schedule-not-an-input-when-invalid", "design_item": "M2: signals on unreadable inputs",
      "replacements": [(PROJECTION, '            p.invalid("schedule.days", "schedule")', '            p.invalid("schedule.days")')]},
+    {"id": "M1h-lax-clock-time", "design_item": "M1 batch 2: strict schedule time",
+     "replacements": [(PROJECTION, '    try:\n        clock_time.fromisoformat(value)\n    except ValueError:\n'
+                                   '        return False\n    return True', '    return True')]},
+    {"id": "M1i-invalid-location-list-as-empty", "design_item": "M1 batch 2: invalid list is null",
+     "replacements": [(PROJECTION, '        p.invalid(pointer)\n        return None\n    result = []',
+                       '        p.invalid(pointer)\n        return []\n    result = []')]},
+    {"id": "M1j-invalid-days-as-empty", "design_item": "M1 batch 2: invalid list is null",
+     "replacements": [(PROJECTION, 'schedule = {"recurrence": None, "days": None, "time": None}',
+                       'schedule = {"recurrence": None, "days": [], "time": None}')]},
+    {"id": "M1k-invalid-includes-as-empty", "design_item": "M1 batch 2: invalid list is null",
+     "replacements": [(PROJECTION, 'includes = {"all_addons": None, "addons": None, "database": None, "folders": None}',
+                       'includes = {"all_addons": None, "addons": [], "database": None, "folders": []}')]},
+    {"id": "M1l-omission-ledger-unbounded", "design_item": "M1 batch 2: exact omission bound",
+     "replacements": [(REPORT, '    if len(omissions) > OMISSION_LIMIT:', '    if False:')]},
+    {"id": "M1m-trimming-bypasses-ledger", "design_item": "M1 batch 2: exact omission bound",
+     "replacements": [(SERVICE, '            report.finish(projector, result)\n', '')]},
+    {"id": "M1n-reason-count-from-listed", "design_item": "M1 batch 2: exact reason count",
+     "replacements": [(REPORT, '"omission_reason_count": len(reasons),', '"omission_reason_count": len(omissions),')]},
+    {"id": "M2h-unknown-with-complete-evidence", "design_item": "M2 batch 2: unknown never complete evidence",
+     "replacements": [(REPORT, '"evidence_complete": not missing,', '"evidence_complete": True,')]},
+    {"id": "M2i-unknown-scope-not-an-input", "design_item": "M2 batch 2: unknown content scope is unreadable",
+     "replacements": [(REPORT, '("content" in b["_invalid"] or b["content_scope"] == "unknown")',
+                       '"content" in b["_invalid"]')]},
+    {"id": "M2j-768d9bd-unknown-scope-behavior", "design_item": "M2 batch 2: unknown never complete evidence",
+     "replacements": [
+         (REPORT, '            return "not_observed", f"Newest full backup is {newest_full[\'age_days\']} day(s) old."\n',
+          '            return "not_observed", f"Newest full backup is {newest_full[\'age_days\']} day(s) old."\n'
+          '        if any(b["content_scope"] == "unknown" and b["age_days"] <= full_days for b in dated):\n'
+          '            return "unknown", "A recent backup\'s content scope could not be established."\n'),
+         (REPORT, '        if status not in DECIDED:\n            raise RuntimeError', '        if False:\n            raise RuntimeError'),
+         (REPORT, '("content" in b["_invalid"] or b["content_scope"] == "unknown")', '"content" in b["_invalid"]'),
+         (REPORT, '            p.omit("content_scope_not_established")\n', '            pass\n'),
+     ]},
+    {"id": "M2k-missing-event-state-valid", "design_item": "M2 batch 2: missing event state is unreadable",
+     "replacements": [(PROJECTION, 'state = event.get("state", MISSING)', 'state = event.get("state")'),
+                      (PROJECTION, 'elif state not in EVENT_STATES[manager_state]:',
+                       'elif state is not None and state not in EVENT_STATES[manager_state]:')]},
+    {"id": "M2l-event-kind-mismatch-accepted", "design_item": "M2 batch 2: missing event state is unreadable",
+     "replacements": [(PROJECTION, 'if state in EVENT_STATES and (last_action is None', 'if False and (last_action is None')]},
+    {"id": "M2m-unknown-scope-not-an-omission", "design_item": "M2 batch 2: unknown content scope is partial",
+     "replacements": [(REPORT, '            p.omit("content_scope_not_established")\n', '            pass\n')]},
+    {"id": "M2n-unhashable-event-kind", "design_item": "M2 batch 2: sweep over every input never crashes",
+     "replacements": [(PROJECTION, 'if type(manager_state) is not str or manager_state not in EVENT_STATES:',
+                       'if manager_state not in EVENT_STATES:')]},
     {"id": "R1-provider-error-message-reflected", "design_item": "reviewer: provider text never in a reason",
      "replacements": [(SERVICE, 'except HomeAssistantApiError:\n            reason = "command_failed"',
                        'except HomeAssistantApiError as exc:\n            reason = str(exc)')]},
+    {"id": "R2-identifier-alias-returns-value", "design_item": "delta reviewer: key-shaped identifiers aliased",
+     "replacements": [(PROJECTION, '        return alias\n\n    def identifier', '        return value\n\n    def identifier')]},
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

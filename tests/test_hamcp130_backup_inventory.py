@@ -29,6 +29,8 @@ import hamcp162_synthetic as syn  # noqa: E402
 from ha_mcp_engineering import sanitization as S  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.backup_inventory import contracts as c  # noqa: E402
+from ha_mcp_engineering.backup_inventory import report as report_module  # noqa: E402
+from ha_mcp_engineering.backup_inventory.projection import OMISSION_LIMIT, Projector  # noqa: E402
 from ha_mcp_engineering.backup_inventory.service import (  # noqa: E402
     BACKUP_INVENTORY,
     BackupInventoryRuntime,
@@ -390,7 +392,9 @@ class ScenarioTests(Base):
         self.assertEqual(report["installation"], "unknown")
         self.assertEqual(report["backups"][0]["content_scope"], "unknown")
         self.assertIsNone(report["summary"]["newest_full_backup"])
-        self.assertEqual(signals(report)["no_full_backup_within_threshold"]["status"], "unknown")
+        sig = signals(report)["no_full_backup_within_threshold"]
+        self.assertEqual((sig["status"], sig["evidence_complete"], sig["unreadable_inputs"]),
+                         ("unknown", False, ["recent_backup_content"]))
 
     async def test_empty(self):
         values = {"backup/config/info": config(), "backup/info": info()}
@@ -1238,6 +1242,139 @@ class FieldValidityTests(Base):
                 self.assertTrue(item["evidence_complete"], (label, item))
                 self.assertEqual(item["unreadable_inputs"], [], (label, item))
 
+    async def test_reviewer_invalid_clock_time_is_null(self):
+        # 768d9bd delta M1: 99:99 matched the shape and was reported complete.
+        for bad in ("99:99", "24:00", "12:60", "04:45:61", "4:45", "04:45+01:00", "04:45:00.1234567", 445):
+            report = await self.assert_partial_with(
+                lambda v: v["backup/config/info"]["config"]["schedule"].update(time=bad),
+                "invalid_field:schedule.time")
+            self.assertIsNone(report["automatic_backups"]["schedule"]["time"], bad)
+        for good in ("04:45", "00:00", "04:45:00", "23:59:59.999999", None):
+            values = healthy()
+            values["backup/config/info"]["config"]["schedule"]["time"] = good
+            report = await self.run_inventory(values)
+            self.assertEqual(report["completeness"], "complete", (good, report["omissions"]))
+            self.assertEqual(report["automatic_backups"]["schedule"]["time"], good)
+
+    async def test_reviewer_invalid_lists_are_null_not_empty(self):
+        # 768d9bd delta M1: invalid lists were shown as empty lists.
+        cfg = lambda v: v["backup/config/info"]["config"]  # noqa: E731
+        create = lambda v: cfg(v)["create_backup"]  # noqa: E731
+        first = lambda v: v["backup/info"]["backups"][0]  # noqa: E731
+        automatic = lambda r: r["automatic_backups"]  # noqa: E731
+        cases = (
+            (lambda v: create(v).update(include_addons="invalid"), "create_backup.include_addons",
+             lambda r: automatic(r)["includes"]["addons"]),
+            (lambda v: create(v).update(include_folders="invalid"), "create_backup.include_folders",
+             lambda r: automatic(r)["includes"]["folders"]),
+            (lambda v: create(v).update(include_folders=["media", "synthetic"]), "create_backup.include_folders",
+             lambda r: automatic(r)["includes"]["folders"]),
+            (lambda v: create(v).pop("include_addons"), "create_backup.include_addons",
+             lambda r: automatic(r)["includes"]["addons"]),
+            (lambda v: create(v).update(agent_ids="invalid"), "create_backup.agent_ids",
+             lambda r: automatic(r)["location_ids"]),
+            (lambda v: cfg(v)["schedule"].update(days="invalid"), "schedule.days",
+             lambda r: automatic(r)["schedule"]["days"]),
+            (lambda v: cfg(v).update(agents="invalid"), "agents", lambda r: automatic(r)["location_overrides"]),
+            (lambda v: first(v).update(addons="invalid"), "backup.addons", lambda r: r["backups"][0]["addons"]),
+            (lambda v: first(v).update(agents="invalid"), "backup.agents", lambda r: r["backups"][0]["locations"]),
+            (lambda v: first(v).update(agents={}), "backup.agents", lambda r: r["backups"][0]["locations"]),
+        )
+        for mutate, pointer, field in cases:
+            report = await self.assert_partial_with(mutate, "invalid_field:" + pointer)
+            self.assertIsNone(field(report), pointer)
+        # Unreadable locations of the newest backup are not "no off-site copy".
+        report = await self.assert_partial_with(lambda v: first(v).update(agents="invalid"),
+                                                "invalid_field:backup.agents")
+        self.assertEqual(report["summary"]["newest_backup_offsite_copy"], "unknown")
+        self.assertIsNone(report["summary"]["newest_backup"]["storage_classes"])
+        self.assertIsNone(report["backups"][0]["protected"])
+        report = await self.assert_partial_with(
+            lambda v: first(v).update(agents={"bad id": {"protected": False, "size": 1}}),
+            "invalid_field:backup.agents.location_id")
+        self.assertEqual(report["summary"]["newest_backup_offsite_copy"], "unknown")
+        # Valid empty lists stay empty; Core's null "none selected" is empty.
+        values = healthy()
+        create(values).update(include_addons=None, include_folders=None, agent_ids=[])
+        values["backup/config/info"]["config"]["schedule"]["days"] = []
+        report = await self.run_inventory(values)
+        self.assertEqual(report["completeness"], "complete", report["omissions"])
+        self.assertEqual(automatic(report)["includes"]["addons"], [])
+        self.assertEqual(automatic(report)["includes"]["folders"], [])
+        self.assertEqual(automatic(report)["location_ids"], [])
+        self.assertEqual(automatic(report)["schedule"]["days"], [])
+        self.assertEqual(automatic(report)["location_overrides"], {})
+
+    def test_omission_ledger_is_exactly_bounded(self):
+        for n in (0, 1, OMISSION_LIMIT - 1, OMISSION_LIMIT, OMISSION_LIMIT + 1, 3 * OMISSION_LIMIT):
+            p = Projector(key_known=True)
+            for i in range(n):
+                p.omit(f"invalid_field:f{i:03d}", i + 1)
+            result = report_module.finish(p, {"sources": [], "redaction": None})
+            self.assertEqual(result["omission_reason_count"], n)
+            self.assertEqual(result["completeness"], "partial" if n else "complete")
+            listed = result["omissions"]
+            self.assertEqual(len(listed), min(n, OMISSION_LIMIT))
+            if n <= OMISSION_LIMIT:
+                self.assertNotIn("omissions_not_listed", [o["reason"] for o in listed])
+            else:
+                self.assertEqual(listed[-1], {"reason": "omissions_not_listed", "count": n - OMISSION_LIMIT + 1})
+                self.assertEqual(len(listed) - 1 + listed[-1]["count"], n)
+        # Aggregate reasons are listed before per-field ones.
+        p = Projector(key_known=True)
+        for i in range(2 * OMISSION_LIMIT):
+            p.omit(f"invalid_field:f{i:03d}")
+        p.omit("source_unavailable:backup_info")
+        p.omit("backups_not_listed_response_bytes", 3)
+        listed = report_module.finish(p, {"sources": [], "redaction": None})["omissions"]
+        self.assertEqual([o["reason"] for o in listed[:2]],
+                         ["backups_not_listed_response_bytes", "source_unavailable:backup_info"])
+
+    async def test_reviewer_omission_cap_with_byte_trimming(self):
+        # 768d9bd delta M1: byte trimming appended a 41st entry after the
+        # ledger was bounded, and the reason count was stale.
+        values = healthy()
+        cfg = values["backup/config/info"]["config"]
+        cfg["schedule"] = {"recurrence": "bad", "days": "bad", "time": "bad"}
+        cfg["retention"] = {"copies": -1, "days": -1}
+        cfg["agents"] = {"hassio.nas": {"protected": "bad", "retention": {"copies": -1, "days": -1}}}
+        cfg["create_backup"] = {k: "bad" for k in ("agent_ids", "include_addons", "include_all_addons",
+                                                   "include_database", "include_folders")}
+        cfg["create_backup"]["password"] = KEY
+        for k in ("automatic_backups_configured", "next_automatic_backup", "next_automatic_backup_additional",
+                  "last_attempted_automatic_backup", "last_completed_automatic_backup"):
+            cfg[k] = "bad"
+        inf = values["backup/info"]
+        inf.update(state="bad", last_attempted_automatic_backup="bad", last_completed_automatic_backup="bad",
+                   last_action_event={"manager_state": "bad", "state": "bad", "stage": "bad stage",
+                                      "reason": "bad reason"},
+                   agent_errors={"bad location": 7})
+        bad = backup("bad", 1)
+        bad.update(date="bad", name=7, agents={"bad location": {"size": "bad", "protected": "bad"}}, addons=[7],
+                   folders="bad", failed_folders="bad", failed_agent_ids="bad", failed_addons="bad",
+                   homeassistant_included="bad", database_included="bad", homeassistant_version="bad version",
+                   with_automatic_settings="bad")
+        long = "N" * c.MAX_NAME
+        inf["backups"] = [bad] + [backup(f"b{i}", i + 2, name=long,
+                                         addons=[(long, f"addon_{k}") for k in range(c.MAX_ADDONS_PER_BACKUP)])
+                                  for i in range(c.MAX_LIMIT - 1)]
+        report = await self.run_inventory(values, limit=c.MAX_LIMIT)
+        self.assertLessEqual(len(json.dumps(report, separators=(",", ":"))), c.RESPONSE_BUDGET)
+        listed = report["omissions"]
+        self.assertEqual(len(listed), OMISSION_LIMIT)
+        marker = listed[-1]
+        self.assertEqual(marker["reason"], "omissions_not_listed")
+        self.assertGreater(report["omission_reason_count"], OMISSION_LIMIT)
+        self.assertEqual(len(listed) - 1 + marker["count"], report["omission_reason_count"])
+        reasons = {o["reason"]: o["count"] for o in listed}
+        summary = report["summary"]
+        self.assertEqual(reasons["backups_not_listed_response_bytes"], summary["more_backups_not_listed"])
+        self.assertGreater(summary["more_backups_not_listed"], 0)
+        self.assertEqual(summary["listed_count"], len(report["backups"]))
+        self.assertEqual(summary["listed_count"] + summary["more_backups_not_listed"], summary["backup_count"])
+        self.assertEqual(report["completeness"], "partial")
+        self.assertNotIn(KEY, json.dumps(report))
+
 
 class SignalInputTests(Base):
     """M2: a signal is never decided from inputs that were not fully read."""
@@ -1252,12 +1389,7 @@ class SignalInputTests(Base):
             self.assertIn(item, sig["fact"], sig)
 
     def assert_consistent(self, report):
-        for sig in report["health_signals"]:
-            self.assertTrue(sig["depends_on"], sig)
-            self.assertEqual(sig["evidence_complete"], not sig["unreadable_inputs"], sig)
-            self.assertLessEqual(set(sig["unreadable_inputs"]), set(sig["depends_on"]), sig)
-            if sig["unreadable_inputs"]:
-                self.assertEqual(sig["status"], "unknown", sig)
+        assert_signals_consistent(self, report)
 
     async def mutated(self, mutate):
         values = healthy()
@@ -1354,6 +1486,73 @@ class SignalInputTests(Base):
         self.assert_unknown(report, "automatic_backups_not_scheduled", "schedule")
         self.assert_unknown(report, "last_completed_automatic_backup_stale", "schedule")
 
+    async def test_reviewer_missing_event_state(self):
+        # 768d9bd delta M2: a create event without its required state made
+        # "not completed" conclusive while a backup may be in progress.
+        def creating(v, event):
+            v["backup/info"].update(state="create_backup", last_action_event=event)
+            for source in (v["backup/info"], v["backup/config/info"]["config"]):
+                source["last_attempted_automatic_backup"] = at(0.1)
+                source["last_completed_automatic_backup"] = at(2)
+        for event in ({"manager_state": "create_backup"},
+                      {"manager_state": "create_backup", "stage": None, "reason": None},
+                      {"manager_state": "create_backup", "stage": None, "reason": None, "state": None},
+                      {"manager_state": "create_backup", "stage": None, "reason": None, "state": "core_restart"},
+                      {"manager_state": "restore_backup", "stage": None, "reason": None, "state": "in_progress"},
+                      None):
+            report = await self.mutated(lambda v: creating(v, event))
+            self.assert_unknown(report, "last_automatic_backup_not_completed", "manager_state")
+            self.assertEqual(report["automatic_backups"]["last_result"], "unknown", event)
+            self.assertNotIn("automatic_backup_not_completed", [f["kind"] for f in report["recent_failures"]])
+        # Controls: a complete create event decides the result.
+        for state, result in (("in_progress", "in_progress"), ("failed", "not_completed"),
+                              ("completed", "not_completed")):
+            values = healthy()
+            creating(values, {"manager_state": "create_backup", "stage": None, "reason": None, "state": state})
+            report = await self.run_inventory(values)
+            self.assert_consistent(report)
+            self.assertEqual(report["completeness"], "complete", report["omissions"])
+            self.assertEqual(report["automatic_backups"]["last_result"], result)
+            sig = signals(report)["last_automatic_backup_not_completed"]
+            self.assertEqual((sig["status"], sig["evidence_complete"]),
+                             ("observed" if result == "not_completed" else "not_observed", True))
+        # Core never records an idle or blocked event as the last action.
+        for kind in ("idle", "blocked"):
+            report = await self.mutated(lambda v: v["backup/info"].update(last_action_event={"manager_state": kind}))
+            self.assertIn("invalid_field:info.last_action_event.manager_state",
+                          [o["reason"] for o in report["omissions"]])
+
+    async def test_reviewer_unknown_installation_content(self):
+        # 768d9bd delta M2: unknown scope gave an unknown signal with
+        # evidence_complete true, no unreadable input and a complete report.
+        values = healthy()
+        values["backup/config/info"] = config(agent_ids=("cloud.cloud",))
+        values["backup/info"]["backups"] = [
+            backup("b1", 1, agents={"cloud.cloud": {"protected": True, "size": 1}}, folders=())]
+        report = await self.run_inventory(values)
+        self.assert_consistent(report)
+        self.assertEqual(report["installation"], "unknown")
+        self.assertEqual(report["completeness"], "partial")
+        self.assertIn({"reason": "content_scope_not_established", "count": 1}, report["omissions"])
+        self.assert_unknown(report, "no_full_backup_within_threshold", "recent_backup_content")
+        # Control: an older unknown-scope backup does not hide a recent full one.
+        values["backup/info"]["backups"] = [
+            backup("b1", 1, agents={"cloud.cloud": {"protected": True, "size": 1}}),
+            backup("b0", c.FULL_BACKUP_MAX_AGE_DAYS + 1, agents={"cloud.cloud": {"protected": True, "size": 1}},
+                   folders=())]
+        report = await self.run_inventory(values)
+        self.assert_consistent(report)
+        sig = signals(report)["no_full_backup_within_threshold"]
+        self.assertEqual((sig["status"], sig["evidence_complete"]), ("not_observed", True))
+
+    async def test_undecided_signal_fails_rather_than_reporting_complete_evidence(self):
+        undecided = lambda: ("unknown", "synthetic")  # noqa: E731
+        with self.assertRaises(RuntimeError):
+            report_module._signal("synthetic", None, ["backup_list"], set(), undecided)
+        sig = report_module._signal("synthetic", None, ["backup_list"], {"backup_list"}, undecided)
+        self.assertEqual((sig["status"], sig["evidence_complete"], sig["unreadable_inputs"]),
+                         ("unknown", False, ["backup_list"]))
+
     async def test_complete_inputs_decide_every_signal(self):
         report = await self.run_inventory()
         self.assert_consistent(report)
@@ -1365,6 +1564,95 @@ class SignalInputTests(Base):
             "automatic_backups_not_scheduled": "not_observed",
             "last_completed_automatic_backup_stale": "not_observed",
             "storage_location_unreadable": "not_observed", "newest_backup_incomplete": "not_observed"})
+
+
+SIGNAL_NAMES = frozenset({
+    "no_backups", "no_full_backup_within_threshold", "newest_backup_only_on_this_host",
+    "newest_backup_no_confirmed_offsite_copy", "last_automatic_backup_not_completed",
+    "automatic_backups_not_scheduled", "last_completed_automatic_backup_stale",
+    "storage_location_unreadable", "newest_backup_incomplete"})
+
+
+def assert_signals_consistent(case, report, label=None):
+    """``unknown`` <=> unreadable inputs named <=> evidence incomplete."""
+
+    case.assertEqual({sig["signal"] for sig in report["health_signals"]}, SIGNAL_NAMES, label)
+    for sig in report["health_signals"]:
+        case.assertIn(sig["status"], ("observed", "not_observed", "not_applicable", "unknown"), (label, sig))
+        case.assertTrue(sig["depends_on"], (label, sig))
+        case.assertLessEqual(set(sig["unreadable_inputs"]), set(sig["depends_on"]), (label, sig))
+        case.assertEqual(sig["status"] == "unknown", bool(sig["unreadable_inputs"]), (label, sig))
+        case.assertEqual(sig["evidence_complete"], sig["status"] != "unknown", (label, sig))
+        if sig["unreadable_inputs"]:
+            case.assertEqual(report["completeness"], "partial", (label, sig))
+
+
+def sweep_bases():
+    creating = healthy()
+    creating["backup/info"].update(state="create_backup", last_action_event={
+        "manager_state": "create_backup", "stage": None, "reason": None, "state": "in_progress"})
+    for source in (creating["backup/info"], creating["backup/config/info"]["config"]):
+        source["last_attempted_automatic_backup"] = at(0.1)
+        source["last_completed_automatic_backup"] = at(2)
+    cloud = {"backup/config/info": config(agent_ids=("cloud.cloud",), recurrence="custom_days", days=("mon",)),
+             "backup/info": info([backup("c1", 1, agents={"cloud.cloud": {"protected": True, "size": 2}},
+                                         failed_folders=("media",)),
+                                  backup("c0", 3, agents={"cloud.cloud": {"protected": True, "size": 1}})],
+                                 attempted=at(1), completed=at(1))}
+    return {"healthy": healthy(), "creating": creating, "cloud": cloud}
+
+
+def sweep_paths(value, path=()):
+    """Every mapping member and the first element of every list of mappings."""
+
+    if type(value) is dict:
+        for key in value:
+            if key != "extra_metadata":
+                yield path + (key,)
+                yield from sweep_paths(value[key], path + (key,))
+    elif type(value) is list and value and type(value[0]) is dict:
+        yield path + (0,)
+        yield from sweep_paths(value[0], path + (0,))
+
+
+DELETE = object()
+SWEEP_VARIANTS = (DELETE, None, "invalid", 7, [], {})
+
+
+class SignalSweepTests(Base):
+    """M2 invariant across all nine signals and every missing or unreadable input."""
+
+    async def test_every_signal_consistent_across_missing_and_unreadable_inputs(self):
+        unknown_seen, decided_seen, runs = set(), set(), 0
+        for base_name, base in sweep_bases().items():
+            cases = [(f"{base_name}:{source}:unavailable", source, HomeAssistantTimeoutError("t"))
+                     for source in base]
+            for source in base:
+                for path in sweep_paths(base[source]):
+                    for variant in SWEEP_VARIANTS:
+                        cases.append((f"{base_name}:{source}:{path}:{variant!r}", source, (path, variant)))
+            for label, source, change in cases:
+                values = copy.deepcopy(base)
+                if isinstance(change, Exception):
+                    values[source] = change
+                else:
+                    path, variant = change
+                    parent = values[source]
+                    for step in path[:-1]:
+                        parent = parent[step]
+                    if variant is DELETE:
+                        parent.pop(path[-1]) if type(parent) is dict else parent.clear()
+                    else:
+                        parent[path[-1]] = copy.deepcopy(variant)
+                report = await self.run_inventory(values)
+                runs += 1
+                assert_signals_consistent(self, report, label)
+                for sig in report["health_signals"]:
+                    (unknown_seen if sig["status"] == "unknown" else decided_seen).add(sig["signal"])
+        # The sweep reached every signal both ways.
+        self.assertEqual(unknown_seen, SIGNAL_NAMES)
+        self.assertEqual(decided_seen, SIGNAL_NAMES)
+        self.assertGreater(runs, 500)
 
 
 class SampleTests(unittest.IsolatedAsyncioTestCase):

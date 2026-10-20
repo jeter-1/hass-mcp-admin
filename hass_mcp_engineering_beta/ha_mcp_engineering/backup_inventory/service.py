@@ -134,16 +134,15 @@ class BackupInventoryService:
                 projector.omit("source_unavailable:" + source["source_id"])
         result = report.build(projector, now=now, limit=limit, config=config, info=info, sources=sources)
         result["observed_at"] = report.iso(now)
-        trimmed = 0
         while result["backups"] and len(json.dumps(
                 result, separators=(",", ":"), default=str)) > c.RESPONSE_BUDGET:
+            # Each trimmed backup is an omission like any other: the ledger
+            # is rebuilt within its bound and the response measured again.
             result["backups"].pop()
-            trimmed += 1
-        if trimmed:
-            result["completeness"] = "partial"
-            result["omissions"].append({"reason": "backups_not_listed_response_bytes", "count": trimmed})
-            result["summary"]["listed_count"] = len(result["backups"])
-            result["summary"]["more_backups_not_listed"] += trimmed
+            result["summary"]["listed_count"] -= 1
+            result["summary"]["more_backups_not_listed"] += 1
+            projector.omit("backups_not_listed_response_bytes")
+            report.finish(projector, result)
         if telemetry:
             # A source failure inside a partial report is evidence in
             # ``sources``; it does not turn the response into a failure.

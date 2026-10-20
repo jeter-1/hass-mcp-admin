@@ -16,7 +16,7 @@ structured facts (dates, sizes, counts, flags, versions) are shown.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, time as clock_time, timezone
 import re
 from typing import Any
 
@@ -32,6 +32,8 @@ LOCATION_ID = re.compile(r"[a-z0-9_]{1,64}\.[A-Za-z0-9_.:@-]{1,128}")
 SLUG = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 VERSION = re.compile(r"[A-Za-z0-9_.+-]{1,32}")
 CODE = re.compile(r"[a-z0-9_]{1,64}")
+# The shape of Core's ``time.isoformat()``; the value must also be a valid
+# time of day (parse_clock).
 TIME = re.compile(r"\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?")
 # Shown even while the encryption key is unknown: fixed vocabulary and
 # structured values that carry no user text.
@@ -41,7 +43,14 @@ ALIAS_DOMAINS = ("hassio", "backup", "cloud")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 RECURRENCES = ("never", "daily", "custom_days")
 MANAGER_STATES = ("idle", "create_backup", "blocked", "receive_backup", "restore_backup")
-EVENT_STATES = ("completed", "failed", "in_progress", "core_restart")
+# ``last_action_event`` is only ever a create, receive or restore event
+# (backup/manager.py ``async_on_backup_event``); each requires ``state`` and
+# carries nullable ``stage`` and ``reason``. Restore alone has core_restart.
+EVENT_STATES = {
+    "create_backup": ("completed", "failed", "in_progress"),
+    "receive_backup": ("completed", "failed", "in_progress"),
+    "restore_backup": ("completed", "core_restart", "failed", "in_progress"),
+}
 LOCAL_IDS = ("hassio.local", "backup.local")
 OMISSION_LIMIT = 40
 MISSING = object()
@@ -72,6 +81,18 @@ def parse_time(value: Any) -> datetime | None:
     if parsed.tzinfo is None:
         return None
     return parsed.astimezone(timezone.utc)
+
+
+def parse_clock(value: Any) -> bool:
+    """A schedule time: Core's ``time.isoformat()`` of a valid time of day."""
+
+    if type(value) is not str or TIME.fullmatch(value) is None:
+        return False
+    try:
+        clock_time.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 def iso(value: datetime | None) -> str | None:
@@ -228,10 +249,12 @@ def _retention(p: Projector, value: Any, pointer: str, *, nullable: bool) -> dic
     return result
 
 
-def _location_ids(p: Projector, value: Any, pointer: str) -> list[str]:
+def _location_ids(p: Projector, value: Any, pointer: str) -> list[str] | None:
+    """An invalid list is null, never an empty list that reads as "none"."""
+
     if type(value) is not list:
         p.invalid(pointer)
-        return []
+        return None
     result = []
     for item in value[:c.MAX_LOCATIONS]:
         location = p.identifier(item, LOCATION_ID, pointer, alias="location", structured=FIXED_LOCATION_ID)
@@ -251,7 +274,8 @@ def project_config(p: Projector, raw: Any) -> dict:
         config = {}
 
     schedule_raw = config.get("schedule")
-    schedule = {"recurrence": None, "days": [], "time": None}
+    # Fields that cannot be read stay null; a valid empty list stays empty.
+    schedule = {"recurrence": None, "days": None, "time": None}
     if type(schedule_raw) is dict:
         recurrence = schedule_raw.get("recurrence")
         if recurrence in RECURRENCES:
@@ -264,7 +288,7 @@ def project_config(p: Projector, raw: Any) -> dict:
         else:
             p.invalid("schedule.days", "schedule")
         time_value = schedule_raw.get("time", MISSING)
-        if time_value is None or (type(time_value) is str and TIME.fullmatch(time_value)):
+        if time_value is None or parse_clock(time_value):
             schedule["time"] = time_value
         else:
             p.invalid("schedule.time")
@@ -272,8 +296,8 @@ def project_config(p: Projector, raw: Any) -> dict:
         p.invalid("schedule", "schedule")
 
     create = config.get("create_backup")
-    includes = {"all_addons": None, "addons": [], "database": None, "folders": []}
-    location_ids: list[str] = []
+    includes = {"all_addons": None, "addons": None, "database": None, "folders": None}
+    location_ids: list[str] | None = None
     encryption_configured = None
     if type(create) is dict:
         password = create.get("password", MISSING)
@@ -288,27 +312,34 @@ def project_config(p: Projector, raw: Any) -> dict:
         location_ids = _location_ids(p, create.get("agent_ids"), "create_backup.agent_ids")
         includes["all_addons"] = _required_bool(p, create, "include_all_addons", "create_backup.include_all_addons")
         includes["database"] = _required_bool(p, create, "include_database", "create_backup.include_database")
+        # Core stores null for "none selected"; it is reported as an empty list.
         addons = create.get("include_addons", MISSING)
-        if type(addons) is list:
+        if addons is None:
+            includes["addons"] = []
+        elif type(addons) is list:
+            includes["addons"] = []
             for slug in addons[:c.MAX_ADDONS_PER_BACKUP]:
                 safe = p.identifier(slug, SLUG, "create_backup.include_addons")
                 if safe is not None:
                     includes["addons"].append(safe)
             if len(addons) > c.MAX_ADDONS_PER_BACKUP:
                 p.omit("addons_not_listed", len(addons) - c.MAX_ADDONS_PER_BACKUP)
-        elif addons is not None:
+        else:
             p.invalid("create_backup.include_addons")
         folders = create.get("include_folders", MISSING)
-        if type(folders) is list and all(item in c.CORE_FOLDERS for item in folders):
+        if folders is None:
+            includes["folders"] = []
+        elif type(folders) is list and all(item in c.CORE_FOLDERS for item in folders):
             includes["folders"] = sorted(set(folders))
-        elif folders is not None:
+        else:
             p.invalid("create_backup.include_folders")
     else:
         p.invalid("create_backup")
 
-    overrides = {}
+    overrides: dict | None = None
     agents = config.get("agents")
     if type(agents) is dict:
+        overrides = {}
         for agent_id in sorted(agents, key=str)[:c.MAX_LOCATIONS]:
             safe = p.identifier(agent_id, LOCATION_ID, "agents.location_id",
                                 alias="location", structured=FIXED_LOCATION_ID)
@@ -366,9 +397,10 @@ def _backup(p: Projector, raw: dict, now: datetime) -> dict | None:
     if date is None:
         bad("date", "date")
     name = p.text(raw.get("name"), c.MAX_NAME, "backup.name")
-    locations = []
+    locations: list[dict] | None = None
     agents = raw.get("agents")
     if type(agents) is dict and agents:
+        locations = []
         for agent_id in sorted(agents, key=str)[:c.MAX_LOCATIONS]:
             status = agents[agent_id]
             safe = p.identifier(agent_id, LOCATION_ID, "backup.agents.location_id",
@@ -396,9 +428,10 @@ def _backup(p: Projector, raw: dict, now: datetime) -> dict | None:
     else:
         bad("agents", "locations")
 
-    addons = []
+    addons: list[str] | None = None
     raw_addons = raw.get("addons")
     if type(raw_addons) is list:
+        addons = []
         for addon in raw_addons[:c.MAX_ADDONS_PER_BACKUP]:
             label = None
             if type(addon) is not dict:
@@ -453,8 +486,8 @@ def _backup(p: Projector, raw: dict, now: datetime) -> dict | None:
         version = p.identifier(None if version is MISSING else version, VERSION,
                                "backup.homeassistant_version", structured=STRUCTURED_VERSION)
     automatic = _nullable_bool(p, raw, "with_automatic_settings", "backup.with_automatic_settings")
-    protections = [item["protected"] for item in locations]
-    sizes = [item["size_bytes"] for item in locations if item["size_bytes"] is not None]
+    protections = [item["protected"] for item in locations or ()]
+    sizes = [item["size_bytes"] for item in locations or () if item["size_bytes"] is not None]
     return {
         "backup_id": backup_id,
         "name": name,
@@ -550,28 +583,38 @@ def project_backups(p: Projector, raw: Any, now: datetime) -> tuple[list[dict], 
     event = raw.get("last_action_event", MISSING)
     last_action = None
     if type(event) is dict:
+        # Validated by event kind; a missing or invalid state leaves the
+        # manager state unreadable, never a valid null.
         manager_state = event.get("manager_state")
-        if manager_state not in MANAGER_STATES:
+        if type(manager_state) is not str or manager_state not in EVENT_STATES:
             p.invalid("info.last_action_event.manager_state", "manager_state")
             manager_state = None
-        state = event.get("state")
-        if state is not None and state not in EVENT_STATES:
+        state = event.get("state", MISSING)
+        if manager_state is None:
+            state = None  # cannot be validated without its event kind
+        elif state not in EVENT_STATES[manager_state]:
             p.invalid("info.last_action_event.state", "manager_state")
             state = None
-        last_action = {
-            "manager_state": manager_state,
-            "state": state,
-            "stage": (p.identifier(event.get("stage"), CODE, "info.last_action_event.stage")
-                      if event.get("stage") is not None else None),
-            "reason": (p.identifier(event.get("reason"), CODE, "info.last_action_event.reason")
-                       if event.get("reason") is not None else None),
-        }
+
+        def code(key):
+            value = event.get(key, MISSING)
+            if value is None:
+                return None
+            return p.identifier(None if value is MISSING else value, CODE, "info.last_action_event." + key)
+
+        last_action = {"manager_state": manager_state, "state": state,
+                       "stage": code("stage"), "reason": code("reason")}
     elif event is not None:
         p.invalid("info.last_action_event", "manager_state")
     state = raw.get("state")
     if state not in MANAGER_STATES:
         p.invalid("info.state", "manager_state")
         state = None
+    if state in EVENT_STATES and (last_action is None
+                                  or last_action["manager_state"] not in (None, state)):
+        # Core's current state comes from its last event; during an action
+        # that event is the last action event, of the same kind.
+        p.invalid("info.last_action_event", "manager_state")
     manager = {
         "manager_state": state,
         "last_action": last_action,
