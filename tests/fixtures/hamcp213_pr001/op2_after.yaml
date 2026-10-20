@@ -1,0 +1,591 @@
+id: pr001_op2_departure_close
+alias: Anonymized alias 15
+description: Anonymized description 35.
+triggers:
+- entity_id:
+  - person.resident_a
+  event: leave
+  id: resident_a_departure
+  trigger: zone
+  zone: zone.home
+- entity_id:
+  - person.resident_b
+  event: leave
+  id: resident_b_departure
+  trigger: zone
+  zone: zone.home
+- entity_id:
+  - person.resident_c
+  event: leave
+  id: resident_c_departure
+  trigger: zone
+  zone: zone.home
+- entity_id:
+  - binary_sensor.garage_occupancy
+  id: occupancy_clear
+  to: 'off'
+  trigger: state
+- entity_id:
+  - cover.garage_main
+  id: garage_closed
+  to: closed
+  trigger: state
+- event: start
+  id: startup
+  trigger: homeassistant
+- id: reconcile
+  minutes: /1
+  trigger: time_pattern
+conditions: []
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: resident_a_departure
+    - condition: state
+      entity_id: input_boolean.visitor_mode
+      state: 'off'
+    sequence:
+    - condition: state
+      entity_id: cover.garage_main
+      state: open
+    - condition: template
+      value_template: '{{ (now() - states.cover.garage_main.last_changed).total_seconds() > 45 }}'
+    - condition: state
+      entity_id: input_boolean.service_visit_mode
+      state: 'off'
+    - condition: state
+      entity_id: input_boolean.visitor_mode
+      state: 'off'
+    - action: input_number.set_value
+      data:
+        value: '{{ (as_timestamp(now()) + 900) | int }}'
+      target:
+        entity_id: input_number.departure_resident_a_pending_until
+    - continue_on_timeout: true
+      timeout: 00:02:00
+      wait_template: '{{ is_state(''binary_sensor.garage_occupancy'', ''off'') }}'
+    - choose:
+      - conditions:
+        - condition: or
+          conditions:
+          - condition: state
+            entity_id: binary_sensor.garage_occupancy
+            state: 'off'
+          - condition: and
+            conditions:
+            - condition: state
+              entity_id: binary_sensor.garage_occupancy
+              state: 'on'
+            - condition: template
+              value_template: '{{ states(''person.resident_a'') not in [''home'',''unknown'',''unavailable''] }}'
+            - condition: state
+              entity_id: binary_sensor.garage_interior_door
+              for: 00:01:00
+              state: 'off'
+            - condition: state
+              entity_id: binary_sensor.garage_camera_a_person
+              for: 00:01:00
+              state: 'off'
+            - condition: state
+              entity_id: binary_sensor.garage_camera_b_person
+              for: 00:01:00
+              state: 'off'
+        - condition: state
+          entity_id: cover.garage_main
+          state: open
+        - condition: state
+          entity_id: input_boolean.service_visit_mode
+          state: 'off'
+        - condition: template
+          value_template: '{{ states(''person.resident_a'') not in [''home'',''unknown'',''unavailable''] }}'
+        - condition: template
+          value_template: '{{ states(''input_number.departure_resident_a_pending_until'') | float(0) > as_timestamp(now()) }}'
+        - condition: state
+          entity_id: input_boolean.visitor_mode
+          state: 'off'
+        sequence:
+        - choose:
+          - conditions:
+            - condition: state
+              entity_id: binary_sensor.garage_occupancy
+              state: 'on'
+            sequence:
+            - action: logbook.log
+              continue_on_error: true
+              data:
+                entity_id: cover.garage_main
+                message: Neutral message 17.
+                name: Neutral name 18.
+            - action: notify.mobile_app_owner_phone
+              continue_on_error: true
+              data:
+                title: Neutral title 36.
+                message: Neutral message 37.
+                data:
+                  tag: departure_override
+                  priority: high
+                  ttl: 0
+        - action: input_number.set_value
+          data:
+            value: 0
+          target:
+            entity_id:
+            - input_number.departure_resident_a_pending_until
+            - input_number.departure_resident_b_pending_until
+        - action: cover.close_cover
+          continue_on_error: true
+          target:
+            entity_id: cover.garage_main
+        - continue_on_timeout: true
+          timeout: 00:00:30
+          wait_for_trigger:
+          - entity_id: cover.garage_main
+            to: closed
+            trigger: state
+        - choose:
+          - conditions:
+            - condition: state
+              entity_id: cover.garage_main
+              state: closed
+            sequence:
+            - action: logbook.log
+              continue_on_error: true
+              data:
+                entity_id: cover.garage_main
+                message: Neutral message 19.
+                name: Neutral name 20.
+          default:
+          - action: notify.mobile_app_owner_phone
+            continue_on_error: true
+            data:
+              title: Neutral title 38.
+              message: Neutral message 39. {{ states('cover.garage_main') }}
+              data:
+                tag: close_failed
+                priority: high
+                ttl: 0
+                actions:
+                - action: CLOSE_GARAGE
+                  title: Neutral title 3.
+          - action: persistent_notification.create
+            continue_on_error: true
+            data:
+              message: Neutral message 21. {{ states('cover.garage_main') }} {{ states('binary_sensor.garage_occupancy') }}
+              notification_id: departure_close_unverified
+              title: Neutral title 22.
+          - action: system_log.write
+            continue_on_error: true
+            data:
+              level: warning
+              logger: departure_close
+              message: Neutral message 23. {{ states('cover.garage_main') }} {{ states('binary_sensor.garage_occupancy') }}
+      default:
+      - choose:
+        - conditions:
+          - condition: template
+            value_template: '{{ states(''input_number.departure_resident_a_pending_until'') | float(0) > 0 and (states(''input_number.departure_resident_a_pending_until'') | float(0) <= as_timestamp(now()) or states(''person.resident_a'') in [''home'',''unknown'',''unavailable''] or not is_state(''cover.garage_main'',''open'') or is_state(''input_boolean.service_visit_mode'',''on'')) }}'
+          sequence:
+          - action: input_number.set_value
+            data:
+              value: 0
+            target:
+              entity_id: input_number.departure_resident_a_pending_until
+  - conditions:
+    - condition: trigger
+      id: resident_b_departure
+    - condition: state
+      entity_id: input_boolean.visitor_mode
+      state: 'off'
+    sequence:
+    - condition: state
+      entity_id: cover.garage_main
+      state: open
+    - condition: template
+      value_template: '{{ (now() - states.cover.garage_main.last_changed).total_seconds() > 45 }}'
+    - condition: state
+      entity_id: input_boolean.service_visit_mode
+      state: 'off'
+    - condition: state
+      entity_id: input_boolean.visitor_mode
+      state: 'off'
+    - action: input_number.set_value
+      data:
+        value: '{{ (as_timestamp(now()) + 900) | int }}'
+      target:
+        entity_id: input_number.departure_resident_b_pending_until
+    - continue_on_timeout: true
+      timeout: 00:02:00
+      wait_template: '{{ is_state(''binary_sensor.garage_occupancy'', ''off'') }}'
+    - choose:
+      - conditions:
+        - condition: or
+          conditions:
+          - condition: state
+            entity_id: binary_sensor.garage_occupancy
+            state: 'off'
+          - condition: and
+            conditions:
+            - condition: state
+              entity_id: binary_sensor.garage_occupancy
+              state: 'on'
+            - condition: template
+              value_template: '{{ states(''person.resident_b'') not in [''home'',''unknown'',''unavailable''] }}'
+            - condition: state
+              entity_id: binary_sensor.garage_interior_door
+              for: 00:01:00
+              state: 'off'
+            - condition: state
+              entity_id: binary_sensor.garage_camera_a_person
+              for: 00:01:00
+              state: 'off'
+            - condition: state
+              entity_id: binary_sensor.garage_camera_b_person
+              for: 00:01:00
+              state: 'off'
+        - condition: state
+          entity_id: cover.garage_main
+          state: open
+        - condition: state
+          entity_id: input_boolean.service_visit_mode
+          state: 'off'
+        - condition: template
+          value_template: '{{ states(''person.resident_b'') not in [''home'',''unknown'',''unavailable''] }}'
+        - condition: template
+          value_template: '{{ states(''input_number.departure_resident_b_pending_until'') | float(0) > as_timestamp(now()) }}'
+        - condition: state
+          entity_id: input_boolean.visitor_mode
+          state: 'off'
+        sequence:
+        - choose:
+          - conditions:
+            - condition: state
+              entity_id: binary_sensor.garage_occupancy
+              state: 'on'
+            sequence:
+            - action: logbook.log
+              continue_on_error: true
+              data:
+                entity_id: cover.garage_main
+                message: Neutral message 24.
+                name: Neutral name 18.
+            - action: notify.mobile_app_owner_phone
+              continue_on_error: true
+              data:
+                title: Neutral title 36.
+                message: Neutral message 40.
+                data:
+                  tag: departure_override
+                  priority: high
+                  ttl: 0
+        - action: input_number.set_value
+          data:
+            value: 0
+          target:
+            entity_id:
+            - input_number.departure_resident_a_pending_until
+            - input_number.departure_resident_b_pending_until
+        - action: cover.close_cover
+          continue_on_error: true
+          target:
+            entity_id: cover.garage_main
+        - continue_on_timeout: true
+          timeout: 00:00:30
+          wait_for_trigger:
+          - entity_id: cover.garage_main
+            to: closed
+            trigger: state
+        - choose:
+          - conditions:
+            - condition: state
+              entity_id: cover.garage_main
+              state: closed
+            sequence:
+            - action: logbook.log
+              continue_on_error: true
+              data:
+                entity_id: cover.garage_main
+                message: Neutral message 25.
+                name: Neutral name 20.
+          default:
+          - action: notify.mobile_app_owner_phone
+            continue_on_error: true
+            data:
+              title: Neutral title 38.
+              message: Neutral message 39. {{ states('cover.garage_main') }}
+              data:
+                tag: close_failed
+                priority: high
+                ttl: 0
+                actions:
+                - action: CLOSE_GARAGE
+                  title: Neutral title 3.
+          - action: persistent_notification.create
+            continue_on_error: true
+            data:
+              message: Neutral message 26. {{ states('cover.garage_main') }} {{ states('binary_sensor.garage_occupancy') }}
+              notification_id: departure_close_unverified
+              title: Neutral title 22.
+          - action: system_log.write
+            continue_on_error: true
+            data:
+              level: warning
+              logger: departure_close
+              message: Neutral message 27. {{ states('cover.garage_main') }} {{ states('binary_sensor.garage_occupancy') }}
+      default:
+      - choose:
+        - conditions:
+          - condition: template
+            value_template: '{{ states(''input_number.departure_resident_b_pending_until'') | float(0) > 0 and (states(''input_number.departure_resident_b_pending_until'') | float(0) <= as_timestamp(now()) or states(''person.resident_b'') in [''home'',''unknown'',''unavailable''] or not is_state(''cover.garage_main'',''open'') or is_state(''input_boolean.service_visit_mode'',''on'')) }}'
+          sequence:
+          - action: input_number.set_value
+            data:
+              value: 0
+            target:
+              entity_id: input_number.departure_resident_b_pending_until
+  - conditions:
+    - condition: trigger
+      id: resident_c_departure
+    - condition: state
+      entity_id: input_boolean.visitor_mode
+      state: 'off'
+    sequence:
+    - condition: state
+      entity_id: cover.garage_main
+      state: open
+    - condition: template
+      value_template: '{{ (now() - states.cover.garage_main.last_changed).total_seconds() > 45 }}'
+    - condition: state
+      entity_id: input_boolean.service_visit_mode
+      state: 'off'
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id: person.resident_a
+        state: home
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id: person.resident_b
+        state: home
+    - continue_on_timeout: true
+      timeout: 00:02:00
+      wait_template: '{{ is_state(''binary_sensor.garage_occupancy'', ''off'') }}'
+    - condition: state
+      entity_id: binary_sensor.garage_occupancy
+      state: 'off'
+    - action: cover.close_cover
+      continue_on_error: true
+      target:
+        entity_id: cover.garage_main
+    - continue_on_timeout: true
+      timeout: 00:00:30
+      wait_for_trigger:
+      - entity_id: cover.garage_main
+        to: closed
+        trigger: state
+    - choose:
+      - conditions:
+        - condition: state
+          entity_id: cover.garage_main
+          state: closed
+        sequence:
+        - action: logbook.log
+          continue_on_error: true
+          data:
+            entity_id: cover.garage_main
+            message: Neutral message 28.
+            name: Neutral name 20.
+      default:
+      - action: notify.mobile_app_owner_phone
+        continue_on_error: true
+        data:
+          title: Neutral title 38.
+          message: Neutral message 39. {{ states('cover.garage_main') }}
+          data:
+            tag: close_failed
+            priority: high
+            ttl: 0
+            actions:
+            - action: CLOSE_GARAGE
+              title: Neutral title 3.
+      - action: persistent_notification.create
+        continue_on_error: true
+        data:
+          message: Neutral message 29. {{ states('cover.garage_main') }} {{ states('binary_sensor.garage_occupancy') }} {{ trigger.id | default('unknown') }}
+          notification_id: departure_close_unverified
+          title: Neutral title 22.
+      - action: system_log.write
+        continue_on_error: true
+        data:
+          level: warning
+          logger: departure_close
+          message: Neutral message 30. {{ states('cover.garage_main') }} {{ states('binary_sensor.garage_occupancy') }} {{ trigger.id | default('unknown') }}
+  - conditions:
+    - condition: trigger
+      id: garage_closed
+    sequence:
+    - action: input_number.set_value
+      data:
+        value: 0
+      target:
+        entity_id:
+        - input_number.departure_resident_a_pending_until
+        - input_number.departure_resident_b_pending_until
+  - conditions:
+    - condition: or
+      conditions:
+      - condition: trigger
+        id: occupancy_clear
+      - condition: trigger
+        id: startup
+      - condition: trigger
+        id: reconcile
+    - condition: state
+      entity_id: input_boolean.visitor_mode
+      state: 'off'
+    sequence:
+    - choose:
+      - conditions:
+        - condition: template
+          value_template: '{{ states(''input_number.departure_resident_a_pending_until'') | float(0) > 0 and (states(''input_number.departure_resident_a_pending_until'') | float(0) <= as_timestamp(now()) or states(''person.resident_a'') in [''home'',''unknown'',''unavailable''] or not is_state(''cover.garage_main'',''open'') or is_state(''input_boolean.service_visit_mode'',''on'')) }}'
+        sequence:
+        - action: input_number.set_value
+          data:
+            value: 0
+          target:
+            entity_id: input_number.departure_resident_a_pending_until
+    - choose:
+      - conditions:
+        - condition: template
+          value_template: '{{ states(''input_number.departure_resident_b_pending_until'') | float(0) > 0 and (states(''input_number.departure_resident_b_pending_until'') | float(0) <= as_timestamp(now()) or states(''person.resident_b'') in [''home'',''unknown'',''unavailable''] or not is_state(''cover.garage_main'',''open'') or is_state(''input_boolean.service_visit_mode'',''on'')) }}'
+        sequence:
+        - action: input_number.set_value
+          data:
+            value: 0
+          target:
+            entity_id: input_number.departure_resident_b_pending_until
+    - choose:
+      - conditions:
+        - condition: state
+          entity_id: cover.garage_main
+          state: open
+        - condition: state
+          entity_id: input_boolean.service_visit_mode
+          state: 'off'
+        - condition: or
+          conditions:
+          - condition: state
+            entity_id: binary_sensor.garage_occupancy
+            state: 'off'
+          - condition: and
+            conditions:
+            - condition: state
+              entity_id: binary_sensor.garage_occupancy
+              state: 'on'
+            - condition: state
+              entity_id: binary_sensor.garage_interior_door
+              for: 00:01:00
+              state: 'off'
+            - condition: state
+              entity_id: binary_sensor.garage_camera_a_person
+              for: 00:01:00
+              state: 'off'
+            - condition: state
+              entity_id: binary_sensor.garage_camera_b_person
+              for: 00:01:00
+              state: 'off'
+        - condition: or
+          conditions:
+          - condition: and
+            conditions:
+            - condition: template
+              value_template: '{{ states(''person.resident_a'') not in [''home'',''unknown'',''unavailable''] }}'
+            - condition: template
+              value_template: '{{ states(''input_number.departure_resident_a_pending_until'') | float(0) > as_timestamp(now()) }}'
+          - condition: and
+            conditions:
+            - condition: template
+              value_template: '{{ states(''person.resident_b'') not in [''home'',''unknown'',''unavailable''] }}'
+            - condition: template
+              value_template: '{{ states(''input_number.departure_resident_b_pending_until'') | float(0) > as_timestamp(now()) }}'
+        - condition: state
+          entity_id: input_boolean.visitor_mode
+          state: 'off'
+        sequence:
+        - choose:
+          - conditions:
+            - condition: state
+              entity_id: binary_sensor.garage_occupancy
+              state: 'on'
+            sequence:
+            - action: logbook.log
+              continue_on_error: true
+              data:
+                entity_id: cover.garage_main
+                message: Neutral message 31.
+                name: Neutral name 18.
+            - action: notify.mobile_app_owner_phone
+              continue_on_error: true
+              data:
+                title: Neutral title 36.
+                message: Neutral message 41.
+                data:
+                  tag: departure_override
+                  priority: high
+                  ttl: 0
+        - action: input_number.set_value
+          data:
+            value: 0
+          target:
+            entity_id:
+            - input_number.departure_resident_a_pending_until
+            - input_number.departure_resident_b_pending_until
+        - action: cover.close_cover
+          continue_on_error: true
+          target:
+            entity_id: cover.garage_main
+        - continue_on_timeout: true
+          timeout: 00:00:30
+          wait_for_trigger:
+          - entity_id: cover.garage_main
+            to: closed
+            trigger: state
+        - choose:
+          - conditions:
+            - condition: state
+              entity_id: cover.garage_main
+              state: closed
+            sequence:
+            - action: logbook.log
+              continue_on_error: true
+              data:
+                entity_id: cover.garage_main
+                message: Neutral message 32.
+                name: Neutral name 20.
+          default:
+          - action: notify.mobile_app_owner_phone
+            continue_on_error: true
+            data:
+              title: Neutral title 38.
+              message: Neutral message 39. {{ states('cover.garage_main') }}
+              data:
+                tag: close_failed
+                priority: high
+                ttl: 0
+                actions:
+                - action: CLOSE_GARAGE
+                  title: Neutral title 3.
+          - action: persistent_notification.create
+            continue_on_error: true
+            data:
+              message: Neutral message 33. {{ states('cover.garage_main') }} {{ states('binary_sensor.garage_occupancy') }}
+              notification_id: departure_close_unverified
+              title: Neutral title 22.
+          - action: system_log.write
+            continue_on_error: true
+            data:
+              level: warning
+              logger: departure_close
+              message: Neutral message 34. {{ states('cover.garage_main') }} {{ states('binary_sensor.garage_occupancy') }}
+mode: single

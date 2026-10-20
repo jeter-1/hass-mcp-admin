@@ -1,0 +1,97 @@
+id: pr001_op1_open_warning
+alias: Anonymized alias 1
+description: Anonymized description 9.
+triggers:
+- entity_id: cover.garage_main
+  for: 00:15:00
+  id: open_15m
+  to: open
+  trigger: state
+- entity_id: cover.garage_main
+  id: closed
+  to: closed
+  trigger: state
+conditions: []
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: open_15m
+    - condition: state
+      entity_id: input_boolean.visitor_mode
+      state: 'off'
+    - condition: state
+      entity_id: input_boolean.service_visit_mode
+      state: 'off'
+    sequence:
+    - repeat:
+        while:
+        - condition: state
+          entity_id: cover.garage_main
+          state: open
+        - condition: state
+          entity_id: input_boolean.visitor_mode
+          state: 'off'
+        - condition: state
+          entity_id: input_boolean.service_visit_mode
+          state: 'off'
+        sequence:
+        - if:
+          - condition: state
+            entity_id: timer.alert_snooze
+            state: idle
+          then:
+          - action: notify.mobile_app_owner_phone
+            data:
+              data:
+                actions:
+                - action: CLOSE_GARAGE
+                  title: Neutral title 3.
+                - action: ACK_GARAGE_ALERT
+                  title: Neutral title 10.
+                - action: SNOOZE_ALERTS
+                  title: Neutral title 4.
+                tag: garage_open_warning
+                priority: high
+                ttl: 0
+              message: Neutral message 11. {{ ((now() - states.cover.garage_main.last_changed).total_seconds() / 60) | round(0) | int }}
+              title: Neutral title 6.
+          - action: logbook.log
+            data:
+              entity_id: cover.garage_main
+              message: Neutral message 12. {{ repeat.index }}
+              name: Neutral name 1.
+        - wait_for_trigger:
+          - trigger: event
+            event_type: mobile_app_notification_action
+            event_data:
+              action: ACK_GARAGE_ALERT
+          timeout: 00:15:00
+          continue_on_timeout: true
+        - if:
+          - condition: template
+            value_template: '{{ wait.trigger is not none }}'
+          then:
+          - action: logbook.log
+            data:
+              entity_id: cover.garage_main
+              message: Neutral message 13.
+              name: Neutral name 1.
+          - action: notify.mobile_app_owner_phone
+            continue_on_error: true
+            data:
+              data:
+                tag: garage_open_warning
+              message: Neutral message 8.
+          - stop: Stop reason 14
+  - conditions:
+    - condition: trigger
+      id: closed
+    sequence:
+    - action: notify.mobile_app_owner_phone
+      continue_on_error: true
+      data:
+        data:
+          tag: garage_open_warning
+        message: Neutral message 8.
+mode: restart

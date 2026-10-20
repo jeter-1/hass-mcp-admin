@@ -1,0 +1,117 @@
+alias: Anonymized alias 42
+description: Anonymized description 43.
+icon: mdi:garage-alert
+mode: single
+sequence:
+- choose:
+  - conditions:
+    - condition: state
+      entity_id: cover.garage_main
+      state: closed
+    sequence:
+    - variables:
+        hamcp135_result:
+          contract: hamcp135-garage-attempt-v1
+          outcome: already_closed
+          service_call: not_sent
+    - response_variable: hamcp135_result
+      stop: Stop reason 44
+  - conditions:
+    - condition: state
+      entity_id: cover.garage_main
+      state: open
+    sequence:
+    - action: cover.close_cover
+      target:
+        entity_id: cover.garage_main
+    - continue_on_timeout: true
+      timeout: 00:00:30
+      wait_template: '{{ is_state(''cover.garage_main'', ''closed'') }}'
+    - choose:
+      - conditions:
+        - condition: state
+          entity_id: cover.garage_main
+          state: closed
+        sequence:
+        - variables:
+            hamcp135_result:
+              contract: hamcp135-garage-attempt-v1
+              outcome: closed
+              service_call: returned
+        - action: notify.mobile_app_owner_phone
+          continue_on_error: true
+          data:
+            message: Neutral message 45.
+            title: Neutral title 46.
+        - action: logbook.log
+          continue_on_error: true
+          data:
+            entity_id: cover.garage_main
+            message: Neutral message 47.
+            name: Neutral name 42.
+        - response_variable: hamcp135_result
+          stop: Stop reason 48
+      - conditions:
+        - condition: state
+          entity_id: cover.garage_main
+          state: open
+        - condition: template
+          value_template: '{{ wait.completed is sameas false }}'
+        sequence:
+        - variables:
+            hamcp135_result:
+              contract: hamcp135-garage-attempt-v1
+              outcome: open_after_timeout
+              service_call: returned
+        - action: notify.mobile_app_owner_phone
+          continue_on_error: true
+          data:
+            message: Neutral message 49.
+            title: Neutral title 50.
+        - action: logbook.log
+          continue_on_error: true
+          data:
+            entity_id: cover.garage_main
+            message: Neutral message 47.
+            name: Neutral name 42.
+        - response_variable: hamcp135_result
+          stop: Stop reason 51
+      default:
+      - variables:
+          hamcp135_result:
+            contract: hamcp135-garage-attempt-v1
+            outcome: unverified
+            service_call: returned
+      - action: notify.mobile_app_owner_phone
+        continue_on_error: true
+        data:
+          message: Neutral message 49.
+          title: Neutral title 50.
+      - action: logbook.log
+        continue_on_error: true
+        data:
+          entity_id: cover.garage_main
+          message: Neutral message 47.
+          name: Neutral name 42.
+      - response_variable: hamcp135_result
+        stop: Stop reason 52
+  default:
+  - variables:
+      hamcp135_result:
+        contract: hamcp135-garage-attempt-v1
+        outcome: not_open
+        service_call: not_sent
+  - action: notify.mobile_app_owner_phone
+    continue_on_error: true
+    data:
+      message: Neutral message 49.
+      title: Neutral title 50.
+  - action: logbook.log
+    continue_on_error: true
+    data:
+      entity_id: cover.garage_main
+      message: Neutral message 47.
+      name: Neutral name 42.
+  - response_variable: hamcp135_result
+    stop: Stop reason 53
+category: 01ANONYMIZEDCATEGORY000000
