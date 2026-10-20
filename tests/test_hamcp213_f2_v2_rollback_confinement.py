@@ -1,9 +1,11 @@
 """HAMCP-213: the f2-v2 rollback-evidence exception stays inside F3 rollback.
 
-f2-v3 refuses every superseded f2-v2 snapshot as current authority. The one
-exception admits an exact f2-v2 snapshot as read-only source evidence when
-F3 creates (and later rechecks) a governed inverse. The inverse is evaluated
-under current policy. These tests use the shipped beta16 writer's records: an
+f2-v3 refuses every superseded f2-v2 snapshot as current authority. Two
+read-only exceptions remain. F3 rollback creation (and its later recheck)
+admits an exact f2-v2 snapshot as source evidence; the inverse is evaluated
+under current policy. Reverification of an applied task admits its own
+consumed f2-v2 plan as readback evidence; it reads and records receipts and
+never dispatches. These tests use the shipped beta16 writer's records: an
 applied f2-v2 source and a pending f2-v2 cached inverse.
 """
 
@@ -21,7 +23,10 @@ sys.path.insert(0, str(ROOT))
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
-from ha_mcp_engineering.governance.models import PlanStatus  # noqa: E402
+from ha_mcp_engineering.governance.models import (  # noqa: E402
+    ApprovalState,
+    PlanStatus,
+)
 from ha_mcp_engineering.governance.policy import (  # noqa: E402
     POLICY_VERSION,
     persisted_f2_v2_policy_snapshot_matches,
@@ -34,6 +39,7 @@ from tests import test_hamcp135_governed_rollback as rollback  # noqa: E402
 
 PACKAGE = ROOT / "hass_mcp_engineering_beta" / "ha_mcp_engineering"
 SERVICE = PACKAGE / "governance" / "service.py"
+REVERIFICATION_KEYWORD = "reverification_history"
 PROVENANCE = rollback.HISTORICAL / "PROVENANCE.json"
 
 
@@ -92,21 +98,46 @@ class StructuralConfinementTests(unittest.TestCase):
         # Only when F3 owns the rollback: `self.f3_runtime is not None`.
         self.assertEqual(ast.unparse(value), "self.f3_runtime is not None")
 
+    def test_reverification_keyword_is_passed_only_by_reverification_history(self):
+        rows = list(
+            _calls(
+                lambda node: any(
+                    keyword.arg == REVERIFICATION_KEYWORD for keyword in node.keywords
+                )
+            )
+        )
+        self.assertEqual(
+            [(module, function) for module, function, _node in rows],
+            [("governance/configuration_reverification.py", "_history")],
+        )
+        (_m, _f, call), = rows
+        self.assertEqual(_name(call), "_load")
+        value = next(
+            keyword.value
+            for keyword in call.keywords
+            if keyword.arg == REVERIFICATION_KEYWORD
+        )
+        self.assertEqual(ast.unparse(value), "True")
+
     def test_load_defaults_to_refusing_historical_snapshots(self):
         (load,) = [
             function
             for function in _functions(SERVICE)
             if function.name == "_load"
         ]
-        (keyword,) = [
-            (arg, default)
+        defaults = {
+            arg.arg: default
             for arg, default in zip(load.args.kwonlyargs, load.args.kw_defaults)
-            if arg.arg == "f3_rollback_source"
-        ]
-        self.assertIsInstance(keyword[1], ast.Constant)
-        self.assertIs(keyword[1].value, False)
+        }
+        self.assertEqual(
+            set(defaults), {"f3_rollback_source", REVERIFICATION_KEYWORD}
+        )
+        for name, default in defaults.items():
+            with self.subTest(keyword=name):
+                self.assertIsInstance(default, ast.Constant)
+                self.assertIs(default.value, False)
 
-    def test_f2_v2_recognizer_is_called_only_by_the_rollback_evidence_paths(self):
+    def test_f2_v2_recognizer_is_called_only_by_the_read_only_evidence_paths(self):
         sites = sorted(
             (module, function)
             for module, function, _node in _calls(
@@ -118,13 +149,15 @@ class StructuralConfinementTests(unittest.TestCase):
             [
                 ("governance/configuration_rollback_eligibility.py", "source_snapshot"),
                 ("governance/policy.py", "persisted_historical_policy_snapshot_matches"),
+                # F3 rollback source, then reverification history.
+                ("governance/service.py", "_load"),
                 ("governance/service.py", "_load"),
             ],
         )
 
 
 class BehavioralConfinementTests(rollback.RollbackTests):
-    """Every path except F3 rollback creation refuses the f2-v2 records."""
+    """Every path except the two read-only exceptions refuses the f2-v2 records."""
 
     async def seed_records(self):
         source = await self.seed()
@@ -208,6 +241,28 @@ class BehavioralConfinementTests(rollback.RollbackTests):
         await self.assert_refused(
             lambda: legacy.rollback_change(source["plan_id"], source["plan_hash"]),
             {ErrorCode.POLICY_SNAPSHOT_MISMATCH},
+        )
+        self.assertEqual(self.writes(), [])
+
+    async def test_reverification_admits_only_a_consumed_f2_v2_plan(self):
+        source, cached = await self.seed_records()
+        applied = self.repository.get(source["plan_id"])
+        self.assertEqual(applied.approval.state, ApprovalState.CONSUMED)
+        admitted = self.service._load(
+            source["plan_id"], reverification_history=True
+        )
+        self.assertEqual(admitted.policy_decision.policy_version, "f2-v2")
+        pending = self.repository.get(cached["plan_id"])
+        self.assertNotEqual(pending.approval.state, ApprovalState.CONSUMED)
+        await self.assert_refused(
+            lambda: self.service._load(
+                cached["plan_id"], reverification_history=True
+            ),
+            {ErrorCode.POLICY_SNAPSHOT_MISMATCH},
+        )
+        # The readback admission grants no write authority.
+        await self.assert_refused(
+            lambda: self.service.apply(source["plan_id"], source["plan_hash"])
         )
         self.assertEqual(self.writes(), [])
 

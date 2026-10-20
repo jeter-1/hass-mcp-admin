@@ -666,6 +666,11 @@ a design-validation prototype of D2, not runtime code):
   the new action kind as read-only.
 - The new action uses `authority_version` 4. Version 3 bundles remain valid
   for plans that do not require it.
+- **Implementation (PR 1).** Two read-only boundaries keep admitting an exact
+  `f2-v2` snapshot: F3 rollback creation reads an applied source as evidence
+  (the inverse is evaluated under `f2-v3`), and reverification reads the
+  consumed plan of the task it reverifies. Neither dispatches under the
+  historical decision; every other load refuses it.
 - Public output changes:
   - the new `ApprovalActionKind` value;
   - new reason codes;

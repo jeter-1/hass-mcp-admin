@@ -12,6 +12,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / 'hass_mcp_engineering_beta')]
 
+from ha_mcp_engineering.errors import ErrorCode, GovernanceError
 from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
 from ha_mcp_engineering.f3.executor import SharedOperationExecutor, SimulatedProcessLoss
 from ha_mcp_engineering.f3.locks import DurableLockStore, LockStorageError, LockOwnershipError
@@ -289,7 +290,12 @@ class TokenlessRuntimeTests(ConfigurationPlanTestCase):
         self.assertEqual(calls, self.gateway.calls)
         self.assertEqual((), self.runtime.locks.records())
         self.assertEqual('failed_pre_dispatch', self.service.get_execution_task(provenance['public_task_id'])['state'])
-        self.assertFalse(self.service._public(self.service._load(provenance['plan_id']), include_configs=False)['apply_allowed'])
+        # f2-v3 (HAMCP-213) refuses the beta5 f2-v2 snapshot as current authority;
+        # the read projection still shows the plan cannot be applied.
+        with self.assertRaises(GovernanceError) as refused:
+            self.service._load(provenance['plan_id'])
+        self.assertEqual(ErrorCode.POLICY_SNAPSHOT_MISMATCH, refused.exception.code)
+        self.assertFalse(self.service._public(self.service._load_for_projection(provenance['plan_id']), include_configs=False)['apply_allowed'])
         await self.runtime.recover_once('periodic')
         self.assertEqual([], self.runtime.reconciliation_items())
         self.assertEqual(0, self.runtime.health()['recovery_failures'])

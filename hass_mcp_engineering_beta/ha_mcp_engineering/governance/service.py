@@ -1863,7 +1863,11 @@ class ChangeGovernanceService:
         return safe
 
     def _load(
-        self, plan_id: str, *, f3_rollback_source: bool = False
+        self,
+        plan_id: str,
+        *,
+        f3_rollback_source: bool = False,
+        reverification_history: bool = False,
     ) -> ChangePlan:
         try:
             plan = self.repository.get(plan_id)
@@ -1876,6 +1880,22 @@ class ChangeGovernanceService:
                 details=self._identifier_details(resource_id=plan_id),
             )
         self._require_v2_persisted_plan_safe(plan)
+        if (
+            reverification_history
+            and plan.approval.state == ApprovalState.CONSUMED
+            and persisted_f2_v2_policy_snapshot_matches(plan)
+        ):
+            # A consumed pre-HAMCP-213 plan stays readback-only evidence for
+            # reverifying its own applied task. Reverification reads and
+            # records receipts; it never dispatches under this decision.
+            bundle_error = self._approval_bundle_integrity_error(plan)
+            if bundle_error is not None:
+                METRICS.record_classified_outcome(bundle_error.value)
+                raise GovernanceError(
+                    bundle_error,
+                    details={"resource_id": plan.plan_id},
+                )
+            return plan
         if plan.policy_decision is not None and not (
             # An exact pre-HAMCP-213 snapshot remains read-only rollback source
             # evidence. F3 evaluates the inverse plan under current policy, so

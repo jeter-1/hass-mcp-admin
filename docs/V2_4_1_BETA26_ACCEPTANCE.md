@@ -43,8 +43,8 @@ The review needs a security section covering:
 - acknowledgement forgery: exact object set and hash, same administrator,
   single-use CSRF, expiry, Ingress-only grant and the independent dispatch
   check;
-- the `f2-v2` rollback-evidence exception and its confinement to F3 rollback
-  creation;
+- the two read-only `f2-v2` exceptions (F3 rollback creation, and
+  reverification of a consumed task) and their confinement;
 - the beta.25 rollback quarantine of records that name the new action kind.
 
 Preserve the following:
@@ -76,9 +76,12 @@ No test reaches a live system.
 - `tests/test_hamcp213_physical_effect_regressions.py` (11 tests): one test per
   E013 symptom, the unlock floor, the unresolved target, and the abort-point,
   mode, run-occupancy and reference-only rules.
-- `tests/test_hamcp213_f2_v2_rollback_confinement.py` (6 tests): only F3
-  rollback creation admits an `f2-v2` source; every other path refuses
-  `f2-v2` plans without a state change or a write.
+- `tests/test_hamcp213_f2_v2_rollback_confinement.py` (8 tests): only F3
+  rollback creation, and reverification of a consumed task, admit an `f2-v2`
+  plan; every other path refuses `f2-v2` plans without a state change or a
+  write.
+- `tests/test_configuration_reverification.py`: a task applied by the shipped
+  beta6 writer under `f2-v2` still reverifies after the upgrade.
 - Mutations, each killed: the reference-only table, the abort-point rule (both
   directions), the mode rule, the run-occupancy rule, the object-set check,
   the dispatch check, and three widenings of the `f2-v2` exception. The PR

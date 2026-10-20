@@ -87,9 +87,15 @@ retry shape carried a retry warning.
 
 - **Policy snapshots.** `f2-v1` and `f2-v2` stay readable. A pending `f2-v2`
   plan fails its policy snapshot under `f2-v3` and must be replanned; terminal
-  records are not rewritten. The one exception admits an applied `f2-v2`
-  source as read-only evidence when F3 creates a governed rollback inverse.
-  The inverse is evaluated under `f2-v3`.
+  records are not rewritten. Two read-only exceptions admit an exact `f2-v2`
+  snapshot. F3 rollback creation admits an applied source as evidence; the
+  inverse is evaluated under `f2-v3`. `reverify_configuration_task` admits
+  the consumed plan of the task it reverifies, as beta.25 did; it reads
+  and records receipts and never dispatches.
+- **Upgrade with work in flight.** A task still executing at upgrade under an
+  `f2-v2` plan cannot regain authority: startup reconciliation moves it to
+  manual review (the existing fail-closed path). Let in-flight tasks finish
+  before upgrading.
 - **Stored records (additive).** Plans may carry the new action kind in
   `required_acknowledgements`, and an acknowledgement record with
   `kind: safety_critical_acknowledgement`, `authority_version: 4`,
@@ -100,6 +106,9 @@ retry shape carried a retry warning.
 - **Public output (additive).** The new `ApprovalActionKind` value, reason
   codes, the `safety_critical_acknowledgement` review section, the OD-4 values,
   the audit events and the two error codes.
+- **Sanitizer.** The acknowledgement review is a seventh allow-listed
+  `rescan_stored_plan` call site (governance family), like the plan review
+  summary.
 - **Health.** The elevated-acknowledgement counters do not count safety-critical
   acknowledgements; their keys are unchanged.
 - **Rollback** is reinstalling the beta.25 artifact. beta.25 cannot parse the

@@ -25,8 +25,9 @@ Builds on 2.4.1-beta.25.
 - New audit events and the stable error codes
   `safety_critical_acknowledgement_required` and
   `safety_critical_acknowledgement_mismatch`.
-- Pending `f2-v2` plans must be replanned. An applied `f2-v2` source is
-  admitted only as F3 rollback evidence.
+- Pending `f2-v2` plans must be replanned. An applied `f2-v2` plan is
+  admitted only as read-only evidence: as an F3 rollback source, and when
+  reverifying its own consumed task.
 - Rollback to beta.25 quarantines plan records that name the new action kind;
   finish or reject those plans first.
 

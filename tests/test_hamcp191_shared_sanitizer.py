@@ -590,6 +590,7 @@ SANITIZER_SITES = {
     ("governance/service.py", "ChangeGovernanceService._public", "rescan_stored_plan"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService._public_plan_observability_projection", "rescan_stored_plan"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService._review_summary", "rescan_stored_plan"): (3, "governance"),
+    ("governance/service.py", "ChangeGovernanceService._safety_critical_review", "rescan_stored_plan"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService.approve", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService.create_dashboard_update_plan", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "_sanitize_configuration_caller_context", "sanitize_untrusted_data"): (1, "governance"),
@@ -1104,7 +1105,7 @@ class StoredPlanExceptionTests(unittest.TestCase):
             site: count for site, count in scan_package().items() if site[2] == "rescan_stored_plan"
         }
         self.assertEqual(found, STORED_PLAN_RESCAN_SITES)
-        self.assertEqual(sum(found.values()), 6)
+        self.assertEqual(sum(found.values()), 7)
         self.assertEqual({module for module, _scope, _name in found}, {"governance/resources.py", "governance/service.py"})
 
     def test_the_allow_list_proof_fails_for_a_new_caller(self):
