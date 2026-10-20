@@ -15,7 +15,8 @@ between two public connectors. Current implementation lives under
 with application assembly in `application.py`, the inbound gateway in `routing.py`,
 and capability declarations in `capabilities.py`. Frozen, operationally retired
 `hass_mcp_admin/` v1.1.2 is historical code, not the current implementation target
-or an Engineering rollback.
+or an Engineering rollback. It is not installable from this add-on repository
+(HAMCP-203, [`hass_mcp_admin/README.md`](hass_mcp_admin/README.md)).
 
 Current contract entry points:
 

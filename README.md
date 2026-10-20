@@ -224,7 +224,10 @@ The installation retains its technical **Beta** identity. Choose **HA MCP
 Engineering Server Beta**, directory and slug `hass_mcp_engineering_beta`.
 No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
-current installation target nor a supported Engineering rollback.
+current installation target nor a supported Engineering rollback. Since
+HAMCP-203 it is no longer offered by this add-on repository: its add-on
+configuration is renamed so the Supervisor does not discover it, and only the
+code is kept. See [`hass_mcp_admin/README.md`](hass_mcp_admin/README.md).
 
 Read the [2.4.1-beta.18 release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
 [2.4.1-beta.18 acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md). A source version does

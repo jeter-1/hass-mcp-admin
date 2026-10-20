@@ -613,7 +613,8 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
             return UNKNOWN
         return value
 
-    stable_config = Path("hass_mcp_admin/config.yaml")
+    # HAMCP-203: stable v1 is retired; its add-on config is not Supervisor-discoverable.
+    stable_config = Path("hass_mcp_admin/retired-addon-config.yaml")
     engineering_config = Path("hass_mcp_engineering_beta/config.yaml")
     capabilities_path = Path(
         "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py"

@@ -113,7 +113,7 @@ class Beta26PlanStoreScaleTests(unittest.IsolatedAsyncioTestCase):
                     BETA26_VERSION,
                 )
         stable_config = (
-            ROOT / "hass_mcp_admin" / "config.yaml"
+            ROOT / "hass_mcp_admin" / "retired-addon-config.yaml"
         ).read_text(encoding="utf-8")
         self.assertIn('version: "1.1.2"', stable_config)
 

@@ -1,0 +1,44 @@
+{
+  "repository": "https://github.com/home-assistant/supervisor",
+  "release": "2026.09.1",
+  "commit": "40e3ee7640a3c44abe67f1a1397f39c3cd949806",
+  "method": "Python AST selects named node with decorators; exact source lines, textwrap.dedent only; no rewritten behavior",
+  "fragments": [
+    {
+      "path": "supervisor/const.py",
+      "full_source_sha256": "9188d52b822667c9baf08875fef303cc97271270fe54c8466d02471d54a5c3b5",
+      "name": "FILE_SUFFIX_CONFIGURATION",
+      "start_line": 44,
+      "end_line": 44,
+      "file": "FILE_SUFFIX_CONFIGURATION.txt",
+      "sha256": "f156e5a405b3188a495a5c2ce547f2b514bb73ad7ec71f78a00e6c5db0d88e64"
+    },
+    {
+      "path": "supervisor/utils/common.py",
+      "full_source_sha256": "c774a9be1de8859a1e938046e26778aa085ab16f782c1baa9a2b37883e3b4ab8",
+      "name": "find_one_filetype",
+      "start_line": 22,
+      "end_line": 30,
+      "file": "find_one_filetype.txt",
+      "sha256": "9b1872f9c00bb41f94cc6498064dd2934197332d6d320e07164b1fab30cf45a8"
+    },
+    {
+      "path": "supervisor/store/validate.py",
+      "full_source_sha256": "3c60c92944b6ed3bce49683d9fec5ed39df554682a65883a500ad60ab4d0210c",
+      "name": "SCHEMA_REPOSITORY_CONFIG",
+      "start_line": 10,
+      "end_line": 17,
+      "file": "SCHEMA_REPOSITORY_CONFIG.txt",
+      "sha256": "553445773b4ecbe1e66cda8023cf8fb10e6c382764cbd30a6ac65ed58e9d6452"
+    },
+    {
+      "path": "supervisor/store/data.py",
+      "full_source_sha256": "3714417b3505d7308b6c1b46d6717d4d163042a5ca6f83c5a62ef1e9ea3b22ce",
+      "name": "StoreData._find_app_configs",
+      "start_line": 150,
+      "end_line": 183,
+      "file": "_find_app_configs.txt",
+      "sha256": "a44207cee40d9172f10cea5040cc365acbdad6ab621aa10bba5567a62d7f9291"
+    }
+  ]
+}

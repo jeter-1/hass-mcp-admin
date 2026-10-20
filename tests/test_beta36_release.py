@@ -141,7 +141,7 @@ class Beta36ReleaseBoundaryTests(unittest.TestCase):
         self.assertNotIn("manifest", identity_source.lower())
         self.assertIn(
             'version: "1.1.2"',
-            (ROOT / "hass_mcp_admin" / "config.yaml").read_text(),
+            (ROOT / "hass_mcp_admin" / "retired-addon-config.yaml").read_text(),
         )
 
 

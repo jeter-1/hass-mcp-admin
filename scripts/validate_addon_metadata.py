@@ -23,6 +23,27 @@ BETA_SLUG = "hass_mcp_engineering_beta"
 PRODUCTION_NAME = "HA MCP Engineering Server"
 BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
+# HAMCP-203: stable v1 is retired. Its add-on config is renamed so the
+# Supervisor's `**/config.*` store discovery no longer finds it; the code stays.
+RETIRED_DIR = "hass_mcp_admin"
+RETIRED_CONFIG_PATH = Path(RETIRED_DIR, "retired-addon-config.yaml")
+DISCOVERABLE_CONFIG_PATH = Path(RETIRED_DIR, "config.yaml")
+SUPERVISOR_CONFIG_SUFFIXES = (".yaml", ".yml", ".json")
+RETIRED_README_PATH = Path(RETIRED_DIR, "README.md")
+RETIREMENT_TRANSITION_PATHS = frozenset({
+    DISCOVERABLE_CONFIG_PATH.as_posix(),
+    RETIRED_CONFIG_PATH.as_posix(),
+    RETIRED_README_PATH.as_posix(),
+})
+# The only content the retirement may add to the old config.yaml. The renamed
+# file must equal this header followed by the base config, byte for byte.
+RETIREMENT_HEADER = (
+    b"# RETIRED (HAMCP-203): stable v1 is not a Home Assistant add-on any more.\n"
+    b"# This file was config.yaml. It is renamed so the Supervisor's add-on store\n"
+    b'# discovery (glob "**/config.*") cannot find, list, or install it. Do not\n'
+    b"# rename it back. Values are kept as the last shipped v1.1.2 metadata. See README.md.\n"
+    b"\n"
+)
 BETA_VERSION = "2.4.1-beta.23"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 NEXT_VERSION_PATH = Path(".release/next-version")
@@ -102,6 +123,7 @@ class ValidationReport:
     production_changed: bool
     same_version_correction: bool
     staged_release_version: str | None
+    stable_retirement_transition: bool = False
 
 
 def read_yaml(path: Path) -> dict:
@@ -295,6 +317,85 @@ def run_git(repo_root: Path, *args: str) -> str:
     return result.stdout
 
 
+def run_git_bytes(repo_root: Path, *args: str, stdin: bytes | None = None) -> bytes:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo_root,
+        input=stdin,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        raise MetadataValidationError("Git metadata validation failed")
+    return result.stdout
+
+
+def discoverable_retired_configs(repo_root: Path) -> list[str]:
+    """Files under the retired directory that Supervisor store discovery would find."""
+    return sorted(
+        path.relative_to(repo_root).as_posix()
+        for path in (repo_root / RETIRED_DIR).rglob("config.*")
+        if path.suffix in SUPERVISOR_CONFIG_SUFFIXES
+    )
+
+
+def ref_has_path(repo_root: Path, ref: str, path: str) -> bool:
+    try:
+        run_git(repo_root, "cat-file", "-e", f"{ref}:{path}")
+    except MetadataValidationError:
+        return False
+    return True
+
+
+def is_stable_retirement_transition(
+    production_paths: set[str],
+    *,
+    base_discoverable: bool,
+    head_discoverable: bool,
+    content_preserved: bool,
+) -> bool:
+    """Allow only the one-time change that removes stable v1 from discovery."""
+    return (
+        bool(production_paths)
+        and production_paths <= RETIREMENT_TRANSITION_PATHS
+        and base_discoverable
+        and not head_discoverable
+        and content_preserved
+    )
+
+
+def retirement_content_preserved(repo_root: Path, base_ref: str) -> bool:
+    """True only for an exact rename of the base config plus the RETIRED header.
+
+    The committed, staged, and working-tree versions of the renamed config must
+    all be the base ``config.yaml`` blob with ``RETIREMENT_HEADER`` prepended,
+    and the renamed config and README must be new in this change. Object ids
+    are compared after Git's own clean conversion, so a checkout's line-ending
+    translation is neither a false refusal nor a way to hide a change.
+    """
+    retired = RETIRED_CONFIG_PATH.as_posix()
+    if any(
+        ref_has_path(repo_root, base_ref, path)
+        for path in (retired, RETIRED_README_PATH.as_posix())
+    ):
+        return False
+    try:
+        base = run_git_bytes(
+            repo_root, "cat-file", "blob", f"{base_ref}:{DISCOVERABLE_CONFIG_PATH.as_posix()}"
+        )
+        expected = run_git_bytes(
+            repo_root, "hash-object", "--no-filters", "--stdin", stdin=RETIREMENT_HEADER + base
+        ).strip()
+        observed = (
+            run_git_bytes(repo_root, "rev-parse", "--verify", f"HEAD:{retired}").strip(),
+            run_git_bytes(repo_root, "rev-parse", "--verify", f":{retired}").strip(),
+            run_git_bytes(repo_root, "hash-object", f"--path={retired}", "--", retired).strip(),
+        )
+    except MetadataValidationError:
+        return False
+    return bool(expected) and all(oid == expected for oid in observed)
+
+
 def changed_paths(repo_root: Path, base_ref: str) -> set[str]:
     paths: set[str] = set()
     for args in (
@@ -432,7 +533,13 @@ def validate_repository(
     paths: Iterable[str] | None = None,
     unreleased_integrity_check: Callable[[Path, str], None] | None = None,
 ) -> ValidationReport:
-    production = read_yaml(repo_root / "hass_mcp_admin" / "config.yaml")
+    discoverable = discoverable_retired_configs(repo_root)
+    if discoverable:
+        raise MetadataValidationError(
+            "Retired stable v1 must not be discoverable by the Supervisor: "
+            + ", ".join(discoverable)
+        )
+    production = read_yaml(repo_root / RETIRED_CONFIG_PATH)
     beta = read_yaml(repo_root / "hass_mcp_engineering_beta" / "config.yaml")
     beta_version_py = read_python_constant(
         repo_root
@@ -463,13 +570,24 @@ def validate_repository(
         raise MetadataValidationError("Configured beta version does not match ExpectedVersion")
 
     path_set = set(paths) if paths is not None else changed_paths(repo_root, base_ref)
-    production_changed = any(path.startswith("hass_mcp_admin/") for path in path_set)
+    production_paths = {path for path in path_set if path.startswith(f"{RETIRED_DIR}/")}
+    production_changed = bool(production_paths)
     beta_changed = any(
         path.startswith("hass_mcp_engineering_beta/")
         and path not in NON_RELEASE_BETA_PATHS
         for path in path_set
     )
-    if production_changed:
+    base_discoverable = production_changed and ref_has_path(
+        repo_root, base_ref, DISCOVERABLE_CONFIG_PATH.as_posix()
+    )
+    retirement_transition = production_changed and is_stable_retirement_transition(
+        production_paths,
+        base_discoverable=base_discoverable,
+        head_discoverable=bool(discoverable),
+        content_preserved=base_discoverable
+        and retirement_content_preserved(repo_root, base_ref),
+    )
+    if production_changed and not retirement_transition:
         raise MetadataValidationError("Production add-on files were modified")
 
     comparison = deployed_version or version_from_ref(repo_root, base_ref)
@@ -502,6 +620,7 @@ def validate_repository(
         production_changed=production_changed,
         same_version_correction=same_version_correction,
         staged_release_version=staged_version,
+        stable_retirement_transition=retirement_transition,
     )
 
 
@@ -535,7 +654,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Metadata validation failed: {exc}", file=sys.stderr)
         return 1
     print("Metadata validation passed.")
-    print(f"Production: {PRODUCTION_SLUG} v{report.production_version} port {PRODUCTION_PORT}")
+    print(
+        f"Retired stable: {PRODUCTION_SLUG} v{report.production_version} "
+        f"(not Supervisor-discoverable; {RETIRED_CONFIG_PATH.as_posix()})"
+    )
+    if report.stable_retirement_transition:
+        print("Stable v1 retirement transition: allowed (one-time, HAMCP-203)")
     print(f"Beta: {BETA_SLUG} v{report.beta_version} port {BETA_PORT}")
     if report.compared_version:
         print(f"Version comparison baseline: {report.compared_version}")

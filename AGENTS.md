@@ -166,8 +166,11 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 
 ## Stable and Engineering Boundaries
 
-- Stable v1.1.2 under `hass_mcp_admin/` is frozen unless a task explicitly
-  includes it. Current v2 Engineering work remains isolated from stable v1.
+- Stable v1.1.2 under `hass_mcp_admin/` is retired and frozen unless a task
+  explicitly includes it. It is not installable from this repository: its add-on
+  configuration is `hass_mcp_admin/retired-addon-config.yaml`, which the
+  Supervisor does not discover (HAMCP-203). Never rename it back to `config.*`.
+  Current v2 Engineering work remains isolated from stable v1.
 - Preserve fail-closed behavior, reviewed provider boundaries, bounded output,
   sanitization, audit attribution, governance, and zero unreviewed fallback or
   write reachability.
@@ -267,7 +270,7 @@ gate.
 
 - `.coderabbit.yaml` - automated-review scope, retention, trigger, and write-adjacent controls
 - `.github/codex/` - native Codex review policy or integration contracts
-- `hass_mcp_admin/` - stable v1.1.2 source and packaging
+- `hass_mcp_admin/` - retired stable v1.1.2 source and packaging (not Supervisor-discoverable)
 - `hass_mcp_engineering_beta/ha_mcp_engineering/` - Engineering runtime, schemas, registration, routing, providers, and policy
 - `.github/workflows/*.yml` and `*.yaml` - CI, publication, signing, and deployment authority
 - `.release/` - release declarations

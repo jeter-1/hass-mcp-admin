@@ -206,7 +206,7 @@ class Beta25SearchPromotionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn(
             'version: "1.1.2"',
-            (ROOT / "hass_mcp_admin" / "config.yaml").read_text(
+            (ROOT / "hass_mcp_admin" / "retired-addon-config.yaml").read_text(
                 encoding="utf-8"
             ),
         )
@@ -225,7 +225,7 @@ class Beta25SearchPromotionTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIn(
             'version: "1.1.2"',
-            (ROOT / "hass_mcp_admin" / "config.yaml").read_text(
+            (ROOT / "hass_mcp_admin" / "retired-addon-config.yaml").read_text(
                 encoding="utf-8"
             ),
         )
