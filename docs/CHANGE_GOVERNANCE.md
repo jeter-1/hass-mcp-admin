@@ -407,6 +407,18 @@ is limited to reviewed automation action positions; conditions are not scanned
 as executable actions, and unsupported action nesting fails closed. Other
 high-risk service names retain their existing policy mapping.
 
+Policy `f2-v3` (HAMCP-213) narrows this. The Beta 33 retained-effect proof
+above is unchanged and is evaluated first. Otherwise, a safety-critical script
+or automation create or update is no longer prohibited by the risk class
+alone. Engineering compares the before and after physical effects (model
+`physical-effect-comparison-v1`). An exact write whose effects are `equivalent`
+is `elevated_admin` with plan approval only; a `changed` or `unresolved`
+comparison is `elevated_admin` with a high risk delta and also requires the
+per-object safety-critical acknowledgement. An unlock or disarm effect always
+requires that acknowledgement (owner decision OD-6(b), ADR-022). A write that
+is not exact remains prohibited. See
+[External approval](EXTERNAL_APPROVAL.md#safety-critical-acknowledgement).
+
 Governed configuration reads, writes, verification, and rollback are
 `direct_ha_required` facilitator capabilities. They do not route through ordinary
 service execution or fall back to an unverified write. See ADR-002 for provider rules.
@@ -527,7 +539,11 @@ Lifecycle events include `change_plan_created`,
 `external_approval_requested`, optional `external_approval_viewed`,
 `external_approval_granted`, `external_approval_rejected`,
 `external_approval_expired`, `external_approval_invalidated`, and
-`external_approval_consumed`.
+`external_approval_consumed`. Policy `f2-v3` adds
+`safety_critical_acknowledgement_requested`,
+`safety_critical_acknowledgement_granted`, and
+`safety_critical_acknowledgement_failed`; see
+[External approval](EXTERNAL_APPROVAL.md#safety-critical-acknowledgement).
 
 Events contain only request ID, plan ID, target type/ID, operation, risk,
 result status, stable error code, duration, caller ID, approval state, bounded
@@ -554,6 +570,8 @@ policy_snapshot_required
 policy_snapshot_mismatch
 prohibited_change
 elevated_risk_acknowledgement_required
+safety_critical_acknowledgement_required
+safety_critical_acknowledgement_mismatch
 approval_principal_mismatch
 approval_sequence_failure
 stale_target_state

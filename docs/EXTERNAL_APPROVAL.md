@@ -11,8 +11,12 @@ F2 authority version 3 derives policy from the immutable plan. A
 `standard_admin` plan requires one `plan_approval`. An `elevated_admin` plan
 requires plan approval followed by a distinct
 `elevated_risk_acknowledgement` from the same authenticated administrator.
-This is not two-person control. A `prohibited` plan creates no actionable
-challenge. See ADR-012 in the architecture decision records and the
+This is not two-person control. Since HAMCP-213 (policy `f2-v3`), an
+automation or script plan whose protected physical effects change, or cannot be
+determined, requires plan approval followed by a per-object
+`safety_critical_acknowledgement` instead (see
+**Safety-critical acknowledgement** below). A `prohibited` plan creates no
+actionable challenge. See ADR-012 in the architecture decision records and the
 active [`V2_2_0_BETA15_ACCEPTANCE.md`](V2_2_0_BETA15_ACCEPTANCE.md).
 
 The Beta 7 correction makes that non-actionability consistent across legacy
@@ -278,7 +282,11 @@ fallback principal `home_assistant_admin_ingress`; the record then stores
 written before HAMCP-184 stored `true` for such decisions; they are not
 rewritten, and plan reads project them from the recorded principal so old and
 new records display the same truth. Plans with no Ingress decision report
-`null` with reason `no_external_approver_exists`. Audit records carry only
+`null` with reason `no_decision_recorded`, or `not_approvable` when the plan is
+prohibited (HAMCP-213 OD-4). These replace the earlier
+`no_external_approver_exists`, which wrongly suggested that no approver
+existed. Stored records are not rewritten; only the plan-read projection
+changed. Audit records carry only
 `approval_principal_present` and execution tasks carry no separation claim.
 
 Since HAMCP-205 the anonymous fallback principal is no longer an approver.
@@ -302,12 +310,60 @@ reused. Reconsideration requires a new plan. Rejected plans remain readable as
 historical records but are not open work, pending authorization, or blockers in
 handoffs.
 
+## Safety-critical acknowledgement
+
+HAMCP-213 adds a second ordered action, `safety_critical_acknowledgement`, for
+automation and script updates and creates that touch a protected physical
+object: a lock, alarm panel or valve; a cover whose entity id contains
+`garage`; or a water control matched by entity id. Policy compares the current
+and proposed configuration's protected effects (model
+`physical-effect-comparison-v1`) and records one verdict per operation:
+
+| Verdict | Meaning | Required actions |
+| --- | --- | --- |
+| `none` | No protected effect before or after | Standard or elevated policy as before |
+| `equivalent` | Every protected effect keeps its service, object, order and reachability | `plan_approval` only (the page stays elevated) |
+| `changed` | An effect, its reachability, the run mode or the run structure around it changed | `plan_approval`, then `safety_critical_acknowledgement` |
+| `unresolved` | A protected effect's target cannot be determined | `plan_approval`, then `safety_critical_acknowledgement` |
+
+An unlock or disarm effect always needs the acknowledgement, even when it is
+`equivalent` (OD-6(b), ADR-022). An incomplete execution contract stays
+`prohibited`. A plan whose acknowledgement would name more than 32 objects is
+refused at creation.
+
+After plan approval succeeds, the panel shows a new challenge listing every
+object that needs acknowledgement: operation, object id, verdict, protection
+(`effect_cannot_be_determined` for an unresolved target), and the before and
+after effects. Each object has its own required checkbox, so the administrator
+cannot submit the form without acknowledging every listed object. The decision
+POST carries the opaque per-object tokens (`ack_object`) and the comparison
+hash (`ack_projection_hash`). Governance recomputes the comparison from the
+immutable plan. It records the acknowledgement only when the submitted token
+set equals the expected set exactly (no missing, extra, duplicate or unknown
+token) and the hash matches. Otherwise it returns
+`safety_critical_acknowledgement_mismatch` and records nothing. The same
+administrator rule, CSRF single use, expiry and stale-page refusals apply as
+for the elevated-risk acknowledgement.
+
+The action is recorded with action authority version `4`, and it binds the
+comparison hash and the acknowledged object set. For compatibility the record
+is stored in the persisted `elevated_risk_acknowledgement` slot. That is a
+historical name; the record's `kind` says which action it is. No MCP tool can
+grant this action; it exists only on the Ingress panel.
+
+Dispatch checks the acknowledgement independently of the bundle state. Before
+any write it recomputes the comparison and refuses with
+`safety_critical_acknowledgement_required` unless an acknowledgement exactly
+matches the current objects and hash. Plan approval alone never dispatches such
+a plan. The F3 operational adapter refuses a bundle bound to this action.
+
 ## Apply and rollback enforcement
 
 Apply requires every prior governance gate plus authority version `3`, the
 external Ingress channel and principal, an Ingress-identified administrator
 principal (never the anonymous fallback; HAMCP-205), the exact challenge-bound plan and policy hashes, the required ordered action set,
-same-administrator confirmation for elevated policy, approval kind `apply`,
+same-administrator confirmation for elevated policy, the exact per-object
+safety-critical acknowledgement when policy requires it, approval kind `apply`,
 unexpired and unconsumed approval, and a non-rejected plan. Without that record,
 `apply_change_plan` returns `external_approval_required` before a Home Assistant
 write, provider write dispatch, apply snapshot, approval consumption, or index
@@ -335,7 +391,8 @@ principal, exact binding, kind, and timestamps when applicable; they never
 expose CSRF nonces, cookies, Ingress credentials, or raw request headers.
 
 Bundle states are `pending_plan_approval`,
-`pending_elevated_risk_acknowledgement`, `fully_approved`, `consumed`,
+`pending_elevated_risk_acknowledgement`,
+`pending_safety_critical_acknowledgement`, `fully_approved`, `consumed`,
 `rejected`, `expired`, and `invalidated`. The two elevated action records have
 separate challenge IDs and timestamps but bind the same plan and policy hashes.
 
@@ -343,6 +400,9 @@ Audit events include `external_approval_requested`, optional bounded
 `external_approval_viewed`, `external_approval_granted`,
 `elevated_risk_acknowledgement_requested`,
 `elevated_risk_acknowledgement_granted`,
+`safety_critical_acknowledgement_requested`,
+`safety_critical_acknowledgement_granted`,
+`safety_critical_acknowledgement_failed`,
 `external_approval_rejected`, `external_approval_expired`,
 `external_approval_invalidated`, and `external_approval_consumed`. Records may
 contain bounded IDs, channel, principal, kind, result, reason, timestamp and
@@ -353,8 +413,10 @@ Governance health additively reports whether external approval and the Ingress
 UI are configured, authority version, policy-class counts, pending plan and
 elevated actions, granted elevated acknowledgements, consumed standard and
 elevated bundles, prohibited decisions, policy/principal/sequence failures,
-legacy approval counts, and the last safe approval failure category. These
-metrics are observability only and never authorize a change.
+legacy approval counts, and the last safe approval failure category. The
+elevated-acknowledgement counters do not count safety-critical
+acknowledgements. These metrics are observability only and never authorize a
+change.
 
 ## Upgrade to authority version 3
 

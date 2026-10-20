@@ -675,6 +675,16 @@ a design-validation prototype of D2, not runtime code):
   `tools/governance.py` descriptions and capability metadata. The
   implementation task must name them explicitly
   (`-AuthorizedProtectedPath hass_mcp_engineering_beta/ha_mcp_engineering/`).
+- **Implementation deviation (PR 1).** The projection hash is not bound into
+  the policy subject. The comparison is a deterministic function of the
+  operation's normalized before and after configurations, which the plan hash
+  already binds, and `policy_snapshot_matches` recomputes the decision from
+  them. The acknowledgement record stores `safety_critical_projection_hash`
+  and the sorted object set. The grant and every dispatch recompute the
+  binding from the immutable plan and refuse a mismatch with
+  `safety_critical_acknowledgement_mismatch`. Keeping the policy subject
+  unchanged leaves the historical policy projections and hashes for `f2-v1`
+  and `f2-v2` records untouched.
 
 ### D9. Security section (for the implementation PR)
 

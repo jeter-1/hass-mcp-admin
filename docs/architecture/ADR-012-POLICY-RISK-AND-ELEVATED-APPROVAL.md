@@ -95,6 +95,18 @@ traversed without scanning conditions or arbitrary mappings; unsupported
 nesting fails closed. High-risk services outside this exact set keep their
 separately reviewed mapping.
 
+Policy `f2-v3` (HAMCP-213) supersedes this paragraph in part, by owner decision
+OD-6(b) recorded in
+[ADR-022](ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md#owner-decision-record-hamcp-213-safety-critical-acknowledgement).
+The Beta 33 retained-effect proof, the garage inverse and the retry-transfer
+paths are unchanged and are evaluated first. Otherwise, an exact automation or
+script write with a protected physical effect is `elevated_admin`. An `equivalent` before/after comparison needs
+`plan_approval` only. A `changed` or `unresolved` comparison, and any unlock or
+disarm effect, needs `plan_approval` and the per-object
+`safety_critical_acknowledgement` instead of the elevated-risk
+acknowledgement. An incomplete execution contract remains prohibited. See
+[External approval](../EXTERNAL_APPROVAL.md#safety-critical-acknowledgement).
+
 The plan hash binds the complete policy snapshot. The policy-decision hash binds
 the normalized plan subject and the complete decision. Loading, requesting
 approval, and applying revalidate both bindings. A mismatch is never silently
