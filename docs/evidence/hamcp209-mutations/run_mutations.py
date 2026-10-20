@@ -322,6 +322,14 @@ MUTATIONS = [
         "                if str(attrs.get(\"id\")) in pending_snapshot:\n",
         "                if False:\n",
     )]),
+    m("C1-real-ha-capture-display-registries-refused",
+      "CI: the Real HA read capture refuses the display registry reads (afaff67 lane failure)",
+      "scripts/real_ha_contract_tests.py", [(
+        "        \"config/device_registry/list\",\n"
+        "        \"config/area_registry/list\",\n"
+        "        \"config/floor_registry/list\",\n",
+        "",
+    )]),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

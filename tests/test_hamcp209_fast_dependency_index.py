@@ -59,6 +59,7 @@ from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     MAX_PENDING_AUTOMATION_WRITES,
     PENDING_WRITE_UNRECONCILED,
     DirectHaDependencyProvider,
+    _EFFECT_DISPLAY_REGISTRY_COMMANDS,
     _EffectDisplayFilter,
     _EffectDisplayRegistry,
 )
@@ -1980,6 +1981,78 @@ class EffectDisplayRegistryScanTests(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn(known, text, label)
                         self.assertIn("action[0].data.brightness=10", text, label)
                 self.assertNotEqual(result.get("status"), "refused")
+
+
+class RealHomeAssistantReadCaptureTests(unittest.IsolatedAsyncioTestCase):
+    """The disposable Real HA lane's read capture admits the display reads.
+
+    ``scripts/real_ha_contract_tests.py`` asserts that the dependency feature
+    raised no capture violation. The effect-display registry reads are
+    read-only list commands; without them the lane failed on afaff67 with
+    ``script_stage=read_capture_verification`` while the provider correctly
+    failed closed.
+    """
+
+    async def test_scan_through_the_capture_has_no_violation(self):
+        from scripts.real_ha_contract_tests import _ScriptDependencyReadCapture
+
+        # The lane's capture has no ``command_batch``: the stored path.
+        ha = SyntheticHomeAssistant([
+            record("automation.synthetic_stored", {
+                "id": "synthetic_stored",
+                "alias": "Synthetic stored",
+                "trigger": [{"platform": "state", "entity_id": "input_boolean.synthetic_gate"}],
+                "action": [{
+                    "service": "light.turn_on",
+                    "target": {"entity_id": "light.synthetic_kitchen",
+                               "area_id": "synthetic_living_room",
+                               "floor_id": "synthetic_ground",
+                               "label_id": "synthetic_downstairs",
+                               "device_id": SYNTHETIC_DEVICE_ID},
+                    "data": {"brightness": 10},
+                }],
+            }),
+        ])
+        capture = _ScriptDependencyReadCapture(
+            ha.rest, ha.websocket_without_batch, SimpleNamespace(execute_read=None),
+        )
+        scan = await DirectHaDependencyProvider(capture, capture, secret=SECRET).scan()
+        self.assertEqual(capture.violations, [])
+        commands = {call[1] for call in capture.calls if call[0] == "websocket"}
+        for command, _key, _operation in _EFFECT_DISPLAY_REGISTRY_COMMANDS.values():
+            if command != "config/label_registry/list":
+                self.assertIn(command, commands)
+        profile = asdict(scan.automation_action_profiles[0])
+        self.assertFalse(profile["presentation_truncated"])
+        self.assertIn(
+            "action[0].target.area_id|area_id|synthetic_living_room", profile["effect_targets"],
+        )
+
+    async def test_capture_admits_exactly_the_reviewed_reads(self):
+        from scripts.real_ha_contract_tests import _ScriptDependencyReadCapture
+
+        reviewed = {"config/entity_registry/list"} | {
+            command for command, _key, _operation in _EFFECT_DISPLAY_REGISTRY_COMMANDS.values()
+        }
+        self.assertEqual(_ScriptDependencyReadCapture.REVIEWED_WEBSOCKET_COMMANDS, reviewed)
+        ha = SyntheticHomeAssistant([])
+        capture = _ScriptDependencyReadCapture(
+            ha.rest, ha.websocket_without_batch, SimpleNamespace(execute_read=None),
+        )
+        for payload in (
+            {"type": "config/entity_registry/update"},
+            {"type": "config/device_registry/update"},
+            {"type": "config/area_registry/delete"},
+            {"type": "call_service"},
+            {"type": "automation/config", "entity_id": "automation.synthetic"},
+        ):
+            with self.subTest(command=payload["type"]):
+                with self.assertRaises(AssertionError):
+                    await capture.command(payload)
+        with self.assertRaises(AssertionError):
+            await capture.request("POST", "/services/automation/reload", {})
+        self.assertEqual(len(capture.violations), 6)
+        self.assertEqual(capture.calls, [])
 
 
 if __name__ == "__main__":

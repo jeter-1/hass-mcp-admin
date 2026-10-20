@@ -3155,8 +3155,18 @@ class _ScriptDependencyReadCapture:
         self.calls.append(("rest", method, path))
         return await self.rest.request(method, path, *args, **kwargs)
 
+    # Read-only registry lists: the entity index, label targets and the
+    # HAMCP-209 effect-display membership reads (device, area, floor, label).
+    REVIEWED_WEBSOCKET_COMMANDS = frozenset({
+        "config/entity_registry/list",
+        "config/device_registry/list",
+        "config/area_registry/list",
+        "config/floor_registry/list",
+        "config/label_registry/list",
+    })
+
     async def command(self, payload):
-        if payload.get("type") not in {"config/entity_registry/list", "config/label_registry/list"}:
+        if payload.get("type") not in self.REVIEWED_WEBSOCKET_COMMANDS:
             self.violations.append("unreviewed WebSocket command")
             raise AssertionError("Script dependency feature attempted an unreviewed WebSocket command")
         self.calls.append(("websocket", payload["type"]))

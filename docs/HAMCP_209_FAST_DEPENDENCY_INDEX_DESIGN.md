@@ -390,7 +390,7 @@ support window; stable v1.
 
 ## 5. Tests, parity and mutations
 
-`tests/test_hamcp209_fast_dependency_index.py` (57 tests, synthetic model in
+`tests/test_hamcp209_fast_dependency_index.py` (59 tests, synthetic model in
 `tests/hamcp209_fixtures.py`; the client tests use a disposable loopback
 WebSocket peer):
 
@@ -489,6 +489,19 @@ WebSocket peer):
   now serves the loaded form through `command_batch` so it still proves a
   low-risk, executable plan. That file was not in the PR before this
   correction batch.
+- **Real HA read capture** (`RealHomeAssistantReadCaptureTests`, 2): the
+  disposable Real HA lane (`scripts/real_ha_contract_tests.py`) runs the
+  dependency feature through `_ScriptDependencyReadCapture` and fails on any
+  capture violation. Its reviewed WebSocket set now also holds the read-only
+  `config/device_registry/list`, `config/area_registry/list` and
+  `config/floor_registry/list` that effect display sends. On `afaff67` the
+  lane failed at `script_stage=read_capture_verification`. The provider had
+  correctly failed closed; the capture had flagged the reads. One test runs a
+  stored scan through the capture with no violation. The other pins the set to
+  the entity registry plus the provider's display-registry commands, and
+  checks that registry updates, deletes, `call_service`, `automation/config`
+  and a REST POST are still refused. Both fail against the old set. That
+  script was not in the PR before this fix; it is not a protected path.
 
 Two existing tests change. `test_rc2dev4_release_hardening`
 `test_cold_build_profile_has_bounded_request_breakdown` pinned the old
@@ -508,7 +521,7 @@ replaced `_display_safe_effect_tokens`). The focused rerun found the
 missing row (`test_every_sanitizer_call_site_is_in_the_committed_table`).
 
 Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`,
-`results.json`): 47 of 47 are killed and none survive.
+`results.json`): 48 of 48 are killed and none survive.
 
 | ID | Mutation (design item) | First failing test (recorded) |
 | --- | --- | --- |
@@ -559,6 +572,7 @@ Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`,
 | M2e-pending-cleared-after-partial-build | M2: pending writes are cleared after a partial build | `test_stored_read_failure_for_pending_write_is_not_cleared` |
 | M2f-overflow-not-reported | M2: an overflowed journal does not make the build partial | `test_journal_overflow_is_sticky_and_always_partial` |
 | M2g-unreconciled-read-failure-not-reported | M2: a journaled write whose read failed is not reported unreconciled | `test_stored_read_failure_for_pending_write_is_not_cleared` |
+| C1-real-ha-capture-display-registries-refused | CI: the Real HA read capture refuses the display registry reads (afaff67 lane failure) | `test_capture_admits_exactly_the_reviewed_reads` |
 
 The first M2a draft (dropping the stored failure code) was equivalent: the
 consumer's `failure or config is None` guard still caught it. It was replaced

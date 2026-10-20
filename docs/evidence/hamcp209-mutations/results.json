@@ -5,11 +5,11 @@
       "tests.test_hamcp209_fast_dependency_index"
     ],
     "returncode": 0,
-    "seconds": 8.8,
+    "seconds": 9.3,
     "summary": "OK"
   },
-  "mutation_count": 47,
-  "killed": 47,
+  "mutation_count": 48,
+  "killed": 48,
   "survived": [],
   "python": "3.12.14",
   "results": [
@@ -55,7 +55,7 @@
       "first_failures": [
         "FAIL test_partial_coverage_matches_stored_path (tests.test_hamcp209_fast_dependency_index.CoverageTests.test_partial_coverage_matches_stored_path)"
       ],
-      "seconds": 3.8
+      "seconds": 3.9
     },
     {
       "id": "M2b-pending-written-automation-never-checked",
@@ -77,7 +77,7 @@
       "first_failures": [
         "FAIL test_deleted_pending_automation_clears_on_404 (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_deleted_pending_automation_clears_on_404)"
       ],
-      "seconds": 8.4
+      "seconds": 9.3
     },
     {
       "id": "M2c-pending-not-loaded-reported-unavailable",
@@ -99,7 +99,7 @@
       "first_failures": [
         "FAIL test_written_automation_not_loaded_is_partial_with_empty_inventory (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_written_automation_not_loaded_is_partial_with_empty_inventory)"
       ],
-      "seconds": 8.6
+      "seconds": 10.0
     },
     {
       "id": "M3-silent-fallback",
@@ -121,7 +121,7 @@
       "first_failures": [
         "FAIL test_unreadable_loaded_and_stored_automation_is_partial (tests.test_hamcp209_fast_dependency_index.CoverageTests.test_unreadable_loaded_and_stored_automation_is_partial)"
       ],
-      "seconds": 3.7
+      "seconds": 4.3
     },
     {
       "id": "M4-journal-ignored",
@@ -143,7 +143,7 @@
       "first_failures": [
         "FAIL test_stored_read_failure_for_pending_write_is_not_cleared (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_stored_read_failure_for_pending_write_is_not_cleared)"
       ],
-      "seconds": 8.6
+      "seconds": 10.4
     },
     {
       "id": "M5-blueprint-search-ignored",
@@ -165,7 +165,7 @@
       "first_failures": [
         "FAIL test_blueprint_loaded_form_is_never_used (tests.test_hamcp209_fast_dependency_index.ExtractionParityTests.test_blueprint_loaded_form_is_never_used)"
       ],
-      "seconds": 7.3
+      "seconds": 8.8
     },
     {
       "id": "M6-identity-unchecked",
@@ -187,7 +187,7 @@
       "first_failures": [
         "FAIL test_each_per_automation_reason_is_reported (tests.test_hamcp209_fast_dependency_index.FallbackReportingTests.test_each_per_automation_reason_is_reported)"
       ],
-      "seconds": 8.2
+      "seconds": 10.0
     },
     {
       "id": "M7-allowlist-open",
@@ -209,7 +209,7 @@
       "first_failures": [
         "FAIL test_only_fixed_read_shapes_are_admitted (tests.test_hamcp209_fast_dependency_index.BatchAllowlistTests.test_only_fixed_read_shapes_are_admitted)"
       ],
-      "seconds": 1.3
+      "seconds": 1.7
     },
     {
       "id": "M8-governed-write-not-journaled",
@@ -231,7 +231,7 @@
       "first_failures": [
         "FAIL test_automation_gateway_journals_before_dispatch (tests.test_hamcp209_fast_dependency_index.GovernedWriteHookTests.test_automation_gateway_journals_before_dispatch)"
       ],
-      "seconds": 8.3
+      "seconds": 10.0
     },
     {
       "id": "M9-resource-write-not-journaled",
@@ -253,7 +253,7 @@
       "first_failures": [
         "FAIL test_resource_gateway_journals_automation_only (tests.test_hamcp209_fast_dependency_index.GovernedWriteHookTests.test_resource_gateway_journals_automation_only)"
       ],
-      "seconds": 8.3
+      "seconds": 9.8
     },
     {
       "id": "R1-sanitizer-decision-bypassed",
@@ -275,7 +275,7 @@
       "first_failures": [
         "FAIL test_known_numeric_and_enum_values_are_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_known_numeric_and_enum_values_are_digested)"
       ],
-      "seconds": 3.8
+      "seconds": 4.2
     },
     {
       "id": "H1a-denylist-instead-of-allowlist",
@@ -309,7 +309,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.8
+      "seconds": 4.3
     },
     {
       "id": "H1b-hash-prefix-trusted",
@@ -331,7 +331,7 @@
       "first_failures": [
         "FAIL test_enum_words_require_a_literal_configuration (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_enum_words_require_a_literal_configuration)"
       ],
-      "seconds": 3.8
+      "seconds": 4.3
     },
     {
       "id": "H1c-target-position-bypasses-filter",
@@ -353,7 +353,7 @@
       "first_failures": [
         "FAIL test_jwt_variants_are_digested_in_plan_response_and_files (tests.test_hamcp209_fast_dependency_index.EffectDisplayPlanPersistenceTests.test_jwt_variants_are_digested_in_plan_response_and_files)"
       ],
-      "seconds": 4.2
+      "seconds": 4.7
     },
     {
       "id": "H1d-data-position-bypasses-filter",
@@ -375,7 +375,7 @@
       "first_failures": [
         "FAIL test_generated_lowercase_value_is_digested_in_every_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_generated_lowercase_value_is_digested_in_every_position)"
       ],
-      "seconds": 5.7
+      "seconds": 6.5
     },
     {
       "id": "H1e-service-position-bypasses-filter",
@@ -397,7 +397,7 @@
       "first_failures": [
         "FAIL test_generated_lowercase_value_is_digested_in_every_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_generated_lowercase_value_is_digested_in_every_position)"
       ],
-      "seconds": 6.0
+      "seconds": 6.9
     },
     {
       "id": "H1f-domain-position-bypasses-filter",
@@ -419,7 +419,7 @@
       "first_failures": [
         "FAIL test_generated_lowercase_value_is_digested_in_every_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_generated_lowercase_value_is_digested_in_every_position)"
       ],
-      "seconds": 6.1
+      "seconds": 7.1
     },
     {
       "id": "H1g-data-enum-provenance-ignored",
@@ -441,7 +441,7 @@
       "first_failures": [
         "FAIL test_enum_words_require_a_literal_configuration (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_enum_words_require_a_literal_configuration)"
       ],
-      "seconds": 3.9
+      "seconds": 4.2
     },
     {
       "id": "H1h-target-enum-provenance-ignored",
@@ -463,7 +463,7 @@
       "first_failures": [
         "FAIL test_enum_words_require_a_literal_configuration (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_enum_words_require_a_literal_configuration)"
       ],
-      "seconds": 3.8
+      "seconds": 4.3
     },
     {
       "id": "H2a-shape-heuristic-restored",
@@ -497,7 +497,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.8
+      "seconds": 4.2
     },
     {
       "id": "H2b-entity-registry-skipped",
@@ -519,7 +519,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.8
+      "seconds": 4.2
     },
     {
       "id": "H2b-device-registry-skipped",
@@ -541,7 +541,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.8
+      "seconds": 4.4
     },
     {
       "id": "H2b-area-registry-skipped",
@@ -563,7 +563,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.8
+      "seconds": 4.3
     },
     {
       "id": "H2b-floor-registry-skipped",
@@ -585,7 +585,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.8
+      "seconds": 4.2
     },
     {
       "id": "H2b-label-registry-skipped",
@@ -607,7 +607,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.7
+      "seconds": 4.2
     },
     {
       "id": "H2c-service-registry-skipped",
@@ -629,7 +629,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.8
+      "seconds": 4.2
     },
     {
       "id": "H2d-domain-registry-skipped",
@@ -651,7 +651,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.8
+      "seconds": 4.3
     },
     {
       "id": "H2e-data-key-schema-skipped",
@@ -673,7 +673,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.7
+      "seconds": 4.2
     },
     {
       "id": "H2f-data-key-any-service-schema",
@@ -695,7 +695,7 @@
       "first_failures": [
         "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
-      "seconds": 3.8
+      "seconds": 4.2
     },
     {
       "id": "H2g-target-step-path-unchecked",
@@ -717,7 +717,7 @@
       "first_failures": [
         "FAIL test_unregistered_values_are_digested_in_every_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_unregistered_values_are_digested_in_every_position)"
       ],
-      "seconds": 3.9
+      "seconds": 4.2
     },
     {
       "id": "H2h-registry-member-sanitizer-skipped",
@@ -739,7 +739,7 @@
       "first_failures": [
         "FAIL test_registered_value_the_sanitizer_recognizes_is_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_registered_value_the_sanitizer_recognizes_is_digested)"
       ],
-      "seconds": 3.9
+      "seconds": 4.3
     },
     {
       "id": "H2i-unavailable-registry-treated-complete",
@@ -761,7 +761,7 @@
       "first_failures": [
         "FAIL test_unavailable_registry_fails_closed_and_is_partial (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_unavailable_registry_fails_closed_and_is_partial)"
       ],
-      "seconds": 7.5
+      "seconds": 8.3
     },
     {
       "id": "H2j-unverified-not-partial",
@@ -783,7 +783,7 @@
       "first_failures": [
         "FAIL test_unavailable_registry_fails_closed_and_is_partial (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_unavailable_registry_fails_closed_and_is_partial)"
       ],
-      "seconds": 7.5
+      "seconds": 8.6
     },
     {
       "id": "H2k-unverified-warning-dropped",
@@ -805,7 +805,7 @@
       "first_failures": [
         "FAIL test_unavailable_registry_fails_closed_and_is_partial (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_unavailable_registry_fails_closed_and_is_partial)"
       ],
-      "seconds": 7.5
+      "seconds": 8.4
     },
     {
       "id": "H2l-service-section-is-a-key",
@@ -827,7 +827,7 @@
       "first_failures": [
         "FAIL test_service_registry_schema_is_validated_and_bounded (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_service_registry_schema_is_validated_and_bounded)"
       ],
-      "seconds": 3.9
+      "seconds": 4.2
     },
     {
       "id": "H2m-malformed-service-registry-accepted",
@@ -849,7 +849,7 @@
       "first_failures": [
         "FAIL test_service_registry_schema_is_validated_and_bounded (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_service_registry_schema_is_validated_and_bounded)"
       ],
-      "seconds": 4.0
+      "seconds": 4.3
     },
     {
       "id": "M3a-number-literal-sanitizer-skipped",
@@ -871,7 +871,7 @@
       "first_failures": [
         "FAIL test_known_numeric_and_enum_values_are_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_known_numeric_and_enum_values_are_digested)"
       ],
-      "seconds": 3.9
+      "seconds": 4.2
     },
     {
       "id": "M3b-data-enum-sanitizer-skipped",
@@ -893,7 +893,7 @@
       "first_failures": [
         "FAIL test_known_numeric_and_enum_values_are_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_known_numeric_and_enum_values_are_digested)"
       ],
-      "seconds": 4.1
+      "seconds": 4.2
     },
     {
       "id": "M3c-target-enum-sanitizer-skipped",
@@ -915,7 +915,7 @@
       "first_failures": [
         "FAIL test_known_numeric_and_enum_values_are_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_known_numeric_and_enum_values_are_digested)"
       ],
-      "seconds": 4.1
+      "seconds": 4.3
     },
     {
       "id": "M1a-unverified-loaded-reported-complete",
@@ -937,7 +937,7 @@
       "first_failures": [
         "FAIL test_batch_failure_is_not_treated_as_unsupported (tests.test_hamcp209_fast_dependency_index.FallbackReportingTests.test_batch_failure_is_not_treated_as_unsupported)"
       ],
-      "seconds": 8.5
+      "seconds": 9.7
     },
     {
       "id": "M1c-batch-failure-reported-unsupported",
@@ -959,7 +959,7 @@
       "first_failures": [
         "FAIL test_batch_failure_is_not_treated_as_unsupported (tests.test_hamcp209_fast_dependency_index.FallbackReportingTests.test_batch_failure_is_not_treated_as_unsupported)"
       ],
-      "seconds": 8.7
+      "seconds": 9.7
     },
     {
       "id": "M1b-identity-mismatch-treated-stable",
@@ -981,7 +981,7 @@
       "first_failures": [
         "FAIL test_each_per_automation_reason_is_reported (tests.test_hamcp209_fast_dependency_index.FallbackReportingTests.test_each_per_automation_reason_is_reported)"
       ],
-      "seconds": 8.9
+      "seconds": 10.1
     },
     {
       "id": "M2d-overflow-cleared-after-build",
@@ -1003,7 +1003,7 @@
       "first_failures": [
         "FAIL test_journal_overflow_is_sticky_and_always_partial (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_journal_overflow_is_sticky_and_always_partial)"
       ],
-      "seconds": 9.2
+      "seconds": 10.0
     },
     {
       "id": "M2e-pending-cleared-after-partial-build",
@@ -1025,7 +1025,7 @@
       "first_failures": [
         "FAIL test_stored_read_failure_for_pending_write_is_not_cleared (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_stored_read_failure_for_pending_write_is_not_cleared)"
       ],
-      "seconds": 9.4
+      "seconds": 10.2
     },
     {
       "id": "M2f-overflow-not-reported",
@@ -1047,7 +1047,7 @@
       "first_failures": [
         "FAIL test_journal_overflow_is_sticky_and_always_partial (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_journal_overflow_is_sticky_and_always_partial)"
       ],
-      "seconds": 9.1
+      "seconds": 9.9
     },
     {
       "id": "M2g-unreconciled-read-failure-not-reported",
@@ -1069,7 +1069,29 @@
       "first_failures": [
         "FAIL test_stored_read_failure_for_pending_write_is_not_cleared (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_stored_read_failure_for_pending_write_is_not_cleared)"
       ],
-      "seconds": 8.8
+      "seconds": 10.3
+    },
+    {
+      "id": "C1-real-ha-capture-display-registries-refused",
+      "design_item": "CI: the Real HA read capture refuses the display registry reads (afaff67 lane failure)",
+      "path": "scripts/real_ha_contract_tests.py",
+      "replacements": [
+        [
+          "        \"config/device_registry/list\",\n        \"config/area_registry/list\",\n        \"config/floor_registry/list\",\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "C1-real-ha-capture-display-registries-refused.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_capture_admits_exactly_the_reviewed_reads (tests.test_hamcp209_fast_dependency_index.RealHomeAssistantReadCaptureTests.test_capture_admits_exactly_the_reviewed_reads)"
+      ],
+      "seconds": 10.6
     }
   ]
 }
