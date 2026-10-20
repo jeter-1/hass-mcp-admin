@@ -575,6 +575,7 @@ SANITIZER_SITES = {
     ("dependency/models.py", "_bounded_evidence_values", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/provider.py", "DirectHaDependencyProvider.scan", "redact_data"): (2, "analysis"),
     ("dependency/provider.py", "_bounded_provider_identity", "redact_data"): (1, "analysis"),
+    ("dependency/provider.py", "_EffectDisplayFilter._clean", "redact_data"): (1, "analysis"),
     ("dependency/script_calls.py", "extract_script_calls", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/script_calls.py", "extract_script_calls.add", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/script_sources.py", "collect_script_diagnostics", "sanitize_untrusted_data"): (1, "analysis"),

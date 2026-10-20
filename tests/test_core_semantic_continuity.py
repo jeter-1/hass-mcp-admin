@@ -109,6 +109,17 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
             "id": "synthetic", "triggers": [{"trigger": "template", "value_template":
                 "{{ is_state('input_boolean.beta37_exact_action', 'on') }}"}],
             "actions": [{"action": "notify.notify", "data": {"message": "synthetic"}}]}
+        # HAMCP-209: the loaded form arrives over the WebSocket batch, which
+        # _Network cannot pipeline; an unreadable loaded source is partial.
+        loaded = self.network.payloads["/config/automation/config/synthetic"]
+
+        async def loaded_batch(_client, payloads):
+            return [(True, {"config": loaded}) if item["type"] == "automation/config" else (True, {})
+                    for item in payloads]
+
+        batch = patch.object(HomeAssistantWebSocketClient, "command_batch", loaded_batch)
+        batch.start()
+        self.addCleanup(batch.stop)
         evidence = await self.risk.assess(self.helper.entity_id)
         self.assertTrue(evidence["binding"]["execution_eligible"], evidence["binding"])
         self.assertIn("automation.synthetic", evidence["binding"]["relevant_downstream_object_ids"])

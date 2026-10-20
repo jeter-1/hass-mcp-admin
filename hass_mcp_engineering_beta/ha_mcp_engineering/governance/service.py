@@ -522,6 +522,11 @@ class AutomationGateway:
                     "provider_response_received": False,
                 }
             ) from exc
+        # HAMCP-209: the loaded configuration is verified against the stored
+        # one for this automation until Home Assistant's reload lands.
+        from ..dependency import DEPENDENCY_ANALYSIS
+
+        DEPENDENCY_ANALYSIS.note_automation_write(automation_id)
         try:
             return await self.client.request(
                 "POST",

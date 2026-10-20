@@ -1,0 +1,164 @@
+{
+  "synthetic": true,
+  "base": "a1236c4 (2.4.1-beta.19, REST-only provider)",
+  "head": "HAMCP-209 working tree",
+  "result": "IDENTICAL",
+  "base_tree": {
+    "generated_113": {
+      "automation_config_rest_reads": 113,
+      "automation_config_source": "stored_rest (pre-HAMCP-209)",
+      "dynamic_reference_count": 0,
+      "finding_count": 339,
+      "obligation_count": 452,
+      "snapshot_fingerprint": "4a773504efe98f8cc64edb25844e41a3a7e94316f0d92fe3c91b13d6a888ce6d",
+      "view_sha256": "a9a421e2e339cf02135a2aa0e4079aba390fb0b2c0c649988e113fc9fe660288"
+    },
+    "representative": {
+      "automation_config_rest_reads": 6,
+      "automation_config_source": "stored_rest (pre-HAMCP-209)",
+      "dynamic_reference_count": 7,
+      "finding_count": 21,
+      "obligation_count": 26,
+      "snapshot_fingerprint": "7c95ffc698f3cb4780d08d1c3ab90d748f9357d71d85525e09d231605b78baab",
+      "view_sha256": "a91fd3a34c9c9f13c57a9edde02a7011e125e42bd615ff73ab6c48da4e5cd25d"
+    }
+  },
+  "head_tree": {
+    "generated_113": {
+      "automation_config_rest_reads": 0,
+      "automation_config_source": "loaded_websocket",
+      "dynamic_reference_count": 0,
+      "finding_count": 339,
+      "obligation_count": 452,
+      "snapshot_fingerprint": "4a773504efe98f8cc64edb25844e41a3a7e94316f0d92fe3c91b13d6a888ce6d",
+      "view_sha256": "a9a421e2e339cf02135a2aa0e4079aba390fb0b2c0c649988e113fc9fe660288"
+    },
+    "representative": {
+      "automation_config_rest_reads": 2,
+      "automation_config_source": "mixed",
+      "dynamic_reference_count": 7,
+      "finding_count": 21,
+      "obligation_count": 26,
+      "snapshot_fingerprint": "7c95ffc698f3cb4780d08d1c3ab90d748f9357d71d85525e09d231605b78baab",
+      "view_sha256": "a91fd3a34c9c9f13c57a9edde02a7011e125e42bd615ff73ab6c48da4e5cd25d"
+    }
+  },
+  "recheck_after_main_merge": {
+    "base": "538a7c7 (2.4.1-beta.20, HAMCP-191 #280 merged; REST-only provider)",
+    "head": "78a2595 (HAMCP-209 merged with 538a7c7)",
+    "result": "IDENTICAL",
+    "base_tree": {
+      "generated_113": {
+        "automation_config_rest_reads": 113,
+        "automation_config_source": "stored_rest (pre-HAMCP-209)",
+        "dynamic_reference_count": 0,
+        "finding_count": 339,
+        "obligation_count": 452,
+        "snapshot_fingerprint": "4a773504efe98f8cc64edb25844e41a3a7e94316f0d92fe3c91b13d6a888ce6d",
+        "view_sha256": "a9a421e2e339cf02135a2aa0e4079aba390fb0b2c0c649988e113fc9fe660288"
+      },
+      "representative": {
+        "automation_config_rest_reads": 6,
+        "automation_config_source": "stored_rest (pre-HAMCP-209)",
+        "dynamic_reference_count": 7,
+        "finding_count": 21,
+        "obligation_count": 26,
+        "snapshot_fingerprint": "7c95ffc698f3cb4780d08d1c3ab90d748f9357d71d85525e09d231605b78baab",
+        "view_sha256": "a91fd3a34c9c9f13c57a9edde02a7011e125e42bd615ff73ab6c48da4e5cd25d"
+      }
+    },
+    "head_tree": {
+      "generated_113": {
+        "automation_config_rest_reads": 0,
+        "automation_config_source": "loaded_websocket",
+        "dynamic_reference_count": 0,
+        "finding_count": 339,
+        "obligation_count": 452,
+        "snapshot_fingerprint": "4a773504efe98f8cc64edb25844e41a3a7e94316f0d92fe3c91b13d6a888ce6d",
+        "view_sha256": "a9a421e2e339cf02135a2aa0e4079aba390fb0b2c0c649988e113fc9fe660288"
+      },
+      "representative": {
+        "automation_config_rest_reads": 2,
+        "automation_config_source": "mixed",
+        "dynamic_reference_count": 7,
+        "finding_count": 21,
+        "obligation_count": 26,
+        "snapshot_fingerprint": "7c95ffc698f3cb4780d08d1c3ab90d748f9357d71d85525e09d231605b78baab",
+        "view_sha256": "a91fd3a34c9c9f13c57a9edde02a7011e125e42bd615ff73ab6c48da4e5cd25d"
+      }
+    }
+  },
+  "recheck_after_beta22_merge": {
+    "base": "c618884 (2.4.1-beta.22, HAMCP-205 #281 and HAMCP-211 #284 merged; REST-only provider)",
+    "head": "969086e (HAMCP-209 merged with c618884); re-run on the final beta.23 source (with the effect-projection display fix) gives the same view hashes and fingerprints",
+    "result": "IDENTICAL",
+    "base_tree": {
+      "generated_113": {
+        "automation_config_rest_reads": 113,
+        "automation_config_source": "stored_rest (pre-HAMCP-209)",
+        "dynamic_reference_count": 0,
+        "finding_count": 339,
+        "obligation_count": 452,
+        "snapshot_fingerprint": "4a773504efe98f8cc64edb25844e41a3a7e94316f0d92fe3c91b13d6a888ce6d",
+        "view_sha256": "a9a421e2e339cf02135a2aa0e4079aba390fb0b2c0c649988e113fc9fe660288"
+      },
+      "representative": {
+        "automation_config_rest_reads": 6,
+        "automation_config_source": "stored_rest (pre-HAMCP-209)",
+        "dynamic_reference_count": 7,
+        "finding_count": 21,
+        "obligation_count": 26,
+        "snapshot_fingerprint": "7c95ffc698f3cb4780d08d1c3ab90d748f9357d71d85525e09d231605b78baab",
+        "view_sha256": "a91fd3a34c9c9f13c57a9edde02a7011e125e42bd615ff73ab6c48da4e5cd25d"
+      }
+    },
+    "head_tree": {
+      "generated_113": {
+        "automation_config_rest_reads": 0,
+        "automation_config_source": "loaded_websocket",
+        "dynamic_reference_count": 0,
+        "finding_count": 339,
+        "obligation_count": 452,
+        "snapshot_fingerprint": "4a773504efe98f8cc64edb25844e41a3a7e94316f0d92fe3c91b13d6a888ce6d",
+        "view_sha256": "a9a421e2e339cf02135a2aa0e4079aba390fb0b2c0c649988e113fc9fe660288"
+      },
+      "representative": {
+        "automation_config_rest_reads": 2,
+        "automation_config_source": "mixed",
+        "dynamic_reference_count": 7,
+        "finding_count": 21,
+        "obligation_count": 26,
+        "snapshot_fingerprint": "7c95ffc698f3cb4780d08d1c3ab90d748f9357d71d85525e09d231605b78baab",
+        "view_sha256": "a91fd3a34c9c9f13c57a9edde02a7011e125e42bd615ff73ab6c48da4e5cd25d"
+      }
+    }
+  },
+  "recheck_after_review_corrections": {
+    "bases": [
+      "a1236c4 (2.4.1-beta.19)",
+      "2.4.1-beta.20",
+      "c618884 (2.4.1-beta.22)"
+    ],
+    "head": "HAMCP-209 working tree with the H1, M1 and M2 review corrections",
+    "result": "IDENTICAL",
+    "note": "Every base gives the view hashes and snapshot fingerprints of base_tree above; the head gives those of head_tree (view_sha256 a9a421e2... and a91fd3a3...). The fixtures load every automation, so no M1 or M2 partial reason applies."
+  },
+  "recheck_after_registry_display": {
+    "bases": [
+      "a1236c4 (2.4.1-beta.19)",
+      "2.4.1-beta.20",
+      "c618884 (2.4.1-beta.22)"
+    ],
+    "head": "HAMCP-209 working tree with correction batch 2 (registry-backed effect display, M sanitizer check)",
+    "result": "IDENTICAL",
+    "generated_113": {
+      "view_sha256": "7b370194a210f3f21e63952c03936781d9956ae4f10f01aa53399ebf8feac46f",
+      "snapshot_fingerprint": "4a773504efe98f8cc64edb25844e41a3a7e94316f0d92fe3c91b13d6a888ce6d"
+    },
+    "representative": {
+      "view_sha256": "a91fd3a34c9c9f13c57a9edde02a7011e125e42bd615ff73ab6c48da4e5cd25d",
+      "snapshot_fingerprint": "7c95ffc698f3cb4780d08d1c3ab90d748f9357d71d85525e09d231605b78baab"
+    },
+    "note": "The generated fixture's state machine now also lists the light entities its automations target, so the effect display can admit them by registry membership; this changes the generated_113 view_sha256 for every tree alike (base and head agree). Snapshot fingerprints and the representative view are unchanged from base_tree above."
+  }
+}
