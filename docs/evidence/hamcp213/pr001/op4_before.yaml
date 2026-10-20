@@ -1,0 +1,39 @@
+id: pr001_op4_evening_alert
+alias: Anonymized alias 60
+description: Anonymized description 61.
+triggers:
+- entity_id: cover.garage_main
+  for: 00:30:00
+  id: open_30m
+  to: open
+  trigger: state
+- at: '21:00:00'
+  id: evening_check
+  trigger: time
+conditions:
+- after: '21:00:00'
+  condition: time
+- condition: state
+  entity_id: cover.garage_main
+  for: 00:30:00
+  state: open
+- alias: Anonymized alias 62
+  condition: template
+  value_template: "{% set door = states.cover.garage_main %}\n{% set opened_at = as_timestamp(door.last_changed, none) if door is defined and door is not none and door.last_changed is defined else none %}\n{% set boundary = as_timestamp(today_at('21:00:00')) - 1800 %}\n{% set trigger_id = trigger.id if trigger is defined and trigger.id is defined else '' %}\n{% set source_opened_at = as_timestamp(trigger.to_state.last_changed, none) if trigger_id == 'open_30m' and trigger.to_state is defined and trigger.to_state is not none and trigger.to_state.last_changed is defined else none %}\n{{ is_number(opened_at) and (\n  (trigger_id == 'evening_check' and opened_at <= boundary)\n  or (trigger_id == 'open_30m' and opened_at > boundary and source_opened_at == opened_at)\n) }}"
+actions:
+- action: media_player.turn_on
+  target:
+    entity_id: media_player.display_a
+- delay: 00:00:02
+- action: tts.speak
+  data:
+    cache: true
+    media_player_entity_id: media_player.display_a
+    message: Neutral message 63.
+  target:
+    entity_id: tts.speech_engine_a
+- action: notify.mobile_app_owner_phone
+  data:
+    message: Neutral message 64.
+    title: Neutral title 65.
+mode: single
