@@ -592,12 +592,16 @@ def configuration_operation_policy(
     *,
     owner_authoritative: bool = True,
     safety_critical_comparison: bool = True,
+    unlock_or_disarm_floor: bool | None = None,
 ) -> OperationPolicyClassification:
     """Classify one operation for both policy and approval review.
 
     ``safety_critical_comparison`` selects the f2-v3 (HAMCP-213) protected
     physical-effect mapping and script parity. It is false only for the
-    exact recomputation of historical f2-v1 and f2-v2 snapshots.
+    exact recomputation of historical f2-v1 and f2-v2 snapshots and for the
+    legacy contract-v1 route. ``unlock_or_disarm_floor`` (default: the same
+    as ``safety_critical_comparison``) applies the current OD-6(b) floor; the
+    legacy route passes it under current policy.
     """
     if operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE:
         return _entity_metadata_operation_policy(operation)
@@ -613,7 +617,28 @@ def configuration_operation_policy(
         )
     )
 
-    if _retained_safety_critical_effect_is_non_risk_increasing(
+    if unlock_or_disarm_floor is None:
+        unlock_or_disarm_floor = safety_critical_comparison
+    unlock_or_disarm = bool(
+        unlock_or_disarm_floor
+        and operation.resource_type in {"automation", "script"}
+        and compare_operation(operation).unlock_or_disarm
+    )
+    if unlock_or_disarm and owner_authoritative and safety_critical_comparison:
+        # Review H3 / OD-6(b): where an unlock or disarm effect is (or may
+        # be) present, no shortcut (retained effect, garage inverse, retry
+        # transfer) applies. The comparison mapping always requires the
+        # per-object acknowledgement for it.
+        protected = _safety_critical_comparison_policy(
+            operation,
+            triggers=triggers,
+            safety_critical_services=safety_critical_services,
+            risk_delta=risk_delta,
+        )
+        if protected is not None:
+            return protected
+
+    if not unlock_or_disarm and _retained_safety_critical_effect_is_non_risk_increasing(
         operation,
         triggers=triggers,
         safety_critical_services=safety_critical_services,
@@ -1029,9 +1054,12 @@ def _single_plan_policy(
                 synthetic,
                 # ADR-022 intentionally authorizes only the current typed
                 # configuration-plan route. The legacy contract-v1 route
-                # retains its historical consequence-policy boundary.
+                # retains its historical consequence-policy boundary, except
+                # that under current policy the retained-effect exception no
+                # longer admits an unlock or disarm change (review H3).
                 owner_authoritative=False,
                 safety_critical_comparison=False,
+                unlock_or_disarm_floor=safety_critical_comparison,
             ),
         )
     return (

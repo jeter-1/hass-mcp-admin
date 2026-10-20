@@ -89,11 +89,17 @@ class ComparisonRuleTests(unittest.TestCase):
             script(CLOSE), script(CLOSE, notify("a", continue_on_error=True))
         )
         self.assertEqual(after.verdict, VERDICT_EQUIVALENT, after.reason_codes)
-        # Without continue_on_error the step is kept, wording ignored.
+        # Review H2: a reference step that can run before an effect is
+        # compared in full, so even its wording is a change...
         kept = self.verdict(
             script(notify("a"), CLOSE), script(notify("b"), CLOSE)
         )
-        self.assertEqual(kept.verdict, VERDICT_EQUIVALENT, kept.reason_codes)
+        self.assertEqual(kept.verdict, VERDICT_CHANGED, kept.reason_codes)
+        # ...while literal wording after the last effect is ignored.
+        trailing = self.verdict(
+            script(CLOSE, notify("a")), script(CLOSE, notify("b"))
+        )
+        self.assertEqual(trailing.verdict, VERDICT_EQUIVALENT, trailing.reason_codes)
 
     def test_mode_rule_compares_the_run_mode(self):
         changed = self.verdict(script(CLOSE), script(CLOSE, mode="queued"))
@@ -187,7 +193,7 @@ class E013RegressionTests(ConfigurationPlanTestCase):
             notify("a")
         )
         self.gateway.configs[("script", "e013_retry_close")] = script(
-            notify("a"), CLOSE
+            CLOSE, notify("a")
         )
         created = await self.service.create_configuration_plan(
             title="E013 retry",
@@ -199,7 +205,7 @@ class E013RegressionTests(ConfigurationPlanTestCase):
                     "action": "update",
                     "target_id": "e013_retry_close",
                     "depends_on": [],
-                    "proposed_config": script(notify("b"), CLOSE),
+                    "proposed_config": script(CLOSE, notify("b")),
                 },
                 {
                     "operation_id": "sibling",
@@ -238,11 +244,13 @@ class E013RegressionTests(ConfigurationPlanTestCase):
         self.assertIn(RECIPIENT_REASON, retargeted.risk.reasons)
 
     async def test_wording_only_change_needs_plan_approval_only(self):
+        # Wording after the last effect; wording ahead of an effect is a
+        # change under review H2 (see the abort-point rule test).
         created, operation = await self.plan(
             "automation",
             "e013_wording",
-            automation(notify("Closing the garage"), CLOSE),
-            automation(notify("The garage is closing"), CLOSE),
+            automation(CLOSE, notify("The garage was closed")),
+            automation(CLOSE, notify("The garage is now closed")),
         )
         comparison = compare_operation(operation)
         self.assertEqual(comparison.verdict, VERDICT_EQUIVALENT, comparison.reason_codes)
@@ -259,8 +267,8 @@ class E013RegressionTests(ConfigurationPlanTestCase):
         created, operation = await self.plan(
             "script",
             "e013_unlock",
-            script(notify("a"), unlock),
-            script(notify("b"), unlock),
+            script(unlock, notify("a")),
+            script(unlock, notify("b")),
         )
         comparison = compare_operation(operation)
         self.assertEqual(comparison.verdict, VERDICT_EQUIVALENT, comparison.reason_codes)

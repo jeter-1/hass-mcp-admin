@@ -1779,13 +1779,17 @@ class Beta54ExactAutomationOwnerAuthorityTests(
         }
         created = await self._create_vanity_plan(proposed)
         decision = created["policy_decision"]
+        # HAMCP-213 review H1: a templated service name cannot be resolved,
+        # so the effect is disclosed as one that cannot be determined and
+        # needs the per-object safety-critical acknowledgement; it is never
+        # treated as having no protected effect.
         self.assertEqual("elevated_admin", decision["policy_class"])
-        self.assertEqual("unknown", decision["physical_consequence"])
-        self.assertEqual(["plan_approval"], decision["required_acknowledgements"])
-        self.assertIn(
-            "automation_consequence_semantics_incomplete",
-            decision["reason_codes"],
+        self.assertEqual("safety_critical", decision["physical_consequence"])
+        self.assertEqual(
+            ["plan_approval", "safety_critical_acknowledgement"],
+            decision["required_acknowledgements"],
         )
+        self.assertIn("safety_critical_effect_unresolved", decision["reason_codes"])
         self.assertTrue(created["risk"]["apply_allowed"])
         self.assertTrue(created["approval_actionable"])
         self.assertEqual(0, sum(call[0] == "write" for call in self.gateway.calls))
@@ -1797,7 +1801,7 @@ class Beta54ExactAutomationOwnerAuthorityTests(
         _review, csrf = await self.service.issue_external_csrf(
             created["plan_id"], pending["challenge_id"]
         )
-        granted = await self.service.decide_external_approval(
+        plan_only = await self.service.decide_external_approval(
             plan_id=created["plan_id"],
             challenge_id=pending["challenge_id"],
             expected_plan_hash=created["plan_hash"],
@@ -1808,6 +1812,36 @@ class Beta54ExactAutomationOwnerAuthorityTests(
             approver_principal=(
                 "home_assistant_admin_ingress:beta54-owner"
             ),
+        )
+        self.assertEqual("approval_pending", plan_only["status"])
+        self.assertEqual(
+            "safety_critical_acknowledgement", plan_only["approval_action"]
+        )
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(0, sum(call[0] == "write" for call in self.gateway.calls))
+        review, csrf = await self.service.issue_external_csrf(
+            created["plan_id"], plan_only["challenge_id"]
+        )
+        safety = review["safety_critical_acknowledgement"]
+        self.assertEqual(
+            ["unresolved"], [row["verdict"] for row in safety["objects"]]
+        )
+        granted = await self.service.decide_external_approval(
+            plan_id=created["plan_id"],
+            challenge_id=plan_only["challenge_id"],
+            expected_plan_hash=created["plan_hash"],
+            approval_kind=plan_only["approval_kind"],
+            approval_action=plan_only["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal=(
+                "home_assistant_admin_ingress:beta54-owner"
+            ),
+            acknowledged_objects=tuple(
+                row["object_ref"] for row in safety["objects"]
+            ),
+            acknowledged_projection_hash=safety["projection_hash"],
         )
         self.assertEqual("approved", granted["status"])
         self.assertEqual(0, sum(call[0] == "write" for call in self.gateway.calls))

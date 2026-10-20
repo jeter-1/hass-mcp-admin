@@ -14,13 +14,23 @@ Verdicts:
   display text and non-aborting reference-only steps that no effect follows
   may differ (OD-10, conservative rule).
 - ``changed``: anything else.
-- ``unresolved``: the operation has a protected effect, but some service,
-  target, blueprint input or structure cannot be bounded by the reviewed
-  grammar. Uncertainty is disclosed and acknowledged, never treated as
-  equivalence.
+- ``unresolved``: the operation has, or may have, a protected effect that
+  the reviewed grammar cannot bound: a templated or variable-driven service
+  name; an effect-capable service whose target is templated, area, device,
+  floor or label based, or absent; an unresolvable device action; a
+  blueprint input; or an unbounded structure. Uncertainty is disclosed as
+  "effect cannot be determined" and acknowledged, never treated as ``none``
+  or ``equivalent`` (HAMCP-213 review H1).
 
 Only closed, reviewed tables are used. An unknown service acting on a
-protected object counts as an effect.
+protected object counts as an effect. Registry data is not available to this
+pure comparison, so an area, device, floor or label selector is never
+resolved to its members: it is always ``unresolved``.
+
+Every reference-only step that can run before a protected effect in the same
+run path is compared in full (service, all data including nested data,
+target, ``continue_on_error``, ``enabled`` and position), because any change
+to it can change whether the effect is reached (OD-10, review H2).
 """
 
 from __future__ import annotations
@@ -62,6 +72,20 @@ _EFFECT_DOMAINS = frozenset({"cover", *SENSITIVE_ENTITY_DOMAINS})
 _GENERIC_EFFECT_SERVICES = frozenset(
     {"homeassistant.turn_on", "homeassistant.turn_off", "homeassistant.toggle"}
 )
+# Effect-capable domains (review H1): a call or device action in one of these
+# domains whose target cannot be resolved statically may act on a protected
+# object. Switch and water_heater entities are routinely matched by the water
+# floor; siren is listed by the architect direction although its literal
+# targets are not yet part of the floor (OD-7/D5).
+_UNRESOLVED_EFFECT_DOMAINS = frozenset(
+    {*_EFFECT_DOMAINS, "siren", "switch", "water_heater"}
+)
+# Closed table of reviewed domains whose services cannot act on a protected
+# object through an unresolved target (risk._HELPER_DIRECT_EFFECT_DOMAINS less
+# the effect-capable domains above). Any other domain is unknown, so an
+# unresolved target on its service is treated as a possible protected effect.
+_KNOWN_NON_PROTECTED_DOMAINS = frozenset({"climate", "fan", "light"})
+_KNOWN_TRANSITIVE_DOMAINS = frozenset({"automation", "scene", "script"})
 _TRANSITIVE_EXACT_SERVICES = frozenset({"automation.trigger", "scene.turn_on"})
 _TRANSITIVE_SERVICE_PREFIXES = ("script.",)
 _SAFETY_CRITICAL_DEVICE_ACTIONS = frozenset(
@@ -75,6 +99,7 @@ _CONTEXT_EXCLUDED_KEYS = {
 }
 _BODY_KEY = {"automation": "action", "script": "sequence"}
 _TARGET_SELECTORS = ("entity_id", "device_id", "area_id", "floor_id", "label_id")
+_UNLOCK_OR_DISARM = "unlock_or_disarm_effect"
 
 MAX_STEPS = 4096
 MAX_DEPTH = 24
@@ -108,8 +133,14 @@ def protected_object_reason(entity_id: str) -> str | None:
 
 
 def _step_service(step: dict[str, Any]) -> tuple[str | None, bool]:
-    """Return ``(service, dynamic)`` for one call step."""
+    """Return ``(service, dynamic)`` for one call step.
 
+    The legacy ``service_template`` key always names a service that the
+    grammar does not resolve (review H1), so it is always dynamic.
+    """
+
+    if "service_template" in step:
+        return None, True
     for key in ("action", "service"):
         if key not in step:
             continue
@@ -164,11 +195,20 @@ def _call_targets(
             values, is_dynamic = _split_entity_values(holder[selector])
             entities.extend(values)
             dynamic = dynamic or is_dynamic
-    data = step.get("data")
-    if include_data_entity and isinstance(data, dict) and "entity_id" in data:
-        values, is_dynamic = _split_entity_values(data["entity_id"])
-        entities.extend(values)
-        dynamic = dynamic or is_dynamic
+    for data_key in ("data", "data_template"):
+        if not include_data_entity or data_key not in step:
+            continue
+        data = step[data_key]
+        if not isinstance(data, dict):
+            # A templated data mapping can carry any selector.
+            dynamic = True
+            continue
+        if "entity_id" in data:
+            values, is_dynamic = _split_entity_values(data["entity_id"])
+            entities.extend(values)
+            dynamic = dynamic or is_dynamic
+        # Home Assistant also accepts the non-entity selectors in data.
+        other = other or any(selector in data for selector in _TARGET_SELECTORS[1:])
     if any(item in {"all", "*"} for item in entities):
         dynamic = True
         entities = [item for item in entities if item not in {"all", "*"}]
@@ -188,8 +228,7 @@ class _Effect:
 @dataclass
 class _Side:
     effects: list[_Effect]
-    unresolved: list[tuple[str, str]]  # (object key, reason code)
-    potential_unresolved: list[tuple[str, str]]
+    unresolved: list[tuple[str, str, bool]]  # (object key, reason, unlock/disarm)
     transitive: list[str]
     buttons: set[str]
     relevant: bool
@@ -280,21 +319,31 @@ class _Analyzer:
     def __init__(self) -> None:
         self.steps = 0
         self.effects: list[_Effect] = []
-        self.unresolved: list[tuple[str, str]] = []
-        self.potential_unresolved: list[tuple[str, str]] = []
+        self.unresolved: list[tuple[str, str, bool]] = []
         self.transitive: list[str] = []
         self.buttons: set[str] = set()
         self.relevant = False
-        self._effect_memo: dict[int, bool] = {}
+        # Keyed by ``id()``; each entry also holds the keyed list so that its
+        # id cannot be reused by a later (temporary) list while the analyzer
+        # lives. A bare id key returned stale results for a reused id.
+        self._effect_memo: dict[int, tuple[list[Any], bool]] = {}
 
     # -- classification of one step ---------------------------------------
+
+    def _add_unresolved(self, key: str, reason: str, floor: bool) -> None:
+        # Review H1: an effect the grammar cannot resolve always makes the
+        # operation protected; it is never discarded as ``none``.
+        self.relevant = True
+        self.unresolved.append((key, reason, floor))
 
     def _call_effects(self, step: dict[str, Any], path: str) -> bool:
         """Record effects of one call step; return whether it is an effect."""
 
         service, dynamic = _step_service(step)
         if dynamic:
-            self.potential_unresolved.append((f"dynamic_service@{path}", "dynamic_service"))
+            # A templated or variable-driven service name may be any service,
+            # including lock.unlock or alarm_control_panel.alarm_disarm.
+            self._add_unresolved(f"dynamic_service@{path}", "dynamic_service", True)
             return True
         if service is None:
             return False
@@ -323,16 +372,27 @@ class _Analyzer:
                 _Effect(entity_id, service, path, data_keys, reason, floor)
             )
         sensitive_service = domain in SENSITIVE_ENTITY_DOMAINS or floor
-        unresolved_target = dynamic_target or other_selector or (
-            not entities and domain in _EFFECT_DOMAINS
+        effect_capable = (
+            domain in _UNRESOLVED_EFFECT_DOMAINS
+            or service in _GENERIC_EFFECT_SERVICES
+            or domain
+            not in _KNOWN_NON_PROTECTED_DOMAINS
+            | _KNOWN_TRANSITIVE_DOMAINS
+            | {"homeassistant"}
         )
-        if unresolved_target and (sensitive_service or domain in _EFFECT_DOMAINS or service in _GENERIC_EFFECT_SERVICES):
-            key = f"{service}@{path}"
-            if sensitive_service:
-                self.relevant = True
-                self.unresolved.append((key, "unresolved_protected_target"))
-            else:
-                self.potential_unresolved.append((key, "unresolved_effect_target"))
+        unresolved_target = dynamic_target or other_selector or (
+            not entities and domain in _UNRESOLVED_EFFECT_DOMAINS
+        )
+        if unresolved_target and effect_capable:
+            self._add_unresolved(
+                f"{service}@{path}",
+                (
+                    "unresolved_protected_target"
+                    if sensitive_service
+                    else "unresolved_effect_target"
+                ),
+                floor,
+            )
             effect = True
         if service in _TRANSITIVE_EXACT_SERVICES or service.startswith(
             _TRANSITIVE_SERVICE_PREFIXES
@@ -352,20 +412,47 @@ class _Analyzer:
         if not isinstance(domain, str) or "type" not in step:
             return False
         kind = step.get("type")
+        floor = (domain, kind) in _SAFETY_CRITICAL_DEVICE_ACTIONS
+        # A device action of an effect-capable or unknown domain acts on an
+        # object that the grammar may be unable to name (review H1).
+        effect_capable = "condition" not in step and (
+            domain in _UNRESOLVED_EFFECT_DOMAINS
+            or domain not in _KNOWN_NON_PROTECTED_DOMAINS
+        )
         if not isinstance(device_id, str) or not isinstance(kind, str):
             if domain in SENSITIVE_ENTITY_DOMAINS:
-                self.relevant = True
-                self.unresolved.append((f"device:{domain}@{path}", "unresolved_protected_target"))
+                self._add_unresolved(
+                    f"device:{domain}@{path}", "unresolved_protected_target", floor
+                )
+                return True
+            if effect_capable:
+                self._add_unresolved(
+                    f"device:{domain}@{path}", "unresolved_effect_target", floor
+                )
                 return True
             return False
         entity = step.get("entity_id")
         reason = None
         object_id = f"device:{device_id}"
-        if isinstance(entity, str) and entity and not _has_template(entity):
+        literal_entity = (
+            isinstance(entity, str)
+            and "." in entity
+            and not _has_template(entity)
+        )
+        if literal_entity:
             reason = protected_object_reason(entity)
             object_id = entity.strip().lower()
         if reason is None and domain in SENSITIVE_ENTITY_DOMAINS:
             reason = f"sensitive_domain_{domain}"
+        if reason is None and effect_capable and not literal_entity:
+            # The entity is a registry id, a template or absent, so the
+            # protected floor cannot be evaluated for it.
+            self._add_unresolved(
+                f"device:{domain}.{kind}@{path}"[:MAX_OBJECT_ID_LENGTH],
+                "unresolved_effect_target",
+                floor,
+            )
+            return True
         if reason is None:
             return False
         self.relevant = True
@@ -376,7 +463,7 @@ class _Analyzer:
                 path,
                 (),
                 reason,
-                (domain, kind) in _SAFETY_CRITICAL_DEVICE_ACTIONS,
+                floor,
             )
         )
         return True
@@ -408,7 +495,7 @@ class _Analyzer:
         if not isinstance(step, dict):
             raise _Unbounded("step")
         found = False
-        if "action" in step or "service" in step:
+        if "action" in step or "service" in step or "service_template" in step:
             found = self._call_effects(step, path) or found
         found = self._device_effect(step, path) or found
         found = self._scene_effect(step) or found
@@ -419,8 +506,8 @@ class _Analyzer:
 
         key = id(steps)
         cached = self._effect_memo.get(key)
-        if cached is not None:
-            return cached
+        if cached is not None and cached[0] is steps:
+            return cached[1]
         result = False
         for step in steps:
             if not isinstance(step, dict):
@@ -434,7 +521,7 @@ class _Analyzer:
             ):
                 result = True
                 break
-        self._effect_memo[key] = result
+        self._effect_memo[key] = (steps, result)
         return result
 
     def walk(self, steps: Any, path: str, effect_follows: bool, depth: int) -> list[Any]:
@@ -458,12 +545,30 @@ class _Analyzer:
                     # A non-aborting reference step that no effect follows can
                     # neither gate nor delay a protected effect (OD-10).
                     continue
-                normalized.append(_reference_signature(service, step))
+                if later:
+                    # Review H2: a reference step that can run before an
+                    # effect is compared in full, nested data included; any
+                    # change can change whether the effect is reached.
+                    normalized.append(_reference_step(step))
+                else:
+                    normalized.append(_reference_signature(service, step))
                 continue
             node: dict[str, Any] = {"step": _shell(step)}
-            for label, child, loops in _children(step):
+            children = list(_children(step))
+            # Parallel branches run concurrently: an effect in any branch can
+            # follow (or be cut short by) a reference step in a sibling.
+            parallel_effect = "parallel" in step and any(
+                self.contains_effect(_as_steps(child))
+                for label, child, _loops in children
+                if label.startswith("parallel[")
+            )
+            for label, child, loops in children:
                 child_steps = _as_steps(child)
-                follows = later or (loops and self.contains_effect(child_steps))
+                follows = (
+                    later
+                    or parallel_effect
+                    or (loops and self.contains_effect(child_steps))
+                )
                 node[label] = self.walk(child_steps, f"{here}.{label}", follows, depth + 1)
             normalized.append(node)
         return normalized
@@ -488,7 +593,22 @@ def _effect_shape(step: dict[str, Any]) -> bool:
     )
 
 
+def _reference_step(step: dict[str, Any]) -> dict[str, Any]:
+    """Full normalized form of a reference step that an effect may follow.
+
+    Only the display ``alias`` is dropped; every behavioral field is kept.
+    """
+
+    return {
+        "reference_step": {
+            key: value for key, value in step.items() if key not in _DISPLAY_STEP_KEYS
+        }
+    }
+
+
 def _reference_signature(service: str, step: dict[str, Any]) -> dict[str, Any]:
+    """Signature of a reference step after which no protected effect can run."""
+
     entities, dynamic, other = _call_targets(step, include_data_entity=True)
     data = step.get("data") if isinstance(step.get("data"), dict) else {}
     kept_data = {
@@ -543,21 +663,19 @@ def _blueprint_inputs(config: dict[str, Any]) -> list[tuple[str, str]]:
 
 def _analyze(resource_type: str, config: dict[str, Any] | None) -> _Side:
     if config is None:
-        return _Side([], [], [], [], set(), False, None)
+        return _Side([], [], [], set(), False, None)
     if not isinstance(config, dict):
         raise _Unbounded("config")
     analyzer = _Analyzer()
     body = config.get(_BODY_KEY[resource_type], [])
     structure = analyzer.walk(body, _BODY_KEY[resource_type], False, 0)
     for entity_id, _reason in _blueprint_inputs(config):
-        analyzer.relevant = True
-        analyzer.unresolved.append((entity_id, "unresolved_blueprint_input"))
+        analyzer._add_unresolved(entity_id, "unresolved_blueprint_input", False)
     excluded = _CONTEXT_EXCLUDED_KEYS[resource_type]
     context = {key: value for key, value in config.items() if key not in excluded}
     return _Side(
         analyzer.effects,
         analyzer.unresolved,
-        analyzer.potential_unresolved,
         analyzer.transitive,
         analyzer.buttons,
         analyzer.relevant,
@@ -580,6 +698,13 @@ class PhysicalEffectComparison:
     @property
     def acknowledgement_required(self) -> bool:
         return bool(self.acknowledgement_objects)
+
+    @property
+    def unlock_or_disarm(self) -> bool:
+        """Whether any row is, or may be, an unlock or disarm effect (OD-6(b))."""
+
+        rows = (self.projection or {}).get("rows", [])
+        return any(_UNLOCK_OR_DISARM in row.get("reason_codes", []) for row in rows)
 
 
 NONE_COMPARISON = PhysicalEffectComparison(VERDICT_NONE, (), None, None, ())
@@ -675,9 +800,6 @@ def compare_physical_effects(
 
     reasons: list[str] = []
     unresolved = before.unresolved + after.unresolved
-    # Inside an operation that has protected effects, any call that might act
-    # on an object the grammar cannot name is unresolved, not ignored.
-    unresolved += before.potential_unresolved + after.potential_unresolved
     if before.structure is None or after.structure is None:
         # A create (or a deleted side) has no prior reachability to preserve,
         # so every protected effect it carries is new.
@@ -695,7 +817,7 @@ def compare_physical_effects(
         reasons.append("protected_effects_changed")
     if unresolved:
         verdict = VERDICT_UNRESOLVED
-        reasons.extend(sorted({code for _key, code in unresolved}))
+        reasons.extend(sorted({code for _key, code, _floor in unresolved}))
     elif reasons:
         verdict = VERDICT_CHANGED
     else:
@@ -705,7 +827,12 @@ def compare_physical_effects(
     for side, effects in (("before", before.effects), ("after", after.effects)):
         for effect in effects:
             objects.setdefault(effect.object_id, {"before": [], "after": []})[side].append(effect)
-    if len(objects) + len(unresolved) > MAX_ROWS or any(
+    unresolved_rows: dict[str, tuple[set[str], bool]] = {}
+    for key, code, floor in unresolved:
+        codes, seen_floor = unresolved_rows.setdefault(key[:MAX_OBJECT_ID_LENGTH], (set(), False))
+        codes.add(code)
+        unresolved_rows[key[:MAX_OBJECT_ID_LENGTH]] = (codes, seen_floor or floor)
+    if len(objects) + len(unresolved_rows) > MAX_ROWS or any(
         len(object_id) > MAX_OBJECT_ID_LENGTH for object_id in objects
     ):
         return _unbounded_comparison(resource_type, action, "comparison_bounds_exceeded")
@@ -726,7 +853,7 @@ def compare_physical_effects(
         if floor:
             # OD-6(b): an unlock or disarm effect always needs the per-object
             # acknowledgement, even when the comparison is equivalent.
-            row_reasons.append("unlock_or_disarm_effect")
+            row_reasons.append(_UNLOCK_OR_DISARM)
         rows.append(
             {
                 "object_id": object_id,
@@ -740,15 +867,18 @@ def compare_physical_effects(
                 ),
             }
         )
-    for key, code in sorted(set(unresolved)):
+    for key in sorted(unresolved_rows):
+        codes, floor = unresolved_rows[key]
         if key in objects:
+            # The same name is also a resolved effect; its row already
+            # requires the acknowledgement (the verdict is unresolved).
             continue
         rows.append(
             {
-                "object_id": key[:MAX_OBJECT_ID_LENGTH],
+                "object_id": key,
                 "verdict": ROW_UNRESOLVED,
                 "protection": "effect_cannot_be_determined",
-                "reason_codes": [code],
+                "reason_codes": sorted(codes) + ([_UNLOCK_OR_DISARM] if floor else []),
                 "before": [],
                 "after": [],
                 "acknowledgement_required": True,

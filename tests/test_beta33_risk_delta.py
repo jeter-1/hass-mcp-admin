@@ -457,10 +457,21 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
         ]
         guarded_lock = copy.deepcopy(retained_lock)
         guarded_lock["condition"].append(copy.deepcopy(OBSTRUCTION_GUARD))
-        self.assertEqual(
-            _operation_policy(retained_lock, guarded_lock).policy_class,
-            ApprovalPolicyClass.ELEVATED_ADMIN,
+        # HAMCP-213 review H3 / OD-6(b): the retained-effect exception never
+        # applies to an unlock or disarm. A changed condition changes when the
+        # unlock runs, so it needs the per-object acknowledgement (exact
+        # writer contract) or stays prohibited (no exact contract).
+        decision = _operation_policy(retained_lock, guarded_lock)
+        self.assertEqual(decision.policy_class, ApprovalPolicyClass.PROHIBITED)
+        self.assertIn(
+            "safety_critical_execution_contract_incomplete",
+            decision.reason_codes,
         )
+        exact = _operation_policy(retained_lock, guarded_lock, exact=True)
+        self.assertEqual(exact.policy_class, ApprovalPolicyClass.ELEVATED_ADMIN)
+        self.assertTrue(exact.safety_critical_acknowledgement)
+        self.assertEqual(exact.risk_delta, RiskDelta.HIGH)
+        self.assertIn("unlock_or_disarm_effect", exact.reason_codes)
 
     def test_tautological_template_guard_is_not_labeled_strict_reduction(self):
         current = copy.deepcopy(CURRENT_GARAGE_AUTOMATION)
