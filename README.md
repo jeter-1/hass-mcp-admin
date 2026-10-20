@@ -1,5 +1,19 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.26** makes exact automation and script changes that
+touch a protected physical object (lock, alarm panel, valve, water control or
+garage cover) actionable instead of prohibited (HAMCP-213 PR 1, policy
+`f2-v3`). Engineering compares the before and after physical effects. An
+equivalent change needs plan approval only. A changed or undeterminable
+effect, and any unlock or disarm, also needs a per-object safety-critical
+acknowledgement on the Ingress panel, which dispatch rechecks. Incomplete
+execution contracts stay prohibited. No tool, schema or descriptor changes
+(88 tools, 89 with the optional YAML reader). Read the
+[2.4.1-beta.26 release notes](docs/V2_4_1_BETA26_RELEASE_NOTES.md) and
+[2.4.1-beta.26 acceptance contract](docs/V2_4_1_BETA26_ACCEPTANCE.md).
+
+It builds on beta.25 below.
+
 Engineering **2.4.1-beta.25** reads script configuration from what Home
 Assistant has loaded (HAMCP-212, fast dependency index part 2). The index
 build's single WebSocket batch adds two fixed, read-only commands per available
@@ -267,7 +281,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.25 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.26 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

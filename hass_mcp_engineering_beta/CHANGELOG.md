@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.4.1-beta.26 - Safety-critical acknowledgement (HAMCP-213 PR 1)
+
+Builds on 2.4.1-beta.25.
+
+- Compare each automation or script create or update's protected physical
+  effects before and after (`physical-effect-comparison-v1`): `none`,
+  `equivalent`, `changed` or `unresolved`. Reference-only services never name
+  an effect; run mode, abort points (conservative OD-10) and run occupancy
+  count.
+- Policy `f2-v3`: `equivalent` is `elevated_admin` with plan approval only;
+  `changed` or `unresolved` adds the per-object
+  `safety_critical_acknowledgement` (Ingress only, authority version 4).
+  Unlock and disarm effects always need it (OD-6(b)). An incomplete execution
+  contract stays `prohibited`. The Beta 33 retained proof, garage inverse and
+  retry-transfer paths are unchanged.
+- Dispatch rechecks the exact acknowledged object set and comparison hash
+  independently of the bundle state; plan approval alone never dispatches.
+- E013 precision: logbook mentions are not targets, notify routed by name has
+  no omitted target, no retry warning outside a retry candidate, recipient
+  reason only when recipients change.
+- OD-4: `principal_separation_status.reason` is `no_decision_recorded` or
+  `not_approvable`.
+- New audit events and the stable error codes
+  `safety_critical_acknowledgement_required` and
+  `safety_critical_acknowledgement_mismatch`.
+- Pending `f2-v2` plans must be replanned. An applied `f2-v2` source is
+  admitted only as F3 rollback evidence.
+- Rollback to beta.25 quarantines plan records that name the new action kind;
+  finish or reject those plans first.
+
 ## 2.4.1-beta.25 - Loaded script configuration (HAMCP-212)
 
 Builds on 2.4.1-beta.24.
