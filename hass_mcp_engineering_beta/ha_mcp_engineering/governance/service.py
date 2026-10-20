@@ -101,15 +101,19 @@ from .normalize import (
 from .risk import classify_risk
 from .configuration_eligibility import (
     TRIGGER as RETRY_PROOF_TRIGGER,
+    ProofRefused,
     derive_proof,
     markers as retry_proof_markers,
+    script_baseline,
 )
+from .physical_effects import compare_physical_effects
 from . import configuration_rollback_eligibility as inverse_eligibility
 from .policy import (
     POLICY_VERSION,
     configuration_operation_policy,
     evaluate_change_policy,
-    persisted_f2_v1_policy_snapshot_matches,
+    persisted_f2_v2_policy_snapshot_matches,
+    persisted_historical_policy_snapshot_matches,
     policy_snapshot_matches,
 )
 from .resources import (
@@ -1060,10 +1064,10 @@ class ChangeGovernanceService:
             # source at load/apply and the complete-bundle preflight boundary.
             self._require_policy_snapshot(plan, projection_only=True)
             return
-        if persisted_f2_v1_policy_snapshot_matches(plan):
-            # Exact F2-v1 is immutable review evidence only. Approval, apply,
+        if persisted_historical_policy_snapshot_matches(plan):
+            # Exact F2-v1 or F2-v2 is immutable review evidence only. Approval, apply,
             # rollback, and recovery load through _require_policy_snapshot and
-            # therefore cannot acquire F2-v2 execution authority.
+            # therefore cannot acquire current execution authority.
             bundle_error = self._approval_bundle_integrity_error(plan)
             if bundle_error is not None:
                 METRICS.record_classified_outcome(bundle_error.value)
@@ -1456,7 +1460,7 @@ class ChangeGovernanceService:
             if (
                 not policy_snapshot_validated
                 and not policy_snapshot_matches(plan)
-                and not persisted_f2_v1_policy_snapshot_matches(plan)
+                and not persisted_historical_policy_snapshot_matches(plan)
             ):
                 failures.append("legacy_policy_snapshot_invalid")
         if plan.risk.apply_allowed:
@@ -1572,7 +1576,7 @@ class ChangeGovernanceService:
             if (
                 not policy_snapshot_validated
                 and not policy_snapshot_matches(plan)
-                and not persisted_f2_v1_policy_snapshot_matches(plan)
+                and not persisted_historical_policy_snapshot_matches(plan)
             ):
                 failures.append("policy_snapshot_invalid")
         if plan.risk.apply_allowed:
@@ -1713,7 +1717,9 @@ class ChangeGovernanceService:
                 safe[key] = value
         return safe
 
-    def _load(self, plan_id: str) -> ChangePlan:
+    def _load(
+        self, plan_id: str, *, f3_rollback_source: bool = False
+    ) -> ChangePlan:
         try:
             plan = self.repository.get(plan_id)
         except ChangePlanStorageError as exc:
@@ -1725,7 +1731,13 @@ class ChangeGovernanceService:
                 details=self._identifier_details(resource_id=plan_id),
             )
         self._require_v2_persisted_plan_safe(plan)
-        if plan.policy_decision is not None:
+        if plan.policy_decision is not None and not (
+            # An exact pre-HAMCP-213 snapshot remains read-only rollback source
+            # evidence. F3 evaluates the inverse plan under current policy, so
+            # the historical decision never authorizes the new dispatch.
+            f3_rollback_source
+            and persisted_f2_v2_policy_snapshot_matches(plan)
+        ):
             self._require_policy_snapshot(plan)
         return plan
 
@@ -3421,6 +3433,10 @@ class ChangeGovernanceService:
         action: str,
         diff: dict[str, Any],
         proposed: dict[str, Any],
+        *,
+        current: dict[str, Any] | None = None,
+        normalized_current: dict[str, Any] | None = None,
+        normalized_proposed: dict[str, Any] | None = None,
     ) -> ChangeRiskAssessment:
         if resource_type == "helper":
             return ChangeRiskAssessment(
@@ -3438,14 +3454,22 @@ class ChangeGovernanceService:
                 warnings=[],
             )
 
+        def script_view(config: dict[str, Any] | None) -> dict[str, Any] | None:
+            if not isinstance(config, dict):
+                return config
+            view = dict(config)
+            if "sequence" in config and not any(
+                key in config for key in ("action", "actions")
+            ):
+                view["action"] = config["sequence"]
+            return view
+
         risk_config = proposed
+        risk_current = current
         risk_diff = diff
         if resource_type == "script":
-            risk_config = dict(proposed)
-            if "sequence" in proposed and not any(
-                key in proposed for key in ("action", "actions")
-            ):
-                risk_config["action"] = proposed["sequence"]
+            risk_config = script_view(proposed)
+            risk_current = script_view(current)
             risk_diff = dict(diff)
             changed_fields = [
                 dict(item)
@@ -3465,17 +3489,27 @@ class ChangeGovernanceService:
             if action == "create"
             else ChangeOperation.UPDATE_AUTOMATION
         )
-        risk = classify_risk(legacy_operation, risk_diff, risk_config)
+        comparison = compare_physical_effects(
+            resource_type, action, normalized_current, normalized_proposed
+        )
+        risk = classify_risk(
+            legacy_operation,
+            risk_diff,
+            risk_config,
+            current=risk_current,
+            protected_effect_verdict=comparison.verdict,
+        )
         if (
-            resource_type == "automation"
-            and action == "update"
+            resource_type in {"automation", "script"}
+            and action in {"update", "create"}
             and not risk.apply_allowed
         ):
-            # The risk classifier describes what the stored automation may do.
-            # For an existing typed automation update, that consequence does
-            # not make the exact configuration provider target or payload
-            # ambiguous. Policy v2 keeps the high/safety evidence while F3,
-            # optimistic state, readback, and verification remain mandatory.
+            # The risk classifier describes what the stored automation or
+            # script may do. For a typed update or create, that consequence
+            # does not make the exact configuration provider target or payload
+            # ambiguous (HAMCP-213 script parity and OD-6(a)). Policy keeps
+            # the high/safety evidence while F3, optimistic state, readback,
+            # and verification remain mandatory.
             risk = ChangeRiskAssessment(
                 level=risk.level,
                 reasons=list(risk.reasons),
@@ -3489,6 +3523,26 @@ class ChangeGovernanceService:
                 for reason in risk.reasons
             ]
         return risk
+
+    @staticmethod
+    def _script_retry_candidate(operations: list[ConfigurationOperation]) -> bool:
+        """Whether a plan has the shape of a retry transformation (D4.3)."""
+
+        if (
+            len(operations) not in (1, 5)
+            or operations[0].resource_type != "script"
+            or operations[0].action != "update"
+            or not isinstance(operations[0].current_config, dict)
+        ):
+            return False
+        try:
+            script_baseline(operations[0].current_config)
+        except (
+            ProofRefused, KeyError, IndexError, TypeError, ValueError,
+            RecursionError, OverflowError,
+        ):
+            return False
+        return True
 
     @staticmethod
     def _aggregate_configuration_risk(
@@ -5144,6 +5198,9 @@ class ChangeGovernanceService:
                         action,
                         diff,
                         proposed_config,
+                        current=current,
+                        normalized_current=normalized_current,
+                        normalized_proposed=normalized_proposed,
                     )
             except (TypeError, ValueError, OverflowError) as exc:
                 raise GovernanceError(
@@ -5196,8 +5253,12 @@ class ChangeGovernanceService:
                     "runtime activation is unverified, and script restoration is not eligible."
                 )
         else:
+            # D4.3: the missing-proof warning describes only a plan shaped
+            # like a retry transformation; otherwise the comparison explains
+            # the script change.
+            retry_candidate = self._script_retry_candidate(prepared)
             for operation in prepared:
-                if _rollback_context is None and operation.resource_type == "script" and not operation.risk.apply_allowed:
+                if _rollback_context is None and operation.resource_type == "script" and retry_candidate:
                     operation.risk.warnings.append(
                         "No complete retry-transformation proof: required structure "
                         "is unsupported or its proof bounds were exhausted."
@@ -6541,7 +6602,7 @@ class ChangeGovernanceService:
         if (
             plan.policy_decision is not None
             and plan.policy_decision.policy_version != POLICY_VERSION
-            and not persisted_f2_v1_policy_snapshot_matches(plan)
+            and not persisted_historical_policy_snapshot_matches(plan)
         ):
             self._require_policy_snapshot(plan)
         self._resolve_lifecycle(plan)
@@ -7928,7 +7989,7 @@ class ChangeGovernanceService:
             if (
                 plan.policy_decision is not None
                 and plan.policy_decision.policy_version != POLICY_VERSION
-                and not persisted_f2_v1_policy_snapshot_matches(plan)
+                and not persisted_historical_policy_snapshot_matches(plan)
             ):
                 self._require_policy_snapshot(plan)
             if (
@@ -12770,7 +12831,9 @@ class ChangeGovernanceService:
     async def rollback_change(self, plan_id: str, expected_plan_hash: str = "") -> dict[str, Any]:
         plan_lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with plan_lock:
-            plan = self._load(plan_id)
+            plan = self._load(
+                plan_id, f3_rollback_source=self.f3_runtime is not None
+            )
             if self.f3_runtime is not None:
                 return await self.f3_runtime.create_rollback_plan(
                     plan, expected_plan_hash

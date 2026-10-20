@@ -1205,7 +1205,7 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
         )
         plan = created["plan"]
         decision = plan["policy_decision"]
-        self.assertEqual("f2-v2", POLICY_VERSION)
+        self.assertEqual("f2-v3", POLICY_VERSION)
         self.assertEqual(POLICY_VERSION, decision["policy_version"])
         self.assertEqual("high", plan["risk"]["level"])
         self.assertTrue(plan["risk"]["apply_allowed"])
@@ -1735,7 +1735,7 @@ class Beta54ExactAutomationOwnerAuthorityTests(
         )
         decision = created["policy_decision"]
         operation = created["operations"][0]
-        self.assertEqual("f2-v2", decision["policy_version"])
+        self.assertEqual("f2-v3", decision["policy_version"])
         self.assertEqual("elevated_admin", decision["policy_class"])
         self.assertEqual("direct", decision["physical_consequence"])
         self.assertEqual(["plan_approval"], decision["required_acknowledgements"])

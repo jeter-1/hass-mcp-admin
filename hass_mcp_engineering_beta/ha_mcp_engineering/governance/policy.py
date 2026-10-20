@@ -20,12 +20,23 @@ from .normalize import stable_hash
 from .risk import SAFETY_CRITICAL_SERVICES
 from .configuration_eligibility import bound_proof, local_member_marked, markers
 from . import configuration_rollback_eligibility as inverse_eligibility
+from .physical_effects import (
+    VERDICT_EQUIVALENT,
+    VERDICT_NONE,
+    compare_operation,
+)
 from .entity_metadata import ENTITY_METADATA_RESOURCE_TYPE
 from .entity_metadata_planning import POLICY_TRIGGER as ENTITY_METADATA_POLICY_TRIGGER
 
 
-POLICY_VERSION = "f2-v2"
-COMPATIBLE_POLICY_VERSIONS = frozenset({"f2-v1", POLICY_VERSION})
+POLICY_VERSION = "f2-v3"
+# f2-v3 (HAMCP-213) adds the protected physical-effect comparison and the
+# safety-critical owner acknowledgement. Exact f2-v1 and f2-v2 snapshots
+# remain recognizable review evidence; they never acquire f2-v3 authority.
+F2_V2_POLICY_VERSION = "f2-v2"
+COMPATIBLE_POLICY_VERSIONS = frozenset(
+    {"f2-v1", F2_V2_POLICY_VERSION, POLICY_VERSION}
+)
 
 _RISK_RANK = {
     RiskDelta.NONE: 0,
@@ -109,6 +120,7 @@ class OperationPolicyClassification:
     risk_delta: RiskDelta
     physical_consequence: PhysicalConsequence
     reason_codes: tuple[str, ...]
+    safety_critical_acknowledgement: bool = False
 
 
 def _risk_delta(level: RiskLevel) -> RiskDelta:
@@ -143,6 +155,8 @@ def _risk_services(operation: ConfigurationOperation) -> set[str]:
 
 def _exact_existing_automation_update(
     operation: ConfigurationOperation,
+    *,
+    include_scripts: bool = False,
 ) -> bool:
     """Recognize the first exact typed configuration-write authority.
 
@@ -154,7 +168,10 @@ def _exact_existing_automation_update(
     """
 
     return bool(
-        operation.resource_type == "automation"
+        (
+            operation.resource_type == "automation"
+            or (include_scripts and operation.resource_type == "script")
+        )
         and operation.action == "update"
         and isinstance(operation.current_config, dict)
         and isinstance(operation.proposed_config, dict)
@@ -169,6 +186,115 @@ def _exact_existing_automation_update(
         and operation.normalization_version >= 1
         and operation.validation_results.get("valid") is True
         and operation.risk.apply_allowed
+    )
+
+
+def _exact_configuration_write(operation: ConfigurationOperation) -> bool:
+    """Recognize an exact automation or script update or create (D3).
+
+    A create is exact when the identifier is new (no current configuration)
+    and the proposed configuration is validated, normalized, and hash bound;
+    the writer checks the identifier conflict and reads the result back.
+    """
+
+    if _exact_existing_automation_update(operation, include_scripts=True):
+        return True
+    return bool(
+        operation.resource_type in {"automation", "script"}
+        and operation.action == "create"
+        and operation.current_config is None
+        and operation.normalized_current_config is None
+        and isinstance(operation.proposed_config, dict)
+        and isinstance(operation.normalized_proposed_config, dict)
+        and isinstance(operation.target_id, str)
+        and bool(operation.target_id)
+        and isinstance(operation.current_state_fingerprint, str)
+        and len(operation.current_state_fingerprint) == 64
+        and isinstance(operation.proposed_config_hash, str)
+        and len(operation.proposed_config_hash) == 64
+        and operation.normalization_version >= 1
+        and operation.validation_results.get("valid") is True
+        and operation.risk.apply_allowed
+    )
+
+
+def _safety_critical_comparison_policy(
+    operation: ConfigurationOperation,
+    *,
+    triggers: set[str],
+    safety_critical_services: set[str],
+    risk_delta: RiskDelta,
+) -> OperationPolicyClassification | None:
+    """Map the D2 comparison to policy (HAMCP-213 D3); ``None`` = not protected.
+
+    The comparison selects only which owner decision is required. It never
+    removes the exact execution contract: an incomplete contract stays
+    prohibited.
+    """
+
+    if operation.resource_type not in {"automation", "script"}:
+        return None
+    comparison = compare_operation(operation)
+    risk_protected = bool(
+        triggers & _SAFETY_CRITICAL_TRIGGERS or safety_critical_services
+    )
+    if comparison.verdict == VERDICT_NONE:
+        if risk_protected:
+            # The two classifiers disagree about a protected object; the
+            # comparison cannot be trusted, so fail closed.
+            return OperationPolicyClassification(
+                ApprovalPolicyClass.PROHIBITED,
+                risk_delta,
+                PhysicalConsequence.SAFETY_CRITICAL,
+                (
+                    "safety_critical_effect_comparison_mismatch",
+                    "supported_configuration_change",
+                ),
+            )
+        return None
+    if not _exact_configuration_write(operation):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.PROHIBITED,
+            risk_delta,
+            PhysicalConsequence.SAFETY_CRITICAL,
+            (
+                "safety_critical_execution_contract_incomplete",
+                "supported_configuration_change",
+            ),
+        )
+    if not comparison.acknowledgement_required:
+        if comparison.verdict != VERDICT_EQUIVALENT:
+            # Every non-equivalent comparison names acknowledgement rows.
+            return OperationPolicyClassification(
+                ApprovalPolicyClass.PROHIBITED,
+                risk_delta,
+                PhysicalConsequence.SAFETY_CRITICAL,
+                ("safety_critical_effect_comparison_mismatch",),
+            )
+        # OD-5: an equivalent comparison keeps the elevated review page with
+        # plan approval only; its delta comes from the non-effect changes.
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            min(risk_delta, RiskDelta.MODERATE, key=lambda item: _RISK_RANK[item]),
+            PhysicalConsequence.SAFETY_CRITICAL,
+            (
+                "safety_critical_effect_equivalent",
+                "supported_configuration_change",
+            ),
+        )
+    reasons = {
+        "safety_critical_owner_acknowledgement_required",
+        "supported_configuration_change",
+        f"safety_critical_effect_{comparison.verdict}",
+    }
+    if safety_critical_services:
+        reasons.add("unlock_or_disarm_effect")
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.ELEVATED_ADMIN,
+        max(risk_delta, RiskDelta.HIGH, key=lambda item: _RISK_RANK[item]),
+        PhysicalConsequence.SAFETY_CRITICAL,
+        tuple(sorted(reasons)),
+        safety_critical_acknowledgement=True,
     )
 
 
@@ -465,8 +591,14 @@ def configuration_operation_policy(
     operation: ConfigurationOperation,
     *,
     owner_authoritative: bool = True,
+    safety_critical_comparison: bool = True,
 ) -> OperationPolicyClassification:
-    """Classify one operation for both policy and approval review."""
+    """Classify one operation for both policy and approval review.
+
+    ``safety_critical_comparison`` selects the f2-v3 (HAMCP-213) protected
+    physical-effect mapping and script parity. It is false only for the
+    exact recomputation of historical f2-v1 and f2-v2 snapshots.
+    """
     if operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE:
         return _entity_metadata_operation_policy(operation)
     triggers = _risk_triggers(operation)
@@ -476,7 +608,9 @@ def configuration_operation_policy(
     consequence = PhysicalConsequence.NONE
     exact_automation_update = bool(
         owner_authoritative
-        and _exact_existing_automation_update(operation)
+        and _exact_existing_automation_update(
+            operation, include_scripts=safety_critical_comparison
+        )
     )
 
     if _retained_safety_critical_effect_is_non_risk_increasing(
@@ -537,6 +671,15 @@ def configuration_operation_policy(
             consequence,
             tuple(sorted({*reasons, "proved_configuration_retry_transfer", "owner_decision_required"})),
         )
+    if owner_authoritative and safety_critical_comparison:
+        protected = _safety_critical_comparison_policy(
+            operation,
+            triggers=triggers,
+            safety_critical_services=safety_critical_services,
+            risk_delta=risk_delta,
+        )
+        if protected is not None:
+            return protected
     if consequence_uncertain and exact_automation_update:
         return OperationPolicyClassification(
             ApprovalPolicyClass.ELEVATED_ADMIN,
@@ -624,6 +767,7 @@ def _single_plan_policy(
     plan: ChangePlan,
     *,
     owner_authoritative: bool = True,
+    safety_critical_comparison: bool = True,
 ) -> tuple[OperationPolicyClassification, ...]:
     if plan.operation == ChangeOperation.CREATE_FULL_BACKUP:
         return (
@@ -850,6 +994,7 @@ def _single_plan_policy(
             configuration_operation_policy(
                 operation,
                 owner_authoritative=owner_authoritative,
+                safety_critical_comparison=safety_critical_comparison,
             )
             for operation in plan.operations
         )
@@ -886,6 +1031,7 @@ def _single_plan_policy(
                 # configuration-plan route. The legacy contract-v1 route
                 # retains its historical consequence-policy boundary.
                 owner_authoritative=False,
+                safety_critical_comparison=False,
             ),
         )
     return (
@@ -924,6 +1070,10 @@ def aggregate_policy_classifications(
                     for reason in classification.reason_codes
                 }
             )
+        ),
+        safety_critical_acknowledgement=any(
+            classification.safety_critical_acknowledgement
+            for classification in classifications
         ),
     )
 
@@ -1037,11 +1187,13 @@ def _evaluate_change_policy_version(
     *,
     policy_version: str,
     owner_authoritative: bool,
+    safety_critical_comparison: bool = True,
 ) -> ChangePolicyDecision:
     classification = aggregate_policy_classifications(
         _single_plan_policy(
             plan,
             owner_authoritative=owner_authoritative,
+            safety_critical_comparison=safety_critical_comparison,
         )
     )
     dependency_binding = (
@@ -1063,7 +1215,10 @@ def _evaluate_change_policy_version(
                 plan.operation == ChangeOperation.CONFIGURATION_PLAN
                 and bool(plan.operations)
                 and all(
-                    _exact_existing_automation_update(operation)
+                    _exact_existing_automation_update(
+                        operation,
+                        include_scripts=safety_critical_comparison,
+                    )
                     for operation in plan.operations
                 )
             )
@@ -1088,6 +1243,17 @@ def _evaluate_change_policy_version(
         ),
         ApprovalPolicyClass.PROHIBITED: (),
     }[classification.policy_class]
+    if (
+        classification.safety_critical_acknowledgement
+        and classification.policy_class is ApprovalPolicyClass.ELEVATED_ADMIN
+    ):
+        # D1: the safety-critical acknowledgement subsumes the elevated
+        # acknowledgement and no exactness shortcut ever removes it. Only a
+        # different, recomputed comparison result can.
+        required = (
+            ApprovalActionKind.PLAN_APPROVAL,
+            ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT,
+        )
     subject_hash = stable_hash(policy_subject_payload(plan))
     decision_payload = {
         "policy_version": policy_version,
@@ -1131,8 +1297,33 @@ def persisted_f2_v1_policy_snapshot_matches(plan: ChangePlan) -> bool:
             plan,
             policy_version="f2-v1",
             owner_authoritative=False,
+            safety_critical_comparison=False,
         )
     )
+
+
+def persisted_f2_v2_policy_snapshot_matches(plan: ChangePlan) -> bool:
+    """Recognize an exact pre-HAMCP-213 F2 snapshot without granting authority."""
+
+    return bool(
+        plan.policy_decision is not None
+        and plan.policy_decision.policy_version == F2_V2_POLICY_VERSION
+        and plan.policy_decision
+        == _evaluate_change_policy_version(
+            plan,
+            policy_version=F2_V2_POLICY_VERSION,
+            owner_authoritative=True,
+            safety_critical_comparison=False,
+        )
+    )
+
+
+def persisted_historical_policy_snapshot_matches(plan: ChangePlan) -> bool:
+    """Recognize an exact superseded (f2-v1 or f2-v2) snapshot as evidence only."""
+
+    return persisted_f2_v1_policy_snapshot_matches(
+        plan
+    ) or persisted_f2_v2_policy_snapshot_matches(plan)
 
 
 def policy_snapshot_matches(plan: ChangePlan) -> bool:

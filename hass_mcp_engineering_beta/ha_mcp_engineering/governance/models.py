@@ -82,6 +82,9 @@ class ApprovalActionKind(str, Enum):
     ELEVATED_RISK_ACKNOWLEDGEMENT = (
         "elevated_risk_acknowledgement"
     )
+    SAFETY_CRITICAL_ACKNOWLEDGEMENT = (
+        "safety_critical_acknowledgement"
+    )
 
 
 _POLICY_REASON_CODE = re.compile(r"^[a-z][a-z0-9_]{0,95}$")
@@ -102,7 +105,7 @@ class ChangePolicyDecision:
     policy_decision_hash: str
 
     def __post_init__(self) -> None:
-        if self.policy_version not in {"f2-v1", "f2-v2"}:
+        if self.policy_version not in {"f2-v1", "f2-v2", "f2-v3"}:
             raise ValueError("unsupported policy version")
         if (
             not self.reason_codes

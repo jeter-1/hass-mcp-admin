@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 from pathlib import Path
 import re
 import sys
@@ -76,7 +77,7 @@ OBSTRUCTION_GUARD = {
 }
 
 
-def _operation_policy(current, proposed, *, action="update"):
+def _operation_policy(current, proposed, *, action="update", exact=False):
     risk_operation = (
         ChangeOperation.CREATE_AUTOMATION
         if action == "create"
@@ -110,6 +111,11 @@ def _operation_policy(current, proposed, *, action="update"):
         normalization_version=3,
         risk=risk,
     )
+    if exact:
+        # HAMCP-213 D3: the complete exact writer contract the service binds
+        # (validated proposal, apply-allowed typed writer and readback).
+        operation.validation_results = {"valid": True}
+        operation.risk = dataclasses.replace(risk, apply_allowed=True)
     return configuration_operation_policy(operation)
 
 
@@ -275,10 +281,15 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
             ],
         )
         decision = created["policy_decision"]
-        self.assertEqual(decision["policy_version"], "f2-v2")
+        self.assertEqual(decision["policy_version"], "f2-v3")
         self.assertEqual(decision["policy_class"], "elevated_admin")
         self.assertEqual(decision["physical_consequence"], "safety_critical")
-        self.assertEqual(decision["required_acknowledgements"], ["plan_approval"])
+        # HAMCP-213 D3/OD-1: a changed protected effect is owner-actionable
+        # through plan approval plus the separate safety-critical acknowledgement.
+        self.assertEqual(
+            decision["required_acknowledgements"],
+            ["plan_approval", "safety_critical_acknowledgement"],
+        )
         self.assertTrue(created["approval_actionable"])
         _pending, _review, granted = await self.approve(created)
         self.assertEqual(granted["status"], "approved")
@@ -361,13 +372,29 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
 
         for name, proposed in cases.items():
             with self.subTest(name=name):
+                # HAMCP-213 D3: a non-qualifying change never uses the
+                # retained-effect exception. Without the exact writer
+                # contract it stays prohibited ...
                 decision = _operation_policy(current, proposed)
                 self.assertEqual(
                     decision.policy_class, ApprovalPolicyClass.PROHIBITED
                 )
                 self.assertIn(
-                    "safety_critical_effect_not_reviewed",
+                    "safety_critical_execution_contract_incomplete",
                     decision.reason_codes,
+                )
+                self.assertFalse(decision.safety_critical_acknowledgement)
+                # ... and with it the owner decides through the separate
+                # safety-critical acknowledgement (OD-1), not a refusal.
+                exact = _operation_policy(current, proposed, exact=True)
+                self.assertEqual(
+                    exact.policy_class, ApprovalPolicyClass.ELEVATED_ADMIN
+                )
+                self.assertEqual(exact.risk_delta, RiskDelta.HIGH)
+                self.assertTrue(exact.safety_critical_acknowledgement)
+                self.assertIn(
+                    "safety_critical_owner_acknowledgement_required",
+                    exact.reason_codes,
                 )
 
         retained_lock = copy.deepcopy(current)

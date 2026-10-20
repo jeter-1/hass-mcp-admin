@@ -61,6 +61,7 @@ from ha_mcp_engineering.governance.models import (
     RiskLevel,
 )
 from ha_mcp_engineering.governance.operational import OperationalGatewayError
+from ha_mcp_engineering.governance.policy import POLICY_VERSION
 from ha_mcp_engineering.governance.operational_lifecycle import LifecycleGatewayError
 from ha_mcp_engineering.governance.helper_state import (
     HELPER_STATE_PROVIDER_SLUG,
@@ -372,7 +373,7 @@ def baseline_for(
 def _policy(operation: str) -> ChangePolicyDecision:
     elevated = operation in {RESTART_ADDON, RESTART_HOME_ASSISTANT}
     return ChangePolicyDecision(
-        policy_version="f2-v2",
+        policy_version=POLICY_VERSION,
         policy_class=(
             ApprovalPolicyClass.ELEVATED_ADMIN
             if elevated
