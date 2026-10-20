@@ -5,9 +5,10 @@ reader), HAMCP-130 (the native read-only tool pattern), HAMCP-191 (the shared
 strict sanitizer), HAMCP-200 (the closed REST `Route` registry), HAMCP-164
 (the Core gate).
 
-Status: **Part 1: sources report and design. Owner decisions are pending
-(section 8).** This document makes no runtime change. Part 2 starts only
-after Josh decides.
+Status: **Part 1: sources report and design. Owner decisions recorded
+(section 8, Josh, 2026-10-20): every decision as recommended.** This document
+makes no runtime change. Slice 1 (A + C) is implemented in a separate pull
+request; slice 2 (B + D) is later.
 
 Base: `origin/main` `e42fa152` (Engineering `2.4.1-beta.25`; HAMCP-215 →
 beta.26 and HAMCP-213 → beta.27 are pending). The release number is taken at
@@ -440,6 +441,24 @@ with `-Parallel 4` on the final head (log path and pass line recorded).
 | (v) | When `homeassistant.packages` exists (or `!include` is used), report unspecified recorder keys as `unknown` rather than as Core defaults? | **Yes, `unknown`**, because packages can supply recorder keys that the reader cannot see. |
 | (vi) | Two tools per slice, or one tool per slice with a `scope` mode? | **Two tools in slice 1** for schema clarity; **one tool in slice 2** (`get_helper_definitions` with an embedded `capability` block). |
 | (vii) | Should `template <label>:` keys stay unaddressable (a HAMCP-162 pattern change is out of scope)? | **Keep them unaddressable** and report `key_not_addressable`; a pattern change would be a separate task. |
+
+### Recorded decisions (Josh, 2026-10-20)
+
+All seven decisions were taken as recommended:
+
+- (i) **No** options-flow open and abort. UI-defined definitions are reported
+  as `definition_not_readable_without_flow`.
+- (ii) Slice 1 = A + C now; slice 2 = B + D later.
+- (iii) The `ha_mcp_tools` component commands are deferred to slice 2,
+  pending an exact-source review of component 2.2.1 and a version pin.
+- (iv) `recorder/entity_options/get`: at most 50 entities per call, through
+  the batch path (a new `_BATCH_COMMAND_KEYS` entry with a strict entity-ID
+  pattern).
+- (v) With `homeassistant.packages` or `!include` present, unspecified
+  recorder keys are `unknown`, not defaults.
+- (vi) Two tools in slice 1: `get_recorder_settings` and
+  `get_unregistered_entities`.
+- (vii) `template <label>:` keys stay unaddressable (`key_not_addressable`).
 
 ## 9. Limitations
 
