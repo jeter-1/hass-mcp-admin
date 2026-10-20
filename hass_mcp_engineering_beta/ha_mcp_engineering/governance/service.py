@@ -106,7 +106,13 @@ from .configuration_eligibility import (
     markers as retry_proof_markers,
     script_baseline,
 )
-from .physical_effects import compare_physical_effects
+from .physical_effects import (
+    MAX_ACKNOWLEDGED_OBJECTS,
+    acknowledgement_object_token,
+    compare_operation,
+    compare_physical_effects,
+    plan_acknowledgement_binding,
+)
 from . import configuration_rollback_eligibility as inverse_eligibility
 from .policy import (
     POLICY_VERSION,
@@ -256,12 +262,99 @@ def principal_separation_status(approval: Any) -> dict[str, Any]:
         "evaluated": evaluated,
         "enforced": enforced,
         "reason": (
-            "no_external_approver_exists" if not evaluated
+            # HAMCP-213 OD-4: an unevaluated record has no recorded Ingress
+            # decision yet, or it can never be approved.
+            (
+                "not_approvable"
+                if getattr(approval, "bundle_state", None) == "prohibited"
+                else "no_decision_recorded"
+            )
+            if not evaluated
             else "anonymous_fallback_principal" if anonymous
             else "external_administrator_distinct" if enforced
             else "external_principal_not_distinct"
         ),
     }
+
+
+# HAMCP-213 D1: the ordered second administrator action. The persisted slot
+# keeps its historical name ``elevated_risk_acknowledgement``; its ``kind``
+# says which action it records. Only the safety-critical acknowledgement uses
+# action authority version 4 and binds the recomputed physical-effect
+# comparison and the exact acknowledged objects.
+SAFETY_CRITICAL_ACKNOWLEDGEMENT_AUTHORITY_VERSION = 4
+SECOND_ACTION_PENDING_STATES = {
+    ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT: (
+        "pending_elevated_risk_acknowledgement"
+    ),
+    ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT: (
+        "pending_safety_critical_acknowledgement"
+    ),
+}
+SECOND_ACTION_EVENT_PREFIXES = {
+    ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT: (
+        "elevated_risk_acknowledgement"
+    ),
+    ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT: (
+        "safety_critical_acknowledgement"
+    ),
+}
+SECOND_ACTION_VALUES = frozenset(
+    kind.value for kind in SECOND_ACTION_PENDING_STATES
+)
+
+
+def second_action_kind(decision: Any) -> ApprovalActionKind | None:
+    """Return the decision's ordered second action, or ``None``.
+
+    Callers that need the exact sequence validate it separately; this returns
+    the first second-action kind the decision requires.
+    """
+
+    if decision is None:
+        return None
+    for kind in decision.required_acknowledgements:
+        if kind in SECOND_ACTION_PENDING_STATES:
+            return kind
+    return None
+
+
+def second_action_authority_version(kind: ApprovalActionKind) -> int:
+    return (
+        SAFETY_CRITICAL_ACKNOWLEDGEMENT_AUTHORITY_VERSION
+        if kind is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+        else APPROVAL_AUTHORITY_VERSION
+    )
+
+
+def safety_critical_binding(plan: Any) -> dict[str, Any] | None:
+    """Recompute the plan's bounded acknowledgement binding, or ``None``.
+
+    ``None`` means the immutable plan names no acknowledgeable object or more
+    than ``MAX_ACKNOWLEDGED_OBJECTS``; either way no acknowledgement can be
+    bound to it and the plan fails closed.
+    """
+
+    try:
+        binding = plan_acknowledgement_binding(plan.operations)
+    except Exception:  # noqa: BLE001 - malformed persisted operations fail closed
+        return None
+    if binding is None or not binding["objects"]:
+        return None
+    if len(binding["objects"]) > MAX_ACKNOWLEDGED_OBJECTS:
+        return None
+    return binding
+
+
+def safety_critical_object_rows(binding: dict[str, Any]) -> list[dict[str, str]]:
+    return [
+        {
+            "operation_id": str(row["operation_id"]),
+            "object_id": str(row["object_id"]),
+            "token": acknowledgement_object_token(row),
+        }
+        for row in binding["objects"]
+    ]
 
 
 CONFIGURATION_PLAN_CONTRACT_VERSION = 2
@@ -992,16 +1085,26 @@ class ChangeGovernanceService:
             else "pending_plan_approval"
         )
         plan.approval.same_principal_confirmed = None
-        plan.approval.elevated_risk_acknowledgement = (
-            ApprovalActionRecord(
-                kind=(
-                    ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                )
-            )
-            if ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-            in decision.required_acknowledgements
-            else None
+        kind = second_action_kind(decision)
+        if kind is None:
+            plan.approval.elevated_risk_acknowledgement = None
+            return
+        record = ApprovalActionRecord(
+            kind=kind,
+            authority_version=second_action_authority_version(kind),
         )
+        if kind is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT:
+            binding = safety_critical_binding(plan)
+            if binding is None:
+                raise GovernanceError(
+                    ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+                    details={
+                        "reason": "safety_critical_acknowledgement_unbindable",
+                        "max_acknowledged_objects": MAX_ACKNOWLEDGED_OBJECTS,
+                    },
+                )
+            record.safety_critical_projection_hash = binding["projection_hash"]
+        plan.approval.elevated_risk_acknowledgement = record
 
     def _require_policy_snapshot(self, plan: ChangePlan, *, projection_only: bool = False) -> None:
         if plan.policy_decision is None:
@@ -1129,18 +1232,44 @@ class ChangeGovernanceService:
             is not ApprovalActionKind.PLAN_APPROVAL
         ):
             return ErrorCode.APPROVAL_SEQUENCE_FAILURE
-        acknowledgement_required = (
-            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-            in decision.required_acknowledgements
-        )
-        if acknowledgement_required != (acknowledgement is not None):
-            return ErrorCode.APPROVAL_SEQUENCE_FAILURE
-        if (
-            acknowledgement is not None
-            and acknowledgement.kind
-            is not ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+        required_kind = second_action_kind(decision)
+        if tuple(decision.required_acknowledgements) != (
+            (ApprovalActionKind.PLAN_APPROVAL,)
+            if required_kind is None
+            else (ApprovalActionKind.PLAN_APPROVAL, required_kind)
         ):
             return ErrorCode.APPROVAL_SEQUENCE_FAILURE
+        if (required_kind is not None) != (acknowledgement is not None):
+            return ErrorCode.APPROVAL_SEQUENCE_FAILURE
+        if acknowledgement is not None and (
+            acknowledgement.kind is not required_kind
+            or acknowledgement.authority_version
+            != second_action_authority_version(required_kind)
+        ):
+            return ErrorCode.APPROVAL_SEQUENCE_FAILURE
+        safety_binding: dict[str, Any] | None = None
+        if acknowledgement is not None:
+            if (
+                required_kind
+                is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+            ):
+                safety_binding = safety_critical_binding(plan)
+                if (
+                    safety_binding is None
+                    or acknowledgement.safety_critical_projection_hash
+                    != safety_binding["projection_hash"]
+                ):
+                    return ErrorCode.POLICY_SNAPSHOT_MISMATCH
+                if acknowledgement.acknowledged_objects is not None and (
+                    acknowledgement.acknowledged_objects
+                    != safety_binding["objects"]
+                ):
+                    return ErrorCode.APPROVAL_SEQUENCE_FAILURE
+            elif (
+                acknowledgement.safety_critical_projection_hash is not None
+                or acknowledgement.acknowledged_objects is not None
+            ):
+                return ErrorCode.APPROVAL_SEQUENCE_FAILURE
 
         expected_state_pairs: dict[
             str, tuple[ApprovalState, ApprovalState | None]
@@ -1153,9 +1282,15 @@ class ChangeGovernanceService:
                     else None
                 ),
             ),
-            "pending_elevated_risk_acknowledgement": (
-                ApprovalState.APPROVED,
-                ApprovalState.EXTERNAL_PENDING,
+            **(
+                {
+                    SECOND_ACTION_PENDING_STATES[required_kind]: (
+                        ApprovalState.APPROVED,
+                        ApprovalState.EXTERNAL_PENDING,
+                    )
+                }
+                if required_kind is not None
+                else {}
             ),
             "fully_approved": (
                 ApprovalState.APPROVED,
@@ -1251,9 +1386,7 @@ class ChangeGovernanceService:
         ):
             return ErrorCode.APPROVAL_SEQUENCE_FAILURE
         if acknowledgement is not None and acknowledgement.challenge_id and (
-            acknowledgement.authority_version
-            != APPROVAL_AUTHORITY_VERSION
-            or acknowledgement.bound_plan_hash
+            acknowledgement.bound_plan_hash
             != ChangeGovernanceService.plan_hash(plan)
             or acknowledgement.policy_decision_hash
             != decision.policy_decision_hash
@@ -1274,6 +1407,18 @@ class ChangeGovernanceService:
             )
         ):
             return ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
+        if safety_binding is not None and acknowledgement is not None:
+            granted = acknowledgement.acknowledged_objects is not None
+            if (
+                acknowledgement.state
+                in {ApprovalState.APPROVED, ApprovalState.CONSUMED}
+                and not granted
+            ) or (
+                acknowledgement.state
+                in {ApprovalState.REQUIRED, ApprovalState.EXTERNAL_PENDING}
+                and granted
+            ):
+                return ErrorCode.APPROVAL_SEQUENCE_FAILURE
         return None
 
     @staticmethod
@@ -1847,6 +1992,21 @@ class ChangeGovernanceService:
                 "granted_at": acknowledgement.granted_at,
                 "consumed_at": acknowledgement.consumed_at,
             }
+            if (
+                acknowledgement.kind
+                is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+            ):
+                value["elevated_risk_acknowledgement"].update(
+                    {
+                        "safety_critical_projection_hash": (
+                            acknowledgement.safety_critical_projection_hash
+                        ),
+                        "acknowledged_objects": [
+                            dict(row)
+                            for row in acknowledgement.acknowledged_objects or []
+                        ],
+                    }
+                )
         return value
 
     def _task_idempotency_key(
@@ -1901,9 +2061,8 @@ class ChangeGovernanceService:
             "policy_decision_hash": task.approval_reference.get(
                 "policy_decision_hash"
             ),
-            "same_principal_requirement": (
-                ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
-                in (
+            "same_principal_requirement": bool(
+                SECOND_ACTION_VALUES.intersection(
                     task.approval_reference.get(
                         "required_acknowledgements"
                     )
@@ -2675,10 +2834,8 @@ class ChangeGovernanceService:
             "challenge_id": plan.approval.challenge_id,
             "approval_principal_present": bool(approval_principal),
             "approval_bundle_state": self._approval_bundle_state(plan),
-            "same_principal_requirement": bool(
-                plan.policy_decision
-                and ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                in plan.policy_decision.required_acknowledgements
+            "same_principal_requirement": (
+                second_action_kind(plan.policy_decision) is not None
             ),
             "same_principal_confirmed": (
                 plan.approval.same_principal_confirmed
@@ -3102,8 +3259,8 @@ class ChangeGovernanceService:
 
     def _approval_lifecycle(self, plan: ChangePlan) -> str:
         bundle_state = self._effective_approval_bundle_state(plan)
-        if bundle_state == "pending_elevated_risk_acknowledgement":
-            return "pending_elevated_risk_acknowledgement"
+        if bundle_state in SECOND_ACTION_PENDING_STATES.values():
+            return bundle_state
         if bundle_state == "fully_approved":
             return "approved"
         if bundle_state == "prohibited":
@@ -3162,7 +3319,7 @@ class ChangeGovernanceService:
             in {
                 "approval_not_requested",
                 "approval_pending_external",
-                "pending_elevated_risk_acknowledgement",
+                *SECOND_ACTION_PENDING_STATES.values(),
             }
         )
 
@@ -6698,6 +6855,21 @@ class ChangeGovernanceService:
             self.now() + APPROVAL_CHALLENGE_TTL,
             datetime.fromisoformat(plan.expires_at),
         ).isoformat()
+        second_kind = second_action_kind(decision)
+        safety_projection_hash: str | None = None
+        if second_kind is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT:
+            # D1: the acknowledgement binds the comparison recomputed from the
+            # immutable plan, never a caller-supplied value.
+            binding = safety_critical_binding(plan)
+            if binding is None:
+                raise GovernanceError(
+                    ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+                    details={
+                        "resource_id": plan.plan_id,
+                        "reason": "safety_critical_acknowledgement_unbindable",
+                    },
+                )
+            safety_projection_hash = binding["projection_hash"]
         # HAMCP-191 A: the sanitized note is Engineering's own output; the
         # plan-content chokepoint keeps that exact object (D4 identity).
         with plan_output_registry() as note_registry:
@@ -6727,10 +6899,10 @@ class ChangeGovernanceService:
                 bundle_state="pending_plan_approval",
                 elevated_risk_acknowledgement=(
                     ApprovalActionRecord(
-                        kind=(
-                            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+                        kind=second_kind,
+                        authority_version=(
+                            second_action_authority_version(second_kind)
                         ),
-                        authority_version=APPROVAL_AUTHORITY_VERSION,
                         bound_plan_hash=calculated,
                         policy_decision_hash=(
                             decision.policy_decision_hash
@@ -6740,9 +6912,11 @@ class ChangeGovernanceService:
                         physical_consequence=(
                             decision.physical_consequence.value
                         ),
+                        safety_critical_projection_hash=(
+                            safety_projection_hash
+                        ),
                     )
-                    if ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                    in decision.required_acknowledgements
+                    if second_kind is not None
                     else None
                 ),
             )
@@ -7097,10 +7271,8 @@ class ChangeGovernanceService:
             ),
             "approval_action": self._active_challenge_projection(plan)[0],
             "approval_bundle_state": self._approval_bundle_state(plan),
-            "same_principal_requirement": bool(
-                plan.policy_decision
-                and ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                in plan.policy_decision.required_acknowledgements
+            "same_principal_requirement": (
+                second_action_kind(plan.policy_decision) is not None
             ),
             "request_note": str(
                 # Stored-plan re-scan: D11 exception (HAMCP-207).
@@ -7120,6 +7292,13 @@ class ChangeGovernanceService:
             "snapshot_fingerprint": plan.snapshot.fingerprint if plan.snapshot and plan.approval.approval_kind == "rollback" else None,
             "rollback_target": plan.target_id if plan.approval.approval_kind == "rollback" else None,
         }
+        second_kind = second_action_kind(plan.policy_decision)
+        if second_kind is not None:
+            summary["second_action"] = second_kind.value
+        if second_kind is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT:
+            summary["safety_critical_acknowledgement"] = (
+                self._safety_critical_review(plan)
+            )
         if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
             operational = plan.operational
             if operational is None:
@@ -7293,6 +7472,60 @@ class ChangeGovernanceService:
             raise GovernanceError(ErrorCode.INTERNAL_SERVER_ERROR)
         return sanitized
 
+    def _safety_critical_review(self, plan: ChangePlan) -> dict[str, Any]:
+        """Return the bounded per-object rows the administrator acknowledges.
+
+        Rows are recomputed from the immutable plan. Each carries the opaque
+        token the review form submits; the decision accepts only the exact
+        token set of the recomputed binding.
+        """
+
+        binding = safety_critical_binding(plan)
+        if binding is None:
+            return {"available": False, "objects": []}
+        rows: list[dict[str, Any]] = []
+        for operation in sorted(plan.operations, key=lambda item: item.order):
+            comparison = compare_operation(operation)
+            if not comparison.protected:
+                continue
+            for row in (comparison.projection or {}).get("rows", []):
+                if not row.get("acknowledgement_required"):
+                    continue
+                rows.append(
+                    {
+                        "token": acknowledgement_object_token(
+                            {
+                                "operation_id": operation.operation_id,
+                                "object_id": row["object_id"],
+                            }
+                        ),
+                        "operation_id": operation.operation_id,
+                        "operation_order": operation.order,
+                        "object_id": row["object_id"],
+                        "verdict": row.get("verdict"),
+                        "protection": row.get("protection"),
+                        "reason_codes": list(row.get("reason_codes") or [])[:16],
+                        "before": list(row.get("before") or [])[:16],
+                        "after": list(row.get("after") or [])[:16],
+                    }
+                )
+        expected = {
+            acknowledgement_object_token(row) for row in binding["objects"]
+        }
+        if {row["token"] for row in rows} != expected or len(rows) != len(
+            expected
+        ):
+            return {"available": False, "objects": []}
+        # Stored-plan re-scan: D11 exception (HAMCP-207).
+        sanitized = rescan_stored_plan(
+            rows, known_secrets=self.sensitive_values, max_string=500
+        ).value
+        return {
+            "available": True,
+            "projection_hash": binding["projection_hash"],
+            "objects": sanitized if isinstance(sanitized, list) else [],
+        }
+
     async def issue_external_csrf(self, plan_id: str, challenge_id: str) -> tuple[dict[str, Any], str]:
         lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with lock:
@@ -7313,8 +7546,7 @@ class ChangeGovernanceService:
             nonce = secrets.token_urlsafe(32)
             digest = hashlib.sha256(nonce.encode("utf-8")).hexdigest()
             if (
-                action
-                == ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
+                action in SECOND_ACTION_VALUES
                 and plan.approval.elevated_risk_acknowledgement
                 is not None
             ):
@@ -7345,8 +7577,14 @@ class ChangeGovernanceService:
         decision: str,
         approver_principal: str,
         approval_action: str = ApprovalActionKind.PLAN_APPROVAL.value,
+        acknowledged_objects: tuple[str, ...] = (),
+        acknowledged_projection_hash: str = "",
     ) -> dict[str, Any]:
-        """Perform the private Ingress-authority decision under the plan lock."""
+        """Perform the private Ingress-authority decision under the plan lock.
+
+        ``acknowledged_objects`` are the opaque row tokens a safety-critical
+        acknowledgement form submitted; every other action refuses them.
+        """
 
         lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with lock:
@@ -7400,8 +7638,7 @@ class ChangeGovernanceService:
             acknowledgement = approval.elevated_risk_acknowledgement
             expected_csrf = (
                 acknowledgement.csrf_digest
-                if active_action
-                == ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
+                if active_action in SECOND_ACTION_VALUES
                 and acknowledgement is not None
                 else approval.csrf_digest
             )
@@ -7421,8 +7658,7 @@ class ChangeGovernanceService:
                     plan, ErrorCode.EXTERNAL_APPROVAL_INVALID
                 )
             if (
-                active_action
-                == ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
+                active_action in SECOND_ACTION_VALUES
                 and acknowledgement is not None
             ):
                 acknowledgement.csrf_digest = None
@@ -7431,9 +7667,20 @@ class ChangeGovernanceService:
                 approval.csrf_digest = None
                 approval.csrf_issued_at = None
             principal = approver_principal[:160]
-            if (
+            safety_action = (
                 active_action
-                == ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
+                == ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT.value
+            )
+            if (acknowledged_objects or acknowledged_projection_hash) and not (
+                safety_action and decision == "approve"
+            ):
+                # Object acknowledgements belong only to the safety-critical
+                # approve decision; anywhere else they are a forged form.
+                self._reject_external_decision(
+                    plan, ErrorCode.EXTERNAL_APPROVAL_INVALID
+                )
+            if (
+                active_action in SECOND_ACTION_VALUES
                 and (
                     acknowledgement is None
                     or approval.approver_principal != principal
@@ -7441,7 +7688,7 @@ class ChangeGovernanceService:
             ):
                 self._record(
                     plan,
-                    "elevated_risk_acknowledgement_failed",
+                    f"{SECOND_ACTION_EVENT_PREFIXES[ApprovalActionKind(active_action)]}_failed",
                     "rejected",
                     error_code=(
                         ErrorCode.APPROVAL_PRINCIPAL_MISMATCH.value
@@ -7461,11 +7708,12 @@ class ChangeGovernanceService:
                     approval.principal_separation_enforced = (
                         principal_separation_proven(principal)
                     )
-                    if (
-                        ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                        in plan.policy_decision.required_acknowledgements
-                    ):
-                        if acknowledgement is None:
+                    second_kind = second_action_kind(plan.policy_decision)
+                    if second_kind is not None:
+                        if (
+                            acknowledgement is None
+                            or acknowledgement.kind is not second_kind
+                        ):
                             self._reject_external_decision(
                                 plan,
                                 ErrorCode.APPROVAL_SEQUENCE_FAILURE,
@@ -7481,8 +7729,21 @@ class ChangeGovernanceService:
                             requested_at
                         )
                         acknowledgement.authority_version = (
-                            APPROVAL_AUTHORITY_VERSION
+                            second_action_authority_version(second_kind)
                         )
+                        if (
+                            second_kind
+                            is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+                        ):
+                            binding = safety_critical_binding(plan)
+                            if (
+                                binding is None
+                                or binding["projection_hash"]
+                                != acknowledgement.safety_critical_projection_hash
+                            ):
+                                self._reject_external_decision(
+                                    plan, ErrorCode.POLICY_SNAPSHOT_MISMATCH
+                                )
                         acknowledgement.bound_plan_hash = calculated
                         acknowledgement.policy_decision_hash = (
                             plan.policy_decision.policy_decision_hash
@@ -7501,7 +7762,7 @@ class ChangeGovernanceService:
                             datetime.fromisoformat(plan.expires_at),
                         ).isoformat()
                         approval.bundle_state = (
-                            "pending_elevated_risk_acknowledgement"
+                            SECOND_ACTION_PENDING_STATES[second_kind]
                         )
                         approval.same_principal_confirmed = None
                         self._record(
@@ -7513,12 +7774,9 @@ class ChangeGovernanceService:
                         )
                         self._record(
                             plan,
-                            "elevated_risk_acknowledgement_requested",
+                            f"{SECOND_ACTION_EVENT_PREFIXES[second_kind]}_requested",
                             "success",
-                            approval_action=(
-                                ApprovalActionKind.
-                                ELEVATED_RISK_ACKNOWLEDGEMENT.value
-                            ),
+                            approval_action=second_kind.value,
                         )
                         return self._approval_pending_response(plan)
                     approval.bundle_state = "fully_approved"
@@ -7541,10 +7799,51 @@ class ChangeGovernanceService:
                         "approval_bundle_state": "fully_approved",
                     }
 
-                if acknowledgement is None:
+                if (
+                    acknowledgement is None
+                    or acknowledgement.kind.value != active_action
+                ):
                     self._reject_external_decision(
                         plan, ErrorCode.APPROVAL_SEQUENCE_FAILURE
                     )
+                if safety_action:
+                    binding = safety_critical_binding(plan)
+                    if binding is None or (
+                        binding["projection_hash"]
+                        != acknowledgement.safety_critical_projection_hash
+                    ):
+                        self._reject_external_decision(
+                            plan, ErrorCode.POLICY_SNAPSHOT_MISMATCH
+                        )
+                    expected_tokens = sorted(
+                        row["token"]
+                        for row in safety_critical_object_rows(binding)
+                    )
+                    if (
+                        not hmac.compare_digest(
+                            acknowledged_projection_hash.encode("utf-8"),
+                            binding["projection_hash"].encode("utf-8"),
+                        )
+                        or len(acknowledged_objects)
+                        != len(set(acknowledged_objects))
+                        or sorted(acknowledged_objects) != expected_tokens
+                    ):
+                        self._record(
+                            plan,
+                            "safety_critical_acknowledgement_failed",
+                            "rejected",
+                            error_code=(
+                                ErrorCode.
+                                SAFETY_CRITICAL_ACKNOWLEDGEMENT_MISMATCH.value
+                            ),
+                            approval_action=active_action,
+                        )
+                        raise GovernanceError(
+                            ErrorCode.SAFETY_CRITICAL_ACKNOWLEDGEMENT_MISMATCH
+                        )
+                    acknowledgement.acknowledged_objects = [
+                        dict(row) for row in binding["objects"]
+                    ]
                 acknowledgement.state = ApprovalState.APPROVED
                 acknowledgement.granted_at = self._timestamp()
                 acknowledgement.approver_principal = principal
@@ -7556,7 +7855,7 @@ class ChangeGovernanceService:
                     plan.rollback.approved_at = approval.approved_at
                 self._record(
                     plan,
-                    "elevated_risk_acknowledgement_granted",
+                    f"{SECOND_ACTION_EVENT_PREFIXES[acknowledgement.kind]}_granted",
                     "success",
                     approval_principal=principal,
                     approval_action=active_action,
@@ -12318,10 +12617,64 @@ class ChangeGovernanceService:
                 or approval.same_principal_confirmed is not True
             ):
                 return ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
+        safety_error = self._safety_critical_dispatch_error(plan)
+        if safety_error is not None:
+            return safety_error
         if plan.status != expected_status:
             return ErrorCode.EXTERNAL_APPROVAL_REQUIRED
         if self._approval_bundle_state(plan) != "fully_approved":
             return ErrorCode.EXTERNAL_APPROVAL_REQUIRED
+        return None
+
+    def _safety_critical_dispatch_error(
+        self, plan: ChangePlan
+    ) -> ErrorCode | None:
+        """HAMCP-213 D1: refuse dispatch without the exact acknowledgement.
+
+        This check is independent of the stored bundle state and plan status:
+        plan approval alone, or a record that only claims ``fully_approved``,
+        never dispatches a plan that requires the safety-critical
+        acknowledgement. The binding is recomputed from the immutable plan.
+        """
+
+        decision = plan.policy_decision
+        if (
+            decision is None
+            or ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+            not in decision.required_acknowledgements
+        ):
+            return None
+        approval = plan.approval
+        acknowledgement = approval.elevated_risk_acknowledgement
+        if (
+            acknowledgement is None
+            or acknowledgement.kind
+            is not ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+            or acknowledgement.authority_version
+            != SAFETY_CRITICAL_ACKNOWLEDGEMENT_AUTHORITY_VERSION
+            or acknowledgement.state != ApprovalState.APPROVED
+            or not acknowledgement.granted_at
+            or not acknowledgement.challenge_id
+            or acknowledgement.bound_plan_hash != self.plan_hash(plan)
+            or acknowledgement.policy_decision_hash
+            != decision.policy_decision_hash
+        ):
+            return ErrorCode.SAFETY_CRITICAL_ACKNOWLEDGEMENT_REQUIRED
+        binding = safety_critical_binding(plan)
+        if (
+            binding is None
+            or acknowledgement.safety_critical_projection_hash
+            != binding["projection_hash"]
+            or acknowledgement.acknowledged_objects != binding["objects"]
+        ):
+            return ErrorCode.SAFETY_CRITICAL_ACKNOWLEDGEMENT_MISMATCH
+        if (
+            not acknowledgement.approver_principal
+            or acknowledgement.approver_principal
+            != approval.approver_principal
+            or approval.same_principal_confirmed is not True
+        ):
+            return ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
         return None
 
     @staticmethod

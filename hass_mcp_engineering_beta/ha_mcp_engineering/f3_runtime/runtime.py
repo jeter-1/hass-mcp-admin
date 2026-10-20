@@ -375,9 +375,25 @@ def _approval_bundle_hash(plan: Any) -> str:
                 "principal": elevated.approver_principal,
                 "bound_plan_hash": elevated.bound_plan_hash,
                 "policy_decision_hash": elevated.policy_decision_hash,
+                # HAMCP-213 D1: present only on a safety-critical
+                # acknowledgement, so authority-v3 bundle hashes are unchanged.
+                **_safety_critical_bundle_fields(elevated),
             },
         }
     )
+
+
+def _safety_critical_bundle_fields(record: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    if record.safety_critical_projection_hash is not None:
+        fields["safety_critical_projection_hash"] = (
+            record.safety_critical_projection_hash
+        )
+    if record.acknowledged_objects is not None:
+        fields["acknowledged_objects"] = [
+            dict(row) for row in record.acknowledged_objects
+        ]
+    return fields
 
 
 class RuntimeLockStore(DurableLockStore):

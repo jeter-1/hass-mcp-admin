@@ -291,12 +291,63 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
             ["plan_approval", "safety_critical_acknowledgement"],
         )
         self.assertTrue(created["approval_actionable"])
-        _pending, _review, granted = await self.approve(created)
-        self.assertEqual(granted["status"], "approved")
+        # HAMCP-213 D1: plan approval alone leaves the separate
+        # safety-critical acknowledgement pending and never dispatches.
+        pending = self.service.approve(created["plan_id"], created["plan_hash"])
+        _review, csrf = await self.service.issue_external_csrf(
+            created["plan_id"], pending["challenge_id"]
+        )
+        plan_only = await self.service.decide_external_approval(
+            plan_id=created["plan_id"],
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=created["plan_hash"],
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal="home_assistant_admin_ingress:dev14-reviewer",
+        )
+        self.assertEqual(plan_only["status"], "approval_pending")
+        self.assertEqual(
+            plan_only["approval_action"], "safety_critical_acknowledgement"
+        )
+        stored = self.service.repository.get(created["plan_id"])
+        self.assertEqual(
+            stored.approval.bundle_state,
+            "pending_safety_critical_acknowledgement",
+        )
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created["plan_id"], created["plan_hash"])
         self.assertEqual(
             [call for call in self.gateway.calls if call[0] == "write"], []
         )
         self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
+
+        second_review, second_csrf = await self.service.issue_external_csrf(
+            created["plan_id"], plan_only["challenge_id"]
+        )
+        safety = second_review["safety_critical_acknowledgement"]
+        self.assertTrue(safety["available"])
+        self.assertEqual(
+            [row["operation_id"] for row in safety["objects"]],
+            ["change_garage_effect"],
+        )
+        granted = await self.service.decide_external_approval(
+            plan_id=created["plan_id"],
+            challenge_id=plan_only["challenge_id"],
+            expected_plan_hash=created["plan_hash"],
+            approval_kind=plan_only["approval_kind"],
+            approval_action=plan_only["approval_action"],
+            csrf_nonce=second_csrf,
+            decision="approve",
+            approver_principal="home_assistant_admin_ingress:dev14-reviewer",
+            acknowledged_objects=tuple(row["token"] for row in safety["objects"]),
+            acknowledged_projection_hash=safety["projection_hash"],
+        )
+        self.assertEqual(granted["status"], "approved")
+        self.assertEqual(
+            [call for call in self.gateway.calls if call[0] == "write"], []
+        )
 
     def test_only_exact_appended_reviewed_guards_qualify(self):
         current = copy.deepcopy(CURRENT_GARAGE_AUTOMATION)

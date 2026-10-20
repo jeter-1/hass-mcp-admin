@@ -814,3 +814,19 @@ def plan_acknowledgement_binding(operations: Iterable[Any]) -> dict[str, Any] | 
             objects, key=lambda item: (item["operation_id"], item["object_id"])
         ),
     }
+
+
+MAX_ACKNOWLEDGED_OBJECTS = 32
+
+
+def acknowledgement_object_token(row: dict[str, str]) -> str:
+    """Return the opaque form token naming one acknowledgement row.
+
+    The Ingress review form submits one token per checked row. Tokens are
+    derived from the exact ``(operation_id, object_id)`` pair so a submission
+    can only name rows the immutable plan's recomputed binding contains.
+    """
+
+    return stable_hash(
+        {"operation_id": row["operation_id"], "object_id": row["object_id"]}
+    )[:32]

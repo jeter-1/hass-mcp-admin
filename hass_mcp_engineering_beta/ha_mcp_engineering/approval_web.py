@@ -53,6 +53,10 @@ from .governance.semantic_projection import (
 
 
 MAX_BODY_BYTES = 8_192
+# HAMCP-213 D1: five fixed decision fields plus the safety-critical
+# acknowledgement projection hash and at most 32 per-object row tokens.
+MAX_ACKNOWLEDGED_OBJECT_FIELDS = 32
+MAX_DECISION_FORM_FIELDS = 8 + MAX_ACKNOWLEDGED_OBJECT_FIELDS
 # The complete canonical projection is bounded before persistence. HTML entity
 # escaping can expand one source byte to six bytes, so this response boundary
 # is derived from that product limit and includes fixed page/form overhead.
@@ -1044,8 +1048,15 @@ class IngressApprovalApplication:
                 413,
             )
         try:
-            parsed = parse_qs(raw.decode("utf-8", "strict"), keep_blank_values=True, max_num_fields=8)
+            parsed = parse_qs(
+                raw.decode("utf-8", "strict"),
+                keep_blank_values=True,
+                max_num_fields=MAX_DECISION_FORM_FIELDS,
+            )
             one = lambda name: parsed.get(name, [""])[0]
+            acknowledged_objects = parsed.get("ack_object", [])
+            if len(acknowledged_objects) > MAX_ACKNOWLEDGED_OBJECT_FIELDS:
+                raise ValueError("too many acknowledged objects")
             result = await self.governance.require().decide_external_approval(
                 plan_id=request.path_params["plan_id"],
                 challenge_id=one("challenge_id")[:256],
@@ -1060,6 +1071,10 @@ class IngressApprovalApplication:
                 csrf_nonce=one("csrf")[:256],
                 decision=decision,
                 approver_principal=principal,
+                acknowledged_objects=tuple(
+                    value[:64] for value in acknowledged_objects
+                ),
+                acknowledged_projection_hash=one("ack_projection_hash")[:128],
             )
         except (UnicodeDecodeError, ValueError):
             return self._response(
@@ -1078,7 +1093,12 @@ class IngressApprovalApplication:
         status = _text(result.get("status"), 32)
         if status == "approval_pending":
             next_href = f"{prefix}/plans/{request.path_params['plan_id']}"
-            next_label = "Continue elevated-risk acknowledgement"
+            next_label = (
+                "Continue safety-critical acknowledgement"
+                if result.get("approval_action")
+                == "safety_critical_acknowledgement"
+                else "Continue elevated-risk acknowledgement"
+            )
         else:
             remaining = self.governance.require().pending_external_reviews()
             next_href = f"{prefix}/"
@@ -1693,6 +1713,106 @@ def _render_operation_summaries(operations: list[dict[str, Any]]) -> str:
     )
 
 
+def _render_safety_critical(
+    value: Any, *, required: bool, decision_form: bool
+) -> tuple[str, str, str | None]:
+    """Render the HAMCP-213 per-object safety-critical section.
+
+    Returns the read-only section, the approve-form fields (one checkbox per
+    object plus the bound projection hash, only on the acknowledgement
+    decision), and an error that disables approval.
+    """
+
+    if not required:
+        return "", "", None
+    unavailable = (
+        "The safety-critical acknowledgement projection is unavailable."
+    )
+    if not isinstance(value, dict) or value.get("available") is not True:
+        return (
+            "<h2>Safety-critical acknowledgement</h2>"
+            f'<p class="danger"><strong>{escape(unavailable)}</strong> '
+            "Approval is disabled. Reject this plan and create a new bounded plan.</p>",
+            "",
+            unavailable,
+        )
+    objects = value.get("objects")
+    projection_hash = value.get("projection_hash")
+    if (
+        not isinstance(objects, list)
+        or not objects
+        or len(objects) > MAX_ACKNOWLEDGED_OBJECT_FIELDS
+        or not isinstance(projection_hash, str)
+        or not all(
+            isinstance(item, dict)
+            and isinstance(item.get("token"), str)
+            and re.fullmatch(r"[0-9a-f]{32}", item["token"])
+            for item in objects
+        )
+    ):
+        return (
+            "<h2>Safety-critical acknowledgement</h2>"
+            f'<p class="danger"><strong>{escape(unavailable)}</strong></p>',
+            "",
+            unavailable,
+        )
+
+    def effects(items: Any) -> str:
+        if not isinstance(items, list) or not items:
+            return "none"
+        return "; ".join(
+            "{} at {}".format(
+                _summary_scalar(item.get("service"), 96),
+                _summary_scalar(item.get("position"), 160),
+            )
+            for item in items[:16]
+            if isinstance(item, dict)
+        ) or "none"
+
+    header = (
+        "<tr><th>Object</th><th>Operation</th><th>Verdict</th>"
+        "<th>Protection</th><th>Before</th><th>After</th><th>Reasons</th>"
+        + ("<th>Acknowledge</th>" if decision_form else "")
+        + "</tr>"
+    )
+    rows = []
+    for item in objects:
+        token = item["token"]
+        checkbox = (
+            f'<td><input type="checkbox" name="ack_object" '
+            f'value="{escape(token, quote=True)}" '
+            f'form="safety-critical-acknowledgement" required></td>'
+            if decision_form
+            else ""
+        )
+        rows.append(
+            "<tr>"
+            f"<td><code>{escape(_summary_scalar(item.get('object_id'), 255))}</code></td>"
+            f"<td><code>{escape(_summary_scalar(item.get('operation_id'), 64))}</code></td>"
+            f"<td>{escape(_summary_scalar(item.get('verdict'), 32))}</td>"
+            f"<td>{escape(_summary_scalar(item.get('protection'), 64))}</td>"
+            f"<td>{escape(effects(item.get('before')))}</td>"
+            f"<td>{escape(effects(item.get('after')))}</td>"
+            f"<td>{escape(_summary_scalar(item.get('reason_codes'), 500))}</td>"
+            f"{checkbox}</tr>"
+        )
+    section = (
+        '<h2 class="danger">Safety-critical acknowledgement</h2>'
+        "<p>This plan changes what a lock, alarm, valve, cover or water "
+        "control does. Approving the plan is not enough: the same "
+        "administrator must separately acknowledge every object below.</p>"
+        f"<p>Comparison hash: <code>{escape(_text(projection_hash, 128))}</code></p>"
+        "<table>" + header + "".join(rows) + "</table>"
+    )
+    fields = (
+        f'<input type="hidden" name="ack_projection_hash" '
+        f'value="{escape(_text(projection_hash, 128), quote=True)}">'
+        if decision_form
+        else ""
+    )
+    return section, fields, None
+
+
 def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
     def row(label: str, value: Any) -> str:
         return f"<tr><th>{escape(label)}</th><td><code>{escape(_text(value, 2_000))}</code></td></tr>"
@@ -1819,18 +1939,41 @@ def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
         review.get("approval_action")
         == "elevated_risk_acknowledgement"
     )
+    safety_acknowledgement = (
+        review.get("approval_action")
+        == "safety_critical_acknowledgement"
+    )
+    safety_required = (
+        review.get("second_action") == "safety_critical_acknowledgement"
+    )
+    safety_section, safety_fields, safety_error = _render_safety_critical(
+        review.get("safety_critical_acknowledgement"),
+        required=safety_required,
+        decision_form=safety_acknowledgement,
+    )
+    projection_error = projection_error or safety_error
     action_label = (
-        "Acknowledge elevated risk"
+        "Acknowledge these safety-critical changes"
+        if safety_acknowledgement
+        else "Acknowledge elevated risk"
         if elevated_acknowledgement
         else "Approve exact plan"
     )
     action_explanation = (
         "The same authenticated Home Assistant administrator who approved "
+        "the plan must check every listed safety-critical object to confirm "
+        "its changed physical effect. Every object must be checked."
+        if safety_acknowledgement
+        else "The same authenticated Home Assistant administrator who approved "
         "the plan must separately acknowledge the displayed elevated risk "
         "and physical consequence."
         if elevated_acknowledgement
         else (
-            "This action approves the exact plan. A separate elevated-risk "
+            "This action approves the exact plan. A separate safety-critical "
+            "acknowledgement of each listed object will be required on the "
+            "subsequent page."
+            if safety_required
+            else "This action approves the exact plan. A separate elevated-risk "
             "acknowledgement will be required on the subsequent page."
             if review.get("same_principal_requirement") is True
             else "This action approves the exact plan and completes the "
@@ -1840,7 +1983,9 @@ def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
     )
     approve_form = (
         f'<p>{escape(action_explanation)}</p>'
-        f'<form method="post" action="{approve_action}">{hidden}<button type="submit">{escape(action_label)}</button></form>'
+        f'<form method="post" action="{approve_action}"'
+        + (' id="safety-critical-acknowledgement"' if safety_acknowledgement else "")
+        + f'>{hidden}{safety_fields}<button type="submit">{escape(action_label)}</button></form>'
         if not projection_error
         else ""
     )
@@ -1860,6 +2005,7 @@ def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
         + "".join(rows)
         + "</table>"
         + change_table
+        + safety_section
         + warning_block
         + forms,
         prefix=prefix,

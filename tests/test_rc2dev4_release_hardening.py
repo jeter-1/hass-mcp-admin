@@ -307,7 +307,7 @@ class GovernanceLifecycleAcceptanceTests(GovernanceTestCase):
         self.assertIsNone(created["approval"]["principal_separation_enforced"])
         self.assertEqual(
             created["approval"]["principal_separation_status"]["reason"],
-            "no_external_approver_exists",
+            "no_decision_recorded",
         )
         pending = self.service.approve(created["plan_id"], created["plan_hash"])
         self.assertEqual(pending["approval_lifecycle"], "approval_pending_external")

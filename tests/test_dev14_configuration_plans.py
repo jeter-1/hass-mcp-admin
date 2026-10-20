@@ -424,9 +424,13 @@ class ConfigurationPlanTestCase(unittest.IsolatedAsyncioTestCase):
             ),
         )
         if granted["status"] == "approval_pending":
-            _, second_csrf = await self.service.issue_external_csrf(
+            second_review, second_csrf = await self.service.issue_external_csrf(
                 created["plan_id"], granted["challenge_id"]
             )
+            # HAMCP-213 D1: a safety-critical acknowledgement submits every
+            # reviewed object token and the bound comparison hash, as the
+            # Ingress form does after the administrator checks each row.
+            safety = second_review.get("safety_critical_acknowledgement") or {}
             granted = await self.service.decide_external_approval(
                 plan_id=created["plan_id"],
                 challenge_id=granted["challenge_id"],
@@ -438,6 +442,10 @@ class ConfigurationPlanTestCase(unittest.IsolatedAsyncioTestCase):
                 approver_principal=(
                     "home_assistant_admin_ingress:dev14-reviewer"
                 ),
+                acknowledged_objects=tuple(
+                    row["token"] for row in safety.get("objects", [])
+                ),
+                acknowledged_projection_hash=safety.get("projection_hash", ""),
             )
         return pending, review, granted
 

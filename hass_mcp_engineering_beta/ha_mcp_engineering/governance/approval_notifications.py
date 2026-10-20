@@ -35,6 +35,9 @@ _SAFE_ADDON_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _SAFE_PLAN_ID = re.compile(r"^[a-f0-9]{32}$")
 _SEND_EVENTS = {
     "external_approval_requested": ApprovalActionKind.PLAN_APPROVAL.value,
+    "safety_critical_acknowledgement_requested": (
+        ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT.value
+    ),
     "elevated_risk_acknowledgement_requested": (
         ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
     ),
@@ -47,10 +50,22 @@ _CLEAR_ALL_EVENTS = {
 }
 _CLEAR_ACTION_EVENTS = {
     "external_approval_granted": ApprovalActionKind.PLAN_APPROVAL.value,
+    "safety_critical_acknowledgement_granted": (
+        ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT.value
+    ),
     "elevated_risk_acknowledgement_granted": (
         ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
     ),
 }
+
+
+# Ordered actions that receive an advisory notification. A notification never
+# carries authority; it only opens the approval inbox.
+_NOTIFIED_ACTIONS = (
+    ApprovalActionKind.PLAN_APPROVAL.value,
+    ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value,
+    ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT.value,
+)
 
 
 def validate_notification_service(value: str) -> bool:
@@ -130,9 +145,9 @@ class ApprovalNotificationManager:
             return plan.approval.challenge_id
         acknowledgement = plan.approval.elevated_risk_acknowledgement
         if (
-            approval_action
-            == ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
-            and acknowledgement is not None
+            acknowledgement is not None
+            and approval_action == acknowledgement.kind.value
+            and approval_action in _NOTIFIED_ACTIONS
         ):
             return acknowledgement.challenge_id
         return None
@@ -167,10 +182,7 @@ class ApprovalNotificationManager:
                     )
                 return
             if event in _CLEAR_ALL_EVENTS:
-                for action in (
-                    ApprovalActionKind.PLAN_APPROVAL.value,
-                    ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value,
-                ):
+                for action in _NOTIFIED_ACTIONS:
                     challenge_id = self._challenge_for_action(plan, action)
                     if challenge_id:
                         self._enqueue(
@@ -204,11 +216,7 @@ class ApprovalNotificationManager:
                 isinstance(plan_id, str)
                 and isinstance(challenge_id, str)
                 and isinstance(approval_action, str)
-                and approval_action
-                in {
-                    ApprovalActionKind.PLAN_APPROVAL.value,
-                    ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value,
-                }
+                and approval_action in _NOTIFIED_ACTIONS
             ):
                 self._enqueue(
                     "notify",
@@ -361,10 +369,22 @@ class ApprovalNotificationManager:
             # relative target; no external URL handler or Ingress session is
             # needed and the notification conveys no per-plan authority.
             review_path = f"/app/{addon_slug}"
+            safety_critical = (
+                work.approval_action
+                == ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT.value
+            )
             body = {
-                "title": "Home Assistant approval requested",
+                "title": (
+                    "Home Assistant safety-critical acknowledgement required"
+                    if safety_critical
+                    else "Home Assistant approval requested"
+                ),
                 "message": (
-                    "A governed Home Assistant change is waiting for "
+                    "A governed Home Assistant change to a safety-critical "
+                    "device is waiting for a separate administrator "
+                    "acknowledgement."
+                    if safety_critical
+                    else "A governed Home Assistant change is waiting for "
                     "administrator review."
                 ),
                 "data": {

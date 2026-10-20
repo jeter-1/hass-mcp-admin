@@ -244,6 +244,8 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "prohibited_change", "policy_snapshot_required",
             "policy_snapshot_mismatch",
             "elevated_risk_acknowledgement_required",
+            "safety_critical_acknowledgement_required",
+            "safety_critical_acknowledgement_mismatch",
             "approval_principal_mismatch", "approval_sequence_failure",
             "change_plan_rejected",
             "change_in_progress", "unsupported_change_operation",

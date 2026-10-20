@@ -186,7 +186,7 @@ EXEMPT_FIELDS: dict[tuple[str, ...], str] = {
             ("approval", "bound_plan_hash"), ("approval", "csrf_digest"),
             ("approval", "policy_decision_hash"),
             (*_ACK, "bound_plan_hash"), (*_ACK, "policy_decision_hash"),
-            (*_ACK, "csrf_digest"),
+            (*_ACK, "csrf_digest"), (*_ACK, "safety_critical_projection_hash"),
             ("policy_decision", "policy_subject_hash"),
             ("policy_decision", "policy_decision_hash"),
             ("snapshot", "fingerprint"),

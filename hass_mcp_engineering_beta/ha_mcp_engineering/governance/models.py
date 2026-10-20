@@ -202,6 +202,13 @@ class ApprovalActionRecord:
     consumed_at: str | None = None
     csrf_digest: str | None = None
     csrf_issued_at: str | None = None
+    # HAMCP-213 D1: only a safety-critical acknowledgement (action authority
+    # version 4) binds the recomputed physical-effect comparison and the
+    # exact (operation_id, object_id) rows the administrator acknowledged.
+    # Both are omitted from storage when absent so authority-v3 records keep
+    # their persisted shape.
+    safety_critical_projection_hash: str | None = None
+    acknowledged_objects: list[dict[str, str]] | None = None
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "ApprovalActionRecord":
@@ -500,6 +507,11 @@ class ChangePlan:
             ):
                 if approval.get(key) is None:
                     approval.pop(key, None)
+            acknowledgement = approval.get("elevated_risk_acknowledgement")
+            if isinstance(acknowledgement, dict):
+                for key in ("safety_critical_projection_hash", "acknowledged_objects"):
+                    if acknowledgement.get(key) is None:
+                        acknowledgement.pop(key, None)
         # Contract-v1 records predate ordered configuration operations. Keep
         # their persisted and public representation byte-for-byte compatible:
         # the additive fields exist only on contract-v2 records.

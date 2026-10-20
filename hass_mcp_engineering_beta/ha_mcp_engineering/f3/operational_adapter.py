@@ -120,6 +120,26 @@ def _approval_bundle_hash(plan: ChangePlan) -> str:
                     "principal": elevated.approver_principal,
                     "bound_plan_hash": elevated.bound_plan_hash,
                     "policy_decision_hash": elevated.policy_decision_hash,
+                    # HAMCP-213 D1: present only on a safety-critical
+                    # acknowledgement; authority-v3 hashes are unchanged.
+                    **(
+                        {
+                            "safety_critical_projection_hash": (
+                                elevated.safety_critical_projection_hash
+                            )
+                        }
+                        if elevated.safety_critical_projection_hash is not None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "acknowledged_objects": [
+                                dict(row) for row in elevated.acknowledged_objects
+                            ]
+                        }
+                        if elevated.acknowledged_objects is not None
+                        else {}
+                    ),
                 }
                 if elevated is not None
                 else None
@@ -318,6 +338,13 @@ class OperationalAdministrationAdapter:
             raise OperationalAdapterError("policy_snapshot_mismatch")
         if operational.provider != strategy.capability.provider:
             raise OperationalAdapterError("provider_identity_mismatch")
+        if (
+            ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+            in policy.required_acknowledgements
+        ):
+            # HAMCP-213 D1: lifecycle operations never carry a physical-effect
+            # comparison, so a safety-critical requirement here is not bound.
+            raise OperationalAdapterError("safety_critical_authorization_not_bound")
         elevated = plan.approval.elevated_risk_acknowledgement
         acknowledgement_required = (
             ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
