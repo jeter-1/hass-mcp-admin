@@ -351,7 +351,7 @@ def safety_critical_object_rows(binding: dict[str, Any]) -> list[dict[str, str]]
         {
             "operation_id": str(row["operation_id"]),
             "object_id": str(row["object_id"]),
-            "token": acknowledgement_object_token(row),
+            "object_ref": acknowledgement_object_token(row),
         }
         for row in binding["objects"]
     ]
@@ -2001,10 +2001,17 @@ class ChangeGovernanceService:
                         "safety_critical_projection_hash": (
                             acknowledgement.safety_critical_projection_hash
                         ),
-                        "acknowledged_objects": [
-                            dict(row)
-                            for row in acknowledgement.acknowledged_objects or []
-                        ],
+                        # Task evidence is depth-bounded; record the exact
+                        # acknowledged object set as a digest and count. The
+                        # plan record keeps the set and dispatch rechecks it.
+                        "acknowledged_objects_hash": (
+                            stable_hash(acknowledgement.acknowledged_objects)
+                            if acknowledgement.acknowledged_objects is not None
+                            else None
+                        ),
+                        "acknowledged_object_count": len(
+                            acknowledgement.acknowledged_objects or []
+                        ),
                     }
                 )
         return value
@@ -7493,7 +7500,7 @@ class ChangeGovernanceService:
                     continue
                 rows.append(
                     {
-                        "token": acknowledgement_object_token(
+                        "object_ref": acknowledgement_object_token(
                             {
                                 "operation_id": operation.operation_id,
                                 "object_id": row["object_id"],
@@ -7512,7 +7519,7 @@ class ChangeGovernanceService:
         expected = {
             acknowledgement_object_token(row) for row in binding["objects"]
         }
-        if {row["token"] for row in rows} != expected or len(rows) != len(
+        if {row["object_ref"] for row in rows} != expected or len(rows) != len(
             expected
         ):
             return {"available": False, "objects": []}
@@ -7816,7 +7823,7 @@ class ChangeGovernanceService:
                             plan, ErrorCode.POLICY_SNAPSHOT_MISMATCH
                         )
                     expected_tokens = sorted(
-                        row["token"]
+                        row["object_ref"]
                         for row in safety_critical_object_rows(binding)
                     )
                     if (

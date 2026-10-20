@@ -1745,8 +1745,8 @@ def _render_safety_critical(
         or not isinstance(projection_hash, str)
         or not all(
             isinstance(item, dict)
-            and isinstance(item.get("token"), str)
-            and re.fullmatch(r"[0-9a-f]{32}", item["token"])
+            and isinstance(item.get("object_ref"), str)
+            and re.fullmatch(r"[0-9a-f]{32}", item["object_ref"])
             for item in objects
         )
     ):
@@ -1777,7 +1777,7 @@ def _render_safety_critical(
     )
     rows = []
     for item in objects:
-        token = item["token"]
+        token = item["object_ref"]
         checkbox = (
             f'<td><input type="checkbox" name="ack_object" '
             f'value="{escape(token, quote=True)}" '

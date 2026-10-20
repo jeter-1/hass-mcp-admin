@@ -443,7 +443,7 @@ class ConfigurationPlanTestCase(unittest.IsolatedAsyncioTestCase):
                     "home_assistant_admin_ingress:dev14-reviewer"
                 ),
                 acknowledged_objects=tuple(
-                    row["token"] for row in safety.get("objects", [])
+                    row["object_ref"] for row in safety.get("objects", [])
                 ),
                 acknowledged_projection_hash=safety.get("projection_hash", ""),
             )

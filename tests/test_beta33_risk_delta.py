@@ -341,7 +341,7 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
             csrf_nonce=second_csrf,
             decision="approve",
             approver_principal="home_assistant_admin_ingress:dev14-reviewer",
-            acknowledged_objects=tuple(row["token"] for row in safety["objects"]),
+            acknowledged_objects=tuple(row["object_ref"] for row in safety["objects"]),
             acknowledged_projection_hash=safety["projection_hash"],
         )
         self.assertEqual(granted["status"], "approved")
