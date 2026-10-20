@@ -1,0 +1,308 @@
+{
+ "schema": "backup-inventory-v1",
+ "completeness": "complete",
+ "omissions": [],
+ "omission_reason_count": 0,
+ "redaction": null,
+ "sources": [
+  {
+   "source_id": "backup_config",
+   "command": "backup/config/info",
+   "status": "complete",
+   "reason": null,
+   "duration_ms": 0
+  },
+  {
+   "source_id": "backup_info",
+   "command": "backup/info",
+   "status": "complete",
+   "reason": null,
+   "duration_ms": 0
+  }
+ ],
+ "thresholds": {
+  "full_backup_max_age_days": 7,
+  "automatic_backup_max_age_days": {
+   "daily": 2,
+   "custom_days": 8
+  }
+ },
+ "definitions": {
+  "full": "Home Assistant configuration and database included, every Core-known folder included on a Supervisor installation, and no add-on or folder failed. Core does not report whether every installed add-on was included.",
+  "off_site": "Confirmed only for Home Assistant Cloud. Network storage and other integration agents are off-host; Core does not attest their site."
+ },
+ "installation": "supervisor",
+ "summary": {
+  "backup_count": 2,
+  "listed_count": 2,
+  "listed_limit": 25,
+  "more_backups_not_listed": 0,
+  "newest_backup": {
+   "backup_id": "5f1a0c2e",
+   "name": "Automatic backup 2026.10.1",
+   "date": "2026-10-19T07:12:00Z",
+   "age_days": 1.2,
+   "content_scope": "full",
+   "storage_classes": [
+    "home_assistant_cloud",
+    "local"
+   ]
+  },
+  "oldest_backup": {
+   "backup_id": "9b3d77a1",
+   "name": "Before kitchen changes",
+   "date": "2026-10-16T00:00:00Z",
+   "age_days": 4.5,
+   "content_scope": "partial",
+   "storage_classes": [
+    "network_storage"
+   ]
+  },
+  "newest_full_backup": {
+   "backup_id": "5f1a0c2e",
+   "name": "Automatic backup 2026.10.1",
+   "date": "2026-10-19T07:12:00Z",
+   "age_days": 1.2,
+   "content_scope": "full",
+   "storage_classes": [
+    "home_assistant_cloud",
+    "local"
+   ]
+  },
+  "newest_backup_offsite_copy": "confirmed",
+  "newest_full_backup_offsite_copy": "confirmed",
+  "storage_locations": [
+   {
+    "location_id": "cloud.cloud",
+    "storage_class": "home_assistant_cloud",
+    "backup_count": 1,
+    "newest_backup_date": "2026-10-19T07:12:00Z",
+    "read_error": false,
+    "selected_for_automatic_backups": true
+   },
+   {
+    "location_id": "hassio.local",
+    "storage_class": "local",
+    "backup_count": 1,
+    "newest_backup_date": "2026-10-19T07:12:00Z",
+    "read_error": false,
+    "selected_for_automatic_backups": true
+   },
+   {
+    "location_id": "hassio.synthetic_nas",
+    "storage_class": "network_storage",
+    "backup_count": 1,
+    "newest_backup_date": "2026-10-16T00:00:00Z",
+    "read_error": false,
+    "selected_for_automatic_backups": false
+   }
+  ],
+  "manager_state": "idle",
+  "last_action": {
+   "manager_state": "create_backup",
+   "state": "failed",
+   "stage": null,
+   "reason": "upload_failed"
+  }
+ },
+ "automatic_backups": {
+  "configured": true,
+  "schedule": {
+   "recurrence": "daily",
+   "days": [],
+   "time": "04:45"
+  },
+  "retention": {
+   "copies": 3,
+   "days": null
+  },
+  "location_ids": [
+   "hassio.local",
+   "cloud.cloud"
+  ],
+  "location_overrides": {
+   "cloud.cloud": {
+    "storage_class": "home_assistant_cloud",
+    "protected": true,
+    "retention": {
+     "copies": 10,
+     "days": null
+    }
+   }
+  },
+  "includes": {
+   "all_addons": false,
+   "addons": [
+    "core_mosquitto"
+   ],
+   "database": true,
+   "folders": [
+    "media",
+    "share"
+   ]
+  },
+  "encryption_configured": true,
+  "next_scheduled": "2026-10-21T00:00:00Z",
+  "next_scheduled_additional": false,
+  "last_attempted": "2026-10-20T07:12:00Z",
+  "last_completed": "2026-10-19T07:12:00Z",
+  "last_completed_age_days": 1.2,
+  "last_result": "not_completed"
+ },
+ "recent_failures": [
+  {
+   "kind": "last_backup_action_failed",
+   "manager_state": "create_backup",
+   "state": "failed",
+   "stage": null,
+   "reason": "upload_failed"
+  },
+  {
+   "kind": "automatic_backup_not_completed",
+   "last_attempted": "2026-10-20T07:12:00Z",
+   "last_completed": "2026-10-19T07:12:00Z"
+  }
+ ],
+ "recent_failure_count": 2,
+ "health_signals": [
+  {
+   "signal": "no_backups",
+   "status": "not_observed",
+   "threshold": null,
+   "fact": "2 backup(s) found in readable storage locations.",
+   "evidence_complete": true
+  },
+  {
+   "signal": "no_full_backup_within_threshold",
+   "status": "not_observed",
+   "threshold": {
+    "max_age_days": 7
+   },
+   "fact": "Newest full backup is 1.2 day(s) old.",
+   "evidence_complete": true
+  },
+  {
+   "signal": "newest_backup_only_on_this_host",
+   "status": "not_observed",
+   "threshold": null,
+   "fact": "Storage classes of the newest backup: home_assistant_cloud, local.",
+   "evidence_complete": true
+  },
+  {
+   "signal": "newest_backup_no_confirmed_offsite_copy",
+   "status": "not_observed",
+   "threshold": null,
+   "fact": "Off-site is confirmed only for Home Assistant Cloud; network storage and other integration agents are off-host but Core does not attest their site.",
+   "evidence_complete": true
+  },
+  {
+   "signal": "last_automatic_backup_not_completed",
+   "status": "observed",
+   "threshold": null,
+   "fact": "Last automatic backup result: not_completed.",
+   "evidence_complete": true
+  },
+  {
+   "signal": "automatic_backups_not_scheduled",
+   "status": "not_observed",
+   "threshold": null,
+   "fact": "Schedule recurrence: daily.",
+   "evidence_complete": true
+  },
+  {
+   "signal": "last_completed_automatic_backup_stale",
+   "status": "not_observed",
+   "threshold": {
+    "max_age_days": 2,
+    "recurrence": "daily"
+   },
+   "fact": "Last completed automatic backup is 1.2 day(s) old.",
+   "evidence_complete": true
+  },
+  {
+   "signal": "storage_location_unreadable",
+   "status": "not_observed",
+   "threshold": null,
+   "fact": "0 storage location(s) reported a read error.",
+   "evidence_complete": true
+  },
+  {
+   "signal": "newest_backup_incomplete",
+   "status": "not_observed",
+   "threshold": null,
+   "fact": "Failed locations, add-ons or folders recorded for the newest backup.",
+   "evidence_complete": true
+  }
+ ],
+ "backups": [
+  {
+   "backup_id": "5f1a0c2e",
+   "name": "Automatic backup 2026.10.1",
+   "date": "2026-10-19T07:12:00Z",
+   "age_days": 1.2,
+   "size_bytes": 734003200,
+   "content_scope": "full",
+   "homeassistant_included": true,
+   "homeassistant_version": "2026.10.1",
+   "database_included": true,
+   "addons": [
+    "Mosquitto broker",
+    "Synthetic add-on"
+   ],
+   "folders": [
+    "addons/local",
+    "media",
+    "share",
+    "ssl"
+   ],
+   "protected": true,
+   "automatic": true,
+   "locations": [
+    {
+     "location_id": "cloud.cloud",
+     "storage_class": "home_assistant_cloud",
+     "size_bytes": 734003200,
+     "protected": true
+    },
+    {
+     "location_id": "hassio.local",
+     "storage_class": "local",
+     "size_bytes": 734003200,
+     "protected": true
+    }
+   ],
+   "failed_location_ids": [],
+   "failed_addons": [],
+   "failed_folders": []
+  },
+  {
+   "backup_id": "9b3d77a1",
+   "name": "Before kitchen changes",
+   "date": "2026-10-16T00:00:00Z",
+   "age_days": 4.5,
+   "size_bytes": 52428800,
+   "content_scope": "partial",
+   "homeassistant_included": true,
+   "homeassistant_version": "2026.10.1",
+   "database_included": false,
+   "addons": [],
+   "folders": [
+    "share"
+   ],
+   "protected": false,
+   "automatic": false,
+   "locations": [
+    {
+     "location_id": "hassio.synthetic_nas",
+     "storage_class": "network_storage",
+     "size_bytes": 52428800,
+     "protected": false
+    }
+   ],
+   "failed_location_ids": [],
+   "failed_addons": [],
+   "failed_folders": []
+  }
+ ],
+ "observed_at": "2026-10-20T12:00:00Z"
+}

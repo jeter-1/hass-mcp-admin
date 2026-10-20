@@ -23,6 +23,7 @@ class ProviderCapability(str, Enum):
     ERROR_LOG_READ = "error_log_read"
     CORE_LOG_HISTORY = "core_log_history"
     INTEGRATION_INSPECTION = "integration_inspection"
+    BACKUP_INVENTORY = "backup_inventory"
     AUTOMATION_BASELINE_CAPTURE = "automation_baseline_capture"
     DASHBOARD_INTEGRITY_ANALYSIS = "dashboard_integrity_analysis"
     AUTOMATION_LIST = "automation_list"

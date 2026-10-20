@@ -184,6 +184,7 @@ def create_application(
     settings = settings or load_settings()
     from .audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
     from .integration_inspection.runtime import INTEGRATION_INSPECTION
+    from .backup_inventory.service import BACKUP_INVENTORY
     server = get_registered_server()
     audit = AuditLogger(
         settings.audit_path,
@@ -197,6 +198,7 @@ def create_application(
         audit_sink=audit.write,
     )
     INTEGRATION_INSPECTION.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
+    BACKUP_INVENTORY.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
     AUTOMATION_BASELINE_CAPTURE.configure(settings, CORE_READMISSION)
     gateway = AuthenticatedMcpGateway(
         server.streamable_http_app(),

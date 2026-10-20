@@ -109,6 +109,13 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "fallback": "none", "policy": "alarmo_allowlist_v1", "direct_write_allowed": False,
     },
     {
+        "tool": "get_backup_inventory", "category": "evidence",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native",
+        "provider": "engineering", "data_providers": ["direct_ha_api"],
+        "fallback": "none", "policy": "backup_inventory_read_v1", "direct_write_allowed": False,
+    },
+    {
         "tool": "get_core_log_history", "category": "evidence",
         "status": "beta_native", "risk": "read", "additive": True,
         "operation_class": "read", "routing": "engineering_native",
@@ -469,6 +476,15 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "completeness": "bounded_allowlisted_configuration_only",
         "security_justification": "Fixed native commands; separate Core applicability and Alarmo profile; no flows, writes or fallback.",
         "trust_mode": "reviewed_native_read", "trust_profile": "alarmo-configuration-read-v1",
+    },
+    {
+        "tool": "get_backup_inventory", "capability": "backup_inventory",
+        "required_semantics": "Backups across every Core backup agent, automatic-backup status and stated-threshold health facts; partial when any source, location or field is unreadable.",
+        "standard_ha_mcp_coverage": "semantically_unsuitable", "direct_ha_coverage": "reviewed_fixed_reads",
+        "selected_provider": "engineering", "fallback_policy": "none",
+        "completeness": "partial_with_reasons_when_any_location_or_field_unreadable",
+        "security_justification": "Two fixed admin Core WebSocket reads; allowlist projection; encryption key reduced to a flag; no create, restore, delete, download, settings or fallback.",
+        "trust_mode": "reviewed_native_read", "trust_profile": "backup-inventory-read-v1",
     },
     {
         "tool": "get_core_log_history", "capability": "core_log_history",

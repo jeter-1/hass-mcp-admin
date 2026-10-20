@@ -122,6 +122,10 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_integration_inspection": (
         "core.basic_websocket_read", "core.integration_inspection_metadata_read",
     ),
+    # HAMCP-130: the basic profile does not attest backup/config/info or
+    # backup/info; the allowlist projection reports drift as partial, never
+    # as complete, and no other command is reachable.
+    "get_backup_inventory": ("core.basic_websocket_read",),
     "render_template": ("core.template_semantics",),
     "list_automation_traces": ("core.automation_trace_read",),
     "get_automation_trace": ("core.automation_trace_read",),
