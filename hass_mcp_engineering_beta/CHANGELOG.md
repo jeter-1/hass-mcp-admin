@@ -17,6 +17,11 @@ Builds on 2.4.1-beta.22.
 - Journal governed automation writes before dispatch (cap 256, overflow
   reported) so a written-but-not-reloaded automation is partial, never
   silently stale.
+- Show a `redacted_sha256:` digest in place of any helper or
+  entity-metadata effect-projection value (literal target or allowlisted data
+  field) that the shared sanitizer recognizes. A resolved `!secret` in a
+  loaded package automation no longer reaches a helper-state plan disclosure;
+  projection fingerprints are unchanged.
 - Add additive build-profile fields. No tool, input schema, description,
   provider route, signed registry, HOLD, support window, persisted format,
   workflow or stable-v1 change.

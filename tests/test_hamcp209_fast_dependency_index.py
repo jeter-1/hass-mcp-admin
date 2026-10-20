@@ -13,7 +13,9 @@ automation, and never read a configuration file for it. These tests prove:
   REST read);
 * the pending-write journal keeps a write that Core has not reloaded yet from
   being reported from stale loaded configuration;
-* the batch client refuses any command outside its fixed read-only set.
+* the batch client refuses any command outside its fixed read-only set;
+* no analysis output carries a secret-shaped value resolved into loaded
+  configuration (a package automation's ``!secret``).
 
 Every value is synthetic. The WebSocket client tests use a disposable loopback
 peer; no live dependency is used.
@@ -27,6 +29,7 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -48,7 +51,23 @@ from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     MAX_PENDING_AUTOMATION_WRITES,
     DirectHaDependencyProvider,
+    _display_safe_effect_tokens,
 )
+from ha_mcp_engineering.dependency.service import EntityDependencyAnalysisService  # noqa: E402
+from ha_mcp_engineering.governance.entity_metadata_disclosure import (  # noqa: E402
+    build_consumer_disclosure,
+)
+from ha_mcp_engineering.governance.helper_dependency import HelperDependencyRiskService  # noqa: E402
+from ha_mcp_engineering.handoff.provider import EngineeringHandoffProvider  # noqa: E402
+from ha_mcp_engineering.handoff.service import HandoffGenerationService  # noqa: E402
+from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E402
+from ha_mcp_engineering.impact.service import ChangeImpactAnalysisService  # noqa: E402
+from ha_mcp_engineering.incident.provider import DirectHaIncidentProvider  # noqa: E402
+from ha_mcp_engineering.incident.service import IncidentCorrelationService  # noqa: E402
+from ha_mcp_engineering.integrity.provider import DirectHaIntegrityProvider  # noqa: E402
+from ha_mcp_engineering.integrity.service import ConfigurationIntegrityAnalysisService  # noqa: E402
+from ha_mcp_engineering.reliability.provider import DirectHaReliabilityProvider  # noqa: E402
+from ha_mcp_engineering.reliability.service import AutomationReliabilityAnalysisService  # noqa: E402
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime  # noqa: E402
 from ha_mcp_engineering.errors import (  # noqa: E402
     AuthorizationError,
@@ -58,8 +77,11 @@ from ha_mcp_engineering.errors import (  # noqa: E402
 
 from tests.hamcp209_fixtures import (  # noqa: E402
     SyntheticHomeAssistant,
+    SyntheticRest,
+    SyntheticWebSocket,
     generated_automations,
     read_blueprint,
+    record,
     representative_automations,
 )
 
@@ -782,6 +804,294 @@ class CommandBatchClientTests(unittest.IsolatedAsyncioTestCase):
                 await self.run_peer(handler, _payloads(10))
         # One check before connecting, then one per send: two sends got out.
         self.assertEqual(len(received), 2)
+
+
+# Resolved ``!secret`` values. Each planted value is assembled at run time
+# around a distinctive marker, so no secret-shaped text is in this file.
+_MARKERS = {
+    name: f"hamcp209{name}plant"
+    for name in (
+        "jwt", "bearer", "password", "apikey", "userinfo", "webhook",
+        "query", "template", "label", "target", "targetjwt", "safefield",
+    )
+}
+
+
+def _jwt_shape(marker: str) -> str:
+    return ".".join(["ey" + "J" + marker, "c3ludGhldGljcGF5bG9hZA", "c3ludGhldGljc2ln"])
+
+
+def _bearer(marker: str) -> str:
+    return "Bear" + "er " + marker
+
+
+def _secret_bearing_config(automation_id: str) -> dict:
+    m = _MARKERS
+    credential_key = "pass" + "word"
+    userinfo = "https://" + "synthetic" + ":" + m["userinfo"] + "@example.invalid/hook"
+    query = "https://example.invalid/hook?" + "access_" + "token=" + m["query"]
+    return {
+        "id": automation_id,
+        "alias": automation_id,
+        "trigger": [
+            {"platform": "state", "entity_id": "binary_sensor.synthetic_door"},
+            {"platform": "webhook", "webhook_id": m["webhook"]},
+        ],
+        "condition": [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{{ states('input_number.synthetic_setpoint') | float > 1 and '"
+                    + credential_key + "=" + m["template"] + "' != '' }}"
+                ),
+            },
+            {"condition": "state", "entity_id": "input_select.synthetic_mode", "state": "away"},
+            {
+                "condition": "template",
+                "value_template": (
+                    "{{ is_state('light.' ~ states('input_text.synthetic_target'), 'on') and '"
+                    + _bearer(m["bearer"]) + "' != '" + _jwt_shape(m["jwt"]) + "' }}"
+                ),
+            },
+        ],
+        "action": [
+            {
+                "service": "light.turn_on",
+                "target": {"entity_id": "light.synthetic_kitchen"},
+                "data": {credential_key: m["password"], "api_key": m["apikey"], "brightness": 10},
+            },
+            {
+                "service": "input_number.set_value",
+                "target": {"entity_id": "input_number.synthetic_setpoint"},
+                "data": {"value": 3},
+            },
+            {
+                # Literal targets and allowlisted data fields are shown verbatim
+                # by the effect projection unless the sanitizer recognizes them.
+                "service": "light.turn_off",
+                "target": {
+                    "entity_id": "light.synthetic_hall",
+                    "device_id": _bearer(m["target"]),
+                    "label_id": _jwt_shape(m["targetjwt"]),
+                },
+                "data": {"transition": _bearer(m["safefield"])},
+            },
+            {
+                "service": "light.turn_on",
+                "target": {
+                    "entity_id": "{{ label_entities('" + credential_key + "=" + m["label"] + "') }}",
+                },
+            },
+            {
+                "service": "rest_command.synthetic",
+                "data": {
+                    "url": userinfo,
+                    "headers": _bearer(m["bearer"]),
+                    "token_hint": _jwt_shape(m["jwt"]),
+                    "query": query,
+                },
+            },
+        ],
+    }
+
+
+class _AnalysisRest(SyntheticRest):
+    """Adds the read-only routes the analysis families use beyond the index."""
+
+    async def request(self, method, path, body=None, raw=False, expected_statuses=frozenset(), *, logbook_read=False):
+        text = str(path)
+        if method == "GET" and text.startswith("/states/"):
+            entity_id = text[len("/states/"):]
+            for row in self.ha.states():
+                if row["entity_id"] == entity_id:
+                    return deepcopy(row)
+            raise HomeAssistantApiError(details={"status": 404})
+        if method == "GET" and text.startswith(("/history", "/logbook", "/error")):
+            return []
+        return await super().request(
+            method, path, body, raw, expected_statuses, logbook_read=logbook_read,
+        )
+
+
+class _AnalysisWebSocket(SyntheticWebSocket):
+    async def command(self, payload):
+        if payload.get("type") in {"trace/list", "system_log/list"}:
+            return []
+        return await super().command(payload)
+
+
+def _serialized(value) -> str:
+    def default(item):
+        public = getattr(item, "public", None)
+        if callable(public):
+            try:
+                return public()
+            except TypeError:
+                pass
+        if hasattr(item, "__dataclass_fields__"):
+            return asdict(item)
+        if hasattr(item, "__dict__"):
+            return vars(item)
+        return str(item)
+
+    return json.dumps(value, default=default, sort_keys=True)
+
+
+class ResolvedSecretDisclosureTests(unittest.IsolatedAsyncioTestCase):
+    """Review item (a): loaded configuration can hold resolved ``!secret`` values.
+
+    One package automation exists only in loaded form (the stored route returns
+    404), and one stored automation has the same content. Every analysis family
+    that reads the index runs at its most detailed level. No planted value may
+    appear in any output.
+    """
+
+    async def asyncSetUp(self):
+        self.ha = SyntheticHomeAssistant([
+            record(
+                "automation.synthetic_package", None,
+                automation_id="synthetic_package",
+                loaded=_secret_bearing_config("synthetic_package"),
+            ),
+            record("automation.synthetic_stored", _secret_bearing_config("synthetic_stored")),
+        ])
+        self.rest = _AnalysisRest(self.ha)
+        self.websocket = _AnalysisWebSocket(self.ha)
+        self.index = DependencyIndex(
+            DirectHaDependencyProvider(self.rest, self.websocket, secret=SECRET)
+        )
+
+    def assert_no_marker(self, label: str, output) -> str:
+        text = _serialized(output)
+        leaked = sorted(name for name, marker in _MARKERS.items() if marker in text)
+        self.assertEqual(leaked, [], f"{label} disclosed planted values")
+        return text
+
+    async def test_no_analysis_output_carries_a_resolved_secret(self):
+        snapshot, _, _ = await self.index.get(refresh=True)
+        profile = snapshot.build_profile
+        self.assertEqual(profile["automation_config_source_counts"]["loaded_websocket"], 2)
+        self.assertEqual(self.ha.rest_counts["automation_config_read"], 0)
+
+        outputs: dict[str, object] = {}
+        dependency = EntityDependencyAnalysisService(self.index)
+        for entity_id in (
+            "light.synthetic_kitchen", "light.synthetic_hall", "input_number.synthetic_setpoint",
+            "binary_sensor.synthetic_door", "input_text.synthetic_target",
+        ):
+            outputs[f"dependency {entity_id}"] = await dependency.analyze(
+                entity_id=entity_id, detail_level="evidence", include_indirect=True,
+            )
+        impact = ChangeImpactAnalysisService(DirectHaImpactProvider(
+            self.index, self.rest, self.websocket, secret=SECRET, ha_token=SECRET,
+        ))
+        for entity_id in ("light.synthetic_kitchen", "input_number.synthetic_setpoint"):
+            outputs[f"impact {entity_id}"] = await impact.analyze(
+                entity_id=entity_id, operation="remove_entity", detail_level="evidence",
+            )
+        integrity = ConfigurationIntegrityAnalysisService(DirectHaIntegrityProvider(
+            self.index, self.rest, self.websocket, secret=SECRET, ha_token=SECRET,
+        ))
+        outputs["integrity"] = await integrity.analyze(detail_level="evidence", limit=100)
+        reliability_provider = DirectHaReliabilityProvider(
+            self.rest, self.websocket, secret=SECRET, ha_token=SECRET,
+        )
+        outputs["reliability"] = await AutomationReliabilityAnalysisService(
+            reliability_provider
+        ).analyze(automation_id="synthetic_stored", detail_level="evidence")
+        incident = IncidentCorrelationService(DirectHaIncidentProvider(
+            self.index, self.rest, self.websocket, reliability_provider,
+            secret=SECRET, ha_token=SECRET,
+        ))
+        incident_values = {
+            "related_entity_ids": [], "lookback_hours": 24, "correlation_window_minutes": 30,
+            "trace_limit": 10, "include_dependency_context": True,
+            "include_integrity_context": True, "include_reliability_context": True,
+            "detail_level": "evidence", "limit": 50, "cursor": "", "refresh_index": False,
+        }
+        outputs["incident focus"] = await incident.analyze(
+            focus_entity_id="light.synthetic_kitchen", automation_id="", **incident_values,
+        )
+        outputs["incident automation"] = await incident.analyze(
+            focus_entity_id="", automation_id="synthetic_package", **incident_values,
+        )
+        handoff = HandoffGenerationService(EngineeringHandoffProvider(
+            governance=SimpleNamespace(), incident=incident, dependency_index=self.index,
+            rest_client=self.rest, health=SimpleNamespace(), secret=SECRET, ha_token=SECRET,
+        ))
+        handoff_values = {
+            "handoff_type": "focused_review", "title": "",
+            "focus_entity_ids": ["light.synthetic_kitchen"],
+            "automation_ids": ["synthetic_package", "synthetic_stored"], "change_plan_ids": [],
+            "lookback_hours": 168, "include_runtime_health": False,
+            "include_governance_context": False, "include_dependency_context": True,
+            "include_integrity_context": True, "include_reliability_context": False,
+            "include_incident_context": True, "include_recommendations": True,
+            "detail_level": "evidence", "limit": 50, "cursor": "", "refresh_index": False,
+        }
+        for output_format in ("structured", "markdown"):
+            outputs[f"handoff {output_format}"] = await handoff.generate(
+                **handoff_values, output_format=output_format,
+            )
+        helper = HelperDependencyRiskService(self.index)
+        for entity_id in ("input_number.synthetic_setpoint", "input_select.synthetic_mode"):
+            outputs[f"helper plan {entity_id}"] = await helper.assess(entity_id, refresh=True)
+        outputs["entity-metadata plan"] = build_consumer_disclosure(
+            snapshot,
+            entity_id="light.synthetic_hall",
+            current={"entity_id": "light.synthetic_hall", "labels": [], "area_id": None},
+            final={"entity_id": "light.synthetic_hall", "labels": ["synthetic_downstairs"], "area_id": None},
+            reference_definitions={"labels": {"synthetic_downstairs": {"name": "Synthetic downstairs"}}},
+        )
+
+        texts = {label: self.assert_no_marker(label, output) for label, output in outputs.items()}
+        # The outputs are not vacuous: the package automation is analyzed, and
+        # the effect projection shows the same actions with the planted values
+        # replaced by digests while ordinary values stay readable.
+        for label in ("dependency light.synthetic_kitchen", "impact light.synthetic_kitchen",
+                      "incident automation", "handoff structured", "helper plan input_number.synthetic_setpoint"):
+            self.assertIn("synthetic_package", texts[label], label)
+        helper_text = texts["helper plan input_number.synthetic_setpoint"]
+        self.assertIn("action[0].data.brightness=10", helper_text)
+        self.assertIn("action[2].target.entity_id|entity_id|light.synthetic_hall", helper_text)
+        for token in (
+            "action[2].target.device_id|device_id|redacted_sha256:",
+            "action[2].target.label_id|label_id|redacted_sha256:",
+            "action[2].data.transition=redacted_sha256:",
+        ):
+            self.assertIn(token, helper_text)
+
+    def test_effect_tokens_hash_only_values_the_sanitizer_recognizes(self):
+        jwt = _jwt_shape(_MARKERS["targetjwt"])
+        config = {"action": [{"target": {"label_id": jwt}}]}
+        targets = _display_safe_effect_tokens(
+            (
+                "action[0].target.entity_id|entity_id|light.synthetic_kitchen",
+                # Lowercased by the projection: recognized by its original spelling.
+                "action[0].target.label_id|label_id|" + jwt.lower(),
+                "action[0].target.device_id|device_id|" + _bearer(_MARKERS["target"]).lower(),
+                "action[0].target.area_id|area_id|sha256:" + "0" * 64,
+            ),
+            config, secret=SECRET, separator="|",
+        )
+        self.assertEqual(targets[0], "action[0].target.entity_id|entity_id|light.synthetic_kitchen")
+        self.assertTrue(targets[1].startswith("action[0].target.label_id|label_id|redacted_sha256:"))
+        self.assertTrue(targets[2].startswith("action[0].target.device_id|device_id|redacted_sha256:"))
+        self.assertEqual(targets[3], "action[0].target.area_id|area_id|sha256:" + "0" * 64)
+        data = _display_safe_effect_tokens(
+            (
+                "action[0].data.brightness=10",
+                "action[0].data.transition=" + SECRET,
+                "action[0].data.transition=" + _bearer(_MARKERS["safefield"]),
+            ),
+            config, secret=SECRET, separator="=",
+        )
+        self.assertEqual(data[0], "action[0].data.brightness=10")
+        self.assertTrue(data[1].startswith("action[0].data.transition=redacted_sha256:"))
+        self.assertTrue(data[2].startswith("action[0].data.transition=redacted_sha256:"))
+        for token in (*targets, *data):
+            self.assertFalse(any(marker in token.lower() for marker in _MARKERS.values()), token)
+            self.assertNotIn(SECRET, token)
 
 
 if __name__ == "__main__":

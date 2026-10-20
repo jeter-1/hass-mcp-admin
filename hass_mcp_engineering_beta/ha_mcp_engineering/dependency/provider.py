@@ -161,6 +161,82 @@ def _bounded_provider_identity(
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+_EFFECT_HASHED_PREFIXES = (
+    "sha256:",
+    "dynamic_sha256:",
+    "oversized_sha256:",
+    "overflow_sha256:",
+)
+
+
+def _string_leaves_by_folded_text(value: Any) -> dict[str, set[str]]:
+    """Map each lowercased string leaf to its original spellings."""
+
+    leaves: dict[str, set[str]] = defaultdict(set)
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            leaves[item.lower()].add(item)
+        elif isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+    return leaves
+
+
+def _display_safe_effect_tokens(
+    tokens: Any,
+    config: Any,
+    *,
+    secret: str,
+    separator: str,
+) -> tuple[str, ...]:
+    """Hash projected effect values the shared sanitizer recognizes.
+
+    The effect projection shows literal targets (lowercased) and a few
+    allowlisted data fields verbatim. Loaded configuration can carry resolved
+    ``!secret`` values there, so a value the sanitizer would redact, in its
+    original spelling or as shown, is replaced by a digest. The projection's
+    fingerprints are computed upstream from the raw values and are unchanged.
+    """
+
+    leaves: dict[str, set[str]] | None = None
+    safe: list[str] = []
+    for item in tokens:
+        token = str(item)
+        if separator == "|":
+            parts = token.rsplit("|", 2)
+            prefix, value = (
+                ("|".join(parts[:2]) + "|", parts[2])
+                if len(parts) == 3
+                else ("", token)
+            )
+        else:
+            path, found, value = token.partition(separator)
+            prefix = path + separator if found else ""
+            if not found:
+                value = token
+        if not value or value.startswith(_EFFECT_HASHED_PREFIXES):
+            safe.append(token)
+            continue
+        if leaves is None:
+            leaves = _string_leaves_by_folded_text(config)
+        spellings = {value, *leaves.get(value.lower(), ())}
+        if all(
+            redact_data(spelling, secret=secret) == spelling
+            for spelling in spellings
+        ):
+            safe.append(token)
+            continue
+        safe.append(
+            prefix
+            + "redacted_sha256:"
+            + hashlib.sha256(value.encode("utf-8")).hexdigest()
+        )
+    return tuple(safe)
+
+
 class DependencySourceProvider(EngineeringEvidenceProvider):
     provider_id = "dependency_source_provider"
     capabilities = frozenset({ProviderCapability.DEPENDENCY_ANALYSIS})
@@ -818,13 +894,17 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     effect_projection_model=str(
                         consequence["effect_projection_model"]
                     ),
-                    effect_targets=tuple(
-                        str(item)
-                        for item in consequence["effect_targets"]
+                    effect_targets=_display_safe_effect_tokens(
+                        consequence["effect_targets"],
+                        action_config,
+                        secret=self.secret,
+                        separator="|",
                     ),
-                    effect_data=tuple(
-                        str(item)
-                        for item in consequence["effect_data"]
+                    effect_data=_display_safe_effect_tokens(
+                        consequence["effect_data"],
+                        action_config,
+                        secret=self.secret,
+                        separator="=",
                     ),
                     effect_structure_fingerprint=str(
                         consequence["effect_structure_fingerprint"]

@@ -36,7 +36,7 @@ Bind the following:
 - the passing PR `validate` run for that exact head;
 - the Evidence tier log named in the PR.
 
-### Offline proof (`tests/test_hamcp209_fast_dependency_index.py`, 35 tests)
+### Offline proof (`tests/test_hamcp209_fast_dependency_index.py`, 37 tests)
 
 The tests use the synthetic Home Assistant model in `tests/hamcp209_fixtures.py`.
 It models Core's stored route as one lock plus a whole-file parse, an
@@ -62,9 +62,19 @@ boundaries. Client tests use a loopback WebSocket peer.
   overflow is handled.
 - **Governed write hooks** (3), **batch allowlist** (1) and **batch client**
   (6).
+- **Resolved-secret disclosure** (2): secret-shaped values planted in a
+  loaded-only package automation and a stored automation never appear in
+  the following outputs:
+  - dependency, impact, integrity and reliability;
+  - incident;
+  - handoff (structured and markdown);
+  - helper-state and entity-metadata disclosures.
+
+  Effect-projection values that the sanitizer recognizes are shown as
+  `redacted_sha256:` digests.
 
 Cross-tree parity (`docs/evidence/hamcp209/parity.py`, `parity.json`): the
-beta.19 and beta.20 providers and this tree give identical views and
+beta.19, beta.20 and beta.22 providers and this tree give identical views and
 fingerprints on both fixture sets.
 
 ### Mutation proof
@@ -90,10 +100,10 @@ each one must fail:
 
 | | Base `a1236c4` | Head |
 | --- | --- | --- |
-| Build wall time | 34.8 s | 0.42 s |
+| Build wall time | 34.6 s | 0.43 s |
 | Provider requests | 116 | 4 |
 | Per-automation REST reads | 113 | 0 |
-| Write during the build | 2.7 s | 0.32 s |
+| Write during the build | 2.7 s | 0.33 s |
 
 The idle write takes 0.30 s in both trees.
 

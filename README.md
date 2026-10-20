@@ -4,8 +4,8 @@ Engineering **2.4.1-beta.23** builds the dependency index from the automation
 configuration Home Assistant has loaded (HAMCP-209). One WebSocket connection
 with two fixed, read-only commands per automation replaces one serialized REST
 fetch per automation. On a synthetic 113-automation model the build drops from
-34.8 s and 116 requests to 0.42 s and 4 requests, and a write during the build
-from 2.7 s to 0.32 s. Blueprint instances, unavailable or unreadable entries
+34.6 s and 116 requests to 0.43 s and 4 requests, and a write during the build
+from 2.7 s to 0.33 s. Blueprint instances, unavailable or unreadable entries
 and writes Home Assistant has not reloaded keep the stored read, and each
 such fallback is counted with its reason. No tool, schema or route changes.
 Read the [2.4.1-beta.23 release notes](docs/V2_4_1_BETA23_RELEASE_NOTES.md) and

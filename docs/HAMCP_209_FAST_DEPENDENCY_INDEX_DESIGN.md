@@ -111,9 +111,8 @@ Every file cited below is byte-identical between the two tags
   `automation_config_unreadable`. WebSocket returns their loaded configuration,
   including values resolved from `!secret`. This is the one intentional
   difference: coverage improves, and nothing reported complete before is now
-  partial. Excerpts stay bounded and redacted by the existing
-  `extraction._bounded` / `redact_data` path and are only emitted at
-  `detail_level=evidence`.
+  partial. What can surface from that configuration, and the fix to the
+  effect projection found while preparing the review, are in §4.
 - **Loaded versus stored after a write:** a REST POST returns before the
   reload task runs (`config/view.py:134-137`). Directly after a governed write,
   the loaded configuration can lag the stored configuration that governance just
@@ -247,17 +246,51 @@ support window; stable v1.
 - Stored reads use the unchanged typed Route. No configuration file is read
   for automations. The existing blueprint-source read path is unchanged.
 - Disclosure: package-defined automations become readable, including resolved
-  `!secret` values (the stored REST read returned 404 for them). Only bounded
-  evidence leaves the provider, through `redact_data` →
-  `sanitize_untrusted_data` (credential-named keys, bearer/JWT/URL-userinfo,
-  webhook paths, the configured token). A resolved secret in a key or format
-  the sanitizer does not recognise is not redacted. This is the same residual
-  risk as an inline literal in `automations.yaml`, which the old path already
-  read, and only `detail_level=evidence` excerpts carry configuration text.
+  `!secret` values (the stored REST read returned 404 for them). What the
+  index keeps from automation configuration, and where it can surface:
+  - findings and dynamic references from the index carry entity IDs,
+    configuration paths and bounded identity fields (`_bounded` →
+    `redact_data` → `sanitize_untrusted_data`), and no configuration
+    excerpt. Excerpts exist only on the reliability path, which reads the
+    stored configuration and is unchanged;
+  - literal `label_entities()` selectors pass through the same sanitizer;
+  - the helper and entity-metadata effect projection (`effect_targets`,
+    `effect_data`) showed literal targets (lowercased) and a few allowlisted
+    data fields (`brightness`, `transition` and similar) verbatim. A resolved
+    secret placed there reached helper-state plan disclosures. A lowercased
+    JWT also evaded the case-sensitive JWT rule, so plan persistence screening
+    did not catch it.
+
+  **Fix (found while preparing the review).** `dependency/provider.py`
+  `_display_safe_effect_tokens` replaces any projected value with a
+  `redacted_sha256:` digest if the shared sanitizer recognizes it, either as
+  shown or in its original spelling in the configuration. The projection's
+  fingerprints are computed upstream from the raw values and are unchanged,
+  so plan binding is unchanged. Entity-metadata matching cannot match such a
+  value, which is correct because registry IDs are never secret-shaped. Before
+  the fix, a `bearer …` value made helper-state plan persistence refuse
+  (`plan_contains_prohibited_sensitive_data`). Now the plan shows the digest.
+  The same values in `automations.yaml` (the old path) are covered by the same
+  fix.
+
+  `ResolvedSecretDisclosureTests` plants secret-shaped values (JWT, bearer,
+  credential keys, URL userinfo and query, webhook ID, template and label
+  selector text, literal target and allowlisted data field) in a loaded-only
+  package automation and a stored automation. It then runs dependency, impact,
+  integrity, reliability, incident, handoff (structured and markdown),
+  helper-state and entity-metadata outputs, and asserts that no planted value
+  appears. Positive controls show that the package automation is analyzed and
+  that the projection carries the digests. Without the fix, the test fails on
+  the helper output (`safefield`, `target`, `targetjwt`).
+
+  Residual risk: a resolved secret in a key or format the sanitizer does not
+  recognize, at a position shown verbatim (a literal target ID or an
+  allowlisted numeric/mode data field), is shown as written. This is the same
+  as an inline literal in `automations.yaml`, which the old path already read.
 
 ## 5. Tests, parity and mutations
 
-`tests/test_hamcp209_fast_dependency_index.py` (35 tests, synthetic model in
+`tests/test_hamcp209_fast_dependency_index.py` (37 tests, synthetic model in
 `tests/hamcp209_fixtures.py`; the client tests use a disposable loopback
 WebSocket peer):
 
@@ -273,8 +306,10 @@ WebSocket peer):
   identical index views and fingerprints on both fixture sets: 21 findings,
   26 obligations and 7 dynamic references; 339 findings and 452 obligations.
   REST configuration reads drop from 6 to 2 and from 113 to 0.
-  The recheck against `538a7c7` (beta.20) after the `main` merge is also
-  identical, with the same fingerprints (`recheck_after_main_merge`).
+  The recheck against `538a7c7` (beta.20) after the first `main` merge is also
+  identical, with the same fingerprints (`recheck_after_main_merge`). So is the
+  recheck against `c618884` (beta.22) after the second merge
+  (`recheck_after_beta22_merge`).
 - **Bounded requests** (`BoundedRequestTests`): 113 automations use one
   WebSocket connection with 226 commands, no `automation_config` REST read, and
   at most 5 provider requests in total. Unavailable and id-less candidates are
@@ -312,8 +347,12 @@ WebSocket peer):
   - `unauthorized` and `auth_invalid` raise;
   - duplicate or unknown ids and an early close are malformed;
   - withdrawn dispatch authority stops sending.
+- **Resolved-secret disclosure** (`ResolvedSecretDisclosureTests`), 2 tests:
+  see §4. The second unit-tests the display hashing: a lowercased JWT is
+  recognized by its original spelling, entity IDs, numbers and existing digests
+  are unchanged, and the configured token is hashed.
 
-One existing test changes. `test_rc2dev4_release_hardening`
+Two existing tests change. `test_rc2dev4_release_hardening`
 `test_cold_build_profile_has_bounded_request_breakdown` pinned the old
 per-automation breakdown (3 `automation_config` reads, 6 requests). It now pins
 the loaded breakdown: 4 requests, one `loaded_automation_config_batch`. A new
@@ -321,6 +360,11 @@ sibling test pins the stored-only case: a client without `command_batch` gives
 7 requests, including the counted batch attempt, and
 `loaded_source_unavailable: 3`. CI shard 5 found this pin in run 39286251867.
 The focused module set used locally had missed it.
+
+`test_hamcp191_shared_sanitizer` keeps a committed table of every sanitizer
+call site. It gains one row for the new `redact_data` call in
+`_display_safe_effect_tokens` (family `analysis`). The focused rerun found the
+missing row (`test_every_sanitizer_call_site_is_in_the_committed_table`).
 
 Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`,
 `results.json`): 11 of 11 are killed and none survive.
@@ -346,20 +390,20 @@ with the realistic regression above.
 ## 6. Measurements
 
 Synthetic model (`docs/evidence/hamcp209/measure.py`, `measurement.json`;
-same host, back to back). Core's stored route is modelled as one lock plus a
+same host, back to back, re-run on the final source). Core's stored route is modelled as one lock plus a
 whole-file parse at 2.65 ms per automation, about 0.30 s per read at N=113.
 The base run reproduces the live figures (HAMCP-171):
 
 | Metric (113 automations) | Base `a1236c4` | Head | Head, 10x slower WS |
 | --- | --- | --- | --- |
-| Index build wall time | 34.8 s | 0.42 s | 1.44 s |
+| Index build wall time | 34.6 s | 0.43 s | 1.46 s |
 | Provider requests | 116 | 4 | 4 |
 | `automation_config` REST reads | 113 | 0 | 0 |
 | WebSocket batch connections / commands | 0 / 0 | 1 / 226 | 1 / 226 |
 | Average / max request queue wait | 15.1 s / 31.9 s | 0 / 0 | 0 / 0 |
-| Automation POST issued 50 ms into the build | 2.7 s | 0.32 s | 0.30 s |
+| Automation POST issued 50 ms into the build | 2.7 s | 0.33 s | 0.30 s |
 | Same POST on an idle model | 0.30 s | 0.30 s | 0.30 s |
-| Second index reader during the build (a write's preflight) | 34.5 s | 0.32 s | 1.35 s |
+| Second index reader during the build (a write's preflight) | 34.5 s | 0.33 s | 1.36 s |
 
 Live reference: builds of 33.7-41.5 s, average queue wait about 15.6 s,
 maximum about 33 s, and writes after a restart of 35-44 s.

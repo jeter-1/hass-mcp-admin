@@ -90,12 +90,12 @@ incremental hashing; the design note gives the reasons.
 
 | | beta.19 base | beta.23 |
 | --- | --- | --- |
-| Build wall time | 34.8 s | 0.42 s |
+| Build wall time | 34.6 s | 0.43 s |
 | Provider requests | 116 | 4 |
 | Per-automation REST reads | 113 | 0 |
 | Max request queue wait | 31.9 s | 0 |
-| Automation write issued during the build | 2.7 s | 0.32 s (idle: 0.30 s) |
-| Index reader during the build | 34.5 s | 0.32 s |
+| Automation write issued during the build | 2.7 s | 0.33 s (idle: 0.30 s) |
+| Index reader during the build | 34.5 s | 0.33 s |
 
 The model reproduces the live beta.19 figures. The live check is in the
 acceptance document. Extraction parity with beta.19 is proven on a
@@ -110,9 +110,14 @@ views and snapshot fingerprints.
     `configuration.yaml`) returned 404 on the stored route and was reported
     unreadable. It is now indexed from its loaded configuration. Coverage
     improves for these automations.
-  - Because the loaded form can include resolved `!secret` values, bounded
-    `detail_level=evidence` excerpts pass through the existing sanitizer. See
-    the design note's security section.
+  - The loaded form can include resolved `!secret` values. The index keeps
+    no configuration excerpt, and its identity fields and label selectors pass
+    through the existing sanitizer. The helper and entity-metadata effect
+    projection now shows a `redacted_sha256:` digest in place of any literal
+    target or allowlisted data value that the sanitizer recognizes. Before,
+    such a value reached helper-state plan disclosures, or made the plan
+    refuse. A test plants secret-shaped values and checks every analysis
+    output. See the design note's security section.
   - Out-of-band edits that Home Assistant has not reloaded are reported as
     loaded, which is the configuration that runs.
 - **Stored formats.** No stored format changes. The journal is in memory only.
