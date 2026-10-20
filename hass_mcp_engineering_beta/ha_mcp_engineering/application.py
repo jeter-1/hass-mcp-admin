@@ -9,6 +9,7 @@ import ipaddress
 
 import uvicorn
 
+from .approval_identity import AdministratorVerifier
 from .approval_web import create_approval_application as create_ingress_web_application
 from .audit import AuditLogger
 from .fan.service import FAN_OPERATIONS
@@ -368,10 +369,21 @@ def create_application(
     return gateway
 
 
-def create_approval_application():
-    """Create the private Ingress application after governance is configured."""
+def create_approval_application(settings=None):
+    """Create the private Ingress application after governance is configured.
 
-    return create_ingress_web_application(GOVERNANCE)
+    HAMCP-205: every approval page verifies the requester's Home Assistant
+    administrator role per request through the Supervisor-proxied Core
+    WebSocket.
+    """
+
+    settings = settings or load_settings()
+    return create_ingress_web_application(
+        GOVERNANCE,
+        administrator_verifier=AdministratorVerifier(
+            HomeAssistantWebSocketClient(settings)
+        ),
+    )
 
 
 async def _supervise_upstream_reconciliation(
@@ -490,7 +502,7 @@ async def _serve(settings: Settings) -> None:
     try:
         approval_server = uvicorn.Server(
             uvicorn.Config(
-                create_approval_application(),
+                create_approval_application(settings),
                 host="0.0.0.0",
                 port=settings.ingress_port,
                 log_level=settings.log_level.lower(),

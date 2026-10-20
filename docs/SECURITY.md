@@ -254,7 +254,10 @@ approval credential. See [`EXTERNAL_APPROVAL.md`](EXTERNAL_APPROVAL.md).
 Since HAMCP-184 (2.4.1-beta.12) `principal_separation_enforced` is `true` only
 for a decision by an Ingress-identified administrator. A decision under the
 anonymous fallback principal (no `X-Remote-User-Id`) reports `false` with reason
-`anonymous_fallback_principal`; its standard-class eligibility is unchanged.
+`anonymous_fallback_principal`. Since HAMCP-205 such a stored approval is
+ineligible: apply and rollback refuse it with `external_approval_required` and
+reason `anonymous_approval_requires_reapproval`, and governance records no new
+anonymous decision.
 
 ## Beta 24 ingress and execution hardening
 
@@ -609,6 +612,17 @@ PKCS#7 decryption or X.509 verification APIs, but strict auditing is retained
 without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
+
+The `2.4.1-beta.22` dependency-security release (HAMCP-211) advances
+`aiohttp` to 3.14.4 for GHSA-2g87-pp6c-29x5, CVE-2026-111063 and
+CVE-2026-111064, and `yarl` to 1.25.1, the floor 3.14.4 requires. Engineering
+uses only the aiohttp client; its MCP and Ingress servers run on uvicorn and
+Starlette, so the server-timeout advisory does not apply. Its client
+transports refuse redirects, disable automatic decompression and bound bytes,
+frames and time. Inherited behaviour changes are listed in the
+[release notes](V2_4_1_BETA22_RELEASE_NOTES.md) and pinned by
+`tests/test_hamcp211_aiohttp_3144_contract.py`. Stable v1.1.2 still pins
+`aiohttp==3.9.5` and is unchanged.
 
 Published 2.2.2 retains the Host/Origin configuration risk tracked in issue #62.
 Engineering 2.2.3 adds an Engineering-owned policy before all MCP gateway paths.

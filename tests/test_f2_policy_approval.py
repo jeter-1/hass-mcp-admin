@@ -12,6 +12,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
+sys.path.insert(0, str(Path(__file__).parent))
+from approval_identity_support import admin_verifier  # noqa: E402
 from ha_mcp_engineering.approval_web import (  # noqa: E402
     create_approval_application,
 )
@@ -1224,7 +1226,7 @@ class F2IngressTests(F2ApprovalTestCase):
     async def _client(self, user_id=ADMIN_A.rsplit(":", 1)[-1]):
         import httpx
 
-        app = create_approval_application(RuntimeShim(self.service))
+        app = create_approval_application(RuntimeShim(self.service), administrator_verifier=admin_verifier())
         transport = httpx.ASGITransport(
             app=app, client=("172.30.32.2", 12345)
         )
@@ -1305,7 +1307,7 @@ class F2IngressTests(F2ApprovalTestCase):
         self.service.approve(created["plan_id"], created["plan_hash"])
         import httpx
 
-        app = create_approval_application(RuntimeShim(self.service))
+        app = create_approval_application(RuntimeShim(self.service), administrator_verifier=admin_verifier())
         transport = httpx.ASGITransport(
             app=app, client=("127.0.0.1", 12345)
         )

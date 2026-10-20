@@ -12,10 +12,10 @@
   },
   "installer_version": "25.0.1",
   "python_version": "3.12.14",
-  "requirements_sha256": "45c86057668f4e1a992fee06796770e41d5c7e7959b0a9859ad0b89cbf0040a7",
+  "requirements_sha256": "e03585447824ff177b99651eff5931dc22bb031279053884dd839f5c46b64590",
   "runtime": {
     "aiohappyeyeballs": "2.7.1",
-    "aiohttp": "3.14.3",
+    "aiohttp": "3.14.4",
     "aiosignal": "1.4.0",
     "annotated-types": "0.8.0",
     "anyio": "4.15.1",
@@ -52,8 +52,8 @@
     "typing-extensions": "4.16.0",
     "typing-inspection": "0.4.4",
     "uvicorn": "0.51.0",
-    "yarl": "1.24.5"
+    "yarl": "1.25.1"
   },
-  "runtime_lock_sha256": "9f8b592c062fc6947c45b08ee243d6e163ece22c738730da8544280f920fac33",
+  "runtime_lock_sha256": "d466020b95979de297d1d3980b9ede21ec4c62dbb91d4ac8bec8388f9e9910ca",
   "schema_version": 1
 }

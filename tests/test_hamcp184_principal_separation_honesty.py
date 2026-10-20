@@ -1,15 +1,19 @@
 """HAMCP-184 F-02: principal separation is reported truthfully.
 
-The Ingress approval route falls back to the anonymous principal
-``home_assistant_admin_ingress`` when Home Assistant supplies no
-``X-Remote-User-Id``. That records that an administrator decided through the
+Before HAMCP-205 the Ingress approval route fell back to the anonymous
+principal ``home_assistant_admin_ingress`` when Home Assistant supplied no
+``X-Remote-User-Id``. That recorded that an administrator decided through the
 separate Ingress channel, but not which administrator, so principal separation
 is not proven. Before HAMCP-184 every Ingress decision stored and displayed
 ``principal_separation_enforced: true``.
 
-This change is reporting only (owner decision): who may approve, the approval
-flow, standard-class eligibility of the anonymous fallback, and elevated-class
-behavior are unchanged.
+HAMCP-184 changed reporting only. HAMCP-205 (owner decision) supersedes its
+eligibility rule: no decision is recorded for the anonymous principal any
+more, and a stored anonymous decision never authorizes dispatch; the plan must
+be re-approved by a verified administrator. Stored anonymous records are
+planted here exactly as the earlier writers persisted them (the same record
+with only the principal and the recorded flag differing), and their projection
+stays truthful.
 """
 
 from __future__ import annotations
@@ -30,7 +34,8 @@ from ha_mcp_engineering.governance.models import (  # noqa: E402
     PlanStatus,
 )
 from ha_mcp_engineering.governance.service import (  # noqa: E402
-    DEFAULT_APPROVER_PRINCIPAL,
+    ANONYMOUS_APPROVAL_REAPPROVAL_REASON,
+    LEGACY_ANONYMOUS_APPROVER_PRINCIPAL,
     ChangeGovernanceService,
     principal_separation_proven,
     principal_separation_status,
@@ -40,8 +45,25 @@ from tests.test_beta25_external_approval import (  # noqa: E402
 )
 from tests.test_f2_policy_approval import F2ApprovalTestCase  # noqa: E402
 
-ANONYMOUS = DEFAULT_APPROVER_PRINCIPAL
+ANONYMOUS = LEGACY_ANONYMOUS_APPROVER_PRINCIPAL
 IDENTIFIED = "home_assistant_admin_ingress:hamcp184-admin"
+
+
+def plant_anonymous_decision(repository, plan_id, *, recorded_flag):
+    """Rewrite a stored decision to what a pre-HAMCP-205 writer persisted.
+
+    ``recorded_flag`` is ``False`` for HAMCP-184 through HAMCP-205 writers and
+    ``True`` for earlier ones.
+    """
+
+    plan = repository.get(plan_id)
+    plan.approval.approver_principal = ANONYMOUS
+    plan.approval.principal_separation_enforced = recorded_flag
+    acknowledgement = plan.approval.elevated_risk_acknowledgement
+    if acknowledgement is not None and acknowledgement.approver_principal:
+        acknowledgement.approver_principal = ANONYMOUS
+    repository.save(plan)
+    return plan
 
 
 class PrincipalSeparationHonestyTests(F2ApprovalTestCase):
@@ -56,10 +78,10 @@ class PrincipalSeparationHonestyTests(F2ApprovalTestCase):
             public["principal_separation_status"],
         )
 
-    async def test_anonymous_fallback_standard_approval_is_not_enforced_and_stays_eligible(self):
+    async def test_stored_anonymous_standard_approval_projects_truthfully_and_needs_reapproval(self):
         created = await self.create_standard()
-        granted = await self.fully_approve(created, principal=ANONYMOUS)
-        self.assertEqual(granted["status"], "approved")
+        await self.fully_approve(created, principal=IDENTIFIED)
+        plant_anonymous_decision(self.repository, created["plan_id"], recorded_flag=False)
         persisted, projected, status = self._surfaces(created["plan_id"])
         self.assertIs(persisted, False)
         self.assertIs(projected, False)
@@ -67,14 +89,19 @@ class PrincipalSeparationHonestyTests(F2ApprovalTestCase):
             status,
             {"evaluated": True, "enforced": False, "reason": "anonymous_fallback_principal"},
         )
+        self.assertIs(self.service.get_plan(created["plan_id"])["apply_allowed"], False)
+        # HAMCP-205: the stored anonymous approval no longer authorizes apply.
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
+        self.assertEqual(
+            raised.exception.details, {"reason": ANONYMOUS_APPROVAL_REAPPROVAL_REASON}
+        )
+        self.assertEqual(self.gateway.writes, 0)
         record = self.repository.get(created["plan_id"])
-        self.assertEqual(record.approval.approver_principal, ANONYMOUS)
         self.assertEqual(record.approval.state, ApprovalState.APPROVED)
-        # Eligibility unchanged: the standard-class fallback approval applies.
-        applied = await self.service.apply(created["plan_id"], created["plan_hash"])
-        self.assertEqual(applied["status"], "applied")
-        self.assertEqual(self.gateway.writes, 1)
-        # The terminal record keeps reporting the same truth.
+        self.assertEqual(record.approval.approver_principal, ANONYMOUS)
+        # The record keeps reporting the same truth.
         persisted, projected, status = self._surfaces(created["plan_id"])
         self.assertEqual((persisted, projected, status["reason"]), (False, False, "anonymous_fallback_principal"))
         listed = [
@@ -108,22 +135,30 @@ class PrincipalSeparationHonestyTests(F2ApprovalTestCase):
         applied = await self.service.apply(created["plan_id"], created["plan_hash"])
         self.assertEqual(applied["status"], "applied")
 
-    async def test_elevated_still_refuses_anonymous_fallback(self):
-        created = await self.create_elevated()
-        pending = self.service.approve(created["plan_id"], created["plan_hash"])
-        with self.assertRaises(GovernanceError) as raised:
-            await self.decide(created, pending, principal=ANONYMOUS)
-        self.assertEqual(raised.exception.code, ErrorCode.APPROVAL_PRINCIPAL_MISMATCH)
-        record = self.repository.get(created["plan_id"])
-        self.assertNotEqual(record.approval.state, ApprovalState.APPROVED)
-        self.assertIsNone(record.approval.principal_separation_enforced)
+    async def test_no_decision_is_recorded_for_the_anonymous_principal(self):
+        # HAMCP-205: approve or reject, standard or elevated, a missing or
+        # anonymous principal is refused when the decision is made.
+        for create in (self.create_standard, self.create_elevated):
+            for decision in ("approve", "reject"):
+                for principal in (ANONYMOUS, ""):
+                    with self.subTest(create=create.__name__, decision=decision, principal=principal):
+                        created = await create()
+                        pending = self.service.approve(created["plan_id"], created["plan_hash"])
+                        with self.assertRaises(GovernanceError) as raised:
+                            await self.decide(created, pending, principal=principal, decision=decision)
+                        self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_INVALID)
+                        record = self.repository.get(created["plan_id"])
+                        self.assertEqual(record.approval.state, ApprovalState.EXTERNAL_PENDING)
+                        self.assertIsNone(record.approval.approver_principal)
+                        self.assertIsNone(record.approval.principal_separation_enforced)
         self.assertEqual(self.gateway.writes, 0)
 
-    async def test_anonymous_rejection_is_not_enforced(self):
+    async def test_stored_anonymous_rejection_is_not_enforced(self):
         created = await self.create_standard()
         pending = self.service.approve(created["plan_id"], created["plan_hash"])
-        result = await self.decide(created, pending, principal=ANONYMOUS, decision="reject")
+        result = await self.decide(created, pending, principal=IDENTIFIED, decision="reject")
         self.assertEqual(result["status"], "rejected")
+        plant_anonymous_decision(self.repository, created["plan_id"], recorded_flag=False)
         record = self.repository.get(created["plan_id"])
         self.assertEqual(record.status, PlanStatus.REJECTED)
         self.assertIs(record.approval.principal_separation_enforced, False)
@@ -137,28 +172,29 @@ class PrincipalSeparationHonestyTests(F2ApprovalTestCase):
         record = self.repository.get(created["plan_id"])
         self.assertIs(record.approval.principal_separation_enforced, True)
 
-    async def test_pre_hamcp184_true_stored_fallback_record_projects_truthfully_and_stays_eligible(self):
+    async def test_pre_hamcp184_true_stored_fallback_record_projects_truthfully_and_needs_reapproval(self):
         created = await self.create_standard()
-        await self.fully_approve(created, principal=ANONYMOUS)
-        plan = self.repository.get(created["plan_id"])
+        await self.fully_approve(created, principal=IDENTIFIED)
         # Exactly what a pre-HAMCP-184 writer persisted for this decision.
-        plan.approval.principal_separation_enforced = True
-        self.repository.save(plan)
+        plant_anonymous_decision(self.repository, created["plan_id"], recorded_flag=True)
         persisted, projected, status = self._surfaces(created["plan_id"])
         self.assertIs(persisted, True)  # never rewritten
         self.assertIs(projected, False)
         self.assertEqual(status["reason"], "anonymous_fallback_principal")
-        applied = await self.service.apply(created["plan_id"], created["plan_hash"])
-        self.assertEqual(applied["status"], "applied")
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
+        self.assertEqual(
+            raised.exception.details, {"reason": ANONYMOUS_APPROVAL_REAPPROVAL_REASON}
+        )
+        self.assertEqual(self.gateway.writes, 0)
         self.assertIs(
             self.repository.get(created["plan_id"]).approval.principal_separation_enforced,
             True,
         )
 
     async def test_forged_false_with_identified_principal_is_not_eligible(self):
-        # The eligibility rule accepts ``False`` only for the anonymous
-        # fallback principal on a standard-class plan, exactly the decisions
-        # that were eligible before HAMCP-184.
+        # Only an identified principal recorded ``True`` is eligible.
         created = await self.create_standard()
         await self.fully_approve(created, principal=IDENTIFIED)
         plan = self.repository.get(created["plan_id"])
@@ -170,14 +206,18 @@ class PrincipalSeparationHonestyTests(F2ApprovalTestCase):
 
     async def test_eligibility_rule_matrix(self):
         created = await self.create_standard()
-        await self.fully_approve(created, principal=ANONYMOUS)
+        await self.fully_approve(created, principal=IDENTIFIED)
         plan = self.repository.get(created["plan_id"])
         valid = ChangeGovernanceService._external_principal_authority_valid
         elevated = replace(plan.policy_decision, policy_class=ApprovalPolicyClass.ELEVATED_ADMIN)
+        # HAMCP-205: the anonymous rows were eligible for standard-class plans
+        # before; no anonymous decision is eligible now.
         cases = (
             (True, IDENTIFIED, plan.policy_decision, True),
-            (True, ANONYMOUS, plan.policy_decision, True),  # pre-HAMCP-184 record
-            (False, ANONYMOUS, plan.policy_decision, True),
+            (True, IDENTIFIED, elevated, True),
+            (True, ANONYMOUS, plan.policy_decision, False),  # pre-HAMCP-184 record
+            (False, ANONYMOUS, plan.policy_decision, False),
+            (True, ANONYMOUS, elevated, False),
             (False, IDENTIFIED, plan.policy_decision, False),
             (False, ANONYMOUS, elevated, False),
             (None, ANONYMOUS, plan.policy_decision, False),
@@ -196,11 +236,16 @@ class PrincipalSeparationHonestyTests(F2ApprovalTestCase):
 
 
 class PrincipalSeparationAuditTests(ExternalApprovalTestCase):
-    async def test_audit_never_claims_separation_for_anonymous_fallback(self):
+    async def test_audit_never_claims_separation(self):
         created = await self.create()
-        _, granted = await self.grant(created, principal=ANONYMOUS)
+        _, granted = await self.grant(created, principal=IDENTIFIED)
         self.assertEqual(granted["status"], "approved")
         await self.service.apply(created["plan_id"], created["plan_hash"])
+        anonymous = await self.create(description="Stored anonymous approval")
+        await self.grant(anonymous, principal=IDENTIFIED)
+        plant_anonymous_decision(self.repository, anonymous["plan_id"], recorded_flag=False)
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(anonymous["plan_id"], anonymous["plan_hash"])
         records = [json.loads(line) for line in self.audit_path.read_text().splitlines()]
         self.assertTrue(records)
         for record in records:

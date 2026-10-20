@@ -1,9 +1,13 @@
 """Admin-only Home Assistant Ingress approval interface.
 
 The MCP listener never mounts these routes. Home Assistant authenticates the
-Ingress session and ``panel_admin`` limits the panel to administrators; this
-application additionally accepts requests only from the documented Supervisor
-Ingress peer and requires the documented Ingress path header.
+Ingress session; ``panel_admin`` only hides the sidebar entry and is not an
+authorization boundary. This application accepts requests only from the
+documented Supervisor Ingress peer with the documented Ingress path header, and
+(HAMCP-205) every page and every decision first requires exactly one
+well-formed forwarded Home Assistant user ID that Home Assistant Core confirms,
+for that request, is an administrator (``approval_identity``). There is no
+anonymous approver.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ import re
 import secrets
 from typing import Any
 import unicodedata
+import uuid
 from urllib.parse import parse_qs
 
 from starlette.applications import Starlette
@@ -25,6 +30,13 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response
 from starlette.routing import Route
 
+from .approval_identity import (
+    APPROVAL_IDENTITY_COUNTERS,
+    AdministratorVerdict,
+    administrator_principal,
+    ingress_user_id,
+)
+from .audit import AuditRecord
 from .errors import EngineeringServerError, GovernanceError
 from .f3_dashboard.approval_projection import (
     validate_dashboard_approval_projection,
@@ -38,7 +50,6 @@ from .governance.semantic_projection import (
     canonical_projection_bytes,
     projection_hash,
 )
-from .governance.service import DEFAULT_APPROVER_PRINCIPAL
 
 
 MAX_BODY_BYTES = 8_192
@@ -53,9 +64,31 @@ MAX_REVIEW_OPERATIONS = 8
 MAX_STEP_WARNINGS = 10
 SUPERVISOR_INGRESS_PEER = "172.30.32.2"
 _INGRESS_PATH = re.compile(r"^/api/hassio_ingress/[A-Za-z0-9_-]{8,128}$")
-_HA_USER_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _TYPED_TASK_ID = re.compile(r"^[a-f0-9]{32}$")
 TYPED_HOLD_KINDS = ("fan", "power")
+
+# HAMCP-205 refusal pages: (title, explanation, HTTP status).
+_IDENTITY_REFUSALS = {
+    AdministratorVerdict.IDENTITY_MISSING: (
+        "Approver identity missing",
+        "Approver identity missing: Home Assistant did not forward exactly one "
+        "valid user identity for this request. Nothing was shown or changed.",
+        403,
+    ),
+    AdministratorVerdict.NOT_ADMINISTRATOR: (
+        "Administrator required",
+        "Administrator required: this Home Assistant user is not an "
+        "administrator. Nothing was shown or changed.",
+        403,
+    ),
+    AdministratorVerdict.LOOKUP_FAILED: (
+        "Could not verify administrator role",
+        "Could not verify administrator role: Home Assistant did not confirm "
+        "this user's role for this request. Nothing was shown or changed; "
+        "try again.",
+        503,
+    ),
+}
 
 SECURITY_HEADERS = {
     "Cache-Control": "no-store",
@@ -343,8 +376,13 @@ class IngressApprovalApplication:
         allowed_peers: tuple[str, ...] = (SUPERVISOR_INGRESS_PEER,),
         require_ingress_header: bool = True,
         typed_services=None,
+        administrator_verifier=None,
+        audit_sink=None,
     ):
         self.governance = governance
+        # HAMCP-205: without a verifier every page refuses (fail closed).
+        self.administrator_verifier = administrator_verifier
+        self._audit_sink = audit_sink
         self.allowed_peers = frozenset(allowed_peers)
         self.require_ingress_header = require_ingress_header
         self._f3_csrf: dict[str, tuple[str, str, int, str, str]] = {}
@@ -372,7 +410,7 @@ class IngressApprovalApplication:
         app.add_middleware(_SecurityHeadersMiddleware)
         return app
 
-    def _ingress_context(self, request: Request) -> tuple[str, str] | None:
+    def _ingress_context(self, request: Request) -> tuple[str, str | None] | None:
         peer = request.client.host if request.client else ""
         if self.allowed_peers and peer not in self.allowed_peers:
             return None
@@ -381,13 +419,7 @@ class IngressApprovalApplication:
             return None
         if not prefix:
             prefix = ""
-        user_id = request.headers.get("x-remote-user-id", "")
-        principal = (
-            f"home_assistant_admin_ingress:{user_id}"
-            if _HA_USER_ID.fullmatch(user_id)
-            else DEFAULT_APPROVER_PRINCIPAL
-        )
-        return prefix, principal
+        return prefix, ingress_user_id(request.headers.getlist("x-remote-user-id"))
 
     @staticmethod
     def _response(body: str, status: int = 200) -> HTMLResponse:
@@ -400,17 +432,85 @@ class IngressApprovalApplication:
             status = 500
         return HTMLResponse(body, status_code=status)
 
-    def _deny_unless_ingress(self, request: Request) -> tuple[str, str] | Response:
+    async def _require_administrator(
+        self, request: Request, surface: str
+    ) -> tuple[str, str] | Response:
+        """The one shared gate for every approval page and decision.
+
+        Returns ``(prefix, principal)`` only when Home Assistant confirms, for
+        this request, that the forwarded user is an administrator. Every other
+        outcome returns a refusal before any state is read or changed.
+        """
+
         context = self._ingress_context(request)
         if context is None:
             return self._response(
                 _page("Forbidden", "<p>This interface is available only through Home Assistant Ingress.</p>"),
                 403,
             )
-        return context
+        prefix, user_id = context
+        verifier = self.administrator_verifier
+        if user_id is None:
+            verdict = AdministratorVerdict.IDENTITY_MISSING
+        elif verifier is None:
+            verdict = AdministratorVerdict.LOOKUP_FAILED
+        else:
+            try:
+                verdict = await verifier.verify(user_id)
+            except Exception:
+                verdict = AdministratorVerdict.LOOKUP_FAILED
+        if verdict is AdministratorVerdict.ADMINISTRATOR:
+            return prefix, administrator_principal(user_id)
+        if verdict not in _IDENTITY_REFUSALS:
+            verdict = AdministratorVerdict.LOOKUP_FAILED
+        self._record_identity_refusal(request, surface, user_id, verdict)
+        title, explanation, status = _IDENTITY_REFUSALS[verdict]
+        return self._response(
+            _page(title, f"<p>{escape(explanation)}</p>", prefix=prefix), status
+        )
+
+    def _record_identity_refusal(
+        self,
+        request: Request,
+        surface: str,
+        user_id: str | None,
+        verdict: AdministratorVerdict,
+    ) -> None:
+        APPROVAL_IDENTITY_COUNTERS.record_refusal(verdict)
+        sink = self._audit_sink
+        if sink is None:
+            try:
+                audit = self.governance.require().audit
+            except Exception:
+                audit = None
+            sink = audit.write if audit is not None else None
+        if sink is None:
+            return
+        try:
+            sink(
+                AuditRecord(
+                    request_id=uuid.uuid4().hex,
+                    tool_name=None,
+                    capability_classification="ingress_approval",
+                    operation_category=surface,
+                    access="refused",
+                    authenticated=False,
+                    # A malformed, repeated or missing value is never recorded.
+                    caller_id=(
+                        administrator_principal(user_id) if user_id else None
+                    ),
+                    parameters={"surface": surface, "method": request.method},
+                    result_status="refused",
+                    error_code=verdict.value,
+                    event="ingress_approval_identity_refused",
+                )
+            )
+        except Exception:
+            # The refusal stands even when the audit write fails.
+            return
 
     async def inbox(self, request: Request) -> Response:
-        context = self._deny_unless_ingress(request)
+        context = await self._require_administrator(request, "plan_inbox")
         if isinstance(context, Response):
             return context
         prefix, _ = context
@@ -446,7 +546,7 @@ class IngressApprovalApplication:
         )
 
     async def review(self, request: Request) -> Response:
-        context = self._deny_unless_ingress(request)
+        context = await self._require_administrator(request, "plan_review")
         if isinstance(context, Response):
             return context
         prefix, _ = context
@@ -492,19 +592,10 @@ class IngressApprovalApplication:
         return await self._decide(request, "reject")
 
     async def f3_inbox(self, request: Request) -> Response:
-        context = self._deny_unless_ingress(request)
+        context = await self._require_administrator(request, "f3_inbox")
         if isinstance(context, Response):
             return context
         prefix, _principal = context
-        if _principal == DEFAULT_APPROVER_PRINCIPAL:
-            return self._response(
-                _page(
-                    "Forbidden",
-                    "<p>An authenticated Home Assistant administrator identity is required.</p>",
-                    prefix=prefix,
-                ),
-                403,
-            )
         runtime = self.governance.require().f3_runtime
         if runtime is None:
             return self._response(
@@ -530,19 +621,10 @@ class IngressApprovalApplication:
         )
 
     async def f3_review(self, request: Request) -> Response:
-        context = self._deny_unless_ingress(request)
+        context = await self._require_administrator(request, "f3_review")
         if isinstance(context, Response):
             return context
         prefix, principal = context
-        if principal == DEFAULT_APPROVER_PRINCIPAL:
-            return self._response(
-                _page(
-                    "Forbidden",
-                    "<p>An authenticated Home Assistant administrator identity is required.</p>",
-                    prefix=prefix,
-                ),
-                403,
-            )
         runtime = self.governance.require().f3_runtime
         if runtime is None:
             return self._response(
@@ -634,19 +716,10 @@ class IngressApprovalApplication:
         )
 
     async def f3_reconcile(self, request: Request) -> Response:
-        context = self._deny_unless_ingress(request)
+        context = await self._require_administrator(request, "f3_reconcile")
         if isinstance(context, Response):
             return context
         prefix, principal = context
-        if principal == DEFAULT_APPROVER_PRINCIPAL:
-            return self._response(
-                _page(
-                    "Forbidden",
-                    "<p>An authenticated Home Assistant administrator identity is required.</p>",
-                    prefix=prefix,
-                ),
-                403,
-            )
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if content_type != "application/x-www-form-urlencoded":
             return self._response(
@@ -724,22 +797,6 @@ class IngressApprovalApplication:
             )
         )
 
-    def _require_admin(self, request: Request) -> tuple[str, str] | Response:
-        context = self._deny_unless_ingress(request)
-        if isinstance(context, Response):
-            return context
-        prefix, principal = context
-        if principal == DEFAULT_APPROVER_PRINCIPAL:
-            return self._response(
-                _page(
-                    "Forbidden",
-                    "<p>An authenticated Home Assistant administrator identity is required.</p>",
-                    prefix=prefix,
-                ),
-                403,
-            )
-        return context
-
     def _typed_service(self, kind: str):
         if kind not in TYPED_HOLD_KINDS:
             return None
@@ -753,7 +810,7 @@ class IngressApprovalApplication:
         return POWER_OPERATIONS.service
 
     async def typed_inbox(self, request: Request) -> Response:
-        context = self._require_admin(request)
+        context = await self._require_administrator(request, "typed_inbox")
         if isinstance(context, Response):
             return context
         prefix, _principal = context
@@ -780,7 +837,7 @@ class IngressApprovalApplication:
         return self._response(_page("Typed hold release", content, prefix=prefix))
 
     async def typed_review(self, request: Request) -> Response:
-        context = self._require_admin(request)
+        context = await self._require_administrator(request, "typed_review")
         if isinstance(context, Response):
             return context
         prefix, principal = context
@@ -872,7 +929,7 @@ class IngressApprovalApplication:
         )
 
     async def typed_release(self, request: Request) -> Response:
-        context = self._require_admin(request)
+        context = await self._require_administrator(request, "typed_release")
         if isinstance(context, Response):
             return context
         prefix, principal = context
@@ -952,7 +1009,7 @@ class IngressApprovalApplication:
         )
 
     async def _decide(self, request: Request, decision: str) -> Response:
-        context = self._deny_unless_ingress(request)
+        context = await self._require_administrator(request, f"plan_{decision}")
         if isinstance(context, Response):
             return context
         prefix, principal = context
@@ -1050,12 +1107,16 @@ def create_approval_application(
     allowed_peers: tuple[str, ...] = (SUPERVISOR_INGRESS_PEER,),
     require_ingress_header: bool = True,
     typed_services=None,
+    administrator_verifier=None,
+    audit_sink=None,
 ) -> Starlette:
     return IngressApprovalApplication(
         governance,
         allowed_peers=allowed_peers,
         require_ingress_header=require_ingress_header,
         typed_services=typed_services,
+        administrator_verifier=administrator_verifier,
+        audit_sink=audit_sink,
     ).create()
 
 
