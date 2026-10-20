@@ -324,10 +324,14 @@ and proposed configuration's protected effects (model
 | `none` | No protected effect before or after | Standard or elevated policy as before |
 | `equivalent` | Every protected effect keeps its service, object, order and reachability | `plan_approval` only (the page stays elevated) |
 | `changed` | An effect, its reachability, the run mode or the run structure around it changed | `plan_approval`, then `safety_critical_acknowledgement` |
-| `unresolved` | A protected effect's target cannot be determined | `plan_approval`, then `safety_critical_acknowledgement` |
+| `unresolved` | A possible protected effect's service or target cannot be determined (templated, variable-driven, or an area, device, floor or label selector) | `plan_approval`, then `safety_critical_acknowledgement` |
 
 An unlock or disarm effect always needs the acknowledgement, even when it is
-`equivalent` (OD-6(b), ADR-022). An incomplete execution contract stays
+`equivalent` (OD-6(b), ADR-022). Where one is or may be present, the Beta 33
+retained-effect proof, the garage inverse and the retry transfer do not
+apply. A notification or log step that can run before a protected effect is
+compared in full (nested data, target, `continue_on_error`, `enabled` and
+position), so any change to it is `changed`. An incomplete execution contract stays
 `prohibited`. A plan whose acknowledgement would name more than 32 objects is
 refused at creation.
 

@@ -408,13 +408,17 @@ as executable actions, and unsupported action nesting fails closed. Other
 high-risk service names retain their existing policy mapping.
 
 Policy `f2-v3` (HAMCP-213) narrows this. The Beta 33 retained-effect proof
-above is unchanged and is evaluated first. Otherwise, a safety-critical script
+above is unchanged and is evaluated first, except where an unlock or disarm
+effect is or may be present: it then does not apply, and the acknowledgement
+below is always required. Otherwise, a safety-critical script
 or automation create or update is no longer prohibited by the risk class
 alone. Engineering compares the before and after physical effects (model
 `physical-effect-comparison-v1`). An exact write whose effects are `equivalent`
 is `elevated_admin` with plan approval only; a `changed` or `unresolved`
 comparison is `elevated_admin` with a high risk delta and also requires the
-per-object safety-critical acknowledgement. An unlock or disarm effect always
+per-object safety-critical acknowledgement. An effect-capable call whose
+service or target is templated, variable-driven or a registry selector is
+`unresolved`. An unlock or disarm effect always
 requires that acknowledgement (owner decision OD-6(b), ADR-022). A write that
 is not exact remains prohibited. See
 [External approval](EXTERNAL_APPROVAL.md#safety-critical-acknowledgement).

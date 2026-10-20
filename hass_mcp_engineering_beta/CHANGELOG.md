@@ -12,9 +12,14 @@ Builds on 2.4.1-beta.25.
 - Policy `f2-v3`: `equivalent` is `elevated_admin` with plan approval only;
   `changed` or `unresolved` adds the per-object
   `safety_critical_acknowledgement` (Ingress only, authority version 4).
-  Unlock and disarm effects always need it (OD-6(b)). An incomplete execution
-  contract stays `prohibited`. The Beta 33 retained proof, garage inverse and
-  retry-transfer paths are unchanged.
+  Unlock and disarm effects always need it (OD-6(b)), and no shortcut applies
+  to them. An incomplete execution contract stays `prohibited`. Otherwise the
+  Beta 33 retained proof, garage inverse and retry-transfer paths are
+  unchanged.
+- An effect-capable call with a templated, variable-driven or area, device,
+  floor or label target, or a templated service name, is `unresolved`. A
+  reference step that can run before an effect is compared in full; any
+  change to it is `changed`.
 - Dispatch rechecks the exact acknowledged object set and comparison hash
   independently of the bundle state; plan approval alone never dispatches.
 - E013 precision: logbook mentions are not targets, notify routed by name has

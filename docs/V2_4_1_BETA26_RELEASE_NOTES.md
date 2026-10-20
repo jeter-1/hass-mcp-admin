@@ -45,6 +45,18 @@ retry shape carried a retry warning.
      `changed`, because it can still abort the run.
    - An unknown service on a protected object counts as an effect. Unknown
      structure is `unresolved`.
+   - An effect-capable call (`cover`, `lock`, `alarm_control_panel`,
+     `valve`, `siren`, `switch`, `water_heater`, `homeassistant.turn_on`,
+     `turn_off` or `toggle`, an unknown service, or a device action of those
+     domains) whose target is templated, variable-driven, or an area, device,
+     floor or label selector is `unresolved`. So is any call whose service
+     name is templated (`service_template` included). Registry selectors are
+     not resolved.
+   - A reference-only step that can run before a protected effect is
+     compared in full: nested data, target, `continue_on_error`, `enabled`
+     and position relative to conditions, waits and branches. Any difference,
+     wording included, is `changed`. Wording after the last effect stays
+     `equivalent`.
 2. **Policy mapping** (`f2-v3`):
 
    | Verdict | Policy | Required actions |
@@ -58,7 +70,9 @@ retry shape carried a retry warning.
    which supersedes part of ADR-012). If the comparison finds no protected
    effect while the risk classifier does, the plan is `prohibited`. The Beta 33
    retained-effect proof, the garage inverse and the retry-transfer paths are
-   unchanged and are evaluated first. Script updates join automation updates
+   unchanged and are evaluated first, except where an unlock or disarm effect
+   is or may be present: none of them applies there. On the legacy
+   contract-v1 route, such an unlock or disarm change is `prohibited`. Script updates join automation updates
    as exact writes.
 3. **Safety-critical acknowledgement** (Ingress panel only, action authority
    version 4). After plan approval, the panel lists each protected object with
@@ -84,6 +98,14 @@ retry shape carried a retry warning.
    names the acknowledgement step; it carries no authority.
 
 ## Compatibility and rollback
+
+- **More acknowledgements by design.** A cover, switch, siren, water heater,
+  generic `homeassistant` or unknown-service call with an area, device,
+  floor, label or templated target now needs the acknowledgement, as does a
+  wording change to a notification that runs before a protected effect.
+  `light`, `fan` and `climate` calls with such targets, unknown services
+  with no target, and effects reached only through a called script are not
+  flagged (residual).
 
 - **Policy snapshots.** `f2-v1` and `f2-v2` stay readable. A pending `f2-v2`
   plan fails its policy snapshot under `f2-v3` and must be replanned; terminal

@@ -490,8 +490,42 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
    the review page for every plan with protected effects, including
    `equivalent` ones, as the comparison evidence the register Outcome requires.
 
+7. **Implementation (PR 1, independent-review corrections).** When the
+   comparison cannot prove that a protected effect and its reachability are
+   unchanged, the verdict is `changed` or `unresolved` and the
+   acknowledgement is required; it is never `none` or `equivalent`.
+   - **Unresolvable effects (H1).** A call is effect-capable when its service
+     is in `cover`, `lock`, `alarm_control_panel`, `valve`, `siren`, `switch`
+     or `water_heater`, is `homeassistant.turn_on`, `turn_off` or `toggle`, or
+     is an unknown service. It is also effect-capable when it is a device
+     action of those domains. If its target is templated, variable-driven, or
+     an `area_id`, `device_id`, `floor_id` or `label_id` selector (in `target`
+     or `data`), it is an `unresolved` effect. The same holds when its service
+     name is templated or uses `service_template`. Registry selectors are
+     never resolved, which is stricter than resolving them through the
+     registry. A templated service name may be an unlock or disarm, so it
+     carries the OD-6(b) floor. `light`, `fan` and `climate` calls and
+     transitive callees are not flagged (residual).
+   - **Reference steps before an effect (H2).** A reference-only step that
+     can run before a protected effect is compared in full: service, every
+     data field (nested data included), target, `continue_on_error`,
+     `enabled`, and its position relative to conditions, waits and branches.
+     Only the display `alias` is ignored. Any difference is `changed`. This
+     supersedes the template-free `message`/`title` allowance in item 4 for
+     such steps. A reference step after the last effect still compares by
+     signature only, so trailing wording stays `equivalent`.
+   - **Unlock and disarm floor (H3, OD-6(b)).** Where an unlock or disarm
+     effect is or may be present, no shortcut applies: the Beta 33
+     retained-effect proof, the garage inverse and the retry transfer are
+     skipped, and the per-object acknowledgement is always required. That
+     includes an `equivalent` unlock in an otherwise-edited automation. Under
+     current policy, the legacy contract-v1 route refuses such a change
+     (`prohibited`). Historical `f2-v1` and `f2-v2` recomputation is unchanged.
+
 **Effect on the audit plan:** see D6. The owner's real plan replaced the
 earlier inference from the audit description, and the predicted verdicts held.
+The review corrections leave them unchanged (op1 `none`, op2 `changed`, op3
+`equivalent`, op4 `none`).
 
 ### D3. Policy mapping (replaces `policy.py:567-591` for protected effects)
 

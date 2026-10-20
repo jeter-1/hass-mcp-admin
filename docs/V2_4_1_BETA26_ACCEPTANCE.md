@@ -52,7 +52,8 @@ Preserve the following:
 - every tool descriptor and input schema (88 tools, 89 with the optional YAML
   reader admitted, as in beta.25);
 - the Beta 33 retained-effect proof, the garage inverse and the retry-transfer
-  paths;
+  paths, except that none applies where an unlock or disarm effect is or may
+  be present;
 - probe fingerprints, Core capability profiles, owner-signed Core registry
   entries and the signed ha-mcp registry;
 - the HOLD and the support window;
@@ -76,6 +77,16 @@ No test reaches a live system.
 - `tests/test_hamcp213_physical_effect_regressions.py` (11 tests): one test per
   E013 symptom, the unlock floor, the unresolved target, and the abort-point,
   mode, run-occupancy and reference-only rules.
+- `tests/test_hamcp213_review_corrections.py` (16 tests): every
+  independent-review reproduction through both the configuration service and
+  the F3 runtime. H1: templated, variable-driven, area, device, floor and
+  label targets and templated service names are `unresolved`. H2: reference
+  steps before an effect compared in full. H3: unlock and disarm always
+  require the acknowledgement, and no shortcut applies to them. Each needs
+  the acknowledgement, plan approval alone writes nothing, and the exact
+  acknowledgement dispatches once.
+  Controls keep plan approval only. The PR001 verdicts are unchanged, and
+  comparisons are deterministic.
 - `tests/test_hamcp213_f2_v2_rollback_confinement.py` (8 tests): only F3
   rollback creation, and reverification of a consumed task, admit an `f2-v2`
   plan; every other path refuses `f2-v2` plans without a state change or a
@@ -84,8 +95,11 @@ No test reaches a live system.
   beta6 writer under `f2-v2` still reverifies after the upgrade.
 - Mutations, each killed: the reference-only table, the abort-point rule (both
   directions), the mode rule, the run-occupancy rule, the object-set check,
-  the dispatch check, and three widenings of the `f2-v2` exception. The PR
-  lists counts and logs.
+  the dispatch check, and three widenings of the `f2-v2` exception. The
+  review corrections add: a templated target or service treated as `none`,
+  unresolved targets ignored, reference steps compared by presence and order
+  or signature only, the unlock and disarm floor disabled or bypassed, and an
+  id-only comparison memo. The PR lists counts and logs.
 
 ## 2. Release CI and publication
 
