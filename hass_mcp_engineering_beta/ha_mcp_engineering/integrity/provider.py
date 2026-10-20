@@ -20,7 +20,7 @@ from ..providers import (
     ProviderFailureCategory,
     ProviderResult,
 )
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import ReferenceMarkerRegistry, sanitize_untrusted_data
 from .models import IntegrityEvidenceBundle, IntegritySourceCoverage
 
 
@@ -149,6 +149,11 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
         dynamic_references = []
         sanitation_failures: Counter = Counter()
         outside_dynamic_count = 0
+        # HAMCP-191 D4: read the snapshot's identity record so bounded
+        # extraction text survives this re-scan.
+        markers = ReferenceMarkerRegistry(
+            inherits=getattr(snapshot, "sanitizer_registry", None)
+        )
 
         for finding in snapshot.findings[:MAX_INDEX_REFERENCES]:
             source_type = _effective_source_type(asdict(finding))
@@ -158,6 +163,7 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
                 asdict(finding),
                 known_secrets=(self.secret, self.ha_token),
                 max_string=500,
+                registry=markers,
             )
             if safe.failed_closed or not isinstance(safe.value, dict):
                 sanitation_failures[source_type] += 1
@@ -172,6 +178,7 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
                 asdict(item),
                 known_secrets=(self.secret, self.ha_token),
                 max_string=500,
+                registry=markers,
             )
             if safe.failed_closed or not isinstance(safe.value, dict):
                 sanitation_failures[item.source_type] += 1

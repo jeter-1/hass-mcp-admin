@@ -1,5 +1,105 @@
 # Changelog
 
+## 2.4.1-beta.22 - aiohttp 3.14.4 dependency security release (HAMCP-211)
+
+Builds on 2.4.1-beta.21, which was superseded before publication and is not
+re-tagged or re-published. beta.22 is the first published beta with
+HAMCP-205's administrator verification.
+
+- Upgrade `aiohttp` from 3.14.3 to 3.14.4 for GHSA-2g87-pp6c-29x5,
+  CVE-2026-111063 and CVE-2026-111064, and `yarl` from 1.24.5 to 1.25.1 as
+  3.14.4 requires. `requirements.txt`, both hash locks and
+  `build-inputs.json` change; no other package changes.
+- Pin the inherited library behaviour on Engineering's transports: header
+  whitespace stripping on the identity check, the WebSocket byte ceiling and
+  fragment rules, single-attempt reads, and HAMCP-200 route guarding under
+  yarl 1.25.1's query parsing (`tests/test_hamcp211_aiohttp_3144_contract.py`).
+- No runtime code change. Preserve the catalog, input schemas, signed
+  registries, HOLD, support window, persisted formats, workflows and stable
+  v1 (which still pins `aiohttp==3.9.5`, reported to Josh).
+
+## 2.4.1-beta.21 - Administrator verification for Ingress approval pages (HAMCP-205)
+
+Builds on 2.4.1-beta.20. Superseded before publication; first published in
+2.4.1-beta.22.
+
+- Require a Home Assistant administrator on all ten Ingress approval routes
+  (plan, F3 and typed inboxes, reviews and decisions). One shared gate needs
+  exactly one well-formed `X-Remote-User-Id` and reads the fixed, read-only
+  `config/auth/list` command on every request, with no caching. A missing
+  identity or non-administrator is refused with 403, and a failed or
+  ambiguous lookup with 503, before any governance, F3, typed-service, CSRF
+  or device access. Absorbs HAMCP-199.
+- Treat an inactive user, the owner included, and a system-generated account
+  as not an administrator (review L1).
+- Remove the anonymous default approver. Governance refuses a missing or
+  anonymous principal with `external_approval_invalid`, and a stored
+  anonymous approval is refused at apply and rollback with
+  `external_approval_required` and reason
+  `anonymous_approval_requires_reapproval`; re-plan and approve as a
+  verified administrator.
+- Add `approval_identity` to `get_server_health` (refusal counts by reason,
+  no user IDs).
+- Preserve the catalog, input schemas, signed registries, HOLD, support
+  window, persisted formats, workflows and stable v1.
+
+## 2.4.1-beta.20 - Shared sanitizer with identity-only redaction markers (HAMCP-191)
+
+Builds on 2.4.1-beta.19.
+
+- Use one strict sanitizer for every tool. Every rule runs first, then any
+  string that still looks like a redaction marker (including keys and
+  encoded or folded spellings) is replaced as a whole by
+  `[REDACTED:redaction_marker_collision]`. This closes the P1 (secret
+  wrapped in a forged marker) and P2 (anchor split by a forged marker) leaks.
+- Keep only the markers Engineering produced in the same request, checked by
+  object identity against a per-request record (approval review, plan views,
+  impact, integrity, reliability, gateway-withheld evidence and the audit
+  sink). A byte-identical upstream copy collides.
+- Keep beta.19's marker tolerance only for the re-scan of stored plans (D11),
+  through one allow-listed entry point. Every plan family (configuration,
+  legacy automation, dashboard, backup, helper state, reload, restart) runs
+  the strict detector before persisting or returning a new plan, and refuses
+  flagged text, the automation identifier included. Follow-up: HAMCP-207.
+- Write every governance plan record through one storage chokepoint
+  (`ChangePlanRepository.save`). It strict-sanitizes all new strings,
+  identifiers included, refuses on creation and in identity, configuration
+  and dispatch fields, and redacts in place in evidence, receipts, failures
+  and events. Dispatch and recovery state stays byte-exact in 72 exempt
+  schema paths whose formats cannot carry free text. Old stored content is
+  written back unchanged. Static and runtime writer-enumeration tests guard
+  the chokepoint, and flagged identifiers are withheld from response
+  metadata (review findings H1g, H2).
+- Screen the inbound request ID once at request start and replace a
+  token-shaped or known-secret ID with an Engineering-generated one,
+  counted in health as `request_id_replacements` (review finding H4).
+  Screen every caller-supplied governance-tool identifier at the tool
+  boundary before any tool work, refusing with `INVALID_REQUEST` and no echo
+  (review finding H1g-residual). Gate dashboard `url_path` and the caller ID
+  before any read, and write the dashboard artifact only after the plan
+  passes the strict gate (review finding M2). Run the D11 stored-plan
+  re-check for contract-v1 records too (review finding L3).
+- Add `sanitization` to `get_server_health` (`strict_marker_mode`,
+  `marker_collisions`, `marker_collision_refusals`). Look-alike text can now
+  block a governed edit, and each refusal is counted.
+- Report `completeness: partial` with a bounded `metadata.redaction` summary
+  when redaction applied anywhere in the response (including warnings, hints
+  and server identity) on the generic delegated read, the held-read canary,
+  the YAML reader and dashboard get/list; the delegated read also warns that
+  the result is not complete.
+- Sanitize Core log history in two passes: every credential rule runs over
+  the whole window first (an LF or CRLF credential split across lines is
+  still redacted, and the line count is kept), then a marker-like line
+  collapses only that line (a CRLF line keeps its `\r`), with bounded `redacted_line_count`, `collided_line_count` and
+  `redaction`. Structured-log redaction counters include the first pass.
+- Scan or withhold a key whose scan failed (never write the raw key back),
+  count evidence truncation from a structural flag, and show
+  `(authorization header withheld)` in incident correlation.
+- Ordinary data is byte-identical to beta.19 (85-sample corpus: 68
+  identical, 17 changed by decision, 0 unexpected). Preserve the catalog,
+  input schemas, signed registries, HOLD, support window, persisted formats,
+  workflows and stable v1.
+
 ## 2.4.1-beta.19 - Prompt verification of slow typed fan and power devices (HAMCP-192)
 
 Builds on 2.4.1-beta.18.

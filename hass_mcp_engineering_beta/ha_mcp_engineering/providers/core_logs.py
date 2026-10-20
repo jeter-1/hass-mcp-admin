@@ -20,7 +20,12 @@ from ..clients.rest import HomeAssistantRestClient
 from ..errors import ErrorCode, GovernanceError
 from ..observability import METRICS
 from ..request_context import current_telemetry
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import (
+    MARKER_COLLISION,
+    MAX_REDACTION_COUNT,
+    redaction_summary,
+    sanitize_log_lines,
+)
 
 
 SUPERVISOR_URL = "http://supervisor/core/logs"
@@ -158,7 +163,7 @@ class CoreLogReader(HomeAssistantRestClient):
             METRICS.record_provider_result("supervisor_core_logs", outcome, dispatched=True)
 
     def evidence(self, window: CoreLogWindow, *, limit: int, offset: int) -> dict:
-        """Sanitize the bounded full window before shortening any evidence."""
+        """Sanitize each line of the bounded full window before shortening any evidence."""
         raw = window.content
         # A capped final line may contain a partial credential that cannot be
         # recognized. Omit that line completely, including split UTF-8 bytes.
@@ -169,15 +174,28 @@ class CoreLogReader(HomeAssistantRestClient):
             text = raw.decode("utf-8", errors="strict")
         except UnicodeDecodeError as exc:
             raise _failure(ErrorCode.PROVIDER_ERROR, "core_log_encoding_invalid") from exc
-        sanitized = sanitize_untrusted_data(
-            text, known_secrets=(*window.known_secrets, self.settings.ha_token, self.settings.access_secret),
+        # HAMCP-191 owner direction and H3: the credential rules run over the
+        # whole window, so an anchor and its value on different lines (LF or
+        # CRLF) are still redacted; marker look-alikes are judged per line,
+        # so a marker-like line collapses only itself, never the window, and
+        # Home Assistant's own "**REDACTED**" lines stay byte-identical.
+        bodies = text.split("\n")
+        ending = bodies.pop() if bodies else ""
+        sanitized = sanitize_log_lines(
+            bodies, known_secrets=(*window.known_secrets, self.settings.ha_token, self.settings.access_secret),
         )
-        if sanitized.failed_closed or not isinstance(sanitized.value, str):
+        if (
+            sanitized.failed_closed or not isinstance(sanitized.value, list)
+            or len(sanitized.value) != len(bodies) or ending
+            or not all(isinstance(line, str) for line in sanitized.value)
+        ):
             raise _failure(ErrorCode.PROVIDER_ERROR, "core_log_sanitization_failed")
+        collided_lines = sum(1 for line in sanitized.value if line.removesuffix("\r") == MARKER_COLLISION)
+        redacted_lines = sum(1 for safe, line in zip(sanitized.value, bodies) if safe != line)
         # Export only complete sanitized lines. JSON's ASCII escaping bounds
         # serialized UTF-8 bytes, including non-ASCII and control characters.
         budget = min(MAX_EVIDENCE_BYTES, max(0, self.settings.response_size_limit // 2 - 2048))
-        safe_lines = sanitized.value.splitlines(keepends=True)
+        safe_lines = [line + "\n" for line in sanitized.value]
         kept = []
         size = 2  # JSON quotes around the log string
         for line in safe_lines:
@@ -209,6 +227,12 @@ class CoreLogReader(HomeAssistantRestClient):
             "truncated": truncated, "truncation_reasons": reasons,
             "redaction_applied": sanitized.redaction_applied,
             "redaction_categories": list(sanitized.redaction_categories),
+            # Bounded counts over the sanitized window, never line content.
+            "redacted_line_count": min(redacted_lines, MAX_REDACTION_COUNT),
+            "collided_line_count": min(collided_lines, MAX_REDACTION_COUNT),
+            "redaction": redaction_summary(sanitized),
+            # Always partial: retention is unverified, and any redacted or
+            # collided line would make it partial on its own.
             "completeness": "partial",
             "window_completeness": "unknown",
             "retention_coverage": "unknown",

@@ -65,7 +65,11 @@ from ..request_context import (
     current_telemetry,
     end_request,
 )
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import (
+    record_marker_collision_refusal,
+    redaction_summary,
+    sanitize_untrusted_data,
+)
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
     EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS,
@@ -210,6 +214,31 @@ _ALLOWED_TOOL_META_FIELDS = {
     "ha_mcp": frozenset({"llm_api_exposed", "pinned", "policy"}),
 }
 _OBSERVED_IDENTITY_EVIDENCE = re.compile(r"^[A-Za-z0-9_.+\-]{1,128}$")
+# The gateway's own placeholder for withheld identity evidence. Downstream
+# sinks keep it only as this exact object, registered in the request's
+# identity record (HAMCP-191 D4); equal upstream text collides.
+_REDACTED_EVIDENCE = "[REDACTED]"
+REDACTION_WARNING = (
+    "Sensitive values in the untrusted upstream response were redacted; "
+    "the result is not complete."
+)
+
+
+def _own_evidence(telemetry: Any, value: Any) -> Any:
+    if value is _REDACTED_EVIDENCE:
+        telemetry.sanitizer_registry.register_output(value)
+    return value
+
+
+def _withheld_evidence() -> str:
+    # Registered with the active request, if any, wherever the placeholder
+    # is produced (health, status and catalog diagnostics included).
+    telemetry = current_telemetry()
+    if telemetry is not None:
+        telemetry.sanitizer_registry.register_output(_REDACTED_EVIDENCE)
+    return _REDACTED_EVIDENCE
+
+
 _FAILURE_CATEGORIES = frozenset(
     {
         "not_configured",
@@ -2707,7 +2736,7 @@ class UpstreamReadGateway:
             max_string=128,
         )
         if sanitation.failed_closed or sanitation.redaction_applied:
-            return "[REDACTED]"
+            return _withheld_evidence()
         if (
             not isinstance(sanitation.value, str)
             or not _OBSERVED_IDENTITY_EVIDENCE.fullmatch(sanitation.value)
@@ -2981,7 +3010,7 @@ class UpstreamReadGateway:
             or sanitation.redaction_applied
             or not isinstance(sanitation.value, str)
         ):
-            return "[REDACTED]"
+            return _withheld_evidence()
         if not _OBSERVED_TOOL_NAME.fullmatch(sanitation.value):
             return "[INVALID_NAME]"
         return sanitation.value
@@ -3154,10 +3183,11 @@ class UpstreamReadGateway:
                 if telemetry:
                     telemetry.audit_context[
                         "upstream_version_evidence"
-                    ] = (
+                    ] = _own_evidence(
+                        telemetry,
                         mapping.authority_source
                         if self._signed_release_registry is not None
-                        else self._safe_version_evidence(catalog.server_version)
+                        else self._safe_version_evidence(catalog.server_version),
                     )
                     telemetry.audit_context[
                         "upstream_identity_status"
@@ -3846,6 +3876,8 @@ class UpstreamReadGateway:
                     raise _GatewayFailure("response_too_large", dispatched=True)
                 completeness = "partial" if yaml_result.partial else "complete"
                 bounded_truncation = False
+                # The reader's envelope carries its own redaction summary.
+                redaction = None
                 # K7: every successful read carries the YAML 1.2 disclosure.
                 completeness_warnings = [yaml_reader.K7_WARNING]
             else:
@@ -3953,6 +3985,7 @@ class UpstreamReadGateway:
                 if sanitation.failed_closed:
                     raise _GatewayFailure("sanitization_failed", dispatched=True)
                 if require_unmodified_script and sanitation.redaction_applied:
+                    record_marker_collision_refusal(sanitation)
                     raise _GatewayFailure("sanitization_failed", dispatched=True)
                 encoded_size = len(
                     json.dumps(
@@ -3969,9 +4002,13 @@ class UpstreamReadGateway:
                 upstream_partial, completeness_warnings = _upstream_completeness(
                     policy_entry, sanitation.value
                 )
+                # HAMCP-191 Finding 11: redaction makes the read partial.
+                redaction = redaction_summary(sanitation)
                 completeness = (
                     "partial"
-                    if sanitation.truncated_field_count or upstream_partial
+                    if sanitation.truncated_field_count
+                    or upstream_partial
+                    or redaction is not None
                     else "complete"
                 )
                 data_value = sanitation.value
@@ -3999,6 +4036,8 @@ class UpstreamReadGateway:
             warnings = []
             if bounded_truncation:
                 warnings.append("The untrusted upstream response was safely bounded.")
+            if redaction is not None:
+                warnings.append(REDACTION_WARNING)
             warnings.extend(completeness_warnings)
             if response_adapter is not None:
                 warnings.append(
@@ -4017,6 +4056,8 @@ class UpstreamReadGateway:
                 "fallback_occurred": False,
                 "completeness": completeness,
             }
+            if redaction is not None:
+                metadata["redaction"] = redaction
             if response_adapter is not None:
                 metadata["response_adapter"] = response_adapter
             success = SuccessResponse(
@@ -4367,7 +4408,7 @@ class UpstreamReadGateway:
                 return
             telemetry.audit_context.update(
                 {
-                    key: value[key]
+                    key: _own_evidence(telemetry, value[key])
                     for key in (
                         "upstream_tool",
                         "expected_compatibility_entry_id",
@@ -4738,8 +4779,16 @@ class UpstreamReadGateway:
                     "non-success application outcomes."
                 )
             truncated = bool(sanitation.truncated_field_count)
+            redacted = sanitation.redaction_applied
+            # HAMCP-191 Finding 11 (M1): the canary carries the same bounded
+            # redaction summary as every other delegated read.
+            redaction = redaction_summary(sanitation)
+            if redacted:
+                warnings.append(REDACTION_WARNING)
             completeness = (
-                "partial" if truncated or upstream_partial else "complete"
+                "partial"
+                if truncated or upstream_partial or redacted
+                else "complete"
             )
             report = evidence(
                 outcome="partial" if completeness == "partial" else "success",
@@ -4758,6 +4807,15 @@ class UpstreamReadGateway:
             )
 
             def bounded_success_response() -> str | None:
+                metadata = {
+                    "provider": PROVIDER_ID,
+                    "untrusted_upstream_content": True,
+                    "fallback": "none",
+                    "fallback_occurred": False,
+                    "promotion_performed": False,
+                }
+                if redaction is not None:
+                    metadata["redaction"] = redaction
                 response = SuccessResponse(
                     operation="run_held_read_canary",
                     summary=(
@@ -4766,13 +4824,7 @@ class UpstreamReadGateway:
                     ),
                     data={"canary_evidence": report, "result": result},
                     warnings=response_warnings,
-                    metadata={
-                        "provider": PROVIDER_ID,
-                        "untrusted_upstream_content": True,
-                        "fallback": "none",
-                        "fallback_occurred": False,
-                        "promotion_performed": False,
-                    },
+                    metadata=metadata,
                     timing=timing_since(started),
                     request_id=current_request_id(),
                 )

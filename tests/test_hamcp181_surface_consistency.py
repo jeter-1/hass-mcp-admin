@@ -670,9 +670,10 @@ class OperationalSurfaceTests(_CounterBasisMixin, integration._OperationalActiva
     async def render_admin_page(self, child_id):
         import httpx
 
+        from tests.approval_identity_support import admin_verifier
         from ha_mcp_engineering.approval_web import create_approval_application
 
-        app = create_approval_application(integration._IngressGovernanceStub(self.runtime))
+        app = create_approval_application(integration._IngressGovernanceStub(self.runtime), administrator_verifier=admin_verifier())
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app, client=("172.30.32.2", 12345)),
             base_url="http://f3-ingress.local",

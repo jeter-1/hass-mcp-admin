@@ -35,6 +35,8 @@ from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3_EXECUTION_AUTHORITY,
     F3RuntimeIntegration,
 )
+sys.path.insert(0, str(Path(__file__).parent))
+from approval_identity_support import admin_verifier  # noqa: E402
 from ha_mcp_engineering.approval_web import (  # noqa: E402
     create_approval_application,
 )
@@ -489,7 +491,7 @@ class F3IngressReconciliationTests(unittest.IsolatedAsyncioTestCase):
         import httpx
 
         self.runtime = _IngressRuntimeStub()
-        app = create_approval_application(_IngressGovernanceStub(self.runtime))
+        app = create_approval_application(_IngressGovernanceStub(self.runtime), administrator_verifier=admin_verifier())
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(
                 app=app, client=("172.30.32.2", 12345)
@@ -590,7 +592,7 @@ class F3IngressReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 403)
         import httpx
 
-        app = create_approval_application(_IngressGovernanceStub(self.runtime))
+        app = create_approval_application(_IngressGovernanceStub(self.runtime), administrator_verifier=admin_verifier())
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app, client=("127.0.0.1", 12345)),
             base_url="http://f3-ingress.local",

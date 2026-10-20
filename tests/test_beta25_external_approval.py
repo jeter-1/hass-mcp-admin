@@ -13,7 +13,10 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
+from approval_identity_support import admin_verifier  # noqa: E402
+import hamcp162_synthetic as syn  # noqa: E402
 from ha_mcp_engineering.approval_web import create_approval_application  # noqa: E402
 from ha_mcp_engineering.application import _serve, validate_settings  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
@@ -34,6 +37,7 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 from ha_mcp_engineering.governance.storage import ChangePlanRepository  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
+from tests.test_dev14_configuration_plans import plant_stored_record  # noqa: E402
 
 
 CURRENT = {
@@ -182,7 +186,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
                 plan_id=created["plan_id"], challenge_id=pending["challenge_id"],
                 expected_plan_hash=created["plan_hash"], approval_kind="apply",
                 csrf_nonce=pending["challenge_id"], decision="approve",
-                approver_principal="home_assistant_admin_ingress",
+                approver_principal="home_assistant_admin_ingress:user-1",
             )
         self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_INVALID)
 
@@ -195,7 +199,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
                 "plan_id": created["plan_id"], "challenge_id": pending["challenge_id"],
                 "expected_plan_hash": created["plan_hash"], "approval_kind": "apply",
                 "csrf_nonce": csrf, "decision": "approve",
-                "approver_principal": "home_assistant_admin_ingress",
+                "approver_principal": "home_assistant_admin_ingress:user-1",
             }
             arguments[field] = value
             with self.assertRaises(GovernanceError):
@@ -255,7 +259,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
             await self.service.decide_external_approval(
                 plan_id=created["plan_id"], challenge_id=first["challenge_id"],
                 expected_plan_hash=created["plan_hash"], approval_kind="apply", csrf_nonce=old_csrf,
-                decision="approve", approver_principal="home_assistant_admin_ingress",
+                decision="approve", approver_principal="home_assistant_admin_ingress:user-1",
             )
 
     async def test_superseding_plan_invalidates_existing_challenge(self):
@@ -279,7 +283,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
         await reloaded.decide_external_approval(
             plan_id=created["plan_id"], challenge_id=pending["challenge_id"],
             expected_plan_hash=created["plan_hash"], approval_kind="apply", csrf_nonce=csrf,
-            decision="approve", approver_principal="home_assistant_admin_ingress",
+            decision="approve", approver_principal="home_assistant_admin_ingress:user-1",
         )
         await reloaded.apply(created["plan_id"], created["plan_hash"])
         recovered = ChangeGovernanceService(self.repository, self.gateway, now=self.clock)
@@ -299,7 +303,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
         await self.service.decide_external_approval(
             plan_id=rejected["plan_id"], challenge_id=pending["challenge_id"],
             expected_plan_hash=rejected["plan_hash"], approval_kind="apply", csrf_nonce=csrf,
-            decision="reject", approver_principal="home_assistant_admin_ingress",
+            decision="reject", approver_principal="home_assistant_admin_ingress:user-1",
         )
         rejected_reload = ChangeGovernanceService(self.repository, self.gateway, now=self.clock)
         self.assertEqual(rejected_reload.get_plan(rejected["plan_id"])["status"], "rejected")
@@ -377,7 +381,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
             from ha_mcp_engineering.governance.models import ChangeSnapshot
             plan.snapshot = ChangeSnapshot(self.clock().isoformat(), copy.deepcopy(CURRENT), "legacy")
         plan.rollback.expected_current_fingerprint = "legacy"
-        self.repository.save(plan)
+        plant_stored_record(self, self.repository, plan)
         with self.assertRaises(GovernanceError) as raised:
             await self.service.rollback_change(created["plan_id"], "legacy-hash")
         self.assertEqual(raised.exception.code, ErrorCode.APPROVAL_AUTHORITY_MISMATCH)
@@ -409,7 +413,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
                     plan_id=created["plan_id"], challenge_id=pending["challenge_id"],
                     expected_plan_hash=created["plan_hash"], approval_kind="apply",
                     csrf_nonce=csrf, decision=value,
-                    approver_principal="home_assistant_admin_ingress",
+                    approver_principal="home_assistant_admin_ingress:user-1",
                 )
             except GovernanceError as exc:
                 return exc.code
@@ -427,13 +431,13 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
                 plan_id=created["plan_id"], challenge_id=pending["challenge_id"],
                 expected_plan_hash=created["plan_hash"], approval_kind="apply",
                 csrf_nonce="wrong", decision="approve",
-                approver_principal="home_assistant_admin_ingress",
+                approver_principal="home_assistant_admin_ingress:user-1",
             )
         await self.service.decide_external_approval(
             plan_id=created["plan_id"], challenge_id=pending["challenge_id"],
             expected_plan_hash=created["plan_hash"], approval_kind="apply",
             csrf_nonce=csrf, decision="approve",
-            approver_principal="home_assistant_admin_ingress",
+            approver_principal="home_assistant_admin_ingress:user-1",
         )
         await self.service.apply(created["plan_id"], created["plan_hash"])
         health = self.service.health_summary()
@@ -456,7 +460,7 @@ class IngressBoundaryTests(ExternalApprovalTestCase):
     async def _client(self, *, peer="172.30.32.2"):
         import httpx
 
-        app = create_approval_application(RuntimeShim(self.service))
+        app = create_approval_application(RuntimeShim(self.service), administrator_verifier=admin_verifier())
         transport = httpx.ASGITransport(app=app, client=(peer, 12345))
         return httpx.AsyncClient(
             transport=transport,
@@ -495,9 +499,17 @@ class IngressBoundaryTests(ExternalApprovalTestCase):
             self.assertEqual(response.status_code, 403)
 
     async def test_server_rendered_review_escapes_untrusted_content_and_has_headers(self):
+        # HAMCP-191 H1: a title holding a known secret is refused at creation
+        # (beta.25 through beta.19 stored it verbatim and relied on output
+        # redaction); nothing is persisted.
+        with self.assertRaises(GovernanceError) as refused:
+            await self.create(title="unsafe beta25-test-access-secret")
+        self.assertEqual(refused.exception.code, ErrorCode.AUTOMATION_VALIDATION_FAILED)
+        self.assertNotIn("beta25-test-access-secret", repr(refused.exception.details))
+        self.assertEqual(self.repository.list(), [])
         created = await self.create(
             description='<script>alert(1)</script><img src=x onerror=alert(2)>\u202e',
-            title='<form action="https://attacker.example">unsafe</form> beta25-test-access-secret',
+            title='<form action="https://attacker.example">unsafe</form>',
         )
         pending = self.service.approve(created["plan_id"], created["plan_hash"])
         async with await self._client() as client:
@@ -520,7 +532,7 @@ class IngressBoundaryTests(ExternalApprovalTestCase):
         created = await self.create()
         self.service.approve(
             created["plan_id"], created["plan_hash"],
-            "Authorization: Bearer beta25-test-access-secret <script>approve</script>",
+            syn.auth_header(syn.bearer("beta25-test-access-secret")) + " <script>approve</script>",
         )
         persisted = self.repository.get(created["plan_id"])
         self.assertNotIn("beta25-test-access-secret", persisted.approval.request_note)
@@ -574,8 +586,13 @@ class IngressBoundaryTests(ExternalApprovalTestCase):
                 data=values,
                 headers={"X-Remote-User-Id": "<script>fake</script>"},
             )
-            self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.repository.get(created["plan_id"]).approval.approver_principal, "home_assistant_admin_ingress")
+            # HAMCP-205 (absorbs HAMCP-199): a malformed identity is refused,
+            # never recorded as an anonymous default approver.
+            self.assertEqual(response.status_code, 403)
+            self.assertIn("Approver identity missing", response.text)
+        approval = self.repository.get(created["plan_id"]).approval
+        self.assertEqual(approval.state, ApprovalState.EXTERNAL_PENDING)
+        self.assertNotIn("fake", str(approval.approver_principal))
 
 
 class MetadataBoundaryTests(unittest.TestCase):

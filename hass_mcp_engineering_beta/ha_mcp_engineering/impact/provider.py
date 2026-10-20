@@ -27,7 +27,7 @@ from ..providers import (
     ProviderResult,
 )
 from ..reliability.timestamps import normalize_timestamp, parse_timestamp
-from ..sanitization import sanitize_untrusted_data
+from ..sanitization import ReferenceMarkerRegistry, sanitize_untrusted_data
 from ..trace_normalization import fetch_normalized_trace_list
 from .models import (
     ImpactEvidenceBundle,
@@ -155,9 +155,14 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
         )
         evidence: dict[str, ImpactEvidenceReference] = {}
         coverage: list[ImpactSourceCoverage] = []
+        # HAMCP-191 D4: this analysis's identity record; it reads the
+        # snapshot's record so bounded extraction text survives the re-scan.
+        markers = ReferenceMarkerRegistry(
+            inherits=getattr(snapshot, "sanitizer_registry", None)
+        )
 
         state_started = time.perf_counter()
-        target_state, target_state_missing = await self._exact_state(entity_id)
+        target_state, target_state_missing = await self._exact_state(entity_id, markers)
         coverage.append(
             ImpactSourceCoverage(
                 "target_state",
@@ -170,7 +175,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
         )
 
         registry_started = time.perf_counter()
-        registry_values, registry_coverage = await self._entity_registry()
+        registry_values, registry_coverage = await self._entity_registry(markers)
         registry_coverage.duration_ms = (
             time.perf_counter() - registry_started
         ) * 1000
@@ -184,7 +189,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
             )
 
         target = self._target_summary(
-            entity_id, target_state, target_state_missing, target_registry
+            entity_id, target_state, target_state_missing, target_registry, markers
         )
         target_reference = ImpactEvidenceReference(
             reference_id=stable_id(
@@ -316,7 +321,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
         replacement_conflict = False
         if replacement:
             replacement_state, replacement_state_missing = await self._exact_state(
-                replacement
+                replacement, markers
             )
             replacement_registry = registry_values.get(replacement)
             replacement_conflict = (
@@ -348,7 +353,9 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
         dependencies = []
         sanitation_failures: dict[str, int] = {}
         for finding in selected:
-            safe, failed = self._safe_dependency(finding, finding.evidence_id in direct_ids)
+            safe, failed = self._safe_dependency(
+                finding, finding.evidence_id in direct_ids, markers
+            )
             if failed:
                 sanitation_failures[safe["source_type"]] = (
                     sanitation_failures.get(safe["source_type"], 0) + 1
@@ -388,6 +395,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 asdict(item),
                 known_secrets=(self.secret, self.ha_token),
                 max_string=500,
+                registry=markers,
             )
             value = safe.value if isinstance(safe.value, dict) else {}
             source_type = str(value.get("source_type") or "unknown")[:64]
@@ -551,7 +559,9 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
             dynamic_outside_requested_scope_count=outside_scope_count,
         )
 
-    async def _exact_state(self, entity_id: str) -> tuple[dict[str, Any] | None, bool]:
+    async def _exact_state(
+        self, entity_id: str, markers: ReferenceMarkerRegistry | None = None
+    ) -> tuple[dict[str, Any] | None, bool]:
         try:
             value = await self.rest_client.request(
                 "GET",
@@ -568,13 +578,14 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
             value,
             known_secrets=(self.secret, self.ha_token),
             max_string=500,
+            registry=markers,
         )
         if sanitized.failed_closed or not isinstance(sanitized.value, dict):
             raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE)
         return sanitized.value, False
 
     async def _entity_registry(
-        self,
+        self, markers: ReferenceMarkerRegistry
     ) -> tuple[dict[str, dict[str, Any]], ImpactSourceCoverage]:
         try:
             value = await self.websocket_client.command(
@@ -586,6 +597,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 value,
                 known_secrets=(self.secret, self.ha_token),
                 max_string=500,
+                registry=markers,
             )
             if sanitized.failed_closed or not isinstance(sanitized.value, list):
                 raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE)
@@ -618,7 +630,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 warnings=["Exact entity-registry evidence was unavailable."],
             )
 
-    def _target_summary(self, entity_id, state, missing, registry):
+    def _target_summary(self, entity_id, state, missing, registry, markers):
         attrs = state.get("attributes") if isinstance(state, dict) and isinstance(state.get("attributes"), dict) else {}
         raw_state = str(state.get("state", "")) if isinstance(state, dict) else ""
         state_status = (
@@ -647,16 +659,18 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
             value,
             known_secrets=(self.secret, self.ha_token),
             max_string=200,
+            registry=markers,
         )
         if safe.failed_closed or not isinstance(safe.value, dict):
             raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE)
         return {key: item for key, item in safe.value.items() if item is not None}
 
-    def _safe_dependency(self, finding, direct: bool):
+    def _safe_dependency(self, finding, direct: bool, markers: ReferenceMarkerRegistry):
         sanitized = sanitize_untrusted_data(
             asdict(finding),
             known_secrets=(self.secret, self.ha_token),
             max_string=500,
+            registry=markers,
         )
         value = sanitized.value if isinstance(sanitized.value, dict) else {}
         source_type = str(value.get("source_type") or "unknown")[:64]

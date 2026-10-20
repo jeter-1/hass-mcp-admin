@@ -94,7 +94,7 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
         advertised_version = PROMOTION_MODULE.advertised_version(ROOT)
         self.assertIn(f'version: "{advertised_version}"', beta_config)
         self.assertIn('version: "1.1.2"', stable_config)
-        self.assertIn("aiohttp==3.14.3", requirements)
+        self.assertIn("aiohttp==3.14.4", requirements)
         self.assertIn("cryptography==50.0.0", requirements)
 
     def test_no_fallback_or_live_home_assistant_fixture_is_present(self):

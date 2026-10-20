@@ -39,6 +39,7 @@ from ha_mcp_engineering.governance.resources import (  # noqa: E402
 from ha_mcp_engineering.governance.service import ChangeGovernanceService  # noqa: E402
 from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanRepository,
+    PlanContentRefused,
 )
 from ha_mcp_engineering.request_context import (  # noqa: E402
     begin_request,
@@ -145,6 +146,25 @@ def hvac_operations():
         },
     ]
 
+
+
+def plant_stored_record(test, repository, plan):
+    """Plant an unsafe record as already-stored (corrupt or old) content.
+
+    HAMCP-191 Direction A: ``repository.save`` refuses new unsafe content and
+    leaves the stored bytes unchanged, so the record is written to disk
+    directly to exercise the fail-closed read paths for stored content.
+    """
+
+    path = repository._path_for_plan(plan)
+    before = path.read_bytes()
+    with test.assertRaises(PlanContentRefused):
+        repository.save(plan)
+    test.assertEqual(path.read_bytes(), before)
+    path.write_text(
+        json.dumps(plan.to_dict(), sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
 
 class FakeConfigurationGateway:
     def __init__(self):
@@ -907,7 +927,7 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         operation.proposed_config_hash = stable_hash(
             operation.normalized_proposed_config
         )
-        self.repository.save(plan)
+        plant_stored_record(self, self.repository, plan)
         self.gateway.calls.clear()
 
         await self.assert_corrupt_v2_plan_refused_everywhere(
@@ -931,7 +951,7 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         operation.current_state_fingerprint = resource_fingerprint(
             "script", operation.current_config
         )
-        self.repository.save(plan)
+        plant_stored_record(self, self.repository, plan)
         self.gateway.calls.clear()
 
         await self.assert_corrupt_v2_plan_refused_everywhere(
