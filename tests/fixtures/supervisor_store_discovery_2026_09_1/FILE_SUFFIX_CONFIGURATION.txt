@@ -1,0 +1,1 @@
+FILE_SUFFIX_CONFIGURATION = [".yaml", ".yml", ".json"]

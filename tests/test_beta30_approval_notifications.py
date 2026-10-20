@@ -584,7 +584,7 @@ class Beta30ReleaseBoundaryTests(unittest.TestCase):
             self.assertFalse(marker.exists())
         self.assertIn(
             'version: "1.1.2"',
-            (ROOT / "hass_mcp_admin" / "config.yaml").read_text(),
+            (ROOT / "hass_mcp_admin" / "retired-addon-config.yaml").read_text(),
         )
 
     def test_scope_adds_no_tool_or_provider_fallback(self):

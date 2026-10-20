@@ -1,0 +1,34 @@
+async def _find_app_configs(self, path: Path, repository: str) -> list[Path] | None:
+    """Find apps in the path."""
+
+    def _get_apps_list() -> list[Path]:
+        # Generate a list without artefact, safe for corruptions
+        return [
+            app
+            for app in path.glob("**/config.*")
+            if not [
+                part
+                for part in app.parts
+                if part.startswith(".") or part == "rootfs"
+            ]
+            and app.suffix in FILE_SUFFIX_CONFIGURATION
+        ]
+
+    try:
+        app_list = await self.sys_run_in_executor(_get_apps_list)
+    except OSError as err:
+        suggestion = None
+        self.sys_resolution.check_oserror(err)
+        if err.errno != errno.EBADMSG and repository != REPOSITORY_LOCAL:
+            suggestion = [SuggestionType.EXECUTE_RESET]
+        self.sys_resolution.create_issue(
+            IssueType.CORRUPT_REPOSITORY,
+            ContextType.STORE,
+            reference=path.stem,
+            suggestions=suggestion,
+        )
+        _LOGGER.critical(
+            "Can't process %s because of Filesystem issues: %s", repository, err
+        )
+        return None
+    return app_list

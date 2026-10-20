@@ -47,6 +47,9 @@ docker build \
   -t ha-mcp-engineering ./hass_mcp_admin
 ```
 
+This example is historical. Stable v1 is retired (HAMCP-203); see
+[`hass_mcp_admin/README.md`](hass_mcp_admin/README.md).
+
 Unknown values are reported explicitly as `unknown`; they are never invented.
 
 ## Tests and CI

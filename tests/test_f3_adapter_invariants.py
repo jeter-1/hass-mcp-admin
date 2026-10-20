@@ -108,7 +108,7 @@ class F3AdapterIsolationTests(unittest.TestCase):
             (BETA_DIR / "config.yaml").read_text(encoding="utf-8")
         )
         stable_config = yaml.safe_load(
-            (ROOT / "hass_mcp_admin" / "config.yaml").read_text(
+            (ROOT / "hass_mcp_admin" / "retired-addon-config.yaml").read_text(
                 encoding="utf-8"
             )
         )

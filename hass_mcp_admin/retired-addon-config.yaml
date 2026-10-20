@@ -1,3 +1,8 @@
+# RETIRED (HAMCP-203): stable v1 is not a Home Assistant add-on any more.
+# This file was config.yaml. It is renamed so the Supervisor's add-on store
+# discovery (glob "**/config.*") cannot find, list, or install it. Do not
+# rename it back. Values are kept as the last shipped v1.1.2 metadata. See README.md.
+
 name: HA MCP Engineering Server
 version: "1.1.2"
 slug: hass_mcp_admin

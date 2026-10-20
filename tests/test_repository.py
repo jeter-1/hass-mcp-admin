@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class RepositoryTests(unittest.TestCase):
     def test_addon_config_is_valid_yaml_and_version_matches(self):
-        config = yaml.safe_load((ROOT / "hass_mcp_admin" / "config.yaml").read_text())
+        config = yaml.safe_load((ROOT / "hass_mcp_admin" / "retired-addon-config.yaml").read_text())
         self.assertEqual(config["name"], "HA MCP Engineering Server")
         self.assertEqual(config["version"], "1.1.2")
         self.assertTrue(config["homeassistant_api"])

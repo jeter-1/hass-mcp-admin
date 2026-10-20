@@ -413,9 +413,13 @@ the route is Engineering-native/read/no-fallback.
 
 ## Production and beta boundaries
 
-The repository contains two independently installable Home Assistant add-ons.
+The repository contains one installable Home Assistant add-on, Engineering.
+Stable v1 is retired (HAMCP-203): its code is kept in `hass_mcp_admin/`, but its
+add-on configuration is renamed to `retired-addon-config.yaml`, so the
+Supervisor no longer discovers or offers it. The table records its last
+metadata for history.
 
-| Property | Production v1 | Engineering v2 beta |
+| Property | Retired stable v1 (not installable) | Engineering v2 beta |
 | --- | --- | --- |
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
@@ -430,9 +434,9 @@ ending in `hass-mcp-engineering-beta`; it cannot collide with production's
 hostname. Each container has its own `/data/options.json`, access secret, audit
 file, process, and published port.
 
-The v2 beta never imports or mutates production configuration. Production
-v1.1.2 remains the rollback target and continues to run from its existing
-directory and port.
+The v2 beta never imports or mutates production configuration. Stable v1.1.2
+is not a rollback target: it was uninstalled from production on 2026-10-16 and
+is no longer offered by this repository.
 
 ## Module structure
 

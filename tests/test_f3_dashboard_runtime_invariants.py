@@ -87,7 +87,7 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
 
     def test_versions_and_secure_dependency_pins_are_unchanged(self):
         beta_config = (BETA / "config.yaml").read_text(encoding="utf-8")
-        stable_config = (ROOT / "hass_mcp_admin" / "config.yaml").read_text(
+        stable_config = (ROOT / "hass_mcp_admin" / "retired-addon-config.yaml").read_text(
             encoding="utf-8"
         )
         requirements = (BETA / "requirements.txt").read_text(encoding="utf-8")
