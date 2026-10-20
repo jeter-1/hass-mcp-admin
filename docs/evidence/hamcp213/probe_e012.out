@@ -1,0 +1,22 @@
+== automation_only
+  changed_fields: ['actions', 'mode']
+  risk: high apply_allowed: True reasons: ['Structured action or target requires high-risk review']
+  triggers: [('garage_cover_target', 'actions[2].data.entity_id'), ('garage_cover_target', 'actions[4].target.entity_id'), ('omitted_action_target', 'actions[0].target')]
+  policy: elevated_admin safety_critical ('exact_existing_automation_update', 'owner_decision_required', 'safety_critical_effect_not_reviewed', 'supported_configuration_change')
+  AGG: elevated_admin ('exact_existing_automation_update', 'owner_decision_required', 'safety_critical_effect_not_reviewed', 'supported_configuration_change')
+== script_only
+  changed_fields: ['sequence']
+  risk: high apply_allowed: False reasons: ['Structured action or target requires high-risk review']
+  triggers: [('garage_cover_target', 'action[2].data.entity_id'), ('garage_cover_target', 'action[4].target.entity_id'), ('omitted_action_target', 'action[0].target')]
+  policy: prohibited safety_critical ('safety_critical_effect_not_reviewed', 'supported_configuration_change')
+  AGG: prohibited ('safety_critical_effect_not_reviewed', 'supported_configuration_change')
+== description_only_automation
+  changed_fields: ['description']
+  risk: low apply_allowed: True reasons: ['Only low-impact metadata, logging, notification text, or minor timing changed']
+  triggers: []
+  policy: standard_admin none ('standard_configuration_policy', 'supported_configuration_change')
+  AGG: standard_admin ('standard_configuration_policy', 'supported_configuration_change')
+== mixed automation+script AGG: prohibited safety_critical ('exact_existing_automation_update', 'owner_decision_required', 'safety_critical_effect_not_reviewed', 'supported_configuration_change')
+== extra automation ['actions'] high True ['garage_cover_target', 'omitted_action_target'] elevated_admin safety_critical ['Structured action or target requires high-risk review']
+== extra script ['sequence'] high False ['garage_cover_target', 'omitted_action_target'] prohibited safety_critical ['Structured action or target requires high-risk review']
+== extra script ['mode'] high False ['garage_cover_target', 'omitted_action_target'] prohibited safety_critical ['Structured action or target requires high-risk review']

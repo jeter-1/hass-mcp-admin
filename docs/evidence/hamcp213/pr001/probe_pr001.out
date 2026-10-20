@@ -1,0 +1,26 @@
+== op1 automation changed_fields: ['actions', 'description', 'mode']
+== op2 automation changed_fields: ['actions', 'description']
+== op3 script changed_fields: ['description', 'sequence']
+== op4 automation changed_fields: ['actions', 'description']
+-- op1: risk=high apply_allowed=True
+   reasons: ['Structured action or target requires high-risk review']
+   triggers: ['garage_cover_target', 'omitted_action_target']
+   garage_cover_target fields (2): ['actions[0].choose[0].sequence[0].repeat.sequence[0].then[1].data.entity_id', 'actions[0].choose[0].sequence[0].repeat.sequence[2].then[0].data.entity_id']
+   policy: elevated_admin high safety_critical ('exact_existing_automation_update', 'owner_decision_required', 'safety_critical_effect_not_reviewed', 'supported_configuration_change')
+-- op2: risk=high apply_allowed=True
+   reasons: ['Structured action or target requires high-risk review']
+   triggers: ['garage_cover_target', 'omitted_action_target', 'target_list']
+   garage_cover_target fields (11): ['actions[0].choose[0].sequence[6].choose[0].sequence[0].choose[0].sequence[0].data.entity_id', 'actions[0].choose[0].sequence[6].choose[0].sequence[2].target.entity_id', 'actions[0].choose[0].sequence[6].choose[0].sequence[4].choose[0].sequence[0].data.entity_id', 'actions[0].choose[1].sequence[6].choose[0].sequence[0].choose[0].sequence[0].data.entity_id', 'actions[0].choose[1].sequence[6].choose[0].sequence[2].target.entity_id', 'actions[0].choose[1].sequence[6].choose[0].sequence[4].choose[0].sequence[0].data.entity_id', 'actions[0].choose[2].sequence[7].target.entity_id', 'actions[0].choose[2].sequence[9].choose[0].sequence[0].data.entity_id', 'actions[0].choose[4].sequence[2].choose[0].sequence[0].choose[0].sequence[0].data.entity_id', 'actions[0].choose[4].sequence[2].choose[0].sequence[2].target.entity_id', 'actions[0].choose[4].sequence[2].choose[0].sequence[4].choose[0].sequence[0].data.entity_id']
+   policy: elevated_admin high safety_critical ('exact_existing_automation_update', 'owner_decision_required', 'safety_critical_effect_not_reviewed', 'supported_configuration_change')
+-- op3: risk=high apply_allowed=False
+   reasons: ['Structured action or target requires high-risk review']
+   triggers: ['garage_cover_target', 'omitted_action_target']
+   garage_cover_target fields (5): ['action[0].choose[1].sequence[0].target.entity_id', 'action[0].choose[1].sequence[2].choose[0].sequence[2].data.entity_id', 'action[0].choose[1].sequence[2].choose[1].sequence[2].data.entity_id', 'action[0].choose[1].sequence[2].default[2].data.entity_id', 'action[0].default[2].data.entity_id']
+   policy: prohibited high safety_critical ('safety_critical_effect_not_reviewed', 'supported_configuration_change')
+-- op4: risk=medium apply_allowed=True
+   reasons: ['Recipient or environmental-control behavior may change']
+   triggers: ['omitted_action_target']
+   garage_cover_target fields (0): []
+   policy: standard_admin moderate none ('standard_configuration_policy', 'supported_configuration_change')
+== plan aggregate: prohibited high safety_critical ('exact_existing_automation_update', 'owner_decision_required', 'safety_critical_effect_not_reviewed', 'standard_configuration_policy', 'supported_configuration_change')
+== derive_proof(4 operations): None
