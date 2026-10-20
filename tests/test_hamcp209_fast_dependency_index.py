@@ -60,6 +60,7 @@ from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     PENDING_WRITE_UNRECONCILED,
     DirectHaDependencyProvider,
     _EffectDisplayFilter,
+    _EffectDisplayRegistry,
 )
 from ha_mcp_engineering.dependency.service import EntityDependencyAnalysisService  # noqa: E402
 from ha_mcp_engineering.governance.entity_metadata_disclosure import (  # noqa: E402
@@ -84,6 +85,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
 )
 
 from tests.hamcp209_fixtures import (  # noqa: E402
+    SYNTHETIC_DEVICE_ID,
     SyntheticHomeAssistant,
     SyntheticRest,
     SyntheticWebSocket,
@@ -240,7 +242,8 @@ class BoundedRequestTests(unittest.IsolatedAsyncioTestCase):
         operations = result.profile["request_count_by_operation"]
         self.assertNotIn("automation_config", operations)
         self.assertEqual(operations["loaded_automation_config_batch"], 1)
-        # /config, /states, entity registry, label registry, one batch.
+        # /config, /states, entity registry, the display-only service
+        # registry, one batch.
         self.assertLessEqual(result.profile["request_count"], 5)
         self.assertEqual(result.profile["loaded_config_connection_count"], 1)
         self.assertEqual(result.profile["loaded_config_command_count"], 226)
@@ -1291,22 +1294,89 @@ def _leaks(token: str, planted: dict[str, str]) -> list[str]:
     return sorted(leaked)
 
 
+def _generated_identifier() -> str:
+    """Reviewer's generator: lowercase, identifier-shaped, >159 random bits."""
+
+    consonants = "bcdfghjklmnpqrstvwxyz"
+    return "_".join(
+        "".join(secrets.choice(consonants) for _ in range(4)) + secrets.choice("aeiou")
+        for _ in range(8)
+    )
+
+
+def _generated_leaks(text: str, value: str) -> bool:
+    """The value, or any two adjacent chunks of it, appear in ``text``."""
+
+    chunks = value.split("_")
+    return value in text or any(
+        "_".join(chunks[index:index + 2]) in text for index in range(len(chunks) - 1)
+    )
+
+
+# A dictionary-like lowercase literal that no registry holds.
+_UNREGISTERED_WORDS = "porch_lantern_glow"
+
+
+def _display_registry(
+    *, entities=(), devices=(), areas=(), floors=(), labels=(),
+    services=None, domains=(), complete=True,
+):
+    members = {
+        "entity": frozenset(entities), "device": frozenset(devices),
+        "area": frozenset(areas), "floor": frozenset(floors), "label": frozenset(labels),
+    }
+    return _EffectDisplayRegistry(
+        members=members,
+        complete={kind: complete for kind in members},
+        services=services,
+        domains=frozenset(domains),
+        sources={},
+    )
+
+
+_ORDINARY_REGISTRY = dict(
+    entities={"light.synthetic_kitchen", "climate.synthetic_hall"},
+    devices={SYNTHETIC_DEVICE_ID},
+    areas={"synthetic_living_room"},
+    floors={"synthetic_ground"},
+    labels={"synthetic_downstairs"},
+    services={
+        "light.turn_on": frozenset({"brightness", "transition"}),
+        "climate.set_hvac_mode": frozenset({"hvac_mode"}),
+        "rest_command.synthetic": frozenset(),
+    },
+    domains={"light", "climate", "rest_command"},
+)
+
+
 class EffectDisplayAllowlistTests(unittest.TestCase):
-    """Reviewer H1: only known-safe grammar is shown verbatim (allowlist)."""
+    """Reviewer H1 residual: only registry members, numbers and enums are verbatim."""
 
-    def filter_for(self, config, known=frozenset()):
-        return _EffectDisplayFilter(config, secret=SECRET, known_identifiers=known)
+    def filter_for(self, config, **registry):
+        values = {**_ORDINARY_REGISTRY, **registry}
+        return _EffectDisplayFilter(config, secret=SECRET, registry=_display_registry(**values))
 
-    def test_planted_values_are_digested_in_every_position(self):
-        planted = _planted_values()
+    def assert_digested(self, token, value):
+        self.assertNotIn(value, token)
+        self.assertIn("redacted_sha256:", token)
+
+    def test_unregistered_values_are_digested_in_every_position(self):
+        planted = {
+            **_planted_values(),
+            "generated_lowercase": _generated_identifier(),
+            "dictionary_lowercase": _UNREGISTERED_WORDS,
+        }
         for name, value in planted.items():
             with self.subTest(case=name):
                 folded = value.lower()
                 config = {"action": [
-                    {"service": "light.turn_on", "target": {"label_id": value}},
+                    {"service": "light.turn_on", "target": {
+                        "label_id": value, "area_id": folded, "device_id": folded,
+                        "floor_id": folded}},
                     {"service": "rest_command." + folded, "data": {value: 7}},
-                    {"service": "light.turn_on", "data": {"transition": value}},
-                    {"service": folded + ".turn_on", "target": {"entity_id": folded + ".x"}},
+                    {"service": "light.turn_on", "data": {"transition": value, folded: 7}},
+                    {"service": folded + ".turn_on", "target": {"entity_id": "light." + folded}},
+                    {"service": "rest_command.synthetic", "data": {folded: 7}},
                 ]}
                 display = self.filter_for(config)
                 tokens = [
@@ -1314,74 +1384,115 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
                     display.target("action[0].target.label_id|label_id|" + value),
                     display.target("action[0].target.area_id|area_id|" + folded),
                     display.target("action[0].target.device_id|device_id|" + folded),
-                    display.target("action[3].target.entity_id|entity_id|" + folded + ".x"),
+                    display.target("action[0].target.floor_id|floor_id|" + folded),
+                    display.target("action[3].target.entity_id|entity_id|light." + folded),
                     display.target("action[0].target.label_id|" + folded + "|x"),
                     display.target(folded + "|label_id|x"),
+                    # A registered value under a path that is not a projected step.
+                    display.target(
+                        "action[0].target." + folded + ".label_id|label_id|synthetic_downstairs"
+                    ),
                     display.data("action[2].data.transition=" + folded),
                     display.data("action[2].data.transition=" + value),
                     display.data("action[1].data." + folded + "=7"),
+                    display.data("action[2].data." + folded + "=7"),
+                    display.data("action[4].data." + folded + "=7"),
                     display.data(folded),
                     display.service("rest_command." + folded),
+                    display.service(folded + ".turn_on"),
                     display.service(folded),
                     display.domain(folded),
-                    display.domain(folded.split(".", 1)[0]),
                 ]
                 for token in tokens:
                     self.assertEqual(_leaks(token, planted), [], token)
+                    self.assertNotIn(folded, token)
                     self.assertIn("redacted_sha256:", token)
+                self.assertFalse(display.unverified)
 
-    def test_ordinary_values_stay_verbatim(self):
-        # A Home Assistant device ID shape (32 hex), built at runtime.
-        device = hashlib.sha256(b"synthetic-device").hexdigest()[:32]
+    def test_registered_values_stay_verbatim(self):
         config = {"action": [
             {"service": "light.turn_on",
              "target": {"entity_id": ["light.synthetic_kitchen", "all"],
                         "area_id": "synthetic_living_room",
+                        "floor_id": "synthetic_ground",
                         "label_id": "synthetic_downstairs",
-                        "device_id": device},
-             "data": {"brightness": 10, "transition": 2.5, "hvac_mode": "heat_cool"}},
+                        "device_id": SYNTHETIC_DEVICE_ID},
+             "data": {"brightness": 10, "transition": 2.5}},
+            {"service": "climate.set_hvac_mode",
+             "target": {"entity_id": "climate.synthetic_hall"},
+             "data": {"hvac_mode": "heat_cool"}},
         ]}
-        display = self.filter_for(config, known=frozenset({device}))
+        display = self.filter_for(config)
         for token in (
-            "action[0].target.entity_id|entity_id|light.synthetic_kitchen",
-            "action[0].target.entity_id|entity_id|all",
+            "action[0].target.entity_id[0]|entity_id|light.synthetic_kitchen",
+            "action[0].target.entity_id[1]|entity_id|all",
             "action[0].target.area_id|area_id|synthetic_living_room",
+            "action[0].target.floor_id|floor_id|synthetic_ground",
             "action[0].target.label_id|label_id|synthetic_downstairs",
-            # Registry identifiers are shown even though hex-shaped.
-            "action[0].target.device_id|device_id|" + device,
+            "action[0].target.device_id|device_id|" + SYNTHETIC_DEVICE_ID,
+            "action[1].target.entity_id|entity_id|climate.synthetic_hall",
             "action[0].target.entity_id|entity_id|sha256:" + "0" * 64,
-            "action[0].target.event_type|event_type|redacted_sha256:" + "1" * 64,
         ):
             with self.subTest(token=token):
-                if "|event_type|" in token:
-                    self.assertTrue(display.target(token).startswith(
-                        "action[0].target.event_type|event_type|redacted_sha256:"))
-                else:
-                    self.assertEqual(display.target(token), token)
+                self.assertEqual(display.target(token), token)
+        self.assertTrue(display.target(
+            "action[0].event|event_type|redacted_sha256:" + "1" * 64
+        ).startswith("action[0].event|event_type|redacted_sha256:"))
         for token in (
             "action[0].data.brightness=10",
             "action[0].data.transition=2.5",
-            "action[0].data.hvac_mode=heat_cool",
-            "action[0].data.enabled=true",
-            "action[0].data.value=dynamic_sha256:" + "a" * 64,
+            "action[0].data.transition=true",
+            "action[1].data.hvac_mode=heat_cool",
+            "action[0].data.brightness=dynamic_sha256:" + "a" * 64,
             "overflow_sha256:" + "b" * 64,
         ):
             with self.subTest(token=token):
                 self.assertEqual(display.data(token), token)
         self.assertEqual(display.service("light.turn_on"), "light.turn_on")
+        self.assertEqual(display.service("climate.set_hvac_mode"), "climate.set_hvac_mode")
         self.assertEqual(display.domain("light"), "light")
+        self.assertFalse(display.unverified)
 
-    def test_provenance_is_required(self):
-        """Grammar alone is not enough: the exact spelling must be configured."""
+    def test_each_position_requires_registry_membership(self):
+        """A registered value of one kind does not admit another position."""
 
-        display = self.filter_for({"action": [{"target": {"label_id": "Synthetic_Mixed"}}]})
-        # A lowercased projection of a mixed-case value is not a literal.
+        config = {"action": [
+            {"service": "light.turn_on",
+             "target": {"label_id": "synthetic_living_room", "area_id": "synthetic_downstairs",
+                        "device_id": "synthetic_ground", "floor_id": SYNTHETIC_DEVICE_ID,
+                        "entity_id": "light.synthetic_unregistered"},
+             "data": {"hvac_mode": "heat", "brightness": 10}},
+        ]}
+        display = self.filter_for(config)
+        for token, value in (
+            ("action[0].target.label_id|label_id|synthetic_living_room", "synthetic_living_room"),
+            ("action[0].target.area_id|area_id|synthetic_downstairs", "synthetic_downstairs"),
+            ("action[0].target.device_id|device_id|synthetic_ground", "synthetic_ground"),
+            ("action[0].target.floor_id|floor_id|" + SYNTHETIC_DEVICE_ID, SYNTHETIC_DEVICE_ID),
+            ("action[0].target.entity_id|entity_id|light.synthetic_unregistered",
+             "light.synthetic_unregistered"),
+        ):
+            with self.subTest(token=token):
+                self.assert_digested(display.target(token), value)
+        # A key of another service's schema is not this step's data key.
+        self.assert_digested(display.data("action[0].data.hvac_mode=heat"), "hvac_mode")
+        # An unregistered service of a registered domain, and the reverse.
+        self.assert_digested(display.service("light.flicker"), "flicker")
+        self.assert_digested(display.domain("rest_commands"), "rest_commands")
+        # A data path the projection cannot emit for this configuration.
+        self.assert_digested(display.data("action[7].data.brightness=10"), "action[7]")
+        self.assert_digested(display.data("action[0].data.brightness.inner=10"), "inner")
+        self.assert_digested(display.data("action[0].event_data.brightness=10"), "event_data")
+
+    def test_enum_words_require_a_literal_configuration(self):
+        display = self.filter_for({"action": [
+            {"service": "climate.set_hvac_mode", "data": {"hvac_mode": "{{ mode }}"}},
+            {"service": "light.turn_on", "target": {"entity_id": "{{ targets }}"}},
+        ]})
+        self.assertIn("redacted_sha256:", display.data("action[0].data.hvac_mode=heat"))
         self.assertIn(
-            "redacted_sha256:",
-            display.target("action[0].target.label_id|label_id|synthetic_mixed"),
+            "redacted_sha256:", display.target("action[1].target.entity_id|entity_id|all"),
         )
-        # An enum word shown only when configured.
-        self.assertIn("redacted_sha256:", display.data("action[0].data.preset_mode=away"))
         # A digest-shaped configuration string is not a generated digest.
         fake = "sha256:" + "c" * 64
         display = self.filter_for({"action": [{"target": {"label_id": fake}}]})
@@ -1390,32 +1501,133 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
             display.target("action[0].target.label_id|label_id|" + fake),
         )
 
-    def test_registry_identifier_the_sanitizer_recognizes_is_digested(self):
-        """Registry provenance skips the grammar, never the sanitizer."""
+    def test_registered_value_the_sanitizer_recognizes_is_digested(self):
+        """Registry membership skips no sanitizer or known-secret check."""
 
         jwt = _planted_values()["jwt"]
-        config = {"action": [{"target": {"label_id": jwt}}]}
-        display = self.filter_for(config, known=frozenset({jwt}))
-        shown = display.target("action[0].target.label_id|label_id|" + jwt)
-        self.assertNotIn(jwt, shown)
-        self.assertIn("redacted_sha256:", shown)
-        ordinary = self.filter_for(config, known=frozenset({"synthetic_label"}))
-        self.assertEqual(
-            ordinary.target("action[0].target.label_id|label_id|synthetic_label"),
-            "action[0].target.label_id|label_id|synthetic_label",
+        config = {"action": [{"service": "light.turn_on", "target": {"label_id": jwt}}]}
+        display = self.filter_for(config, labels={jwt.lower()})
+        self.assert_digested(display.target("action[0].target.label_id|label_id|" + jwt.lower()), jwt.lower())
+        display = self.filter_for(
+            {"action": [{"service": "light.turn_on", "target": {"label_id": SECRET}}]},
+            labels={SECRET},
+        )
+        self.assert_digested(display.target("action[0].target.label_id|label_id|" + SECRET), SECRET)
+
+    def test_known_numeric_and_enum_values_are_digested(self):
+        """Reviewer M: numbers, JSON literals and enum words pass the sanitizer too."""
+
+        number = "".join(str(digit) for digit in (4, 3, 8, 2, 7, 1, 9, 0, 5, 8, 2, 6, 3, 4, 1))
+        config = {"action": [
+            {"service": "light.turn_on",
+             "target": {"entity_id": ["all", "light.synthetic_kitchen"]},
+             "data": {"transition": number, "brightness": 10}},
+            {"service": "climate.set_hvac_mode", "data": {"hvac_mode": "heat"}},
+        ]}
+        for known, token in (
+            (number, "action[0].data.transition=" + number),
+            ("heat", "action[1].data.hvac_mode=heat"),
+            ("true", "action[0].data.transition=true"),
+        ):
+            with self.subTest(known=known):
+                display = _EffectDisplayFilter(
+                    config, secret=known, registry=_display_registry(**_ORDINARY_REGISTRY),
+                )
+                shown = display.data(token)
+                self.assertNotIn("=" + known, shown)
+                self.assertTrue(shown.startswith(token.split("=", 1)[0] + "=redacted_sha256:"))
+                self.assertEqual(display.data("action[0].data.brightness=10"),
+                                 "action[0].data.brightness=10")
+        display = _EffectDisplayFilter(
+            config, secret="all", registry=_display_registry(**_ORDINARY_REGISTRY),
+        )
+        self.assert_digested(
+            display.target("action[0].target.entity_id[0]|entity_id|all"), "|all",
         )
 
-    def test_sanitizer_recognized_values_are_digested(self):
-        config = {"action": [{"target": {"label_id": SECRET}}]}
-        display = self.filter_for(config)
-        self.assertNotIn(SECRET, display.target("action[0].target.label_id|label_id|" + SECRET))
+    def test_unavailable_registry_digests_and_marks_unverified(self):
+        config = {"action": [
+            {"service": "light.turn_on",
+             "target": {"entity_id": "light.synthetic_kitchen", "area_id": "synthetic_living_room"},
+             "data": {"brightness": 10}},
+        ]}
+        cases = {
+            "services": dict(services=None),
+            "area": dict(areas=(), complete=False),
+        }
+        for name, override in cases.items():
+            with self.subTest(case=name):
+                values = {**_ORDINARY_REGISTRY, **override}
+                display = _EffectDisplayFilter(
+                    config, secret=SECRET, registry=_display_registry(**values),
+                )
+                if name == "services":
+                    self.assertIn("redacted_sha256:", display.service("light.turn_on"))
+                    self.assertIn("redacted_sha256:", display.data("action[0].data.brightness=10"))
+                else:
+                    self.assertIn("redacted_sha256:", display.target(
+                        "action[0].target.area_id|area_id|synthetic_living_room"))
+                self.assertTrue(display.unverified)
+        # An incomplete registry never shows a value it does not hold.
+        display = _EffectDisplayFilter(config, secret=SECRET, registry=_display_registry(
+            **{**_ORDINARY_REGISTRY, "complete": False},
+        ))
+        self.assertEqual(
+            display.target("action[0].target.entity_id|entity_id|light.synthetic_kitchen"),
+            "action[0].target.entity_id|entity_id|light.synthetic_kitchen",
+        )
+        self.assertFalse(display.unverified)
+
+    def test_service_registry_schema_is_validated_and_bounded(self):
+        from ha_mcp_engineering.dependency import provider as module
+
+        domains, services = module._service_registry_schema([
+            {"domain": "light", "services": {"turn_on": {"fields": {
+                "brightness": {},
+                "advanced_fields": {"collapsed": True, "fields": {"flash": {}}},
+            }}}},
+        ])
+        self.assertEqual(domains, frozenset({"light"}))
+        self.assertEqual(services, {"light.turn_on": frozenset({"brightness", "flash"})})
+        for rows in (
+            {"domain": "light"},
+            [{"domain": "light", "services": []}],
+            [{"domain": 7, "services": {}}],
+            [{"domain": "light", "services": {"turn_on": "x"}}],
+            [{"domain": "light", "services": {"turn_on": {"fields": "x"}}}],
+            ["light"],
+        ):
+            with self.subTest(rows=rows):
+                self.assertIsNone(module._service_registry_schema(rows))
+        with patch.object(module, "MAX_EFFECT_DISPLAY_SERVICES", 1):
+            self.assertIsNone(module._service_registry_schema([
+                {"domain": "light", "services": {"turn_on": {}, "turn_off": {}}},
+            ]))
+        with patch.object(module, "MAX_EFFECT_DISPLAY_SERVICE_FIELDS", 1):
+            self.assertIsNone(module._service_registry_schema([
+                {"domain": "light", "services": {"turn_on": {"fields": {"a": {}, "b": {}}}}},
+            ]))
+        self.assertIsNone(module._registry_identifiers([{"area_id": None}], "area_id"))
+        self.assertIsNone(module._registry_identifiers({"area_id": "x"}, "area_id"))
+        with patch.object(module, "MAX_EFFECT_DISPLAY_REGISTRY_ENTRIES", 1):
+            self.assertIsNone(module._registry_identifiers(
+                [{"area_id": "a"}, {"area_id": "b"}], "area_id",
+            ))
+        self.assertEqual(
+            module._registry_identifiers([{"area_id": "Synthetic_Room"}], "area_id"),
+            frozenset({"synthetic_room"}),
+        )
 
 
 class EffectDisplayScanTests(unittest.IsolatedAsyncioTestCase):
     """Every projection position of a real scan goes through the allowlist."""
 
     async def test_planted_values_never_reach_a_profile_position(self):
-        planted = _planted_values()
+        planted = {
+            **_planted_values(),
+            "generated_lowercase": _generated_identifier(),
+            "dictionary_lowercase": _UNREGISTERED_WORDS,
+        }
         for name, value in planted.items():
             with self.subTest(case=name):
                 config = {
@@ -1516,6 +1728,258 @@ class EffectDisplayPlanPersistenceTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("light.synthetic_kitchen", text, label)
                     self.assertIn("action[0].data.brightness=10", text, label)
                     self.assertIn("action[0].target.label_id|label_id|redacted_sha256:", text, label)
+
+
+
+_GENERATED_POSITIONS = (
+    "label_id", "device_id", "area_id", "floor_id", "entity_id",
+    "data_value", "data_key", "service", "domain",
+)
+
+
+def _positioned_action(position: str, value: str) -> dict:
+    """The reviewer's probe: one unregistered value in one projection position."""
+
+    action = {
+        "service": "light.turn_on",
+        "target": {"entity_id": "light.synthetic_kitchen"},
+        "data": {"brightness": 10},
+    }
+    if position in ("label_id", "device_id", "area_id", "floor_id"):
+        action["target"][position] = value
+    elif position == "entity_id":
+        action["target"]["entity_id"] = ["light.synthetic_kitchen", "light." + value]
+    elif position == "data_value":
+        action["data"]["transition"] = value
+    elif position == "data_key":
+        action["data"][value] = 7
+    elif position == "service":
+        action["service"] = "rest_command." + value
+    elif position == "domain":
+        action["service"] = value + ".turn_on"
+    return action
+
+
+def _single_automation(action, trigger_entity="input_boolean.synthetic_gate"):
+    config = {
+        "id": "synthetic_package",
+        "alias": "Synthetic package",
+        "trigger": [{"platform": "state", "entity_id": trigger_entity}],
+        "action": [action] if isinstance(action, dict) else action,
+    }
+    return SyntheticHomeAssistant([
+        record("automation.synthetic_package", None,
+               automation_id="synthetic_package", loaded=config),
+    ])
+
+
+async def _helper_plan(ha, gateway, *, secret=SECRET, sensitive_values=()):
+    """Create a helper-state plan; return (result, response text, plan files text)."""
+
+    from ha_mcp_engineering.governance.service import ChangeGovernanceService
+    from ha_mcp_engineering.governance.storage import ChangePlanRepository
+    from tests.test_beta37_exact_helper_state import Clock, UnusedLegacyGateway
+
+    index = DependencyIndex(DirectHaDependencyProvider(
+        _AnalysisRest(ha), _AnalysisWebSocket(ha), secret=secret,
+    ))
+    with tempfile.TemporaryDirectory(prefix="hamcp209-plan-") as directory:
+        service = ChangeGovernanceService(
+            ChangePlanRepository(Path(directory) / "plans"),
+            UnusedLegacyGateway(),
+            now=Clock(),
+            helper_state_gateway=gateway,
+            helper_dependency_risk_reader=HelperDependencyRiskService(index).assess,
+            sensitive_values=sensitive_values,
+            plan_observability_cursor_key=b"synthetic-plan-key" * 2,
+        )
+        result = await service.create_helper_state_plan(
+            entity_id=gateway.entity_id, desired_state="on",
+        )
+        stored = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted(Path(directory).rglob("*.json"))
+        )
+    return result, _serialized(result), stored
+
+
+class EffectDisplayRegistryScanTests(unittest.IsolatedAsyncioTestCase):
+    """Reviewer H1 residual through a real scan and a persisted plan."""
+
+    async def test_generated_lowercase_value_is_digested_in_every_position(self):
+        from tests.test_beta37_exact_helper_state import FakeHelperStateGateway
+
+        for value_name, value in (
+            ("generated", _generated_identifier()),
+            ("dictionary", _UNREGISTERED_WORDS),
+        ):
+            for position in _GENERATED_POSITIONS:
+                with self.subTest(value=value_name, position=position):
+                    gateway = FakeHelperStateGateway()
+                    ha = _single_automation(
+                        _positioned_action(position, value), gateway.entity_id,
+                    )
+                    scan = await provider_for(ha).scan()
+                    profile = asdict(scan.automation_action_profiles[0])
+                    scan_text = json.dumps(profile, sort_keys=True)
+                    result, response, stored = await _helper_plan(ha, gateway)
+                    self.assertTrue(stored)
+                    self.assertEqual(gateway.dispatch_count, 0)
+                    for label, text in (
+                        ("scan", scan_text), ("response", response), ("plan file", stored),
+                    ):
+                        self.assertFalse(_generated_leaks(text, value), f"{position} in {label}")
+                        self.assertIn("redacted_sha256:", text, label)
+                        # Not vacuous: registered values stay readable.
+                        self.assertIn(
+                            "action[0].target.entity_id"
+                            + ("[0]" if position == "entity_id" else "")
+                            + "|entity_id|light.synthetic_kitchen",
+                            text, label,
+                        )
+                        if position not in ("service", "domain"):
+                            self.assertIn("action[0].data.brightness=10", text, label)
+                            self.assertIn("light.turn_on", text, label)
+                    self.assertFalse(profile["presentation_truncated"])
+                    self.assertEqual(scan.profile["effect_display_unverified_profiles"], 0)
+
+    async def test_registered_values_stay_verbatim_through_scan(self):
+        ha = _single_automation([
+            {"service": "light.turn_on",
+             "target": {"entity_id": "light.synthetic_kitchen",
+                        "area_id": "synthetic_living_room", "floor_id": "synthetic_ground",
+                        "label_id": "synthetic_downstairs", "device_id": SYNTHETIC_DEVICE_ID},
+             "data": {"brightness": 10, "rgb_color": [1, 2, 3]}},
+            {"service": "climate.set_hvac_mode",
+             "target": {"entity_id": "climate.synthetic_hall"},
+             "data": {"hvac_mode": "heat_cool"}},
+        ])
+        scan = await provider_for(ha).scan()
+        profile = asdict(scan.automation_action_profiles[0])
+        for token in (
+            "action[0].target.entity_id|entity_id|light.synthetic_kitchen",
+            "action[0].target.area_id|area_id|synthetic_living_room",
+            "action[0].target.floor_id|floor_id|synthetic_ground",
+            "action[0].target.label_id|label_id|synthetic_downstairs",
+            "action[0].target.device_id|device_id|" + SYNTHETIC_DEVICE_ID,
+            "action[1].target.entity_id|entity_id|climate.synthetic_hall",
+        ):
+            self.assertIn(token, profile["effect_targets"])
+        for token in (
+            "action[0].data.brightness=10",
+            "action[0].data.rgb_color[0]=1",
+            "action[1].data.hvac_mode=heat_cool",
+        ):
+            self.assertIn(token, profile["effect_data"])
+        self.assertEqual(set(profile["services"]), {"light.turn_on", "climate.set_hvac_mode"})
+        self.assertEqual(set(profile["action_domains"]), {"light", "climate"})
+        self.assertFalse(profile["presentation_truncated"])
+        sources = scan.profile["effect_display_registry"]
+        self.assertEqual(sources["service"]["registry_read"], "complete")
+        # The label is already known from the entity registry: no extra read.
+        self.assertEqual(sources["label"]["registry_read"], "not_needed")
+        for kind in ("device", "area", "floor"):
+            self.assertEqual(sources[kind]["registry_read"], "complete", kind)
+        counts = scan.profile["request_count_by_operation"]
+        self.assertEqual(counts["effect_display_service_registry"], 1)
+        self.assertNotIn("effect_display_label_registry", counts)
+
+    async def test_no_target_registry_read_when_not_needed(self):
+        ha = _single_automation({
+            "service": "light.turn_on", "target": {"entity_id": "light.synthetic_kitchen"},
+        })
+        scan = await provider_for(ha).scan()
+        counts = scan.profile["request_count_by_operation"]
+        self.assertEqual(
+            sorted(key for key in counts if key.startswith("effect_display_")),
+            ["effect_display_service_registry"],
+        )
+        # No automation: no registry read at all.
+        scan = await provider_for(SyntheticHomeAssistant([])).scan()
+        self.assertFalse(any(
+            key.startswith("effect_display_") for key in scan.profile["request_count_by_operation"]
+        ))
+        self.assertEqual(scan.profile["effect_display_registry"], {})
+
+    async def test_unavailable_registry_fails_closed_and_is_partial(self):
+        action = {
+            "service": "light.turn_on",
+            "target": {"entity_id": "light.synthetic_kitchen", "area_id": "synthetic_living_room"},
+            "data": {"brightness": 10},
+        }
+        malformed = [{"domain": "light", "services": "not-a-mapping"}]
+        for name, failures, overrides in (
+            ("services raises", {"services"}, {}),
+            ("services malformed", set(), {"services": malformed}),
+            ("area raises", {"config/area_registry/list"}, {}),
+            ("area malformed", set(), {"config/area_registry/list": [{"area_id": 7}]}),
+        ):
+            with self.subTest(case=name):
+                ha = _single_automation(action)
+                ha.registry_failures = failures
+                ha.registry_overrides = overrides
+                scan = await provider_for(ha).scan()
+                profile = asdict(scan.automation_action_profiles[0])
+                self.assertTrue(profile["presentation_truncated"])
+                self.assertEqual(scan.profile["effect_display_unverified_profiles"], 1)
+                warnings = coverage_of(scan, "entity_metadata").warnings
+                self.assertIn(
+                    "Home Assistant registry data for effect display was unavailable; "
+                    "1 automation profile(s) show unverified values as digests.",
+                    warnings,
+                )
+                # Registered entity targets are still shown; the scan is not failed.
+                self.assertIn(
+                    "action[0].target.entity_id|entity_id|light.synthetic_kitchen",
+                    profile["effect_targets"],
+                )
+                sources = scan.profile["effect_display_registry"]
+                if name.startswith("services"):
+                    self.assertEqual(sources["service"]["registry_read"], "unavailable")
+                    self.assertNotIn("light.turn_on", profile["services"])
+                    self.assertNotIn("action[0].data.brightness=10", profile["effect_data"])
+                    self.assertIn("light", profile["action_domains"])
+                else:
+                    self.assertEqual(sources["area"]["registry_read"], "unavailable")
+                    self.assertNotIn(
+                        "action[0].target.area_id|area_id|synthetic_living_room",
+                        profile["effect_targets"],
+                    )
+                    self.assertIn("light.turn_on", profile["services"])
+                self.assertEqual(coverage_of(scan).completeness, "complete")
+
+    async def test_known_numeric_value_is_digested_and_the_plan_succeeds(self):
+        """Reviewer M: a known value matching the number grammar is a digest, not a refusal."""
+
+        from tests.test_beta37_exact_helper_state import FakeHelperStateGateway
+
+        number = "".join(str(digit) for digit in (4, 3, 8, 2, 7, 1, 9, 0, 5, 8, 2, 6, 3, 4, 1))
+        for name, data in (
+            ("number", {"transition": number}),
+            ("enum", {"hvac_mode": "heat"}),
+        ):
+            with self.subTest(case=name):
+                known = number if name == "number" else "heat"
+                gateway = FakeHelperStateGateway()
+                service = "light.turn_on" if name == "number" else "climate.set_hvac_mode"
+                ha = _single_automation({
+                    "service": service,
+                    "target": {"entity_id": "light.synthetic_kitchen"},
+                    "data": {**data, "brightness": 10} if name == "number" else data,
+                }, gateway.entity_id)
+                result, response, stored = await _helper_plan(
+                    ha, gateway, secret=known, sensitive_values=(known,),
+                )
+                self.assertEqual(gateway.dispatch_count, 0)
+                self.assertTrue(stored)
+                key = next(iter(data))
+                for label, text in (("response", response), ("plan file", stored)):
+                    self.assertNotIn(f"data.{key}={known}", text, label)
+                    self.assertIn(f"action[0].data.{key}=redacted_sha256:", text, label)
+                    if name == "number":
+                        self.assertNotIn(known, text, label)
+                        self.assertIn("action[0].data.brightness=10", text, label)
+                self.assertNotEqual(result.get("status"), "refused")
 
 
 if __name__ == "__main__":

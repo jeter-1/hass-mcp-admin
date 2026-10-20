@@ -298,38 +298,84 @@ support window; stable v1.
   was trusted as a generated digest, and the delimiter moved the screened
   suffix), reaching helper-state plan responses and plan files lowercased.
 
-  `dependency/provider.py` `_EffectDisplayFilter` is now an **allowlist** for
-  every verbatim position (`action_domains`, `services`, `effect_targets`,
-  `effect_data`). A value is shown verbatim only if all of the following hold;
-  otherwise its position shows `redacted_sha256:<digest>`:
-  - it matches the position's grammar: entity ID or service
-    (`[a-z0-9_]+.[a-z0-9_]+`), slug for device, area, floor and label IDs and
-    domains, configuration path for the token's path and data keys, a number,
-    `true`/`false`/`null`, or a fixed set of enum words (`all`/`none` targets;
-    HVAC and preset modes);
-  - its pieces look ordinary: each at most 24 characters, no long digit run,
-    few letter-digit alternations, no long consonant run;
-  - it has literal provenance: the exact displayed spelling is a string in the
-    configuration (so a lowercased projection of a mixed-case value is
-    digested), or a registry identifier (entity, device, area or label);
-  - the shared sanitizer does not recognize it in any original spelling.
+  The second fix, an allowlist based on identifier shape (grammar, piece
+  length, digit runs, letter-digit alternation), was replaced after delta
+  review H1 residual: a high-entropy lowercase identifier and a
+  dictionary-word literal both passed it.
+
+  `dependency/provider.py` `_EffectDisplayFilter` now admits a value for
+  verbatim display by **registry membership** at every verbatim position
+  (`action_domains`, `services`, `effect_targets`, `effect_data`). Otherwise
+  the position shows `redacted_sha256:<digest>`. A value is shown verbatim
+  only if one of the following holds and the shared sanitizer, including the
+  provider's known secret, leaves every original spelling unchanged:
+  - **target** (`path|selector|value`): the path is an action step path that
+    the projection emits for this exact configuration, followed by the
+    field spelling for that selector; and the value is a registered ID of
+    the selector's kind:
+    - entity: the state machine or the entity registry, both already read by
+      the scan;
+    - device, area, floor or label: `config/<kind>_registry/list`.
+    The enum words `all`/`none` are admitted only as entity targets that were
+    configured literally;
+  - **service** or **domain**: the service is in Home Assistant's service
+    registry (`GET /services`, already in the reviewed REST route templates).
+    The domain is a service-registry domain, an entity-ID domain or an
+    entity-registry platform;
+  - **data** (`path.data.key=value`): the step is an emitted step path. The
+    key is a field of that step's registered service schema (fields inside
+    `sections` count; a section name does not) or a target key. The value is
+    a number, `true`/`false`/`null`, or a fixed HVAC/preset enum word that was
+    configured literally. A numeric or enum value is screened by the sanitizer
+    and the known-secret check like any other value (review M); a match
+    digests the value for display only and never refuses a plan.
+    `event_data` keys and nested data keys are always digested.
+
   A digest token (`sha256:`, `dynamic_sha256:`, `oversized_sha256:`,
   `overflow_sha256:`) is shown as generated only when its text is not itself a
-  configuration string; provenance never comes from a prefix. Tokens are
-  split left-first, the path and selector are screened too, and an unknown
-  shape digests the whole token.
+  configuration string; provenance never comes from a prefix. A token of an
+  unknown shape is digested whole.
 
-  The projection's fingerprints are computed upstream from the raw values and
-  are unchanged, so plan binding is unchanged; the digests are display only.
-  The helper `downstream_profiles` evidence material changes only where a
-  token is digested. Entity-metadata label matching is unchanged for ordinary
-  slugs and registry labels.
+  Registry reads are display-only, bounded (20,000 registry entries; 10,000
+  services and 100,000 service fields), and use no new permission:
+  - one `GET /services` per build that has automation profiles;
+  - a device, area, floor or label registry read only when a target of that
+    kind is not already an entity-registry member or a generated digest.
+  A malformed or oversized response is unavailable. The scan profile reports
+  the sources (`effect_display_registry`, with
+  `complete`/`unavailable`/`not_needed` per kind) and
+  `effect_display_unverified_profiles`.
 
-  Residual: a lowercase identifier-shaped string that is configured literally
-  and passes the shape checks (for example a dictionary-word passphrase in a
-  label target) is shown, because without a dictionary it cannot be told from
-  a name. Values that are not registry identifiers and fail the shape checks
-  (some vendor-style IDs such as `158d0001`) are digested.
+  When the registry that could admit a value is unavailable, the value is
+  digested (fail closed). Its profile is marked `presentation_truncated`, and
+  the entity-metadata coverage carries the warning that registry data for
+  effect display was unavailable.
+
+  **Binding.** The projection's raw `effect`, profile and index fingerprints
+  are computed upstream from the raw values, and they are unchanged. The
+  aggregate helper `evidence_fingerprint` (`stable_hash` over the
+  `downstream_profiles` material) does change:
+  - it covers the displayed values and `presentation_truncated`, so it
+    changes whenever a value is digested;
+  - that includes a change in registry availability or membership with an
+    unchanged configuration (for example, the service registry is briefly
+    unavailable, or a device is removed).
+  A plan bound to the earlier evidence then reports stale evidence and must
+  be re-planned. That fails closed; it never admits a write.
+
+  Residuals (disclosed):
+  - an entity target that is in neither the state machine nor the entity
+    registry is digested, so a target that does not exist yet is not shown;
+  - nested data keys and `event_data` keys are always digested;
+  - while registries are unavailable, entity-metadata label matching cannot
+    match a digested label or area target;
+  - each build adds one `/services` request, and a target-registry read when
+    needed. The Pi measurements were not re-run after this change.
+
+  Residual risk: a resolved secret that is itself a registered entity,
+  device, area, floor or label ID, a registered service, or a number or enum
+  that the sanitizer and the known-secret check do not recognize, is shown as
+  written. Home Assistant already exposes those values through its registries.
 
   `ResolvedSecretDisclosureTests` plants secret-shaped values (JWT, bearer,
   credential keys, URL userinfo and query, webhook ID, template and label
@@ -341,14 +387,10 @@ support window; stable v1.
   that the projection carries the digests. Without the fix, the test fails on
   the helper output (`safefield`, `target`, `targetjwt`).
 
-  Residual risk: a resolved secret in a key or format the sanitizer does not
-  recognize, at a position shown verbatim (a literal target ID or an
-  allowlisted numeric/mode data field), is shown as written. This is the same
-  as an inline literal in `automations.yaml`, which the old path already read.
 
 ## 5. Tests, parity and mutations
 
-`tests/test_hamcp209_fast_dependency_index.py` (37 tests, synthetic model in
+`tests/test_hamcp209_fast_dependency_index.py` (57 tests, synthetic model in
 `tests/hamcp209_fixtures.py`; the client tests use a disposable loopback
 WebSocket peer):
 
@@ -367,7 +409,11 @@ WebSocket peer):
   The recheck against `538a7c7` (beta.20) after the first `main` merge is also
   identical, with the same fingerprints (`recheck_after_main_merge`). So is the
   recheck against `c618884` (beta.22) after the second merge
-  (`recheck_after_beta22_merge`).
+  (`recheck_after_beta22_merge`). The rechecks after the first and second
+  review corrections (`recheck_after_review_corrections`,
+  `recheck_after_registry_display`) are identical against all three bases.
+  The generated fixture now lists the lights its automations target in the
+  state machine, which changes that set's view hash for every tree alike.
 - **Bounded requests** (`BoundedRequestTests`): 113 automations use one
   WebSocket connection with 226 commands, no `automation_config` REST read, and
   at most 5 provider requests in total. Unavailable and id-less candidates are
@@ -382,7 +428,7 @@ WebSocket peer):
   partial with `failed_item_count` 1. Partial coverage matches the stored path.
   A package automation is complete from loaded configuration (the intended
   difference).
-- **Pending-write journal** (`PendingWriteJournalTests`), 11 tests:
+- **Pending-write journal** (`PendingWriteJournalTests`), 13 tests:
   - retention until reload, then clearing;
   - written-but-not-loaded is partial, including with an empty inventory;
   - a 404 clears an entry;
@@ -406,23 +452,38 @@ WebSocket peer):
   - duplicate or unknown ids and an early close are malformed;
   - withdrawn dispatch authority stops sending.
 - **Resolved-secret disclosure** (`ResolvedSecretDisclosureTests`): see §4.
-- **Effect display allowlist** (`EffectDisplayAllowlistTests`,
-  `EffectDisplayScanTests`, `EffectDisplayPlanPersistenceTests`): runtime-built
-  planted values (the review's JWT, `sha256:`-prefixed, `|`-delimited and
-  lowercased JWT, random hex and base62, random letters, URL credentials, a
-  base64 blob and a digest-shaped configuration string) are digested in
-  every position of the filter, of a real scan's profile, and of a real
-  helper-state plan's creation response and persisted plan files. Ordinary
-  entity IDs, slugs, registry IDs, numbers, booleans, enum words and generated
-  digests stay verbatim.
+- **Effect display by registry membership** (`EffectDisplayAllowlistTests`,
+  `EffectDisplayScanTests`, `EffectDisplayRegistryScanTests`,
+  `EffectDisplayPlanPersistenceTests`):
+  - runtime-built planted values are digested in every position of the
+    filter, of a real scan's profile, and of a real helper-state plan's
+    creation response and persisted plan files. They include the review's
+    JWT, a `sha256:`-prefixed, `|`-delimited and lowercased JWT, random hex
+    and base62, random letters, URL credentials, a base64 blob, a
+    digest-shaped configuration string, the delta review's high-entropy
+    lowercase generator and an unregistered dictionary-word literal;
+  - registered entity, device, area, floor and label IDs, registered
+    services and domains, schema data keys (including keys inside a service
+    `sections` entry), numbers, booleans, literally configured enum words
+    and generated digests stay verbatim;
+  - each position needs its own registry: a value registered for another
+    kind, service or step is digested;
+  - a registered value, number or enum word that the sanitizer or the known
+    secret matches is digested, and the plan still succeeds;
+  - an unavailable or malformed service or target registry digests, marks the
+    profile `presentation_truncated` and adds the coverage warning;
+  - a target registry is read only when needed, and the service-registry
+    schema is validated and bounded.
 - **Correction-batch coverage** (M1, M2): the review's WebSocket-failure
   reproduction is partial and names the automation whose loaded-only
   dependency is unverified; the review's overflow reproduction is partial on
   both builds; a sticky overflow survives a clean rewrite.
 - **Existing suites touched by the corrections.**
   `test_rc2dev4_release_hardening` pins the no-batch breakdown, which is now
-  the pre-HAMCP-209 one on `main` (6 requests, 3 `automation_config`, reason
-  `loaded_source_unsupported`, complete). In `test_core_semantic_continuity`
+  the pre-HAMCP-209 one on `main` (3 `automation_config`, reason
+  `loaded_source_unsupported`, complete), plus the display-only
+  `effect_display_service_registry` read: 7 requests. The loaded breakdown
+  is 5 requests. In `test_core_semantic_continuity`
   one test adds an automation, and its `_Network` socket cannot pipeline a
   batch, so the loaded source fails and M1 makes the build partial; the test
   now serves the loaded form through `command_batch` so it still proves a
@@ -432,10 +493,12 @@ WebSocket peer):
 Two existing tests change. `test_rc2dev4_release_hardening`
 `test_cold_build_profile_has_bounded_request_breakdown` pinned the old
 per-automation breakdown (3 `automation_config` reads, 6 requests). It now pins
-the loaded breakdown: 4 requests, one `loaded_automation_config_batch`. A new
-sibling test pins the stored-only case: a client without `command_batch` gives
-7 requests, including the counted batch attempt, and
-`loaded_source_unavailable: 3`. CI shard 5 found this pin in run 39286251867.
+the loaded breakdown: one `loaded_automation_config_batch`, now with one
+`effect_display_service_registry` read (5 requests; 4 before correction
+batch 2). A new sibling test pins the stored-only case: a client without
+`command_batch` gives the pre-HAMCP-209 breakdown (3 `automation_config`,
+`loaded_source_unsupported: 3`) plus the service-registry read, 7 requests.
+CI shard 5 found this pin in run 39286251867.
 The focused module set used locally had missed it.
 
 `test_hamcp191_shared_sanitizer` keeps a committed table of every sanitizer
@@ -445,7 +508,7 @@ replaced `_display_safe_effect_tokens`). The focused rerun found the
 missing row (`test_every_sanitizer_call_site_is_in_the_committed_table`).
 
 Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`,
-`results.json`): 26 of 26 are killed and none survive.
+`results.json`): 47 of 47 are killed and none survive.
 
 | ID | Mutation (design item) | First failing test (recorded) |
 | --- | --- | --- |
@@ -460,14 +523,35 @@ Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`,
 | M7-allowlist-open | security: the batch admits any command | `test_only_fixed_read_shapes_are_admitted` |
 | M8-governed-write-not-journaled | design 4: the governed automation write skips the journal | `test_automation_gateway_journals_before_dispatch` |
 | M9-resource-write-not-journaled | design 4: the resource automation write skips the journal | `test_resource_gateway_journals_automation_only` |
-| R1-sanitizer-decision-bypassed | review: the shared-sanitizer decision in the effect display filter always passes | `test_registry_identifier_the_sanitizer_recognizes_is_digested` |
-| H1a-denylist-instead-of-allowlist | H1: values the sanitizer does not recognize are shown verbatim (denylist) | `test_planted_values_are_digested_in_every_position` |
-| H1b-hash-prefix-trusted | H1: a digest-shaped configuration string is trusted as a generated digest | `test_planted_values_are_digested_in_every_position` |
+| R1-sanitizer-decision-bypassed | review: the shared-sanitizer decision in the effect display filter always passes | `test_known_numeric_and_enum_values_are_digested` |
+| H1a-denylist-instead-of-allowlist | H1: values the sanitizer does not recognize are shown verbatim (denylist) | `test_each_position_requires_registry_membership` |
+| H1b-hash-prefix-trusted | H1: a digest-shaped configuration string is trusted as a generated digest | `test_enum_words_require_a_literal_configuration` |
 | H1c-target-position-bypasses-filter | H1: the effect-target position is copied verbatim | `test_jwt_variants_are_digested_in_plan_response_and_files` |
-| H1d-data-position-bypasses-filter | H1: the effect-data position is copied verbatim | `test_planted_values_never_reach_a_profile_position` |
-| H1e-service-position-bypasses-filter | H1: the service position is copied verbatim | `test_planted_values_never_reach_a_profile_position` |
-| H1f-domain-position-bypasses-filter | H1: the action-domain position is copied verbatim | `test_planted_values_never_reach_a_profile_position` |
-| H1g-literal-provenance-ignored | H1: identifier grammar alone admits a lowercased projection of a configured value | `test_provenance_is_required` |
+| H1d-data-position-bypasses-filter | H1: the effect-data position is copied verbatim | `test_generated_lowercase_value_is_digested_in_every_position` |
+| H1e-service-position-bypasses-filter | H1: the service position is copied verbatim | `test_generated_lowercase_value_is_digested_in_every_position` |
+| H1f-domain-position-bypasses-filter | H1: the action-domain position is copied verbatim | `test_generated_lowercase_value_is_digested_in_every_position` |
+| H1g-data-enum-provenance-ignored | H1: a data enum word is shown without being configured literally | `test_enum_words_require_a_literal_configuration` |
+| H1h-target-enum-provenance-ignored | H1: a target enum word (all/none) is shown without being configured literally | `test_enum_words_require_a_literal_configuration` |
+| H2a-shape-heuristic-restored | H1 residual: identifier shape admits a target, service, domain and data key (no registry) | `test_each_position_requires_registry_membership` |
+| H2b-entity-registry-skipped | H1 residual: a entity target is shown without registry membership | `test_each_position_requires_registry_membership` |
+| H2b-device-registry-skipped | H1 residual: a device target is shown without registry membership | `test_each_position_requires_registry_membership` |
+| H2b-area-registry-skipped | H1 residual: a area target is shown without registry membership | `test_each_position_requires_registry_membership` |
+| H2b-floor-registry-skipped | H1 residual: a floor target is shown without registry membership | `test_each_position_requires_registry_membership` |
+| H2b-label-registry-skipped | H1 residual: a label target is shown without registry membership | `test_each_position_requires_registry_membership` |
+| H2c-service-registry-skipped | H1 residual: a service is shown without service-registry membership | `test_each_position_requires_registry_membership` |
+| H2d-domain-registry-skipped | H1 residual: a domain is shown without registry membership | `test_each_position_requires_registry_membership` |
+| H2e-data-key-schema-skipped | H1 residual: a data key is shown without being in the service schema | `test_each_position_requires_registry_membership` |
+| H2f-data-key-any-service-schema | H1 residual: a data key of any registered service admits this step's key | `test_each_position_requires_registry_membership` |
+| H2g-target-step-path-unchecked | H1 residual: a target path that is not a projected step path is accepted | `test_unregistered_values_are_digested_in_every_position` |
+| H2h-registry-member-sanitizer-skipped | H1 residual: a registry member is shown without the sanitizer check | `test_registered_value_the_sanitizer_recognizes_is_digested` |
+| H2i-unavailable-registry-treated-complete | H1 residual: an unread target registry is treated as complete (not reported unverified) | `test_unavailable_registry_fails_closed_and_is_partial` |
+| H2j-unverified-not-partial | H1 residual: a profile with unverified digests is not marked presentation-truncated | `test_unavailable_registry_fails_closed_and_is_partial` |
+| H2k-unverified-warning-dropped | H1 residual: the coverage warning for unverified display values is dropped | `test_unavailable_registry_fails_closed_and_is_partial` |
+| H2l-service-section-is-a-key | H1 residual: a service-schema section name is admitted and its keys are not | `test_service_registry_schema_is_validated_and_bounded` |
+| H2m-malformed-service-registry-accepted | H1 residual: a malformed service row is skipped instead of failing closed | `test_service_registry_schema_is_validated_and_bounded` |
+| M3a-number-literal-sanitizer-skipped | M: a number or JSON literal is shown without the sanitizer and known-secret check | `test_known_numeric_and_enum_values_are_digested` |
+| M3b-data-enum-sanitizer-skipped | M: a data enum word is shown without the sanitizer and known-secret check | `test_known_numeric_and_enum_values_are_digested` |
+| M3c-target-enum-sanitizer-skipped | M: a target enum word is shown without the sanitizer and known-secret check | `test_known_numeric_and_enum_values_are_digested` |
 | M1a-unverified-loaded-reported-complete | M1: a stored read standing in for unreadable loaded configuration is complete | `test_batch_failure_is_not_treated_as_unsupported` |
 | M1c-batch-failure-reported-unsupported | M1: a batch read that raises is reported as an unsupported client (complete) | `test_batch_failure_is_not_treated_as_unsupported` |
 | M1b-identity-mismatch-treated-stable | M1: a loaded identity mismatch verifies the stored read | `test_each_per_automation_reason_is_reported` |
@@ -483,27 +567,28 @@ with the realistic regression above.
 ## 6. Measurements
 
 Synthetic model (`docs/evidence/hamcp209/measure.py`, `measurement.json`;
-same host, back to back, re-run on the final source). Core's stored route is modelled as one lock plus a
-whole-file parse at 2.65 ms per automation, about 0.30 s per read at N=113.
+same host, back to back, re-run after correction batch 2; the head's fifth
+request is the display-only `effect_display_service_registry` read). Core's
+stored route is modelled as one lock plus a whole-file parse at 2.65 ms per automation, about 0.30 s per read at N=113.
 The base run reproduces the live figures (HAMCP-171):
 
 | Metric (113 automations) | Base `a1236c4` | Head | Head, 10x slower WS |
 | --- | --- | --- | --- |
-| Index build wall time | 34.6 s | 0.43 s | 1.46 s |
-| Provider requests | 116 | 4 | 4 |
+| Index build wall time | 34.6 s | 0.45 s | 1.46 s |
+| Provider requests | 116 | 5 | 5 |
 | `automation_config` REST reads | 113 | 0 | 0 |
 | WebSocket batch connections / commands | 0 / 0 | 1 / 226 | 1 / 226 |
 | Average / max request queue wait | 15.1 s / 31.9 s | 0 / 0 | 0 / 0 |
-| Automation POST issued 50 ms into the build | 2.7 s | 0.33 s | 0.30 s |
+| Automation POST issued 50 ms into the build | 2.7 s | 0.32 s | 0.30 s |
 | Same POST on an idle model | 0.30 s | 0.30 s | 0.30 s |
-| Second index reader during the build (a write's preflight) | 34.5 s | 0.33 s | 1.36 s |
+| Second index reader during the build (a write's preflight) | 34.5 s | 0.35 s | 1.36 s |
 
 Live reference: builds of 33.7-41.5 s, average queue wait about 15.6 s,
 maximum about 33 s, and writes after a restart of 35-44 s.
 
 **Projected live effect.**
-- The startup prewarm becomes the inventory reads plus one pipelined batch
-  over in-memory configuration, so a write right after a restart runs at
+- The startup prewarm becomes the inventory reads, one service-registry
+  read and one pipelined batch over in-memory configuration, so a write right after a restart runs at
   normal speed.
 - Each blueprint instance, unavailable automation, identity mismatch or
   pending write still costs one reported stored read.

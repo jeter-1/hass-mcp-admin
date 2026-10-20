@@ -209,12 +209,14 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         # B39-136-R3b added one bounded read: the running Home Assistant
         # version, which the reviewed template semantics must be admitted
         # against. HAMCP-209 replaced the per-automation stored-config reads
-        # with one loaded-configuration batch. This pinned breakdown exists to
-        # make exactly that kind of change visible.
-        self.assertEqual(result.profile["request_count"], 4)
+        # with one loaded-configuration batch, and added one service-registry
+        # read that admits effect values for display. This pinned breakdown
+        # exists to make exactly that kind of change visible.
+        self.assertEqual(result.profile["request_count"], 5)
         self.assertEqual(
             result.profile["request_count_by_operation"],
             {
+                "effect_display_service_registry": 1,
                 "entity_registry_inventory": 1,
                 "home_assistant_config": 1,
                 "loaded_automation_config_batch": 1,
@@ -233,11 +235,12 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         # A client with no batch read has no loaded source: no batch is
         # attempted, and the breakdown is the pre-HAMCP-209 one, with every
         # automation read from stored configuration and the reason reported.
-        self.assertEqual(result.profile["request_count"], 6)
+        self.assertEqual(result.profile["request_count"], 7)
         self.assertEqual(
             result.profile["request_count_by_operation"],
             {
                 "automation_config": 3,
+                "effect_display_service_registry": 1,
                 "entity_registry_inventory": 1,
                 "home_assistant_config": 1,
                 "states_inventory": 1,

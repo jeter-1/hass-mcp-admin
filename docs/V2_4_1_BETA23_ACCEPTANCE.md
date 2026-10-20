@@ -36,7 +36,7 @@ Bind the following:
 - the passing PR `validate` run for that exact head;
 - the Evidence tier log named in the PR.
 
-### Offline proof (`tests/test_hamcp209_fast_dependency_index.py`, 37 tests)
+### Offline proof (`tests/test_hamcp209_fast_dependency_index.py`, 57 tests)
 
 The tests use the synthetic Home Assistant model in `tests/hamcp209_fixtures.py`.
 It models Core's stored route as one lock plus a whole-file parse, an
@@ -50,19 +50,20 @@ boundaries. Client tests use a loopback WebSocket peer.
   blueprint-based, unavailable and id-less automations) and for 113
   automations. The loaded form of a blueprint instance is never used.
 - **Bounded requests** (3): 113 automations give one connection, 226 commands,
-  no `automation_config` REST read and at most 5 provider requests.
-- **Fallback reporting** (4): every reason is counted and named in the
+  no `automation_config` REST read and at most 5 provider requests (one of
+  them the display-only service-registry read).
+- **Fallback reporting** (8): every reason is counted and named in the
   coverage policy. Malformed results are reported. A whole-source failure or
   an incomplete batch is reported with a warning, never silently.
 - **Coverage** (3): partial and failure counts match the stored path. An
   automation unreadable from both routes is partial.
-- **Pending-write journal** (11): retention until reload; written-but-not-loaded
+- **Pending-write journal** (13): retention until reload; written-but-not-loaded
   is partial (including with an empty inventory); a 404 clears an entry;
   unreadable entries are retained; a rewrite during the build is retained;
   overflow is handled.
 - **Governed write hooks** (3), **batch allowlist** (1) and **batch client**
   (6).
-- **Resolved-secret disclosure** (2): secret-shaped values planted in a
+- **Resolved-secret disclosure** (1): secret-shaped values planted in a
   loaded-only package automation and a stored automation never appear in
   the following outputs:
   - dependency, impact, integrity and reliability;
@@ -70,10 +71,18 @@ boundaries. Client tests use a loopback WebSocket peer.
   - handoff (structured and markdown);
   - helper-state and entity-metadata disclosures.
 
-  Effect-projection values outside the display allowlist are shown as
-  `redacted_sha256:` digests, in responses and in persisted plan files
-  (`EffectDisplayAllowlistTests`, `EffectDisplayScanTests`,
-  `EffectDisplayPlanPersistenceTests`).
+- **Effect display** (15): an effect-projection value is shown verbatim only
+  when Home Assistant's registries admit it: registered entity, device,
+  area, floor and label targets; registered services and domains; data keys
+  in the step's service schema. Any other value is a `redacted_sha256:`
+  digest, in responses and in persisted plan files. This covers the review's
+  high-entropy lowercase generator and an unregistered dictionary-word
+  literal in every position. Numbers and enum words go through the sanitizer
+  and the known-secret check; a match is a display digest, and the plan
+  still succeeds. Unavailable or malformed registry data digests and marks
+  the profile partial for display. The tests are `EffectDisplayAllowlistTests`
+  (8), `EffectDisplayScanTests` (1), `EffectDisplayRegistryScanTests` (5) and
+  `EffectDisplayPlanPersistenceTests` (1).
 
 Cross-tree parity (`docs/evidence/hamcp209/parity.py`, `parity.json`): the
 beta.19, beta.20 and beta.22 providers and this tree give identical views and
@@ -100,19 +109,33 @@ each one must fail:
 14. A digest-shaped configuration string trusted as a generated digest (H1).
 15. The effect-target, effect-data, service and action-domain positions each
     copied verbatim (four mutations, H1).
-16. Identifier grammar alone admitting a lowercased projection of a configured
-    value (H1).
-17. A stored read standing in for unreadable loaded configuration reported
+16. A data or target enum word shown without being configured literally (two
+    mutations, H1).
+17. The identifier-shape heuristic restored in place of registry membership
+    for targets, services, domains and data keys (H1 residual).
+18. The registry check skipped for each target kind: entity, device, area,
+    floor and label (five mutations, H1 residual).
+19. The service-registry, domain and service-schema checks each skipped, and
+    a data key admitted by any service's schema (four mutations, H1
+    residual).
+20. A target path that is not a projected step path accepted (H1 residual).
+21. A registry member shown without the sanitizer check (H1 residual).
+22. An unread registry treated as complete; unverified digests not marked
+    partial; the unverified warning dropped (three mutations, H1 residual).
+23. A service-schema section name admitted as a key; a malformed service row
+    skipped instead of failing closed (two mutations, H1 residual).
+24. A number or JSON literal, a data enum word and a target enum word each
+    shown without the sanitizer and known-secret check (three mutations, M).
+25. A stored read standing in for unreadable loaded configuration reported
     complete (M1).
-18. A batch read that raises reported as an unsupported client (M1).
-19. A loaded identity mismatch treated as verifying the stored read (M1).
-20. The journal overflow cleared after a build (M2).
-21. Pending writes cleared after a partial build (M2).
-22. An overflowed journal not making the build partial (M2).
-23. A journaled write whose read failed not reported unreconciled (M2).
+26. A batch read that raises reported as an unsupported client (M1).
+27. A loaded identity mismatch treated as verifying the stored read (M1).
+28. The journal overflow cleared after a build (M2).
+29. Pending writes cleared after a partial build (M2).
+30. An overflowed journal not making the build partial (M2).
+31. A journaled write whose read failed not reported unreconciled (M2).
 
-All 26 mutations (item 15 counts four) are killed in the committed
-`results.json`.
+All 47 mutations are killed in the committed `results.json`.
 
 ### Measurement
 
@@ -120,10 +143,10 @@ All 26 mutations (item 15 counts four) are killed in the committed
 
 | | Base `a1236c4` | Head |
 | --- | --- | --- |
-| Build wall time | 34.6 s | 0.43 s |
-| Provider requests | 116 | 4 |
+| Build wall time | 34.6 s | 0.45 s |
+| Provider requests | 116 | 5 |
 | Per-automation REST reads | 113 | 0 |
-| Write during the build | 2.7 s | 0.33 s |
+| Write during the build | 2.7 s | 0.32 s |
 
 The idle write takes 0.30 s in both trees.
 

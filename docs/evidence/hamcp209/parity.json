@@ -142,5 +142,23 @@
     "head": "HAMCP-209 working tree with the H1, M1 and M2 review corrections",
     "result": "IDENTICAL",
     "note": "Every base gives the view hashes and snapshot fingerprints of base_tree above; the head gives those of head_tree (view_sha256 a9a421e2... and a91fd3a3...). The fixtures load every automation, so no M1 or M2 partial reason applies."
+  },
+  "recheck_after_registry_display": {
+    "bases": [
+      "a1236c4 (2.4.1-beta.19)",
+      "2.4.1-beta.20",
+      "c618884 (2.4.1-beta.22)"
+    ],
+    "head": "HAMCP-209 working tree with correction batch 2 (registry-backed effect display, M sanitizer check)",
+    "result": "IDENTICAL",
+    "generated_113": {
+      "view_sha256": "7b370194a210f3f21e63952c03936781d9956ae4f10f01aa53399ebf8feac46f",
+      "snapshot_fingerprint": "4a773504efe98f8cc64edb25844e41a3a7e94316f0d92fe3c91b13d6a888ce6d"
+    },
+    "representative": {
+      "view_sha256": "a91fd3a34c9c9f13c57a9edde02a7011e125e42bd615ff73ab6c48da4e5cd25d",
+      "snapshot_fingerprint": "7c95ffc698f3cb4780d08d1c3ab90d748f9357d71d85525e09d231605b78baab"
+    },
+    "note": "The generated fixture's state machine now also lists the light entities its automations target, so the effect display can admit them by registry membership; this changes the generated_113 view_sha256 for every tree alike (base and head agree). Snapshot fingerprints and the representative view are unchanged from base_tree above."
   }
 }

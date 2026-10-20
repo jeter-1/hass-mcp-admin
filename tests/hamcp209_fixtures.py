@@ -15,6 +15,7 @@ Every value is synthetic. Nothing here contacts a live system.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections import Counter
 from copy import deepcopy
 import time
@@ -23,6 +24,8 @@ from typing import Any
 
 SYNTHETIC_VERSION = "2026.10.1"
 BLUEPRINT_PATH = "synthetic/motion_light.yaml"
+# A Home Assistant device ID shape (32 hex), built at runtime.
+SYNTHETIC_DEVICE_ID = hashlib.sha256(b"synthetic-device").hexdigest()[:32]
 
 
 def blueprint_source() -> dict[str, Any]:
@@ -217,6 +220,9 @@ class SyntheticHomeAssistant:
         self.batch_calls: list[list[dict[str, Any]]] = []
         self.batch_failure: Exception | None = None
         self.batch_overrides: dict[tuple[str, str], tuple[bool, Any]] = {}
+        # Registry reads that fail (``"services"`` or a WS registry command).
+        self.registry_failures: set[str] = set()
+        self.registry_overrides: dict[str, Any] = {}
         self.rest = SyntheticRest(self)
         self.websocket = SyntheticWebSocket(self)
         self.websocket_without_batch = SyntheticWebSocketWithoutBatch(self)
@@ -239,6 +245,12 @@ class SyntheticHomeAssistant:
             "sensor.synthetic_temperature", "input_number.synthetic_setpoint",
             "input_select.synthetic_mode", "input_text.synthetic_target",
             "light.synthetic_downstairs_one",
+            # Each bulk automation's own light exists in the state machine.
+            *(
+                "light." + str(item["id"])
+                for item in self.automations.values()
+                if str(item["id"]).startswith("synthetic_bulk_")
+            ),
         })
         rows = [
             {"entity_id": entity_id, "state": "on", "attributes": {"friendly_name": entity_id}}
@@ -266,6 +278,54 @@ class SyntheticHomeAssistant:
                 "hidden_by": None,
             })
         return rows
+
+    def services(self) -> list[dict[str, Any]]:
+        """``GET /services``: registered services and their schema fields."""
+
+        def fields(*keys):
+            return {key: {"selector": {"text": None}} for key in keys}
+
+        return [
+            {"domain": "light", "services": {
+                "turn_on": {"fields": {
+                    **fields("brightness", "transition"),
+                    # A collapsible section groups keys; it is not one.
+                    "advanced_fields": {"collapsed": True, "fields": fields("rgb_color", "flash")},
+                }},
+                "turn_off": {"fields": fields("transition", "flash")},
+                "toggle": {"fields": fields("transition")},
+            }},
+            {"domain": "climate", "services": {
+                "set_temperature": {"fields": fields("temperature", "hvac_mode")},
+                "set_hvac_mode": {"fields": fields("hvac_mode")},
+            }},
+            {"domain": "input_boolean", "services": {
+                "turn_on": {"fields": {}}, "turn_off": {"fields": {}},
+            }},
+            {"domain": "input_number", "services": {"set_value": {"fields": fields("value")}}},
+            {"domain": "input_select", "services": {"select_option": {"fields": fields("option")}}},
+            {"domain": "rest_command", "services": {"synthetic": {"fields": {}}}},
+            {"domain": "automation", "services": {"trigger": {"fields": fields("skip_condition")}}},
+        ]
+
+    def device_registry(self) -> list[dict[str, Any]]:
+        return [{"id": SYNTHETIC_DEVICE_ID, "name": "Synthetic device"}]
+
+    def area_registry(self) -> list[dict[str, Any]]:
+        return [{"area_id": "synthetic_living_room", "name": "Synthetic living room"}]
+
+    def floor_registry(self) -> list[dict[str, Any]]:
+        return [{"floor_id": "synthetic_ground", "name": "Synthetic ground"}]
+
+    def label_registry(self) -> list[dict[str, Any]]:
+        return [{"label_id": "synthetic_downstairs", "name": "Synthetic downstairs"}]
+
+    def registry_read(self, kind: str, default):
+        if kind in self.registry_failures:
+            raise RuntimeError(f"synthetic {kind} unavailable")
+        if kind in self.registry_overrides:
+            return deepcopy(self.registry_overrides[kind])
+        return deepcopy(default())
 
     async def parse_file(self) -> None:
         """Core re-parses the whole file for every stored read or write."""
@@ -299,6 +359,9 @@ class SyntheticRest:
         if method == "GET" and path == "/states":
             self.ha.rest_counts["states"] += 1
             return deepcopy(self.ha.states())
+        if method == "GET" and path == "/services":
+            self.ha.rest_counts["services"] += 1
+            return self.ha.registry_read("services", self.ha.services)
         prefix = "/config/automation/config/"
         if not path.startswith(prefix):
             raise AssertionError(f"unexpected synthetic route {method} {path}")
@@ -334,8 +397,14 @@ class SyntheticWebSocket:
         kind = payload.get("type")
         if kind == "config/entity_registry/list":
             return deepcopy(self.ha.registry())
-        if kind == "config/label_registry/list":
-            return [{"label_id": "synthetic_downstairs", "name": "Synthetic downstairs"}]
+        registries = {
+            "config/label_registry/list": self.ha.label_registry,
+            "config/device_registry/list": self.ha.device_registry,
+            "config/area_registry/list": self.ha.area_registry,
+            "config/floor_registry/list": self.ha.floor_registry,
+        }
+        if kind in registries:
+            return self.ha.registry_read(kind, registries[kind])
         raise AssertionError(f"unexpected synthetic command {kind}")
 
     async def command_batch(self, payloads):

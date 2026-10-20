@@ -102,6 +102,7 @@ MUTATIONS = [
         "            pass\n",
     )]),
     # Correction batch (independent review of 5617aa7): H1, M1, M2.
+    # The H1 entries were rewritten for the registry-backed filter (batch 2).
     m("R1-sanitizer-decision-bypassed",
       "review: the shared-sanitizer decision in the effect display filter always passes", PROVIDER, [(
         "        return all(\n"
@@ -115,9 +116,9 @@ MUTATIONS = [
          "        prefix = f\"{path}|{selector}|\"\n"
          "        if self._clean(value):\n"
          "            return token\n"),
-        ("        if not found or not self._path(path):\n"
+        ("        if not found or not self._data_path(path):\n"
          "            return _effect_digest(token)\n",
-         "        if not found or not self._path(path):\n"
+         "        if not found or not self._data_path(path):\n"
          "            return _effect_digest(token)\n"
          "        if self._clean(value):\n"
          "            return token\n"),
@@ -137,29 +138,137 @@ MUTATIONS = [
     )]),
     m("H1c-target-position-bypasses-filter",
       "H1: the effect-target position is copied verbatim", PROVIDER, [(
-        "                        effect_display.target(str(item))\n",
-        "                        str(item)\n",
+        "                effect_display.target(str(item))\n",
+        "                str(item)\n",
     )]),
     m("H1d-data-position-bypasses-filter",
       "H1: the effect-data position is copied verbatim", PROVIDER, [(
-        "                        effect_display.data(str(item))\n",
-        "                        str(item)\n",
+        "                effect_display.data(str(item))\n",
+        "                str(item)\n",
     )]),
     m("H1e-service-position-bypasses-filter",
       "H1: the service position is copied verbatim", PROVIDER, [(
-        "                        effect_display.service(str(item))\n",
-        "                        str(item)\n",
+        "                effect_display.service(str(item))\n",
+        "                str(item)\n",
     )]),
     m("H1f-domain-position-bypasses-filter",
       "H1: the action-domain position is copied verbatim", PROVIDER, [(
-        "                        effect_display.domain(str(item))\n",
-        "                        str(item)\n",
+        "                effect_display.domain(str(item))\n",
+        "                str(item)\n",
     )]),
-    m("H1g-literal-provenance-ignored",
-      "H1: identifier grammar alone admits a lowercased projection of a configured value", PROVIDER, [(
-        "            and value in self._literals\n"
-        "            and self._clean(value)\n",
-        "            and self._clean(value)\n",
+    m("H1g-data-enum-provenance-ignored",
+      "H1: a data enum word is shown without being configured literally", PROVIDER, [(
+        "            or (value in _EFFECT_DATA_ENUM and value in self._literals)\n",
+        "            or (value in _EFFECT_DATA_ENUM)\n",
+    )]),
+    m("H1h-target-enum-provenance-ignored",
+      "H1: a target enum word (all/none) is shown without being configured literally", PROVIDER, [(
+        "            if value in self._literals and self._clean(value):\n",
+        "            if self._clean(value):\n",
+    )]),
+    # Correction batch 2 (delta review of abe13b6): H1 residual, M, L.
+    m("H2a-shape-heuristic-restored",
+      "H1 residual: identifier shape admits a target, service, domain and data key (no registry)",
+      PROVIDER, [
+        ("        if value in self._registry.members[kind]:\n",
+         "        if re.fullmatch(r\"[a-z0-9_.]{1,255}\", value):\n"),
+        ("        elif value in services and self._clean(value):\n",
+         "        elif re.fullmatch(r\"[a-z0-9_]{1,64}\\.[a-z0-9_]{1,64}\", value) and self._clean(value):\n"),
+        ("        if value in self._registry.domains:\n",
+         "        if re.fullmatch(r\"[a-z0-9_]{1,64}\", value):\n"),
+        ("        return fields is not None and key in fields and self._clean(key)\n",
+         "        return bool(re.fullmatch(r\"[a-z0-9_]{1,64}\", key)) and self._clean(key)\n"),
+      ]),
+    *(
+        m(f"H2b-{kind}-registry-skipped",
+          f"H1 residual: a {kind} target is shown without registry membership", PROVIDER, [(
+            "        if value in self._registry.members[kind]:\n",
+            f"        if kind == \"{kind}\" or value in self._registry.members[kind]:\n",
+        )])
+        for kind in ("entity", "device", "area", "floor", "label")
+    ),
+    m("H2c-service-registry-skipped",
+      "H1 residual: a service is shown without service-registry membership", PROVIDER, [(
+        "        elif value in services and self._clean(value):\n",
+        "        elif self._clean(value):\n",
+    )]),
+    m("H2d-domain-registry-skipped",
+      "H1 residual: a domain is shown without registry membership", PROVIDER, [(
+        "        if value in self._registry.domains:\n",
+        "        if True:\n",
+    )]),
+    m("H2e-data-key-schema-skipped",
+      "H1 residual: a data key is shown without being in the service schema", PROVIDER, [(
+        "        return fields is not None and key in fields and self._clean(key)\n",
+        "        return self._clean(key)\n",
+    )]),
+    m("H2f-data-key-any-service-schema",
+      "H1 residual: a data key of any registered service admits this step's key", PROVIDER, [(
+        "        fields = services.get(service) if isinstance(service, str) else None\n",
+        "        fields = frozenset().union(*services.values())\n",
+    )]),
+    m("H2g-target-step-path-unchecked",
+      "H1 residual: a target path that is not a projected step path is accepted", PROVIDER, [(
+        "            if base.endswith(suffix) and base[: -len(suffix)] in self._steps:\n",
+        "            if base.endswith(suffix):\n",
+    )]),
+    m("H2h-registry-member-sanitizer-skipped",
+      "H1 residual: a registry member is shown without the sanitizer check", PROVIDER, [(
+        "        if value in self._registry.members[kind]:\n"
+        "            return self._clean(value)\n",
+        "        if value in self._registry.members[kind]:\n"
+        "            return True\n",
+    )]),
+    m("H2i-unavailable-registry-treated-complete",
+      "H1 residual: an unread target registry is treated as complete (not reported unverified)",
+      PROVIDER, [(
+        "    complete = {kind: False for kind in EFFECT_DISPLAY_REGISTRY_KINDS}\n",
+        "    complete = {kind: True for kind in EFFECT_DISPLAY_REGISTRY_KINDS}\n",
+    )]),
+    m("H2j-unverified-not-partial",
+      "H1 residual: a profile with unverified digests is not marked presentation-truncated",
+      PROVIDER, [(
+        "                        bool(consequence[\"presentation_truncated\"])\n"
+        "                        or effect_display.unverified\n",
+        "                        bool(consequence[\"presentation_truncated\"])\n",
+    )]),
+    m("H2k-unverified-warning-dropped",
+      "H1 residual: the coverage warning for unverified display values is dropped", PROVIDER, [(
+        "                        if effect_display_unverified\n"
+        "                        else []\n",
+        "                        if False\n"
+        "                        else []\n",
+    )]),
+    m("H2l-service-section-is-a-key",
+      "H1 residual: a service-schema section name is admitted and its keys are not", PROVIDER, [(
+        "                        pending.append(field[\"fields\"])\n",
+        "                        keys.add(key)\n",
+    )]),
+    m("H2m-malformed-service-registry-accepted",
+      "H1 residual: a malformed service row is skipped instead of failing closed", PROVIDER, [(
+        "        if not isinstance(domain, str) or not isinstance(entries, dict):\n"
+        "            return None\n",
+        "        if not isinstance(domain, str) or not isinstance(entries, dict):\n"
+        "            continue\n",
+    )]),
+    m("M3a-number-literal-sanitizer-skipped",
+      "M: a number or JSON literal is shown without the sanitizer and known-secret check", PROVIDER, [(
+        "            or (value in _EFFECT_DATA_ENUM and value in self._literals)\n"
+        "        ) and self._clean(value):\n",
+        "            or (value in _EFFECT_DATA_ENUM and value in self._literals and self._clean(value))\n"
+        "        ):\n",
+    )]),
+    m("M3b-data-enum-sanitizer-skipped",
+      "M: a data enum word is shown without the sanitizer and known-secret check", PROVIDER, [(
+        "            or (value in _EFFECT_DATA_ENUM and value in self._literals)\n"
+        "        ) and self._clean(value):\n",
+        "            or (value in _EFFECT_DATA_ENUM and value in self._literals)\n"
+        "        ) and (value in _EFFECT_DATA_ENUM or self._clean(value)):\n",
+    )]),
+    m("M3c-target-enum-sanitizer-skipped",
+      "M: a target enum word is shown without the sanitizer and known-secret check", PROVIDER, [(
+        "            if value in self._literals and self._clean(value):\n",
+        "            if value in self._literals:\n",
     )]),
     m("M1a-unverified-loaded-reported-complete",
       "M1: a stored read standing in for unreadable loaded configuration is complete", PROVIDER, [(

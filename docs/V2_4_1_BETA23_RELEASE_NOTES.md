@@ -100,12 +100,12 @@ incremental hashing; the design note gives the reasons.
 
 | | beta.19 base | beta.23 |
 | --- | --- | --- |
-| Build wall time | 34.6 s | 0.43 s |
-| Provider requests | 116 | 4 |
+| Build wall time | 34.6 s | 0.45 s |
+| Provider requests | 116 | 5 |
 | Per-automation REST reads | 113 | 0 |
 | Max request queue wait | 31.9 s | 0 |
-| Automation write issued during the build | 2.7 s | 0.33 s (idle: 0.30 s) |
-| Index reader during the build | 34.5 s | 0.33 s |
+| Automation write issued during the build | 2.7 s | 0.32 s (idle: 0.30 s) |
+| Index reader during the build | 34.5 s | 0.35 s |
 
 The model reproduces the live beta.19 figures. The live check is in the
 acceptance document. Extraction parity with beta.19 is proven on a
@@ -123,16 +123,33 @@ views and snapshot fingerprints.
   - The loaded form can include resolved `!secret` values. The index keeps
     no configuration excerpt, and its identity fields and label selectors pass
     through the existing sanitizer. The helper and entity-metadata effect
-    projection (domains, services, targets and allowlisted data values) is
-    now an allowlist: a value is shown verbatim only if it has a known-safe
-    shape (entity ID, service, slug, registry ID, number, boolean or a fixed
-    enum word), is spelled exactly as configured or is a registry ID, and is
-    not recognized by the sanitizer. Anything else is a `redacted_sha256:`
-    digest. Before, a secret-shaped value (including prefixed, delimited or
-    lowercased JWTs) could reach helper-state plan disclosures and plan
-    files. Plan fingerprints and binding are unchanged. Tests plant
-    secret-shaped values and check every analysis output, plan response and
-    persisted plan file. See the design note's security section.
+    projection (domains, services, targets and data values) now admits a
+    value for verbatim display by registry membership:
+    - a target must be a registered entity, device, area, floor or label ID
+      (state machine, entity registry or `config/<kind>_registry/list`);
+    - a service or domain must be in the service registry (`GET /services`);
+    - a data key must be in that service's schema; its value must be a
+      number, a boolean or `null`, or a fixed enum word that was configured
+      literally.
+
+    Every value must also pass the sanitizer and the known-secret check,
+    numbers and enums included. Anything else is a `redacted_sha256:`
+    digest. When registry data is unavailable, values are digested and the
+    profile is marked partial for display. Before, a secret-shaped value
+    (including prefixed, delimited, lowercased or high-entropy lowercase
+    values) could reach helper-state plan disclosures and plan files.
+    Tests plant secret-shaped values and check every analysis output, plan
+    response and persisted plan file. See the design note's security
+    section.
+  - **Plan evidence.** The raw effect, profile and index fingerprints are
+    unchanged. The aggregate helper evidence fingerprint covers the displayed
+    values, so it changes when a value is digested, including when registry
+    availability changes for an unchanged configuration. A plan bound to the
+    earlier evidence is then stale and must be re-planned; this fails
+    closed.
+  - **Requests.** Each build with automation profiles makes one more read,
+    `GET /services`. It makes a device, area, floor or label registry read
+    only when a target of that kind is not already known.
   - Out-of-band edits that Home Assistant has not reloaded are reported as
     loaded, which is the configuration that runs.
 - **Stored formats.** No stored format changes. The journal is in memory only.

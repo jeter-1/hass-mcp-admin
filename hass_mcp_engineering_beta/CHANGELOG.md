@@ -20,12 +20,22 @@ Builds on 2.4.1-beta.22.
   build cannot account for, or any journal overflow, keeps every build
   partial (`pending_write_unreconciled`); overflow is never cleared by a
   build.
-- Show helper and entity-metadata effect-projection values (domains,
-  services, targets, allowlisted data) verbatim only when they match a
-  known-safe grammar, are spelled as configured or are registry IDs, and
-  are not recognized by the shared sanitizer; anything else is a
-  `redacted_sha256:` digest, in responses and persisted plan files.
-  Projection fingerprints and plan binding are unchanged.
+- Show helper and entity-metadata effect-projection values verbatim only
+  when Home Assistant's registries admit them. A target must be a registered
+  entity, device, area, floor or label ID. A service or domain must be in the
+  service registry. A data key must be in that service's schema. Numbers,
+  booleans and fixed enum words need no registry. Every value must also pass
+  the shared sanitizer and the known-secret check, numbers and enums
+  included. Anything else is a `redacted_sha256:` digest, in responses and
+  persisted plan files. When registry data is unavailable, values are
+  digested and the profile is marked partial for display. The registry
+  reads are display-only and use reads Engineering already makes (one
+  `GET /services` per build; target registries only when needed).
+- The raw effect, profile and index fingerprints are unchanged. The
+  aggregate helper evidence fingerprint covers the displayed values, so it
+  changes when a value is digested, including when registry availability
+  changes. A plan bound to the earlier evidence is then stale and must be
+  re-planned.
 - Add additive build-profile fields. No tool, input schema, description,
   provider route, signed registry, HOLD, support window, persisted format,
   workflow or stable-v1 change.

@@ -5,11 +5,11 @@
       "tests.test_hamcp209_fast_dependency_index"
     ],
     "returncode": 0,
-    "seconds": 6.5,
+    "seconds": 8.8,
     "summary": "OK"
   },
-  "mutation_count": 26,
-  "killed": 26,
+  "mutation_count": 47,
+  "killed": 47,
   "survived": [],
   "python": "3.12.14",
   "results": [
@@ -77,7 +77,7 @@
       "first_failures": [
         "FAIL test_deleted_pending_automation_clears_on_404 (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_deleted_pending_automation_clears_on_404)"
       ],
-      "seconds": 6.0
+      "seconds": 8.4
     },
     {
       "id": "M2c-pending-not-loaded-reported-unavailable",
@@ -99,7 +99,7 @@
       "first_failures": [
         "FAIL test_written_automation_not_loaded_is_partial_with_empty_inventory (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_written_automation_not_loaded_is_partial_with_empty_inventory)"
       ],
-      "seconds": 6.3
+      "seconds": 8.6
     },
     {
       "id": "M3-silent-fallback",
@@ -121,7 +121,7 @@
       "first_failures": [
         "FAIL test_unreadable_loaded_and_stored_automation_is_partial (tests.test_hamcp209_fast_dependency_index.CoverageTests.test_unreadable_loaded_and_stored_automation_is_partial)"
       ],
-      "seconds": 3.8
+      "seconds": 3.7
     },
     {
       "id": "M4-journal-ignored",
@@ -143,7 +143,7 @@
       "first_failures": [
         "FAIL test_stored_read_failure_for_pending_write_is_not_cleared (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_stored_read_failure_for_pending_write_is_not_cleared)"
       ],
-      "seconds": 6.3
+      "seconds": 8.6
     },
     {
       "id": "M5-blueprint-search-ignored",
@@ -165,7 +165,7 @@
       "first_failures": [
         "FAIL test_blueprint_loaded_form_is_never_used (tests.test_hamcp209_fast_dependency_index.ExtractionParityTests.test_blueprint_loaded_form_is_never_used)"
       ],
-      "seconds": 5.2
+      "seconds": 7.3
     },
     {
       "id": "M6-identity-unchecked",
@@ -187,7 +187,7 @@
       "first_failures": [
         "FAIL test_each_per_automation_reason_is_reported (tests.test_hamcp209_fast_dependency_index.FallbackReportingTests.test_each_per_automation_reason_is_reported)"
       ],
-      "seconds": 5.9
+      "seconds": 8.2
     },
     {
       "id": "M7-allowlist-open",
@@ -209,7 +209,7 @@
       "first_failures": [
         "FAIL test_only_fixed_read_shapes_are_admitted (tests.test_hamcp209_fast_dependency_index.BatchAllowlistTests.test_only_fixed_read_shapes_are_admitted)"
       ],
-      "seconds": 1.2
+      "seconds": 1.3
     },
     {
       "id": "M8-governed-write-not-journaled",
@@ -231,7 +231,7 @@
       "first_failures": [
         "FAIL test_automation_gateway_journals_before_dispatch (tests.test_hamcp209_fast_dependency_index.GovernedWriteHookTests.test_automation_gateway_journals_before_dispatch)"
       ],
-      "seconds": 6.1
+      "seconds": 8.3
     },
     {
       "id": "M9-resource-write-not-journaled",
@@ -253,7 +253,7 @@
       "first_failures": [
         "FAIL test_resource_gateway_journals_automation_only (tests.test_hamcp209_fast_dependency_index.GovernedWriteHookTests.test_resource_gateway_journals_automation_only)"
       ],
-      "seconds": 6.1
+      "seconds": 8.3
     },
     {
       "id": "R1-sanitizer-decision-bypassed",
@@ -273,9 +273,9 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_registry_identifier_the_sanitizer_recognizes_is_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_registry_identifier_the_sanitizer_recognizes_is_digested)"
+        "FAIL test_known_numeric_and_enum_values_are_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_known_numeric_and_enum_values_are_digested)"
       ],
-      "seconds": 3.6
+      "seconds": 3.8
     },
     {
       "id": "H1a-denylist-instead-of-allowlist",
@@ -287,8 +287,8 @@
           "        prefix = f\"{path}|{selector}|\"\n        if self._clean(value):\n            return token\n"
         ],
         [
-          "        if not found or not self._path(path):\n            return _effect_digest(token)\n",
-          "        if not found or not self._path(path):\n            return _effect_digest(token)\n        if self._clean(value):\n            return token\n"
+          "        if not found or not self._data_path(path):\n            return _effect_digest(token)\n",
+          "        if not found or not self._data_path(path):\n            return _effect_digest(token)\n        if self._clean(value):\n            return token\n"
         ],
         [
           "    def service(self, value: str) -> str:\n",
@@ -307,7 +307,7 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_planted_values_are_digested_in_every_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_planted_values_are_digested_in_every_position)"
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
       ],
       "seconds": 3.8
     },
@@ -329,7 +329,7 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_planted_values_are_digested_in_every_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_planted_values_are_digested_in_every_position)"
+        "FAIL test_enum_words_require_a_literal_configuration (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_enum_words_require_a_literal_configuration)"
       ],
       "seconds": 3.8
     },
@@ -339,8 +339,8 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
       "replacements": [
         [
-          "                        effect_display.target(str(item))\n",
-          "                        str(item)\n"
+          "                effect_display.target(str(item))\n",
+          "                str(item)\n"
         ]
       ],
       "tests": [
@@ -353,7 +353,7 @@
       "first_failures": [
         "FAIL test_jwt_variants_are_digested_in_plan_response_and_files (tests.test_hamcp209_fast_dependency_index.EffectDisplayPlanPersistenceTests.test_jwt_variants_are_digested_in_plan_response_and_files)"
       ],
-      "seconds": 4.0
+      "seconds": 4.2
     },
     {
       "id": "H1d-data-position-bypasses-filter",
@@ -361,8 +361,8 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
       "replacements": [
         [
-          "                        effect_display.data(str(item))\n",
-          "                        str(item)\n"
+          "                effect_display.data(str(item))\n",
+          "                str(item)\n"
         ]
       ],
       "tests": [
@@ -373,9 +373,9 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_planted_values_never_reach_a_profile_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayScanTests.test_planted_values_never_reach_a_profile_position)"
+        "FAIL test_generated_lowercase_value_is_digested_in_every_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_generated_lowercase_value_is_digested_in_every_position)"
       ],
-      "seconds": 5.0
+      "seconds": 5.7
     },
     {
       "id": "H1e-service-position-bypasses-filter",
@@ -383,8 +383,8 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
       "replacements": [
         [
-          "                        effect_display.service(str(item))\n",
-          "                        str(item)\n"
+          "                effect_display.service(str(item))\n",
+          "                str(item)\n"
         ]
       ],
       "tests": [
@@ -395,9 +395,9 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_planted_values_never_reach_a_profile_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayScanTests.test_planted_values_never_reach_a_profile_position)"
+        "FAIL test_generated_lowercase_value_is_digested_in_every_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_generated_lowercase_value_is_digested_in_every_position)"
       ],
-      "seconds": 4.9
+      "seconds": 6.0
     },
     {
       "id": "H1f-domain-position-bypasses-filter",
@@ -405,8 +405,8 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
       "replacements": [
         [
-          "                        effect_display.domain(str(item))\n",
-          "                        str(item)\n"
+          "                effect_display.domain(str(item))\n",
+          "                str(item)\n"
         ]
       ],
       "tests": [
@@ -417,31 +417,505 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_planted_values_never_reach_a_profile_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayScanTests.test_planted_values_never_reach_a_profile_position)"
+        "FAIL test_generated_lowercase_value_is_digested_in_every_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_generated_lowercase_value_is_digested_in_every_position)"
       ],
-      "seconds": 4.9
+      "seconds": 6.1
     },
     {
-      "id": "H1g-literal-provenance-ignored",
-      "design_item": "H1: identifier grammar alone admits a lowercased projection of a configured value",
+      "id": "H1g-data-enum-provenance-ignored",
+      "design_item": "H1: a data enum word is shown without being configured literally",
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
       "replacements": [
         [
-          "            and value in self._literals\n            and self._clean(value)\n",
-          "            and self._clean(value)\n"
+          "            or (value in _EFFECT_DATA_ENUM and value in self._literals)\n",
+          "            or (value in _EFFECT_DATA_ENUM)\n"
         ]
       ],
       "tests": [
         "tests.test_hamcp209_fast_dependency_index"
       ],
-      "log": "H1g-literal-provenance-ignored.log",
+      "log": "H1g-data-enum-provenance-ignored.log",
       "returncode": 1,
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_provenance_is_required (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_provenance_is_required)"
+        "FAIL test_enum_words_require_a_literal_configuration (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_enum_words_require_a_literal_configuration)"
+      ],
+      "seconds": 3.9
+    },
+    {
+      "id": "H1h-target-enum-provenance-ignored",
+      "design_item": "H1: a target enum word (all/none) is shown without being configured literally",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            if value in self._literals and self._clean(value):\n",
+          "            if self._clean(value):\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H1h-target-enum-provenance-ignored.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_enum_words_require_a_literal_configuration (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_enum_words_require_a_literal_configuration)"
       ],
       "seconds": 3.8
+    },
+    {
+      "id": "H2a-shape-heuristic-restored",
+      "design_item": "H1 residual: identifier shape admits a target, service, domain and data key (no registry)",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        if value in self._registry.members[kind]:\n",
+          "        if re.fullmatch(r\"[a-z0-9_.]{1,255}\", value):\n"
+        ],
+        [
+          "        elif value in services and self._clean(value):\n",
+          "        elif re.fullmatch(r\"[a-z0-9_]{1,64}\\.[a-z0-9_]{1,64}\", value) and self._clean(value):\n"
+        ],
+        [
+          "        if value in self._registry.domains:\n",
+          "        if re.fullmatch(r\"[a-z0-9_]{1,64}\", value):\n"
+        ],
+        [
+          "        return fields is not None and key in fields and self._clean(key)\n",
+          "        return bool(re.fullmatch(r\"[a-z0-9_]{1,64}\", key)) and self._clean(key)\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2a-shape-heuristic-restored.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
+      ],
+      "seconds": 3.8
+    },
+    {
+      "id": "H2b-entity-registry-skipped",
+      "design_item": "H1 residual: a entity target is shown without registry membership",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        if value in self._registry.members[kind]:\n",
+          "        if kind == \"entity\" or value in self._registry.members[kind]:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2b-entity-registry-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
+      ],
+      "seconds": 3.8
+    },
+    {
+      "id": "H2b-device-registry-skipped",
+      "design_item": "H1 residual: a device target is shown without registry membership",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        if value in self._registry.members[kind]:\n",
+          "        if kind == \"device\" or value in self._registry.members[kind]:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2b-device-registry-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
+      ],
+      "seconds": 3.8
+    },
+    {
+      "id": "H2b-area-registry-skipped",
+      "design_item": "H1 residual: a area target is shown without registry membership",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        if value in self._registry.members[kind]:\n",
+          "        if kind == \"area\" or value in self._registry.members[kind]:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2b-area-registry-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
+      ],
+      "seconds": 3.8
+    },
+    {
+      "id": "H2b-floor-registry-skipped",
+      "design_item": "H1 residual: a floor target is shown without registry membership",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        if value in self._registry.members[kind]:\n",
+          "        if kind == \"floor\" or value in self._registry.members[kind]:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2b-floor-registry-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
+      ],
+      "seconds": 3.8
+    },
+    {
+      "id": "H2b-label-registry-skipped",
+      "design_item": "H1 residual: a label target is shown without registry membership",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        if value in self._registry.members[kind]:\n",
+          "        if kind == \"label\" or value in self._registry.members[kind]:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2b-label-registry-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
+      ],
+      "seconds": 3.7
+    },
+    {
+      "id": "H2c-service-registry-skipped",
+      "design_item": "H1 residual: a service is shown without service-registry membership",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        elif value in services and self._clean(value):\n",
+          "        elif self._clean(value):\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2c-service-registry-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
+      ],
+      "seconds": 3.8
+    },
+    {
+      "id": "H2d-domain-registry-skipped",
+      "design_item": "H1 residual: a domain is shown without registry membership",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        if value in self._registry.domains:\n",
+          "        if True:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2d-domain-registry-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
+      ],
+      "seconds": 3.8
+    },
+    {
+      "id": "H2e-data-key-schema-skipped",
+      "design_item": "H1 residual: a data key is shown without being in the service schema",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        return fields is not None and key in fields and self._clean(key)\n",
+          "        return self._clean(key)\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2e-data-key-schema-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
+      ],
+      "seconds": 3.7
+    },
+    {
+      "id": "H2f-data-key-any-service-schema",
+      "design_item": "H1 residual: a data key of any registered service admits this step's key",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        fields = services.get(service) if isinstance(service, str) else None\n",
+          "        fields = frozenset().union(*services.values())\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2f-data-key-any-service-schema.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_position_requires_registry_membership (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_each_position_requires_registry_membership)"
+      ],
+      "seconds": 3.8
+    },
+    {
+      "id": "H2g-target-step-path-unchecked",
+      "design_item": "H1 residual: a target path that is not a projected step path is accepted",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            if base.endswith(suffix) and base[: -len(suffix)] in self._steps:\n",
+          "            if base.endswith(suffix):\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2g-target-step-path-unchecked.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_unregistered_values_are_digested_in_every_position (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_unregistered_values_are_digested_in_every_position)"
+      ],
+      "seconds": 3.9
+    },
+    {
+      "id": "H2h-registry-member-sanitizer-skipped",
+      "design_item": "H1 residual: a registry member is shown without the sanitizer check",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        if value in self._registry.members[kind]:\n            return self._clean(value)\n",
+          "        if value in self._registry.members[kind]:\n            return True\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2h-registry-member-sanitizer-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_registered_value_the_sanitizer_recognizes_is_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_registered_value_the_sanitizer_recognizes_is_digested)"
+      ],
+      "seconds": 3.9
+    },
+    {
+      "id": "H2i-unavailable-registry-treated-complete",
+      "design_item": "H1 residual: an unread target registry is treated as complete (not reported unverified)",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "    complete = {kind: False for kind in EFFECT_DISPLAY_REGISTRY_KINDS}\n",
+          "    complete = {kind: True for kind in EFFECT_DISPLAY_REGISTRY_KINDS}\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2i-unavailable-registry-treated-complete.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_unavailable_registry_fails_closed_and_is_partial (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_unavailable_registry_fails_closed_and_is_partial)"
+      ],
+      "seconds": 7.5
+    },
+    {
+      "id": "H2j-unverified-not-partial",
+      "design_item": "H1 residual: a profile with unverified digests is not marked presentation-truncated",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "                        bool(consequence[\"presentation_truncated\"])\n                        or effect_display.unverified\n",
+          "                        bool(consequence[\"presentation_truncated\"])\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2j-unverified-not-partial.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_unavailable_registry_fails_closed_and_is_partial (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_unavailable_registry_fails_closed_and_is_partial)"
+      ],
+      "seconds": 7.5
+    },
+    {
+      "id": "H2k-unverified-warning-dropped",
+      "design_item": "H1 residual: the coverage warning for unverified display values is dropped",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "                        if effect_display_unverified\n                        else []\n",
+          "                        if False\n                        else []\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2k-unverified-warning-dropped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_unavailable_registry_fails_closed_and_is_partial (tests.test_hamcp209_fast_dependency_index.EffectDisplayRegistryScanTests.test_unavailable_registry_fails_closed_and_is_partial)"
+      ],
+      "seconds": 7.5
+    },
+    {
+      "id": "H2l-service-section-is-a-key",
+      "design_item": "H1 residual: a service-schema section name is admitted and its keys are not",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "                        pending.append(field[\"fields\"])\n",
+          "                        keys.add(key)\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2l-service-section-is-a-key.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_service_registry_schema_is_validated_and_bounded (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_service_registry_schema_is_validated_and_bounded)"
+      ],
+      "seconds": 3.9
+    },
+    {
+      "id": "H2m-malformed-service-registry-accepted",
+      "design_item": "H1 residual: a malformed service row is skipped instead of failing closed",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "        if not isinstance(domain, str) or not isinstance(entries, dict):\n            return None\n",
+          "        if not isinstance(domain, str) or not isinstance(entries, dict):\n            continue\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "H2m-malformed-service-registry-accepted.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_service_registry_schema_is_validated_and_bounded (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_service_registry_schema_is_validated_and_bounded)"
+      ],
+      "seconds": 4.0
+    },
+    {
+      "id": "M3a-number-literal-sanitizer-skipped",
+      "design_item": "M: a number or JSON literal is shown without the sanitizer and known-secret check",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            or (value in _EFFECT_DATA_ENUM and value in self._literals)\n        ) and self._clean(value):\n",
+          "            or (value in _EFFECT_DATA_ENUM and value in self._literals and self._clean(value))\n        ):\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M3a-number-literal-sanitizer-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_known_numeric_and_enum_values_are_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_known_numeric_and_enum_values_are_digested)"
+      ],
+      "seconds": 3.9
+    },
+    {
+      "id": "M3b-data-enum-sanitizer-skipped",
+      "design_item": "M: a data enum word is shown without the sanitizer and known-secret check",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            or (value in _EFFECT_DATA_ENUM and value in self._literals)\n        ) and self._clean(value):\n",
+          "            or (value in _EFFECT_DATA_ENUM and value in self._literals)\n        ) and (value in _EFFECT_DATA_ENUM or self._clean(value)):\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M3b-data-enum-sanitizer-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_known_numeric_and_enum_values_are_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_known_numeric_and_enum_values_are_digested)"
+      ],
+      "seconds": 4.1
+    },
+    {
+      "id": "M3c-target-enum-sanitizer-skipped",
+      "design_item": "M: a target enum word is shown without the sanitizer and known-secret check",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            if value in self._literals and self._clean(value):\n",
+          "            if value in self._literals:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp209_fast_dependency_index"
+      ],
+      "log": "M3c-target-enum-sanitizer-skipped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_known_numeric_and_enum_values_are_digested (tests.test_hamcp209_fast_dependency_index.EffectDisplayAllowlistTests.test_known_numeric_and_enum_values_are_digested)"
+      ],
+      "seconds": 4.1
     },
     {
       "id": "M1a-unverified-loaded-reported-complete",
@@ -463,7 +937,7 @@
       "first_failures": [
         "FAIL test_batch_failure_is_not_treated_as_unsupported (tests.test_hamcp209_fast_dependency_index.FallbackReportingTests.test_batch_failure_is_not_treated_as_unsupported)"
       ],
-      "seconds": 5.7
+      "seconds": 8.5
     },
     {
       "id": "M1c-batch-failure-reported-unsupported",
@@ -485,7 +959,7 @@
       "first_failures": [
         "FAIL test_batch_failure_is_not_treated_as_unsupported (tests.test_hamcp209_fast_dependency_index.FallbackReportingTests.test_batch_failure_is_not_treated_as_unsupported)"
       ],
-      "seconds": 5.8
+      "seconds": 8.7
     },
     {
       "id": "M1b-identity-mismatch-treated-stable",
@@ -507,7 +981,7 @@
       "first_failures": [
         "FAIL test_each_per_automation_reason_is_reported (tests.test_hamcp209_fast_dependency_index.FallbackReportingTests.test_each_per_automation_reason_is_reported)"
       ],
-      "seconds": 5.8
+      "seconds": 8.9
     },
     {
       "id": "M2d-overflow-cleared-after-build",
@@ -529,7 +1003,7 @@
       "first_failures": [
         "FAIL test_journal_overflow_is_sticky_and_always_partial (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_journal_overflow_is_sticky_and_always_partial)"
       ],
-      "seconds": 6.0
+      "seconds": 9.2
     },
     {
       "id": "M2e-pending-cleared-after-partial-build",
@@ -551,7 +1025,7 @@
       "first_failures": [
         "FAIL test_stored_read_failure_for_pending_write_is_not_cleared (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_stored_read_failure_for_pending_write_is_not_cleared)"
       ],
-      "seconds": 6.2
+      "seconds": 9.4
     },
     {
       "id": "M2f-overflow-not-reported",
@@ -573,7 +1047,7 @@
       "first_failures": [
         "FAIL test_journal_overflow_is_sticky_and_always_partial (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_journal_overflow_is_sticky_and_always_partial)"
       ],
-      "seconds": 6.0
+      "seconds": 9.1
     },
     {
       "id": "M2g-unreconciled-read-failure-not-reported",
@@ -595,7 +1069,7 @@
       "first_failures": [
         "FAIL test_stored_read_failure_for_pending_write_is_not_cleared (tests.test_hamcp209_fast_dependency_index.PendingWriteJournalTests.test_stored_read_failure_for_pending_write_is_not_cleared)"
       ],
-      "seconds": 6.1
+      "seconds": 8.8
     }
   ]
 }
