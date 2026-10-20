@@ -1,5 +1,21 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.24** adds one read-only tool, `get_backup_inventory`
+(HAMCP-130). It reports Home Assistant's backups from Core's own backup
+manager: per backup its date, size, content scope, protection flag, add-ons,
+folders and storage locations; the newest full backup and confirmed off-site
+copies; the automatic-backup schedule, retention and last attempt; and health
+signals that report `unknown` whenever an input could not be read. It makes two
+fixed admin-only Core WebSocket reads and needs no new permission. It cannot
+create, restore, delete, download or change backups. The encryption key is
+withheld in any letter case; a deliberately transformed copy in a backup name
+is an owner-accepted residual (see the release notes). Static tools 60,
+advertised catalog 88 (89 with the optional YAML reader). Read the
+[2.4.1-beta.24 release notes](docs/V2_4_1_BETA24_RELEASE_NOTES.md) and
+[2.4.1-beta.24 acceptance contract](docs/V2_4_1_BETA24_ACCEPTANCE.md).
+
+It builds on beta.23 below.
+
 Engineering **2.4.1-beta.23** builds the dependency index from the automation
 configuration Home Assistant has loaded (HAMCP-209). One WebSocket connection
 with two fixed, read-only commands per automation replaces one serialized REST
@@ -236,7 +252,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.23 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.24 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
