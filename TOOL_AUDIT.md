@@ -11,8 +11,11 @@ then `backup/info`, under the existing admin authority and the HAMCP-164
 `core.basic_websocket_read` gate. It reports backups, the newest full backup,
 storage locations, confirmed off-site copies, automatic-backup schedule,
 retention and last result, recent failures and nine threshold-stated health
-signals, and is `partial` with reasons when anything cannot be read. The
-encryption key is never returned. There is no create, restore, delete,
+signals, and is `partial` with per-field reasons when anything cannot be
+read. Each signal names the inputs it depends on and is `unknown` when any of
+them is unreadable. The encryption key is never returned; when it cannot be
+positively read, every name and error text is withheld and free-form
+identifiers are aliased. There is no create, restore, delete,
 download or settings path. The catalog is 60 static + 28 delegated = 88
 (89 with the optional YAML reader). See the
 [design](docs/HAMCP_130_BACKUP_INVENTORY_DESIGN.md).
