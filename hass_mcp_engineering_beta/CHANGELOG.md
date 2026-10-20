@@ -32,6 +32,46 @@ Builds on 2.4.1-beta.23.
   reader. Every existing descriptor, signed registry, HOLD, support window,
   persisted format, workflow and stable v1 is unchanged.
 
+## 2.4.1-beta.23 - Dependency index from Home Assistant's loaded automation config (HAMCP-209)
+
+Builds on 2.4.1-beta.22.
+
+- Build the dependency index from the loaded automation configuration over
+  one authenticated WebSocket connection: two fixed, read-only commands per
+  automation (`automation/config`, `search/related`), at most 16 in flight,
+  enforced by an allowlist in the client. No per-automation
+  `automation_config` REST read on the normal path (HAMCP-171 D3; no config
+  file read, D4).
+- Keep the stored REST read for blueprint instances, unavailable,
+  unreadable or mismatched entries, writes not yet reloaded and a failed
+  loaded source, and report every such fallback with its reason in the
+  coverage policy and build profile. When the loaded configuration could
+  not be read (unreadable, mismatched or a failed loaded source) the index
+  is partial (`loaded_config_unavailable`).
+- Journal governed automation writes before dispatch (cap 256). A write the
+  build cannot account for, or any journal overflow, keeps every build
+  partial (`pending_write_unreconciled`); overflow is never cleared by a
+  build.
+- Show helper and entity-metadata effect-projection values verbatim only
+  when Home Assistant's registries admit them. A target must be a registered
+  entity, device, area, floor or label ID. A service or domain must be in the
+  service registry. A data key must be in that service's schema. Numbers,
+  booleans and fixed enum words need no registry. Every value must also pass
+  the shared sanitizer and the known-secret check, numbers and enums
+  included. Anything else is a `redacted_sha256:` digest, in responses and
+  persisted plan files. When registry data is unavailable, values are
+  digested and the profile is marked partial for display. The registry
+  reads are display-only and use reads Engineering already makes (one
+  `GET /services` per build; target registries only when needed).
+- The raw effect, profile and index fingerprints are unchanged. The
+  aggregate helper evidence fingerprint covers the displayed values, so it
+  changes when a value is digested, including when registry availability
+  changes. A plan bound to the earlier evidence is then stale and must be
+  re-planned.
+- Add additive build-profile fields. No tool, input schema, description,
+  provider route, signed registry, HOLD, support window, persisted format,
+  workflow or stable-v1 change.
+
 ## 2.4.1-beta.22 - aiohttp 3.14.4 dependency security release (HAMCP-211)
 
 Builds on 2.4.1-beta.21, which was superseded before publication and is not
