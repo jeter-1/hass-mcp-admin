@@ -15,8 +15,11 @@ signals, and is `partial` with per-field reasons when anything cannot be
 read. Each signal names the inputs it depends on and is `unknown` when any of
 them is unreadable. The encryption key is never returned; when it cannot be
 positively read, every name and error text is withheld and free-form
-identifiers are aliased. There is no create, restore, delete,
-download or settings path. The catalog is 60 static + 28 delegated = 88
+identifiers are aliased. An `unknown` signal always has
+`evidence_complete: false`, invalid lists are `null`, and the omission ledger
+is exactly bounded with a full reason count. A transformed (encoded or split)
+copy of a known key is an accepted residual (`docs/SECURITY.md`). There is no
+create, restore, delete, download or settings path. The catalog is 60 static + 28 delegated = 88
 (89 with the optional YAML reader). See the
 [design](docs/HAMCP_130_BACKUP_INVENTORY_DESIGN.md).
 

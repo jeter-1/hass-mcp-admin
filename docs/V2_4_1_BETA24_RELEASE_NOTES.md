@@ -61,7 +61,11 @@ The report contains:
   - an unreadable storage location;
   - one failed read;
   - a malformed, missing or out-of-range field, reported per field
-    (`invalid_field:<pointer>`);
+    (`invalid_field:<pointer>`) and shown as `null`; an invalid list is
+    `null`, never an empty list, and a schedule time must be a valid time of
+    day;
+  - a backup whose content scope cannot be established because the
+    installation kind is unknown (`content_scope_not_established`);
   - a truncated name or error text (`truncated_field:<pointer>`);
   - a list cap;
   - the response budget;
@@ -71,6 +75,13 @@ The report contains:
 - Each health signal declares the inputs it depends on (`depends_on`). If any
   of them is unreadable or partial, the signal is `unknown`, with
   `evidence_complete: false` and the inputs named in `unreadable_inputs`.
+  A signal is `unknown` only then, so an `unknown` signal never claims
+  complete evidence. A last action event without its required state, or of a
+  kind Core does not record there, leaves the manager state unreadable rather
+  than deciding "not completed".
+- `omissions` holds at most 40 entries. When more reasons exist, the last
+  entry is `omissions_not_listed` with the number not listed, and
+  `omission_reason_count` counts them all.
 - When both reads fail, the call returns `analysis_unavailable`.
 - A permission failure, or a change of Core authority between reads, fails
   closed.
@@ -106,6 +117,11 @@ The report contains:
     text is withheld, free-form identifiers are replaced by stable aliases
     such as `withheld#1`, and only structured facts (dates, sizes, flags,
     fixed location ids, versions) are shown.
+  - Accepted residual (Josh's decision): a known key is matched literally, in
+    any letter case. A transformed copy (URL-encoded, base64-encoded or split
+    across names) is not recognized. Exploiting this requires an
+    administrator to embed such a copy in backup names deliberately, and
+    administrators can already view the key.
 - **Untrusted text.**
   - Backup names, error text and every identifier pass through the shared
     sanitizer.

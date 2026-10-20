@@ -17,9 +17,16 @@ Builds on 2.4.1-beta.23.
   field cannot be read, is out of range or truncated, or text is redacted.
   Each health signal names the inputs it depends on and is `unknown` when any
   of them is unreadable.
+- Show an invalid field or list as `null`, never as an empty list, validate
+  the schedule time strictly, and keep `omissions` to exactly 40 entries
+  with an `omissions_not_listed` marker and a full reason count. A signal is
+  `unknown` only when an input is unreadable, and then never claims complete
+  evidence; a last action event without its required state is unreadable.
 - Never return the encryption key; it is a per-response known secret for the
   shared sanitizer. When the key cannot be positively read, withhold every
-  name and error text and alias free-form identifiers.
+  name and error text and alias free-form identifiers. A transformed copy of
+  a known key (encoded or split across names) is an accepted residual; see
+  `docs/SECURITY.md`.
 - Map the tool to `core.basic_websocket_read` in the Core gate. Static tools
   60 (was 59); advertised catalog 88 (was 87), or 89 with the optional YAML
   reader. Every existing descriptor, signed registry, HOLD, support window,

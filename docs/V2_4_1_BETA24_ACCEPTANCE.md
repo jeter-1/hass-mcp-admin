@@ -60,7 +60,7 @@ Preserve the following:
 
 No test reaches a live system.
 
-- `tests/test_hamcp130_backup_inventory.py` (79 tests) uses synthetic
+- `tests/test_hamcp130_backup_inventory.py` (87 tests) uses synthetic
   fixtures modeled on Core 2026.10.1's response shapes. It covers:
   - six scenarios: local only; local + cloud; failed automatic backup;
     encrypted; partial backups; empty;
@@ -72,16 +72,27 @@ No test reaches a live system.
   - per-field validity, truncation and list caps;
   - every signal `unknown` when a declared input is unreadable, and decided
     when all are complete;
+  - each delta-review reproduction (invalid clock time, invalid lists, the
+    omission bound with byte trimming, a missing event state, unknown
+    installation scope);
+  - a sweep of all nine signals over every input path of both sources,
+    checking that `unknown` holds exactly when inputs are unreadable and
+    never with `evidence_complete: true`;
   - a static and runtime no-write-path check;
   - Core-gate mapping, registration and audit privacy;
   - sample drift.
-- Mutations: 38 of 38 killed (`docs/evidence/hamcp130-mutations/`), including:
+- Mutations: 53 of 53 killed (`docs/evidence/hamcp130-mutations/`), including:
   - a failed read reported as complete (F1 to F7);
   - newest-full picking a partial (N1 to N6);
   - free text or identifiers shown while the key is unknown (H1 to H6);
   - truncation or an invalid field not making the report partial (M1a to
     M1g);
-  - a signal decided from partial inputs (M2a to M2g).
+  - a signal decided from partial inputs (M2a to M2g);
+  - lax clock time, invalid lists as empty, and an unbounded or stale
+    omission ledger (M1h to M1n);
+  - an `unknown` signal with complete evidence, unknown content scope or a
+    missing event state decided as conclusive (M2h to M2n);
+  - the reviewers' R1 and R2.
 - Count suites: 59 → 60 static tools, 87 → 88 advertised and 88 → 89 with the
   optional YAML reader admitted.
 

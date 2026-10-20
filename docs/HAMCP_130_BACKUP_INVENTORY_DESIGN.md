@@ -149,14 +149,14 @@ it, and a test checks for drift. Top-level keys:
 | Key | Meaning |
 |---|---|
 | `completeness` | `complete` or `partial` (§3.1) |
-| `omissions` [{reason, count}] | Why the report is partial (≤ 40 reasons) |
-| `omission_reason_count` | Count of omission reasons |
+| `omissions` [{reason, count}] | Why the report is partial (exactly ≤ 40 entries; see §3.1) |
+| `omission_reason_count` | Count of all omission reasons, listed or not |
 | `redaction` | Sanitizer tally, or null |
 | `sources` [{source_id, command, status, reason, duration_ms}] | One per read |
 | `thresholds` | `full_backup_max_age_days: 7`, `automatic_backup_max_age_days: {daily: 2, custom_days: 8}` |
 | `definitions` | The meaning of `full` and `off_site` |
 | `installation` | `supervisor`, `core` or `unknown`, from agent naming |
-| `summary` | backup_count, listed_count, listed_limit, more_backups_not_listed, newest_backup, oldest_backup, newest_full_backup (each: id, name, date, age_days, content_scope, storage_classes), newest_backup_offsite_copy, newest_full_backup_offsite_copy (`confirmed`, `off_host_not_confirmed_off_site` or `none`), storage_locations [{location_id, storage_class, backup_count, newest_backup_date, read_error, selected_for_automatic_backups}], manager_state, last_action |
+| `summary` | backup_count, listed_count, listed_limit, more_backups_not_listed, newest_backup, oldest_backup, newest_full_backup (each: id, name, date, age_days, content_scope, storage_classes, which is null when the backup's locations are unreadable), newest_backup_offsite_copy, newest_full_backup_offsite_copy (`confirmed`, `off_host_not_confirmed_off_site`, `none`, or `unknown` when a location of that backup is unreadable and no Home Assistant Cloud copy is confirmed), storage_locations [{location_id, storage_class, backup_count, newest_backup_date, read_error, selected_for_automatic_backups}], manager_state, last_action |
 | `automatic_backups` | configured, schedule {recurrence, days, time}, retention {copies, days}, location_ids, location_overrides, includes {all_addons, addons, database, folders}, encryption_configured (flag), next_scheduled, next_scheduled_additional, last_attempted, last_completed, last_completed_age_days, last_result (`completed`, `in_progress`, `not_completed`, `never_attempted` or `unknown`) |
 | `recent_failures` (≤ 20) and `recent_failure_count` | Kinds: `last_backup_action_failed`, `automatic_backup_not_completed`, `storage_location_unreadable`, `backup_partially_failed` |
 | `health_signals` | Nine signals (§3.3) |
@@ -203,8 +203,29 @@ Validity is tracked **per field**. A field that is required by Core's contract
 and absent is invalid; a field Core declares nullable is valid when it is
 `null` and invalid when it is absent or of the wrong type. An invalid field is
 shown as `null` (never coerced into a plausible value) and also marks the
-signal input it feeds as unreadable (§3.3). Omission reasons stay bounded at
-40, with counts.
+signal input it feeds as unreadable (§3.3). In particular:
+
+- An invalid **list** (schedule days, location ids, location overrides,
+  included add-ons or folders, a backup's add-ons or locations) is `null`,
+  never an empty list that would read as "none". A valid empty list stays
+  empty, and Core's stored `null` for "no add-ons or folders selected" is
+  shown as an empty list.
+- The schedule **time** must be Core's `time.isoformat()` of a valid time of
+  day (`HH:MM`, `HH:MM:SS` or with microseconds); a value such as `99:99`,
+  `24:00` or one with an offset is `invalid_field:schedule.time`.
+- A backup whose content fields were all read but whose scope cannot be
+  established, because the installation kind is unknown (§3.2), is recorded
+  as `content_scope_not_established`.
+
+The omission ledger is **exactly** bounded at 40 entries, with counts.
+Aggregate reasons (unreadable sources, caps, trimming) are listed before
+per-field reasons (`invalid_field:`, `truncated_field:`,
+`encryption_key_unknown:`), each group alphabetically. When more than 40
+reasons exist, the first 39 are listed and the 40th entry is
+`{"reason": "omissions_not_listed", "count": <reasons not listed>}`.
+`omission_reason_count` always counts every reason. The ledger is rebuilt
+after each response-budget trim, so the trim reason is counted and the bound
+still holds.
 
 Caller paging (`limit`) is not an omission: `more_backups_not_listed` states
 it, and every backup was still read.
@@ -253,16 +274,26 @@ unreadable or partial, the signal is `unknown`, `evidence_complete` is
 read. The rule is deliberately strict: no signal is concluded from partial
 inputs, even where a one-sided argument would allow it.
 
+Invariant, enforced in one place (`report._signal`): `status` is `unknown`
+**if and only if** `unreadable_inputs` is non-empty, and `evidence_complete`
+is `false` exactly then. A decider called with fully read inputs must return
+`observed`, `not_observed` or `not_applicable`; anything else raises and the
+call fails rather than reporting an unknown signal as complete evidence. Any
+unreadable input also makes the report partial. A test sweeps all nine
+signals across every input path of both sources (deleted, `null`,
+wrong-type and empty values, and each source failing) and checks this
+invariant on every run.
+
 | Input | Unreadable when |
 |---|---|
 | `backup_list` | `backup/info` failed; the backups value is not a list; a record was unreadable or beyond the 500-record cap; any `agent_errors` entry (a location could not be listed) |
 | `backup_dates` | `backup/info` failed, or any backup date is missing or invalid |
-| `recent_backup_content` | A backup within 7 days has an invalid content field |
+| `recent_backup_content` | A backup within 7 days has an invalid content field, or its content scope is `unknown` |
 | `newest_backup_locations` | The newest backup's agents are missing or malformed |
 | `newest_backup_failures` | The newest backup's failed add-ons, agents or folders are malformed |
 | `schedule` | `backup/config/info` failed, or recurrence or days are invalid |
 | `automatic_times` | A last attempted/completed time is invalid in a present source, or absent from all |
-| `manager_state` | `backup/info` failed, or the manager or event state is invalid |
+| `manager_state` | `backup/info` failed; the manager state is invalid; the last action event is not a mapping, its kind is not one Core records there (`create_backup`, `receive_backup`, `restore_backup`; never `idle` or `blocked`), or its required `state` is missing, `null` or invalid for that kind; or the manager is in an action whose last action event is absent or of another kind |
 | `location_errors` | `backup/info` failed, or `agent_errors` is not a mapping |
 
 | Signal | `depends_on` |
@@ -285,7 +316,7 @@ input unreadable, because every record was still read.
 | Signal | Observed when | Threshold |
 |---|---|---|
 | `no_backups` | The readable listing is empty | — |
-| `no_full_backup_within_threshold` | The newest full backup is older than 7 days, or there is none. It is `unknown` if a recent backup has unknown scope | 7 days |
+| `no_full_backup_within_threshold` | The newest full backup is older than 7 days, or there is none | 7 days |
 | `newest_backup_only_on_this_host` | Every copy of the newest backup is `local` | — |
 | `newest_backup_no_confirmed_offsite_copy` | The newest backup has no Home Assistant Cloud copy | — |
 | `last_automatic_backup_not_completed` | `last_result == not_completed` | — |
@@ -378,7 +409,7 @@ they are withheld.
 
 ## 5. Validation
 
-- `tests/test_hamcp130_backup_inventory.py`: 79 tests.
+- `tests/test_hamcp130_backup_inventory.py`: 87 tests.
   - Six fixture scenarios: local only; local + cloud (+ network storage);
     failed automatic backup; encrypted; partial backups; empty.
   - Also: in progress, never attempted or unscheduled, custom days, Core
@@ -410,11 +441,21 @@ they are withheld.
     (`backups: null`, `agent_errors: null`, an invalid date, `custom_days`
     with invalid days) plus each declared input; every `unknown` signal names
     its unreadable inputs, and complete inputs decide every signal.
+  - Correction batch 2, each delta-review reproduction as a permanent test:
+    invalid clock times (`99:99` and others) with valid controls; invalid
+    lists shown as `null` with empty and `null` controls; the exact omission
+    bound (unit, 0 to 120 reasons) and the reviewer's 40-plus-reason report
+    with byte trimming; a create event with a missing, `null` or mismatched
+    state; unknown installation scope; and the `_signal` guard.
+  - Signal sweep (`SignalSweepTests`): 876 runs over three base fixtures,
+    every input path of both sources, and each source failing; every run
+    satisfies the §3.3 invariant, and each of the nine signals is `unknown`
+    in some run and decided in another.
 - `tests/test_hamcp191_shared_sanitizer.py`: the two new `SANITIZER_SITES`.
 - Count and catalog assertions in existing suites: 59 → 60, 87 → 88 and
   88 → 89.
-- Mutations (`docs/evidence/hamcp130-mutations/`): **38 of 38 killed**, none
-  by an import or syntax error, against a 79-test baseline (`results.json`).
+- Mutations (`docs/evidence/hamcp130-mutations/`): **53 of 53 killed**, none
+  by an import or syntax error, against an 87-test baseline (`results.json`).
   - F1 to F7: a failed read reported as complete.
   - N1 to N6: newest-full picks a partial.
   - S1 and S2: sanitizer.
@@ -426,6 +467,14 @@ they are withheld.
     list caps silently applied.
   - M2a to M2g: a signal computed as complete from partial inputs.
   - R1: a provider error message reflected into the response.
+  - Correction batch 2: M1h lax clock-time validation; M1i to M1k invalid
+    lists shown as empty; M1l to M1n the omission ledger unbounded, bypassed
+    by byte trimming, or counted from the listed entries; M2h an `unknown`
+    signal with `evidence_complete: true`; M2i, M2j and M2m unknown content
+    scope not an input, the 768d9bd behavior, or not an omission; M2k and
+    M2l a missing or mismatched event state accepted; M2n the sweep's crash
+    on a non-string event kind; R2 the delta reviewer's identifier alias
+    returning the original value.
 
 ## 6. Protected-file list (finalized)
 
@@ -483,6 +532,15 @@ This PR stages **beta.24** on the assumption that #283 takes beta.23 first. If
 - `full` cannot attest that every installed add-on was included (§3.2).
 - Off-site is confirmed only for Home Assistant Cloud (§3.3).
 - Over-redaction is possible with a very short user encryption key (§3.4).
+- **Accepted residual H2 (Josh's decision).** A known encryption key is
+  matched literally and in any letter case. A transformed copy (URL-encoded,
+  base64-encoded, or split across several backup or add-on names) is not
+  recognized and can survive into output. Rationale: exploiting it requires a
+  Home Assistant administrator to embed an encoded copy of the key in backup
+  names deliberately, and administrators can already view the key. The tool
+  never outputs the key field, withholds every literal occurrence in any case,
+  and fails closed (withholds all free text) when the key is not positively
+  known (§3.4). No decoding heuristics are added.
 - When the key is not positively known, all free text is withheld, so names
   and error text are unavailable until the config read succeeds (§3.4).
 - Signals are `unknown` whenever any declared input is unreadable, even where
