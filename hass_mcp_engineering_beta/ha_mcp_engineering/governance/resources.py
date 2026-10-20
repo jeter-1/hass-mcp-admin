@@ -899,11 +899,15 @@ class ConfigurationResourceGateway:
                     "provider_response_received": False,
                 }
             ) from exc
-        if resource_type == "automation":
-            # HAMCP-209: verify loaded against stored until the reload lands.
+        if resource_type in {"automation", "script"}:
+            # HAMCP-209/HAMCP-212: verify loaded against stored until the
+            # reload lands.
             from ..dependency import DEPENDENCY_ANALYSIS
 
-            DEPENDENCY_ANALYSIS.note_automation_write(resource_id)
+            if resource_type == "automation":
+                DEPENDENCY_ANALYSIS.note_automation_write(resource_id)
+            else:
+                DEPENDENCY_ANALYSIS.note_script_write(resource_id)
         try:
             return await self.rest_client.request(
                 "POST",

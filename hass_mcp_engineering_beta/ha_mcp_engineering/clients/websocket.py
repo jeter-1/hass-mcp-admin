@@ -19,19 +19,29 @@ from ..observability import METRICS
 from ..request_context import current_telemetry
 from .single_read import SINGLE_READ, MAX_READ_BYTES, session_options
 
-# HAMCP-209: the only commands a pipelined batch may carry. Both are in-memory
-# reads of one loaded automation; anything else is refused before dispatch.
+# HAMCP-209: the only commands a pipelined batch may carry. Each is an
+# in-memory read of one loaded automation or (HAMCP-212) one loaded script;
+# anything else is refused before dispatch.
 BATCH_WINDOW = 16
-MAX_BATCH_COMMANDS = 2_048
+# Two commands per source, bounded by the 1,000 automation and 1,000 script
+# candidate limits of the dependency provider.
+MAX_BATCH_COMMANDS = 4_096
 _BATCH_COMMAND_KEYS = {
     "automation/config": frozenset({"type", "entity_id"}),
+    "script/config": frozenset({"type", "entity_id"}),
     "search/related": frozenset({"type", "item_type", "item_id"}),
 }
 _AUTOMATION_ENTITY = re.compile(r"automation\.[a-z0-9_]{1,245}\Z", re.ASCII)
+_SCRIPT_ENTITY = re.compile(r"script\.[a-z0-9_]{1,121}\Z", re.ASCII)
+_BATCH_IDENTITY = {
+    "automation/config": _AUTOMATION_ENTITY,
+    "script/config": _SCRIPT_ENTITY,
+}
+_SEARCH_IDENTITY = {"automation": _AUTOMATION_ENTITY, "script": _SCRIPT_ENTITY}
 
 
 def batch_command_allowed(payload: Any) -> bool:
-    """Admit only the fixed loaded-automation read shapes."""
+    """Admit only the fixed loaded-automation and loaded-script read shapes."""
 
     if type(payload) is not dict:
         return False
@@ -39,10 +49,14 @@ def batch_command_allowed(payload: Any) -> bool:
     keys = _BATCH_COMMAND_KEYS.get(command_type) if isinstance(command_type, str) else None
     if keys is None or frozenset(payload) != keys:
         return False
-    if command_type == "search/related" and payload.get("item_type") != "automation":
-        return False
-    identity = payload.get("entity_id", payload.get("item_id"))
-    return isinstance(identity, str) and _AUTOMATION_ENTITY.fullmatch(identity) is not None
+    if command_type == "search/related":
+        item_type = payload.get("item_type")
+        pattern = _SEARCH_IDENTITY.get(item_type) if isinstance(item_type, str) else None
+        identity = payload.get("item_id")
+    else:
+        pattern = _BATCH_IDENTITY[command_type]
+        identity = payload.get("entity_id")
+    return pattern is not None and isinstance(identity, str) and pattern.fullmatch(identity) is not None
 
 
 class HomeAssistantWebSocketClient:

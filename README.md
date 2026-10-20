@@ -1,5 +1,20 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.25** reads script configuration from what Home
+Assistant has loaded (HAMCP-212, fast dependency index part 2). The index
+build's single WebSocket batch adds two fixed, read-only commands per available
+script (`script/config` and `search/related`) and replaces one delegated ha-mcp
+read per script. Blueprint, unavailable and pending-write scripts still use the
+stored read, each counted with its reason. A failed loaded read is always
+reported as partial, and health's `last_build_profile` reports the script
+source counts. Script evidence matches beta.24 on the parity fixtures. No tool,
+schema, permission or descriptor changes (88 tools, 89 with the optional YAML
+reader). Read the
+[2.4.1-beta.25 release notes](docs/V2_4_1_BETA25_RELEASE_NOTES.md) and
+[2.4.1-beta.25 acceptance contract](docs/V2_4_1_BETA25_ACCEPTANCE.md).
+
+It builds on beta.24 below.
+
 Engineering **2.4.1-beta.24** adds one read-only tool, `get_backup_inventory`
 (HAMCP-130). It reports Home Assistant's backups from Core's own backup
 manager: per backup its date, size, content scope, protection flag, add-ons,
@@ -252,7 +267,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.24 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.25 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

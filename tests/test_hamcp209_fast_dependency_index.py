@@ -242,7 +242,7 @@ class BoundedRequestTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(ha.batch_calls[0]), 226)
         operations = result.profile["request_count_by_operation"]
         self.assertNotIn("automation_config", operations)
-        self.assertEqual(operations["loaded_automation_config_batch"], 1)
+        self.assertEqual(operations["loaded_config_batch"], 1)
         # /config, /states, entity registry, the display-only service
         # registry, one batch.
         self.assertLessEqual(result.profile["request_count"], 5)
