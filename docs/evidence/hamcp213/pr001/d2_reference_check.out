@@ -1,0 +1,30 @@
+== op1 (automation) protected effects before=0 after=0
+   verdict[proposed]: none []
+   verdict[conservative]: none []
+   notification action ids: before=['CLOSE_GARAGE', 'SNOOZE_ALERTS'] after=['ACK_GARAGE_ALERT', 'CLOSE_GARAGE', 'SNOOZE_ALERTS'] added=['ACK_GARAGE_ALERT']
+== op2 (automation) protected effects before=4 after=4
+   effect: cover.close_cover ['cover.garage_main'] at [0].choose[0][6].choose[0][2]
+   effect: cover.close_cover ['cover.garage_main'] at [0].choose[1][6].choose[0][2]
+   effect: cover.close_cover ['cover.garage_main'] at [0].choose[2][7]
+   effect: cover.close_cover ['cover.garage_main'] at [0].choose[4][2].choose[0][2]
+   verdict[proposed]: equivalent []
+   verdict[conservative]: changed ['normalized_run_structure_changed']
+   notification action ids: before=[] after=['CLOSE_GARAGE'] added=['CLOSE_GARAGE']
+== op3 (script) protected effects before=1 after=1
+   effect: cover.close_cover ['cover.garage_main'] at [0].choose[1][0]
+   verdict[proposed]: equivalent []
+   verdict[conservative]: equivalent []
+   notification action ids: before=[] after=[] added=[]
+== op4 (automation) protected effects before=0 after=0
+   verdict[proposed]: none []
+   verdict[conservative]: none []
+   notification action ids: before=[] after=[] added=[]
+== mutations (expected: changed under both modes)
+   PASS op2 added push loses continue_on_error: {'proposed': 'changed', 'conservative': 'changed'}
+   PASS op2 delay inserted before a close: {'proposed': 'changed', 'conservative': 'changed'}
+   PASS op2 condition inserted before a close: {'proposed': 'changed', 'conservative': 'changed'}
+   PASS op2 long wait appended after a close (run occupancy): {'proposed': 'changed', 'conservative': 'changed'}
+   PASS op3 mode single -> restart: {'proposed': 'changed', 'conservative': 'changed'}
+   PASS op3 close target changed: {'proposed': 'changed', 'conservative': 'changed'}
+   PASS op1 gains a cover.close_cover: {'proposed': 'changed', 'conservative': 'changed'}
+== all mutations detected: True

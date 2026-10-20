@@ -19,7 +19,7 @@ All paths are relative to `hass_mcp_engineering_beta/ha_mcp_engineering/`
 unless stated otherwise. Line numbers refer to the base commit.
 
 Nothing in this report came from a live Home Assistant instance or a deployed
-MCP endpoint. Section 2.1 rests on an offline probe that runs the shipped
+MCP endpoint. The E012 analysis rests on an offline probe that runs the shipped
 classifier on synthetic configurations:
 [`evidence/hamcp213/probe_e012.py`](evidence/hamcp213/probe_e012.py), with
 output in [`probe_e012.out`](evidence/hamcp213/probe_e012.out). The probe runs on
@@ -27,11 +27,19 @@ CPython 3.12 in a virtual environment installed with `--require-hashes` from
 `hass_mcp_engineering_beta/requirements.lock` (sha256 `d466020b…`), located
 outside `/tmp`.
 
+D6 uses the owner's real PR001 plan (`7b651ef4…`), supplied offline after the
+first draft of this report. The committed fixtures in
+[`evidence/hamcp213/pr001/`](evidence/hamcp213/pr001/README.md) are
+**anonymized structural transforms** of it: every entity, person, notify
+service and free-text string is renamed, and the structure is unchanged. The
+README records the provenance and the checks.
+
 > The task prompt was cut off partway through D1 ("…never grantable by the
 > assistant; clearly"). D1 below finishes that sentence as "clearly
-> distinguished from standard approval". D2–D8 come from the register Outcome
-> for HAMCP-213. If the missing text contained other requirements, they still
-> need to be supplied.
+> distinguished from standard approval". The other sections come from the
+> register Outcome for HAMCP-213, and D6 from the owner's PR001 example. If
+> the missing text contained other requirements, they still need to be
+> supplied.
 
 ---
 
@@ -48,9 +56,15 @@ outside `/tmp`.
      accepts only `resource_type == "automation"`.
    - The policy aggregate takes the strictest class across operations, so one
      script makes the whole plan prohibited.
-   - The probe reproduces the live reason set exactly for a mixed
+   - The synthetic probe reproduces the audited outcome for a mixed
      automation+script plan: `prohibited` with `exact_existing_automation_update`,
-     `owner_decision_required` and `safety_critical_effect_not_reviewed`.
+     `owner_decision_required` and `safety_critical_effect_not_reviewed` (plus
+     the generic `supported_configuration_change`).
+   - The owner's real plan confirms this (D6). Its third operation is a
+     script, and that operation alone is `prohibited`. The real aggregate also
+     carries `standard_configuration_policy` from the one operation with no
+     garage trigger, so the reason set is a superset of the audit's, not an
+     exact match.
 2. **The automation path that does work has no safety-specific
    acknowledgement.** "Owner-authoritative exactness" removes the elevated
    acknowledgement (`governance/policy.py:1083-1088`). A plan that changes
@@ -67,6 +81,13 @@ outside `/tmp`.
    for every plan with no recorded Ingress decision, prohibited plans included
    (`governance/service.py:244-259`). It says nothing about whether the
    HAMCP-205 administrator approver exists.
+5. **On the owner's real plan, the proposed rules give the intended result.**
+   Two operations become `none` and two become `equivalent`. The plan needs one
+   elevated plan approval and shows the comparison, instead of being
+   prohibited (D6). Seven targeted mutations of the same plan all become
+   `changed`. Validating the rules on that plan exposed two gaps that need
+   owner decisions: steps that keep a run busy after a close (OD-10) and
+   notification buttons that lead to a close elsewhere (OD-9).
 
 Recommended direction: replace "prohibited because safety-critical" with three
 outcomes driven by the comparison.
@@ -296,7 +317,7 @@ corrected without breaking an existing test contract.
 ## Part 2: Design proposal
 
 Owner decisions are labeled **OD-n**. Each one has a recommendation. None is
-implemented until Josh decides.
+implemented until the owner decides.
 
 ### D1. Safety-critical owner acknowledgement
 
@@ -322,7 +343,7 @@ shortcut at `policy.py:1083-1088` **never** removes it.
   `authority_version` 4 for this kind only. It stores:
   - `bound_plan_hash` and `policy_decision_hash`, as today;
   - `safety_critical_projection_hash`, the stable hash of the D2 comparison
-    projection, which is also bound into the policy subject (D7);
+    projection, which is also bound into the policy subject (D8);
   - `acknowledged_objects`, the sorted, bounded list of protected object ids;
   - the existing challenge, CSRF, expiry, `granted_at` and `approver_principal`
     fields.
@@ -399,6 +420,12 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
      `persistent_notification.*`, `system_log.write`) never make their
      `data.entity_id` an effect target. They are recorded as references for
      display.
+   - **Actionable notification buttons** (`data.data.actions[].action` on a
+     `notify.*` call, such as a "close garage" button) are not effects of the
+     operation that sends them. A button press fires a
+     `mobile_app_notification_action` event, and whatever handles that event
+     (usually another automation) performs the effect. Added and removed
+     button ids are recorded as reference evidence and shown (OD-9).
    - **Transitive calls** (`script.*`, `script.turn_on`, `automation.trigger`,
      `scene.turn_on`) are effects keyed by callee id. A callee updated in the
      same plan gets its own comparison.
@@ -413,16 +440,29 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
      that can delay, block or abort it. These are `delay`, `wait_*`,
      `condition`, `stop`, control predicates, and every service step without
      `continue_on_error: true`, because a failing step aborts the run.
+   - the **run-occupancy signature**: every step anywhere in the operation
+     except non-aborting reference-only steps, in order. Under `mode: single`,
+     `queued` or `restart`, a step that runs **after** an effect still keeps the
+     run busy, so it can drop, delay or cancel the effect of a later trigger.
+     A wait added after a close is therefore a reachability change even though
+     it is not in that close's gating prefix. Leaving non-aborting
+     reference-only steps out of this signature is an assumption, so OD-10
+     records it as an owner decision.
    - The claim that a failing service call aborts the run, and the exact
      `continue_on_error` semantics, must be verified against pinned Core
      2026.10.1 `helpers/script.py` before implementation (ADR-021). This report
      has not verified it.
+   - The gating prefix is recursive. For an effect inside a `choose`, `if` or
+     `repeat`, it includes the earlier steps of every enclosing list and the
+     predicates of the earlier `choose` options, because those options decide
+     whether this branch is reached.
 4. **Verdict per operation:**
    - `none`: no protected effect on either side. The protected-object rules do
      not apply.
    - `equivalent`: a bijection exists between current and proposed effect
-     records, every reachability context is identical, and each gating prefix
-     has the same ordered abort-point signature. A reference-only step may be
+     records, every reachability context is identical, each gating prefix
+     has the same ordered abort-point signature, and the run-occupancy
+     signature is identical. A reference-only step may be
      reworded, reordered among other reference-only steps, added or removed
      only if it is not an abort point. An abort point counts as unchanged when
      its service and target are the same and only template-free literal
@@ -440,28 +480,18 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
    arguments before the edit, and vice versa. Only the template-free text of
    non-effect steps and their position among non-aborting reference steps may
    differ. Like the Beta 33 proof, this does not claim the automation is
-   correct, only that its physical effects are unchanged.
+   correct, only that its physical effects are unchanged. It does not claim
+   identical timing either: a non-aborting push before a close can delay the
+   close by as long as that call takes. OD-10 decides whether that latency is
+   acceptable for `equivalent`.
 6. **Projection.** `physical_effect_comparison` is stored per operation, with a
    row per object (verdict, reason codes, bounded before/after effect
-   summaries) and its hash bound into the policy subject (D7). It is shown on
+   summaries) and its hash bound into the policy subject (D8). It is shown on
    the review page for every plan with protected effects, including
    `equivalent` ones, as the comparison evidence the register Outcome requires.
 
-**Expected effect on the audit plan** (inferred from the audit description,
-because the plan was not read):
-
-- Rewording and adding a push with `continue_on_error` is `equivalent`.
-- Reordering a push before TTS (with `continue_on_error`) is `equivalent` when
-  the push itself has `continue_on_error`. Otherwise the push is an abort point
-  that moved relative to TTS but not relative to the close, so it is still
-  `equivalent` under the multiset rule. That case needs a test.
-- Adding a new push **without** `continue_on_error` before a close is
-  `changed`, so the owner path applies; the plan is not prohibited.
-- A warning automation whose only cover reference is `logbook.log` gets
-  verdict `none` after the D4 fix, and its mode change single→restart drops to
-  ordinary moderate risk.
-- If that automation does call `cover.close_cover`, the mode change is
-  `changed` and goes to the owner acknowledgement.
+**Effect on the audit plan:** see D6. The owner's real plan replaced the
+earlier inference from the audit description, and the predicted verdicts held.
 
 ### D3. Policy mapping (replaces `policy.py:567-591` for protected effects)
 
@@ -530,9 +560,93 @@ because the plan was not read):
   projection, and the plan fails closed to `unresolved` when the read is
   unavailable.
 - Narrowing the `water` substring (false positives such as
-  `switch.water_feature_lights`) is out of scope unless Josh asks for it.
+  `switch.water_feature_lights`) is out of scope unless the owner asks for it.
 
-### D6. What does not change
+### D6. Worked example: the owner's PR001 plan
+
+**Source.** The four exact updates of plan `7b651ef4…`, from the owner's
+before/after configurations (Core 2026.10.1, Engineering 2.4.1-beta.19, read
+2026-10-20). Only anonymized structural transforms of them are committed:
+[`evidence/hamcp213/pr001/`](evidence/hamcp213/pr001/README.md). That
+README gives the provenance, the source fingerprints and the checks that the
+structure is unchanged. All names below are the anonymized ones.
+
+**Plan composition.** The first draft inferred this from the audit; the
+owner's example confirms it.
+
+| Op | Type | What changes (structure only) |
+| --- | --- | --- |
+| op1 | automation (open-garage warning) | Adds a `repeat`-`while` loop: a push **without** `continue_on_error` (now a templated message), a logbook entry, a 15-minute `wait_for_trigger` on an acknowledgement button, and an "acknowledged" `if` block (logbook, a clearing push with `continue_on_error`, `stop`). Mode `single` → `restart`. Calls no cover service, before or after. |
+| op2 | automation (departure close) | Four `cover.close_cover` sites on `cover.garage_main` (`continue_on_error: true`), each followed by a 30 s `wait_for_trigger` and a verification `choose`. Adds 3 "override" pushes before the close and 4 "close failed" pushes after it, all with `continue_on_error`. The failure pushes carry a `CLOSE_GARAGE` button. Triggers, conditions and `mode: single` are unchanged. |
+| op3 | **script** (close attempt) | One close inside a `choose` option, followed by a 30 s `wait_template` and a result `choose`. Only the description changes, plus `tag`, `priority` and `ttl` on three pushes after or outside the close's prefix (all `continue_on_error`). |
+| op4 | automation (evening alert) | The push moves first; `media_player.turn_on` and `tts.speak` gain `continue_on_error`. No cover service. |
+
+**Today, on `main`** ([`probe_pr001.out`](evidence/hamcp213/pr001/probe_pr001.out),
+the shipped classifier at the base commit, run offline):
+
+| Op | Risk | Policy | Why |
+| --- | --- | --- | --- |
+| op1 | high | `elevated_admin`, safety-critical | Both `garage_cover_target` hits are `logbook.log` `data.entity_id` (E013). |
+| op2 | high | `elevated_admin`, safety-critical | 11 `garage_cover_target` hits: the 4 real close targets and 7 logbook entries. |
+| op3 | high, `apply_allowed=False` | **`prohibited`** | Script path (§ Summary 1); 5 hits, 4 of them logbook. |
+| op4 | medium | `standard_admin` | Spurious recipient reason; the recipient set is unchanged (E013). |
+
+- The plan aggregate is `prohibited`, safety-critical, with reasons
+  `exact_existing_automation_update`, `owner_decision_required`,
+  `safety_critical_effect_not_reviewed`, `standard_configuration_policy` and
+  `supported_configuration_change`.
+- `derive_proof` returns `None` for the four-operation plan, so the shipped
+  service attaches the retry warning to the script
+  (`governance/service.py:5198-5204`).
+- `omitted_action_target` appears on all four operations, from notify calls.
+
+**Under this design** ([`d2_reference_check.out`](evidence/hamcp213/pr001/d2_reference_check.out),
+a design-validation prototype of D2, not runtime code):
+
+| Op | Protected effects before → after | D2 verdict (proposed rule / OD-10 conservative) | Expected outcome (D3, D4) |
+| --- | --- | --- | --- |
+| op1 | 0 → 0 | `none` / `none` | Ordinary rules. Once D4 drops the logbook hits, the mode change is expected to be moderate and `standard_admin`. |
+| op2 | 4 → 4 | `equivalent` / **`changed`** | Proposed: `elevated_admin`, plan approval only, `safety_critical_effect_equivalent`. Conservative: plus the acknowledgement for `cover.garage_main`. |
+| op3 | 1 → 1 | `equivalent` / `equivalent` | `elevated_admin`, plan approval only (needs script parity, D3). |
+| op4 | 0 → 0 | `none` / `none` | `standard_admin`; D4.4 removes the recipient reason. |
+
+- **Expected plan result (proposed rule):** `elevated_admin` with a single plan
+  approval. The consequence stays `safety_critical` and is disclosed, and the
+  review page shows the op2 and op3 comparisons. Under the conservative OD-10
+  rule, the plan also needs one safety-critical acknowledgement for
+  `cover.garage_main`. In neither case is the plan prohibited.
+- These "expected" outcomes are the design's predictions. Only the D2 verdicts
+  were computed, by the prototype; the D3 and D4 mapping is not implemented.
+
+**Mutations.** Each of these edits to the real structure must make the verdict
+`changed`. All 7 do, under both rules:
+
+1. an added op2 pre-close push loses `continue_on_error` (a new abort point);
+2. a `delay` inserted before an op2 close;
+3. a `condition` inserted before an op2 close;
+4. a 10-minute `wait_template` appended after an op2 close (run occupancy);
+5. op3 `mode: single` → `restart`;
+6. the op3 close target changed to another garage cover;
+7. a `cover.close_cover` added to op1.
+
+**What the example taught the design.**
+
+- **Run occupancy.** The gating prefix alone would miss mutation 4. Under
+  `mode: single`, a long wait after a close blocks the next trigger's close.
+  D2.3 adds the run-occupancy signature.
+- **Latency before the close.** op2's verdict is the only one that depends on
+  whether a non-aborting push placed *before* a close is ignored. OD-10 asks
+  the owner to decide.
+- **Notification buttons.** op2 adds a `CLOSE_GARAGE` button (op1 already had
+  one and adds an acknowledgement button). Pressing it closes the garage
+  through a separate automation outside this plan, so the close is not an
+  effect of op2. D2.1 discloses the new button as reference evidence; OD-9
+  decides whether that is enough.
+- **Recursive prefixes.** Three of op2's four closes sit two `choose` levels deep. Their
+  prefixes include the earlier steps and option predicates of every enclosing
+  list (D2.3).
+
+### D7. What does not change
 
 - Hash binding, the stale-state fingerprint, the F1 one-dispatch rule, F3
   locks, non-atomic stop-on-first-failure, readback verification and rollback
@@ -541,7 +655,7 @@ because the plan was not read):
   Planning and approval still never trigger an automation action.
 - No new client-facing tool is added.
 
-### D7. Compatibility and migration
+### D8. Compatibility and migration
 
 - `POLICY_VERSION` goes to `f2-v3`, and `COMPATIBLE_POLICY_VERSIONS` keeps
   `f2-v1` and `f2-v2` readable.
@@ -562,7 +676,7 @@ because the plan was not read):
   implementation task must name them explicitly
   (`-AuthorizedProtectedPath hass_mcp_engineering_beta/ha_mcp_engineering/`).
 
-### D8. Security section (for the implementation PR)
+### D9. Security section (for the implementation PR)
 
 - **Main risk: a false `equivalent`.** It would remove the safety
   acknowledgement, though not the elevated plan approval under OD-5.
@@ -583,7 +697,7 @@ because the plan was not read):
   independently, and creates and scripts are covered, so splitting a change
   across plans cannot avoid the acknowledgement.
 
-### D9. Tests the implementation must add
+### D10. Tests the implementation must add
 
 - **Success:**
   - exact script and automation updates with `changed` effects are actionable
@@ -602,9 +716,16 @@ because the plan was not read):
   - a pending `f2-v2` plan cannot be approved after upgrade.
 - **E013 regressions:** one test per symptom in §1.3.
 - **Mutations:** remove each of the reference-only table, the abort-point rule,
-  the mode rule and the object-set check; each mutation must fail a test.
+  the mode rule, the run-occupancy rule and the object-set check; each
+  mutation must fail a test.
+- **PR001 regression fixtures:** the anonymized fixtures in
+  `docs/evidence/hamcp213/pr001/` (or test copies with the same provenance
+  note) must give op1 `none`, op2 `equivalent` (or `changed` if OD-10 chooses
+  the conservative rule), op3 `equivalent` and op4 `none`, with no recipient
+  reason and no retry warning. Each of the seven D6 mutations must give
+  `changed`.
 
-### D10. Proposed PR slicing (OD-8)
+### D11. Proposed PR slicing (OD-8)
 
 - **Recommended:** one protected-runtime PR. D1–D4 interlock: the precision
   fixes lower classifications, and that is safe only once the acknowledgement
@@ -628,12 +749,19 @@ because the plan was not read):
 | OD-6 | Cover (a) creates and (b) `lock.unlock` / `alarm_disarm` | (a) yes, (b) yes (supersedes part of ADR-012) |
 | OD-7 | Protected-object rules | Keep the floor; add cover `device_class` garage/gate/door and `siren` |
 | OD-8 | PR slicing | One protected PR for D1–D4; D5 separately |
+| OD-9 | Added notification buttons that lead to a protected effect elsewhere (e.g. "close garage") | Disclose as reference evidence; not an effect of the sending operation |
+| OD-10 | Do non-aborting reference-only steps (pushes, logbook with `continue_on_error`) count for `equivalent`, before an effect (latency) and after it (run occupancy)? | Ignore them; all other added steps count everywhere. Conservative alternative: a reference step added before an effect is `changed` (makes PR001 op2 `changed`) |
 
 ## Not done in this task
 
 - No runtime, schema, policy, test, workflow, release or deployment change.
-- No live Home Assistant or MCP access. Plan `7b651ef4…` was not read.
-- No validation tiers were run, because the change is documentation and an
-  offline probe.
+- No live Home Assistant or MCP access. Plan `7b651ef4…` was not read live;
+  the owner supplied its configurations offline, and only anonymized
+  structural transforms are committed (D6).
+- The D2 checker in `evidence/hamcp213/pr001/` is a design prototype. It does
+  not handle `unresolved` (templated targets, blueprints) or transitive callee
+  comparison, and it is not a proposed implementation.
+- No validation tiers were run, because the change is documentation and
+  offline probes.
 - No claims about Home Assistant script-abort semantics or script-provider
   exactness were verified. Both are listed as prerequisites in D2 and D3.
