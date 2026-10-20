@@ -40,6 +40,7 @@ class RoutingDecision:
 
 _ENGINEERING_NATIVE = {
     ProviderCapability.INTEGRATION_INSPECTION,
+    ProviderCapability.BACKUP_INVENTORY,
     ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     ProviderCapability.TYPED_FAN_EXECUTION,
@@ -122,6 +123,7 @@ class RoutingPolicy:
 
 TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_integration_inspection": ProviderCapability.INTEGRATION_INSPECTION,
+    "get_backup_inventory": ProviderCapability.BACKUP_INVENTORY,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     "dashboard_integrity_analysis": ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
@@ -219,6 +221,11 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "get_integration_inspection": {
         "policy_id": "alarmo_allowlist_v1", "access": "read", "orchestrator": "engineering",
         "scope": "one verified Alarmo area/master using fixed native reads and sanitized frozen pagination",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_backup_inventory": {
+        "policy_id": "backup_inventory_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "Core backup/config/info and backup/info only; bounded allowlisted projection",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "automation_reliability_analysis": {

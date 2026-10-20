@@ -1,0 +1,1058 @@
+{
+ "baseline": {
+  "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/baseline.log",
+  "module": "test_hamcp130_backup_inventory",
+  "returncode": 0,
+  "tests": 87,
+  "seconds": 3.5,
+  "summary": "OK"
+ },
+ "mutation_count": 53,
+ "killed": 53,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "F1-report-always-complete",
+   "design_item": "brief: a failed read reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "\"completeness\": \"complete\" if complete else \"partial\",",
+     "\"completeness\": \"complete\","
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/F1-report-always-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_addons_cap_is_the_addon_limit (test_hamcp130_backup_inventory.FieldValidityTests.test_failed_addons_cap_is_the_addon_limit)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "F2-failed-source-status-complete",
+   "design_item": "brief: a failed read reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "\"status\": \"unavailable\" if reason else \"complete\",",
+     "\"status\": \"complete\","
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/F2-failed-source-status-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_both_sources_failing_is_an_error (test_hamcp130_backup_inventory.PartialTests.test_both_sources_failing_is_an_error)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "F3-both-completeness-defenses-removed",
+   "design_item": "brief: a failed read reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "                projector.omit(\"source_unavailable:\" + source[\"source_id\"])\n",
+     "                pass\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "complete = (all(source[\"status\"] == \"complete\" for source in sources)\n                and not p.omissions and redaction is None)",
+     "complete = not p.omissions and redaction is None"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/F3-both-completeness-defenses-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_config_source_failure_is_partial_with_reason (test_hamcp130_backup_inventory.PartialTests.test_config_source_failure_is_partial_with_reason)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "F4-audit-result-success-on-partial",
+   "design_item": "brief: a failed read reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "telemetry.result_status = \"partial\" if result[\"completeness\"] != \"complete\" else \"success\"",
+     "telemetry.result_status = \"success\""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/F4-audit-result-success-on-partial.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_key_unknown_variant_withholds_all_free_text (test_hamcp130_backup_inventory.KeyUnknownTests.test_every_key_unknown_variant_withholds_all_free_text)"
+   ],
+   "seconds": 2.0
+  },
+  {
+   "id": "F5-unreadable-location-not-an-omission",
+   "design_item": "brief: a failed read reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "        p.omit(\"storage_location_unreadable\", error_count)\n",
+     ""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/F5-unreadable-location-not-an-omission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unreadable_storage_location_is_partial (test_hamcp130_backup_inventory.PartialTests.test_unreadable_storage_location_is_partial)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "F6-record-cap-silent",
+   "design_item": "brief: a failed read reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "            p.omit(\"backup_records_not_read\", len(items) - c.MAX_BACKUP_RECORDS)",
+     "            pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/F6-record-cap-silent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_record_cap_is_partial (test_hamcp130_backup_inventory.PartialTests.test_record_cap_is_partial)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "F7-permission-failure-partial",
+   "design_item": "permission failure fails closed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "            raise c.BackupInventoryError(\"permission_failure\")",
+     "            pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/F7-permission-failure-partial.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_permission_failure_fails_closed (test_hamcp130_backup_inventory.PartialTests.test_permission_failure_fails_closed)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "N1-newest-full-is-newest",
+   "design_item": "brief: newest-full-backup logic picks a partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "newest_full = next((b for b in dated if b[\"content_scope\"] == \"full\"), None)",
+     "newest_full = next(iter(dated), None)"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/N1-newest-full-is-newest.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_no_full_backup_at_all (test_hamcp130_backup_inventory.ScenarioTests.test_no_full_backup_at_all)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "N2-newest-full-accepts-unknown",
+   "design_item": "brief: newest-full-backup logic picks a partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "newest_full = next((b for b in dated if b[\"content_scope\"] == \"full\"), None)",
+     "newest_full = next((b for b in dated if b[\"content_scope\"] != \"partial\"), None)"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/N2-newest-full-accepts-unknown.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unknown_installation_scope_is_unknown_not_full (test_hamcp130_backup_inventory.ScenarioTests.test_unknown_installation_scope_is_unknown_not_full)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "N3-classify-ignores-database",
+   "design_item": "brief: newest-full-backup logic picks a partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "if (backup[\"homeassistant_included\"] is False or backup[\"database_included\"] is False\n",
+     "if (backup[\"homeassistant_included\"] is False\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/N3-classify-ignores-database.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_no_full_backup_at_all (test_hamcp130_backup_inventory.ScenarioTests.test_no_full_backup_at_all)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "N4-classify-any-folder-full",
+   "design_item": "brief: newest-full-backup logic picks a partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "if set(backup[\"folders\"]) >= set(c.CORE_FOLDERS):",
+     "if backup[\"folders\"]:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/N4-classify-any-folder-full.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_partial_backups_never_stand_in_for_full (test_hamcp130_backup_inventory.ScenarioTests.test_partial_backups_never_stand_in_for_full)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "N5-classify-ignores-failed-addons",
+   "design_item": "brief: newest-full-backup logic picks a partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "            or backup[\"failed_addons\"] or backup[\"failed_folders\"]):\n        return \"partial\"",
+     "            or backup[\"failed_folders\"]):\n        return \"partial\""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/N5-classify-ignores-failed-addons.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_unreadable_failed_addon_is_still_a_failure (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_unreadable_failed_addon_is_still_a_failure)"
+   ],
+   "seconds": 2.0
+  },
+  {
+   "id": "N6-newest-full-oldest-first",
+   "design_item": "brief: newest-full-backup logic picks a partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "newest_full = next((b for b in dated if b[\"content_scope\"] == \"full\"), None)",
+     "newest_full = next((b for b in reversed(dated) if b[\"content_scope\"] == \"full\"), None)"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/N6-newest-full-oldest-first.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_partial_backups_never_stand_in_for_full (test_hamcp130_backup_inventory.ScenarioTests.test_partial_backups_never_stand_in_for_full)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "S1-key-not-a-known-secret",
+   "design_item": "encryption key withheld from user text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "projector = Projector(known_secrets=self.known_secrets + ((key,) if key else ()),",
+     "projector = Projector(known_secrets=self.known_secrets,"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/S1-key-not-a-known-secret.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_known_key_control_shows_sanitized_text (test_hamcp130_backup_inventory.KeyUnknownTests.test_known_key_control_shows_sanitized_text)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "S2-redaction-not-partial",
+   "design_item": "redaction makes the report partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "and not p.omissions and redaction is None)",
+     "and not p.omissions)"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/S2-redaction-not-partial.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_redaction_alone_makes_the_report_partial (test_hamcp130_backup_inventory.SanitizerTests.test_redaction_alone_makes_the_report_partial)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "W1-extra-command",
+   "design_item": "only the two fixed reads",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/contracts.py",
+     "COMMANDS = (CONFIG_COMMAND, INFO_COMMAND)",
+     "COMMANDS = (CONFIG_COMMAND, INFO_COMMAND, MappingProxyType({\"type\": \"backup/generate\"}))"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/W1-extra-command.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_fixed_command_contract (test_hamcp130_backup_inventory.NoWritePathTests.test_fixed_command_contract)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "W2-info-command-changed",
+   "design_item": "only the two fixed reads",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/contracts.py",
+     "INFO_COMMAND = MappingProxyType({\"type\": \"backup/info\"})",
+     "INFO_COMMAND = MappingProxyType({\"type\": \"backup/details\"})"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/W2-info-command-changed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_addons_cap_is_the_addon_limit (test_hamcp130_backup_inventory.FieldValidityTests.test_failed_addons_cap_is_the_addon_limit)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "H1-key-unknown-treated-as-known",
+   "design_item": "H1: key not positively known fails closed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "key_known=key_known)",
+     "key_known=True)"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/H1-key-unknown-treated-as-known.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_key_unknown_variant_withholds_all_free_text (test_hamcp130_backup_inventory.KeyUnknownTests.test_every_key_unknown_variant_withholds_all_free_text)"
+   ],
+   "seconds": 2.0
+  },
+  {
+   "id": "H2-text-shown-while-key-unknown",
+   "design_item": "H1: key not positively known fails closed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "        if not self.key_known:\n            self.omit(\"encryption_key_unknown:\" + pointer)\n            return None\n        sanitized = self.tally.add(",
+     "        sanitized = self.tally.add("
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/H2-text-shown-while-key-unknown.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_key_unknown_variant_withholds_all_free_text (test_hamcp130_backup_inventory.KeyUnknownTests.test_every_key_unknown_variant_withholds_all_free_text)"
+   ],
+   "seconds": 2.0
+  },
+  {
+   "id": "H3-identifiers-shown-while-key-unknown",
+   "design_item": "H1: key not positively known fails closed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "if not self.key_known and (structured is None",
+     "if False and (structured is None"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/H3-identifiers-shown-while-key-unknown.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_key_unknown_variant_withholds_all_free_text (test_hamcp130_backup_inventory.KeyUnknownTests.test_every_key_unknown_variant_withholds_all_free_text)"
+   ],
+   "seconds": 2.0
+  },
+  {
+   "id": "H4-missing-key-field-as-no-key",
+   "design_item": "H1: key not positively known fails closed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "if type(create) is not dict or \"password\" not in create:",
+     "if type(create) is not dict:"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "password = create[\"password\"]",
+     "password = create.get(\"password\")"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/H4-missing-key-field-as-no-key.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_key_unknown_variant_withholds_all_free_text (test_hamcp130_backup_inventory.KeyUnknownTests.test_every_key_unknown_variant_withholds_all_free_text)"
+   ],
+   "seconds": 2.1
+  },
+  {
+   "id": "H5-invalid-key-field-as-no-key",
+   "design_item": "H1: key not positively known fails closed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "    if type(password) is str:\n        return True, password or None\n    return False, None",
+     "    return True, password if type(password) is str and password else None"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/H5-invalid-key-field-as-no-key.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_key_unknown_variant_withholds_all_free_text (test_hamcp130_backup_inventory.KeyUnknownTests.test_every_key_unknown_variant_withholds_all_free_text)"
+   ],
+   "seconds": 2.1
+  },
+  {
+   "id": "H6-case-variant-guard-removed",
+   "design_item": "H1: no key text anywhere",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "        folded = value.casefold()\n        return any(secret in folded for secret in self._folded_secrets)",
+     "        return False"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/H6-case-variant-guard-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_known_key_in_another_case_is_withheld (test_hamcp130_backup_inventory.KeyUnknownTests.test_known_key_in_another_case_is_withheld)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "M1a-truncation-ignored",
+   "design_item": "M1: truncated input makes the report partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "            self.omit(\"truncated_field:\" + pointer)",
+     "            pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1a-truncation-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_truncated_error_text_is_partial (test_hamcp130_backup_inventory.FieldValidityTests.test_truncated_error_text_is_partial)"
+   ],
+   "seconds": 2.1
+  },
+  {
+   "id": "M1b-invalid-size-silent",
+   "design_item": "M1: invalid field makes the report partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "            if size is None:\n                bad(\"agents.size\")",
+     "            if size is None:\n                pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1b-invalid-size-silent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_malformed_backup_fields (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_malformed_backup_fields)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M1c-failed-list-cap-silent",
+   "design_item": "M1: truncated input makes the report partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "            p.omit(key + \"_not_listed\", len(value) - cap)",
+     "            pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1c-failed-list-cap-silent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_addons_cap_is_the_addon_limit (test_hamcp130_backup_inventory.FieldValidityTests.test_failed_addons_cap_is_the_addon_limit)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M1d-failed-addons-capped-at-location-limit",
+   "design_item": "M1: truncated input makes the report partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "failed_addons = failed_list(\"failed_addons\", SLUG, c.MAX_ADDONS_PER_BACKUP)",
+     "failed_addons = failed_list(\"failed_addons\", SLUG, c.MAX_LOCATIONS)"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1d-failed-addons-capped-at-location-limit.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_addons_cap_is_the_addon_limit (test_hamcp130_backup_inventory.FieldValidityTests.test_failed_addons_cap_is_the_addon_limit)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M1e-failure-list-cap-silent",
+   "design_item": "M1: truncated input makes the report partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "        p.omit(\"recent_failures_not_listed\", failure_count - c.MAX_FAILURES)\n",
+     ""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1e-failure-list-cap-silent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_truncated_report_lists_are_partial (test_hamcp130_backup_inventory.FieldValidityTests.test_truncated_report_lists_are_partial)"
+   ],
+   "seconds": 2.0
+  },
+  {
+   "id": "M1f-missing-nullable-field-as-null",
+   "design_item": "M1: missing field makes the report partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "version = raw.get(\"homeassistant_version\", MISSING)",
+     "version = raw.get(\"homeassistant_version\")"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1f-missing-nullable-field-as-null.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_missing_nullable_fields_differ_from_null (test_hamcp130_backup_inventory.FieldValidityTests.test_missing_nullable_fields_differ_from_null)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M1g-invalid-required-bool-silent",
+   "design_item": "M1: invalid field makes the report partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "    value = _bool(raw.get(key))\n    if value is None:\n        p.invalid(pointer, *inputs)\n",
+     "    value = _bool(raw.get(key))\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1g-invalid-required-bool-silent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_malformed_config_fields (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_malformed_config_fields)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M2a-partial-inputs-decided-as-complete",
+   "design_item": "M2: signals on unreadable inputs",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "    if missing:\n        status, fact = \"unknown\"",
+     "    if False:\n        status, fact = \"unknown\""
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "\"evidence_complete\": not missing,",
+     "\"evidence_complete\": True,"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2a-partial-inputs-decided-as-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_reviewer_invalid_lists_are_null_not_empty (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_invalid_lists_are_null_not_empty)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M2b-partial-inputs-decided",
+   "design_item": "M2: signals on unreadable inputs",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "    if missing:\n        status, fact = \"unknown\"",
+     "    if False:\n        status, fact = \"unknown\""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2b-partial-inputs-decided.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_reviewer_invalid_lists_are_null_not_empty (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_invalid_lists_are_null_not_empty)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M2c-failed-info-inputs-readable",
+   "design_item": "M2: signals on unreadable inputs",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "        unreadable |= {\"backup_list\", \"backup_dates\", \"location_errors\", \"manager_state\"}\n",
+     "        pass\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2c-failed-info-inputs-readable.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_info_source_failure_is_partial_and_signals_unknown (test_hamcp130_backup_inventory.PartialTests.test_info_source_failure_is_partial_and_signals_unknown)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "M2d-invalid-date-not-an-input",
+   "design_item": "M2: signals on unreadable inputs",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "        unreadable.add(\"backup_dates\")\n",
+     "        pass\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2d-invalid-date-not-an-input.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_unreadable_date (test_hamcp130_backup_inventory.SignalInputTests.test_reviewer_unreadable_date)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "M2e-location-error-listing-readable",
+   "design_item": "M2: signals on unreadable inputs",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "        p.omit(\"storage_location_unreadable\", error_count)\n        p.unreadable.add(\"backup_list\")\n",
+     "        p.omit(\"storage_location_unreadable\", error_count)\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2e-location-error-listing-readable.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unreadable_storage_location_is_partial (test_hamcp130_backup_inventory.PartialTests.test_unreadable_storage_location_is_partial)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "M2f-manager-state-never-an-input",
+   "design_item": "M2: signals on unreadable inputs",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "    if \"automatic_times\" not in unreadable and needs_manager_state(attempted, completed):",
+     "    if False:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2f-manager-state-never-an-input.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_committed_sample_matches_generator (test_hamcp130_backup_inventory.SampleTests.test_committed_sample_matches_generator)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "M2g-schedule-not-an-input-when-invalid",
+   "design_item": "M2: signals on unreadable inputs",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "            p.invalid(\"schedule.days\", \"schedule\")",
+     "            p.invalid(\"schedule.days\")"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2g-schedule-not-an-input-when-invalid.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_unreadable_schedule_days (test_hamcp130_backup_inventory.SignalInputTests.test_reviewer_unreadable_schedule_days)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "M1h-lax-clock-time",
+   "design_item": "M1 batch 2: strict schedule time",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "    try:\n        clock_time.fromisoformat(value)\n    except ValueError:\n        return False\n    return True",
+     "    return True"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1h-lax-clock-time.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_invalid_clock_time_is_null (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_invalid_clock_time_is_null)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M1i-invalid-location-list-as-empty",
+   "design_item": "M1 batch 2: invalid list is null",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "        p.invalid(pointer)\n        return None\n    result = []",
+     "        p.invalid(pointer)\n        return []\n    result = []"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1i-invalid-location-list-as-empty.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_invalid_lists_are_null_not_empty (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_invalid_lists_are_null_not_empty)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M1j-invalid-days-as-empty",
+   "design_item": "M1 batch 2: invalid list is null",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "schedule = {\"recurrence\": None, \"days\": None, \"time\": None}",
+     "schedule = {\"recurrence\": None, \"days\": [], \"time\": None}"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1j-invalid-days-as-empty.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_invalid_lists_are_null_not_empty (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_invalid_lists_are_null_not_empty)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M1k-invalid-includes-as-empty",
+   "design_item": "M1 batch 2: invalid list is null",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "includes = {\"all_addons\": None, \"addons\": None, \"database\": None, \"folders\": None}",
+     "includes = {\"all_addons\": None, \"addons\": [], \"database\": None, \"folders\": []}"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1k-invalid-includes-as-empty.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_invalid_lists_are_null_not_empty (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_invalid_lists_are_null_not_empty)"
+   ],
+   "seconds": 1.8
+  },
+  {
+   "id": "M1l-omission-ledger-unbounded",
+   "design_item": "M1 batch 2: exact omission bound",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "    if len(omissions) > OMISSION_LIMIT:",
+     "    if False:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1l-omission-ledger-unbounded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_omission_ledger_is_exactly_bounded (test_hamcp130_backup_inventory.FieldValidityTests.test_omission_ledger_is_exactly_bounded)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M1m-trimming-bypasses-ledger",
+   "design_item": "M1 batch 2: exact omission bound",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "            report.finish(projector, result)\n",
+     ""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1m-trimming-bypasses-ledger.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_reviewer_omission_cap_with_byte_trimming (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_omission_cap_with_byte_trimming)"
+   ],
+   "seconds": 2.0
+  },
+  {
+   "id": "M1n-reason-count-from-listed",
+   "design_item": "M1 batch 2: exact reason count",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "\"omission_reason_count\": len(reasons),",
+     "\"omission_reason_count\": len(omissions),"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M1n-reason-count-from-listed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_omission_ledger_is_exactly_bounded (test_hamcp130_backup_inventory.FieldValidityTests.test_omission_ledger_is_exactly_bounded)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M2h-unknown-with-complete-evidence",
+   "design_item": "M2 batch 2: unknown never complete evidence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "\"evidence_complete\": not missing,",
+     "\"evidence_complete\": True,"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2h-unknown-with-complete-evidence.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_malformed_backup_fields (test_hamcp130_backup_inventory.FieldValidityTests.test_reviewer_malformed_backup_fields)"
+   ],
+   "seconds": 1.7
+  },
+  {
+   "id": "M2i-unknown-scope-not-an-input",
+   "design_item": "M2 batch 2: unknown content scope is unreadable",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "(\"content\" in b[\"_invalid\"] or b[\"content_scope\"] == \"unknown\")",
+     "\"content\" in b[\"_invalid\"]"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2i-unknown-scope-not-an-input.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unknown_installation_scope_is_unknown_not_full (test_hamcp130_backup_inventory.ScenarioTests.test_unknown_installation_scope_is_unknown_not_full)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "M2j-768d9bd-unknown-scope-behavior",
+   "design_item": "M2 batch 2: unknown never complete evidence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "            return \"not_observed\", f\"Newest full backup is {newest_full['age_days']} day(s) old.\"\n",
+     "            return \"not_observed\", f\"Newest full backup is {newest_full['age_days']} day(s) old.\"\n        if any(b[\"content_scope\"] == \"unknown\" and b[\"age_days\"] <= full_days for b in dated):\n            return \"unknown\", \"A recent backup's content scope could not be established.\"\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "        if status not in DECIDED:\n            raise RuntimeError",
+     "        if False:\n            raise RuntimeError"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "(\"content\" in b[\"_invalid\"] or b[\"content_scope\"] == \"unknown\")",
+     "\"content\" in b[\"_invalid\"]"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "            p.omit(\"content_scope_not_established\")\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2j-768d9bd-unknown-scope-behavior.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unknown_installation_scope_is_unknown_not_full (test_hamcp130_backup_inventory.ScenarioTests.test_unknown_installation_scope_is_unknown_not_full)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "M2k-missing-event-state-valid",
+   "design_item": "M2 batch 2: missing event state is unreadable",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "state = event.get(\"state\", MISSING)",
+     "state = event.get(\"state\")"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "elif state not in EVENT_STATES[manager_state]:",
+     "elif state is not None and state not in EVENT_STATES[manager_state]:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2k-missing-event-state-valid.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_missing_event_state (test_hamcp130_backup_inventory.SignalInputTests.test_reviewer_missing_event_state)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "M2l-event-kind-mismatch-accepted",
+   "design_item": "M2 batch 2: missing event state is unreadable",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "if state in EVENT_STATES and (last_action is None",
+     "if False and (last_action is None"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2l-event-kind-mismatch-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_missing_event_state (test_hamcp130_backup_inventory.SignalInputTests.test_reviewer_missing_event_state)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "M2m-unknown-scope-not-an-omission",
+   "design_item": "M2 batch 2: unknown content scope is partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/report.py",
+     "            p.omit(\"content_scope_not_established\")\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2m-unknown-scope-not-an-omission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_unknown_installation_content (test_hamcp130_backup_inventory.SignalInputTests.test_reviewer_unknown_installation_content)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "M2n-unhashable-event-kind",
+   "design_item": "M2 batch 2: sweep over every input never crashes",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "if type(manager_state) is not str or manager_state not in EVENT_STATES:",
+     "if manager_state not in EVENT_STATES:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/M2n-unhashable-event-kind.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_every_signal_consistent_across_missing_and_unreadable_inputs (test_hamcp130_backup_inventory.SignalSweepTests.test_every_signal_consistent_across_missing_and_unreadable_inputs)"
+   ],
+   "seconds": 3.4
+  },
+  {
+   "id": "R1-provider-error-message-reflected",
+   "design_item": "reviewer: provider text never in a reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/service.py",
+     "except HomeAssistantApiError:\n            reason = \"command_failed\"",
+     "except HomeAssistantApiError as exc:\n            reason = str(exc)"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/R1-provider-error-message-reflected.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_key_unknown_variant_withholds_all_free_text (test_hamcp130_backup_inventory.KeyUnknownTests.test_every_key_unknown_variant_withholds_all_free_text)"
+   ],
+   "seconds": 2.0
+  },
+  {
+   "id": "R2-identifier-alias-returns-value",
+   "design_item": "delta reviewer: key-shaped identifiers aliased",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/backup_inventory/projection.py",
+     "        return alias\n\n    def identifier",
+     "        return value\n\n    def identifier"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp130-work/mut/mutation-logs/R2-identifier-alias-returns-value.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_key_unknown_variant_withholds_all_free_text (test_hamcp130_backup_inventory.KeyUnknownTests.test_every_key_unknown_variant_withholds_all_free_text)"
+   ],
+   "seconds": 2.1
+  }
+ ]
+}
