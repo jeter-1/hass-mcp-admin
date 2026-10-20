@@ -461,6 +461,47 @@ class ScriptPartialOnFailureTests(unittest.IsolatedAsyncioTestCase):
                     result.profile["script_stored_config_fallback_reasons"], {"loaded_config_unreadable": 1},
                 )
 
+    async def test_cyclic_script_search_error_is_partial(self):
+        # Core's script search has no cycle guard: a self-calling script, a
+        # two-script cycle and a script that reaches the cycle all fail their
+        # search/related command (per command, not the whole batch).
+        def calls(*targets):
+            return {"sequence": [
+                *({"action": "script.turn_on", "target": {"entity_id": target}} for target in targets),
+                {"action": "light.turn_on", "target": {"entity_id": "light.synthetic_kitchen"}},
+            ]}
+
+        ha = SyntheticScriptHome(generated_automations(1), [
+            script("synthetic_script_self", calls("script.synthetic_script_self")),
+            script("synthetic_script_ping", calls("script.synthetic_script_pong")),
+            script("synthetic_script_pong", calls("script.synthetic_script_ping")),
+            script("synthetic_script_reaches_cycle", calls("script.synthetic_script_ping")),
+            *generated_scripts(1),
+        ])
+        with self.assertRaises(RecursionError):
+            ha.search_script("script.synthetic_script_self")
+        provider, reader = provider_for(ha)
+        result = await scan(provider)
+        diagnostics = result.script_diagnostics
+        cyclic = {
+            "script.synthetic_script_self", "script.synthetic_script_ping",
+            "script.synthetic_script_pong", "script.synthetic_script_reaches_cycle",
+        }
+        # One batch; script/config succeeded, only the search failed.
+        self.assertEqual(len(ha.batch_calls), 1)
+        self.assertEqual(set(reader.calls), cyclic)
+        self.assertEqual(result.profile["script_stored_config_fallback_reasons"], {"loaded_config_unreadable": 4})
+        self.assertEqual(result.profile["script_loaded_config_unavailable"], 4)
+        self.assertEqual(result.profile["script_config_source_counts"], {"loaded_websocket": 1, "stored_delegated": 4})
+        self.assertIn(f"{LOADED_CONFIG_UNAVAILABLE}: 4", warnings_of(diagnostics))
+        self.assertGreaterEqual(diagnostics.coverage.failed_item_count, 4)
+        self.assertEqual(diagnostics.coverage.completeness, "partial")
+        # The stored evidence is still analyzed; the automation source is untouched.
+        analyzed = {finding.source_id for finding in diagnostics.findings}
+        self.assertTrue({entity.removeprefix("script.") for entity in cyclic} <= analyzed, analyzed)
+        automation = next(item for item in result.coverage if item.source_type == "automation")
+        self.assertEqual(automation.completeness, "complete")
+
     async def test_analysis_discloses_loaded_failure(self):
         ha = SyntheticScriptHome([], generated_scripts(2))
         ha.batch_failure = HomeAssistantUnavailableError()

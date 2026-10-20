@@ -10,12 +10,17 @@ Builds on 2.4.1-beta.24.
   index's single WebSocket batch (`loaded_config_batch`, renamed from
   `loaded_automation_config_batch`), replacing one delegated
   `ha_config_get_script` read per script. No configuration file is read.
+- Raise the batch bound `MAX_BATCH_COMMANDS` from 2,048 to 4,096: two commands
+  per source at the provider's 1,000 automation and 1,000 script limits need up
+  to 4,000. The bound is still refused before dispatch; 16 stay in flight.
 - Use the existing delegated stored read only for a counted, closed set of
   reasons: `blueprint_instance`, `blueprint_reference_nested`,
   `loaded_entity_unavailable`, `pending_write_reload`,
   `loaded_source_unsupported`, `loaded_config_unreadable` and
   `loaded_source_unavailable`. The last two are a failed loaded read: script
-  coverage is partial with `loaded_config_unavailable: N`.
+  coverage is partial with `loaded_config_unavailable: N`. A self-calling or
+  cyclic script fails its search (Core has no cycle guard) and is
+  `loaded_config_unreadable`.
 - Journal governed script writes before dispatch until Home Assistant's
   reload lands; written-but-not-loaded scripts are `pending_write_unreconciled`.
 - Attribute each script's evidence to its source (`direct_ha_api` loaded,

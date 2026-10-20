@@ -30,11 +30,17 @@ delegated `ha_config_get_script` (`delegated_script_configuration`: 5 requests,
    identity-verified script, the build's one WebSocket batch (now
    `loaded_config_batch`, at most 16 in flight) adds two fixed, read-only
    commands:
-   - `script/config {entity_id}` returns the in-memory `raw_config`;
+   - `script/config {entity_id}` returns the in-memory `raw_config` (Core's
+     pre-validation copy of the script's configuration);
    - `search/related {item_type: "script", item_id}` detects blueprint use.
 
    The WebSocket client's allowlist admits exactly these shapes. Unavailable
-   and registry-only scripts are not commanded.
+   and registry-only scripts are not commanded. The batch bound
+   (`MAX_BATCH_COMMANDS`) rises from 2,048 to 4,096 so a build at the
+   provider's limits (1,000 automations and 1,000 scripts, two commands each,
+   4,000 in total) still fits; a batch over the bound is refused before
+   dispatch and the whole build would read stored. At most 16 commands remain
+   in flight.
 2. **Stored read only where loaded is not equivalent, always counted.** In
    these cases the unchanged delegated reader is used and the reason recorded:
 
@@ -45,7 +51,7 @@ delegated `ha_config_get_script` (`delegated_script_configuration`: 5 requests,
    | `loaded_entity_unavailable` | the script is unavailable or registry-only | no |
    | `pending_write_reload` | a governed write has not been reloaded yet | no |
    | `loaded_source_unsupported` | the client has no batch read (the pre-beta.25 path) | no |
-   | `loaded_config_unreadable` | the loaded read or search failed or was malformed | **yes** |
+   | `loaded_config_unreadable` | the loaded read or search failed or was malformed, including a self-calling or cyclic script (Core's script search has no cycle guard) | **yes** |
    | `loaded_source_unavailable` | the whole batch failed | **yes** |
 
    Reasons appear in the script coverage `policy` and in the build profile. A

@@ -8,7 +8,9 @@ Extends the HAMCP-209 model with scripts, mirroring the pinned Core
   script entity is loaded (registry-only, disabled or not reloaded yet).
 * ``search/related`` with ``item_type: script`` reports ``script_blueprint``
   and recurses into scripts the script targets, which are listed under
-  ``script`` with their blueprints merged in.
+  ``script`` with their blueprints merged in. Like Core there is no cycle guard,
+  so a self-calling or cyclic script fails its search per command
+  (``unknown_error``).
 * The stored read is the delegated ha-mcp 8.5.0 ``ha_config_get_script``
   route: the scripts.yaml entry, with the entity registry ``category``
   injected when one is set. Each read costs a configurable delay, the cost
@@ -227,23 +229,35 @@ class SyntheticScriptHome(SyntheticHomeAssistant):
         item = self.scripts[entity_id]
         item["loaded"] = deepcopy(item["stored"])
 
-    def search_script(self, entity_id: str, seen: frozenset[str] = frozenset()) -> dict[str, list[str]]:
-        """Core's recursive ``_async_search_script`` for the fixture's shapes."""
+    def search_script(self, entity_id: str, path: tuple[str, ...] = ()) -> dict[str, list[str]]:
+        """Core's recursive ``_async_search_script`` for the fixture's shapes.
 
+        Like Core (``search/__init__.py:613-614``), there is no cycle guard: a
+        script that reaches itself again recurses until ``RecursionError``,
+        which Core's WebSocket layer (``websocket_api/connection.py:249-252``)
+        returns as a per-command ``unknown_error``. The fixture raises at the
+        first repeat instead of exhausting the stack. An unavailable or
+        unloaded script references nothing (``UnavailableScriptEntity``
+        ``script/__init__.py:503-518``; no entity at all for registry-only).
+        """
+
+        if entity_id in path:
+            raise RecursionError(f"cyclic script reference: {' -> '.join((*path, entity_id))}")
         item = self.scripts.get(entity_id)
         related: dict[str, set[str]] = {"script_blueprint": set(), "script": set()}
-        if item is None or item["loaded"] is None:
+        if item is None or item["loaded"] is None or item["state"] in (None, "unavailable"):
             return {}
-        if item["blueprint"] and item["state"] != "unavailable":
+        if item["blueprint"]:
             related["script_blueprint"].add(item["blueprint"])
         for step in item["loaded"].get("sequence", []) if isinstance(item["loaded"].get("sequence"), list) else []:
             target = step.get("target", {}).get("entity_id") if isinstance(step, dict) and isinstance(step.get("target"), dict) else None
-            if isinstance(target, str) and target.startswith("script.") and target not in seen:
+            if isinstance(target, str) and target.startswith("script."):
                 related["script"].add(target)
-                nested = self.search_script(target, seen | {entity_id})
+                nested = self.search_script(target, (*path, entity_id))
                 for key, values in nested.items():
                     related.setdefault(key, set()).update(values)
-        related["script"].discard(entity_id)
+        if not path:
+            related["script"].discard(entity_id)  # Core: async_search :114-115
         return {key: sorted(values) for key, values in related.items() if values}
 
 
@@ -283,7 +297,10 @@ class SyntheticScriptWebSocket(SyntheticWebSocket):
                     related["automation_blueprint"] = [item["blueprint"]]
                 outcomes.append((True, related))
             else:
-                outcomes.append((True, self.ha.search_script(entity_id)))
+                try:
+                    outcomes.append((True, self.ha.search_script(entity_id)))
+                except RecursionError:
+                    outcomes.append((False, "unknown_error"))
         return outcomes
 
 

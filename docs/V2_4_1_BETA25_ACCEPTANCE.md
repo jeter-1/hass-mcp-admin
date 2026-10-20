@@ -64,12 +64,14 @@ Preserve the following:
 
 No test reaches a live system.
 
-- `tests/test_hamcp212_loaded_script_config.py` (43 tests) covers:
+- `tests/test_hamcp212_loaded_script_config.py` (43 tests: the 42 reviewed at
+  `180b1d3` plus the cyclic-search test) covers:
   - parity of loaded and stored scripts;
   - bounded requests: one batch, 236 commands for 113 automations and
     5 scripts, and 0 delegated reads;
   - fallback accounting for each reason;
-  - partial on failure;
+  - partial on failure, including a self-calling or cyclic script whose
+    `search/related` fails per command (Core has no cycle guard);
   - the journal and its write hook;
   - the allowlist;
   - health profile keys;

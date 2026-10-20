@@ -63,14 +63,14 @@ relative to `homeassistant/components/`.
 
 | Case | Core source | Loaded content | HAMCP-212 handling |
 | --- | --- | --- | --- |
-| Plain, templated or dynamic script | `_create_script_entities` `:328` stores the validated config as `raw_config` | Same keys and values as `scripts.yaml`; templates stay unrendered | Loaded; parity proven |
+| Plain, templated or dynamic script | `script/config.py _async_validate_config_item` `:118` keeps the pre-validation `dict(config)` as `raw_config` (the validated config is held separately, `:220-232`); `_create_script_entities` `:348-353` passes it to the entity | Same keys and values as `scripts.yaml`; templates stay unrendered | Loaded; parity proven |
 | Blueprint instance | `referenced_blueprint` `:503`, `:632-638`; `raw_config` is the **substituted** body | The expanded sequence, not the `use_blueprint` input form | `search/related` reports `script_blueprint`, so the stored read is used: `blueprint_instance` |
 | Script that targets a blueprint script | `search/__init__.py _async_search_script` `:556-615` recurses into referenced scripts | Its own config, but the search reports the nested script's blueprint | Stored read: `blueprint_reference_nested`. This is conservative; the config itself is plain |
 | Validation failure | `UnavailableScriptEntity` `:460-480`, state `unavailable`, `raw_config` is the original | Possibly invalid; no blueprint reported | Not commanded; stored read: `loaded_entity_unavailable` |
 | Registry-only or disabled script | No entity loaded | `ERR_NOT_FOUND` | Not commanded; stored read: `loaded_entity_unavailable` |
 | Package or YAML-only script (no `scripts.yaml` entry) | Loaded from configuration packages | Loaded config; `!secret` values are **resolved** | Loaded; the stored route alone would report `resource_not_found` |
 | Governed write before reload | `config/script.py` reloads after the POST response | Stale until the reload lands | Pending-write journal (section 3.3) |
-| Self or cyclic script reference | `_async_search_script` recursion | A per-command search error | `loaded_config_unreadable`, therefore partial (disclosed limitation) |
+| Self or cyclic script reference | `_async_search_script` `:613-614` recurses with no cycle guard until `RecursionError`; `websocket_api/connection.py:249-252` returns it as `unknown_error` | A per-command search error (`script/config` itself succeeds) | `loaded_config_unreadable`, therefore partial (disclosed limitation); `test_cyclic_script_search_error_is_partial` |
 | Registry category | Not part of `raw_config` | Absent | ha-mcp 8.5.0 `ha_config_get_script` (`tools_config_scripts.py:117`, commit `311d6dc`) injects `category` into the stored form; `_comparable_stored` ignores it for the journal comparison |
 
 Blueprint helpers: `blueprint_in_script` `:196-207` and `scripts_with_blueprint`
@@ -175,7 +175,17 @@ Attribution:
 Authorized by the brief (dependency modules and the WebSocket client):
 
 - `hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py`:
-  allowlist only.
+  - the allowlist (two more fixed shapes);
+  - the batch bound `MAX_BATCH_COMMANDS`, raised from 2,048 to 4,096. Each
+    script adds two commands, like each automation, so a build at the
+    provider's limits (`MAX_AUTOMATION_SOURCES` 1,000 and
+    `MAX_SCRIPT_SOURCES` 1,000) needs up to 4,000 commands. At 2,048, such a
+    home would exceed the bound and lose the loaded route for the whole build
+    (`loaded_source_unavailable`). The bound is still a fixed refusal limit
+    checked before dispatch; the in-flight window (`BATCH_WINDOW` 16) is
+    unchanged. `test_delegated_fallback_reads_stay_bounded` asserts the bound
+    covers both limits, and HAMCP-209's refusal test still rejects
+    `MAX_BATCH_COMMANDS + 1` payloads before dispatch.
 - `dependency/provider.py`: batch assembly, journal and profile.
 - `dependency/runtime.py`: `note_script_write`.
 - `dependency/script_sources.py`: routing, accounting, attribution.
@@ -233,14 +243,16 @@ Not changed:
 
 ## 5. Tests, parity and mutations
 
-- `tests/test_hamcp212_loaded_script_config.py` (43 tests):
+- `tests/test_hamcp212_loaded_script_config.py` (43 tests: the 42 reviewed at
+  `180b1d3` plus the cyclic-search test):
   - parity;
   - bounded requests (one connection, 236 commands for 113 + 5, 0 delegated
     reads, fixed shapes, unavailable and registry-only scripts not commanded,
     a scripts-only batch, no reader means no script command);
   - fallback accounting for each reason;
   - partial on failure (batch failure, short batch, per-command error, malformed
-    config or search, both sources failing);
+    config or search, both sources failing, a self-calling or cyclic script's
+    search error);
   - analysis disclosure;
   - journal (until reload, verified, written-not-loaded, deleted, unreadable,
     rewrite during build, overflow sticky, overflow package);
@@ -250,7 +262,10 @@ Not changed:
   - attribution;
   - planted secrets.
 - `tests/hamcp212_fixtures.py` extends the HAMCP-209 synthetic model with
-  loaded and stored scripts. Core's recursive script search is modelled.
+  loaded and stored scripts. Core's recursive script search is modelled as
+  Core implements it: no cycle guard (a cycle is a per-command
+  `unknown_error`), and an unavailable or unloaded nested script references
+  nothing.
 - Cross-tree parity (`docs/evidence/hamcp212/`): base `f69bf8c` (every script
   read delegated) and head are **IDENTICAL** for the representative and
   113 + 5 fixtures, covering the analysis, automation index, script view and
@@ -296,7 +311,8 @@ acceptance check records the real number.
 
 - A whole-batch failure affects automations and scripts together (shared
   connection), and both report it.
-- Cyclic script references make the search fail. That script is
+- Cyclic script references make the search fail (Core has no cycle guard).
+  Every script that reaches the cycle, including a self-calling script, is
   `loaded_config_unreadable` and partial, while its stored evidence is still
   reported.
 - A `blueprint_reference_nested` script reads stored even though its own config
