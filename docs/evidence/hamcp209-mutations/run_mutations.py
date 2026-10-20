@@ -51,7 +51,7 @@ def m(identifier, item, path, replacements, tests=(T_INDEX,)):
 MUTATIONS = [
     m("M1-per-automation-rest-loop-restored",
       "brief: the per-automation REST loop restored (request-count test must fail)", PROVIDER, [(
-        "            if reason is None and not pending:\n",
+        "            if reason is None and not (tracked or journal_overflow):\n",
         "            if False:\n",
     )]),
     m("M2a-missing-automation-reported-complete",
@@ -78,8 +78,8 @@ MUTATIONS = [
         "",
     )]),
     m("M4-journal-ignored", "design 4: a pending write is read from stale loaded config", PROVIDER, [(
-        "            pending = journal_key in pending_snapshot or journal_overflow\n",
-        "            pending = False\n",
+        "            tracked = journal_key in pending_snapshot\n",
+        "            tracked = False\n",
     )]),
     m("M5-blueprint-search-ignored", "design 2: a blueprint instance is read from substituted loaded config", PROVIDER, [(
         "            if blueprints or \"use_blueprint\" in config:\n",
@@ -100,6 +100,118 @@ MUTATIONS = [
     m("M9-resource-write-not-journaled", "design 4: the resource automation write skips the journal", RESOURCES, [(
         "            DEPENDENCY_ANALYSIS.note_automation_write(resource_id)\n",
         "            pass\n",
+    )]),
+    # Correction batch (independent review of 5617aa7): H1, M1, M2.
+    m("R1-sanitizer-decision-bypassed",
+      "review: the shared-sanitizer decision in the effect display filter always passes", PROVIDER, [(
+        "        return all(\n"
+        "            redact_data(spelling, secret=self._secret) == spelling\n",
+        "        return True or all(\n"
+        "            redact_data(spelling, secret=self._secret) == spelling\n",
+    )]),
+    m("H1a-denylist-instead-of-allowlist",
+      "H1: values the sanitizer does not recognize are shown verbatim (denylist)", PROVIDER, [
+        ("        prefix = f\"{path}|{selector}|\"\n",
+         "        prefix = f\"{path}|{selector}|\"\n"
+         "        if self._clean(value):\n"
+         "            return token\n"),
+        ("        if not found or not self._path(path):\n"
+         "            return _effect_digest(token)\n",
+         "        if not found or not self._path(path):\n"
+         "            return _effect_digest(token)\n"
+         "        if self._clean(value):\n"
+         "            return token\n"),
+        ("    def service(self, value: str) -> str:\n",
+         "    def service(self, value: str) -> str:\n"
+         "        if self._clean(value):\n"
+         "            return value\n"),
+        ("    def domain(self, value: str) -> str:\n",
+         "    def domain(self, value: str) -> str:\n"
+         "        if self._clean(value):\n"
+         "            return value\n"),
+      ]),
+    m("H1b-hash-prefix-trusted",
+      "H1: a digest-shaped configuration string is trusted as a generated digest", PROVIDER, [(
+        "            and value.lower() not in self._leaves\n",
+        "            and True\n",
+    )]),
+    m("H1c-target-position-bypasses-filter",
+      "H1: the effect-target position is copied verbatim", PROVIDER, [(
+        "                        effect_display.target(str(item))\n",
+        "                        str(item)\n",
+    )]),
+    m("H1d-data-position-bypasses-filter",
+      "H1: the effect-data position is copied verbatim", PROVIDER, [(
+        "                        effect_display.data(str(item))\n",
+        "                        str(item)\n",
+    )]),
+    m("H1e-service-position-bypasses-filter",
+      "H1: the service position is copied verbatim", PROVIDER, [(
+        "                        effect_display.service(str(item))\n",
+        "                        str(item)\n",
+    )]),
+    m("H1f-domain-position-bypasses-filter",
+      "H1: the action-domain position is copied verbatim", PROVIDER, [(
+        "                        effect_display.domain(str(item))\n",
+        "                        str(item)\n",
+    )]),
+    m("H1g-literal-provenance-ignored",
+      "H1: identifier grammar alone admits a lowercased projection of a configured value", PROVIDER, [(
+        "            and value in self._literals\n"
+        "            and self._clean(value)\n",
+        "            and self._clean(value)\n",
+    )]),
+    m("M1a-unverified-loaded-reported-complete",
+      "M1: a stored read standing in for unreadable loaded configuration is complete", PROVIDER, [(
+        "            elif failure is None and reason in _UNVERIFIED_LOADED_REASONS:\n"
+        "                unverified_loaded.add(id(state))\n",
+        "",
+    )]),
+    m("M1c-batch-failure-reported-unsupported",
+      "M1: a batch read that raises is reported as an unsupported client (complete)", PROVIDER, [(
+        "                loaded.clear()\n"
+        "                loaded_source_failure = \"loaded_source_unavailable\"\n",
+        "                loaded.clear()\n"
+        "                loaded_source_failure = \"loaded_source_unsupported\"\n",
+    )]),
+    m("M1b-identity-mismatch-treated-stable",
+      "M1: a loaded identity mismatch verifies the stored read", PROVIDER, [(
+        "_STABLE_LOADED_REASONS = frozenset({\n"
+        "    \"blueprint_instance\",\n"
+        "    \"loaded_entity_unavailable\",\n"
+        "})\n",
+        "_STABLE_LOADED_REASONS = frozenset({\n"
+        "    \"blueprint_instance\",\n"
+        "    \"loaded_entity_unavailable\",\n"
+        "    \"loaded_identity_mismatch\",\n"
+        "})\n",
+    )]),
+    m("M2d-overflow-cleared-after-build",
+      "M2: the journal overflow is cleared after a build (the pending write is forgotten)", PROVIDER, [(
+        "        for key in verified:\n"
+        "            if key in snapshot and self._pending_writes.get(key) == snapshot[key]:\n"
+        "                del self._pending_writes[key]\n",
+        "        for key in verified:\n"
+        "            if key in snapshot and self._pending_writes.get(key) == snapshot[key]:\n"
+        "                del self._pending_writes[key]\n"
+        "        self._pending_write_overflow = False\n",
+    )]),
+    m("M2e-pending-cleared-after-partial-build",
+      "M2: pending writes are cleared after a partial build", PROVIDER, [(
+        "        self._settle_pending_writes(pending_snapshot, verified_pending)\n",
+        "        self._settle_pending_writes(pending_snapshot, set(pending_snapshot))\n",
+    )]),
+    m("M2f-overflow-not-reported",
+      "M2: an overflowed journal does not make the build partial", PROVIDER, [(
+        "        if journal_overflow:\n"
+        "            # Identities beyond the journal cap are unknown;",
+        "        if False:\n"
+        "            # Identities beyond the journal cap are unknown;",
+    )]),
+    m("M2g-unreconciled-read-failure-not-reported",
+      "M2: a journaled write whose read failed is not reported unreconciled", PROVIDER, [(
+        "                if str(attrs.get(\"id\")) in pending_snapshot:\n",
+        "                if False:\n",
     )]),
 ]
 

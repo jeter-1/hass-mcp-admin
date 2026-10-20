@@ -230,24 +230,26 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         rest, _, websocket = self._cold_build_fixture()
         provider = DirectHaDependencyProvider(rest, websocket, concurrency=2)
         result = await provider.scan()
-        # The failed batch attempt is counted, and every automation is read
-        # from stored configuration with the reason reported.
-        self.assertEqual(result.profile["request_count"], 7)
+        # A client with no batch read has no loaded source: no batch is
+        # attempted, and the breakdown is the pre-HAMCP-209 one, with every
+        # automation read from stored configuration and the reason reported.
+        self.assertEqual(result.profile["request_count"], 6)
         self.assertEqual(
             result.profile["request_count_by_operation"],
             {
                 "automation_config": 3,
                 "entity_registry_inventory": 1,
                 "home_assistant_config": 1,
-                "loaded_automation_config_batch": 1,
                 "states_inventory": 1,
             },
         )
         self.assertEqual(result.profile["automation_config_source"], "stored_rest")
         self.assertEqual(
             result.profile["stored_config_fallback_reasons"],
-            {"loaded_source_unavailable": 3},
+            {"loaded_source_unsupported": 3},
         )
+        automation = next(item for item in result.coverage if item.source_type == "automation")
+        self.assertEqual(automation.completeness, "complete")
         self.assertLessEqual(result.profile["observed_max_concurrency"], 2)
 
     async def test_cursor_continuation_is_under_100ms_and_never_rebuilds(self):

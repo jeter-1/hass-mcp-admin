@@ -24,11 +24,17 @@ peer; no live dependency is used.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 from copy import deepcopy
 from dataclasses import asdict
 import json
 from pathlib import Path
+import re
+import secrets
+import string
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -49,9 +55,11 @@ from ha_mcp_engineering.clients.websocket import (  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
+    LOADED_CONFIG_UNAVAILABLE,
     MAX_PENDING_AUTOMATION_WRITES,
+    PENDING_WRITE_UNRECONCILED,
     DirectHaDependencyProvider,
-    _display_safe_effect_tokens,
+    _EffectDisplayFilter,
 )
 from ha_mcp_engineering.dependency.service import EntityDependencyAnalysisService  # noqa: E402
 from ha_mcp_engineering.governance.entity_metadata_disclosure import (  # noqa: E402
@@ -93,6 +101,17 @@ BLUEPRINT_READER = "ha_mcp_engineering.dependency.provider._read_blueprint_with_
 def provider_for(ha: SyntheticHomeAssistant, *, batch: bool = True) -> DirectHaDependencyProvider:
     websocket = ha.websocket if batch else ha.websocket_without_batch
     return DirectHaDependencyProvider(ha.rest, websocket, secret=SECRET)
+
+
+async def stored_reference_scan(ha: SyntheticHomeAssistant):
+    """The pre-HAMCP-209 stored-only build, used as the parity reference.
+
+    A client with no batch read has no loaded source: every automation reads
+    stored configuration with reason ``loaded_source_unsupported``, exactly
+    the pre-HAMCP-209 path (``test_no_batch_client_reads_stored_as_before``).
+    """
+
+    return await provider_for(ha, batch=False).scan()
 
 
 def coverage_of(result, source_type="automation"):
@@ -150,7 +169,7 @@ class ExtractionParityTests(unittest.IsolatedAsyncioTestCase):
         ha_stored = SyntheticHomeAssistant(deepcopy(automations))
         with patch(BLUEPRINT_READER, side_effect=read_blueprint):
             loaded = await provider_for(ha_loaded).scan()
-            stored = await provider_for(ha_stored, batch=False).scan()
+            stored = await stored_reference_scan(ha_stored)
         return ha_loaded, loaded, ha_stored, stored
 
     async def test_representative_fixture_index_is_identical(self):
@@ -266,8 +285,22 @@ class FallbackReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("automation_config_source=mixed", policy)
         for reason, count in reasons.items():
             self.assertIn(f"{reason}={count}", policy)
-        # The stored reads succeeded, so coverage is unchanged.
-        self.assertEqual(coverage_of(result).failed_item_count, 1)  # the id-less one
+        # Blueprint and unavailable reads are exact; for the unreadable and
+        # the mismatched loaded configuration what runs is unverified (M1).
+        automation = coverage_of(result)
+        self.assertEqual(automation.completeness, "partial")
+        self.assertEqual(automation.failed_item_count, 3)  # + the id-less one
+        unverified = sorted(
+            item.source_entity_id
+            for item in result.obligations
+            if item.reason_code == LOADED_CONFIG_UNAVAILABLE
+        )
+        self.assertEqual(
+            unverified,
+            ["automation.synthetic_bulk_0000", "automation.synthetic_bulk_0001"],
+        )
+        self.assertEqual(result.profile[LOADED_CONFIG_UNAVAILABLE], 2)
+        self.assertIn(LOADED_CONFIG_UNAVAILABLE, result.profile["automation_partial_reasons"])
 
     async def test_malformed_loaded_results_are_reported(self):
         for override in (
@@ -283,6 +316,8 @@ class FallbackReportingTests(unittest.IsolatedAsyncioTestCase):
                     result.profile["stored_config_fallback_reasons"],
                     {"loaded_config_unreadable": 1},
                 )
+                self.assertEqual(coverage_of(result).completeness, "partial")
+                self.assertEqual(result.profile[LOADED_CONFIG_UNAVAILABLE], 1)
         for override in ((False, "unknown_error"), (True, {"automation_blueprint": "x"}), (True, [])):
             with self.subTest(search=override):
                 ha = SyntheticHomeAssistant(generated_automations(2))
@@ -292,6 +327,7 @@ class FallbackReportingTests(unittest.IsolatedAsyncioTestCase):
                     result.profile["stored_config_fallback_reasons"],
                     {"loaded_config_unreadable": 1},
                 )
+                self.assertEqual(coverage_of(result).completeness, "partial")
 
     async def test_whole_source_failure_is_reported_not_silent(self):
         for failure in (
@@ -310,11 +346,14 @@ class FallbackReportingTests(unittest.IsolatedAsyncioTestCase):
                     {"loaded_source_unavailable": 4},
                 )
                 self.assertIn("loaded_source_unavailable=4", automation.policy)
-                self.assertTrue(any("Loaded automation configuration was unavailable" in item
+                self.assertTrue(any(item.startswith(LOADED_CONFIG_UNAVAILABLE)
                                     for item in automation.warnings))
                 self.assertFalse(automation.fallback_occurred)
                 self.assertEqual(ha.rest_counts["automation_config_read"], 4)
-                self.assertEqual(automation.completeness, "complete")
+                # M1: stored reads stand in for unreadable loaded configuration.
+                self.assertEqual(automation.completeness, "partial")
+                self.assertEqual(automation.failed_item_count, 4)
+                self.assertEqual(result.profile[LOADED_CONFIG_UNAVAILABLE], 4)
 
     async def test_incomplete_batch_result_is_a_whole_source_failure(self):
         ha = SyntheticHomeAssistant(generated_automations(3))
@@ -326,6 +365,87 @@ class FallbackReportingTests(unittest.IsolatedAsyncioTestCase):
         ha.websocket.command_batch = short
         result = await provider_for(ha).scan()
         self.assertEqual(result.profile["stored_config_fallback_reasons"], {"loaded_source_unavailable": 3})
+        self.assertEqual(coverage_of(result).completeness, "partial")
+        self.assertEqual(result.profile[LOADED_CONFIG_UNAVAILABLE], 3)
+
+    async def test_websocket_failure_is_partial_and_loaded_only_dependency_unverified(self):
+        """Reviewer M1 reproduction: stored differs from what is loaded."""
+
+        for failure in (TimeoutError(), HomeAssistantUnavailableError()):
+            with self.subTest(failure=type(failure).__name__):
+                ha = SyntheticHomeAssistant(generated_automations(1))
+                loaded = ha.automations["automation.synthetic_bulk_0000"]["loaded"]
+                loaded["action"][0]["target"]["entity_id"] = "light.synthetic_loaded_only"
+                ha.batch_failure = failure
+                result = await provider_for(ha).scan()
+
+                automation = coverage_of(result)
+                self.assertEqual(automation.completeness, "partial")
+                self.assertEqual(automation.failed_item_count, 1)
+                self.assertNotIn(
+                    "light.synthetic_loaded_only",
+                    {item.target_entity_id for item in result.findings},
+                )
+                # The automation whose running dependency is unseen is named.
+                self.assertEqual(
+                    [
+                        (item.source_entity_id, item.reason_code)
+                        for item in result.obligations
+                        if item.outcome == "coverage_failure"
+                    ],
+                    [("automation.synthetic_bulk_0000", LOADED_CONFIG_UNAVAILABLE)],
+                )
+                self.assertEqual(result.profile["automation_partial_reasons"], [LOADED_CONFIG_UNAVAILABLE])
+
+                index = DependencyIndex(_FixedProvider(result))
+                snapshot, _, _ = await index.get(refresh=True)
+                health = index.health()
+                self.assertEqual(
+                    health["last_build_profile"]["automation_partial_reasons"],
+                    [LOADED_CONFIG_UNAVAILABLE],
+                )
+                self.assertEqual(health["last_build_profile"][LOADED_CONFIG_UNAVAILABLE], 1)
+                self.assertEqual(
+                    next(item for item in snapshot.coverage if item.source_type == "automation").completeness,
+                    "partial",
+                )
+
+    async def test_stable_reasons_stay_complete(self):
+        """Parity-equivalent stored reads (blueprint, unavailable, id-less) are not M1."""
+
+        ha = SyntheticHomeAssistant(representative_automations())
+        with patch(BLUEPRINT_READER, side_effect=read_blueprint):
+            result = await provider_for(ha).scan()
+        self.assertEqual(result.profile[LOADED_CONFIG_UNAVAILABLE], 0)
+        self.assertNotIn(LOADED_CONFIG_UNAVAILABLE, result.profile["automation_partial_reasons"])
+        self.assertEqual(coverage_of(result).failed_item_count, 1)  # id-less only
+
+    async def test_no_batch_client_reads_stored_as_before(self):
+        """No batch read means no loaded source: the pre-HAMCP-209 path, reported."""
+
+        ha = SyntheticHomeAssistant(generated_automations(3))
+        result = await provider_for(ha, batch=False).scan()
+        automation = coverage_of(result)
+        self.assertEqual(automation.completeness, "complete")
+        self.assertEqual(result.profile[LOADED_CONFIG_UNAVAILABLE], 0)
+        self.assertEqual(result.profile["stored_config_fallback_reasons"], {"loaded_source_unsupported": 3})
+        self.assertEqual(result.profile["loaded_config_connection_count"], 0)
+        self.assertEqual(result.profile["request_count_by_operation"]["automation_config"], 3)
+        self.assertTrue(any(w.startswith("loaded_source_unsupported:") for w in automation.warnings))
+
+    async def test_batch_failure_is_not_treated_as_unsupported(self):
+        """A batch read that exists but raises is a failed loaded source (M1)."""
+
+        ha = SyntheticHomeAssistant(generated_automations(3))
+
+        async def fails(payloads):
+            raise AttributeError("synthetic failure inside the batch")
+
+        ha.websocket.command_batch = fails
+        result = await provider_for(ha).scan()
+        self.assertEqual(coverage_of(result).completeness, "partial")
+        self.assertEqual(result.profile["stored_config_fallback_reasons"], {"loaded_source_unavailable": 3})
+        self.assertEqual(result.profile[LOADED_CONFIG_UNAVAILABLE], 3)
 
 
 class CoverageTests(unittest.IsolatedAsyncioTestCase):
@@ -353,7 +473,7 @@ class CoverageTests(unittest.IsolatedAsyncioTestCase):
         ha_loaded = SyntheticHomeAssistant(deepcopy(automations))
         ha_stored = SyntheticHomeAssistant(deepcopy(automations))
         loaded = await provider_for(ha_loaded).scan()
-        stored = await provider_for(ha_stored, batch=False).scan()
+        stored = await stored_reference_scan(ha_stored)
         self.assertEqual(index_view(loaded), index_view(stored))
         self.assertEqual(coverage_of(loaded).completeness, "partial")
 
@@ -408,7 +528,7 @@ class PendingWriteJournalTests(unittest.IsolatedAsyncioTestCase):
         automation = coverage_of(result)
         self.assertEqual(automation.completeness, "partial")
         self.assertIn(
-            ("synthetic_new", "automation_pending_reload_not_loaded"),
+            ("synthetic_new", PENDING_WRITE_UNRECONCILED),
             [(item.source_id, item.reason_code) for item in result.automation_read_failures],
         )
         self.assertTrue(any("stored but not loaded" in item for item in automation.warnings))
@@ -460,6 +580,13 @@ class PendingWriteJournalTests(unittest.IsolatedAsyncioTestCase):
         result = await provider.scan()
         self.assertEqual(coverage_of(result).completeness, "partial")
         self.assertIn("synthetic_bulk_0000", provider._pending_writes)
+        self.assertEqual(result.profile["pending_write_journal"]["unreconciled"], 1)
+        self.assertIn(PENDING_WRITE_UNRECONCILED, result.profile["automation_partial_reasons"])
+
+        # Still unreconciled on the next build, until a read accounts for it.
+        result = await provider.scan()
+        self.assertEqual(coverage_of(result).completeness, "partial")
+        self.assertIn(PENDING_WRITE_UNRECONCILED, result.profile["automation_partial_reasons"])
 
     async def test_rewrite_during_build_is_retained(self):
         ha = SyntheticHomeAssistant(generated_automations(2))
@@ -483,7 +610,7 @@ class PendingWriteJournalTests(unittest.IsolatedAsyncioTestCase):
             await provider.scan()
         self.assertEqual(provider._pending_writes, {})
 
-    async def test_journal_overflow_compares_every_candidate_until_clean(self):
+    async def test_journal_overflow_is_sticky_and_always_partial(self):
         ha = SyntheticHomeAssistant(generated_automations(3))
         provider = provider_for(ha)
         for index in range(MAX_PENDING_AUTOMATION_WRITES + 1):
@@ -491,19 +618,82 @@ class PendingWriteJournalTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(provider._pending_write_overflow)
         self.assertEqual(len(provider._pending_writes), MAX_PENDING_AUTOMATION_WRITES)
 
-        result = await provider.scan()
-        automation = coverage_of(result)
-        self.assertEqual(automation.completeness, "partial")
-        self.assertTrue(result.profile["pending_write_journal"]["overflow_at_build"])
-        self.assertEqual(ha.rest_counts["automation_config_read"], 3 + MAX_PENDING_AUTOMATION_WRITES)
-        self.assertTrue(any("journal overflowed" in item for item in automation.warnings))
-        self.assertFalse(provider._pending_write_overflow)
+        for build in range(2):
+            with self.subTest(build=build):
+                ha.rest_counts.clear()
+                result = await provider.scan()
+                automation = coverage_of(result)
+                journal = result.profile["pending_write_journal"]
+                self.assertEqual(automation.completeness, "partial")
+                self.assertTrue(journal["overflow_at_build"])
+                self.assertEqual(journal["overflow_write_count"], 1)
+                self.assertIn(PENDING_WRITE_UNRECONCILED, result.profile["automation_partial_reasons"])
+                self.assertTrue(any("journal overflowed" in item for item in automation.warnings))
+                # Every candidate is compared with its stored form.
+                self.assertEqual(ha.rest_counts["automation_config_read"], 3 + (
+                    MAX_PENDING_AUTOMATION_WRITES if build == 0 else 0
+                ))
+                self.assertTrue(provider._pending_write_overflow)
+        # The tracked identities were 404 and are cleared; the overflow is not.
         self.assertEqual(provider._pending_writes, {})
 
-        ha.rest_counts.clear()
+    async def test_overflowed_unloaded_write_stays_partial(self):
+        """Reviewer M2 reproduction: the overflowed write is never forgotten."""
+
+        ha = SyntheticHomeAssistant(generated_automations(2))
+        provider = provider_for(ha)
+        for index in range(MAX_PENDING_AUTOMATION_WRITES):
+            provider.note_automation_write(f"synthetic_deleted_{index}")
+        provider.note_automation_write("synthetic_overflow_unloaded")
+        await ha.rest.request(
+            "POST", "/config/automation/config/synthetic_overflow_unloaded",
+            body={
+                "id": "synthetic_overflow_unloaded",
+                "trigger": [],
+                "action": [{"service": "light.turn_on",
+                            "target": {"entity_id": "light.synthetic_overflow_target"}}],
+            },
+        )
+        self.assertNotIn("synthetic_overflow_unloaded", provider._pending_writes)
+
+        for build in range(2):
+            with self.subTest(build=build):
+                result = await provider.scan()
+                automation = coverage_of(result)
+                self.assertEqual(automation.completeness, "partial")
+                self.assertIn(
+                    ("dependency_provider_pending_writes", PENDING_WRITE_UNRECONCILED),
+                    [(item.source_id, item.reason_code) for item in result.obligations],
+                )
+                self.assertTrue(result.profile["pending_write_journal"]["overflow_at_build"])
+        # The 256 deletions were reconciled by 404; only the overflow remains.
+        self.assertEqual(provider._pending_writes, {})
+
+        # A clean rewrite of another automation does not clear the overflow.
+        provider.note_automation_write("synthetic_bulk_0000")
         result = await provider.scan()
-        self.assertEqual(coverage_of(result).completeness, "complete")
-        self.assertEqual(ha.rest_counts["automation_config_read"], 0)
+        self.assertEqual(coverage_of(result).completeness, "partial")
+        self.assertTrue(provider._pending_write_overflow)
+
+    async def test_overflow_routed_package_automation_keeps_loaded_config(self):
+        """A stored 404 under overflow alone does not lose the loaded analysis."""
+
+        ha = SyntheticHomeAssistant(generated_automations(2))
+        ha.automations["automation.synthetic_bulk_0001"]["stored"] = None
+        provider = provider_for(ha)
+        for index in range(MAX_PENDING_AUTOMATION_WRITES + 1):
+            provider.note_automation_write(f"synthetic_written_{index}")
+        result = await provider.scan()
+        self.assertEqual(result.automation_read_failures, [])
+        self.assertIn(
+            "synthetic_bulk_0001",
+            {item.source_id for item in result.findings},
+        )
+        self.assertEqual(coverage_of(result).completeness, "partial")
+        self.assertEqual(
+            [item.reason_code for item in result.obligations if item.outcome == "coverage_failure"],
+            [PENDING_WRITE_UNRECONCILED],
+        )
 
     async def test_journal_overflow_with_stale_loaded_is_retained(self):
         ha = SyntheticHomeAssistant(generated_automations(2))
@@ -1061,37 +1251,271 @@ class ResolvedSecretDisclosureTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertIn(token, helper_text)
 
-    def test_effect_tokens_hash_only_values_the_sanitizer_recognizes(self):
-        jwt = _jwt_shape(_MARKERS["targetjwt"])
+
+def _planted_values() -> dict[str, str]:
+    """Secret-shaped values the sanitizer does not all recognize, built at runtime.
+
+    Each is rejected by construction (character set, case provenance, or
+    piece length), never by chance, so the assertions are deterministic.
+    """
+
+    jwt = _jwt_shape(_MARKERS["targetjwt"])
+    random_text = secrets.token_hex(16)
+    return {
+        "jwt": jwt,
+        "jwt_hash_prefixed": "sha256:" + jwt,
+        "jwt_delimited": jwt + "|ordinary",
+        "jwt_lowercased": jwt.lower(),
+        "random_hex": random_text,
+        "random_base62": "Q" + "".join(
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
+        ),
+        "random_letters": "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(40)),
+        "url_credentials": "https://" + "synthetic" + ":" + random_text + "@example.invalid/hook",
+        "base64_blob": base64.b64encode(secrets.token_bytes(48)).decode("ascii"),
+        "fake_digest": "sha256:" + random_text * 2,
+    }
+
+
+def _leaks(token: str, planted: dict[str, str]) -> list[str]:
+    """Planted values, or any long fragment of one, present in ``token``."""
+
+    folded = token.lower()
+    leaked = set()
+    for name, value in planted.items():
+        fragments = [
+            piece for piece in re.split(r"[^a-z0-9]+", value.lower()) if len(piece) >= 12
+        ]
+        if value.lower() in folded or any(piece in folded for piece in fragments):
+            leaked.add(name)
+    return sorted(leaked)
+
+
+class EffectDisplayAllowlistTests(unittest.TestCase):
+    """Reviewer H1: only known-safe grammar is shown verbatim (allowlist)."""
+
+    def filter_for(self, config, known=frozenset()):
+        return _EffectDisplayFilter(config, secret=SECRET, known_identifiers=known)
+
+    def test_planted_values_are_digested_in_every_position(self):
+        planted = _planted_values()
+        for name, value in planted.items():
+            with self.subTest(case=name):
+                folded = value.lower()
+                config = {"action": [
+                    {"service": "light.turn_on", "target": {"label_id": value}},
+                    {"service": "rest_command." + folded, "data": {value: 7}},
+                    {"service": "light.turn_on", "data": {"transition": value}},
+                    {"service": folded + ".turn_on", "target": {"entity_id": folded + ".x"}},
+                ]}
+                display = self.filter_for(config)
+                tokens = [
+                    display.target("action[0].target.label_id|label_id|" + folded),
+                    display.target("action[0].target.label_id|label_id|" + value),
+                    display.target("action[0].target.area_id|area_id|" + folded),
+                    display.target("action[0].target.device_id|device_id|" + folded),
+                    display.target("action[3].target.entity_id|entity_id|" + folded + ".x"),
+                    display.target("action[0].target.label_id|" + folded + "|x"),
+                    display.target(folded + "|label_id|x"),
+                    display.data("action[2].data.transition=" + folded),
+                    display.data("action[2].data.transition=" + value),
+                    display.data("action[1].data." + folded + "=7"),
+                    display.data(folded),
+                    display.service("rest_command." + folded),
+                    display.service(folded),
+                    display.domain(folded),
+                    display.domain(folded.split(".", 1)[0]),
+                ]
+                for token in tokens:
+                    self.assertEqual(_leaks(token, planted), [], token)
+                    self.assertIn("redacted_sha256:", token)
+
+    def test_ordinary_values_stay_verbatim(self):
+        # A Home Assistant device ID shape (32 hex), built at runtime.
+        device = hashlib.sha256(b"synthetic-device").hexdigest()[:32]
+        config = {"action": [
+            {"service": "light.turn_on",
+             "target": {"entity_id": ["light.synthetic_kitchen", "all"],
+                        "area_id": "synthetic_living_room",
+                        "label_id": "synthetic_downstairs",
+                        "device_id": device},
+             "data": {"brightness": 10, "transition": 2.5, "hvac_mode": "heat_cool"}},
+        ]}
+        display = self.filter_for(config, known=frozenset({device}))
+        for token in (
+            "action[0].target.entity_id|entity_id|light.synthetic_kitchen",
+            "action[0].target.entity_id|entity_id|all",
+            "action[0].target.area_id|area_id|synthetic_living_room",
+            "action[0].target.label_id|label_id|synthetic_downstairs",
+            # Registry identifiers are shown even though hex-shaped.
+            "action[0].target.device_id|device_id|" + device,
+            "action[0].target.entity_id|entity_id|sha256:" + "0" * 64,
+            "action[0].target.event_type|event_type|redacted_sha256:" + "1" * 64,
+        ):
+            with self.subTest(token=token):
+                if "|event_type|" in token:
+                    self.assertTrue(display.target(token).startswith(
+                        "action[0].target.event_type|event_type|redacted_sha256:"))
+                else:
+                    self.assertEqual(display.target(token), token)
+        for token in (
+            "action[0].data.brightness=10",
+            "action[0].data.transition=2.5",
+            "action[0].data.hvac_mode=heat_cool",
+            "action[0].data.enabled=true",
+            "action[0].data.value=dynamic_sha256:" + "a" * 64,
+            "overflow_sha256:" + "b" * 64,
+        ):
+            with self.subTest(token=token):
+                self.assertEqual(display.data(token), token)
+        self.assertEqual(display.service("light.turn_on"), "light.turn_on")
+        self.assertEqual(display.domain("light"), "light")
+
+    def test_provenance_is_required(self):
+        """Grammar alone is not enough: the exact spelling must be configured."""
+
+        display = self.filter_for({"action": [{"target": {"label_id": "Synthetic_Mixed"}}]})
+        # A lowercased projection of a mixed-case value is not a literal.
+        self.assertIn(
+            "redacted_sha256:",
+            display.target("action[0].target.label_id|label_id|synthetic_mixed"),
+        )
+        # An enum word shown only when configured.
+        self.assertIn("redacted_sha256:", display.data("action[0].data.preset_mode=away"))
+        # A digest-shaped configuration string is not a generated digest.
+        fake = "sha256:" + "c" * 64
+        display = self.filter_for({"action": [{"target": {"label_id": fake}}]})
+        self.assertIn(
+            "|label_id|redacted_sha256:",
+            display.target("action[0].target.label_id|label_id|" + fake),
+        )
+
+    def test_registry_identifier_the_sanitizer_recognizes_is_digested(self):
+        """Registry provenance skips the grammar, never the sanitizer."""
+
+        jwt = _planted_values()["jwt"]
         config = {"action": [{"target": {"label_id": jwt}}]}
-        targets = _display_safe_effect_tokens(
-            (
-                "action[0].target.entity_id|entity_id|light.synthetic_kitchen",
-                # Lowercased by the projection: recognized by its original spelling.
-                "action[0].target.label_id|label_id|" + jwt.lower(),
-                "action[0].target.device_id|device_id|" + _bearer(_MARKERS["target"]).lower(),
-                "action[0].target.area_id|area_id|sha256:" + "0" * 64,
-            ),
-            config, secret=SECRET, separator="|",
+        display = self.filter_for(config, known=frozenset({jwt}))
+        shown = display.target("action[0].target.label_id|label_id|" + jwt)
+        self.assertNotIn(jwt, shown)
+        self.assertIn("redacted_sha256:", shown)
+        ordinary = self.filter_for(config, known=frozenset({"synthetic_label"}))
+        self.assertEqual(
+            ordinary.target("action[0].target.label_id|label_id|synthetic_label"),
+            "action[0].target.label_id|label_id|synthetic_label",
         )
-        self.assertEqual(targets[0], "action[0].target.entity_id|entity_id|light.synthetic_kitchen")
-        self.assertTrue(targets[1].startswith("action[0].target.label_id|label_id|redacted_sha256:"))
-        self.assertTrue(targets[2].startswith("action[0].target.device_id|device_id|redacted_sha256:"))
-        self.assertEqual(targets[3], "action[0].target.area_id|area_id|sha256:" + "0" * 64)
-        data = _display_safe_effect_tokens(
-            (
-                "action[0].data.brightness=10",
-                "action[0].data.transition=" + SECRET,
-                "action[0].data.transition=" + _bearer(_MARKERS["safefield"]),
-            ),
-            config, secret=SECRET, separator="=",
+
+    def test_sanitizer_recognized_values_are_digested(self):
+        config = {"action": [{"target": {"label_id": SECRET}}]}
+        display = self.filter_for(config)
+        self.assertNotIn(SECRET, display.target("action[0].target.label_id|label_id|" + SECRET))
+
+
+class EffectDisplayScanTests(unittest.IsolatedAsyncioTestCase):
+    """Every projection position of a real scan goes through the allowlist."""
+
+    async def test_planted_values_never_reach_a_profile_position(self):
+        planted = _planted_values()
+        for name, value in planted.items():
+            with self.subTest(case=name):
+                config = {
+                    "id": "synthetic_planted",
+                    "alias": "Synthetic planted",
+                    "trigger": [{"platform": "state", "entity_id": "input_boolean.synthetic_gate"}],
+                    "action": [
+                        {"service": "light.turn_on",
+                         "target": {"entity_id": "light.synthetic_kitchen", "label_id": value,
+                                    "device_id": value, "area_id": value, "floor_id": value},
+                         "data": {"brightness": 10, "transition": value}},
+                        {"service": "rest_command." + value, "data": {value: 7}},
+                        {"service": value + ".turn_on", "target": {"entity_id": value + ".synthetic"}},
+                        {"service": "input_boolean.turn_on",
+                         "target": {"entity_id": value}},
+                    ],
+                }
+                ha = SyntheticHomeAssistant([
+                    record("automation.synthetic_planted", None,
+                           automation_id="synthetic_planted", loaded=config),
+                ])
+                result = await provider_for(ha).scan()
+                profiles = [asdict(item) for item in result.automation_action_profiles]
+                self.assertEqual(len(profiles), 1)
+                profile = profiles[0]
+                text = json.dumps(profiles, sort_keys=True)
+                self.assertEqual(_leaks(text, planted), [], name)
+                # Not vacuous: each position is populated and ordinary values remain.
+                for field in ("action_domains", "services", "effect_targets", "effect_data"):
+                    self.assertTrue(
+                        any("redacted_sha256:" in item for item in profile[field]), (name, field),
+                    )
+                self.assertIn("light.turn_on", profile["services"])
+                self.assertIn("light", profile["action_domains"])
+                self.assertIn(
+                    "action[0].target.entity_id|entity_id|light.synthetic_kitchen",
+                    profile["effect_targets"],
+                )
+                self.assertIn("action[0].data.brightness=10", profile["effect_data"])
+
+
+class EffectDisplayPlanPersistenceTests(unittest.IsolatedAsyncioTestCase):
+    """Reviewer H1 reproduction through helper-state plan creation and storage."""
+
+    async def test_jwt_variants_are_digested_in_plan_response_and_files(self):
+        from ha_mcp_engineering.governance.service import ChangeGovernanceService
+        from ha_mcp_engineering.governance.storage import ChangePlanRepository
+        from tests.test_beta37_exact_helper_state import (
+            Clock,
+            FakeHelperStateGateway,
+            UnusedLegacyGateway,
         )
-        self.assertEqual(data[0], "action[0].data.brightness=10")
-        self.assertTrue(data[1].startswith("action[0].data.transition=redacted_sha256:"))
-        self.assertTrue(data[2].startswith("action[0].data.transition=redacted_sha256:"))
-        for token in (*targets, *data):
-            self.assertFalse(any(marker in token.lower() for marker in _MARKERS.values()), token)
-            self.assertNotIn(SECRET, token)
+
+        planted = _planted_values()
+        for name, value in planted.items():
+            with self.subTest(case=name):
+                gateway = FakeHelperStateGateway()
+                config = {
+                    "id": "synthetic_package",
+                    "alias": "Synthetic package",
+                    "trigger": [{"platform": "state", "entity_id": gateway.entity_id}],
+                    "action": [
+                        {"service": "light.turn_on",
+                         "target": {"label_id": value, "entity_id": "light.synthetic_kitchen"},
+                         "data": {"brightness": 10}},
+                    ],
+                }
+                ha = SyntheticHomeAssistant([
+                    record("automation.synthetic_package", None,
+                           automation_id="synthetic_package", loaded=config),
+                ])
+                index = DependencyIndex(DirectHaDependencyProvider(
+                    _AnalysisRest(ha), _AnalysisWebSocket(ha), secret=SECRET,
+                ))
+                with tempfile.TemporaryDirectory(prefix="hamcp209-plan-") as directory:
+                    service = ChangeGovernanceService(
+                        ChangePlanRepository(Path(directory) / "plans"),
+                        UnusedLegacyGateway(),
+                        now=Clock(),
+                        helper_state_gateway=gateway,
+                        helper_dependency_risk_reader=HelperDependencyRiskService(index).assess,
+                        plan_observability_cursor_key=b"synthetic-plan-key" * 2,
+                    )
+                    result = await service.create_helper_state_plan(
+                        entity_id=gateway.entity_id, desired_state="on",
+                    )
+                    response = _serialized(result)
+                    stored = "\n".join(
+                        path.read_text(encoding="utf-8")
+                        for path in sorted(Path(directory).rglob("*.json"))
+                    )
+                self.assertTrue(stored)
+                self.assertEqual(gateway.dispatch_count, 0)
+                self.assertEqual(ha.rest_counts["automation_config_read"], 0)
+                for label, text in (("response", response), ("plan file", stored)):
+                    self.assertEqual(_leaks(text, planted), [], f"{name} in {label}")
+                    # Not vacuous: the projection is present with ordinary values.
+                    self.assertIn("light.synthetic_kitchen", text, label)
+                    self.assertIn("action[0].data.brightness=10", text, label)
+                    self.assertIn("action[0].target.label_id|label_id|redacted_sha256:", text, label)
 
 
 if __name__ == "__main__":

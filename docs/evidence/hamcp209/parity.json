@@ -132,5 +132,15 @@
         "view_sha256": "a91fd3a34c9c9f13c57a9edde02a7011e125e42bd615ff73ab6c48da4e5cd25d"
       }
     }
+  },
+  "recheck_after_review_corrections": {
+    "bases": [
+      "a1236c4 (2.4.1-beta.19)",
+      "2.4.1-beta.20",
+      "c618884 (2.4.1-beta.22)"
+    ],
+    "head": "HAMCP-209 working tree with the H1, M1 and M2 review corrections",
+    "result": "IDENTICAL",
+    "note": "Every base gives the view hashes and snapshot fingerprints of base_tree above; the head gives those of head_tree (view_sha256 a9a421e2... and a91fd3a3...). The fixtures load every automation, so no M1 or M2 partial reason applies."
   }
 }

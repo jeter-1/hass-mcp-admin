@@ -70,8 +70,10 @@ boundaries. Client tests use a loopback WebSocket peer.
   - handoff (structured and markdown);
   - helper-state and entity-metadata disclosures.
 
-  Effect-projection values that the sanitizer recognizes are shown as
-  `redacted_sha256:` digests.
+  Effect-projection values outside the display allowlist are shown as
+  `redacted_sha256:` digests, in responses and in persisted plan files
+  (`EffectDisplayAllowlistTests`, `EffectDisplayScanTests`,
+  `EffectDisplayPlanPersistenceTests`).
 
 Cross-tree parity (`docs/evidence/hamcp209/parity.py`, `parity.json`): the
 beta.19, beta.20 and beta.22 providers and this tree give identical views and
@@ -93,6 +95,24 @@ each one must fail:
 9. The batch allowlist opened.
 10. The `AutomationGateway` write not journaled.
 11. The resource automation write not journaled.
+12. The shared-sanitizer decision in the effect display filter bypassed.
+13. A denylist used instead of the display allowlist (H1).
+14. A digest-shaped configuration string trusted as a generated digest (H1).
+15. The effect-target, effect-data, service and action-domain positions each
+    copied verbatim (four mutations, H1).
+16. Identifier grammar alone admitting a lowercased projection of a configured
+    value (H1).
+17. A stored read standing in for unreadable loaded configuration reported
+    complete (M1).
+18. A batch read that raises reported as an unsupported client (M1).
+19. A loaded identity mismatch treated as verifying the stored read (M1).
+20. The journal overflow cleared after a build (M2).
+21. Pending writes cleared after a partial build (M2).
+22. An overflowed journal not making the build partial (M2).
+23. A journaled write whose read failed not reported unreconciled (M2).
+
+All 26 mutations (item 15 counts four) are killed in the committed
+`results.json`.
 
 ### Measurement
 
@@ -178,12 +198,13 @@ authorization.
       `0` once Home Assistant has reloaded the automation, and the index is
       `complete` (or as complete as before).
    4. **Fail:** the apply takes more than about twice the idle write time, or
-      the index reports `automation_pending_reload_not_loaded` after Home
-      Assistant has reloaded. Stop and report the profile and the receipts.
+      the index reports `pending_write_unreconciled` after Home Assistant has
+      reloaded (and the journal has not overflowed). Stop and report the profile and the receipts.
 5. **Fallback visibility (read-only).** If `automation_config_source` is
    `stored_rest` with `loaded_source_unavailable`, the loaded source failed as
-   a whole. Health still reports the coverage warning and the index stays
-   truthful. Record the warning and report it. Do not retry by restarting.
+   a whole. Health reports the index as partial with
+   `loaded_config_unavailable` and a coverage warning. Record the warning and
+   report it. Do not retry by restarting.
 
 The following are proven offline only (§1):
 - per-reason fallback;

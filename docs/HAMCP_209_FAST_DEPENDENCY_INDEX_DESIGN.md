@@ -164,6 +164,28 @@ Every file cited below is byte-identical between the two tags
    | `loaded_identity_mismatch` | loaded `id` differs from the state's `id` attribute |
    | `pending_write_reload` | a governed write to this ID is pending and loaded != stored |
    | `loaded_source_unavailable` | the WebSocket batch failed as a whole (every candidate) |
+   | `loaded_source_unsupported` | the WebSocket client has no batch read at all (every candidate; not the production client) |
+
+   **Correction (independent review M1).** For `loaded_config_unreadable`,
+   `loaded_identity_mismatch` and `loaded_source_unavailable` the running
+   configuration could not be read, so a successful stored read does not
+   prove what is loaded (an unreloaded or out-of-band edit can differ). Each
+   such automation adds the coverage failure `loaded_config_unavailable`, and
+   automation coverage is **partial**. Health (`last_build_profile`) reports
+   `automation_partial_reasons` and the `loaded_config_unavailable` count.
+   `blueprint_instance`, `loaded_entity_unavailable` and the id-less case
+   (`automation_id_missing`, a read failure as before) are parity-equivalent
+   with the old stored path and stay complete.
+
+   `loaded_source_unsupported` is also complete. It applies only when the
+   client has no `command_batch` callable, so there is no loaded source to
+   fail, and the build is the pre-HAMCP-209 stored-only path unchanged (no
+   WebSocket connection; a coverage warning names the reason). The production
+   `HomeAssistantWebSocketClient` always has `command_batch`. A batch read
+   that exists but raises, of any exception type, is
+   `loaded_source_unavailable` and partial
+   (`test_batch_failure_is_not_treated_as_unsupported`, mutation M1c). The
+   in-module parity reference is this path, without a patch seam.
 
 4. **Pending-write journal.** The two governed automation write boundaries
    (`AutomationGateway.write`, `ConfigurationResourceGateway._write_rest_configuration`
@@ -176,21 +198,29 @@ Every file cited below is byte-identical between the two tags
      ID is cleared and loaded is used.
    - If they differ, stored is used (the old behavior), the reason is
      `pending_write_reload`, and the ID is retained.
-   - For `blueprint_instance`, `loaded_entity_unavailable` and
-     `loaded_identity_mismatch`, the stored read is used whatever the reload
-     timing, so a successful stored read clears the ID.
+   - For `blueprint_instance` and `loaded_entity_unavailable`, the stored
+     read is used whatever the reload timing, so a successful stored read
+     clears the ID. (`loaded_identity_mismatch` no longer clears it; see M1.)
    - If the ID is no longer in the inventory, a REST read with 404 expected
      runs. A 404 clears it. A stored configuration that is not loaded becomes
-     the coverage failure `automation_pending_reload_not_loaded` (partial),
-     instead of being silently absent as in the old path.
+     the coverage failure `pending_write_unreconciled` (partial), instead of
+     being silently absent as in the old path.
    - An ID is cleared only if it was not rewritten after the build's snapshot
      (per-ID sequence number).
-   - The journal holds 256 IDs. On overflow every candidate is compared
-     (loaded vs stored), and the automation coverage carries the coverage
-     failure `pending_write_journal_overflow` (partial), because an overflowed
-     ID that is not loaded cannot be ruled out. Overflow clears after a build
-     in which every comparison agreed, no ID was pending-not-loaded, the loaded
-     source was available, and no write happened during the build.
+   - **Correction (independent review M2).** A journaled write this build
+     cannot account for is *unreconciled*: not loaded yet, or its stored
+     read failed. It stays in the journal, and every build is partial with
+     the coverage failure `pending_write_unreconciled` until a build accounts
+     for it (loaded == stored, stable-reason stored read, or 404).
+   - The journal holds 256 IDs (bounded storage). A write beyond the bound
+     sets an explicit overflow flag and count. Its identity is unknown, so no
+     build can show that it was reloaded: the flag is never cleared by a
+     build, every build compares every candidate with its stored form, and
+     every build is partial with `pending_write_unreconciled`
+     (`source_id` `dependency_provider_pending_writes`) until the add-on
+     restarts. A candidate routed to the stored read only by the overflow
+     whose stored read fails (a package automation) keeps its loaded
+     configuration. The journal is in memory; a restart loses it, as before.
    - Out-of-band edits (UI or file edits outside Engineering) are not
      journaled. The index reports what Home Assistant has loaded, which is the
      configuration that runs (D3). The old path reported the stored file even
@@ -261,17 +291,45 @@ support window; stable v1.
     JWT also evaded the case-sensitive JWT rule, so plan persistence screening
     did not catch it.
 
-  **Fix (found while preparing the review).** `dependency/provider.py`
-  `_display_safe_effect_tokens` replaces any projected value with a
-  `redacted_sha256:` digest if the shared sanitizer recognizes it, either as
-  shown or in its original spelling in the configuration. The projection's
-  fingerprints are computed upstream from the raw values and are unchanged,
-  so plan binding is unchanged. Entity-metadata matching cannot match such a
-  value, which is correct because registry IDs are never secret-shaped. Before
-  the fix, a `bearer …` value made helper-state plan persistence refuse
-  (`plan_contains_prohibited_sensitive_data`). Now the plan shows the digest.
-  The same values in `automations.yaml` (the old path) are covered by the same
-  fix.
+  **Fix (found while preparing the review), replaced after independent
+  review H1.** The first fix was a denylist: a value was digested only if the
+  shared sanitizer recognized it. The review showed that a recognized JWT
+  prefixed with `sha256:` or followed by `|ordinary` bypassed it (the prefix
+  was trusted as a generated digest, and the delimiter moved the screened
+  suffix), reaching helper-state plan responses and plan files lowercased.
+
+  `dependency/provider.py` `_EffectDisplayFilter` is now an **allowlist** for
+  every verbatim position (`action_domains`, `services`, `effect_targets`,
+  `effect_data`). A value is shown verbatim only if all of the following hold;
+  otherwise its position shows `redacted_sha256:<digest>`:
+  - it matches the position's grammar: entity ID or service
+    (`[a-z0-9_]+.[a-z0-9_]+`), slug for device, area, floor and label IDs and
+    domains, configuration path for the token's path and data keys, a number,
+    `true`/`false`/`null`, or a fixed set of enum words (`all`/`none` targets;
+    HVAC and preset modes);
+  - its pieces look ordinary: each at most 24 characters, no long digit run,
+    few letter-digit alternations, no long consonant run;
+  - it has literal provenance: the exact displayed spelling is a string in the
+    configuration (so a lowercased projection of a mixed-case value is
+    digested), or a registry identifier (entity, device, area or label);
+  - the shared sanitizer does not recognize it in any original spelling.
+  A digest token (`sha256:`, `dynamic_sha256:`, `oversized_sha256:`,
+  `overflow_sha256:`) is shown as generated only when its text is not itself a
+  configuration string; provenance never comes from a prefix. Tokens are
+  split left-first, the path and selector are screened too, and an unknown
+  shape digests the whole token.
+
+  The projection's fingerprints are computed upstream from the raw values and
+  are unchanged, so plan binding is unchanged; the digests are display only.
+  The helper `downstream_profiles` evidence material changes only where a
+  token is digested. Entity-metadata label matching is unchanged for ordinary
+  slugs and registry labels.
+
+  Residual: a lowercase identifier-shaped string that is configured literally
+  and passes the shape checks (for example a dictionary-word passphrase in a
+  label target) is shown, because without a dictionary it cannot be told from
+  a name. Values that are not registry identifiers and fail the shape checks
+  (some vendor-style IDs such as `158d0001`) are digested.
 
   `ResolvedSecretDisclosureTests` plants secret-shaped values (JWT, bearer,
   credential keys, URL userinfo and query, webhook ID, template and label
@@ -347,10 +405,29 @@ WebSocket peer):
   - `unauthorized` and `auth_invalid` raise;
   - duplicate or unknown ids and an early close are malformed;
   - withdrawn dispatch authority stops sending.
-- **Resolved-secret disclosure** (`ResolvedSecretDisclosureTests`), 2 tests:
-  see §4. The second unit-tests the display hashing: a lowercased JWT is
-  recognized by its original spelling, entity IDs, numbers and existing digests
-  are unchanged, and the configured token is hashed.
+- **Resolved-secret disclosure** (`ResolvedSecretDisclosureTests`): see §4.
+- **Effect display allowlist** (`EffectDisplayAllowlistTests`,
+  `EffectDisplayScanTests`, `EffectDisplayPlanPersistenceTests`): runtime-built
+  planted values (the review's JWT, `sha256:`-prefixed, `|`-delimited and
+  lowercased JWT, random hex and base62, random letters, URL credentials, a
+  base64 blob and a digest-shaped configuration string) are digested in
+  every position of the filter, of a real scan's profile, and of a real
+  helper-state plan's creation response and persisted plan files. Ordinary
+  entity IDs, slugs, registry IDs, numbers, booleans, enum words and generated
+  digests stay verbatim.
+- **Correction-batch coverage** (M1, M2): the review's WebSocket-failure
+  reproduction is partial and names the automation whose loaded-only
+  dependency is unverified; the review's overflow reproduction is partial on
+  both builds; a sticky overflow survives a clean rewrite.
+- **Existing suites touched by the corrections.**
+  `test_rc2dev4_release_hardening` pins the no-batch breakdown, which is now
+  the pre-HAMCP-209 one on `main` (6 requests, 3 `automation_config`, reason
+  `loaded_source_unsupported`, complete). In `test_core_semantic_continuity`
+  one test adds an automation, and its `_Network` socket cannot pipeline a
+  batch, so the loaded source fails and M1 makes the build partial; the test
+  now serves the loaded form through `command_batch` so it still proves a
+  low-risk, executable plan. That file was not in the PR before this
+  correction batch.
 
 Two existing tests change. `test_rc2dev4_release_hardening`
 `test_cold_build_profile_has_bounded_request_breakdown` pinned the old
@@ -363,25 +440,41 @@ The focused module set used locally had missed it.
 
 `test_hamcp191_shared_sanitizer` keeps a committed table of every sanitizer
 call site. It gains one row for the new `redact_data` call in
-`_display_safe_effect_tokens` (family `analysis`). The focused rerun found the
+`_EffectDisplayFilter._clean` (family `analysis`; first added for the
+replaced `_display_safe_effect_tokens`). The focused rerun found the
 missing row (`test_every_sanitizer_call_site_is_in_the_committed_table`).
 
 Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`,
-`results.json`): 11 of 11 are killed and none survive.
+`results.json`): 26 of 26 are killed and none survive.
 
-| ID | Mutation | First failing test (recorded) |
+| ID | Mutation (design item) | First failing test (recorded) |
 | --- | --- | --- |
-| M1 | per-automation REST loop restored | `test_113_automations_use_one_connection_and_no_per_automation_read` |
-| M2a | missing loaded config read as an empty, complete config | `test_partial_coverage_matches_stored_path` |
-| M2b | written automation absent from the inventory never checked | `test_deleted_pending_automation_clears_on_404` |
-| M2c | written-not-loaded reported unavailable instead of partial | `test_written_automation_not_loaded_is_partial_with_empty_inventory` |
-| M3 | fallback reason not recorded (silent fallback) | `test_unreadable_loaded_and_stored_automation_is_partial` |
-| M4 | pending journal ignored | `test_journal_overflow_compares_every_candidate_until_clean` |
-| M5 | `search/related` blueprint report ignored | `test_blueprint_loaded_form_is_never_used` |
-| M6 | loaded identity check removed | `test_each_per_automation_reason_is_reported` |
-| M7 | batch allowlist open | `test_only_fixed_read_shapes_are_admitted` |
-| M8 | `AutomationGateway` write not journaled | `test_automation_gateway_journals_before_dispatch` |
-| M9 | resource automation write not journaled | `test_resource_gateway_journals_automation_only` |
+| M1-per-automation-rest-loop-restored | brief: the per-automation REST loop restored (request-count test must fail) | `test_113_automations_use_one_connection_and_no_per_automation_read` |
+| M2a-missing-automation-reported-complete | brief: a missing automation (loaded config not found) read as an empty, complete config | `test_partial_coverage_matches_stored_path` |
+| M2b-pending-written-automation-never-checked | design 4: a written automation absent from the loaded inventory reported as complete | `test_deleted_pending_automation_clears_on_404` |
+| M2c-pending-not-loaded-reported-unavailable | design 4: with no other automation, a written-not-loaded automation is partial, not unavailable | `test_written_automation_not_loaded_is_partial_with_empty_inventory` |
+| M3-silent-fallback | brief: the stored fallback is reported, never silent | `test_unreadable_loaded_and_stored_automation_is_partial` |
+| M4-journal-ignored | design 4: a pending write is read from stale loaded config | `test_stored_read_failure_for_pending_write_is_not_cleared` |
+| M5-blueprint-search-ignored | design 2: a blueprint instance is read from substituted loaded config | `test_blueprint_loaded_form_is_never_used` |
+| M6-identity-unchecked | design 2: a loaded config for another id is accepted | `test_each_per_automation_reason_is_reported` |
+| M7-allowlist-open | security: the batch admits any command | `test_only_fixed_read_shapes_are_admitted` |
+| M8-governed-write-not-journaled | design 4: the governed automation write skips the journal | `test_automation_gateway_journals_before_dispatch` |
+| M9-resource-write-not-journaled | design 4: the resource automation write skips the journal | `test_resource_gateway_journals_automation_only` |
+| R1-sanitizer-decision-bypassed | review: the shared-sanitizer decision in the effect display filter always passes | `test_registry_identifier_the_sanitizer_recognizes_is_digested` |
+| H1a-denylist-instead-of-allowlist | H1: values the sanitizer does not recognize are shown verbatim (denylist) | `test_planted_values_are_digested_in_every_position` |
+| H1b-hash-prefix-trusted | H1: a digest-shaped configuration string is trusted as a generated digest | `test_planted_values_are_digested_in_every_position` |
+| H1c-target-position-bypasses-filter | H1: the effect-target position is copied verbatim | `test_jwt_variants_are_digested_in_plan_response_and_files` |
+| H1d-data-position-bypasses-filter | H1: the effect-data position is copied verbatim | `test_planted_values_never_reach_a_profile_position` |
+| H1e-service-position-bypasses-filter | H1: the service position is copied verbatim | `test_planted_values_never_reach_a_profile_position` |
+| H1f-domain-position-bypasses-filter | H1: the action-domain position is copied verbatim | `test_planted_values_never_reach_a_profile_position` |
+| H1g-literal-provenance-ignored | H1: identifier grammar alone admits a lowercased projection of a configured value | `test_provenance_is_required` |
+| M1a-unverified-loaded-reported-complete | M1: a stored read standing in for unreadable loaded configuration is complete | `test_batch_failure_is_not_treated_as_unsupported` |
+| M1c-batch-failure-reported-unsupported | M1: a batch read that raises is reported as an unsupported client (complete) | `test_batch_failure_is_not_treated_as_unsupported` |
+| M1b-identity-mismatch-treated-stable | M1: a loaded identity mismatch verifies the stored read | `test_each_per_automation_reason_is_reported` |
+| M2d-overflow-cleared-after-build | M2: the journal overflow is cleared after a build (the pending write is forgotten) | `test_journal_overflow_is_sticky_and_always_partial` |
+| M2e-pending-cleared-after-partial-build | M2: pending writes are cleared after a partial build | `test_stored_read_failure_for_pending_write_is_not_cleared` |
+| M2f-overflow-not-reported | M2: an overflowed journal does not make the build partial | `test_journal_overflow_is_sticky_and_always_partial` |
+| M2g-unreconciled-read-failure-not-reported | M2: a journaled write whose read failed is not reported unreconciled | `test_stored_read_failure_for_pending_write_is_not_cleared` |
 
 The first M2a draft (dropping the stored failure code) was equivalent: the
 consumer's `failure or config is None` guard still caught it. It was replaced

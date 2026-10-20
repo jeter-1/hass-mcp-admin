@@ -56,20 +56,29 @@ and every public descriptor are unchanged from beta.22.
    | `loaded_identity_mismatch` | the loaded ID differs from the state's ID |
    | `pending_write_reload` | a governed write has not been reloaded yet |
    | `loaded_source_unavailable` | the whole WebSocket batch failed |
+   | `loaded_source_unsupported` | the client has no batch read (test clients only; the stored-only path, complete) |
 
    The reasons appear in the automation coverage `policy` string and in the
-   build profile. A whole-source failure also adds a coverage warning. No
-   fallback is silent.
+   build profile. No fallback is silent.
+
+   For `loaded_config_unreadable`, `loaded_identity_mismatch` and
+   `loaded_source_unavailable` the running configuration could not be read,
+   so a stored read does not prove what is loaded. Each such automation is
+   the coverage failure `loaded_config_unavailable`, the index is partial,
+   and health reports `automation_partial_reasons` and the count.
+   `blueprint_instance` and `loaded_entity_unavailable` stay complete.
 3. **Pending-write journal.** Both governed automation write boundaries record
    the automation ID before dispatch. This is needed because Home Assistant
    reloads an automation after the write response.
 
    Until the loaded and stored forms agree, the index uses the stored form, as
-   before. A written automation that Home Assistant has not loaded is the
-   coverage failure `automation_pending_reload_not_loaded`, and the index is
-   partial. The journal holds at most 256 IDs. On overflow, the index compares
-   every automation and reports `pending_write_journal_overflow` until a clean
-   build.
+   before. A journaled write that a build cannot account for (not loaded yet,
+   or its stored read failed) stays journaled, and every build is partial
+   with the coverage failure `pending_write_unreconciled` until a build
+   accounts for it. The journal holds at most 256 IDs. A write beyond that
+   sets an overflow flag and count that no build clears: every build
+   compares every automation and is partial with `pending_write_unreconciled`
+   until the add-on restarts.
 4. **Profile fields (additive).** Health `last_build_profile` adds:
    - `automation_config_source` (`loaded_websocket`, `stored_rest`, `mixed`
      or `none`);
@@ -77,7 +86,8 @@ and every public descriptor are unchanged from beta.22.
    - `stored_config_fallback_reasons`;
    - `loaded_config_connection_count`;
    - `loaded_config_command_count`;
-   - `pending_write_journal`.
+   - `pending_write_journal` (with `overflow_write_count` and `unreconciled`);
+   - `automation_partial_reasons` and `loaded_config_unavailable`.
 
    Existing fields (`request_count`, `request_count_by_operation`,
    `build_wall_clock_ms`, queue-wait fields, coverage) keep their meaning.
@@ -113,11 +123,16 @@ views and snapshot fingerprints.
   - The loaded form can include resolved `!secret` values. The index keeps
     no configuration excerpt, and its identity fields and label selectors pass
     through the existing sanitizer. The helper and entity-metadata effect
-    projection now shows a `redacted_sha256:` digest in place of any literal
-    target or allowlisted data value that the sanitizer recognizes. Before,
-    such a value reached helper-state plan disclosures, or made the plan
-    refuse. A test plants secret-shaped values and checks every analysis
-    output. See the design note's security section.
+    projection (domains, services, targets and allowlisted data values) is
+    now an allowlist: a value is shown verbatim only if it has a known-safe
+    shape (entity ID, service, slug, registry ID, number, boolean or a fixed
+    enum word), is spelled exactly as configured or is a registry ID, and is
+    not recognized by the sanitizer. Anything else is a `redacted_sha256:`
+    digest. Before, a secret-shaped value (including prefixed, delimited or
+    lowercased JWTs) could reach helper-state plan disclosures and plan
+    files. Plan fingerprints and binding are unchanged. Tests plant
+    secret-shaped values and check every analysis output, plan response and
+    persisted plan file. See the design note's security section.
   - Out-of-band edits that Home Assistant has not reloaded are reported as
     loaded, which is the configuration that runs.
 - **Stored formats.** No stored format changes. The journal is in memory only.

@@ -13,15 +13,19 @@ Builds on 2.4.1-beta.22.
 - Keep the stored REST read for blueprint instances, unavailable,
   unreadable or mismatched entries, writes not yet reloaded and a failed
   loaded source, and report every such fallback with its reason in the
-  coverage policy and build profile.
-- Journal governed automation writes before dispatch (cap 256, overflow
-  reported) so a written-but-not-reloaded automation is partial, never
-  silently stale.
-- Show a `redacted_sha256:` digest in place of any helper or
-  entity-metadata effect-projection value (literal target or allowlisted data
-  field) that the shared sanitizer recognizes. A resolved `!secret` in a
-  loaded package automation no longer reaches a helper-state plan disclosure;
-  projection fingerprints are unchanged.
+  coverage policy and build profile. When the loaded configuration could
+  not be read (unreadable, mismatched or a failed loaded source) the index
+  is partial (`loaded_config_unavailable`).
+- Journal governed automation writes before dispatch (cap 256). A write the
+  build cannot account for, or any journal overflow, keeps every build
+  partial (`pending_write_unreconciled`); overflow is never cleared by a
+  build.
+- Show helper and entity-metadata effect-projection values (domains,
+  services, targets, allowlisted data) verbatim only when they match a
+  known-safe grammar, are spelled as configured or are registry IDs, and
+  are not recognized by the shared sanitizer; anything else is a
+  `redacted_sha256:` digest, in responses and persisted plan files.
+  Projection fingerprints and plan binding are unchanged.
 - Add additive build-profile fields. No tool, input schema, description,
   provider route, signed registry, HOLD, support window, persisted format,
   workflow or stable-v1 change.
