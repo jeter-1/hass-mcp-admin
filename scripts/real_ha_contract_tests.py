@@ -1740,7 +1740,11 @@ async def _decide_f2_action(
     assert review["approval_action"] == pending["approval_action"]
     # HAMCP-213 D1: the safety-critical acknowledgement names every reviewed
     # object and the bound comparison hash, as the Ingress form submits them.
-    safety = review.get("safety_critical_acknowledgement") or {}
+    safety = (
+        review.get("safety_critical_acknowledgement") or {}
+        if pending["approval_action"] == "safety_critical_acknowledgement"
+        else {}
+    )
     return await service.decide_external_approval(
         plan_id=created["plan_id"],
         challenge_id=pending["challenge_id"],
