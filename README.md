@@ -266,7 +266,9 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**59 static tools plus 28 delegated reads, 87 total**. The Core inventory represents
+**60 static tools plus 28 delegated reads, 88 total** (89 with the optional
+reviewed YAML reader admitted; the 60th static tool is HAMCP-130's read-only
+`get_backup_inventory`). The Core inventory represents
 **22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol

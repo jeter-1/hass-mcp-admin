@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.4.1-beta.24 - Read-only backup inventory (HAMCP-130)
+
+Builds on 2.4.1-beta.23.
+
+- Add `get_backup_inventory`, a read-only tool that reports Home Assistant
+  backups: per backup, its date, size, content scope, protection flag, Home
+  Assistant version, add-ons, folders, database flag and storage locations;
+  a summary with the newest full backup and confirmed off-site copies; the
+  automatic-backup schedule, retention, last attempt, last completion and
+  result; recent failures; and nine health signals with stated thresholds.
+- Read only Core's `backup/config/info` and `backup/info` over the existing
+  admin WebSocket authority. No create, restore, delete, download or settings
+  path exists.
+- Report `partial`, with reasons, whenever a read, location or field cannot be
+  read or text is redacted. The encryption key is never returned; it is a
+  per-response known secret for the shared sanitizer.
+- Map the tool to `core.basic_websocket_read` in the Core gate. Static tools
+  60 (was 59); advertised catalog 88 (was 87), or 89 with the optional YAML
+  reader. Every existing descriptor, signed registry, HOLD, support window,
+  persisted format, workflow and stable v1 is unchanged.
+
 ## 2.4.1-beta.22 - aiohttp 3.14.4 dependency security release (HAMCP-211)
 
 Builds on 2.4.1-beta.21, which was superseded before publication and is not

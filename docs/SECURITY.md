@@ -613,6 +613,20 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.24` backup inventory (HAMCP-130) adds the read-only
+`get_backup_inventory` tool. It makes exactly two fixed Core WebSocket reads,
+`backup/config/info` and `backup/info`, through Engineering's existing
+Supervisor-proxy admin authority. It adds no permission, add-on option, HTTP
+client, Supervisor call, delegated ha-mcp call, fallback or write path; static
+and runtime tests pin the two commands. `backup/config/info` returns the backup
+encryption key in plaintext. The key is never projected: the report carries
+only an `encryption_configured` flag, and the key seeds that one response's
+shared strict sanitizer (HAMCP-191) as a known secret, so user text that
+contains it is withheld. Backup names, error text and identifiers pass through
+the same sanitizer, and any redaction makes the report partial. The tool is
+mapped to `core.basic_websocket_read` in the HAMCP-164 Core gate. See the
+[design](HAMCP_130_BACKUP_INVENTORY_DESIGN.md). Stable v1.1.2 is unchanged.
+
 The `2.4.1-beta.22` dependency-security release (HAMCP-211) advances
 `aiohttp` to 3.14.4 for GHSA-2g87-pp6c-29x5, CVE-2026-111063 and
 CVE-2026-111064, and `yarl` to 1.25.1, the floor 3.14.4 requires. Engineering
