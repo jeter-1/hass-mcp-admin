@@ -1,5 +1,70 @@
 # Changelog
 
+## 2.4.1-beta.29 - Safety-critical acknowledgement (HAMCP-213 PR 1)
+
+Builds on 2.4.1-beta.28.
+
+- Compare each automation or script create or update's protected physical
+  effects before and after (`physical-effect-comparison-v1`): `none`,
+  `equivalent`, `changed` or `unresolved`. Reference-only services never name
+  an effect; run mode, abort points (conservative OD-10) and run occupancy
+  count.
+- Policy `f2-v3`: `equivalent` is `elevated_admin` with plan approval only;
+  `changed` or `unresolved` adds the per-object
+  `safety_critical_acknowledgement` (Ingress only, authority version 4).
+  Unlock and disarm effects always need it (OD-6(b)), and no shortcut applies
+  to them. An incomplete execution contract stays `prohibited`. Otherwise the
+  Beta 33 retained proof, garage inverse and retry-transfer paths are
+  unchanged.
+- An effect-capable call with a templated, variable-driven or area, device,
+  floor or label target, or a templated service name, is `unresolved`. A
+  reference step that can run before an effect is compared in full; any
+  change to it is `changed`.
+- The comparison is an allowlist: only the keys in the design's
+  ignorable-differences table (D2 item 8) are ignored. An `enabled` flag or
+  an unknown key on an effect path is `changed`.
+- A change past the review bounds (nesting depth, step count, called-script
+  depth or count, or more than 32 acknowledged objects) is `prohibited` on
+  every route, with
+  `safety_critical_review_bounds_exceeded` or
+  `too_many_protected_objects_to_review_split_the_change`. The unlock or
+  disarm floor is computed first.
+- Every called script's fingerprint is bound to the plan and re-read before
+  approval is consumed and before each write. A changed or unreadable callee
+  refuses as `stale_target_state` (reason `stale_called_script`) with no
+  write, on the service path and in F3.
+- A called script the same plan updates or deletes is analyzed with its
+  current and proposed configurations together, so callers are judged
+  against the post-plan callee. Before each caller write the live callee must
+  match its pre-plan fingerprint (callee not yet written) or its proposed
+  fingerprint (callee already written); otherwise the caller refuses as
+  stale with no write, including on F3 resume and recovery.
+- Dispatch rechecks the exact acknowledged object set and comparison hash
+  independently of the bundle state; plan approval alone never dispatches.
+- E013 precision: logbook mentions are not targets, notify routed by name has
+  no omitted target, no retry warning outside a retry candidate, recipient
+  reason only when recipients change.
+- OD-4: `principal_separation_status.reason` is `no_decision_recorded` or
+  `not_approvable`.
+- New audit events and the stable error codes
+  `safety_critical_acknowledgement_required` and
+  `safety_critical_acknowledgement_mismatch`.
+- Pending `f2-v2` plans must be replanned. An applied `f2-v2` plan is
+  admitted only as read-only evidence: as an F3 rollback source, and when
+  reverifying its own consumed task.
+- Rollback to beta.28 quarantines every plan record written under `f2-v3`,
+  terminal ones included (beta.28, like beta.27, accepts only `f2-v1` and
+  `f2-v2`; its plan storage is unchanged from beta.27). If the quarantine
+  move fails, beta.28 deletes the record; the backup is the protection.
+  Procedure: take a fresh Home Assistant backup (it includes the Engineering
+  add-on data), finish or reject pending plans, then roll back.
+  Execution-task records stay readable.
+- On startup, beta.29 restores plan records an older version quarantined,
+  before cleanup and recovery. Only records whose canonical bytes, plan
+  identifier, namespace and content screen verify are restored. Restoration
+  never overwrites, is idempotent and is logged. Anything else stays
+  quarantined and is reported in health (`quarantine_restoration`).
+
 ## 2.4.1-beta.28 - Core authority recovery and visibility (HAMCP-215)
 
 Builds on 2.4.1-beta.27.

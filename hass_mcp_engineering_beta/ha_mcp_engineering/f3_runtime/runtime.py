@@ -375,9 +375,25 @@ def _approval_bundle_hash(plan: Any) -> str:
                 "principal": elevated.approver_principal,
                 "bound_plan_hash": elevated.bound_plan_hash,
                 "policy_decision_hash": elevated.policy_decision_hash,
+                # HAMCP-213 D1: present only on a safety-critical
+                # acknowledgement, so authority-v3 bundle hashes are unchanged.
+                **_safety_critical_bundle_fields(elevated),
             },
         }
     )
+
+
+def _safety_critical_bundle_fields(record: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    if record.safety_critical_projection_hash is not None:
+        fields["safety_critical_projection_hash"] = (
+            record.safety_critical_projection_hash
+        )
+    if record.acknowledged_objects is not None:
+        fields["acknowledged_objects"] = [
+            dict(row) for row in record.acknowledged_objects
+        ]
+    return fields
 
 
 class RuntimeLockStore(DurableLockStore):
@@ -567,6 +583,38 @@ class _RetryBundleAdapter(_SequenceLockAdapter):
 
     async def recover(self, prepared, *, context):
         return await self._bundle_observation(await self._adapter.recover(prepared, context=context))
+
+
+class _CalledScriptFreshnessAdapter:
+    """Refuse a child whose plan's called-script evidence is stale.
+
+    HAMCP-213 review H5: every preflight (first dispatch, re-apply, recovery
+    and pre-intent retry) re-reads the scripts each operation of the plan
+    calls and compares them with the snapshot bound into the plan. A script
+    the same plan changes is read too and must be in its exact state for
+    this child's position in the plan's order (batch 4 H5). Any difference
+    is a preflight rejection before approval consumption and before any
+    write.
+    """
+
+    def __init__(self, adapter: Any, check: Any):
+        self._adapter = adapter
+        self._check = check
+        self.capabilities = adapter.capabilities
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._adapter, name)
+
+    async def preflight(self, prepared: Any, *, acquired_locks: tuple[Any, ...]):
+        stale = await self._check()
+        if stale is not None:
+            self._adapter._increment("stale_rejections")
+            return self._adapter._preflight_rejected(
+                prepared, (str(stale["reason"]),)
+            )
+        return await self._adapter.preflight(
+            prepared, acquired_locks=acquired_locks
+        )
 
 
 class _LegacyConflictAdapter:
@@ -2654,6 +2702,20 @@ class F3RuntimeIntegration:
                 )
             else:
                 adapter = _SequenceLockAdapter(adapter, complete_requests)
+            if plan.contract_version == 2:
+                # Batch 4 H5: a script this plan changes is checked against
+                # its exact state before this child's operation is written.
+                dispatch_order = next(
+                    operation.order
+                    for operation in plan.operations
+                    if operation.operation_id == declaration["operation_id"]
+                )
+                adapter = _CalledScriptFreshnessAdapter(
+                    adapter,
+                    lambda: self.service._called_scripts_stale(
+                        plan.operations, dispatch_order=dispatch_order
+                    ),
+                )
         else:
             if getattr(prepared, "capability_id", None) == DASHBOARD_CAPABILITY_ID:
                 if (

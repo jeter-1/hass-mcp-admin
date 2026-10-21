@@ -37,12 +37,21 @@ def proof_id(snapshot: dict) -> str:
 
 def source_snapshot(runtime: Any, source: Any) -> dict:
     """Read only bounded, identified durable records; never operation status fallback."""
-    from .policy import policy_snapshot_matches
+    from .policy import (
+        persisted_f2_v2_policy_snapshot_matches,
+        policy_snapshot_matches,
+    )
     from .task_models import TERMINAL_TASK_STATES
 
     proof = bound_proof(source.operations)
     require(source.contract_version == 2 and proof is not None and proof["kind"] == "caller_owned_retry")
-    require(policy_snapshot_matches(source))
+    # The source is an executed plan: an exact pre-HAMCP-213 (f2-v2) snapshot
+    # proves the same integrity under the policy that authorized it. The
+    # inverse plan is evaluated under current policy on its own.
+    require(
+        policy_snapshot_matches(source)
+        or persisted_f2_v2_policy_snapshot_matches(source)
+    )
     task = runtime.service.task_repository.get_for_plan(source.plan_id)
     require(task is not None and task.state in TERMINAL_TASK_STATES)
     plan_hash = runtime.service.plan_hash(source)

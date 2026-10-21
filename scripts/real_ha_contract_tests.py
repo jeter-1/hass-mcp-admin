@@ -1738,6 +1738,13 @@ async def _decide_f2_action(
     )
     assert review["plan_hash"] == created["plan_hash"]
     assert review["approval_action"] == pending["approval_action"]
+    # HAMCP-213 D1: the safety-critical acknowledgement names every reviewed
+    # object and the bound comparison hash, as the Ingress form submits them.
+    safety = (
+        review.get("safety_critical_acknowledgement") or {}
+        if pending["approval_action"] == "safety_critical_acknowledgement"
+        else {}
+    )
     return await service.decide_external_approval(
         plan_id=created["plan_id"],
         challenge_id=pending["challenge_id"],
@@ -1747,6 +1754,10 @@ async def _decide_f2_action(
         csrf_nonce=csrf,
         decision="approve",
         approver_principal=principal,
+        acknowledged_objects=tuple(
+            row["object_ref"] for row in safety.get("objects", [])
+        ),
+        acknowledged_projection_hash=safety.get("projection_hash", ""),
     )
 
 
@@ -2048,7 +2059,8 @@ async def _run_f2_policy_acceptance_contract(
                 "safety_critical"
             )
             assert safety_policy["required_acknowledgements"] == [
-                "plan_approval"
+                "plan_approval",
+                "safety_critical_acknowledgement",
             ]
             assert safety_critical["approval_actionable"] is True
             safety_pending = service.approve(
@@ -2058,6 +2070,16 @@ async def _run_f2_policy_acceptance_contract(
                 service,
                 safety_critical,
                 safety_pending,
+                principal=F2_ADMIN_A,
+            )
+            assert safety_approved["status"] == "approval_pending"
+            assert safety_approved["approval_action"] == (
+                "safety_critical_acknowledgement"
+            )
+            safety_approved = await _decide_f2_action(
+                service,
+                safety_critical,
+                safety_approved,
                 principal=F2_ADMIN_A,
             )
             assert safety_approved["status"] == "approved"
@@ -2100,7 +2122,8 @@ async def _run_f2_policy_acceptance_contract(
                 "safety_critical"
             )
             assert device_policy["required_acknowledgements"] == [
-                "plan_approval"
+                "plan_approval",
+                "safety_critical_acknowledgement",
             ]
             assert uncertain_device_target["approval_actionable"] is True
             device_pending = service.approve(
@@ -2111,6 +2134,16 @@ async def _run_f2_policy_acceptance_contract(
                 service,
                 uncertain_device_target,
                 device_pending,
+                principal=F2_ADMIN_A,
+            )
+            assert device_approved["status"] == "approval_pending"
+            assert device_approved["approval_action"] == (
+                "safety_critical_acknowledgement"
+            )
+            device_approved = await _decide_f2_action(
+                service,
+                uncertain_device_target,
+                device_approved,
                 principal=F2_ADMIN_A,
             )
             assert device_approved["status"] == "approved"

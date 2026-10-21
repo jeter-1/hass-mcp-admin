@@ -585,6 +585,9 @@ STORAGE_WRITES = {
     ("ChangePlanRepository.save", "open:x"),
     ("ChangePlanRepository.save", "os.replace"),
     ("ChangePlanRepository._quarantine", "os.replace"),
+    # HAMCP-213 (H6): restoring a record an older version quarantined links
+    # the verified quarantined bytes back without overwriting.
+    ("ChangePlanRepository._restore_quarantined_plan", "os.link"),
 }
 
 
@@ -655,6 +658,29 @@ class WriterInventoryTests(unittest.TestCase):
         self.assertEqual(len(screens), 1)
         self.assertEqual(len(opens), 1)
         self.assertLess(screens[0], opens[0])
+        # Restoration links only bytes that passed the stored-plan screen.
+        tree = ast.parse((PACKAGE / "governance/storage.py").read_text(encoding="utf-8"))
+        methods = {
+            node.name: node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+        }
+
+        def calls(name, attr):
+            return [
+                node.lineno
+                for node in ast.walk(methods[name])
+                if isinstance(node, ast.Call)
+                and (getattr(node.func, "attr", None) or getattr(node.func, "id", None)) == attr
+            ]
+
+        self.assertEqual(len(calls("_verified_quarantined_bytes", "persistence_safety_errors")), 1)
+        verify = calls("_restore_quarantined_plan", "_verified_quarantined_bytes")
+        links = [line for scope, call, line in storage.writes
+                 if scope == "ChangePlanRepository._restore_quarantined_plan"]
+        self.assertEqual(len(verify), 1)
+        self.assertEqual(len(links), 1)
+        self.assertLess(verify[0], links[0])
 
 
 # Plan writes the runtime spy must observe: (package caller, operation,
