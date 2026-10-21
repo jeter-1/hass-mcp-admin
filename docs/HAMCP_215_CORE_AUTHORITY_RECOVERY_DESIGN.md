@@ -518,11 +518,16 @@ The gateway code is not changed. This change makes no changes to:
     `scripts/automation_baseline_contract_acceptance.py`.
 - `docs/evidence/hamcp215-mutations/run_mutations.py` (38 mutations, 38
   killed; results in `results.json`) must fail on each of these:
-  - no recovery loop. This one is killed by the runner's default 900 s timeout,
-    not by an assertion. Without the paced loop, the retirement's own
-    reprobe hint re-wakes the supervisor immediately: 12,557 attempts in
-    15 s were measured. The unpaced chain starves the event loop. This is
-    the retry chain that base code's fixed sleep also prevented.
+  - no recovery loop. This one is killed without an assertion. Without the
+    paced loop, the retirement's own reprobe hint re-wakes the supervisor
+    immediately: 12,557 attempts in 15 s were measured. The unpaced chain
+    starves the event loop and its memory grows without bound, so the
+    suite never finishes. The recorded run (`results.json`) ended it by
+    exhausting a 3 GB cgroup memory cap after 202 s (return code -9); the
+    pre-merge run hit the runner's default 900 s timeout (return code -1).
+    Run the runner under a memory cap: uncapped, this mutant can exhaust
+    host memory first. This is the retry chain that base code's fixed sleep
+    also prevented.
   - fixed-interval (base 300 s) retry
   - restoration without confirmation or without the recovery gate
   - restoration without the lifecycle fence

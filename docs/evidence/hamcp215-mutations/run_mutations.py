@@ -12,6 +12,12 @@ Usage:
 
 Optional ``--only ID [ID ...]`` reruns a subset; ``--workers N`` sets the
 number of tree copies run concurrently (default 2).
+
+Run it under a memory cap. The R1 mutant (no recovery loop) never finishes
+and its memory grows without bound; uncapped, it can exhaust host memory
+before the ``--timeout``. The recorded results.json came from:
+    systemd-run --user -p MemoryMax=3G -p MemorySwapMax=0 \
+        -p OOMPolicy=continue --working-directory=<repo> <the command above>
 """
 
 from __future__ import annotations

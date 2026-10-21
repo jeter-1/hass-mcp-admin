@@ -158,8 +158,10 @@ No test reaches a live system.
   weakened. The script changes are evidenced only by the disposable CI lanes.
 - Mutations (`docs/evidence/hamcp215-mutations/`): 38 of 38 killed,
   including all of these:
-  - no recovery loop (killed by the runner's default 900 s timeout: an
-    unpaced retry chain)
+  - no recovery loop (killed without an assertion: the unpaced retry
+    chain never lets the suite finish. The recorded run ended it by
+    exhausting a 3 GB memory cap after 202 s, return code -9; an uncapped
+    run hits the 900 s timeout or the host's OOM killer)
   - fixed-interval retry
   - restoration without confirmation, the recovery gate or the lifecycle fence
   - no hysteresis or no flap escalation

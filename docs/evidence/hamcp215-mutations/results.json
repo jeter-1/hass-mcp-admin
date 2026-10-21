@@ -5,7 +5,7 @@
       "tests.test_hamcp215_core_authority_recovery"
     ],
     "returncode": 0,
-    "seconds": 10.1,
+    "seconds": 9.9,
     "summary": "OK"
   },
   "mutation_count": 38,
@@ -27,11 +27,11 @@
         "tests.test_hamcp215_core_authority_recovery"
       ],
       "log": "R1-no-recovery-loop.log",
-      "returncode": -1,
+      "returncode": -9,
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [],
-      "seconds": 922.8
+      "seconds": 201.6
     },
     {
       "id": "R1b-fixed-interval-retry",
@@ -53,7 +53,7 @@
       "first_failures": [
         "FAIL test_catalog_and_yaml_reader_resume_after_transient (tests.test_hamcp215_core_authority_recovery.Recovery.test_catalog_and_yaml_reader_resume_after_transient)"
       ],
-      "seconds": 2.8
+      "seconds": 2.6
     },
     {
       "id": "R2-restore-without-confirmation",
@@ -76,7 +76,7 @@
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)",
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
       ],
-      "seconds": 2.2
+      "seconds": 2.1
     },
     {
       "id": "R3-restore-skips-recovery-gate",
@@ -99,7 +99,7 @@
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)",
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
       ],
-      "seconds": 2.2
+      "seconds": 2.1
     },
     {
       "id": "R4-restore-without-lifecycle-fence",
@@ -169,7 +169,7 @@
       "first_failures": [
         "FAIL test_monitorless_failure_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_monitorless_failure_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 7.3
+      "seconds": 7.1
     },
     {
       "id": "R7-connection-move-keeps-confirmations",
@@ -195,7 +195,7 @@
       "first_failures": [
         "FAIL test_connection_move_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_connection_move_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 3.2
+      "seconds": 3.0
     },
     {
       "id": "R8-on-demand-trigger-confirms",
@@ -217,7 +217,7 @@
       "first_failures": [
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
       ],
-      "seconds": 2.2
+      "seconds": 2.1
     },
     {
       "id": "G1-incompatible-bypasses-gate",
@@ -240,7 +240,7 @@
         "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)",
         "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
       ],
-      "seconds": 4.2
+      "seconds": 3.8
     },
     {
       "id": "G2-boot-window-left-open",
@@ -262,7 +262,7 @@
       "first_failures": [
         "FAIL test_boot_sequence_end_spends_the_exception_without_an_outcome (tests.test_hamcp215_core_authority_recovery.Recovery.test_boot_sequence_end_spends_the_exception_without_an_outcome)"
       ],
-      "seconds": 2.3
+      "seconds": 2.2
     },
     {
       "id": "G3-failed-attempt-keeps-boot-window",
@@ -285,7 +285,7 @@
         "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)",
         "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)"
       ],
-      "seconds": 7.6
+      "seconds": 7.3
     },
     {
       "id": "G3b-failed-verification-keeps-boot-exception",
@@ -307,7 +307,7 @@
       "first_failures": [
         "FAIL test_failed_boot_attempt_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_failed_boot_attempt_spends_the_boot_exception)"
       ],
-      "seconds": 5.3
+      "seconds": 5.0
     },
     {
       "id": "G3c-boot-retries-continue-after-spent",
@@ -329,7 +329,7 @@
       "first_failures": [
         "FAIL test_failed_boot_attempt_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_failed_boot_attempt_spends_the_boot_exception)"
       ],
-      "seconds": 9.5
+      "seconds": 9.4
     },
     {
       "id": "E1-reinit-rearms-boot-exception",
@@ -352,7 +352,7 @@
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)",
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
       ],
-      "seconds": 2.1
+      "seconds": 2.2
     },
     {
       "id": "E2-admission-keeps-boot-exception",
@@ -397,7 +397,7 @@
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)",
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
       ],
-      "seconds": 2.1
+      "seconds": 2.0
     },
     {
       "id": "E4-reinit-starts-on-periodic-pacing",
@@ -419,7 +419,7 @@
       "first_failures": [
         "FAIL test_failed_boot_attempt_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_failed_boot_attempt_spends_the_boot_exception)"
       ],
-      "seconds": 5.3
+      "seconds": 5.0
     },
     {
       "id": "K1-on-demand-changed-key-ignored",
@@ -441,7 +441,7 @@
       "first_failures": [
         "FAIL test_on_demand_version_change_mid_streak_needs_fresh_confirmations (tests.test_hamcp215_core_authority_recovery.Recovery.test_on_demand_version_change_mid_streak_needs_fresh_confirmations)"
       ],
-      "seconds": 7.5
+      "seconds": 7.2
     },
     {
       "id": "K2-registry-token-not-in-key",
@@ -463,7 +463,7 @@
       "first_failures": [
         "FAIL test_registry_move_seen_on_demand_resets_the_streak (tests.test_hamcp215_core_authority_recovery.SignedRegistryKey.test_registry_move_seen_on_demand_resets_the_streak)"
       ],
-      "seconds": 10.4
+      "seconds": 10.0
     },
     {
       "id": "K3-key-reset-not-logged",
@@ -485,7 +485,7 @@
       "first_failures": [
         "FAIL test_reviewer_on_demand_version_change_resets_the_streak (tests.test_hamcp215_core_authority_recovery.Recovery.test_reviewer_on_demand_version_change_resets_the_streak)"
       ],
-      "seconds": 10.0
+      "seconds": 9.4
     },
     {
       "id": "K4-incomplete-observation-is-key-change",
@@ -507,7 +507,7 @@
       "first_failures": [
         "FAIL test_monitorless_failure_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_monitorless_failure_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 7.4
+      "seconds": 6.8
     },
     {
       "id": "G4-on-demand-first-admission",
@@ -530,7 +530,7 @@
         "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)",
         "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)"
       ],
-      "seconds": 7.5
+      "seconds": 7.1
     },
     {
       "id": "G5-version-change-retired-only-with-registry",
@@ -553,7 +553,7 @@
         "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)",
         "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
       ],
-      "seconds": 5.0
+      "seconds": 4.8
     },
     {
       "id": "G6-incompatible-withdrawal-not-recovery",
@@ -575,7 +575,7 @@
       "first_failures": [
         "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
       ],
-      "seconds": 4.2
+      "seconds": 3.9
     },
     {
       "id": "G7-material-retirement-not-recovery",
@@ -597,7 +597,7 @@
       "first_failures": [
         "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
       ],
-      "seconds": 4.7
+      "seconds": 4.1
     },
     {
       "id": "G8-confirmation-spacing-only-in-transient-recovery",
@@ -619,7 +619,7 @@
       "first_failures": [
         "FAIL test_failed_boot_attempt_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_failed_boot_attempt_spends_the_boot_exception)"
       ],
-      "seconds": 5.2
+      "seconds": 4.9
     },
     {
       "id": "L1-refusals-counted-as-confirmations",
@@ -641,7 +641,7 @@
       "first_failures": [
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
       ],
-      "seconds": 2.2
+      "seconds": 2.1
     },
     {
       "id": "R9-no-flap-escalation",
@@ -663,7 +663,7 @@
       "first_failures": [
         "FAIL test_flapping_requires_more_spaced_confirmations_and_does_not_toggle (tests.test_hamcp215_core_authority_recovery.Recovery.test_flapping_requires_more_spaced_confirmations_and_does_not_toggle)"
       ],
-      "seconds": 5.5
+      "seconds": 5.1
     },
     {
       "id": "B1-no-backoff-growth",
@@ -685,7 +685,7 @@
       "first_failures": [
         "FAIL test_failure_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_failure_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 5.3
+      "seconds": 4.9
     },
     {
       "id": "B2-backoff-uncapped",
@@ -707,7 +707,7 @@
       "first_failures": [
         "FAIL test_incompatibility_stays_retired_and_is_rechecked_without_backoff (tests.test_hamcp215_core_authority_recovery.Recovery.test_incompatibility_stays_retired_and_is_rechecked_without_backoff)"
       ],
-      "seconds": 5.9
+      "seconds": 5.5
     },
     {
       "id": "V1-retirement-not-logged",
@@ -729,7 +729,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.3
+      "seconds": 3.1
     },
     {
       "id": "V2-verification-failure-not-logged",
@@ -751,7 +751,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.3
+      "seconds": 3.1
     },
     {
       "id": "V3-recovery-attempt-not-logged",
@@ -773,7 +773,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.3
+      "seconds": 3.1
     },
     {
       "id": "V4-restoration-not-logged",
@@ -795,7 +795,7 @@
       "first_failures": [
         "FAIL test_connection_move_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_connection_move_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 3.2
+      "seconds": 2.9
     },
     {
       "id": "V5-catalog-change-not-logged",
@@ -817,7 +817,7 @@
       "first_failures": [
         "FAIL test_catalog_and_yaml_reader_resume_after_transient (tests.test_hamcp215_core_authority_recovery.Recovery.test_catalog_and_yaml_reader_resume_after_transient)"
       ],
-      "seconds": 3.0
+      "seconds": 2.8
     },
     {
       "id": "H1-failure-reason-not-recorded",
@@ -839,7 +839,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.4
+      "seconds": 3.1
     },
     {
       "id": "H2-retired-at-not-recorded",
