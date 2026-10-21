@@ -2,6 +2,44 @@
 
 Date: 2026-07-10
 
+## Read-only recorder settings and unregistered entities (2.4.1-beta.26, HAMCP-132)
+
+`get_recorder_settings` and `get_unregistered_entities` are native read-only
+evidence: `engineering_native` routing, `risk=read`, no fallback.
+
+`get_recorder_settings` reads:
+- `configuration.yaml` paths `recorder`, `homeassistant.packages` and,
+  only to classify a missing packages path, `homeassistant`, through the
+  admitted YAML reader's new fixed `yaml_config_reader` gateway route (at
+  most three delegated reads, attributed and audited, no caller-selected
+  path);
+- Core WebSocket `recorder/info`;
+- for up to 50 entities, a batch of `recorder/entity_options/get`.
+
+It reports each setting with its origin. A Core default is used only when
+every source that could set the key is complete; otherwise the setting is
+`unknown` with a reason. It also reports the filters with Core's filter case,
+the runtime state, and Core's per-entity answer beside the computed filter,
+with `filter_drift` on disagreement. `db_url`, reference names and
+unrecognized keys are never returned. Without the YAML reader admitted, the
+tool still reports runtime and Core's entity answers, as partial.
+
+`get_unregistered_entities` makes zero delegated calls. It reads:
+- REST `GET /api/states`;
+- `config/entity_registry/list`;
+- `entity/source`;
+- a batch of `search/related` with `item_type: entity`.
+
+It reports the platform, a directly written state, the config entry
+(`ambiguous` when more than one) and `definition_location:
+not_determinable`.
+
+Both tools are mapped in the HAMCP-164 Core gate. The batch allowlist adds
+exactly two shapes, each with a strict entity-ID pattern. There is no write,
+purge, reload, flow or service-call path. The catalog is 62 static + 28
+delegated = 90 (91 with the optional YAML reader). See the
+[implementation notes](docs/HAMCP_132_SLICE1_IMPLEMENTATION_NOTES.md).
+
 ## Read-only backup inventory (2.4.1-beta.24, HAMCP-130)
 
 `get_backup_inventory` is native read-only evidence: `engineering_native`

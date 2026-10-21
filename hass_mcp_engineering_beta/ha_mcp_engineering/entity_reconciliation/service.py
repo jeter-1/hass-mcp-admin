@@ -137,8 +137,11 @@ class EntityReconciliationService:
 
     async def report(self, domains: tuple[str, ...] | list[str] | None = None,
                      limit: int = c.DEFAULT_LIMIT) -> dict:
+        # A tuple is normalized; any other non-list (a string included) is
+        # passed through unchanged so validation refuses it, never splits it.
         domains, limit = c.validate_arguments(
-            {"limit": limit} | ({} if domains is None else {"domains": list(domains)}))
+            {"limit": limit} | ({} if domains is None else {
+                "domains": list(domains) if type(domains) is tuple else domains}))
         if current_caller_id() == "anonymous":
             raise c.EntityReconciliationError("authority_unavailable")
         authority = self.authority()

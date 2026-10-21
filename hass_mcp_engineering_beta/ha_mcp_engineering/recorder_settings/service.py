@@ -100,7 +100,9 @@ class RecorderSettingsService:
         return outcomes, reason
 
     async def report(self, entity_ids: tuple[str, ...] | list[str] = ()) -> dict:
-        entity_ids = c.validate_arguments({"entity_ids": list(entity_ids)})
+        # A tuple is normalized; any other non-list is refused, never split.
+        entity_ids = c.validate_arguments(
+            {"entity_ids": list(entity_ids) if type(entity_ids) is tuple else entity_ids})
         if current_caller_id() == "anonymous":
             raise c.RecorderSettingsError("authority_unavailable")
         authority = self.authority()
