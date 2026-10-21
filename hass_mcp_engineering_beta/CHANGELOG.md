@@ -8,15 +8,23 @@ Builds on 2.4.1-beta.26.
   jitter: 20 s, doubling, capped at 240 s. This replaces the fixed 300 s
   `failure_retry`.
 - Pass every non-admitted state (transient retirement, incompatible,
-  unavailable, never initialized after boot, changed version or registry
-  authority) through one restoration gate: `CORE_RECOVERY_CONFIRMATIONS = 2`
-  consecutive complete background verifications by the supervisor, spaced
-  about 15 s apart, with the same Core identity, version and admitted reviewed
+  unavailable, not initialized at boot, changed version or registry
+  authority, re-initialization) through one restoration gate:
+  `CORE_RECOVERY_CONFIRMATIONS = 2` consecutive complete background
+  verifications by the supervisor, spaced about 15 s apart, with the same Core
+  identity, version, selected signed-registry authority and admitted reviewed
   contracts. A retirement within 600 s of a restoration needs 3, at doubled
-  spacing. Any failure, connection move, or identity, version or contract
-  change restarts the count. Only the boot sequence's first admission is
-  exempt. On-demand verification never confirms or restores from any state;
-  it is refused and counted in `recovery_on_demand_refusals`.
+  spacing. Any failure or connection move, and any background or on-demand
+  observation of a changed identity, version, registry authority or contract
+  set, restarts the count. On-demand verification never confirms or restores
+  from any state; it is refused and counted in `recovery_on_demand_refusals`.
+- Make the boot exception a one-shot latch per process: only the boot
+  sequence's first admission, while the process has never admitted, retired
+  or failed, is exempt. Any admission, failure, retirement or non-boot check
+  spends it, and only a new process re-arms it, so an application rebuild or
+  runtime reconfiguration restores through the full gate. A failed first
+  startup check ends the boot retries; the supervisor then recovers on
+  backoff pacing.
 - Keep a complete but unadmitted observation retired
   (`recovery_state: incompatible`). Re-check it every reconciliation interval
   without backoff; once compatible it passes the same gate.
@@ -34,7 +42,10 @@ Builds on 2.4.1-beta.26.
   `recovery_on_demand_refusals` and `authority_restorations`.
 - A lifecycle-socket movement, including the reconnect after a Core restart,
   now waits one confirmation interval (about 15–18 s) before authority returns.
-  Core-backed tools refuse during it. Josh accepted this on 2026-10-20.
+  Core-backed tools refuse during it. Josh accepted this on 2026-10-20, and
+  the same wait (about 15 s) after a Core version change, a moved
+  signed-registry authority, an incompatible Core becoming compatible, or a
+  Core not initialized at boot (which first waits one backoff delay).
 - No tool, schema, descriptor, permission, workflow or stored-format change.
 
 ## 2.4.1-beta.26 - certifi 2026.10.19 dependency security release (HAMCP-217)

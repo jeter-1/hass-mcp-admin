@@ -32,7 +32,10 @@ Bind the following:
   - ship HAMCP-217 (the certifi bump) separately as beta.26 and restage this
     work as beta.27;
   - accept the confirmation wait before Core authority returns after a
-    lifecycle-watcher socket move (see **Accepted restoration delay**);
+    lifecycle-watcher socket move, and the same wait (about 15 s) after a
+    Core version change, a moved signed-registry authority, an incompatible
+    Core becoming compatible, or a Core not initialized at boot (see
+    **Accepted restoration delay**);
 - `2.4.1-beta.27` materialized in all three version authorities, with exact
   acceptance and release-note resolution from `scripts/codex-context.py` and
   no staged declaration left over;
@@ -53,11 +56,21 @@ The review needs a security section covering:
   connection and monitor fences, and reviewed-contract admission, with a
   matching confirmation key.
 - **One restoration gate (H1).** Every non-admitted disposition (transient,
-  incompatible, unavailable, never initialized after boot, changed version or
-  registry authority) needs 2 background confirmations, or 3 when it flaps,
-  agreeing on identity, version and reviewed contracts. Any failure,
-  connection move, or identity, version or contract change restarts the
-  count. Only the boot sequence's first admission is exempt.
+  incompatible, unavailable, not initialized at boot, changed version or
+  registry authority, re-initialization) needs 2 background confirmations, or
+  3 when it flaps, agreeing on identity, version, selected signed-registry
+  authority and reviewed contracts.
+- **One-shot boot exception (H1, review of a6e66a8).** Only the first
+  admission of the process's boot sequence is exempt, and only while the
+  process has never admitted, retired or failed. Any admission, failure,
+  retirement or non-boot check spends it; only a new process re-arms it, and
+  production constructs exactly one runtime per process. A re-initialization
+  (application rebuild, `configure`, collector restart) restores through the
+  full gate.
+- **Changed keys reset the streak (H2, review of a6e66a8).** Any failure or
+  connection move, and any observation, background **or on demand**, of a
+  changed identity, version, signed-registry authority or reviewed contract
+  set, restarts the count. On-demand checks may reset it but never add to it.
 - **Bounded logs and health.** Log and health content is closed-set reasons
   and details, timestamps and counts. There is no exception text, URL or token.
 
@@ -80,9 +93,12 @@ public-surface change. They are additive and authorized by the task.
 After any lifecycle-watcher socket move, including a Home Assistant Core
 restart or update, Core authority returns only after one confirmation
 interval, about 15–18 s once Core is reachable. Core-backed tools refuse
-during that wait. Josh accepted this on 2026-10-20. Acceptance treats a
-refusal in that window as expected, not as a defect, provided the following
-hold:
+during that wait. Josh accepted this on 2026-10-20, and also accepted, the
+same day, the same wait (about 15 s of background confirmations) after a Core
+version change, a moved signed-registry authority, an incompatible Core
+becoming compatible, and a Core not initialized at boot. The last one first
+waits one backoff delay (about 20 s). Acceptance treats a refusal in any of
+these windows as expected, not as a defect, provided the following hold:
 - health shows `recovery_state: confirming`;
 - authority returns without restarting Engineering.
 
@@ -90,7 +106,7 @@ hold:
 
 No test reaches a live system.
 
-- `tests/test_hamcp215_core_authority_recovery.py` (26 tests) covers:
+- `tests/test_hamcp215_core_authority_recovery.py` (43 tests) covers:
   - each transient (REST HTTP failure, connection loss, timeout and
     authentication failure; lifecycle-watcher attach failure and timeout),
     going from retirement through backoff and confirmations to automatic
@@ -107,9 +123,30 @@ No test reaches a live system.
   - a matrix of every non-admitted disposition × {background, on-demand,
     mixed} with no restoration before the full background confirmations;
   - `recovery_confirmations` counting only accepted confirmations (L1);
-  - the exact live beta.24 health state (Part 1) recovering automatically.
+  - the delta review's H1 reproductions: an application rebuild and a
+    `configure` re-initialization, after a retirement or a normal admission,
+    and repeated re-initializations, each needing the full background
+    confirmations; a failed boot ending the boot retries; production
+    constructing one runtime whose latch only `__init__` arms;
+  - the delta review's H2 reproductions: a different Core version, a changed
+    reviewed contract and a moved signed-registry authority seen on demand
+    each reset the streak, then need fresh background confirmations; a
+    same-key on-demand check neither resets nor adds; concurrent mixed checks
+    count only the background one;
+  - the live beta.24 health state (Part 1) recovering automatically, with the
+    production delegated catalog (the reviewed ha-mcp 8.5.0 capture, 29
+    Core-backed tools including the YAML reader) and the dependency index
+    attached. It reproduces every Part 1 counter except lease attempts and
+    failures (11/2), which come from live tool calls. It reproduces the
+    counters, not the live timing, and does not establish which ha-mcp
+    version ran live.
 - Two lifecycle tests in `tests/test_ha_core_2026_9_integration.py` now assert
-  the confirming state before republication. Recovery-delay assertions in
+  the confirming state before republication. Two reconfiguration tests
+  (`test_reconfiguration_rebinds_async_primitives_to_the_serving_loop` there,
+  and `test_reconfiguration_cannot_reuse_old_generation_evidence` in
+  `tests/test_core_semantic_continuity.py`) now assert that the
+  re-initialized runtime is not admitted by `startup` and then restores
+  through the gate. Recovery-delay assertions in
   `tests/test_rc3_postcore_regressions.py` follow the new backoff.
 - Existing tests and disposable-lane scripts that admitted Core on an
   on-demand trigger, or expected one reconciliation to restore authority after
@@ -118,7 +155,7 @@ No test reaches a live system.
   `reconcile_through_gate`. The full list is in the design document's
   Validation section. No refusal, dispatch or authority assertion was
   weakened. The script changes are evidenced only by the disposable CI lanes.
-- Mutations (`docs/evidence/hamcp215-mutations/`): 28 of 28 killed,
+- Mutations (`docs/evidence/hamcp215-mutations/`): 38 of 38 killed,
   including all of these:
   - no recovery loop (killed by the runner's default 900 s timeout: an
     unpaced retry chain)
@@ -133,6 +170,13 @@ No test reaches a live system.
     Core bypassing the gate; the boot window left open; a changed version
     replacing authority without the gate; refused calls counted as
     confirmations (L1)
+  - H1: re-initialization re-arming the boot exception; an admission, a
+    failed verification or a non-boot check not spending it; boot retries
+    continuing after it is spent; a re-initialization dropping the
+    withdrawal; the supervisor waiting a full interval after a re-init
+  - H2: an on-demand changed key ignored; the signed-registry authority left
+    out of the key; the key reset not logged; a failed (incomplete) probe
+    reported as a key change
 
 ## 2. Release CI and publication
 

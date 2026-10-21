@@ -100,38 +100,54 @@ emitted.
    - Attempts 27 = successes 26 + failures 1, so no attempt was in flight. Base
      successes count only admitting publications (`runtime.py:321-328`), so
      every attempt before the last one admitted.
-   - Reprobes 26 = attempts − 1 startup (`runtime.py:240-241`). At the 300 s
-     interval, 26 reprobes span about 7,800 s. The reported uptime at discovery
-     was about 2 h 13 min (7,980 s), so the supervisor ran on schedule
-     throughout. Supervisor death is excluded: `application.py:526-560` runs it
-     under `FIRST_COMPLETED`, so its exit would have ended the server.
-   - The failed attempt was therefore the last one. It happened about
-     2–8 minutes before the 17:49Z snapshot (no earlier than the 25th periodic
-     interval, about 17:41Z). The register's "between 15:43Z and 17:49Z" is the
-     window in which the failure could have happened, not the outage's length.
-   - Base would have retried once at +300 s (`runtime.py:436-438`,
-     `:450-452`), about 17:46–17:54Z. The owner restarted the add-on at about
-     17:55Z, at or just after that retry was due. Nothing records whether it ran
-     or failed. Under base code it could only have succeeded, failed silently or
-     been preempted.
-   - **Conclusion.** The counters do not support an authority outage of about
-     2 h: one would show about 24 failures. Authority had been withdrawn for
-     minutes at discovery. It looked permanent because base gave no signal at
+   - Reprobes 26 = attempts − 1 startup (`runtime.py:240-241`). Base counts
+     every non-startup trigger as a reprobe, including event-driven wakes
+     (`identity_or_connection_change`) and on-demand checks, so the counter
+     does not prove 26 periodic intervals. If all 26 were periodic, they would
+     span about 7,800 s, consistent with the reported uptime of about
+     2 h 13 min (7,980 s); that the supervisor ran on schedule is an
+     **inference**, not an observation. Supervisor death is excluded:
+     `application.py:526-560` runs it under `FIRST_COMPLETED`, so its exit
+     would have ended the server.
+   - The failed attempt was the last one (the counters establish this). When
+     it happened is **not observed**: no failure timestamp was recorded. Only
+     under the all-periodic inference above would it fall about 2–8 minutes
+     before the 17:49Z snapshot (no earlier than the 25th periodic interval,
+     about 17:41Z); event-driven wakes would place it earlier. The register's
+     "between 15:43Z and 17:49Z" is the window in which the failure could
+     have happened, not a measured outage length.
+   - While the failure persisted, base retried every 300 s (`failure_retry`,
+     `runtime.py:436-438`, `:450-452`), each retry adding one attempt. Nothing
+     records whether a retry was due, ran or failed before the owner restarted
+     the add-on at about 17:55Z.
+   - **Conclusion.** The counters do not support about 2 h of *failing
+     verifications*: those would show about 24 failures at a 300 s retry, not
+     1. That authority had been withdrawn for only minutes at discovery is an
+     inference from the counters, not an observation. It looked permanent
+     because base gave no signal at
      all: no log (base `runtime.py` has no logger call), no next-attempt time,
      no recovery state, and a flat 300 s wait. The exact transport cause stays
      unknown: the reason code went only to the audit file, and the exception
      class was discarded (`observation.py:318-320`).
    - This change makes the same state visible and short.
      `test_live_incident_state_recovers_automatically` boots the production
-     source and watcher, runs 25 successful supervisor wakes, then one failed
-     wake (as a failed probe, and as a socket close followed by a failed
-     reprobe). It asserts the exact live health (`initialized` false, version
-     and generation null, attempts 27, successes 26, failures 1, retirements 1,
-     reprobes 26, restorations 0). It then shows the supervisor recovering
+     source and watcher with the production delegated catalog (the reviewed
+     ha-mcp 8.5.0 capture) and the dependency index attached. It runs 25
+     successful event-driven supervisor wakes, then one failed wake (as a
+     failed probe, and as a socket close followed by a failed reprobe). It
+     asserts the live health counters (`initialized` false, version and
+     generation null, attempts 27, successes 26, failures 1, retirements 1,
+     reprobes 26, catalog withdrawals 29 with the YAML reader among them,
+     catalog restorations 0, authority restorations 0) and an invalidated
+     index (`core_authority_changed`). It does **not** reproduce lease
+     attempts and failures (11/2), which came from live tool calls, nor the
+     live timing (its wakes are not 300 s apart). The 29 matches the live
+     count but does not establish which ha-mcp version ran live. It then
+     shows the supervisor recovering
      automatically through the restoration gate: a 20 s backoff, then two
      complete background confirmations about 16.5 s apart, with
      `recovery_state`, the failure reason and `next_recovery_attempt_at`
-     visible throughout.
+     visible throughout, and the gateway restoring all 29 tools.
    - The pre-counter section of `reconcile_once` (the reconciliation lock,
      `refresh_if_due`, `_sync_registry_authority`) cannot block indefinitely:
      the registry is disabled by default, or bounded by the timeouts above. A
@@ -207,11 +223,20 @@ All constants live in `ha_core_readmission/runtime.py`.
     `recovery_state = confirming` and logs `core_authority_recovery_confirming`.
     The supervisor then waits `CORE_RECOVERY_CONFIRMATION_SECONDS = 15` × (1 +
     0.2u) × 2^flap_count, capped as above, before the next verification.
+  - The key is (identity, version, selected signed-registry token, admitted
+    reviewed contracts).
   - The confirmation count restarts on any of these:
     - a failed verification
-    - a verification with a different key
+    - any verification, background **or on demand** (H2, review of
+      a6e66a8), whose complete observation has a different key; it logs
+      `core_authority_recovery_reset` with reason `core_authority_key_changed`
+      and the trigger (an incomplete observation restarts the count as the
+      failed verification above, not as a key change)
+    - a material (version or registry) retirement, admitted or not
     - a connection or lifecycle movement during confirmation, which logs
-      `core_authority_recovery_reset`
+      `core_authority_recovery_reset` with reason `core_connection_changed`
+  - On-demand checks may therefore **reset** the streak but never **add** to
+    it.
   - **Flap.** If authority is retired again within
     `CORE_RECOVERY_FLAP_WINDOW_SECONDS = 600` (monotonic clock) of a
     restoration, the next restoration requires
@@ -228,7 +253,8 @@ All constants live in `ha_core_readmission/runtime.py`.
     example a health or tool probe), and `startup`/`startup_retry` once the
     boot sequence has ended. From any non-admitted state, an on-demand
     verification that would admit is refused without publishing. It is not
-    counted and does not change the streak or the supervisor's next attempt.
+    counted, never adds to the streak (a changed key resets it, above) and
+    does not change the supervisor's next attempt.
     It is counted separately in `counters.recovery_on_demand_refusals` and
     logged at INFO as `core_authority_recovery_on_demand_refused`. Its failures
     still restart the count.
@@ -241,15 +267,37 @@ All constants live in `ha_core_readmission/runtime.py`.
     the immediate reprobe. This is the hysteresis the brief requires.
     **Josh accepted this delay on 2026-10-20**; Core-backed tools refuse
     during it.
-- **First admission is not restoration.** The production boot sequence
-  (`reconcile_until_initialized`: `startup`, then `startup_retry`) of a freshly
-  configured runtime publishes on its first complete verification, because no
-  previously admitted authority is being restored. So does the first
-  background verification of a runtime that has made no attempt yet. The boot
-  window closes at the first admission, at the end of the boot sequence, and
-  after any attempt that is not a boot attempt. A Core that is still not
-  initialized after that passes the restoration gate. A startup failure is
-  logged and paced by the same backoff.
+- **First admission is not restoration: a one-shot latch (H1, review of
+  a6e66a8).** The production boot sequence (`reconcile_until_initialized`:
+  `startup`, then `startup_retry`) publishes on its first complete
+  verification, because no previously admitted authority is being restored.
+  So does the first background verification of a runtime that has made no
+  attempt yet. The exception is `_boot_exception_spent`, set False only in
+  `CoreRuntime.__init__`; its only other writer,
+  `_spend_boot_exception_locked`, sets it True. It is spent by:
+  - any admission (`_record_publication_locked`);
+  - any failed verification (`_record_failure_locked`), including one inside
+    the boot sequence;
+  - any withdrawal of admitted authority (`_enter_recovery_locked`) or
+    retirement (`_material_retirement_locked`, `request_reconciliation`);
+  - any attempt that is not a boot attempt;
+  - the end of the boot sequence.
+
+  `configure` never re-arms it. Production constructs exactly one
+  `CoreRuntime`, the module-level `CORE_READMISSION`, so the latch's lifetime
+  is the process's (pinned by
+  `test_production_constructs_exactly_one_runtime_and_never_rearms`). A
+  re-initialization after the latch is spent (application rebuild,
+  `configure`, collector restart) keeps the recovery and flap bookkeeping;
+  admitted authority it discards enters recovery like any withdrawal, and
+  restoration needs the full gate. Counters are zeroed by `configure`, as in
+  base.
+
+  A failed first startup check spends the latch, so the boot sequence stops
+  retrying (a `startup_retry` could no longer admit). The supervisor then
+  starts on recovery pacing, not the 300 s interval: one backoff delay (about
+  20 s), then the background confirmations. Josh accepted this pause for a
+  Core not initialized at boot on 2026-10-20. A startup failure is logged.
 - **Incompatibility.** A complete, identity-agreeing observation that admits
   nothing publishes the existing fail-closed generation. Examples are an
   unreviewed Core version, or a reviewed version whose evidence fails its
@@ -367,7 +415,7 @@ The gateway code is not changed. This change makes no changes to:
 
 ## Validation
 
-- `tests/test_hamcp215_core_authority_recovery.py` (26 tests) covers:
+- `tests/test_hamcp215_core_authority_recovery.py` (43 tests) covers:
   - every transient trigger going from retirement to automatic restoration,
     with the catalog and index back:
     - REST HTTP failure, connection loss, timeout and authentication failure
@@ -388,14 +436,34 @@ The gateway code is not changed. This change makes no changes to:
     unreviewed version, unavailable, never initialized, version changed) ×
     {background success, on-demand success, mixed}
   - a pristine runtime never admitting on demand
-  - the live incident's exact state (initialized false, version and
-    generation null, 27 attempts) recovering automatically through the
-    gate, for both the probe and the socket fault
+  - the live incident's counters (initialized false, version and generation
+    null, 27 attempts, 26 reprobes, 1 failure, 29 catalog withdrawals with the
+    production 8.5.0 catalog, an invalidated index) recovering automatically
+    through the gate, for both the probe and the socket fault (L2; lease
+    counters and live timing are not reproduced, see Part 1 finding 3)
+  - the one-shot boot exception (H1, review of a6e66a8): the reviewer's
+    application-factory and configure reproductions; re-initialization after
+    a normal admission, after a retirement, after a lone admitting startup
+    check, and repeatedly (two, then three within the flap window,
+    background confirmations each time); a re-initialization showing a
+    withdrawal in health; a supervisor started after a re-initialization
+    running on recovery pacing; the boot sequence repeated without
+    re-initialization; the boot sequence's end spending the exception when
+    no attempt reached a verification outcome; and an AST pin that
+    production builds one runtime and only `__init__` and
+    `_spend_boot_exception_locked` write the latch
+  - a changed key observed on demand restarting the streak (H2, review of
+    a6e66a8): the reviewer's version A→B→A reproduction; a changed reviewed
+    contract; a moved signed-registry authority; concurrent background and
+    on-demand checks counting only the background ones; a same-key on-demand
+    check neither resetting nor adding; fresh background confirmations
+    required after the reset; and a failed probe restarting the count as a
+    failure, not as a key change
   - the confirmation count restarting on each of these:
     - a failure
     - a connection move
     - a monitorless failure
-    - a different version
+    - a different version, background or on demand
   - on-demand verification (every on-demand trigger name, plus unknown
     names) being refused, not counting, and counted only in
     `recovery_on_demand_refusals`
@@ -413,7 +481,18 @@ The gateway code is not changed. This change makes no changes to:
   - `tests/test_ha_core_2026_9_integration.py` had two lifecycle tests that
     expected immediate republication after a connection movement. They now
     assert the confirming state first; the version-transition test restores
-    through the gate.
+    through the gate. Its loop-reconfiguration test (H1) now expects the
+    second event loop's re-initialization of the same runtime to restore
+    through supervisor confirmations, not at startup.
+  - `tests/test_core_semantic_continuity.py`
+    `test_reconfiguration_cannot_reuse_old_generation_evidence` (H1) now
+    asserts that a reconfiguration leaves nothing admitted after startup and
+    restores through `reconcile_through_gate`.
+  - `tests/test_rc3_postcore_regressions.py`
+    `test_cancellation_during_probe_or_monitor_attachment_closes_sessions`
+    (H1): the second supervisor, started after the first attempt spent the
+    boot exception, starts on recovery pacing; the test releases that one
+    delay before cancelling.
   - The H1 gate removes two test-only shortcuts that production never used:
     admission on an arbitrary named (on-demand) trigger, and a single
     reconciliation restoring authority after a version or signed-registry
@@ -437,7 +516,7 @@ The gateway code is not changed. This change makes no changes to:
     `scripts/alarmo_inspection_contract_acceptance.py`,
     `scripts/entity_metadata_contract_acceptance.py` and
     `scripts/automation_baseline_contract_acceptance.py`.
-- `docs/evidence/hamcp215-mutations/run_mutations.py` (28 mutations, 28
+- `docs/evidence/hamcp215-mutations/run_mutations.py` (38 mutations, 38
   killed; results in `results.json`) must fail on each of these:
   - no recovery loop. This one is killed by the runner's default 900 s timeout,
     not by an assertion. Without the paced loop, the retirement's own
@@ -463,3 +542,12 @@ The gateway code is not changed. This change makes no changes to:
     entering recovery; confirmation spacing applied only during transient
     recovery
   - L1: refused on-demand attempts counted in `recovery_confirmations`
+  - H1 one-shot latch (E1-E4, G2, G3, G3b, G3c): `configure` re-arming the
+    latch; an admission, a failed verification or a non-boot check not
+    spending it; the boot sequence's end not spending it; boot retries
+    continuing after it is spent; a re-initialization dropping the
+    withdrawal of admitted authority; a supervisor started after a re-init
+    waiting a full interval
+  - H2 changed key (K1-K4): an on-demand changed key ignored; the
+    signed-registry authority left out of the key; the reset logged with the
+    wrong reason; a failed (incomplete) probe reported as a key change

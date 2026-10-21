@@ -84,10 +84,13 @@ MUTATIONS = [
         "        if False:\n",
     )]),
     m("R5-confirmation-key-ignored",
-      "design: confirmations of different versions/contracts count toward one streak", RUNTIME, [(
-        "                        if key == self._recovery_confirmation_key:\n",
-        "                        if self._recovery_confirmation_key is not None:\n",
-    )]),
+      "design: confirmations of different versions/contracts count toward one streak", RUNTIME, [
+        # The H2 reset alone would restart the streak; disable both checks.
+        ("                        and key != self._recovery_confirmation_key\n",
+         "                        and False\n"),
+        ("                        if key == self._recovery_confirmation_key:\n",
+         "                        if self._recovery_confirmation_key is not None:\n"),
+    ]),
     m("R6-failure-keeps-confirmations",
       "brief: a failure during confirmation does not restart the count", RUNTIME, [(
         "        self._consecutive_failures += 1\n"
@@ -119,16 +122,79 @@ MUTATIONS = [
     )]),
     m("G2-boot-window-left-open",
       "H1: never initialized after the boot sequence admits on one background success", RUNTIME, [(
-        "            self._first_admission_open = False\n"
-        "        return snapshot\n",
-        "            pass\n"
-        "        return snapshot\n",
+        "            # the restoration gate like any other non-admitted state.\n"
+        "            self._spend_boot_exception_locked()\n",
+        "            pass\n",
     )]),
     m("G3-failed-attempt-keeps-boot-window",
-      "H1: a failed non-boot first attempt leaves first admission open (never initialized ungated)", RUNTIME, [(
+      "H1: a non-boot first attempt leaves the boot exception unspent", RUNTIME, [(
         "                if trigger not in _BOOT_TRIGGERS:\n"
-        "                    self._first_admission_open = False\n",
+        "                    self._spend_boot_exception_locked()\n",
         "",
+    )]),
+    m("G3b-failed-verification-keeps-boot-exception",
+      "H1 (review of a6e66a8): a failed verification inside the boot sequence leaves first admission open", RUNTIME, [(
+        "        self._spend_boot_exception_locked()\n"
+        "        self._consecutive_failures += 1\n",
+        "        self._consecutive_failures += 1\n",
+    )]),
+    m("G3c-boot-retries-continue-after-spent",
+      "H1 (review of a6e66a8): boot retries keep running after the exception is spent", RUNTIME, [(
+        "            if snapshot.get(\"identity_agreement\") or exhausted:\n",
+        "            if snapshot.get(\"identity_agreement\"):\n",
+    )]),
+    m("E1-reinit-rearms-boot-exception",
+      "H1 (review of a6e66a8): re-initialization (configure) resets the one-shot latch", RUNTIME, [(
+        "            self._reset_recovery_locked()\n"
+        "            if self._boot_exception_spent:\n",
+        "            self._boot_exception_spent = False\n"
+        "            self._reset_recovery_locked()\n"
+        "            if self._boot_exception_spent:\n",
+    )]),
+    m("E2-admission-keeps-boot-exception",
+      "H1 (review of a6e66a8): an admission does not consume the latch", RUNTIME, [(
+        "        if admitted_now:\n"
+        "            self._spend_boot_exception_locked()\n",
+        "        if admitted_now:\n",
+    )]),
+    m("E3-reinit-drops-withdrawal",
+      "H1 (review of a6e66a8): re-initialization discards admitted authority without arming recovery", RUNTIME, [(
+        "                if was_admitted:\n"
+        "                    self._enter_recovery_locked(datetime.now(timezone.utc))\n",
+        "                if False:\n"
+        "                    pass\n",
+    )]),
+    m("E4-reinit-starts-on-periodic-pacing",
+      "H1 (review of a6e66a8): after a re-init the supervisor waits a full interval", RUNTIME, [(
+        "            retry = self._boot_exception_spent and (\n",
+        "            retry = False and (\n",
+    )]),
+    m("K1-on-demand-changed-key-ignored",
+      "H2 (review of a6e66a8): a changed key seen on demand leaves the streak intact", RUNTIME, [(
+        "                        self._recovery_confirmation_key is not None\n"
+        "                        and key != self._recovery_confirmation_key\n",
+        "                        self._recovery_confirmation_key is not None\n"
+        "                        and key != self._recovery_confirmation_key\n"
+        "                        and trigger in _RECOVERY_CONFIRMATION_TRIGGERS\n",
+    )]),
+    m("K2-registry-token-not-in-key",
+      "H2 (review of a6e66a8): the selected signed-registry authority is not part of the agreement key", RUNTIME, [(
+        "                        observation.identity, observation.version,\n"
+        "                        selected_registry_token, admitted_preview,\n",
+        "                        observation.identity, observation.version,\n"
+        "                        admitted_preview,\n",
+    )]),
+    m("K3-key-reset-not-logged",
+      "H2 (review of a6e66a8): a changed-key streak reset is not logged", RUNTIME, [(
+        "                            reason=\"core_authority_key_changed\",\n",
+        "                            reason=\"core_connection_changed\",\n",
+    )]),
+    m("K4-incomplete-observation-is-key-change",
+      "H2: a failed (incomplete) probe is reported as a changed authority key", RUNTIME, [(
+        "                        and observation.identity_agrees\n"
+        "                        and observation.reason_code == \"observation_complete\"\n"
+        "                    ):\n",
+        "                    ):\n",
     )]),
     m("G4-on-demand-first-admission",
       "H1: an on-demand caller may perform the first admission of a fresh runtime", RUNTIME, [(

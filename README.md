@@ -5,8 +5,12 @@ authority (HAMCP-215). After a transient verification failure, Core authority
 now recovers on its own:
 - a bounded, jittered backoff (20 s doubling to a 240 s cap) replaces the
   fixed 300 s retry;
-- authority returns only after 2 consecutive complete re-verifications about
-  15 s apart, or 3 when it flaps;
+- authority returns only after 2 consecutive complete background
+  re-verifications about 15 s apart, or 3 when it flaps; a changed Core
+  version, identity, signed-registry authority or reviewed contract, seen by
+  any check, restarts the count;
+- only a process's very first boot may admit without confirmation; any later
+  re-initialization passes the same gate;
 - the catalog, the YAML reader and the dependency index then resume.
 
 Every verification failure, retirement, catalog withdrawal, recovery attempt
@@ -14,7 +18,10 @@ and restoration is now a bounded WARNING log event. Health's
 `home_assistant_core_authority.recovery` reports the recovery state, the last
 failure reason and time, and the next attempt. Fail-closed behavior during
 recovery is unchanged. After a Core restart or update, Core-backed tools refuse
-for about 15–18 s until the confirmation completes; Josh accepted this delay.
+for about 15–18 s until the confirmation completes. The same wait (about
+15 s) follows a changed Core version or signed-registry authority, an
+incompatible Core becoming compatible, and a Core not initialized at boot.
+Josh accepted these delays.
 No tool, schema, permission or descriptor changes (88
 tools, 89 with the optional YAML reader). Read the
 [2.4.1-beta.27 release notes](docs/V2_4_1_BETA27_RELEASE_NOTES.md) and

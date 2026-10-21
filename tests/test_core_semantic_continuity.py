@@ -238,6 +238,9 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
         snapshot, _, _ = await self.index.get()
         self.core.configure(object(), source=self.source, release_registry=self.registry_case.registry)
         await self.core.reconcile_once("startup")
+        # HAMCP-215 H1: a re-initialization never reopens first admission.
+        self.registry_case.assert_admitted(self.core, 0)
+        await reconcile_through_gate(self.core)
         self.registry_case.assert_admitted(self.core)
         self.assertFalse(home_assistant_version_admission(snapshot)["admitted"])
         self.assertFalse(self.index.active_identity()["current"])

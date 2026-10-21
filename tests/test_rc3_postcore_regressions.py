@@ -651,6 +651,12 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
                 self.network.mode = mode
                 self.network.blocked.clear()
                 self.start_supervisor()
+                if self.core._boot_exception_spent:
+                    # HAMCP-215 H1: a supervisor restarted after the first
+                    # (cancelled) attempt spent the boot exception starts on
+                    # recovery pacing; release that one bounded delay.
+                    self.assertEqual(mode, "monitor_blocked")
+                    (await self.clock.next_delay()).set_result(None)
                 await asyncio.wait_for(self.network.blocked.wait(), 2)
                 self.supervisor.cancel()
                 with self.assertRaises(asyncio.CancelledError):

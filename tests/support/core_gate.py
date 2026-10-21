@@ -1,12 +1,16 @@
 """Reconcile Core authority in tests the way production does (HAMCP-215 H1).
 
-A freshly configured ``CoreRuntime`` may admit on its boot sequence
+A newly constructed ``CoreRuntime`` may admit once, on its boot sequence
 (``startup``, then ``startup_retry``) or on its first background verification.
+That boot exception is one-shot: an admission, a failure, a retirement or the
+end of the boot sequence spends it, and ``configure`` never re-arms it.
 Every other non-admitted state (retired, incompatible, withheld until a signed
-profile arrives, never initialized after boot) passes the one restoration gate:
-consecutive complete background verifications agreeing on identity, version
-and reviewed contracts. On-demand triggers never admit, so tests that expect
-admission use a boot trigger on a fresh runtime, or this helper afterwards.
+profile arrives, never initialized after boot, re-initialized) passes the one
+restoration gate: consecutive complete background verifications agreeing on
+identity, version, signed-registry authority and reviewed contracts. On-demand
+triggers never admit or confirm (a changed key they observe restarts the
+count), so tests that expect admission use a boot trigger on a fresh runtime,
+or this helper afterwards.
 """
 
 from __future__ import annotations

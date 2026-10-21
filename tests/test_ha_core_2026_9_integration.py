@@ -2905,7 +2905,7 @@ class CoreRuntimeLoopReconfigurationTests(unittest.TestCase):
     def test_reconfiguration_rebinds_async_primitives_to_the_serving_loop(self):
         runtime = CoreRuntime()
 
-        async def exercise_once(session_id: str) -> None:
+        async def exercise_once(session_id: str, *, first_boot: bool) -> None:
             source = _MutableSource(
                 _snapshot(
                     "2026.8.1",
@@ -2915,21 +2915,34 @@ class CoreRuntimeLoopReconfigurationTests(unittest.TestCase):
             )
             runtime.configure(object(), source=source)
             await runtime.reconcile_once("startup")
+            # HAMCP-215 H1: only the process's first boot admits directly; the
+            # re-initialization restores through two background confirmations
+            # (two verifications of two snapshots each) on recovery pacing.
+            self.assertIs(runtime.initialized, first_boot)
             supervisor = asyncio.create_task(
-                runtime.supervise(interval_seconds=3_600)
+                runtime.supervise(
+                    interval_seconds=3_600, sleep=lambda _delay: asyncio.sleep(0)
+                )
             )
+            for _ in range(50):
+                await asyncio.sleep(0)
+                if runtime.initialized:
+                    break
+            self.assertTrue(runtime.initialized)
+            before = source.calls
+            self.assertEqual(before, 2 if first_boot else 6)
             await asyncio.sleep(0)
             runtime.request_reconciliation()
             for _ in range(10):
                 await asyncio.sleep(0)
-                if source.calls == 4:
+                if source.calls == before + 2:
                     break
-            self.assertEqual(source.calls, 4)
+            self.assertEqual(source.calls, before + 2)
             supervisor.cancel()
             await asyncio.gather(supervisor, return_exceptions=True)
 
-        asyncio.run(exercise_once("core-loop-one"))
-        asyncio.run(exercise_once("core-loop-two"))
+        asyncio.run(exercise_once("core-loop-one", first_boot=True))
+        asyncio.run(exercise_once("core-loop-two", first_boot=False))
 
 
 class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):

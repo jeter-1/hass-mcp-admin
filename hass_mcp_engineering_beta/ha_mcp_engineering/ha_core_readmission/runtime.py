@@ -47,8 +47,10 @@ CORE_RECOVERY_MAX_BACKOFF_LEVEL = 8
 # Hysteresis: one restoration gate covers every non-admitted state (transient
 # retirement, incompatible, unavailable, never initialized after boot, changed
 # version or registry authority). Authority is published again only after
-# consecutive complete background verifications agreeing on identity, version
-# and reviewed contracts, spaced by the confirmation delay. A retirement soon
+# consecutive complete background verifications agreeing on identity, version,
+# selected signed-registry authority and reviewed contracts, spaced by the
+# confirmation delay. Any observation of a different key, background or on
+# demand, restarts the count. A retirement soon
 # after a restoration is a flap and needs one more, slower.
 CORE_RECOVERY_CONFIRMATIONS = 2
 CORE_RECOVERY_CONFIRMATION_SECONDS = 15.0
@@ -62,6 +64,7 @@ _RECOVERY_REASONS = frozenset({
     "core_connection_changed", "core_lifecycle_monitor_unavailable",
     "core_observed_version_changed", "core_registry_authority_changed",
     "core_authority_incompatible", "core_generation_replaced",
+    "core_authority_key_changed",
 })
 # Only supervisor-paced attempts may count toward recovery confirmation. Any
 # other trigger is on demand (mutation pre-dispatch, reverification, tool and
@@ -70,10 +73,13 @@ _RECOVERY_REASONS = frozenset({
 _RECOVERY_CONFIRMATION_TRIGGERS = frozenset({
     "periodic", "identity_or_connection_change", "failure_retry",
 })
-# First admission is not restoration: only the boot sequence of a freshly
-# configured runtime (or its first background verification) may admit without
-# the gate. The window closes at the first admission, at the end of the boot
-# sequence, and after any attempt that is not a boot attempt.
+# First admission is not restoration: only the first boot sequence of the
+# runtime object (or its first background verification) may admit without the
+# gate. It is a one-shot latch for the object's lifetime -- in production the
+# module-level ``CORE_READMISSION``, so the process lifetime. It is spent at the
+# first admission, failed verification or retirement, at the end of the first
+# boot sequence, and by any attempt that is not a boot attempt. ``configure``
+# never re-arms it: any later re-initialization passes the full gate.
 _BOOT_TRIGGERS = frozenset({"startup", "startup_retry"})
 _FIRST_ADMISSION_TRIGGERS = _BOOT_TRIGGERS | _RECOVERY_CONFIRMATION_TRIGGERS
 logger = get_logger("core_authority")
@@ -156,6 +162,9 @@ class CoreRuntime:
             "authority_restorations": 0,
         }
         self._monotonic: Callable[[], float] = time.monotonic
+        # One-shot boot exception (see ``_BOOT_TRIGGERS``). Assigned False only
+        # here; ``_spend_boot_exception_locked`` is its only other writer.
+        self._boot_exception_spent = False
         self._reset_recovery_locked()
 
     def _reset_recovery_locked(self) -> None:
@@ -164,7 +173,6 @@ class CoreRuntime:
         # Whether the published generation admits any capability.
         self._admitted = False
         self._admitted_capabilities: frozenset[str] = frozenset()
-        self._first_admission_open = True
         self._recovery_active = False
         self._recovery_state = "initializing"
         self._consecutive_failures = 0
@@ -183,6 +191,11 @@ class CoreRuntime:
         self._last_restored_at: datetime | None = None
         self._last_restored_monotonic: float | None = None
         self._monitor_failure_detail: str | None = None
+
+    def _spend_boot_exception_locked(self) -> None:
+        """Close the one-shot first-admission exception; it never reopens."""
+
+        self._boot_exception_spent = True
 
     def configure(
         self,
@@ -233,7 +246,26 @@ class CoreRuntime:
             self._events = ()
             for key in self._counters:
                 self._counters[key] = 0
+            was_admitted = self._admitted
+            carried = (
+                self._recovery_active, self._recovery_required, self._flap_count,
+                self._backoff_level, self._retired_at, self._last_restored_at,
+                self._last_restored_monotonic,
+            )
             self._reset_recovery_locked()
+            if self._boot_exception_spent:
+                # A re-initialization is not a first boot. Keep the gate and
+                # the flap bookkeeping; admitted authority it discards is a
+                # withdrawal that restores through the full gate.
+                (
+                    self._recovery_active, self._recovery_required,
+                    self._flap_count, self._backoff_level, self._retired_at,
+                    self._last_restored_at, self._last_restored_monotonic,
+                ) = carried
+                if was_admitted:
+                    self._enter_recovery_locked(datetime.now(timezone.utc))
+                elif self._recovery_active:
+                    self._recovery_state = "retrying"
             self._configured = True
 
     @property
@@ -288,6 +320,7 @@ class CoreRuntime:
                 self._admitted_capabilities = frozenset()
                 confirming = self._recovery_confirmations > 0
                 if retired_generation is not None:
+                    self._spend_boot_exception_locked()
                     self._counters["retirements"] += 1
                     if was_admitted or self._recovery_active:
                         # A connection-level movement is transient until a
@@ -362,11 +395,11 @@ class CoreRuntime:
                 attempt_at = datetime.now(timezone.utc)
                 self._last_attempt_at = attempt_at
                 first_admission = (
-                    self._first_admission_open
+                    not self._boot_exception_spent
                     and trigger in _FIRST_ADMISSION_TRIGGERS
                 )
                 if trigger not in _BOOT_TRIGGERS:
-                    self._first_admission_open = False
+                    self._spend_boot_exception_locked()
                 if trigger in _RECOVERY_CONFIRMATION_TRIGGERS and (
                     self._recovery_active or trigger == "failure_retry"
                 ):
@@ -472,20 +505,46 @@ class CoreRuntime:
                 # The single restoration gate: whenever no authority is
                 # admitted (whatever the reason), an admitting publication
                 # needs consecutive complete background verifications agreeing
-                # on identity, version and reviewed contracts. Only the boot
-                # window's first admission is exempt; on-demand never admits.
+                # on identity, version, selected registry authority and
+                # reviewed contracts. Only the one-shot boot exception is
+                # exempt; on-demand never admits.
                 gated = not self._admitted and not first_admission
+                gate_records: list[tuple[int, str, str, dict[str, Any]]] = []
                 if failure_reason is None and gated:
                     # Each confirmation is a full probe; nothing earlier is
                     # replayed or cached.
                     admitted_preview = self._coordinator.preview_admitted(
                         observation, authority
                     )
-                    if admitted_preview and trigger in _RECOVERY_CONFIRMATION_TRIGGERS:
-                        key = (
-                            observation.identity, observation.version,
-                            admitted_preview,
+                    key = (
+                        observation.identity, observation.version,
+                        selected_registry_token, admitted_preview,
+                    )
+                    if (
+                        self._recovery_confirmation_key is not None
+                        and key != self._recovery_confirmation_key
+                        and observation.identity_agrees
+                        and observation.reason_code == "observation_complete"
+                    ):
+                        # Any trigger may restart the streak; only background
+                        # verifications below may add to it. An incomplete
+                        # observation restarts it as a recorded failure.
+                        self._recovery_confirmations = 0
+                        self._recovery_confirmation_key = None
+                        self._recovery_state = "retrying"
+                        self._append_event_locked(
+                            "core_reconciliation",
+                            "core_recovery_confirmation_reset",
+                            None,
                         )
+                        gate_records.append(self._recovery_record_locked(
+                            "core_authority_recovery_reset",
+                            "Home Assistant Core authority changed during recovery confirmation",
+                            now,
+                            reason="core_authority_key_changed",
+                            trigger=trigger if trigger in _AUDIT_TRIGGERS else "other",
+                        ))
+                    if admitted_preview and trigger in _RECOVERY_CONFIRMATION_TRIGGERS:
                         if key == self._recovery_confirmation_key:
                             self._recovery_confirmations += 1
                         else:
@@ -500,7 +559,7 @@ class CoreRuntime:
                                 "core_recovery_confirmation_pending",
                                 None,
                             )
-                            records = [self._recovery_record_locked(
+                            records = gate_records + [self._recovery_record_locked(
                                 "core_authority_recovery_confirming",
                                 "Home Assistant Core verified; confirming stability before restoring authority",
                                 now,
@@ -516,7 +575,7 @@ class CoreRuntime:
                             "core_recovery_on_demand_refused",
                             None,
                         )
-                        records = [self._recovery_record_locked(
+                        records = gate_records + [self._recovery_record_locked(
                             "core_authority_recovery_on_demand_refused",
                             "On-demand Home Assistant Core verification cannot restore authority",
                             now,
@@ -551,7 +610,7 @@ class CoreRuntime:
                         self._last_material_change_at = now
                         if prior_observation is not None:
                             self._counters["retirements"] += 1
-                    records = self._record_publication_locked(
+                    records = gate_records + self._record_publication_locked(
                         result, observation, collector, admitted_now, changed,
                         prior_observation is not None, now, restoring=gated,
                     )
@@ -612,7 +671,7 @@ class CoreRuntime:
         self._admitted = admitted_now
         self._admitted_capabilities = current
         if admitted_now:
-            self._first_admission_open = False
+            self._spend_boot_exception_locked()
             failed_attempts = self._consecutive_failures
             confirmations = self._recovery_confirmations
             self._consecutive_failures = 0
@@ -734,6 +793,7 @@ class CoreRuntime:
     ) -> tuple[int, str, str, dict[str, Any]]:
         """Count one failed verification; consecutive confirmation restarts."""
 
+        self._spend_boot_exception_locked()
         self._consecutive_failures += 1
         self._recovery_confirmations = 0
         self._recovery_confirmation_key = None
@@ -754,6 +814,7 @@ class CoreRuntime:
     def _enter_recovery_locked(self, now: datetime) -> None:
         """Arm hysteresis after admitted authority was withdrawn transiently."""
 
+        self._spend_boot_exception_locked()
         if not self._recovery_active:
             restored = self._last_restored_monotonic
             flap = (
@@ -837,14 +898,19 @@ class CoreRuntime:
     ) -> dict[str, Any]:
         snapshot = await self.reconcile_once("startup")
         for delay in retry_delays:
-            if snapshot.get("identity_agreement"):
+            with self._lock:
+                # Once the one-shot exception is spent (a failed verification,
+                # or a re-initialization), a boot retry can no longer admit:
+                # restoration belongs to the supervisor's background gate.
+                exhausted = self._boot_exception_spent and not self._admitted
+            if snapshot.get("identity_agreement") or exhausted:
                 break
             await sleep(delay)
             snapshot = await self.reconcile_once("startup_retry")
         with self._lock:
             # The boot sequence is over: a never-initialized Core now passes
             # the restoration gate like any other non-admitted state.
-            self._first_admission_open = False
+            self._spend_boot_exception_locked()
         return snapshot
 
     async def supervise(
@@ -862,7 +928,15 @@ class CoreRuntime:
         if retry_base_seconds <= 0 or retry_cap_seconds <= 0 or confirmation_seconds <= 0:
             raise ValueError("Core recovery delays must be positive")
         cap = min(retry_cap_seconds, interval_seconds)
-        retry = False
+        with self._lock:
+            # A runtime past its boot exception that holds no authority (a
+            # failed boot or a re-initialization) starts on recovery pacing
+            # rather than waiting a full reconciliation interval.
+            retry = self._boot_exception_spent and (
+                not self._initialized
+                or (self._recovery_active and self._recovery_state != "incompatible")
+                or self._confirming_locked()
+            )
         try:
             while True:
                 if retry:
@@ -1113,8 +1187,12 @@ class CoreRuntime:
         was_admitted = self._admitted
         self._admitted = False
         self._admitted_capabilities = frozenset()
+        # Changed authority material restarts any confirmation streak.
+        self._recovery_confirmations = 0
+        self._recovery_confirmation_key = None
         if retired is None:
             return []
+        self._spend_boot_exception_locked()
         if was_admitted:
             self._enter_recovery_locked(now)
         self._counters["retirements"] += 1

@@ -21,6 +21,7 @@ from mcp.server.fastmcp import FastMCP
 from tests import test_ha_core_2026_9_integration as core_tests
 from tests import test_rc3_postcore_regressions as rc3
 from tests import test_dependency_build_authority as dependency_tests
+from tests import test_core_update_continuity as continuity_tests
 import tests.test_hamcp162_yaml_admission as yaml_tests
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
 from ha_mcp_engineering.clients.websocket import HomeAssistantWebSocketClient
@@ -38,6 +39,7 @@ from ha_mcp_engineering.ha_core_readmission.runtime import (
     CORE_RECOVERY_STATES,
 )
 from ha_mcp_engineering.ha_core_readmission.source import AiohttpCoreSnapshotSource
+from tests.support.core_gate import reconcile_through_gate
 
 
 LOGGER = "ha_mcp_engineering.core_authority"
@@ -319,8 +321,22 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.assert_authority_round_trip()
 
     async def test_boot_sequence_first_admission_is_not_gated(self):
-        # The production boot (application.py) admits on its first complete
-        # verification, including a startup retry inside the boot sequence.
+        # The production boot (application.py) of a new runtime admits on its
+        # first complete verification: the one-shot boot exception.
+        sleeps = []
+        snapshot = await self.core.reconcile_until_initialized(
+            retry_delays=(0.25, 1.0), sleep=lambda delay: sleeps.append(delay))
+        self.assertTrue(snapshot["initialized"])
+        self.assertEqual(sleeps, [])
+        self.assertEqual((self.counters()["recovery_confirmations"],
+                          self.counters()["authority_restorations"]), (0, 0))
+        self.assertTrue(self.core._boot_exception_spent)
+        self.assert_authority_round_trip()
+
+    async def test_failed_boot_attempt_spends_the_boot_exception(self):
+        # H1 (review of a6e66a8): a failed verification spends the exception
+        # even inside the boot sequence; no boot retry can then admit, and the
+        # supervisor starts on recovery pacing instead of the 300 s interval.
         self.network.mode = "connection"
         sleeps = []
 
@@ -330,11 +346,45 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
 
         snapshot = await self.core.reconcile_until_initialized(
             retry_delays=(0.25, 1.0), sleep=boot_sleep)
-        self.assertTrue(snapshot["initialized"])
-        self.assertEqual(sleeps, [0.25])
-        self.assertEqual((self.counters()["recovery_confirmations"],
-                          self.counters()["authority_restorations"]), (0, 0))
+        self.assertFalse(snapshot["initialized"])
+        self.assertEqual(sleeps, [])  # a futile boot retry is not attempted
+        self.network.mode = "ok"
+        for trigger in ("startup", "startup_retry", *ON_DEMAND):
+            await self.core.reconcile_once(trigger)
+            self.assertIsNone(self.core.acquire(CAPABILITY), trigger)
+        self.assertEqual(self.recovery()["confirmations"], 0)
+        self.supervisor = asyncio.create_task(self.core.supervise(
+            interval_seconds=300, sleep=self.clock.sleep, jitter=lambda: 0.5))
+        await self.recover_through_confirmation(CORE_RECOVERY_RETRY_BASE_SECONDS)
+        self.assertEqual(self.counters()["recovery_confirmations"], CORE_RECOVERY_CONFIRMATIONS)
         self.assert_authority_round_trip()
+
+    async def test_boot_sequence_end_spends_the_exception_without_an_outcome(self):
+        # Every boot attempt can stop at an early fence (a stale connection
+        # epoch, a registry move during the probe) without reaching a
+        # verification outcome. The end of the boot sequence still spends the
+        # one-shot exception, so the first background success is gated.
+        source = _FlakySource(core_tests._core_2026_9_snapshot())
+        core = CoreRuntime()
+        core.configure(object(), source=source)
+        triggers = []
+
+        async def early_fence(trigger):
+            triggers.append(trigger)
+            return {"identity_agreement": False, "initialized": False}
+
+        core.reconcile_once = early_fence
+        await core.reconcile_until_initialized(
+            retry_delays=(0.25,), sleep=lambda _delay: asyncio.sleep(0))
+        del core.reconcile_once
+        self.assertEqual(triggers, ["startup", "startup_retry"])
+        self.assertTrue(core._boot_exception_spent)
+        await core.reconcile_once("periodic")
+        self.assertIsNone(core.acquire(CAPABILITY))
+        self.assertEqual(core.health_projection()["recovery"]["confirmations"], 1)
+        for _ in range(CORE_RECOVERY_CONFIRMATIONS - 1):
+            await core.reconcile_once("periodic")
+        self.assertTrue(core.release(core.acquire(CAPABILITY)))
 
     async def test_failed_boot_sequence_leaves_never_initialized_gated(self):
         self.network.mode = "connection"
@@ -456,6 +506,9 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(core.health_projection()["recovery"]["recovery_state"], "restored")
         self.assertEqual(len(_events(logs.records, "core_authority_retired")), 1)
         self.assertEqual(len(_events(logs.records, "core_authority_restored")), 1)
+        # The failed probe restarts the count as a failure, not a key change.
+        self.assertEqual(len(_events(logs.records, "core_authority_verification_failed")), 2)
+        self.assertEqual(_events(logs.records, "core_authority_recovery_reset"), [])
         self.assertTrue(core.release(core.acquire(CAPABILITY)))
 
     async def test_different_version_during_confirmation_restarts_the_count(self):
@@ -678,11 +731,293 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
                 await self.core.reconcile_once("periodic")
                 self.assert_authority_round_trip()
 
+    # -- H1 (review of a6e66a8): the boot exception is one-shot -----------
+    # Reviewer reproductions: re-initializing the same runtime, through the
+    # application factory or configure, must never reopen first admission.
+
+    async def withdraw(self):
+        self.network.mode = "connection"
+        await self.core.reconcile_once("periodic")
+        self.assertIsNone(self.core.acquire(CAPABILITY))
+        self.network.mode = "ok"
+
+    async def assert_reinit_needs_background_confirmations(
+        self, reinit, required=CORE_RECOVERY_CONFIRMATIONS
+    ):
+        """Re-initialize, run the boot sequence, then require the full gate."""
+        previous_monitor = self.core._connection_monitor_task
+        was_admitted = self.core.initialized
+        await reinit()
+        if was_admitted:
+            # Discarding admitted authority is a withdrawal, visible in health.
+            recovery = self.recovery()
+            self.assertEqual(recovery["recovery_state"], "retrying")
+            self.assertIsNotNone(recovery["retired_at"])
+        if previous_monitor is not None:
+            # configure() forgets, but does not stop, the previous lifecycle
+            # watcher (unchanged from base); stop it so its socket closes.
+            previous_monitor.cancel()
+            await asyncio.gather(previous_monitor, return_exceptions=True)
+        self.assertTrue(self.core._boot_exception_spent)
+        await self.core.reconcile_until_initialized()
+        self.assertIsNone(self.core.acquire(CAPABILITY), "re-init reopened first admission")
+        recovery = self.recovery()
+        self.assertEqual((recovery["confirmations"], recovery["confirmations_required"]),
+                         (0, required))
+        for trigger in ON_DEMAND:
+            await self.core.reconcile_once(trigger)
+            self.assertIsNone(self.core.acquire(CAPABILITY), trigger)
+        for count in range(1, required):
+            await self.core.reconcile_once("periodic")
+            self.assertIsNone(self.core.acquire(CAPABILITY), count)
+            self.assertEqual(self.recovery()["confirmations"], count)
+        await self.core.reconcile_once("periodic")
+        self.assert_authority_round_trip()
+        self.assertEqual(self.counters()["recovery_confirmations"], required)
+        # configure() zeroes the counters, as in base.
+        self.assertEqual(self.counters()["authority_restorations"], 1)
+
+    def configure_again(self):
+        async def reinit():
+            self.core.configure(self.settings, source=AiohttpCoreSnapshotSource(self.settings))
+        return reinit
+
+    async def test_reviewer_application_reinit_cannot_reopen_boot_exception(self):
+        from dataclasses import replace
+        import tempfile
+        from ha_mcp_engineering import application
+
+        await self.boot()
+        await self.withdraw()
+        temp = tempfile.TemporaryDirectory(prefix="hamcp215-reinit-")
+        self.addCleanup(temp.cleanup)
+        settings = replace(self.settings, audit_path=temp.name + "/audit.jsonl",
+                           governance_path=temp.name + "/governance")
+        identity = id(self.core)
+
+        async def reinit():
+            with patch.object(application, "CORE_READMISSION", self.core):
+                application.create_application(
+                    settings, core_snapshot_source=AiohttpCoreSnapshotSource(settings))
+            self.assertEqual(id(self.core), identity)  # the same runtime object
+
+        await self.assert_reinit_needs_background_confirmations(reinit)
+
+    async def test_reviewer_configure_after_retirement_cannot_reopen_boot_exception(self):
+        await self.boot()
+        await self.withdraw()
+        await self.assert_reinit_needs_background_confirmations(self.configure_again())
+
+    async def test_reinit_after_normal_admission_passes_the_gate(self):
+        await self.boot()
+        await self.assert_reinit_needs_background_confirmations(self.configure_again())
+
+    async def test_any_admission_spends_the_boot_exception(self):
+        # Admission itself consumes the latch, not only the end of the boot
+        # sequence: a lone startup verification that admits cannot be followed
+        # by a second first admission after a re-init.
+        await self.core.reconcile_once("startup")
+        self.assert_authority_round_trip()
+        self.assertTrue(self.core._boot_exception_spent)
+        await self.assert_reinit_needs_background_confirmations(self.configure_again())
+
+    async def test_reinit_before_any_reconciliation_keeps_the_boot_exception(self):
+        # Positive control: configuring twice before any verification is still
+        # the runtime's first boot.
+        self.core.configure(self.settings, source=AiohttpCoreSnapshotSource(self.settings))
+        self.assertFalse(self.core._boot_exception_spent)
+        await self.boot()
+        self.assertEqual(self.counters()["recovery_confirmations"], 0)
+
+    async def test_repeated_reinits_each_pass_the_gate(self):
+        await self.boot()
+        for round_ in range(3):
+            with self.subTest(round=round_):
+                if round_ == 1:
+                    await self.withdraw()
+                await self.assert_reinit_needs_background_confirmations(
+                    self.configure_again(),
+                    # A re-init within the flap window of a restoration is a flap.
+                    required=(CORE_RECOVERY_CONFIRMATIONS if round_ == 0
+                              else CORE_RECOVERY_FLAP_CONFIRMATIONS),
+                )
+
+    async def test_repeat_boot_without_configure_cannot_restore(self):
+        await self.boot()
+        await self.withdraw()
+        await self.core.reconcile_until_initialized(
+            retry_delays=(), sleep=lambda _delay: asyncio.sleep(0))
+        self.assertIsNone(self.core.acquire(CAPABILITY))
+        self.assertEqual(self.recovery()["confirmations"], 0)
+
+    async def test_reinit_starts_supervisor_on_recovery_pacing(self):
+        await self.boot()
+        previous_monitor = self.core._connection_monitor_task
+        await self.configure_again()()
+        previous_monitor.cancel()
+        await asyncio.gather(previous_monitor, return_exceptions=True)
+        await self.core.reconcile_until_initialized()
+        self.assertIsNone(self.core.acquire(CAPABILITY))
+        self.supervisor = asyncio.create_task(self.core.supervise(
+            interval_seconds=300, sleep=self.clock.sleep, jitter=lambda: 0.5))
+        await self.recover_through_confirmation(CORE_RECOVERY_RETRY_BASE_SECONDS)
+        self.assert_authority_round_trip()
+
+    def test_production_constructs_exactly_one_runtime_and_never_rearms(self):
+        # The per-object latch is the process lifetime only because production
+        # builds one CoreRuntime, at import, and nothing re-arms the latch.
+        import ast
+        from pathlib import Path
+        import ha_mcp_engineering
+        from ha_mcp_engineering.ha_core_readmission import runtime as runtime_module
+
+        package = Path(ha_mcp_engineering.__file__).parent
+        constructions = []
+        for path in sorted(package.rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id == "CoreRuntime"):
+                    constructions.append(path.relative_to(package).as_posix())
+        self.assertEqual(constructions, ["ha_core_readmission/runtime.py"])
+        tree = ast.parse(Path(runtime_module.__file__).read_text(encoding="utf-8"))
+        module_level = [node for node in tree.body if isinstance(node, ast.Assign)
+                        and isinstance(node.value, ast.Call)
+                        and getattr(node.value.func, "id", None) == "CoreRuntime"]
+        self.assertEqual([target.id for node in module_level for target in node.targets],
+                         ["CORE_READMISSION"])
+        writers = {}
+        for function in ast.walk(tree):
+            if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for node in ast.walk(function):
+                targets = (node.targets if isinstance(node, ast.Assign)
+                           else [node.target] if isinstance(node, (ast.AugAssign, ast.AnnAssign))
+                           else [])
+                for target in targets:
+                    if isinstance(target, ast.Attribute) and target.attr == "_boot_exception_spent":
+                        writers.setdefault(function.name, []).append(ast.unparse(node.value))
+        self.assertEqual(writers, {"__init__": ["False"],
+                                   "_spend_boot_exception_locked": ["True"]})
+
+    # -- H2 (review of a6e66a8): any changed key restarts the streak --------
+
+    async def test_reviewer_on_demand_version_change_resets_the_streak(self):
+        await self.boot()
+        await self.withdraw()
+        await self.core.reconcile_once("periodic")
+        self.assertEqual(self.recovery()["confirmations"], 1)
+        with self.assertLogs(LOGGER, level="INFO") as logs:
+            self.network.version = "2026.9.0"  # B, observed on demand
+            await self.core.reconcile_once("mutation_pre_dispatch")
+        self.assertEqual(self.recovery()["confirmations"], 0)
+        self.assertEqual(self.counters()["recovery_on_demand_refusals"], 1)
+        reset = _events(logs.records, "core_authority_recovery_reset")
+        self.assertEqual([item.safe_context["reason"] for item in reset],
+                         ["core_authority_key_changed"])
+        self.assertEqual(reset[0].levelno, logging.WARNING)
+        self.assert_logs_safe(logs.records)
+        self.network.version = "2026.9.1"  # back to A
+        await self.core.reconcile_once("periodic")
+        self.assertIsNone(self.core.acquire(CAPABILITY), "A-B-A restored after one confirmation")
+        self.assertEqual(self.recovery()["confirmations"], 1)
+        await self.core.reconcile_once("periodic")
+        self.assert_authority_round_trip()
+        self.assertEqual(self.counters()["recovery_confirmations"], 3)
+
+    async def test_on_demand_same_key_neither_resets_nor_adds(self):
+        await self.boot()
+        await self.withdraw()
+        await self.core.reconcile_once("periodic")
+        for trigger in ON_DEMAND:
+            await self.core.reconcile_once(trigger)
+            self.assertEqual(self.recovery()["confirmations"], 1, trigger)
+        await self.core.reconcile_once("periodic")
+        self.assert_authority_round_trip()
+
+    async def test_on_demand_version_change_mid_streak_needs_fresh_confirmations(self):
+        # A flap needs three: a changed key on demand after two still needs three.
+        await self.boot()
+        await self.withdraw()
+        await reconcile_through_gate(self.core)
+        await self.withdraw()
+        self.assertEqual(self.recovery()["confirmations_required"],
+                         CORE_RECOVERY_FLAP_CONFIRMATIONS)
+        for _ in range(CORE_RECOVERY_FLAP_CONFIRMATIONS - 1):
+            await self.core.reconcile_once("periodic")
+        self.network.version = "2026.9.0"
+        await self.core.reconcile_once("configuration_reverification")
+        self.assertEqual(self.recovery()["confirmations"], 0)
+        for count in range(1, CORE_RECOVERY_FLAP_CONFIRMATIONS):
+            await self.core.reconcile_once("periodic")
+            self.assertIsNone(self.core.acquire(CAPABILITY), count)
+        await self.core.reconcile_once("periodic")
+        self.assertEqual(self.core.current_observation.version, "2026.9.0")
+        self.assert_authority_round_trip()
+
+    async def flaky_core_withdrawn(self):
+        source = _FlakySource(core_tests._core_2026_9_snapshot())
+        core = CoreRuntime()
+        core.configure(object(), source=source)
+        await core.reconcile_until_initialized()
+        self.assertTrue(core.release(core.acquire(CAPABILITY)))
+        source.fail = True
+        await core.reconcile_once("periodic")
+        source.fail = False
+        self.assertIsNone(core.acquire(CAPABILITY))
+        return core, source
+
+    async def test_reviewer_on_demand_changed_contract_resets_the_streak(self):
+        from copy import deepcopy
+
+        core, source = await self.flaky_core_withdrawn()
+        await core.reconcile_once("periodic")
+        self.assertEqual(core.health_projection()["recovery"]["confirmations"], 1)
+        complete = deepcopy(source.snapshot["capability_evidence"])
+        source.snapshot["capability_evidence"] = [
+            item for item in complete if item.get("capability_id") != "core.template_semantics"]
+        await core.reconcile_once("mutation_pre_dispatch")
+        self.assertEqual(core.health_projection()["recovery"]["confirmations"], 0)
+        source.snapshot["capability_evidence"] = complete
+        await core.reconcile_once("periodic")
+        self.assertIsNone(core.acquire(CAPABILITY), "a changed contract bridged the streak")
+        await core.reconcile_once("periodic")
+        self.assertTrue(core.release(core.acquire(CAPABILITY)))
+        # Cumulative: the discarded confirmation plus the fresh streak.
+        self.assertEqual(core.health_snapshot()["counters"]["recovery_confirmations"],
+                         1 + CORE_RECOVERY_CONFIRMATIONS)
+
+    async def test_reviewer_concurrent_mixed_checks_count_only_background(self):
+        core, _source = await self.flaky_core_withdrawn()
+        await asyncio.gather(core.reconcile_once("mutation_pre_dispatch"),
+                             core.reconcile_once("periodic"),
+                             core.reconcile_once("mutation_pre_dispatch"))
+        self.assertIsNone(core.acquire(CAPABILITY))
+        self.assertEqual(core.health_projection()["recovery"]["confirmations"], 1)
+        self.assertEqual(core.health_snapshot()["counters"]["recovery_on_demand_refusals"], 2)
+        await core.reconcile_once("periodic")
+        self.assertTrue(core.release(core.acquire(CAPABILITY)))
+
     # -- Root cause: the live beta.24 state recovers through the gate ------
 
     async def reproduce_live_incident_state(self, fault):
-        """Boot, 25 successful background wakes, then one failed attempt."""
+        """Boot, 25 successful supervisor wakes, then one failed attempt.
+
+        The production delegated catalog (the reviewed ha-mcp 8.5.0 capture,
+        whose Core-dependent tools include ``ha_config_get_yaml``) and the
+        dependency index are attached, as in the add-on. The wakes are
+        event-driven, not 300 s intervals: the counters cannot tell the two
+        apart, so this reproduces the counters, not the live timing.
+        """
         await self.boot()
+        yaml_tests.Harness.setUp(self)
+        gateway, transport = await yaml_tests.Harness.gateway(
+            self, "8.5.0", mode="A", core_runtime=self.core)
+        self.core.register_reconciliation_listener(gateway.request_core_reconciliation)
+        dependency = DependencyAnalysisRuntime()
+        dependency.configure(HomeAssistantRestClient(self.settings),
+                             HomeAssistantWebSocketClient(self.settings),
+                             core_runtime=self.core)
+        self.addAsyncCleanup(dependency.shutdown)
         self.supervisor = asyncio.create_task(self.core.supervise(
             interval_seconds=300, sleep=self.clock.sleep, jitter=lambda: 0.5))
         for wake in range(25):
@@ -693,16 +1028,20 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
             self.core.request_reconciliation()  # P1: an ordinary wake fails
         else:
             self.network.monitors[-1].disconnect.set()  # P2: socket closes, reprobe fails
-        return await self.release(CORE_RECOVERY_RETRY_BASE_SECONDS)
+        delay = await self.release(CORE_RECOVERY_RETRY_BASE_SECONDS)
+        await gateway.initialize(gateway.synthetic_server)  # the gateway's rebuild
+        return delay, gateway, transport, dependency.require().index
 
     async def test_live_incident_state_recovers_automatically(self):
+        # Reproduces every live counter in design Part 1 except lease
+        # attempts/failures (11/2), which depend on live tool calls.
         for fault in ("probe", "socket"):
             with self.subTest(fault=fault):
                 await self.fresh_core()
-                delay = await self.reproduce_live_incident_state(fault)
+                delay, gateway, transport, index = await self.reproduce_live_incident_state(fault)
                 health = self.core.health_snapshot()
                 counters = health["counters"]
-                # The exact state reported by live health at 17:49Z.
+                # The live health state at 17:49Z.
                 self.assertEqual(
                     (health["initialized"], health["observed_core_version"],
                      health["current_generation"]), (False, None, None))
@@ -710,10 +1049,19 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
                     {key: counters[key] for key in (
                         "verification_attempts", "verification_successes",
                         "verification_failures", "retirements", "reprobes",
+                        "catalog_withdrawals", "catalog_restorations",
                         "authority_restorations")},
                     {"verification_attempts": 27, "verification_successes": 26,
                      "verification_failures": 1, "retirements": 1, "reprobes": 26,
+                     "catalog_withdrawals": 29, "catalog_restorations": 0,
                      "authority_restorations": 0})
+                catalog = gateway.health_snapshot()
+                self.assertEqual(len(catalog["core_withheld_tools"]), 29)
+                self.assertEqual(catalog["optional_tools"][yaml_tests.TOOL],
+                                 "withheld:core_unavailable")
+                self.assertEqual(transport.sent, [])
+                self.assertTrue(index.invalidated)
+                self.assertEqual(index._invalidation_reason, "core_authority_changed")
                 recovery = self.assert_bounded_projection()
                 # Unlike base, the retry is visible and paced by backoff, not 300 s.
                 self.assertEqual(recovery["recovery_state"], "backing_off")
@@ -722,9 +1070,12 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(recovery["last_failure_reason"],
                                  "core_lifecycle_monitor_unavailable")
                 await self.recover_through_confirmation(None, delay=delay)
+                await gateway.initialize(gateway.synthetic_server)
                 self.assertEqual(self.recovery()["recovery_state"], "restored")
                 self.assertEqual(self.counters()["recovery_confirmations"],
                                  CORE_RECOVERY_CONFIRMATIONS)
+                self.assertEqual(self.counters()["catalog_restorations"], 29)
+                self.assertEqual(gateway.health_snapshot()["core_withheld_tools"], [])
                 self.assert_authority_round_trip()
 
     async def test_flapping_requires_more_spaced_confirmations_and_does_not_toggle(self):
@@ -889,6 +1240,42 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(replacement.generation, original.generation)
         self.assertTrue(index.active_identity()["current"])
         self.assert_authority_round_trip()
+
+
+class SignedRegistryKey(unittest.IsolatedAsyncioTestCase):
+    """H2: the selected signed-registry authority is part of the agreement key."""
+
+    asyncSetUp = continuity_tests.CoreContinuityTests.asyncSetUp
+    runtime = continuity_tests.CoreContinuityTests.runtime
+    next_journal = continuity_tests.CoreContinuityTests.next_journal
+
+    async def move_registry(self, digit):
+        entry = continuity_tests.core_entry()
+        entry["evidence_sha256"] = digit * 64
+        self.raw = self.next_journal(entries=[entry])
+        self.assertTrue(await self.registry.refresh())
+
+    async def test_registry_move_seen_on_demand_resets_the_streak(self):
+        core, _source = await self.runtime()
+        self.assertTrue(core.release(core.acquire(CAPABILITY)))
+        await self.move_registry("8")
+        self.assertIsNone(core.acquire(CAPABILITY))
+        await core.reconcile_once("periodic")
+        self.assertEqual(core.health_projection()["recovery"]["confirmations"], 1)
+        await self.move_registry("9")
+        with self.assertLogs(LOGGER, level="INFO") as logs:
+            await core.reconcile_once("mutation_pre_dispatch")
+        self.assertEqual(core.health_projection()["recovery"]["confirmations"], 0)
+        reset = _events(logs.records, "core_authority_recovery_reset")
+        self.assertEqual([record.safe_context["reason"] for record in reset],
+                         ["core_authority_key_changed"])
+        await core.reconcile_once("periodic")
+        self.assertIsNone(core.acquire(CAPABILITY), "the moved registry bridged the streak")
+        await core.reconcile_once("periodic")
+        self.assertTrue(core.release(core.acquire(CAPABILITY)))
+        # Cumulative: the discarded confirmation plus the fresh streak.
+        self.assertEqual(core.health_snapshot()["counters"]["recovery_confirmations"],
+                         1 + CORE_RECOVERY_CONFIRMATIONS)
 
 
 if __name__ == "__main__":
