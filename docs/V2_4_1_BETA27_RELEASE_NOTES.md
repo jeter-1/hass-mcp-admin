@@ -1,151 +1,168 @@
 # Engineering 2.4.1-beta.27 release notes
 
-Engineering 2.4.1-beta.27 is a break-fix for Home Assistant Core authority
-(HAMCP-215). It fixes two defects:
+Engineering 2.4.1-beta.27 adds two read-only tools (HAMCP-132 slice 1,
+definition visibility):
+- `get_recorder_settings` reports the recorder's effective settings and where
+  each one comes from;
+- `get_unregistered_entities` lists entities that have a state but no
+  registry entry.
 
-- Core authority now **recovers automatically** after a transient verification
-  failure.
-- Every failure, retirement, catalog withdrawal, recovery attempt and
-  restoration is now **logged and visible in health**.
+Neither tool can write, purge, reload or call a service.
 
-Fail-closed behavior during uncertainty is unchanged.
-
-Design and the Part 1 root cause (every retirement path, with reproductions):
-[`HAMCP_215_CORE_AUTHORITY_RECOVERY_DESIGN.md`](HAMCP_215_CORE_AUTHORITY_RECOVERY_DESIGN.md).
+Design and Part 1 verification against the pinned Core 2026.10.1 source:
+[`HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md`](HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md)
+(draft PR #291). Implementation notes and the deviations from the design:
+[`HAMCP_132_SLICE1_IMPLEMENTATION_NOTES.md`](HAMCP_132_SLICE1_IMPLEMENTATION_NOTES.md).
 Acceptance: [`V2_4_1_BETA27_ACCEPTANCE.md`](V2_4_1_BETA27_ACCEPTANCE.md).
 
-beta.27 follows 2.4.1-beta.26 (HAMCP-217, `certifi` 2026.10.19) and includes
-everything in it. It changes no dependency. No tool, input
-schema, description, signed registry, HOLD, support window, workflow or
-stable-v1 change is included. The tool catalog is unchanged: 88 tools, or 89
-with the optional YAML reader admitted.
+beta.27 follows 2.4.1-beta.26 (HAMCP-217, certifi 2026.10.19), which follows
+2.4.1-beta.25 (HAMCP-212), and includes everything in both. It adds no
+dependency change; both hashed locks are beta.26's.
 
-**What happened (beta.24 live, 2026-10-20).** One verification failed out of 27
-attempts. Core authority was retired, 29 Core-backed tools were withdrawn
-(the YAML reader withheld `core_unavailable`), and the dependency index was
-invalidated. Nothing was written to the add-on log.
+The catalog grows from 88 to **90** tools (91 with the optional YAML reader
+admitted): 62 static plus 28 delegated. No existing tool, input schema,
+description, signed registry entry, HOLD, support window, workflow, add-on
+permission or stable-v1 file changes.
 
-- **Why it retired.** A single whole-snapshot transient retires the
-  generation. That can be a REST `/config` or WebSocket timeout, a connection
-  loss, an authentication failure, or a lifecycle-watcher socket move. This is
-  the designed fail-closed behavior, and it is kept.
-- **Why it did not visibly recover.** The only retry was a fixed 300 s
-  `failure_retry`, with no backoff and no visibility. The counters show the
-  failure was the last of 27 attempts. That it came shortly before the 17:49Z
-  snapshot, so that authority had been withdrawn for minutes rather than about
-  2 hours, is an **inference** from the counters, not an observation: no
-  failure timestamp was recorded, and the reprobe counter also counts
-  event-driven wakes. The pending 300 s retry gave no sign (design Part 1,
-  finding 3).
-- **Why it was silent.** The Core-authority code had no logger calls. Outcomes
-  went only to the audit file, and the transport cause was discarded.
+## `get_recorder_settings`
 
-## Changes
+Input: optional `entity_ids`, 0 to 50 strict entity IDs (owner decision (iv)).
 
-1. **Automatic recovery with bounded backoff.** A failed verification is
-   retried after 20 s, then 40, 80, 160, and 240 s thereafter. Each delay has
-   ±20% jitter and never exceeds the cap. It replaces the fixed 300 s retry.
-2. **Restore only after complete re-verification, with hysteresis.**
-   - **One restoration gate.** Whenever no Core authority is admitted, for
-     any reason, authority returns only after **2 consecutive complete
-     background verifications** by the supervisor with the same Core identity,
-     version, selected signed-registry authority and admitted reviewed
-     contracts. This covers a transient retirement, an incompatible or
-     unavailable Core, a Core not initialized at boot, a changed Core version
-     and a moved signed-registry authority. A complete verification is a
-     two-snapshot stable observation with the authenticated lifecycle watcher
-     attached, evaluated against the reviewed contract.
-   - **One-shot boot exception.** The only exemption is the first admission
-     of the process's boot sequence, and it is a one-shot latch: it applies
-     only while this process has never admitted Core authority, never
-     retired one and never failed a verification. Any admission, failure,
-     retirement or non-boot check spends it, and nothing but a new process
-     re-arms it. A re-initialization of the running application (application
-     rebuild, runtime reconfiguration, collector restart) therefore restores
-     through the full gate. A failed first startup check ends the boot
-     sequence's retries; the supervisor then recovers on backoff pacing
-     (about 20 s, then the confirmations).
-   - **Spacing.** The verifications are about 15 s apart. The count restarts
-     on any failure or connection move, and on **any** observation, background
-     or on demand, of a different Core identity, version, signed-registry
-     authority or reviewed contract set.
-   - **Flapping.** A retirement within 10 minutes of a restoration needs
-     **3** verifications, at doubled spacing.
-   - **On-demand verification.** A verification triggered on demand (mutation
-     pre-dispatch or verification, configuration reverification, the fan
-     authority, any tool or health caller) never confirms or restores, from any
-     state. It is refused without publishing and counted in
-     `recovery_on_demand_refusals`. It can **reset** the confirmation count
-     (when it observes a changed key, as above) but never **add** to it.
-3. **Incompatibility stays retired.** A complete observation that no reviewed
-   contract admits stays withdrawn (`recovery_state: incompatible`). It is
-   re-checked every reconciliation interval (300 s) without backoff. When it
-   becomes compatible, it passes the same gate.
-4. **WARNING logs.** The `core_authority` logger emits one WARNING event for
-   each of these:
-   - a verification failure, with a bounded reason and transport detail such
-     as `core_probe_timeout` or `core_lifecycle_monitor_attach_failed`
-   - a retirement
-   - a partial capability withdrawal
-   - a catalog withdrawal and a catalog restoration (with tool counts)
-   - a recovery attempt
-   - a confirmation and a confirmation reset
-   - a restoration (with the outage duration)
+It answers "what will the recorder keep, and why?" from four sources, each
+listed in `sources` with its own status and reason:
 
-   Each scheduled retry, and each refused on-demand verification, is logged
-   at INFO with its time. Every event carries
-   an ISO-8601 UTC `at`. No exception text, URL or token is logged.
-5. **Health recovery fields (additive).** `get_server_health` →
-   `home_assistant_core_authority.recovery` reports:
-   - `recovery_state`: one of `initializing`, `stable`, `retrying`,
-     `backing_off`, `confirming`, `restored`, `incompatible`
-   - `consecutive_failures`
-   - `last_failure_reason`, `last_failure_detail`, `last_failure_at`
-   - `retired_at`, `last_attempt_at`, `next_recovery_attempt_at`,
-     `retry_delay_seconds`
-   - `confirmations`, `confirmations_required`
-   - `last_restored_at`
+| Source | Read | What it gives |
+| --- | --- | --- |
+| `configuration_yaml:recorder` | admitted `ha_config_get_yaml`, `yaml_path: recorder` | written settings and filters |
+| `configuration_yaml:homeassistant.packages` | the same reader, `homeassistant.packages`, and `homeassistant` only to classify a missing path | whether packages could add recorder keys |
+| `recorder/info` | Core WebSocket, its own batch | live recording state, backlog, migration, database location |
+| `recorder/entity_options/get` | Core WebSocket batch, one command per entity (admin, read-only) | Core's own "is this entity recorded" answer |
 
-   Four new counters are added: `recovery_attempts`,
-   `recovery_confirmations` (accepted background confirmations only),
-   `recovery_on_demand_refusals` and `authority_restorations`. Existing
-   counters are unchanged.
-6. **Dependents resume.** Restoration publishes a new generation through the
-   unchanged path:
-   - the gateway restores every withheld delegated tool and the YAML reader
-   - the dependency index rebuilds against the new generation
-   - typed providers lease the new generation
+- **Settings.** Each scalar setting has an `origin`:
+  - `configured` means written in `configuration.yaml`, after Core's own
+    validators;
+  - `core_default` means Core 2026.10.1's schema default, labelled with
+    `pin`, and is used only when every source that could set the key is
+    complete;
+  - `unknown` carries a reason: `packages_present`, `packages_unreadable`,
+    `include_not_followed`, `yaml_truncated` or `yaml_unavailable` (owner
+    decision (v)).
 
-## Accepted behavior change (owner decision)
+  Deprecated settings appear only when written. The YAML reader parses
+  YAML 1.2, while Home Assistant loads YAML 1.1, and the reader's value
+  cannot show how a value was spelled. When the YAML 1.1 readings of the
+  same text would change Core's verdict, the setting is
+  `validity: parser_dependent` with each reading and `value: null`. Examples
+  are unquoted `off` or `yes`, sexagesimal `1:20` and an exponent float.
+  Only a value that fails Core's schema under every reading is `invalid`
+  with `fails_core_schema`. It is never replaced by the default. Under the
+  owner decisions of 2026-10-20:
+  - a plain integer such as `10`, `14`, `30` or `365` is definite.
+    `coverage.yaml_numeric_spelling` always says that the spelling is not
+    observed, and that a leading-zero integer such as `010` would be octal
+    in YAML 1.1;
+  - a string the reader could only have returned because it was quoted
+    (`"010"`, `"true"`, `"1.5"`) is a definite string under both versions;
+  - `y` and `n` are plain strings, because PyYAML's bool resolver does not
+    include them.
+- **`db_url` is never returned.** The report gives only
+  `value_withheld: true`, whether it is configured, and `recorder/info`'s
+  `default_location`. A `!secret` or `!env_var` reference is withheld,
+  including its name. Unrecognized recorder keys are counted, never copied.
+- **Filters.** The `include` and `exclude` lists are reported with
+  `filter_case`, using Core's case numbering: `1`, `2`, `3`, `4a`, `4b` or
+  `6`. In case 4a, Core ignores `exclude.domains`, and the report sets
+  `exclude_domains_ignored: true`. An `exclude.event_types` entry for
+  `state_changed` is flagged with `state_changed_event_type_ignored`.
+- **Runtime.** `recording`, `thread_running`, `backlog`, `max_backlog`,
+  migration flags and `db_in_default_location`. `disable_service_state` is
+  `not_observable`. If `recorder/info` returns `unknown_command`, the
+  recorder is not set up: runtime is `unavailable` with
+  `recorder_not_set_up`, never "not recording".
+- **Entities.** For each requested entity the report gives:
+  - Core's answer (`core_recorded`);
+  - the filter computed from the written configuration (`computed_recorded`);
+  - `agreement`.
 
-Every lifecycle-socket movement now waits one confirmation interval (about
-15–18 s) before Core authority returns. This includes the reconnect after a
-Home Assistant Core update or restart. Previously the immediate reprobe
-restored authority at once. During that wait, Core-backed tools are withheld
-and fail closed, exactly as during any outage. This is the hysteresis the
-HAMCP-215 brief requires. **Josh accepted this delay on 2026-10-20.** After a
-Core restart or update, expect Core-backed tools to refuse for about 15–18 s
-after Core is reachable again, with health showing `recovery_state:
-confirming`, and then to resume without restarting Engineering.
+  A disagreement is `filter_drift` and is never resolved silently; it means
+  the configuration on disk and the running recorder differ, for example
+  before a restart.
+- **Completeness.** Any source that is not complete, any unknown or
+  parser-dependent setting, drift, redaction or response-size trim makes the
+  report `partial`, with each cause in `omissions`. The tool fails only when
+  every source is unavailable.
+- **Sanitization.** Both tools build the complete response first, including
+  omissions and every identifier. They then run the strict sanitizer, with
+  the known secrets, once on that final envelope. Nothing is added after
+  that call, and any redaction makes the report partial.
 
-The same gate applies to a changed Core version, a moved signed-registry
-authority for the running Core, an incompatible Core that becomes compatible,
-and a Core not initialized at boot. Each needs the same background
-confirmations (about 15 s), and tools refuse until they complete. **Josh
-accepted these additional cases on 2026-10-20 as well.** A Core not
-initialized at boot first waits one backoff delay (about 20 s), because a
-failed startup check spends the one-shot boot exception. A re-initialization
-of the running application also passes the gate.
+Without the optional YAML reader admitted, the tool still runs. The YAML
+sources are then `unavailable` with `yaml_reader_not_admitted`, settings and
+filters are `unknown` (`yaml_unavailable`), and the report is partial. Runtime
+and Core's entity answers are still reported.
+
+## `get_unregistered_entities`
+
+Input: optional `domains` (1 to 50) and `limit` (1 to 500, default 200).
+
+It reports each entity that has a current state but no entity registry entry:
+- REST `GET /api/states`, minus `config/entity_registry/list`;
+- `entity/source` gives the integration platform;
+- batched `search/related` (`item_type: entity`) gives the config entry, only
+  for entities that have a platform.
+
+Per entity it reports:
+- `platform`, with `platform_status`. `directly_written_state` means no
+  integration added the entity, so its state was written directly.
+- `config_entry_id`, with `config_entry_status`: `resolved`, `none_related`,
+  `ambiguous` (more than one entry; never guessed), `not_applicable`,
+  `command_failed` or `invalid_response`.
+- `definition_location: not_determinable`. Core records no file or package
+  for a registry-less entity, and no candidate is offered.
+
+`counts` gives totals for states, registry entries, unregistered entities, the
+in-scope subset, listed rows and directly written states. A limit or
+response-size truncation sets `truncated` and makes the report partial. If
+the states or registry read fails, the tool fails with `sources_unavailable`;
+a partial difference is never reported.
+
+## Boundaries
+
+- **Reads only.** The commands are:
+  - REST `GET /api/states`;
+  - WebSocket `recorder/info`, `config/entity_registry/list` and
+    `entity/source`;
+  - in the pipelined batch, `recorder/entity_options/get` (exact keys, strict
+    entity ID) and `search/related` with `item_type: entity`;
+  - the admitted YAML reader for three fixed paths.
+
+  An AST test pins the new modules to these reads.
+- **Allowlist.** The batch allowlist gains exactly two shapes:
+  - `recorder/entity_options/get`;
+  - `search/related` for `item_type: entity`.
+
+  `recorder/info` is admitted only with no keys besides `type`.
+- **Core gate.** `get_recorder_settings` requires `core.basic_rest_read` and
+  `core.basic_websocket_read`. `get_unregistered_entities` also requires
+  `core.non_device_registry_read`.
+- **Arguments.** Arguments are validated before the SDK can coerce them. A
+  string is never split into a list of characters.
+- **Audit.** The audit records counts and source outcomes, never entity IDs.
 
 ## Compatibility and rollback
 
-- **Stored formats.** No stored format changes. Recovery state is in memory
-  only and starts at `initializing` on each process start.
-- **Health.** The `recovery` object and the four counters are additive.
-- **Audit.** Audit events are unchanged in shape. Logging is additive.
-- **Rollback** is reinstalling the beta.26 artifact. That returns to the fixed
-  300 s retry and silent retirement, and keeps `certifi` 2026.10.19. Do not
-  roll back past beta.26: beta.25 carries the vulnerable `certifi` 2026.7.22.
-  No state needs migration.
-- **Boundaries.** No write, service call, reload, restart or fallback becomes
-  reachable. No route or lease is admitted while recovery is active.
+- **Additive.** Two new tools; no existing descriptor or schema changes.
+- **Stored formats.** No stored format changes.
+- **Rollback.** Reinstall the beta.26 artifact; no state needs migration.
+- **Known limitations** (design section 9):
+  - the `recorder.disable` state is not observable;
+  - configured values come from disk and can differ from the running recorder
+    until a restart, so the `filter_drift` cross-check exists;
+  - `!include` targets and package contents are not read;
+  - YAML 1.2 parsing can differ from Home Assistant's YAML 1.1. A value
+    where this can change Core's verdict is reported `parser_dependent`,
+    never invalid. A plain integer is reported as the reader parsed it, so
+    `purge_keep_days: 10` is definite even though it may have been written
+    `010`, which YAML 1.1 reads as 8. A `0o`-prefixed integer cannot be
+    detected either. `coverage.yaml_numeric_spelling` discloses both;
+  - registry-less entities cannot be traced to a file.

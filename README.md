@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.27** is a break-fix for Home Assistant Core
+Engineering **2.4.1-beta.28** is a break-fix for Home Assistant Core
 authority (HAMCP-215). After a transient verification failure, Core authority
 now recovers on its own:
 - a bounded, jittered backoff (20 s doubling to a 240 s cap) replaces the
@@ -22,8 +22,23 @@ for about 15–18 s until the confirmation completes. The same wait (about
 15 s) follows a changed Core version or signed-registry authority, an
 incompatible Core becoming compatible, and a Core not initialized at boot.
 Josh accepted these delays.
-No tool, schema, permission or descriptor changes (88
-tools, 89 with the optional YAML reader). Read the
+No tool, schema, permission or descriptor changes (90
+tools, 91 with the optional YAML reader). Read the
+[2.4.1-beta.28 release notes](docs/V2_4_1_BETA28_RELEASE_NOTES.md) and
+[2.4.1-beta.28 acceptance contract](docs/V2_4_1_BETA28_ACCEPTANCE.md).
+
+It builds on beta.27 below.
+
+Engineering **2.4.1-beta.27** adds two read-only tools (HAMCP-132 slice 1).
+`get_recorder_settings` reports the recorder's effective settings, each with
+its origin: written in `configuration.yaml`, Core's default, or `unknown` with
+the reason, such as packages that could supply the key. It also reports
+filters, live recorder state, and Core's own "is this entity recorded" answer
+beside the computed filter, with `filter_drift` when they disagree. It never
+returns `db_url` or secret names. `get_unregistered_entities` lists entities
+that have a state but no registry entry, with their platform and config entry.
+The definition file is never guessed. Static tools 62, advertised catalog 90
+(91 with the optional YAML reader). Read the
 [2.4.1-beta.27 release notes](docs/V2_4_1_BETA27_RELEASE_NOTES.md) and
 [2.4.1-beta.27 acceptance contract](docs/V2_4_1_BETA27_ACCEPTANCE.md).
 
@@ -348,9 +363,9 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**60 static tools plus 28 delegated reads, 88 total** (89 with the optional
-reviewed YAML reader admitted; the 60th static tool is HAMCP-130's read-only
-`get_backup_inventory`). The Core inventory represents
+**62 static tools plus 28 delegated reads, 90 total** (91 with the optional
+reviewed YAML reader admitted; the 61st and 62nd static tools are HAMCP-132's
+read-only `get_recorder_settings` and `get_unregistered_entities`). The Core inventory represents
 **22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol

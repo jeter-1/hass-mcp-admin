@@ -41,6 +41,8 @@ class RoutingDecision:
 _ENGINEERING_NATIVE = {
     ProviderCapability.INTEGRATION_INSPECTION,
     ProviderCapability.BACKUP_INVENTORY,
+    ProviderCapability.RECORDER_SETTINGS,
+    ProviderCapability.UNREGISTERED_ENTITIES,
     ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     ProviderCapability.TYPED_FAN_EXECUTION,
@@ -124,6 +126,8 @@ class RoutingPolicy:
 TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_integration_inspection": ProviderCapability.INTEGRATION_INSPECTION,
     "get_backup_inventory": ProviderCapability.BACKUP_INVENTORY,
+    "get_recorder_settings": ProviderCapability.RECORDER_SETTINGS,
+    "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     "dashboard_integrity_analysis": ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
@@ -226,6 +230,16 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "get_backup_inventory": {
         "policy_id": "backup_inventory_read_v1", "access": "read", "orchestrator": "engineering",
         "scope": "Core backup/config/info and backup/info only; bounded allowlisted projection",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_recorder_settings": {
+        "policy_id": "recorder_settings_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "admitted YAML reader at fixed recorder/homeassistant paths, recorder/info and up to 50 recorder/entity_options/get; db_url withheld",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_unregistered_entities": {
+        "policy_id": "unregistered_entities_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "GET /api/states, config/entity_registry/list, entity/source and up to 500 search/related; bounded projection",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "automation_reliability_analysis": {

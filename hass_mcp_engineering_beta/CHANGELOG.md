@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.4.1-beta.27 - Core authority recovery and visibility (HAMCP-215)
+## 2.4.1-beta.28 - Core authority recovery and visibility (HAMCP-215)
 
-Builds on 2.4.1-beta.26.
+Builds on 2.4.1-beta.27.
 
 - Retry a failed Core verification with bounded exponential backoff and ±20%
   jitter: 20 s, doubling, capped at 240 s. This replaces the fixed 300 s
@@ -47,6 +47,46 @@ Builds on 2.4.1-beta.26.
   signed-registry authority, an incompatible Core becoming compatible, or a
   Core not initialized at boot (which first waits one backoff delay).
 - No tool, schema, descriptor, permission, workflow or stored-format change.
+
+## 2.4.1-beta.27 - Recorder settings and unregistered entities (HAMCP-132)
+
+Builds on 2.4.1-beta.26.
+
+- Add `get_recorder_settings`, a read-only tool that reports the recorder's
+  effective settings. Each setting carries an `origin` (`configured`,
+  `core_default` with the Core 2026.10.1 pin, or `unknown` with a reason).
+  The report also covers include and exclude filters with Core's filter case,
+  live `recorder/info` runtime state, and, for up to 50 entities, Core's own
+  recorded answer next to the filter computed from configuration. A
+  disagreement is `filter_drift`.
+- Report unwritten settings as `unknown`, never as defaults, when packages,
+  `!include`, truncation or an unreadable source could supply them (owner
+  decision (v)). `unknown_command` from `recorder/info` means the recorder is
+  not set up, never "not recording".
+- Never return `db_url`, a `!secret` or `!env_var` reference name, or an
+  unrecognized recorder key: the projection is a positive allowlist.
+- Sanitize each tool's complete response once, with the known secrets, at a
+  single exit point. Nothing is appended afterwards, and a redaction makes
+  the report partial.
+- Report a written value as `parser_dependent`, not `fails_core_schema`,
+  when its YAML 1.1 readings change Core's verdict. Examples are unquoted
+  `off` or `yes`, `1:20` and exponent floats. A plain integer is definite,
+  and `coverage.yaml_numeric_spelling` discloses that a leading-zero spelling
+  such as `010` is not observed. Quoted strings, and `y` or `n`, are definite
+  strings.
+- Add `get_unregistered_entities`, a read-only tool that lists entities with a
+  state but no registry entry. It reports the platform (from
+  `entity/source`), whether the state was written directly, and the config
+  entry from `search/related` (`ambiguous` when more than one is found). The
+  definition location is always `not_determinable`. A truncation is partial.
+- Read configuration through the admitted YAML reader for three fixed paths
+  (`recorder`, `homeassistant.packages`, `homeassistant`) via a new gateway
+  `yaml_config_reader`. The batch allowlist adds exactly
+  `recorder/entity_options/get` and `search/related` with `item_type: entity`,
+  both with a strict entity-ID pattern. Map both tools in the HAMCP-164 Core
+  gate.
+- Catalog 90 tools (91 with the optional YAML reader). No existing tool,
+  schema, descriptor, permission, workflow or dependency change.
 
 ## 2.4.1-beta.26 - certifi 2026.10.19 dependency security release (HAMCP-217)
 

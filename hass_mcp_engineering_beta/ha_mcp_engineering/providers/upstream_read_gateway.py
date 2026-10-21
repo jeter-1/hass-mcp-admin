@@ -705,6 +705,21 @@ class ScriptDependencyReader:
     provenance: str
 
 
+# HAMCP-132: the only configuration.yaml paths the recorder-settings reader
+# may request. ``homeassistant`` is read solely to classify whether packages
+# are present when ``homeassistant.packages`` is not found.
+YAML_CONFIG_PATHS = frozenset({"recorder", "homeassistant.packages", "homeassistant"})
+
+
+@dataclass(frozen=True)
+class YamlConfigReader:
+    """One fixed admitted YAML reader generation for fixed recorder paths."""
+
+    read: Callable[[str], Awaitable[dict[str, Any]]]
+    current: Callable[[], bool]
+    provenance: str
+
+
 @dataclass(frozen=True)
 class _HeldCanaryRoute:
     """Reviewed held-tool evidence captured by the active exact admission."""
@@ -3624,19 +3639,8 @@ class UpstreamReadGateway:
         elif core_authority is not None:
             core_runtime.release(core_authority)
 
-    def script_dependency_reader(self, *, audit=None) -> ScriptDependencyReader | None:
-        """Capture the existing script read route for bounded diagnostic use."""
-
-        with self._lock:
-            routes = [
-                (name, route) for name, route in self._exposed.items()
-                if route.entry.upstream_name == "ha_config_get_script"
-                and route.entry.classification == "automatic_read"
-            ]
-            if len(routes) != 1:
-                return None
-            name, route = routes[0]
-            core_epoch = self._core_reconciliation_epoch
+    def _bounded_route_current(self, name: str, route: Any, core_epoch: int) -> Callable[[], bool]:
+        """Return the authority check for one captured bounded read route."""
 
         def current() -> bool:
             try:
@@ -3667,6 +3671,24 @@ class UpstreamReadGateway:
                 return True
             except Exception:
                 return False
+
+        return current
+
+    def script_dependency_reader(self, *, audit=None) -> ScriptDependencyReader | None:
+        """Capture the existing script read route for bounded diagnostic use."""
+
+        with self._lock:
+            routes = [
+                (name, route) for name, route in self._exposed.items()
+                if route.entry.upstream_name == "ha_config_get_script"
+                and route.entry.classification == "automatic_read"
+            ]
+            if len(routes) != 1:
+                return None
+            name, route = routes[0]
+            core_epoch = self._core_reconciliation_epoch
+
+        current = self._bounded_route_current(name, route, core_epoch)
 
         async def read(entity_id: str) -> dict[str, Any]:
             if not isinstance(entity_id, str) or not re.fullmatch(r"script\.[a-z0-9_]{1,121}", entity_id):
@@ -3714,6 +3736,76 @@ class UpstreamReadGateway:
             read=read, current=current,
             provenance=(f"ha-mcp {route.server_version}; contract {route.contract_fingerprint}; "
                         "identity inventory direct_ha_api; diagnostic only; no fallback"),
+        ) if current() else None
+
+    def yaml_config_reader(self, *, audit=None) -> YamlConfigReader | None:
+        """Capture the reviewed YAML reader route for fixed recorder paths.
+
+        HAMCP-132: Engineering builds the only argument (one of
+        ``YAML_CONFIG_PATHS``); the reader's own L1-L4 pipeline, Core gate
+        and response seal apply unchanged. No caller-selected path, no
+        fallback and no other upstream tool.
+        """
+
+        with self._lock:
+            routes = [
+                (name, route) for name, route in self._exposed.items()
+                if route.entry.upstream_name == yaml_reader.TOOL_NAME
+                and is_yaml_adapter(route.entry)
+            ]
+            if len(routes) != 1:
+                return None
+            name, route = routes[0]
+            core_epoch = self._core_reconciliation_epoch
+
+        current = self._bounded_route_current(name, route, core_epoch)
+
+        async def read(yaml_path: str) -> dict[str, Any]:
+            if yaml_path not in YAML_CONFIG_PATHS:
+                return {"success": False, "details": {"failure_category": "argument_validation"}}
+            if not current():
+                return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
+            parent = current_telemetry()
+            telemetry, token = begin_request()
+            telemetry.tool_name = "recorder_settings_yaml_read"
+            if parent is not None:
+                telemetry.caller_id = parent.caller_id
+                telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
+                telemetry.audit_context["parent_request_id"] = parent.request_id
+            result: dict[str, Any] = {}
+            try:
+                if not telemetry.authorize_core_dispatch():
+                    return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
+                result = json.loads(await self.execute(
+                    exposed_name=name, arguments={"yaml_path": yaml_path},
+                    reviewed_schema=route.observed_tool["inputSchema"],
+                    policy_entry=route.entry, admission_generation=route.generation,
+                    contract_fingerprint=route.contract_fingerprint,
+                ))
+                if not current() or not telemetry.authorize_core_dispatch():
+                    result = {"success": False, "details": {"failure_category": "provider_authority_changed"}}
+                return result
+            finally:
+                try:
+                    if audit is not None:
+                        audit.write({
+                            "event": "recorder_settings_yaml_read", "request_id": telemetry.request_id,
+                            "parent_request_id": parent.request_id if parent else None,
+                            "provider": PROVIDER_ID, "upstream_tool": yaml_reader.TOOL_NAME,
+                            "yaml_path": yaml_path,
+                            "upstream_version": route.server_version,
+                            "contract_fingerprint": route.contract_fingerprint,
+                            "result_status": "success" if result.get("success") is True else "failed_or_cancelled",
+                            "provider_dispatch_count": telemetry.provider_dispatch_count,
+                            "fallback_occurred": False,
+                        })
+                finally:
+                    end_request(token)
+
+        return YamlConfigReader(
+            read=read, current=current,
+            provenance=(f"ha-mcp {route.server_version}; contract {route.contract_fingerprint}; "
+                        "configuration.yaml only; includes not followed; no fallback"),
         ) if current() else None
 
     async def execute(

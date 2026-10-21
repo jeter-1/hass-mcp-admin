@@ -185,6 +185,8 @@ def create_application(
     from .audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
     from .integration_inspection.runtime import INTEGRATION_INSPECTION
     from .backup_inventory.service import BACKUP_INVENTORY
+    from .recorder_settings.service import RECORDER_SETTINGS
+    from .entity_reconciliation.service import ENTITY_RECONCILIATION
     server = get_registered_server()
     audit = AuditLogger(
         settings.audit_path,
@@ -199,6 +201,14 @@ def create_application(
     )
     INTEGRATION_INSPECTION.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
     BACKUP_INVENTORY.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
+    # HAMCP-132: the YAML reader route is captured per request; before
+    # admission the factory returns None and the source is unavailable.
+    RECORDER_SETTINGS.configure(
+        HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings,
+        yaml_reader_factory=lambda: UPSTREAM_READ_GATEWAY.yaml_config_reader(audit=audit),
+    )
+    ENTITY_RECONCILIATION.configure(HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings),
+                                    CORE_READMISSION, settings)
     AUTOMATION_BASELINE_CAPTURE.configure(settings, CORE_READMISSION)
     gateway = AuthenticatedMcpGateway(
         server.streamable_http_app(),
