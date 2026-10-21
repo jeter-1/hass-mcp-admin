@@ -14,6 +14,7 @@ from heapq import merge
 from itertools import islice
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -36,6 +37,13 @@ from .resources import persistence_safety_errors
 
 
 PLAN_ID = re.compile(r"^[a-f0-9]{32}$")
+# HAMCP-213 batch 4 (H6): the exact name ``_quarantine`` gives a record,
+# identical in beta.27 and later versions.
+QUARANTINED_RECORD_NAME = re.compile(r"^([a-f0-9]{32})\.([0-9]{1,20})\.corrupt$")
+MAX_QUARANTINE_RESTORE_ENTRIES = 4096
+MAX_QUARANTINE_RESTORE_BYTES = 16 * 1024 * 1024
+MAX_QUARANTINE_RESTORE_REPORTED = 32
+_LOGGER = logging.getLogger(__name__)
 OPERATIONAL_NAMESPACE = "operational-administration-v3"
 OPERATIONAL_OPERATIONS = frozenset(
     {
@@ -382,6 +390,13 @@ class ChangePlanRepository:
         self.content_redactions = 0
         self.content_refusals = 0
         self.recovery_refusals = 0
+        self.quarantine_restoration: dict[str, Any] = {
+            "performed": False,
+            "restored": 0,
+            "retained": 0,
+            "scan_truncated": False,
+            "retained_records": [],
+        }
         self._known_secrets: Callable[[], tuple[str, ...]] = tuple
         self._lock = threading.RLock()
         self._entries: dict[str, PlanNavigationEntry] = {}
@@ -1049,6 +1064,220 @@ class ChangePlanRepository:
             except OSError:
                 pass
 
+    def restore_quarantined_records(self) -> dict[str, Any]:
+        """HAMCP-213 batch 4 (H6): return rollback-quarantined plans to service.
+
+        A version that cannot parse a record moves it, byte for byte, to
+        ``quarantine/<plan_id>.<seconds>.corrupt`` (beta.27 rejects every
+        f2-v3 record this way). On startup each such file is restored to its
+        normal path only when its integrity is verified: strict UTF-8 JSON
+        that this version parses, whose bytes equal this version's canonical
+        record serialization, whose identifier matches its name, whose
+        namespace matches the quarantine it sits in, and which passes the
+        stored-plan content screen. A restoration never replaces a record:
+        an existing record with that identifier, another differing
+        quarantined copy, or any other doubt keeps the file quarantined and
+        reports it in health. A quarantined copy byte-identical to the
+        restored record (an interrupted earlier restoration) is removed, so
+        the operation is idempotent. Call after ``bind_known_secrets``.
+        """
+
+        restored: list[str] = []
+        retained: list[dict[str, str]] = []
+        truncated = False
+        with self._lock:
+            for quarantine, root in (
+                (self.quarantine, self.root),
+                (self.operational_quarantine, self.operational_root),
+            ):
+                candidates, namespace_truncated = self._quarantine_candidates(
+                    quarantine, retained
+                )
+                truncated |= namespace_truncated
+                for plan_id, paths in candidates.items():
+                    self._restore_quarantined_plan(
+                        plan_id, paths, root, restored, retained
+                    )
+            if restored:
+                self.generation += 1
+                self.index_invalidation_count += 1
+                self.rebuild_navigation_index()
+            self.quarantine_restoration = {
+                "performed": True,
+                "restored": len(restored),
+                "retained": len(retained),
+                "scan_truncated": truncated,
+                "retained_records": retained[:MAX_QUARANTINE_RESTORE_REPORTED],
+            }
+        for plan_id in restored:
+            _LOGGER.warning(
+                "Restored quarantined governance plan record %s", plan_id
+            )
+        for item in retained:
+            _LOGGER.warning(
+                "Governance plan record remains quarantined: %s (%s)",
+                item["record"],
+                item["reason"],
+            )
+        if truncated:
+            _LOGGER.warning(
+                "Quarantine restoration scan stopped at %d entries",
+                MAX_QUARANTINE_RESTORE_ENTRIES,
+            )
+        return dict(self.quarantine_restoration)
+
+    @staticmethod
+    def _quarantine_candidates(
+        quarantine: Path, retained: list[dict[str, str]]
+    ) -> tuple[dict[str, list[Path]], bool]:
+        candidates: dict[str, list[Path]] = {}
+        try:
+            with os.scandir(quarantine) as entries:
+                for count, entry in enumerate(entries):
+                    if count >= MAX_QUARANTINE_RESTORE_ENTRIES:
+                        return candidates, True
+                    match = QUARANTINED_RECORD_NAME.fullmatch(entry.name)
+                    if match is None:
+                        retained.append(
+                            {"record": "unrecognized_entry", "reason": "unrecognized_name"}
+                        )
+                        continue
+                    if not entry.is_file(follow_symlinks=False):
+                        retained.append(
+                            {"record": entry.name, "reason": "not_regular_file"}
+                        )
+                        continue
+                    candidates.setdefault(match.group(1), []).append(
+                        Path(entry.path)
+                    )
+        except FileNotFoundError:
+            return candidates, False
+        except OSError:
+            retained.append(
+                {"record": quarantine.name, "reason": "quarantine_unreadable"}
+            )
+        return candidates, False
+
+    def _verified_quarantined_bytes(
+        self, plan_id: str, path: Path, root: Path
+    ) -> tuple[bytes | None, str | None]:
+        """Return ``(record bytes, None)`` or ``(None, retention reason)``."""
+
+        try:
+            with open(path, "rb", buffering=0) as handle:
+                status = os.fstat(handle.fileno())
+                if status.st_size > MAX_QUARANTINE_RESTORE_BYTES:
+                    return None, "oversized"
+                raw = handle.read(MAX_QUARANTINE_RESTORE_BYTES + 1)
+        except OSError:
+            return None, "unreadable"
+        if len(raw) > MAX_QUARANTINE_RESTORE_BYTES:
+            return None, "oversized"
+        try:
+            value = json.loads(raw.decode("utf-8"))
+            plan = ChangePlan.from_dict(value)
+        except Exception:  # noqa: BLE001 - every parse failure is unverifiable
+            return None, "unsupported_or_corrupt"
+        try:
+            canonical = json.dumps(
+                plan.to_dict(), sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        except Exception:  # noqa: BLE001
+            return None, "unsupported_or_corrupt"
+        if canonical != raw:
+            return None, "not_canonical"
+        if plan.plan_id != plan_id:
+            return None, "identifier_mismatch"
+        try:
+            expected = self._path_for_plan(plan)
+        except ChangePlanStorageError:
+            return None, "unsupported_or_corrupt"
+        if expected.parent != root:
+            return None, "namespace_mismatch"
+        known_secrets = tuple(value for value in self._known_secrets() if value)
+        try:
+            unsafe = bool(
+                persistence_safety_errors(value, known_secrets, stored_plan=True)
+            )
+        except Exception:  # noqa: BLE001 - an unscreenable record is unsafe
+            unsafe = True
+        if unsafe:
+            return None, "content_refused"
+        return raw, None
+
+    def _restore_quarantined_plan(
+        self,
+        plan_id: str,
+        paths: list[Path],
+        root: Path,
+        restored: list[str],
+        retained: list[dict[str, str]],
+    ) -> None:
+        verified: list[tuple[Path, bytes]] = []
+        for path in sorted(paths):
+            raw, reason = self._verified_quarantined_bytes(plan_id, path, root)
+            if reason is not None:
+                retained.append({"record": path.name, "reason": reason})
+            else:
+                verified.append((path, raw))
+        if not verified:
+            return
+        destination = root / f"{plan_id}.json"
+        other = (
+            self._path(plan_id)
+            if root == self.operational_root
+            else self._path(plan_id, operational=True)
+        )
+
+        def keep(reason: str) -> None:
+            retained.extend(
+                {"record": path.name, "reason": reason} for path, _raw in verified
+            )
+
+        if other.exists():
+            keep("conflicting_record")
+            return
+        if destination.exists() or destination.is_symlink():
+            try:
+                existing = (
+                    None if destination.is_symlink() else destination.read_bytes()
+                )
+            except OSError:
+                existing = None
+            duplicates = [path for path, raw in verified if raw == existing]
+            for path in duplicates:
+                # An earlier restoration linked this record and stopped before
+                # removing the quarantined name; the bytes are already live.
+                try:
+                    path.unlink()
+                except OSError:
+                    retained.append({"record": path.name, "reason": "restore_failed"})
+            verified = [item for item in verified if item[0] not in duplicates]
+            keep("conflicting_record")
+            return
+        if len({raw for _path, raw in verified}) != 1:
+            keep("ambiguous_candidates")
+            return
+        source = verified[0][0]
+        try:
+            # ``link`` never replaces an existing name; the bytes are moved
+            # only after the restored name exists.
+            os.link(source, destination)
+        except FileExistsError:
+            keep("conflicting_record")
+            return
+        except OSError:
+            keep("restore_failed")
+            return
+        for path, _raw in verified:
+            try:
+                path.unlink()
+            except OSError:
+                # The record is live; the identical copy is removed on the
+                # next startup.
+                pass
+        restored.append(plan_id)
+
     def cleanup(self, *, now: datetime | None = None) -> int:
         now = now or datetime.now(timezone.utc)
         cutoff = now - timedelta(days=self.retention_days)
@@ -1368,5 +1597,12 @@ class ChangePlanRepository:
             "corruption_count": self.corruption_count,
             "write_failures": self.write_failures,
             "retention_days": self.retention_days,
+            "quarantine_restoration": {
+                **self.quarantine_restoration,
+                "retained_records": [
+                    dict(item)
+                    for item in self.quarantine_restoration["retained_records"]
+                ],
+            },
             "navigation": self.navigation_metrics(**({"validated": True} if validated else {})),
         }

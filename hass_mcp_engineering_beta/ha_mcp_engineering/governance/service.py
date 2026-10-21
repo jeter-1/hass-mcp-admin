@@ -751,6 +751,13 @@ class ChangeGovernanceService:
         bind_known_secrets = getattr(self.repository, "bind_known_secrets", None)
         if bind_known_secrets is not None:
             bind_known_secrets(lambda: self.sensitive_values)
+        # HAMCP-213 batch 4 (H6): records an older version quarantined on
+        # rollback return to service before cleanup and recovery see them.
+        restore_quarantined = getattr(
+            self.repository, "restore_quarantined_records", None
+        )
+        if restore_quarantined is not None:
+            restore_quarantined()
         self.repository.cleanup(now=self.now())
         self.repository.recover_incomplete(self._timestamp())
         self.task_repository.cleanup(now=self.now())
