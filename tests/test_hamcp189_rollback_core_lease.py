@@ -369,7 +369,9 @@ class RollbackCoreLeaseTests(ConfigurationPlanTestCase):
         # (O8 amendment, governance/service.py) re-checks the lease after the
         # final read and before the plan is saved.
         created = await self.applied(await self.create_automation_plan())
-        await self.assert_final_read_retirement_saves_nothing(created, 1)
+        # The current-state read, then the called-script capture read
+        # (HAMCP-213: the fixture automation calls script.set_hvac_comfort).
+        await self.assert_final_read_retirement_saves_nothing(created, 2)
 
     async def test_runtime_without_core_keeps_current_behavior(self):
         # Test and embedding compositions omit the Core runtime; production

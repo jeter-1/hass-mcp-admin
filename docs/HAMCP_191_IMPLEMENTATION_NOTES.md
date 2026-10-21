@@ -510,8 +510,11 @@ B (two Core log passes). Each reproduction is now a permanent test in
       callers write plan records: `ChangeGovernanceService._save` and
       `ChangePlanRepository._recovery_save`.
     - `governance/storage.py` may write files only through `save` (`open`
-      mode `x`, then `os.replace`) and `_quarantine` (`os.replace` into the
-      quarantine directory).
+      mode `x`, then `os.replace`), `_quarantine` (`os.replace` into the
+      quarantine directory) and, since HAMCP-213 (H6),
+      `_restore_quarantined_plan` (`os.link` of a quarantined record back to
+      its plan name, never overwriting, only after the stored-plan screen in
+      `_verified_quarantined_bytes`).
   - **Runtime.** `RuntimeWriterSpyTests` runs the 14 tests in `SPY_TESTS`.
     While they run, it spies on `os.replace`, `builtins.open` and `io.open`.
     A violation is either of:

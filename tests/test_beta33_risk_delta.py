@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 from pathlib import Path
 import re
 import sys
@@ -76,7 +77,7 @@ OBSTRUCTION_GUARD = {
 }
 
 
-def _operation_policy(current, proposed, *, action="update"):
+def _operation_policy(current, proposed, *, action="update", exact=False):
     risk_operation = (
         ChangeOperation.CREATE_AUTOMATION
         if action == "create"
@@ -110,6 +111,11 @@ def _operation_policy(current, proposed, *, action="update"):
         normalization_version=3,
         risk=risk,
     )
+    if exact:
+        # HAMCP-213 D3: the complete exact writer contract the service binds
+        # (validated proposal, apply-allowed typed writer and readback).
+        operation.validation_results = {"valid": True}
+        operation.risk = dataclasses.replace(risk, apply_allowed=True)
     return configuration_operation_policy(operation)
 
 
@@ -275,17 +281,73 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
             ],
         )
         decision = created["policy_decision"]
-        self.assertEqual(decision["policy_version"], "f2-v2")
+        self.assertEqual(decision["policy_version"], "f2-v3")
         self.assertEqual(decision["policy_class"], "elevated_admin")
         self.assertEqual(decision["physical_consequence"], "safety_critical")
-        self.assertEqual(decision["required_acknowledgements"], ["plan_approval"])
+        # HAMCP-213 D3/OD-1: a changed protected effect is owner-actionable
+        # through plan approval plus the separate safety-critical acknowledgement.
+        self.assertEqual(
+            decision["required_acknowledgements"],
+            ["plan_approval", "safety_critical_acknowledgement"],
+        )
         self.assertTrue(created["approval_actionable"])
-        _pending, _review, granted = await self.approve(created)
-        self.assertEqual(granted["status"], "approved")
+        # HAMCP-213 D1: plan approval alone leaves the separate
+        # safety-critical acknowledgement pending and never dispatches.
+        pending = self.service.approve(created["plan_id"], created["plan_hash"])
+        _review, csrf = await self.service.issue_external_csrf(
+            created["plan_id"], pending["challenge_id"]
+        )
+        plan_only = await self.service.decide_external_approval(
+            plan_id=created["plan_id"],
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=created["plan_hash"],
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal="home_assistant_admin_ingress:dev14-reviewer",
+        )
+        self.assertEqual(plan_only["status"], "approval_pending")
+        self.assertEqual(
+            plan_only["approval_action"], "safety_critical_acknowledgement"
+        )
+        stored = self.service.repository.get(created["plan_id"])
+        self.assertEqual(
+            stored.approval.bundle_state,
+            "pending_safety_critical_acknowledgement",
+        )
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created["plan_id"], created["plan_hash"])
         self.assertEqual(
             [call for call in self.gateway.calls if call[0] == "write"], []
         )
         self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
+
+        second_review, second_csrf = await self.service.issue_external_csrf(
+            created["plan_id"], plan_only["challenge_id"]
+        )
+        safety = second_review["safety_critical_acknowledgement"]
+        self.assertTrue(safety["available"])
+        self.assertEqual(
+            [row["operation_id"] for row in safety["objects"]],
+            ["change_garage_effect"],
+        )
+        granted = await self.service.decide_external_approval(
+            plan_id=created["plan_id"],
+            challenge_id=plan_only["challenge_id"],
+            expected_plan_hash=created["plan_hash"],
+            approval_kind=plan_only["approval_kind"],
+            approval_action=plan_only["approval_action"],
+            csrf_nonce=second_csrf,
+            decision="approve",
+            approver_principal="home_assistant_admin_ingress:dev14-reviewer",
+            acknowledged_objects=tuple(row["object_ref"] for row in safety["objects"]),
+            acknowledged_projection_hash=safety["projection_hash"],
+        )
+        self.assertEqual(granted["status"], "approved")
+        self.assertEqual(
+            [call for call in self.gateway.calls if call[0] == "write"], []
+        )
 
     def test_only_exact_appended_reviewed_guards_qualify(self):
         current = copy.deepcopy(CURRENT_GARAGE_AUTOMATION)
@@ -361,13 +423,29 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
 
         for name, proposed in cases.items():
             with self.subTest(name=name):
+                # HAMCP-213 D3: a non-qualifying change never uses the
+                # retained-effect exception. Without the exact writer
+                # contract it stays prohibited ...
                 decision = _operation_policy(current, proposed)
                 self.assertEqual(
                     decision.policy_class, ApprovalPolicyClass.PROHIBITED
                 )
                 self.assertIn(
-                    "safety_critical_effect_not_reviewed",
+                    "safety_critical_execution_contract_incomplete",
                     decision.reason_codes,
+                )
+                self.assertFalse(decision.safety_critical_acknowledgement)
+                # ... and with it the owner decides through the separate
+                # safety-critical acknowledgement (OD-1), not a refusal.
+                exact = _operation_policy(current, proposed, exact=True)
+                self.assertEqual(
+                    exact.policy_class, ApprovalPolicyClass.ELEVATED_ADMIN
+                )
+                self.assertEqual(exact.risk_delta, RiskDelta.HIGH)
+                self.assertTrue(exact.safety_critical_acknowledgement)
+                self.assertIn(
+                    "safety_critical_owner_acknowledgement_required",
+                    exact.reason_codes,
                 )
 
         retained_lock = copy.deepcopy(current)
@@ -379,10 +457,21 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
         ]
         guarded_lock = copy.deepcopy(retained_lock)
         guarded_lock["condition"].append(copy.deepcopy(OBSTRUCTION_GUARD))
-        self.assertEqual(
-            _operation_policy(retained_lock, guarded_lock).policy_class,
-            ApprovalPolicyClass.ELEVATED_ADMIN,
+        # HAMCP-213 review H3 / OD-6(b): the retained-effect exception never
+        # applies to an unlock or disarm. A changed condition changes when the
+        # unlock runs, so it needs the per-object acknowledgement (exact
+        # writer contract) or stays prohibited (no exact contract).
+        decision = _operation_policy(retained_lock, guarded_lock)
+        self.assertEqual(decision.policy_class, ApprovalPolicyClass.PROHIBITED)
+        self.assertIn(
+            "safety_critical_execution_contract_incomplete",
+            decision.reason_codes,
         )
+        exact = _operation_policy(retained_lock, guarded_lock, exact=True)
+        self.assertEqual(exact.policy_class, ApprovalPolicyClass.ELEVATED_ADMIN)
+        self.assertTrue(exact.safety_critical_acknowledgement)
+        self.assertEqual(exact.risk_delta, RiskDelta.HIGH)
+        self.assertIn("unlock_or_disarm_effect", exact.reason_codes)
 
     def test_tautological_template_guard_is_not_labeled_strict_reduction(self):
         current = copy.deepcopy(CURRENT_GARAGE_AUTOMATION)

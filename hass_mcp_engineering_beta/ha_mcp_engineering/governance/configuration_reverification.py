@@ -127,7 +127,7 @@ class ConfigurationReverification:
     async def _history(self, binding):
         service, runtime = self.service, self.runtime
         task = service._load_task(binding["task_id"])
-        plan = service._load(task.plan_id)
+        plan = service._load(task.plan_id, reverification_history=True)
         if (task.state != ExecutionTaskState.MANUAL_REVIEW_REQUIRED
                 or task.legacy_projection.get("execution_authority") != "f3_child_sequence"
                 or plan.contract_version not in {1, 2}

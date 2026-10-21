@@ -254,6 +254,37 @@ In particular:
   by itself sufficient to prohibit an otherwise exact operation. Ambiguous
   execution or authority continues to fail closed.
 
+### Owner decision record: HAMCP-213 safety-critical acknowledgement
+
+Date: 2026-10-20. Decision owner: Josh (`jeter-1`). Source: register row
+HAMCP-213, owner decisions OD-1 to OD-10 on
+[the HAMCP-213 design](../HAMCP_213_SAFETY_CRITICAL_APPROVAL_DESIGN.md).
+
+- **OD-6(b) supersedes part of ADR-012.** ADR-012 lists `lock.unlock` and
+  `alarm_control_panel.alarm_disarm` by name as prohibited. Under policy
+  `f2-v3`, an exact automation or script write that contains either service
+  is `elevated_admin` and is actionable after plan approval plus the
+  safety-critical acknowledgement. An unlock or disarm effect always requires
+  that acknowledgement, even when the before/after comparison is
+  `equivalent`. The rest of ADR-012 (snapshots, hash binding, stale-state
+  checks and dispatch protections) is unchanged, and an incomplete execution
+  contract remains `prohibited`.
+- **OD-1 and OD-3: the acknowledgement is a distinct consequence boundary.**
+  It is a second approval action inside `elevated_admin`, recorded per
+  protected object with checkboxes, for `changed` or `unresolved` effects and
+  for the unlock and disarm floor. The owner chose this boundary explicitly,
+  so it is not a duplicative approval collected for classifier severity
+  alone. An `equivalent` comparison without the floor needs plan approval
+  only (OD-5).
+- **OD-6(a)** extends the same path to automation and script creates, and
+  **OD-10** chooses the conservative rule: a reference-only step added before
+  a protected effect counts as `changed`.
+
+The runtime contract is in
+[External approval](../EXTERNAL_APPROVAL.md#safety-critical-acknowledgement).
+It grants no deployed authority until it is reviewed, released and deployed
+through their separate boundaries.
+
 Future controls and capability proposals must be evaluated for both risk
 reduction and operational usefulness. A new architecture decision that limits
 the north-star workflow must identify the demonstrated risk, why a more

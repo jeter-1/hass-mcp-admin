@@ -16,7 +16,10 @@ from ha_mcp_engineering.f3_runtime.runtime import (
     F3RuntimeIntegration, RECOVERY_SWEEP_TIME_BUDGET_SECONDS,
 )
 from ha_mcp_engineering.governance import configuration_rollback_eligibility as inverse
-from ha_mcp_engineering.governance.policy import policy_snapshot_matches
+from ha_mcp_engineering.governance.policy import (
+    persisted_f2_v2_policy_snapshot_matches,
+    policy_snapshot_matches,
+)
 from ha_mcp_engineering.governance.service import ChangeGovernanceService
 from ha_mcp_engineering.governance.storage import ChangePlanRepository
 from ha_mcp_engineering.audit import AuditLogger
@@ -614,8 +617,13 @@ class RollbackTests(ConfigurationPlanTestCase):
                     self.assertEqual(self.gateway.configs[(m['resource_type'],m['target_id'])],dict(next(op.current_config for op in self.repository.get(source['plan_id']).operations if op.target_id==m['target_id']), id=m['target_id']))
         source,_=await self.forward(prefix=1,full=False)
         result,request=await self.rollback(source)
-        self.assertEqual(result['status'],'rollback_unavailable')
-        self.assertIsNone(inverse.bound(self.repository.get(request['plan_id'])))
+        # HAMCP-213 D3/OD-1: an unproven minimal source gets no inverse proof;
+        # its exact inverse needs the separate safety-critical acknowledgement.
+        self.assertEqual(result['status'],'rollback_plan_created')
+        unproven=self.repository.get(request['plan_id'])
+        self.assertIsNone(inverse.bound(unproven))
+        self.assertEqual([a.value for a in unproven.policy_decision.required_acknowledgements],
+                         ['plan_approval','safety_critical_acknowledgement'])
 
     async def test_shipped_writer_cached_prohibited_and_historical_hashes_unchanged(self):
         for line in (HISTORICAL/'SHA256SUMS').read_text().splitlines():
@@ -627,7 +635,13 @@ class RollbackTests(ConfigurationPlanTestCase):
         _, request=await self.rollback(source)
         self.assertNotEqual(request['plan_id'],old_id)
         self.assertEqual(path.read_bytes(),before)
-        old=self.service._load(old_id)
+        # HAMCP-213 f2-v3: the shipped f2-v2 inverse is exact historical
+        # evidence only; it can be read but never loaded as current authority.
+        old=self.repository.get(old_id)
+        self.assertTrue(persisted_f2_v2_policy_snapshot_matches(old))
+        self.assertFalse(policy_snapshot_matches(old))
+        with self.assertRaises(GovernanceError) as refused:self.service._load(old_id)
+        self.assertEqual(refused.exception.code,ErrorCode.POLICY_SNAPSHOT_MISMATCH)
         self.assertEqual(old.policy_decision.policy_class.value,'prohibited')
         self.assertIsNone(inverse.bound(old))
         await self.approve(request)
@@ -705,7 +719,11 @@ class RollbackTests(ConfigurationPlanTestCase):
                             'proof':inverse.bound(plan)})
         unmarked=self.repository.get(public['plan_id'])
         self.assertIsNone(inverse.bound(unmarked))
-        self.assertEqual(unmarked.policy_decision.policy_class.value,'prohibited')
+        # HAMCP-213 D3/OD-1: copied markers grant no proof; the exact protected
+        # change needs the owner's separate safety-critical acknowledgement.
+        self.assertEqual(unmarked.policy_decision.policy_class.value,'elevated_admin')
+        self.assertEqual([a.value for a in unmarked.policy_decision.required_acknowledgements],
+                         ['plan_approval','safety_critical_acknowledgement'])
         self.assertEqual(self.writes(),[])
 
     async def test_source_receipt_unknown_missing_wrong_binding_and_corruption_refuse_locally(self):

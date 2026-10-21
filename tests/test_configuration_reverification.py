@@ -70,7 +70,8 @@ class ConfigurationReverificationTests(unittest.IsolatedAsyncioTestCase):
         self.binding = {"task_id": self.provenance["task_id"],
                         "expected_plan_hash": self.provenance["plan_hash"],
                         "request_id": str(uuid.uuid4())}
-        self.plan = self.service._load(self.provenance["plan_id"])
+        # The same loader as reverification: the beta6 plan is f2-v2 history.
+        self.plan = self.service._load(self.provenance["plan_id"], reverification_history=True)
         self.gateway.configs.clear()
         self.gateway.calls.clear()
         for op in self.plan.operations:

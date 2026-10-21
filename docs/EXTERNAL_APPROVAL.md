@@ -11,8 +11,12 @@ F2 authority version 3 derives policy from the immutable plan. A
 `standard_admin` plan requires one `plan_approval`. An `elevated_admin` plan
 requires plan approval followed by a distinct
 `elevated_risk_acknowledgement` from the same authenticated administrator.
-This is not two-person control. A `prohibited` plan creates no actionable
-challenge. See ADR-012 in the architecture decision records and the
+This is not two-person control. Since HAMCP-213 (policy `f2-v3`), an
+automation or script plan whose protected physical effects change, or cannot be
+determined, requires plan approval followed by a per-object
+`safety_critical_acknowledgement` instead (see
+**Safety-critical acknowledgement** below). A `prohibited` plan creates no
+actionable challenge. See ADR-012 in the architecture decision records and the
 active [`V2_2_0_BETA15_ACCEPTANCE.md`](V2_2_0_BETA15_ACCEPTANCE.md).
 
 The Beta 7 correction makes that non-actionability consistent across legacy
@@ -278,7 +282,11 @@ fallback principal `home_assistant_admin_ingress`; the record then stores
 written before HAMCP-184 stored `true` for such decisions; they are not
 rewritten, and plan reads project them from the recorded principal so old and
 new records display the same truth. Plans with no Ingress decision report
-`null` with reason `no_external_approver_exists`. Audit records carry only
+`null` with reason `no_decision_recorded`, or `not_approvable` when the plan is
+prohibited (HAMCP-213 OD-4). These replace the earlier
+`no_external_approver_exists`, which wrongly suggested that no approver
+existed. Stored records are not rewritten; only the plan-read projection
+changed. Audit records carry only
 `approval_principal_present` and execution tasks carry no separation claim.
 
 Since HAMCP-205 the anonymous fallback principal is no longer an approver.
@@ -302,12 +310,77 @@ reused. Reconsideration requires a new plan. Rejected plans remain readable as
 historical records but are not open work, pending authorization, or blockers in
 handoffs.
 
+## Safety-critical acknowledgement
+
+HAMCP-213 adds a second ordered action, `safety_critical_acknowledgement`, for
+automation and script updates and creates that touch a protected physical
+object: a lock, alarm panel or valve; a cover whose entity id contains
+`garage`; or a water control matched by entity id. Policy compares the current
+and proposed configuration's protected effects (model
+`physical-effect-comparison-v1`) and records one verdict per operation:
+
+| Verdict | Meaning | Required actions |
+| --- | --- | --- |
+| `none` | No protected effect before or after | Standard or elevated policy as before |
+| `equivalent` | Every protected effect keeps its service, object, order and reachability | `plan_approval` only (the page stays elevated) |
+| `changed` | An effect, its reachability, the run mode or the run structure around it changed | `plan_approval`, then `safety_critical_acknowledgement` |
+| `unresolved` | A possible protected effect's service or target cannot be determined (templated, variable-driven, or an area, device, floor or label selector), or a called script cannot be resolved | `plan_approval`, then `safety_critical_acknowledgement` |
+
+An unlock or disarm effect always needs the acknowledgement, even when it is
+`equivalent` (OD-6(b), ADR-022). Where one is or may be present, the Beta 33
+retained-effect proof, the garage inverse and the retry transfer do not
+apply. A notification or log step that can run before a protected effect is
+compared in full (nested data, target, `continue_on_error`, `enabled` and
+position), so any change to it is `changed`. A call to a script counts as the
+protected effects of that script (and of scripts it calls, up to 8 levels),
+reached at the calling step, so the row names the protected object and the
+effect service is shown as `script.<key>>cover.close_cover`. A templated,
+unknown, unreadable or blueprint-backed called script, a cycle or a deeper
+chain is `unresolved` and carries the unlock and disarm floor. An incomplete execution contract stays
+`prohibited`. A plan whose acknowledgement would name more than 32 objects is
+refused at creation.
+
+After plan approval succeeds, the panel shows a new challenge listing every
+object that needs acknowledgement: operation, object id, verdict, protection
+(`effect_cannot_be_determined` for an unresolved target), and the before and
+after effects. Each object has its own required checkbox, so the administrator
+cannot submit the form without acknowledging every listed object. The decision
+POST carries the opaque per-object tokens (`ack_object`) and the comparison
+hash (`ack_projection_hash`). Governance recomputes the comparison from the
+immutable plan. It records the acknowledgement only when the submitted token
+set equals the expected set exactly (no missing, extra, duplicate or unknown
+token) and the hash matches. Otherwise it returns
+`safety_critical_acknowledgement_mismatch` and records nothing. The same
+administrator rule, CSRF single use, expiry and stale-page refusals apply as
+for the elevated-risk acknowledgement.
+
+The action is recorded with action authority version `4`, and it binds the
+comparison hash and the acknowledged object set. For compatibility the record
+is stored in the persisted `elevated_risk_acknowledgement` slot. That is a
+historical name; the record's `kind` says which action it is. No MCP tool can
+grant this action; it exists only on the Ingress panel.
+
+Dispatch checks the acknowledgement independently of the bundle state. Before
+any write it recomputes the comparison and refuses with
+`safety_critical_acknowledgement_required` unless an acknowledgement exactly
+matches the current objects and hash. Plan approval alone never dispatches such
+a plan. The F3 operational adapter refuses a bundle bound to this action.
+
+A script that the same plan changes is compared, for each caller, against both
+its current body and the body the plan proposes, so a plan that turns a called
+script into an unlock while removing a caller's guard needs this action on the
+caller. Before each caller write, on the service path and in F3 apply, resume
+and recovery, the live script must match its exact expected state at that
+point in the plan's order (pre-plan before the plan writes it, proposed
+after); otherwise the caller refuses as `stale_target_state` with no write.
+
 ## Apply and rollback enforcement
 
 Apply requires every prior governance gate plus authority version `3`, the
 external Ingress channel and principal, an Ingress-identified administrator
 principal (never the anonymous fallback; HAMCP-205), the exact challenge-bound plan and policy hashes, the required ordered action set,
-same-administrator confirmation for elevated policy, approval kind `apply`,
+same-administrator confirmation for elevated policy, the exact per-object
+safety-critical acknowledgement when policy requires it, approval kind `apply`,
 unexpired and unconsumed approval, and a non-rejected plan. Without that record,
 `apply_change_plan` returns `external_approval_required` before a Home Assistant
 write, provider write dispatch, apply snapshot, approval consumption, or index
@@ -335,7 +408,8 @@ principal, exact binding, kind, and timestamps when applicable; they never
 expose CSRF nonces, cookies, Ingress credentials, or raw request headers.
 
 Bundle states are `pending_plan_approval`,
-`pending_elevated_risk_acknowledgement`, `fully_approved`, `consumed`,
+`pending_elevated_risk_acknowledgement`,
+`pending_safety_critical_acknowledgement`, `fully_approved`, `consumed`,
 `rejected`, `expired`, and `invalidated`. The two elevated action records have
 separate challenge IDs and timestamps but bind the same plan and policy hashes.
 
@@ -343,6 +417,9 @@ Audit events include `external_approval_requested`, optional bounded
 `external_approval_viewed`, `external_approval_granted`,
 `elevated_risk_acknowledgement_requested`,
 `elevated_risk_acknowledgement_granted`,
+`safety_critical_acknowledgement_requested`,
+`safety_critical_acknowledgement_granted`,
+`safety_critical_acknowledgement_failed`,
 `external_approval_rejected`, `external_approval_expired`,
 `external_approval_invalidated`, and `external_approval_consumed`. Records may
 contain bounded IDs, channel, principal, kind, result, reason, timestamp and
@@ -353,8 +430,40 @@ Governance health additively reports whether external approval and the Ingress
 UI are configured, authority version, policy-class counts, pending plan and
 elevated actions, granted elevated acknowledgements, consumed standard and
 elevated bundles, prohibited decisions, policy/principal/sequence failures,
-legacy approval counts, and the last safe approval failure category. These
-metrics are observability only and never authorize a change.
+legacy approval counts, and the last safe approval failure category. The
+elevated-acknowledgement counters do not count safety-critical
+acknowledgements. These metrics are observability only and never authorize a
+change.
+
+## Rollback from beta.29 to beta.28
+
+beta.29 stamps every new plan with policy version `f2-v3`, which beta.28
+cannot read. beta.28's plan storage is unchanged from beta.27's, so this
+section applies equally to a rollback to beta.27. On load beta.28 moves each
+such plan record, pending or terminal, byte for byte to
+`quarantine/<plan_id>.<seconds>.corrupt` in the plan store. **beta.28 (like
+beta.27) may delete those records:** when that move fails (for example, the
+quarantine directory is not writable), its released code removes the record
+instead. A released version cannot be changed; the backup below is the
+protection.
+
+Roll back only in this order:
+
+1. Take a fresh Home Assistant backup that includes the Engineering add-on and
+   its data (a full backup does).
+2. Finish or reject every pending plan: apply it, or reject it.
+3. Roll back to beta.28.
+
+On re-upgrade, startup restores each quarantined record whose integrity it
+verifies (it parses, its bytes are exactly the canonical record, its
+identifier and namespace match, and it passes the stored-plan content screen)
+to normal repository access. Restoration never replaces an existing record, is
+idempotent and is logged. Records it cannot verify stay quarantined and are
+listed, with a reason, in plan storage health under `quarantine_restoration`.
+A record the older version deleted can only be recovered from the step-1
+backup.
+Restoration grants no authority: a restored plan's approvals, expiry and
+dispatch checks are evaluated exactly as for any stored plan.
 
 ## Upgrade to authority version 3
 
