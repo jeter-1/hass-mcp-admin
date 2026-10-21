@@ -22,7 +22,10 @@ Builds on 2.4.1-beta.25.
   the report partial.
 - Report a written value as `parser_dependent`, not `fails_core_schema`,
   when its YAML 1.1 readings change Core's verdict. Examples are unquoted
-  `off` or `yes`, `1:20`, `010` and exponent floats.
+  `off` or `yes`, `1:20` and exponent floats. A plain integer is definite,
+  and `coverage.yaml_numeric_spelling` discloses that a leading-zero spelling
+  such as `010` is not observed. Quoted strings, and `y` or `n`, are definite
+  strings.
 - Add `get_unregistered_entities`, a read-only tool that lists entities with a
   state but no registry entry. It reports the platform (from
   `entity/source`), whether the state was written directly, and the config

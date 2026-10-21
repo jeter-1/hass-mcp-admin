@@ -23,6 +23,8 @@ the runtime state, and Core's per-entity answer beside the computed filter,
 with `filter_drift` on disagreement. `db_url`, reference names and
 unrecognized keys are never returned. A value whose YAML 1.1 readings would
 change Core's verdict is `parser_dependent`, never `fails_core_schema`.
+A plain integer is definite, with the standing numeric-spelling disclosure,
+and a quoted string is a definite string.
 Without the YAML reader admitted, the tool still reports runtime and Core's
 entity answers, as partial. Each tool sanitizes its complete response once,
 with the known secrets, at a single exit point.

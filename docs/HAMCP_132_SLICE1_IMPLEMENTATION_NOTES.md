@@ -54,26 +54,61 @@ tests in `tests/test_hamcp132_recorder_settings.py` or
    `script_dependency_reader` (HAMCP-212) is extracted unchanged into
    `UpstreamReadGateway._bounded_route_current`. The new `yaml_config_reader`
    reuses it. The script reader's behaviour and its tests are unchanged.
-6. **YAML 1.2 versus 1.1 (corrected after review of `de1433f`, M1).**
+6. **YAML 1.2 versus 1.1 (corrected after review of `de1433f`, M1; owner
+   decisions of 2026-10-20 applied).**
    ha-mcp's reader parses YAML 1.2; Home Assistant loads YAML 1.1. The reader's
    value cannot show how a value was spelled: unquoted `off` and quoted
    `"off"` both reach it as the string `off`. Validating the reader's value
    is therefore kept apart from Core-schema validity.
 
    `projection.yaml11_readings` ports the PyYAML 6.0 implicit resolver and
-   constructors. A test checks it against the installed PyYAML. It lists every
-   other value YAML 1.1 could have produced for the same written text:
-   - **A string the reader returned** may have been unquoted. Covered forms:
-     - the boolean family (`yes`/`no`/`true`/`false`/`on`/`off` in
-       their three cases);
-     - the spec booleans `y`/`Y`/`n`/`N`;
-     - YAML 1.1 integers: underscores, `0b`, base 8 with a leading `0`,
-       `0x` and sexagesimal `1:20`;
-     - YAML 1.1 floats, including sexagesimal floats, `.inf` and `.nan`.
-   - **An integer** may have been written with a leading zero. YAML 1.1
-     reads `010` as 8 and `08` as a string.
+   constructors. A test checks it against the installed PyYAML 6.0.2. It
+   lists every other value YAML 1.1 could have produced for the same text:
+   - **A string the reader returned** may have been unquoted only if the
+     reader's own YAML 1.2 resolver keeps its plain spelling a string.
+     `projection._YAML12_NOT_STRING` ports the ruamel.yaml 0.19.1 YAML 1.2
+     implicit resolvers (`resolver.py`, the `(1, 2)` bool, float, int and null
+     entries). 0.19.1 is the version in the reviewed component dependency
+     contract (`tests/fixtures/ha_mcp_860_component_dependencies.json`). The
+     component's manifest requires only `ruamel.yaml>=0.18.0`, so the installed
+     version is not observed, and `coverage.yaml_parse` says so.
+     - **Quoted (owner decision 3).** ruamel reads plain `010`, `10`, `0x1F`,
+       `0b101`, `1_000`, `0o10`, `1.5`, `1e3`, `.inf`, `true`, `null` and the
+       empty scalar as other types. A returned string with that text was
+       quoted, and a quoted scalar is a string under YAML 1.1 too. It is
+       validated as a definite string: `commit_interval: "010"` is 10,
+       `domains: ["true"]` stays `true`.
+     - **Possibly unquoted.** The remaining YAML 1.1 forms are checked: the
+       boolean family (`yes`/`no`/`on`/`off` in their three cases) and
+       sexagesimal integers and floats (`1:20`, `1:20.5`). `true`/`false`
+       are booleans in both versions, so they never reach here as plain text.
+     - **`y`/`n` (owner decision 2).** PyYAML 6.0.2's boolean resolver is
+       `^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$`
+       (`yaml/resolver.py`, registered for the first characters
+       `yYnNtTfFoO`). It does not include `y`, `Y`, `n` or `N`. Pinned Core
+       2026.10.1 constrains `annotatedyaml==1.0.2` and `PyYAML==6.0.3`
+       (`homeassistant/package_constraints.txt`). annotatedyaml 1.0.2's
+       `loader.py` subclasses `yaml.CSafeLoader` (or `yaml.SafeLoader`) and
+       registers constructors only, never an implicit resolver. Its scalar
+       constructor wraps strings that are already resolved. PyYAML 6.0.3's
+       `resolver.py` and `constructor.py` are byte-identical to the installed
+       6.0.2. The wheels were inspected, not installed: annotatedyaml 1.0.2
+       cp313 manylinux sha256
+       `75927ec682f188efe25309e259c115e3976b702900ce1be93a971b328c87a10a`, and
+       PyYAML 6.0.3 cp313 manylinux sha256
+       `0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6`.
+       So these are plain strings under both versions and stay definite. A
+       test asserts this against the installed resolver.
+   - **An integer (owner decision 1)** is reported definite, as parsed. Its
+     written spelling is not observed. `coverage.yaml_numeric_spelling`
+     carries the standing disclosure: an integer written with a leading zero
+     (for example `010`) would be read by Home Assistant's YAML 1.1 loader as
+     octal (`08` and `09` as strings). So `purge_keep_days: 10`, `14`, `30`
+     and `365` are definite. Integers are never marked `parser_dependent`.
    - **A finite float** may have been written without a decimal point. YAML
-     1.1 reads `1e3` as a string.
+     1.1 reads `1e3` as a string. This is unchanged: the owner decisions name
+     integers only, so floats whose readings change Core's verdict stay
+     `parser_dependent`. They are flagged for the architect below.
 
    Each reading goes through the ports of Core's validators: `cv.boolean`,
    and `Coerce(int)` with the schema minimum. The outcomes decide the report:
@@ -84,8 +119,8 @@ tests in `tests/test_hamcp132_recorder_settings.py` or
      carries the reader's value as `as_read`, plus each reading's spelling,
      validity and coerced value, and the omission
      `setting_parser_dependent:<key>`. This covers `commit_interval: off` and
-     `purge_keep_days: yes` (1.1: 0 and 1, valid), `commit_interval: 1:20`
-     (1.1: 80) and `commit_interval: 010` (1.1: 8).
+     `purge_keep_days: yes` (1.1: 0 and 1, valid) and `commit_interval: 1:20`
+     (1.1: 80).
    - **Every reading fails:** only then is the value reported
      `invalid: true`, `reason: fails_core_schema`, with `as_written` for a
      scalar. For example, `commit_interval: never` fails under any parser.
@@ -97,24 +132,20 @@ tests in `tests/test_hamcp132_recorder_settings.py` or
    fails under every reading. For entities, Core's own
    `recorder/entity_options/get` answer stays authoritative.
 
-   Conservative choices, for the architect:
-   - **Leading zeros.** Any integer of 8 or more whose digits are all 0–7
-     could have been written with a leading zero and read in base 8. So
-     common values such as `purge_keep_days: 10`, `14`, `30` or `365` become
-     `parser_dependent`. Integers containing an 8 or a 9 stay definite,
-     because `Coerce(int)` turns the 1.1 string `"09"` back into 9. The review called the leading-zero
-     difference already disclosed. The alternative is to keep these definite
-     and rely on that disclosure.
-   - **Spec booleans `y`/`n`.** These are kept as possible 1.1 booleans because
-     the annotatedyaml 1.0.2 loader could not be inspected (PyPI was
-     unreachable). PyPI's resolver does not treat them as booleans.
-   - **Quoted numeric strings.** A quoted `"010"` is also `parser_dependent`.
-     The reader's resolver is not pinned, so a string is never assumed to have
-     been quoted.
+   Two integer spellings are undetectable and disclosed in
+   `coverage.yaml_numeric_spelling` (owner decision 4): a leading zero, and a
+   `0o`-prefixed integer, which is a number under YAML 1.2 but a string under
+   YAML 1.1.
 
-   One case is still unobservable: a `0o`-prefixed integer is a number under
-   YAML 1.2 but a string under YAML 1.1. `coverage.yaml_numeric_spelling`
-   discloses it.
+   For the architect:
+   - **Floats.** A float is still `parser_dependent` when its exponent
+     spelling would change Core's verdict. Decision 1's rationale (the
+     spelling is not observed) would make it definite with a disclosure. That
+     extension was not made without an owner decision.
+   - **`%YAML 1.1` directive.** ruamel honours a `%YAML 1.1` directive. In
+     that case the reader already parses YAML 1.1, and a string treated as
+     possibly unquoted was in fact quoted. The report is conservative
+     (`parser_dependent`), not wrong.
 7. **No candidate definitions.** The design allowed optional
    `candidate_definition` notes for registry-less entities. Slice 1 offers
    none: `definition_location` is always `not_determinable`, and
@@ -192,3 +223,11 @@ cover items 6 and 12. They include omissions appended after sanitization, and
 a parser-dependent value reported as `fails_core_schema`. All must be killed.
 Three earlier fragments now target the final-envelope variable. The
 response-byte mutation P9 returns the collapsed lists without their omission.
+
+The owner decisions of 2026-10-20 replace M6 and add five mutations, all
+of which must be killed:
+- M6 reports a plain integer as spelling-dependent;
+- M9 treats a quoted string as unquoted;
+- M10 reads `y`/`n` as YAML 1.1 booleans;
+- M11 drops the numeric-spelling disclosure from coverage;
+- M12 and M13 lose the YAML 1.2 quoting signal for booleans and floats.

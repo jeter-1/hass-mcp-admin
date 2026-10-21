@@ -52,10 +52,18 @@ listed in `sources` with its own status and reason:
   cannot show how a value was spelled. When the YAML 1.1 readings of the
   same text would change Core's verdict, the setting is
   `validity: parser_dependent` with each reading and `value: null`. Examples
-  are unquoted `off` or `yes`, sexagesimal `1:20`, a leading-zero `010` and
-  an exponent float. Only a value that fails Core's schema under every
-  reading is `invalid` with `fails_core_schema`. It is never replaced by the
-  default.
+  are unquoted `off` or `yes`, sexagesimal `1:20` and an exponent float.
+  Only a value that fails Core's schema under every reading is `invalid`
+  with `fails_core_schema`. It is never replaced by the default. Under the
+  owner decisions of 2026-10-20:
+  - a plain integer such as `10`, `14`, `30` or `365` is definite.
+    `coverage.yaml_numeric_spelling` always says that the spelling is not
+    observed, and that a leading-zero integer such as `010` would be octal
+    in YAML 1.1;
+  - a string the reader could only have returned because it was quoted
+    (`"010"`, `"true"`, `"1.5"`) is a definite string under both versions;
+  - `y` and `n` are plain strings, because PyYAML's bool resolver does not
+    include them.
 - **`db_url` is never returned.** The report gives only
   `value_withheld: true`, whether it is configured, and `recorder/info`'s
   `default_location`. A `!secret` or `!env_var` reference is withheld,
@@ -152,7 +160,8 @@ a partial difference is never reported.
   - `!include` targets and package contents are not read;
   - YAML 1.2 parsing can differ from Home Assistant's YAML 1.1. A value
     where this can change Core's verdict is reported `parser_dependent`,
-    never invalid. This is conservative: for example, `purge_keep_days: 10`
-    may have been written `010`. A `0o`-prefixed integer cannot be detected,
-    and `coverage.yaml_numeric_spelling` says so;
+    never invalid. A plain integer is reported as the reader parsed it, so
+    `purge_keep_days: 10` is definite even though it may have been written
+    `010`, which YAML 1.1 reads as 8. A `0o`-prefixed integer cannot be
+    detected either. `coverage.yaml_numeric_spelling` discloses both;
   - registry-less entities cannot be traced to a file.

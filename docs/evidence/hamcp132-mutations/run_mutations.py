@@ -23,7 +23,10 @@ removed). ``A*`` probe the authority checks, ``Y*`` the fixed YAML paths and
 envelope identity. The review correction adds ``H*`` (omissions appended after
 sanitization, a redaction that leaves the report complete), ``M*`` (a value
 whose YAML 1.1 reading differs reported as ``fails_core_schema`` or as a
-definite value, each YAML 1.1 form ignored) and the independent reviewer's own
+definite value, each YAML 1.1 form ignored; after the owner decisions of
+2026-10-20, a plain integer made spelling-dependent, a quoted string or
+``y``/``n`` treated as a YAML 1.1 boolean or number, the integer-spelling
+disclosure dropped) and the independent reviewer's own
 ``REVIEW-1``.
 
 Usage:
@@ -269,12 +272,23 @@ MUTATIONS = [
       (PROJECTION, 'if _YAML11_BOOL.match(value):', 'if False:')),
     m("M5-yaml11-sexagesimal-ignored", SPELLING,
       (PROJECTION, '|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)\\Z""", re.X)', ')\\Z""", re.X)')),
-    m("M6-leading-zero-base-8-ignored", SPELLING,
-      (PROJECTION, 'if abs(value) >= 8 and set(digits) <= set("01234567"):', 'if False:')),
+    m("M6-plain-integer-reported-spelling-dependent", SPELLING,
+      (PROJECTION, '    if type(value) is float and math.isfinite(value):',
+       '    if type(value) in (int, float) and math.isfinite(value):')),
     m("M7-exponent-float-ignored", SPELLING,
       (PROJECTION, 'if type(value) is float and math.isfinite(value):', 'if False:')),
     m("M8-parser-dependent-omission-dropped", SPELLING,
       (PROJECTION, '                self.omit(f"setting_parser_dependent:{key}")', '                pass')),
+    m("M9-quoted-string-treated-as-unquoted", SPELLING,
+      (PROJECTION, '        if _YAML12_NOT_STRING.match(value):\n            return None\n', '')),
+    m("M10-spec-booleans-y-n-read-as-yaml11-booleans", SPELLING,
+      (PROJECTION, '|on|On|ON|off|Off|OFF)\\Z")', '|on|On|ON|off|Off|OFF|y|Y|n|N)\\Z")')),
+    m("M11-numeric-spelling-disclosure-dropped", SPELLING,
+      (SERVICE, '"yaml_numeric_spelling": c.YAML_NUMERIC_SPELLING_LIMITATION,', '')),
+    m("M12-yaml12-boolean-quoting-lost", SPELLING,
+      (PROJECTION, '(?:true|True|TRUE|false|False|FALSE\n', '(?:\n')),
+    m("M13-yaml12-float-quoting-lost", SPELLING,
+      (PROJECTION, '|[-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?\n', '\n')),
     m("REVIEW-1-reverse-entity-options-association", REVIEW,
       (PROJECTION, 'ok, value = outcomes[index]', 'ok, value = outcomes[-index - 1]')),
 ]
