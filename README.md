@@ -1,5 +1,14 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.26** is a dependency security release (HAMCP-217).
+It upgrades `certifi` to 2026.10.19 for GHSA-6q48-6c7w-9gw2, removing the
+`emSign ECC Root CA - G3` root from the bundle that Engineering's httpx MCP
+clients trust. No runtime code, tool, schema or descriptor changes. Read the
+[2.4.1-beta.26 release notes](docs/V2_4_1_BETA26_RELEASE_NOTES.md) and
+[2.4.1-beta.26 acceptance contract](docs/V2_4_1_BETA26_ACCEPTANCE.md).
+
+It builds on beta.25 below.
+
 Engineering **2.4.1-beta.25** reads script configuration from what Home
 Assistant has loaded (HAMCP-212, fast dependency index part 2). The index
 build's single WebSocket batch adds two fixed, read-only commands per available
@@ -267,7 +276,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.25 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.26 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
