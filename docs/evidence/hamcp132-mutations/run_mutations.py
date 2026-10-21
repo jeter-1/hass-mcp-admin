@@ -20,7 +20,11 @@ asserted, a ``search/related`` failure, an ambiguous entry guessed or a
 truncation reported as complete) and ``S*`` (a command reachable outside the
 allowlist, a loosened identity pattern, the Core gate or pre-SDK validation
 removed). ``A*`` probe the authority checks, ``Y*`` the fixed YAML paths and
-envelope identity.
+envelope identity. The review correction adds ``H*`` (omissions appended after
+sanitization, a redaction that leaves the report complete), ``M*`` (a value
+whose YAML 1.1 reading differs reported as ``fails_core_schema`` or as a
+definite value, each YAML 1.1 form ignored) and the independent reviewer's own
+``REVIEW-1``.
 
 Usage:
     python docs/evidence/hamcp132-mutations/run_mutations.py \
@@ -61,6 +65,9 @@ ROW7 = "design 7: reconciliation platform, search failure partial"
 ROW8 = "design 7: no write reachability, Core gate, exact batch allowlist"
 AUTH = "authority and caller checks"
 YAML = "fixed YAML paths and envelope identity"
+FINAL = "H1: the complete final envelope is sanitized once, nothing appended after"
+SPELLING = "M1: a value whose YAML 1.1 reading differs is parser_dependent"
+REVIEW = "independent review: each Core verdict stays associated with its requested entity"
 
 
 def m(identifier, item, *replacements):
@@ -101,8 +108,8 @@ MUTATIONS = [
       (PROJECTION, 'return {"value": None, "origin": "configured", "value_withheld": True,',
        'return {"value": value, "origin": "configured", "value_withheld": True,')),
     m("L3-recorder-known-secrets-dropped", ROW2,
-      (SERVICE, 'sanitize_untrusted_data(result, known_secrets=self.known_secrets,',
-       'sanitize_untrusted_data(result, known_secrets=(),')),
+      (SERVICE, 'sanitize_untrusted_data(envelope, known_secrets=self.known_secrets,',
+       'sanitize_untrusted_data(envelope, known_secrets=(),')),
     m("L4-unrecognized-keys-reported", ROW2,
       (PROJECTION, '            result["unrecognized_key_count"] = unrecognized',
        '            result["unrecognized_key_count"] = unrecognized\n'
@@ -114,7 +121,7 @@ MUTATIONS = [
     m("P3-partial-entity-options-complete", ROW3,
       (SERVICE, '"complete" if answered == len(entity_ids) else "partial",', '"complete",')),
     m("P4-report-always-complete", ROW3,
-      (SERVICE, 'result["complete"] = not projector.omissions and all(', 'result["complete"] = True or all(')),
+      (SERVICE, 'envelope["complete"] = not projector.omissions and all(', 'envelope["complete"] = True or all(')),
     m("P5-source-omission-dropped", ROW3,
       (SERVICE, '                projector.omit(f"source_{source[\'status\']}:{source[\'source\']}")',
        '                pass')),
@@ -127,7 +134,10 @@ MUTATIONS = [
     m("P8-entity-reply-shape-loosened", ROW3,
       (PROJECTION, 'set(value) == {"recording_disabled_by"}', '"recording_disabled_by" in value')),
     m("P9-response-budget-trim-silent", ROW3,
-      (SERVICE, '            projector.omit("filter_lists_not_listed_response_bytes")', '            pass')),
+      # The collapsed lists are returned without the omission.
+      (SERVICE, '                projector.omit("filter_lists_not_listed_response_bytes")\n                changed = True',
+       '                return sanitize_untrusted_data({**envelope, "filters": filters}, known_secrets=self.known_secrets,'
+       ' max_string=c.MAX_FILTER_TEXT).value')),
     m("F1-cases-4a-4b-swapped", ROW4,
       (FILTER, '    if case == INCLUDE_DOMAIN_OR_GLOB:\n        def entity_filter_4a',
        '    if case == EXCLUDE_DOMAIN_OR_GLOB:\n        def entity_filter_4a'),
@@ -180,10 +190,10 @@ MUTATIONS = [
     m("R10-domains-string-split", ROW7,
       (RECON, '"domains": list(domains) if type(domains) is tuple else domains}', '"domains": list(domains)}')),
     m("R11-reconciliation-known-secrets-dropped", ROW7,
-      (RECON, 'sanitize_untrusted_data(result, known_secrets=self.known_secrets, max_string=255)',
-       'sanitize_untrusted_data(result, known_secrets=(), max_string=255)')),
+      (RECON, 'sanitize_untrusted_data(envelope, known_secrets=self.known_secrets, max_string=255)',
+       'sanitize_untrusted_data(envelope, known_secrets=(), max_string=255)')),
     m("R12-byte-budget-trim-silent", ROW7,
-      (RECON, '            omit("entities_not_listed_response_bytes")', '            pass')),
+      (RECON, '                omit("entities_not_listed_response_bytes")', '                pass')),
     m("S1-purge-reachable-in-batch", ROW8,
       (WEBSOCKET, '    "recorder/info": frozenset({"type"}),\n}',
        '    "recorder/info": frozenset({"type"}),\n    "recorder/purge": frozenset({"type"}),\n}'),
@@ -237,6 +247,36 @@ MUTATIONS = [
     m("Y4-yaml-error-code-reflected", YAML,
       (PROJECTION, 'return None, code if code in c.YAML_FAILURE_CODES else "yaml_read_failed"',
        'return None, code if code else "yaml_read_failed"')),
+    m("H1-recorder-omissions-appended-after-sanitization", FINAL,
+      (SERVICE, 'envelope = {**report, "omissions": list(projector.omissions)}', 'envelope = dict(report)'),
+      (SERVICE, 'return sanitized.value', 'return {**sanitized.value, "omissions": list(projector.omissions)}')),
+    m("H2-reconciliation-omissions-appended-after-sanitization", FINAL,
+      (RECON, 'envelope = {**result, "omissions": list(omissions)}', 'envelope = dict(result)'),
+      (RECON, 'return sanitized.value', 'return {**sanitized.value, "omissions": list(omissions)}')),
+    m("H3-recorder-redaction-not-partial", FINAL,
+      (SERVICE, 'and "redacted_by_policy" not in projector.omissions:', 'and False:')),
+    m("H4-reconciliation-redaction-not-partial", FINAL,
+      (RECON, 'and "redacted_by_policy" not in omissions:', 'and False:')),
+    m("M1-parser-dependent-reported-fails-core-schema", SPELLING,
+      (PROJECTION, 'if any(outcome != outcomes[0] for outcome in outcomes[1:]):\n                # The reader',
+       'if outcomes[0][0] and any(outcome != outcomes[0] for outcome in outcomes[1:]):\n                # The reader')),
+    m("M2-parser-dependent-reported-definite", SPELLING,
+      (PROJECTION, 'if any(outcome != outcomes[0] for outcome in outcomes[1:]):\n                # The reader',
+       'if False:\n                # The reader')),
+    m("M3-parser-dependent-filter-list-fails-core-schema", SPELLING,
+      (PROJECTION, 'return "parser_dependent" if dependent else None', 'return "fails_core_schema" if dependent else None')),
+    m("M4-yaml11-boolean-family-ignored", SPELLING,
+      (PROJECTION, 'if _YAML11_BOOL.match(value):', 'if False:')),
+    m("M5-yaml11-sexagesimal-ignored", SPELLING,
+      (PROJECTION, '|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)\\Z""", re.X)', ')\\Z""", re.X)')),
+    m("M6-leading-zero-base-8-ignored", SPELLING,
+      (PROJECTION, 'if abs(value) >= 8 and set(digits) <= set("01234567"):', 'if False:')),
+    m("M7-exponent-float-ignored", SPELLING,
+      (PROJECTION, 'if type(value) is float and math.isfinite(value):', 'if False:')),
+    m("M8-parser-dependent-omission-dropped", SPELLING,
+      (PROJECTION, '                self.omit(f"setting_parser_dependent:{key}")', '                pass')),
+    m("REVIEW-1-reverse-entity-options-association", REVIEW,
+      (PROJECTION, 'ok, value = outcomes[index]', 'ok, value = outcomes[-index - 1]')),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

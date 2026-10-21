@@ -17,6 +17,12 @@ Builds on 2.4.1-beta.25.
   not set up, never "not recording".
 - Never return `db_url`, a `!secret` or `!env_var` reference name, or an
   unrecognized recorder key: the projection is a positive allowlist.
+- Sanitize each tool's complete response once, with the known secrets, at a
+  single exit point. Nothing is appended afterwards, and a redaction makes
+  the report partial.
+- Report a written value as `parser_dependent`, not `fails_core_schema`,
+  when its YAML 1.1 readings change Core's verdict. Examples are unquoted
+  `off` or `yes`, `1:20`, `010` and exponent floats.
 - Add `get_unregistered_entities`, a read-only tool that lists entities with a
   state but no registry entry. It reports the platform (from
   `entity/source`), whether the state was written directly, and the config

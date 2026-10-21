@@ -21,8 +21,11 @@ every source that could set the key is complete; otherwise the setting is
 `unknown` with a reason. It also reports the filters with Core's filter case,
 the runtime state, and Core's per-entity answer beside the computed filter,
 with `filter_drift` on disagreement. `db_url`, reference names and
-unrecognized keys are never returned. Without the YAML reader admitted, the
-tool still reports runtime and Core's entity answers, as partial.
+unrecognized keys are never returned. A value whose YAML 1.1 readings would
+change Core's verdict is `parser_dependent`, never `fails_core_schema`.
+Without the YAML reader admitted, the tool still reports runtime and Core's
+entity answers, as partial. Each tool sanitizes its complete response once,
+with the known secrets, at a single exit point.
 
 `get_unregistered_entities` makes zero delegated calls. It reads:
 - REST `GET /api/states`;

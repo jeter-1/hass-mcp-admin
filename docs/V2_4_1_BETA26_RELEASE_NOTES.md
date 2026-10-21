@@ -47,8 +47,14 @@ listed in `sources` with its own status and reason:
     `include_not_followed`, `yaml_truncated` or `yaml_unavailable` (owner
     decision (v)).
 
-  Deprecated settings appear only when written. A value that fails Core's
-  schema is `invalid` with `fails_core_schema`; it is never replaced by the
+  Deprecated settings appear only when written. The YAML reader parses
+  YAML 1.2, while Home Assistant loads YAML 1.1, and the reader's value
+  cannot show how a value was spelled. When the YAML 1.1 readings of the
+  same text would change Core's verdict, the setting is
+  `validity: parser_dependent` with each reading and `value: null`. Examples
+  are unquoted `off` or `yes`, sexagesimal `1:20`, a leading-zero `010` and
+  an exponent float. Only a value that fails Core's schema under every
+  reading is `invalid` with `fails_core_schema`. It is never replaced by the
   default.
 - **`db_url` is never returned.** The report gives only
   `value_withheld: true`, whether it is configured, and `recorder/info`'s
@@ -72,10 +78,14 @@ listed in `sources` with its own status and reason:
   A disagreement is `filter_drift` and is never resolved silently; it means
   the configuration on disk and the running recorder differ, for example
   before a restart.
-- **Completeness.** Any source that is not complete, any unknown setting,
-  drift, redaction or response-size trim makes the report `partial`, with
-  each cause in `omissions`. The tool fails only when every source is
-  unavailable.
+- **Completeness.** Any source that is not complete, any unknown or
+  parser-dependent setting, drift, redaction or response-size trim makes the
+  report `partial`, with each cause in `omissions`. The tool fails only when
+  every source is unavailable.
+- **Sanitization.** Both tools build the complete response first, including
+  omissions and every identifier. They then run the strict sanitizer, with
+  the known secrets, once on that final envelope. Nothing is added after
+  that call, and any redaction makes the report partial.
 
 Without the optional YAML reader admitted, the tool still runs. The YAML
 sources are then `unavailable` with `yaml_reader_not_admitted`, settings and
@@ -140,6 +150,9 @@ a partial difference is never reported.
   - configured values come from disk and can differ from the running recorder
     until a restart, so the `filter_drift` cross-check exists;
   - `!include` targets and package contents are not read;
-  - YAML 1.2 parsing can differ from Home Assistant's YAML 1.1 for unusual
-    numeric forms;
+  - YAML 1.2 parsing can differ from Home Assistant's YAML 1.1. A value
+    where this can change Core's verdict is reported `parser_dependent`,
+    never invalid. This is conservative: for example, `purge_keep_days: 10`
+    may have been written `010`. A `0o`-prefixed integer cannot be detected,
+    and `coverage.yaml_numeric_spelling` says so;
   - registry-less entities cannot be traced to a file.

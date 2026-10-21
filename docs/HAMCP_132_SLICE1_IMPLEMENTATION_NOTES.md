@@ -54,16 +54,67 @@ tests in `tests/test_hamcp132_recorder_settings.py` or
    `script_dependency_reader` (HAMCP-212) is extracted unchanged into
    `UpstreamReadGateway._bounded_route_current`. The new `yaml_config_reader`
    reuses it. The script reader's behaviour and its tests are unchanged.
-6. **YAML 1.2 versus 1.1.** ha-mcp's reader parses YAML 1.2; Home Assistant
-   loads YAML 1.1. Written values go through ports of Core's validators
-   (`cv.boolean`, `Coerce(int)` with the schema minimum). So `auto_purge: off`,
-   a string under 1.2, still projects as `false`. A value that fails them is
-   reported as `configured` with `invalid: true`, `reason: fails_core_schema`
-   and, for a scalar, `as_written`; it is never replaced by a default. A
-   value whose 1.1 and 1.2 readings differ can still project differently from
-   what Home Assistant loaded, for example a leading-zero or sexagesimal
-   number. `coverage.yaml_parse` states this, and for entities Core's own
-   answer stays authoritative.
+6. **YAML 1.2 versus 1.1 (corrected after review of `de1433f`, M1).**
+   ha-mcp's reader parses YAML 1.2; Home Assistant loads YAML 1.1. The reader's
+   value cannot show how a value was spelled: unquoted `off` and quoted
+   `"off"` both reach it as the string `off`. Validating the reader's value
+   is therefore kept apart from Core-schema validity.
+
+   `projection.yaml11_readings` ports the PyYAML 6.0 implicit resolver and
+   constructors. A test checks it against the installed PyYAML. It lists every
+   other value YAML 1.1 could have produced for the same written text:
+   - **A string the reader returned** may have been unquoted. Covered forms:
+     - the boolean family (`yes`/`no`/`true`/`false`/`on`/`off` in
+       their three cases);
+     - the spec booleans `y`/`Y`/`n`/`N`;
+     - YAML 1.1 integers: underscores, `0b`, base 8 with a leading `0`,
+       `0x` and sexagesimal `1:20`;
+     - YAML 1.1 floats, including sexagesimal floats, `.inf` and `.nan`.
+   - **An integer** may have been written with a leading zero. YAML 1.1
+     reads `010` as 8 and `08` as a string.
+   - **A finite float** may have been written without a decimal point. YAML
+     1.1 reads `1e3` as a string.
+
+   Each reading goes through the ports of Core's validators: `cv.boolean`,
+   and `Coerce(int)` with the schema minimum. The outcomes decide the report:
+   - **All readings agree:** the value stays definite. `auto_purge: off`
+     projects as `false` either way.
+   - **Readings differ:** the setting is reported `validity: parser_dependent`
+     with `reason: yaml_1_1_reading_differs` and `value: null`. It also
+     carries the reader's value as `as_read`, plus each reading's spelling,
+     validity and coerced value, and the omission
+     `setting_parser_dependent:<key>`. This covers `commit_interval: off` and
+     `purge_keep_days: yes` (1.1: 0 and 1, valid), `commit_interval: 1:20`
+     (1.1: 80) and `commit_interval: 010` (1.1: 8).
+   - **Every reading fails:** only then is the value reported
+     `invalid: true`, `reason: fails_core_schema`, with `as_written` for a
+     scalar. For example, `commit_interval: never` fails under any parser.
+     The value is never replaced by a default.
+
+   Filter lists use the same rule: an item whose readings change Core's
+   acceptance makes the filter `origin: unknown`, `computable: false`,
+   `reason: parser_dependent`. `fails_core_schema` is used only when an item
+   fails under every reading. For entities, Core's own
+   `recorder/entity_options/get` answer stays authoritative.
+
+   Conservative choices, for the architect:
+   - **Leading zeros.** Any integer of 8 or more whose digits are all 0–7
+     could have been written with a leading zero and read in base 8. So
+     common values such as `purge_keep_days: 10`, `14`, `30` or `365` become
+     `parser_dependent`. Integers containing an 8 or a 9 stay definite,
+     because `Coerce(int)` turns the 1.1 string `"09"` back into 9. The review called the leading-zero
+     difference already disclosed. The alternative is to keep these definite
+     and rely on that disclosure.
+   - **Spec booleans `y`/`n`.** These are kept as possible 1.1 booleans because
+     the annotatedyaml 1.0.2 loader could not be inspected (PyPI was
+     unreachable). PyPI's resolver does not treat them as booleans.
+   - **Quoted numeric strings.** A quoted `"010"` is also `parser_dependent`.
+     The reader's resolver is not pinned, so a string is never assumed to have
+     been quoted.
+
+   One case is still unobservable: a `0o`-prefixed integer is a number under
+   YAML 1.2 but a string under YAML 1.1. `coverage.yaml_numeric_spelling`
+   discloses it.
 7. **No candidate definitions.** The design allowed optional
    `candidate_definition` notes for registry-less entities. Slice 1 offers
    none: `definition_location` is always `not_determinable`, and
@@ -84,6 +135,33 @@ tests in `tests/test_hamcp132_recorder_settings.py` or
     validation unchanged and is refused before any dispatch. A string is never
     split into characters. The first test run found this defect: `"light"`
     became five single-letter domains. A regression test covers it.
+12. **One sanitized exit point (correction after review of `de1433f`, H1).**
+    Both tools used to append identifier-bearing omissions after the strict
+    sanitizer had run. In `get_recorder_settings` these were `filter_drift:`
+    entity IDs; in `get_unregistered_entities` they were `config_entry_unknown:`
+    entity IDs. A configured secret could therefore reach the response.
+
+    Each service now builds the complete envelope first: report, omissions,
+    warnings, limitations and every identifier. Its `_finish` method then runs
+    `sanitize_untrusted_data` once, with the known secrets, on that final
+    envelope. Nothing is added after that call.
+
+    Two events change the omissions, and each causes the envelope to be
+    rebuilt and sanitized again:
+    - **Redaction or truncation** adds `redacted_by_policy`. Per HAMCP-191 the
+      report is then partial.
+    - **The response-byte bound** collapses filter lists in the recorder tool
+      and trims entity rows in the reconciliation tool. Either adds its
+      omission.
+
+    The returned value is always the output of the last sanitizer call.
+    `config_entry_unknown:` omissions are capped at 50
+    (`MAX_OMITTED_ENTITY_IDS`), so the omission list stays bounded. The tests
+    plant a known secret in every field that carries an identifier: entity
+    IDs, platforms, config-entry IDs, filter items, omissions and the scope.
+    They assert that the serialized response never contains it. A control
+    without the known secret shows that each planted path reaches the
+    response.
 
 ## Filter port
 
@@ -107,3 +185,10 @@ with the committed file.
 a disposable copy outside the repository and runs both suites. The results
 are in `results.json` beside it; every row of design section 7 has at least
 one mutation, and the totals are in the acceptance document.
+
+The correction batch for the review of `de1433f` adds 13 mutations. One is the
+reviewer's own: the entity-options result association reversed. The other 12
+cover items 6 and 12. They include omissions appended after sanitization, and
+a parser-dependent value reported as `fails_core_schema`. All must be killed.
+Three earlier fragments now target the final-envelope variable. The
+response-byte mutation P9 returns the collapsed lists without their omission.
