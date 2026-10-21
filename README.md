@@ -1,5 +1,34 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.28** is a break-fix for Home Assistant Core
+authority (HAMCP-215). After a transient verification failure, Core authority
+now recovers on its own:
+- a bounded, jittered backoff (20 s doubling to a 240 s cap) replaces the
+  fixed 300 s retry;
+- authority returns only after 2 consecutive complete background
+  re-verifications about 15 s apart, or 3 when it flaps; a changed Core
+  version, identity, signed-registry authority or reviewed contract, seen by
+  any check, restarts the count;
+- only a process's very first boot may admit without confirmation; any later
+  re-initialization passes the same gate;
+- the catalog, the YAML reader and the dependency index then resume.
+
+Every verification failure, retirement, catalog withdrawal, recovery attempt
+and restoration is now a bounded WARNING log event. Health's
+`home_assistant_core_authority.recovery` reports the recovery state, the last
+failure reason and time, and the next attempt. Fail-closed behavior during
+recovery is unchanged. After a Core restart or update, Core-backed tools refuse
+for about 15–18 s until the confirmation completes. The same wait (about
+15 s) follows a changed Core version or signed-registry authority, an
+incompatible Core becoming compatible, and a Core not initialized at boot.
+Josh accepted these delays.
+No tool, schema, permission or descriptor changes (90
+tools, 91 with the optional YAML reader). Read the
+[2.4.1-beta.28 release notes](docs/V2_4_1_BETA28_RELEASE_NOTES.md) and
+[2.4.1-beta.28 acceptance contract](docs/V2_4_1_BETA28_ACCEPTANCE.md).
+
+It builds on beta.27 below.
+
 Engineering **2.4.1-beta.27** adds two read-only tools (HAMCP-132 slice 1).
 `get_recorder_settings` reports the recorder's effective settings, each with
 its origin: written in `configuration.yaml`, Core's default, or `unknown` with
@@ -291,7 +320,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.26 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.28 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

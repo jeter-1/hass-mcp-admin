@@ -611,7 +611,7 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
     from urllib.parse import urlsplit
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
-    from core_registry_contract_lane import lane_entry, probe_profile_for
+    from core_registry_contract_lane import lane_entry, probe_profile_for, reconcile_through_gate
     from harness_routes import harness_request
     from prepare_core_release_registry import prepare_candidate, sign_candidate, EXTENSION_EVIDENCE_MODEL
     from ha_mcp_engineering.clients import HomeAssistantWebSocketClient
@@ -703,7 +703,7 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
         runtime = CoreRuntime()
         runtime.configure(configured, release_registry=registry)
         try:
-            await runtime.reconcile_once("alarmo_disposable_predecessor")
+            await runtime.reconcile_once("startup")
             assert runtime.health_snapshot()["compatible_count"] == 19
             assert runtime.acquire(c.CORE_REQUIREMENTS) is None
             service = IntegrationInspectionService(AlarmoProvider(websocket, runtime))
@@ -733,7 +733,9 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
             signed = sign_candidate(candidate, expected_sha256=hashlib.sha256(candidate).hexdigest(), previous=previous,
                                     key=key, now=now + timedelta(seconds=1))
             assert await registry.refresh()
-            await runtime.reconcile_once("alarmo_disposable_extension")
+            # The registry change retires the generation; the extension is
+            # admitted only through the restoration gate.
+            await reconcile_through_gate(runtime)
             assert runtime.health_snapshot()["compatible_count"] == 20
             authority = runtime.acquire(c.CORE_REQUIREMENTS)
             assert authority is not None

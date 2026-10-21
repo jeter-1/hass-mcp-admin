@@ -12,6 +12,8 @@ from collections.abc import Awaitable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+import aiohttp
+
 from .models import (
     CORE_IDENTITY,
     CORE_PROTOCOL,
@@ -305,24 +307,70 @@ def stable_observation(
         return _failure_observation("malformed_core_evidence")
 
 
+# HAMCP-215: closed codes the reviewed source raises.  Anything else is
+# reported only by exception category, never by its text.
+PROBE_FAILURE_CODES = frozenset({
+    "core_probe_authentication_failed",
+    "core_probe_auth_protocol_invalid",
+    "core_probe_command_failed",
+    "core_probe_connection_epoch_changed",
+    "core_probe_http_failure",
+    "core_probe_response_invalid",
+    "core_probe_response_oversized",
+    "core_probe_version_changed",
+    "core_probe_version_invalid",
+    "core_probe_websocket_invalid",
+    "core_probe_websocket_reconnect_exhausted",
+})
+PROBE_FAILURE_DETAILS = PROBE_FAILURE_CODES | {
+    "core_probe_timeout",
+    "core_probe_connection_failed",
+    "core_probe_client_error",
+    "core_probe_malformed_response",
+    "other",
+}
+
+
+def classify_probe_failure(exc: BaseException) -> str:
+    """Return one bounded diagnostic category for a snapshot exception."""
+
+    if isinstance(exc, RuntimeError) and len(exc.args) == 1 and exc.args[0] in PROBE_FAILURE_CODES:
+        return exc.args[0]
+    if isinstance(exc, TimeoutError):
+        return "core_probe_timeout"
+    if isinstance(exc, (aiohttp.ClientConnectionError, ConnectionError, OSError)):
+        return "core_probe_connection_failed"
+    if isinstance(exc, aiohttp.ClientError):
+        return "core_probe_client_error"
+    if isinstance(exc, (ValueError, CoreReadmissionError)):
+        return "core_probe_malformed_response"
+    return "other"
+
+
 class CoreObservationCollector:
     """Collect two bounded snapshots so one unstable response cannot admit."""
 
     def __init__(self, source: CoreSnapshotSource):
         self._source = source
+        self.last_failure_detail: str | None = None
 
     async def collect(self) -> CoreObservation:
+        self.last_failure_detail = None
         try:
             first = await self._source.capture_core_snapshot()
             second = await self._source.capture_core_snapshot()
-        except Exception:
-            # Provider exception text is deliberately not retained.
+        except Exception as exc:
+            # Provider exception text is deliberately not retained; only a
+            # closed diagnostic category survives for logs and health.
+            self.last_failure_detail = classify_probe_failure(exc)
             return _failure_observation("core_observation_unavailable")
         return stable_observation(first, second)
 
 
 __all__ = [
+    "PROBE_FAILURE_DETAILS",
     "CoreObservationCollector",
+    "classify_probe_failure",
     "CoreSnapshotSource",
     "stable_observation",
 ]

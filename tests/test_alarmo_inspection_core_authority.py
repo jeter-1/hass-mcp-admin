@@ -43,7 +43,7 @@ class CoreAuthorityTests(unittest.IsolatedAsyncioTestCase):
             source = Source(registry, "2026.9.3", typed_operations=True)
             runtime = CoreRuntime()
             runtime.configure(SimpleNamespace(), source=source, release_registry=registry)
-            await runtime.reconcile_once("synthetic-inspector")
+            await runtime.reconcile_once("startup")
             authority = runtime.acquire(c.CORE_REQUIREMENTS)
             self.assertEqual(authority is not None, admitted)
             commits = runtime.consume(authority) if authority else None

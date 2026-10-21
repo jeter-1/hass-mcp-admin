@@ -1,5 +1,53 @@
 # Changelog
 
+## 2.4.1-beta.28 - Core authority recovery and visibility (HAMCP-215)
+
+Builds on 2.4.1-beta.27.
+
+- Retry a failed Core verification with bounded exponential backoff and ±20%
+  jitter: 20 s, doubling, capped at 240 s. This replaces the fixed 300 s
+  `failure_retry`.
+- Pass every non-admitted state (transient retirement, incompatible,
+  unavailable, not initialized at boot, changed version or registry
+  authority, re-initialization) through one restoration gate:
+  `CORE_RECOVERY_CONFIRMATIONS = 2` consecutive complete background
+  verifications by the supervisor, spaced about 15 s apart, with the same Core
+  identity, version, selected signed-registry authority and admitted reviewed
+  contracts. A retirement within 600 s of a restoration needs 3, at doubled
+  spacing. Any failure or connection move, and any background or on-demand
+  observation of a changed identity, version, registry authority or contract
+  set, restarts the count. On-demand verification never confirms or restores
+  from any state; it is refused and counted in `recovery_on_demand_refusals`.
+- Make the boot exception a one-shot latch per process: only the boot
+  sequence's first admission, while the process has never admitted, retired
+  or failed, is exempt. Any admission, failure, retirement or non-boot check
+  spends it, and only a new process re-arms it, so an application rebuild or
+  runtime reconfiguration restores through the full gate. A failed first
+  startup check ends the boot retries; the supervisor then recovers on
+  backoff pacing.
+- Keep a complete but unadmitted observation retired
+  (`recovery_state: incompatible`). Re-check it every reconciliation interval
+  without backoff; once compatible it passes the same gate.
+- Log `core_authority_verification_failed`, `core_authority_retired`,
+  `core_authority_capabilities_withdrawn`, `core_catalog_tools_withdrawn`,
+  `core_catalog_tools_restored`, `core_authority_recovery_attempt`,
+  `core_authority_recovery_confirming`, `core_authority_recovery_reset` and
+  `core_authority_restored` at WARNING, and `core_authority_recovery_scheduled`
+  and `core_authority_recovery_on_demand_refused` at INFO. Each carries a bounded reason or detail and an `at` timestamp. Probe
+  failures are classified into closed `core_probe_*` details.
+- Add `home_assistant_core_authority.recovery` to health, with recovery state,
+  failure reason, detail and time, retirement, attempt, next-attempt and
+  restoration times, and confirmations. Add the counters `recovery_attempts`,
+  `recovery_confirmations` (accepted confirmations only),
+  `recovery_on_demand_refusals` and `authority_restorations`.
+- A lifecycle-socket movement, including the reconnect after a Core restart,
+  now waits one confirmation interval (about 15–18 s) before authority returns.
+  Core-backed tools refuse during it. Josh accepted this on 2026-10-20, and
+  the same wait (about 15 s) after a Core version change, a moved
+  signed-registry authority, an incompatible Core becoming compatible, or a
+  Core not initialized at boot (which first waits one backoff delay).
+- No tool, schema, descriptor, permission, workflow or stored-format change.
+
 ## 2.4.1-beta.27 - Recorder settings and unregistered entities (HAMCP-132)
 
 Builds on 2.4.1-beta.26.
