@@ -187,6 +187,7 @@ def create_application(
     from .backup_inventory.service import BACKUP_INVENTORY
     from .recorder_settings.service import RECORDER_SETTINGS
     from .entity_reconciliation.service import ENTITY_RECONCILIATION
+    from .configuration_definitions.service import CONFIGURATION_DEFINITIONS
     server = get_registered_server()
     audit = AuditLogger(
         settings.audit_path,
@@ -209,6 +210,11 @@ def create_application(
     )
     ENTITY_RECONCILIATION.configure(HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings),
                                     CORE_READMISSION, settings)
+    CONFIGURATION_DEFINITIONS.configure(
+        HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings,
+        yaml_reader_factory=lambda: UPSTREAM_READ_GATEWAY.yaml_config_reader(
+            audit=audit, purpose="configuration_definitions"),
+    )
     AUTOMATION_BASELINE_CAPTURE.configure(settings, CORE_READMISSION)
     gateway = AuthenticatedMcpGateway(
         server.streamable_http_app(),

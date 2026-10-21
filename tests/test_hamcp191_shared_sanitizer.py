@@ -632,6 +632,7 @@ SANITIZER_SITES = {
     ("providers/upstream_yaml_reader.py", "project_success", "sanitize_untrusted_data"): (1, "delegated"),
     ("providers/upstream_yaml_reader.py", "seal", "sanitize_untrusted_data"): (1, "delegated"),
     ("recorder_settings/service.py", "RecorderSettingsService._finish", "sanitize_untrusted_data"): (1, "analysis"),
+    ("configuration_definitions/service.py", "ConfigurationDefinitionsService._finish", "sanitize_untrusted_data"): (1, "analysis"),
     ("reliability/provider.py", "DirectHaReliabilityProvider._collect_system_log", "sanitize_untrusted_data"): (1, "logs"),
     ("reliability/provider.py", "DirectHaReliabilityProvider._collect_traces.fetch", "sanitize_untrusted_data"): (1, "analysis"),
     ("reliability/provider.py", "DirectHaReliabilityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),

@@ -198,12 +198,13 @@ class ConfigurationDefinitionsService:
                          failure or (None if complete else "include_or_truncation"))
         packages, packages_failure = await self._yaml(reader, "homeassistant.packages", authority)
         yaml_reads += reader is not None
-        core, core_failure = None, None
+        core, core_failure, homeassistant_read = None, None, False
         if packages is not None and not packages["found"]:
             # Only the node type and whether a ``packages`` key exists are
             # used; nothing else from ``homeassistant`` is kept or returned.
             core, core_failure = await self._yaml(reader, "homeassistant", authority)
             yaml_reads += 1
+            homeassistant_read = True
         package_state = packages_status(packages, packages_failure, core, core_failure)
         del core, packages
         self._source(sources, "configuration_yaml:homeassistant.packages",
@@ -364,8 +365,11 @@ class ConfigurationDefinitionsService:
                                   "without opening a flow",
                 "heuristic_naming": SLUGIFY_PIN,
                 "state_values_copied": False,
+                # ``homeassistant`` is read only to tell an absent packages key
+                # from an unreadable node; nothing from it is returned.
                 "yaml_paths_read": [s["source"].split(":", 1)[1] for s in sources
-                                    if s["source"].startswith("configuration_yaml:")],
+                                    if s["source"].startswith("configuration_yaml:")]
+                                   + (["homeassistant"] if homeassistant_read else []),
                 "definitions_found": len(definitions),
                 "definitions_listed": len(rendered),
                 "definitions_not_projected": dict(sorted(collector.unprojected.items())),

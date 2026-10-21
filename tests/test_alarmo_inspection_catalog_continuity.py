@@ -36,12 +36,13 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual = {tool.name: tool.model_dump(mode="json", exclude_none=True) for tool in await get_registered_server().list_tools()}
         self.assertEqual(set(actual) - set(expected), {"get_integration_inspection", "capture_automation_baseline", "dashboard_integrity_analysis",
                                                           "create_entity_metadata_plan", "get_backup_inventory",
-                                                          "get_recorder_settings", "get_unregistered_entities"})
+                                                          "get_recorder_settings", "get_unregistered_entities",
+                                                          "get_configuration_definitions"})
         self.assertEqual(set(expected) - set(actual), set())
         actual["get_server_health"] = _without_hamcp171_deep_storage_audit(self, actual["get_server_health"])
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 62)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 63)
         tool = actual["get_integration_inspection"]
         self.assertFalse(tool["inputSchema"]["additionalProperties"])
         self.assertEqual(set(tool["inputSchema"]["properties"]), {"alarm_entity_id", "integration", "limit", "cursor"})
