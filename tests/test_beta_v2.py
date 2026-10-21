@@ -761,9 +761,7 @@ class BetaApplicationTests(unittest.TestCase):
             core_snapshot_source=SyntheticCoreSource(),
         )
         asyncio.run(
-            CORE_READMISSION.reconcile_once(
-                "synthetic-application-startup"
-            )
+            CORE_READMISSION.reconcile_once("startup")
         )
         asyncio.run(
             GOVERNANCE.require().f3_runtime.recover_once(

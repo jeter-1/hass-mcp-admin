@@ -5,11 +5,11 @@
       "tests.test_hamcp215_core_authority_recovery"
     ],
     "returncode": 0,
-    "seconds": 4.0,
+    "seconds": 7.6,
     "summary": "OK"
   },
-  "mutation_count": 19,
-  "killed": 19,
+  "mutation_count": 28,
+  "killed": 28,
   "survived": [],
   "python": "3.12.14",
   "results": [
@@ -31,7 +31,7 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [],
-      "seconds": 120.1
+      "seconds": 901.0
     },
     {
       "id": "R1b-fixed-interval-retry",
@@ -53,7 +53,7 @@
       "first_failures": [
         "FAIL test_catalog_and_yaml_reader_resume_after_transient (tests.test_hamcp215_core_authority_recovery.Recovery.test_catalog_and_yaml_reader_resume_after_transient)"
       ],
-      "seconds": 2.7
+      "seconds": 3.1
     },
     {
       "id": "R2-restore-without-confirmation",
@@ -61,8 +61,8 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
       "replacements": [
         [
-          "                            or self._recovery_confirmations < self._recovery_required\n",
-          "                            or self._recovery_confirmations < 1\n"
+          "                        if self._recovery_confirmations < self._recovery_required:\n",
+          "                        if self._recovery_confirmations < 1:\n"
         ]
       ],
       "tests": [
@@ -75,7 +75,7 @@
       "first_failures": [
         "ERROR test_catalog_and_yaml_reader_resume_after_transient (tests.test_hamcp215_core_authority_recovery.Recovery.test_catalog_and_yaml_reader_resume_after_transient)"
       ],
-      "seconds": 4.9
+      "seconds": 5.3
     },
     {
       "id": "R3-restore-skips-recovery-gate",
@@ -83,7 +83,7 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
       "replacements": [
         [
-          "                if failure_reason is None and self._recovery_active:\n",
+          "                if failure_reason is None and gated:\n",
           "                if False:\n"
         ]
       ],
@@ -97,7 +97,7 @@
       "first_failures": [
         "ERROR test_catalog_and_yaml_reader_resume_after_transient (tests.test_hamcp215_core_authority_recovery.Recovery.test_catalog_and_yaml_reader_resume_after_transient)"
       ],
-      "seconds": 4.7
+      "seconds": 5.2
     },
     {
       "id": "R4-restore-without-lifecycle-fence",
@@ -119,7 +119,7 @@
       "first_failures": [
         "ERROR test_catalog_and_yaml_reader_resume_after_transient (tests.test_hamcp215_core_authority_recovery.Recovery.test_catalog_and_yaml_reader_resume_after_transient)"
       ],
-      "seconds": 4.5
+      "seconds": 5.1
     },
     {
       "id": "R5-confirmation-key-ignored",
@@ -127,8 +127,8 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
       "replacements": [
         [
-          "                        elif key == self._recovery_confirmation_key:\n",
-          "                        elif self._recovery_confirmation_key is not None:\n"
+          "                        if key == self._recovery_confirmation_key:\n",
+          "                        if self._recovery_confirmation_key is not None:\n"
         ]
       ],
       "tests": [
@@ -139,9 +139,9 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_different_version_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_different_version_during_confirmation_restarts_the_count)"
+        "ERROR test_different_version_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_different_version_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 3.0
+      "seconds": 5.7
     },
     {
       "id": "R6-failure-keeps-confirmations",
@@ -163,7 +163,7 @@
       "first_failures": [
         "FAIL test_monitorless_failure_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_monitorless_failure_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 3.9
+      "seconds": 7.1
     },
     {
       "id": "R7-connection-move-keeps-confirmations",
@@ -171,8 +171,12 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
       "replacements": [
         [
-          "                elif self._recovery_active and self._recovery_confirmations:\n",
+          "                elif confirming:\n",
           "                elif False:\n"
+        ],
+        [
+          "                self._recovery_confirmations = 0\n                self._recovery_confirmation_key = None\n                self._append_event_locked(\n                    \"core_connection_changed\",\n",
+          "                self._append_event_locked(\n                    \"core_connection_changed\",\n"
         ]
       ],
       "tests": [
@@ -185,20 +189,16 @@
       "first_failures": [
         "FAIL test_connection_move_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_connection_move_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 3.0
+      "seconds": 3.7
     },
     {
       "id": "R8-on-demand-trigger-confirms",
-      "design_item": "design: on-demand verification (mutation pre-dispatch) counts as a recovery confirmation",
+      "design_item": "H1: an on-demand verification (mutation pre-dispatch, tool or health caller) counts as a confirmation",
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
       "replacements": [
         [
-          "                        if trigger not in _RECOVERY_CONFIRMATION_TRIGGERS:\n",
-          "                        if False:\n"
-        ],
-        [
-          "                            trigger not in _RECOVERY_CONFIRMATION_TRIGGERS\n",
-          "                            False\n"
+          "                    if admitted_preview and trigger in _RECOVERY_CONFIRMATION_TRIGGERS:\n",
+          "                    if admitted_preview:\n"
         ]
       ],
       "tests": [
@@ -209,9 +209,212 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_on_demand_reverification_during_recovery_is_refused_and_does_not_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_on_demand_reverification_during_recovery_is_refused_and_does_not_count)"
+        "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)",
+        "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
       ],
-      "seconds": 3.9
+      "seconds": 4.1
+    },
+    {
+      "id": "G1-incompatible-bypasses-gate",
+      "design_item": "H1: an incompatible (or unreviewed-version) Core restores outside the gate",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "                gated = not self._admitted and not first_admission\n",
+          "                gated = (not self._admitted and not first_admission\n                         and self._recovery_state != \"incompatible\")\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "G1-incompatible-bypasses-gate.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)",
+        "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
+      ],
+      "seconds": 4.8
+    },
+    {
+      "id": "G2-boot-window-left-open",
+      "design_item": "H1: never initialized after the boot sequence admits on one background success",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "            self._first_admission_open = False\n        return snapshot\n",
+          "            pass\n        return snapshot\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "G2-boot-window-left-open.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
+      ],
+      "seconds": 5.6
+    },
+    {
+      "id": "G3-failed-attempt-keeps-boot-window",
+      "design_item": "H1: a failed non-boot first attempt leaves first admission open (never initialized ungated)",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "                if trigger not in _BOOT_TRIGGERS:\n                    self._first_admission_open = False\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "G3-failed-attempt-keeps-boot-window.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)",
+        "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)"
+      ],
+      "seconds": 7.1
+    },
+    {
+      "id": "G4-on-demand-first-admission",
+      "design_item": "H1: an on-demand caller may perform the first admission of a fresh runtime",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "                    and trigger in _FIRST_ADMISSION_TRIGGERS\n",
+          "                    and True\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "G4-on-demand-first-admission.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)",
+        "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)"
+      ],
+      "seconds": 7.1
+    },
+    {
+      "id": "G5-version-change-retired-only-with-registry",
+      "design_item": "H1: a changed Core version replaces admitted authority without the gate",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "                observation.version is not None\n                and self._retire_observed_version_change(\n",
+          "                registry and registry.enabled\n                and observation.version is not None\n                and self._retire_observed_version_change(\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "G5-version-change-retired-only-with-registry.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)",
+        "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
+      ],
+      "seconds": 5.8
+    },
+    {
+      "id": "G6-incompatible-withdrawal-not-recovery",
+      "design_item": "H1: an incompatible withdrawal is not armed as recovery (no retired_at, no flap)",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "        if was_admitted:\n            # Withdrawn for any reason: restoration passes the same gate.\n            self._enter_recovery_locked(now)\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "G6-incompatible-withdrawal-not-recovery.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
+      ],
+      "seconds": 4.6
+    },
+    {
+      "id": "G7-material-retirement-not-recovery",
+      "design_item": "H1: a material (version/registry) retirement is not armed as recovery",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "        if was_admitted:\n            self._enter_recovery_locked(now)\n        self._counters[\"retirements\"] += 1\n",
+          "        self._counters[\"retirements\"] += 1\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "G7-material-retirement-not-recovery.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
+      ],
+      "seconds": 4.9
+    },
+    {
+      "id": "G8-confirmation-spacing-only-in-transient-recovery",
+      "design_item": "H1: confirmations of a never-initialized Core are paced as backoff, not confirmation spacing",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "            if self._confirming_locked():\n",
+          "            if self._recovery_active and self._recovery_confirmations > 0:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "G8-confirmation-spacing-only-in-transient-recovery.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_startup_failure_is_logged_paced_and_gated (tests.test_hamcp215_core_authority_recovery.Recovery.test_startup_failure_is_logged_paced_and_gated)"
+      ],
+      "seconds": 7.7
+    },
+    {
+      "id": "L1-refusals-counted-as-confirmations",
+      "design_item": "L1: refused on-demand calls inflate counters.recovery_confirmations",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "                        self._counters[\"recovery_on_demand_refusals\"] += 1\n",
+          "                        self._counters[\"recovery_confirmations\"] += 1\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "L1-refusals-counted-as-confirmations.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
+      ],
+      "seconds": 4.2
     },
     {
       "id": "R9-no-flap-escalation",
@@ -233,7 +436,7 @@
       "first_failures": [
         "FAIL test_flapping_requires_more_spaced_confirmations_and_does_not_toggle (tests.test_hamcp215_core_authority_recovery.Recovery.test_flapping_requires_more_spaced_confirmations_and_does_not_toggle)"
       ],
-      "seconds": 3.4
+      "seconds": 6.0
     },
     {
       "id": "B1-no-backoff-growth",
@@ -255,7 +458,7 @@
       "first_failures": [
         "FAIL test_failure_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_failure_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 3.5
+      "seconds": 6.1
     },
     {
       "id": "B2-backoff-uncapped",
@@ -275,9 +478,9 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_persistent_failure_backs_off_to_cap_logs_and_refuses (tests.test_hamcp215_core_authority_recovery.Recovery.test_persistent_failure_backs_off_to_cap_logs_and_refuses)"
+        "FAIL test_incompatibility_stays_retired_and_is_rechecked_without_backoff (tests.test_hamcp215_core_authority_recovery.Recovery.test_incompatibility_stays_retired_and_is_rechecked_without_backoff)"
       ],
-      "seconds": 4.1
+      "seconds": 6.4
     },
     {
       "id": "V1-retirement-not-logged",
@@ -299,7 +502,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.3
+      "seconds": 4.1
     },
     {
       "id": "V2-verification-failure-not-logged",
@@ -321,7 +524,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.2
+      "seconds": 3.7
     },
     {
       "id": "V3-recovery-attempt-not-logged",
@@ -343,7 +546,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.2
+      "seconds": 3.9
     },
     {
       "id": "V4-restoration-not-logged",
@@ -365,7 +568,7 @@
       "first_failures": [
         "FAIL test_connection_move_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_connection_move_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 3.0
+      "seconds": 3.7
     },
     {
       "id": "V5-catalog-change-not-logged",
@@ -387,7 +590,7 @@
       "first_failures": [
         "FAIL test_catalog_and_yaml_reader_resume_after_transient (tests.test_hamcp215_core_authority_recovery.Recovery.test_catalog_and_yaml_reader_resume_after_transient)"
       ],
-      "seconds": 2.9
+      "seconds": 3.4
     },
     {
       "id": "H1-failure-reason-not-recorded",
@@ -409,7 +612,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.2
+      "seconds": 3.7
     },
     {
       "id": "H2-retired-at-not-recorded",
@@ -431,7 +634,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.2
+      "seconds": 3.8
     }
   ]
 }

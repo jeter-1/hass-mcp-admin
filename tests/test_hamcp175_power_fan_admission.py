@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 
 from core_registry_fixtures import CoreSigner, ProjectedCoreSource, core_entry, NOW
+from support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.clients import upstream_read
 from ha_mcp_engineering.clients.mcp import DashboardTransportError
 from ha_mcp_engineering.errors import ErrorCode, map_exception
@@ -210,7 +211,7 @@ class Harness(unittest.IsolatedAsyncioTestCase):
         self.core = CoreRuntime()
         self.source = ProjectedCoreSource(self.registry, '2026.10.1', typed_operations=True)
         self.core.configure(object(), source=self.source, release_registry=self.registry)
-        await self.core.reconcile_once('synthetic-investigation')
+        await self.core.reconcile_once('startup')
         self.authority = 'synthetic-authority'
 
     def operation(self, kind='power', extra_names=(), *, action='turn_off', tools=None):
@@ -276,7 +277,9 @@ class DependencyScopedAdmission(Harness):
             for version in ('2026.10.0', '2026.10.1'):
                 with self.subTest(kind=kind, core=version):
                     self.source.version = version
-                    await self.core.reconcile_once('synthetic-core-change')
+                    # HAMCP-215 H1: a version change retires the generation;
+                    # restoration passes the background gate.
+                    await reconcile_through_gate(self.core)
                     peer, service, request = self.operation(kind)
                     result = await self.public_call(peer, service, request)
                     self.assertEqual(result.get('data', {}).get('state'), 'succeeded_verified', result)
@@ -498,7 +501,7 @@ class AdmissionRefusals(Harness):
                 with self.subTest(kind=kind, retired=retired):
                     self.authority = 'synthetic-authority'
                     self.source.version = '2026.10.1'
-                    await self.core.reconcile_once('synthetic-core-restore')
+                    await reconcile_through_gate(self.core)
                     peer, service, request = self.operation(kind, EXTRAS)
                     async def retire(count):
                         # The third state read is the pre-dispatch revalidation

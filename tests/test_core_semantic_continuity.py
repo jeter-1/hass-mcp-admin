@@ -13,6 +13,7 @@ import unittest
 
 from tests import test_beta37_exact_helper_state as helper_fixtures
 from tests import test_core_update_continuity as core_fixtures
+from tests.support.core_gate import reconcile_through_gate
 from tests.test_dependency_build_authority import _Network
 from tests.test_ha_core_2026_9_integration import settings
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
@@ -165,7 +166,9 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
                                  if c["capability_id"] != "core.template_semantics"]
         self.registry_case.raw = self.registry_case.next_journal(entries=[entry])
         await self.registry_case.registry.refresh()
-        await self.core.reconcile_once("synthetic_partial_review")
+        # HAMCP-215 H1: the registry change retires the generation; the
+        # partial review is restored only through the background gate.
+        await reconcile_through_gate(self.core)
         await self.assert_planning_refused()
         self.assertEqual(self.network.calls, [])
         # Failure remains local: an unrelated admitted read retains useful

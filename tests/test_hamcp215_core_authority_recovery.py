@@ -57,6 +57,12 @@ WARNING_EVENTS = {
     "core_authority_capabilities_withdrawn", "core_catalog_tools_withdrawn",
     "core_catalog_tools_restored",
 }
+# Every production on-demand caller, plus unknown names (health or tool probes)
+# and the boot triggers once the boot window has closed. None may confirm.
+ON_DEMAND = (
+    "mutation_pre_dispatch", "mutation_verification", "configuration_reverification",
+    "fan_authority", "health_probe", "tool_call", "startup", "startup_retry",
+)
 # mode -> (how the transient is noticed, retired reason, failure detail)
 TRANSIENTS = {
     "http": ("probe", "core_lifecycle_monitor_unavailable", "core_probe_http_failure"),
@@ -263,7 +269,7 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         counters = self.counters()
         self.assertEqual((counters["recovery_attempts"], counters["recovery_confirmations"],
                           counters["authority_restorations"], counters["retirements"]),
-                         (2, 1, 1, 1))
+                         (2, 2, 1, 1))  # both accepted confirmations
         self.assertEqual(self.recovery()["recovery_state"], "restored")
         self.assert_authority_round_trip()
 
@@ -295,7 +301,7 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.counters()["retirements"], 1)
         self.assert_logs_safe(logs.records)
 
-    async def test_startup_failure_is_logged_and_paced(self):
+    async def test_startup_failure_is_logged_paced_and_gated(self):
         self.network.mode = "connection"
         with self.assertLogs(LOGGER, level="INFO") as logs:
             self.start_supervisor()
@@ -305,12 +311,46 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(failed[0].safe_context["detail"], "core_probe_connection_failed")
         self.assertEqual(_events(logs.records, "core_authority_retired"), [])  # nothing published
         self.assertEqual(self.recovery()["recovery_state"], "backing_off")
-        self.network.mode = "ok"
-        delay.set_result(None)
-        # Nothing was admitted before, so the first complete success publishes.
-        await self.until(lambda: self.core.initialized)
-        self.assertEqual(self.recovery()["recovery_state"], "stable")
+        # Never initialized after a failed first attempt is not first admission
+        # any more: it passes the same restoration gate.
+        await self.recover_through_confirmation(None, delay=delay)
+        self.assertEqual(self.recovery()["recovery_state"], "restored")
+        self.assertEqual(self.counters()["recovery_confirmations"], CORE_RECOVERY_CONFIRMATIONS)
         self.assert_authority_round_trip()
+
+    async def test_boot_sequence_first_admission_is_not_gated(self):
+        # The production boot (application.py) admits on its first complete
+        # verification, including a startup retry inside the boot sequence.
+        self.network.mode = "connection"
+        sleeps = []
+
+        async def boot_sleep(delay):
+            sleeps.append(delay)
+            self.network.mode = "ok"
+
+        snapshot = await self.core.reconcile_until_initialized(
+            retry_delays=(0.25, 1.0), sleep=boot_sleep)
+        self.assertTrue(snapshot["initialized"])
+        self.assertEqual(sleeps, [0.25])
+        self.assertEqual((self.counters()["recovery_confirmations"],
+                          self.counters()["authority_restorations"]), (0, 0))
+        self.assert_authority_round_trip()
+
+    async def test_failed_boot_sequence_leaves_never_initialized_gated(self):
+        self.network.mode = "connection"
+        snapshot = await self.core.reconcile_until_initialized(
+            retry_delays=(0.25,), sleep=lambda _delay: asyncio.sleep(0))
+        self.assertFalse(snapshot["initialized"])
+        self.network.mode = "ok"
+        for trigger in ON_DEMAND:
+            await self.core.reconcile_once(trigger)
+            self.assertIsNone(self.core.acquire(CAPABILITY), trigger)
+        await self.core.reconcile_once("periodic")
+        self.assertIsNone(self.core.acquire(CAPABILITY))
+        self.assertEqual(self.recovery()["confirmations"], 1)
+        await self.core.reconcile_once("periodic")
+        self.assert_authority_round_trip()
+        self.assertEqual(self.counters()["authority_restorations"], 1)
 
     # -- A: an incompatible Core stays retired but is re-checked -----------
 
@@ -332,12 +372,23 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(recovery["last_failure_reason"], "core_authority_incompatible")
                 self.assertIsNotNone(recovery["next_recovery_attempt_at"])
                 self.assertEqual(self.clock.delays, [])  # periodic re-check, not backoff
+            # Compatible again: the next periodic check is only the first of
+            # the gate's confirmations, spaced (capped by the interval).
+            delay = await self.clock.next_delay()
+            self.assertEqual(self.clock.delays, [0.05])
+            self.assertEqual((self.recovery()["recovery_state"], self.recovery()["confirmations"]),
+                             ("confirming", 1))
+            self.assertIsNone(self.core.acquire(CAPABILITY))
+            delay.set_result(None)
             await self.until(lambda: self.recovery()["recovery_state"] == "restored")
         self.assertIs(self.core._authority_provider, original)
         retired = _events(logs.records, "core_authority_retired")
         self.assertEqual(len(retired), 1)
         self.assertEqual(retired[0].safe_context["reason"], "core_authority_incompatible")
-        self.assertEqual(len(_events(logs.records, "core_authority_restored")), 1)
+        restored = _events(logs.records, "core_authority_restored")
+        self.assertEqual(len(restored), 1)
+        self.assertEqual(restored[0].safe_context["verified_confirmations"],
+                         CORE_RECOVERY_CONFIRMATIONS)
         self.assertEqual(self.counters()["retirements"], 2)  # withdrawal, then restoration generation
         self.assert_authority_round_trip()
 
@@ -433,14 +484,248 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.network.mode = "ok"
         delay.set_result(None)
         delay = await self.release(CONFIRM)
-        for trigger in ("mutation_pre_dispatch", "configuration_reverification", "startup"):
+        accepted = self.counters()["recovery_confirmations"]
+        scheduled = self.recovery()["next_recovery_attempt_at"]
+        for trigger in ON_DEMAND:
             snapshot = await self.core.reconcile_once(trigger)
             self.assertFalse(snapshot["initialized"], trigger)
             self.assertEqual(self.recovery()["confirmations"], 1, trigger)
+            self.assertEqual(self.recovery()["next_recovery_attempt_at"], scheduled, trigger)
             self.assertIsNone(self.core.acquire(CAPABILITY))
+        # L1: refused on-demand calls are counted apart, never as confirmations.
+        self.assertEqual(self.counters()["recovery_confirmations"], accepted)
+        self.assertEqual(self.counters()["recovery_on_demand_refusals"], len(ON_DEMAND))
         delay.set_result(None)
         await self.until(lambda: self.core.initialized)
         self.assertEqual(self.counters()["authority_restorations"], 1)
+        self.assertEqual(self.counters()["recovery_confirmations"], accepted + 1)
+
+    # -- H1: one restoration gate for every non-admitted disposition ------
+    # Reviewer reproductions (review of 4e677ec), through the production
+    # aiohttp collector and lifecycle watcher.
+
+    async def boot(self):
+        await self.core.reconcile_until_initialized(retry_delays=())
+        self.assertIsNotNone(self.core._connection_monitor_epoch)
+        self.assert_authority_round_trip()
+
+    async def test_reviewer_incompatible_contract_cannot_restore_on_demand(self):
+        await self.boot()
+        with patch.object(self.core, "_authority_provider", return_value=()):
+            await self.core.reconcile_once("periodic")
+        self.assertEqual(self.recovery()["recovery_state"], "incompatible")
+        self.assertIsNone(self.core.acquire(CAPABILITY))
+        await self.core.reconcile_once("mutation_pre_dispatch")
+        self.assertIsNone(self.core.acquire(CAPABILITY),
+                          "one on-demand verification restored incompatible authority")
+        self.assertEqual(self.counters()["authority_restorations"], 0)
+
+    async def test_reviewer_incompatible_contract_cannot_restore_after_one_periodic(self):
+        await self.boot()
+        with patch.object(self.core, "_authority_provider", return_value=()):
+            await self.core.reconcile_once("periodic")
+        await self.core.reconcile_once("periodic")
+        self.assertIsNone(self.core.acquire(CAPABILITY),
+                          "one periodic verification restored incompatible authority")
+        self.assertEqual(self.recovery()["confirmations"], 1)
+        await self.core.reconcile_once("periodic")
+        self.assert_authority_round_trip()
+
+    async def test_reviewer_unreviewed_version_then_on_demand_through_watcher(self):
+        await self.boot()
+        self.network.version = "2099.1.0"
+        await self.core.reconcile_once("periodic")
+        self.assertIsNone(self.core.acquire(CAPABILITY))
+        self.assertEqual(self.recovery()["recovery_state"], "incompatible")
+        self.network.version = "2026.9.1"
+        await self.core.reconcile_once("mutation_pre_dispatch")
+        self.assertIsNone(self.core.acquire(CAPABILITY),
+                          "restored by one on-demand verification through the watcher")
+        self.assertEqual(self.core._connection_monitor_epoch, self.core._connection_epoch)
+        for count in range(1, CORE_RECOVERY_CONFIRMATIONS):
+            await self.core.reconcile_once("periodic")
+            self.assertEqual(self.recovery()["confirmations"], count)
+            self.assertIsNone(self.core.acquire(CAPABILITY))
+        await self.core.reconcile_once("periodic")
+        self.assert_authority_round_trip()
+
+    async def test_reviewer_on_demand_does_not_increment_confirmation_counter(self):
+        await self.boot()
+        self.network.mode = "timeout"
+        await self.core.reconcile_once("periodic")
+        self.network.mode = "ok"
+        await self.core.reconcile_once("failure_retry")
+        before = self.counters()["recovery_confirmations"]
+        self.assertEqual(before, 1)
+        for _ in range(3):
+            await self.core.reconcile_once("mutation_pre_dispatch")
+            self.assertIsNone(self.core.acquire(CAPABILITY))
+        self.assertEqual(self.counters()["recovery_confirmations"], before)
+        self.assertEqual(self.counters()["recovery_on_demand_refusals"], 3)
+        self.assertEqual(self.recovery()["confirmations"], 1)
+
+    async def test_reviewer_partial_and_stale_observations_never_restore(self):
+        await self.boot()
+        self.core.request_reconciliation(connection_changed=True)
+        for mode in ("http", "auth", "connection", "monitor_auth"):
+            self.network.mode = mode
+            await self.core.reconcile_once("failure_retry")
+            self.assertIsNone(self.core.acquire(CAPABILITY), mode)
+            self.assertEqual(self.recovery()["confirmations"], 0, mode)
+        self.network.mode = "ok"
+        original = self.core._collector.collect
+
+        async def moved():
+            observation = await original()
+            self.core.request_reconciliation(connection_changed=True)
+            return observation
+
+        with patch.object(self.core._collector, "collect", side_effect=moved):
+            await self.core.reconcile_once("failure_retry")
+        self.assertIsNone(self.core.acquire(CAPABILITY))
+        self.assertEqual(self.recovery()["confirmations"], 0)
+
+    async def induce_disposition(self, disposition):
+        """Withdraw admitted authority (or never admit); return the restorer.
+
+        Returns the confirmations already accepted by the inducing attempt.
+        """
+        if disposition == "never_initialized":
+            self.network.mode = "connection"
+            await self.core.reconcile_until_initialized(
+                retry_delays=(0.25,), sleep=lambda _delay: asyncio.sleep(0))
+            self.network.mode = "ok"
+            return 0
+        await self.boot()
+        if disposition == "transient":
+            self.network.mode = "http"
+            await self.core.reconcile_once("periodic")
+            self.network.mode = "ok"
+        elif disposition == "socket_moved":
+            self.network.monitors[-1].disconnect.set()
+            await self.until(lambda: self.counters()["retirements"] == 1)
+        elif disposition == "incompatible":
+            with patch.object(self.core, "_authority_provider", return_value=()):
+                await self.core.reconcile_once("periodic")
+            self.assertEqual(self.recovery()["recovery_state"], "incompatible")
+        elif disposition == "unreviewed_version":
+            self.network.version = "2099.1.0"
+            await self.core.reconcile_once("periodic")
+            self.assertEqual(self.recovery()["recovery_state"], "incompatible")
+            self.network.version = "2026.9.1"
+        elif disposition == "unavailable":
+            # A complete-identity probe whose evidence admits nothing.
+            with patch.object(self.core._coordinator, "preview_admitted", return_value=()), \
+                    patch.object(self.core, "_authority_provider", return_value=()):
+                await self.core.reconcile_once("periodic")
+        elif disposition == "version_changed":
+            # A different reviewed Core version observed by a background check
+            # retires the old generation; that same check is confirmation one.
+            self.network.version = "2026.9.0"
+            await self.core.reconcile_once("periodic")
+            return 1
+        else:  # pragma: no cover - the matrix names every disposition
+            raise AssertionError(disposition)
+        return 0
+
+    async def test_every_disposition_needs_full_background_confirmation(self):
+        dispositions = ("transient", "socket_moved", "incompatible", "unreviewed_version",
+                        "unavailable", "never_initialized", "version_changed")
+        for disposition in dispositions:
+            for pattern in ("background", "on_demand", "mixed"):
+                with self.subTest(disposition=disposition, pattern=pattern):
+                    await self.fresh_core()
+                    self.network.version = "2026.9.1"
+                    seeded = await self.induce_disposition(disposition)
+                    self.assertIsNone(self.core.acquire(CAPABILITY))
+                    if disposition != "never_initialized":
+                        # Every withdrawal of admitted authority arms recovery.
+                        self.assertIsNotNone(self.recovery()["retired_at"])
+                    self.assertEqual(self.counters()["authority_restorations"], 0)
+                    accepted = self.counters()["recovery_confirmations"]
+                    if pattern in ("on_demand", "mixed"):
+                        for trigger in ON_DEMAND:
+                            await self.core.reconcile_once(trigger)
+                            self.assertIsNone(self.core.acquire(CAPABILITY), trigger)
+                    self.assertEqual(self.counters()["recovery_confirmations"], accepted)
+                    if pattern == "on_demand":
+                        self.assertEqual(self.recovery()["confirmations"], seeded)
+                        self.assertEqual(self.counters()["authority_restorations"], 0)
+                        continue
+                    for count in range(seeded + 1, CORE_RECOVERY_CONFIRMATIONS):
+                        await self.core.reconcile_once("periodic")
+                        self.assertEqual(self.recovery()["confirmations"], count)
+                        self.assertIsNone(self.core.acquire(CAPABILITY))
+                        if pattern == "mixed":
+                            for trigger in ON_DEMAND:
+                                await self.core.reconcile_once(trigger)
+                                self.assertIsNone(self.core.acquire(CAPABILITY), trigger)
+                                self.assertEqual(self.recovery()["confirmations"], count)
+                    await self.core.reconcile_once("periodic")
+                    self.assert_authority_round_trip()
+                    self.assertEqual(self.counters()["authority_restorations"], 1)
+                    self.assertEqual(self.counters()["recovery_confirmations"],
+                                     CORE_RECOVERY_CONFIRMATIONS)
+
+    async def test_pristine_runtime_never_admits_on_demand(self):
+        for trigger in ON_DEMAND[:6]:
+            with self.subTest(trigger=trigger):
+                await self.fresh_core()
+                await self.core.reconcile_once(trigger)
+                self.assertIsNone(self.core.acquire(CAPABILITY))
+                await self.core.reconcile_once("periodic")
+                self.assertIsNone(self.core.acquire(CAPABILITY))  # first of two
+                await self.core.reconcile_once("periodic")
+                self.assert_authority_round_trip()
+
+    # -- Root cause: the live beta.24 state recovers through the gate ------
+
+    async def reproduce_live_incident_state(self, fault):
+        """Boot, 25 successful background wakes, then one failed attempt."""
+        await self.boot()
+        self.supervisor = asyncio.create_task(self.core.supervise(
+            interval_seconds=300, sleep=self.clock.sleep, jitter=lambda: 0.5))
+        for wake in range(25):
+            self.core.request_reconciliation()
+            await self.until(lambda: self.counters()["verification_successes"] == wake + 2)
+        self.network.mode = "connection"
+        if fault == "probe":
+            self.core.request_reconciliation()  # P1: an ordinary wake fails
+        else:
+            self.network.monitors[-1].disconnect.set()  # P2: socket closes, reprobe fails
+        return await self.release(CORE_RECOVERY_RETRY_BASE_SECONDS)
+
+    async def test_live_incident_state_recovers_automatically(self):
+        for fault in ("probe", "socket"):
+            with self.subTest(fault=fault):
+                await self.fresh_core()
+                delay = await self.reproduce_live_incident_state(fault)
+                health = self.core.health_snapshot()
+                counters = health["counters"]
+                # The exact state reported by live health at 17:49Z.
+                self.assertEqual(
+                    (health["initialized"], health["observed_core_version"],
+                     health["current_generation"]), (False, None, None))
+                self.assertEqual(
+                    {key: counters[key] for key in (
+                        "verification_attempts", "verification_successes",
+                        "verification_failures", "retirements", "reprobes",
+                        "authority_restorations")},
+                    {"verification_attempts": 27, "verification_successes": 26,
+                     "verification_failures": 1, "retirements": 1, "reprobes": 26,
+                     "authority_restorations": 0})
+                recovery = self.assert_bounded_projection()
+                # Unlike base, the retry is visible and paced by backoff, not 300 s.
+                self.assertEqual(recovery["recovery_state"], "backing_off")
+                self.assertEqual(recovery["retry_delay_seconds"], CORE_RECOVERY_RETRY_BASE_SECONDS)
+                self.assertIsNotNone(recovery["next_recovery_attempt_at"])
+                self.assertEqual(recovery["last_failure_reason"],
+                                 "core_lifecycle_monitor_unavailable")
+                await self.recover_through_confirmation(None, delay=delay)
+                self.assertEqual(self.recovery()["recovery_state"], "restored")
+                self.assertEqual(self.counters()["recovery_confirmations"],
+                                 CORE_RECOVERY_CONFIRMATIONS)
+                self.assert_authority_round_trip()
 
     async def test_flapping_requires_more_spaced_confirmations_and_does_not_toggle(self):
         clock = [1000.0]

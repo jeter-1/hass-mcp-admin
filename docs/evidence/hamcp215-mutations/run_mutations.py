@@ -70,12 +70,12 @@ MUTATIONS = [
     )]),
     m("R2-restore-without-confirmation",
       "brief: no hysteresis (the first complete success after a transient republishes)", RUNTIME, [(
-        "                            or self._recovery_confirmations < self._recovery_required\n",
-        "                            or self._recovery_confirmations < 1\n",
+        "                        if self._recovery_confirmations < self._recovery_required:\n",
+        "                        if self._recovery_confirmations < 1:\n",
     )]),
     m("R3-restore-skips-recovery-gate",
       "brief: restore without the recovery verification gate at all", RUNTIME, [(
-        "                if failure_reason is None and self._recovery_active:\n",
+        "                if failure_reason is None and gated:\n",
         "                if False:\n",
     )]),
     m("R4-restore-without-lifecycle-fence",
@@ -85,8 +85,8 @@ MUTATIONS = [
     )]),
     m("R5-confirmation-key-ignored",
       "design: confirmations of different versions/contracts count toward one streak", RUNTIME, [(
-        "                        elif key == self._recovery_confirmation_key:\n",
-        "                        elif self._recovery_confirmation_key is not None:\n",
+        "                        if key == self._recovery_confirmation_key:\n",
+        "                        if self._recovery_confirmation_key is not None:\n",
     )]),
     m("R6-failure-keeps-confirmations",
       "brief: a failure during confirmation does not restart the count", RUNTIME, [(
@@ -96,17 +96,77 @@ MUTATIONS = [
         "        self._consecutive_failures += 1\n",
     )]),
     m("R7-connection-move-keeps-confirmations",
-      "design: a connection move during confirmation does not restart the count", RUNTIME, [(
-        "                elif self._recovery_active and self._recovery_confirmations:\n",
-        "                elif False:\n",
-    )]),
-    m("R8-on-demand-trigger-confirms",
-      "design: on-demand verification (mutation pre-dispatch) counts as a recovery confirmation", RUNTIME, [
-        ("                        if trigger not in _RECOVERY_CONFIRMATION_TRIGGERS:\n",
-         "                        if False:\n"),
-        ("                            trigger not in _RECOVERY_CONFIRMATION_TRIGGERS\n",
-         "                            False\n"),
+      "design: a connection move during confirmation does not restart the count", RUNTIME, [
+        ("                elif confirming:\n",
+         "                elif False:\n"),
+        ("                self._recovery_confirmations = 0\n"
+         "                self._recovery_confirmation_key = None\n"
+         "                self._append_event_locked(\n"
+         "                    \"core_connection_changed\",\n",
+         "                self._append_event_locked(\n"
+         "                    \"core_connection_changed\",\n"),
     ]),
+    m("R8-on-demand-trigger-confirms",
+      "H1: an on-demand verification (mutation pre-dispatch, tool or health caller) counts as a confirmation", RUNTIME, [(
+        "                    if admitted_preview and trigger in _RECOVERY_CONFIRMATION_TRIGGERS:\n",
+        "                    if admitted_preview:\n",
+    )]),
+    m("G1-incompatible-bypasses-gate",
+      "H1: an incompatible (or unreviewed-version) Core restores outside the gate", RUNTIME, [(
+        "                gated = not self._admitted and not first_admission\n",
+        "                gated = (not self._admitted and not first_admission\n"
+        "                         and self._recovery_state != \"incompatible\")\n",
+    )]),
+    m("G2-boot-window-left-open",
+      "H1: never initialized after the boot sequence admits on one background success", RUNTIME, [(
+        "            self._first_admission_open = False\n"
+        "        return snapshot\n",
+        "            pass\n"
+        "        return snapshot\n",
+    )]),
+    m("G3-failed-attempt-keeps-boot-window",
+      "H1: a failed non-boot first attempt leaves first admission open (never initialized ungated)", RUNTIME, [(
+        "                if trigger not in _BOOT_TRIGGERS:\n"
+        "                    self._first_admission_open = False\n",
+        "",
+    )]),
+    m("G4-on-demand-first-admission",
+      "H1: an on-demand caller may perform the first admission of a fresh runtime", RUNTIME, [(
+        "                    and trigger in _FIRST_ADMISSION_TRIGGERS\n",
+        "                    and True\n",
+    )]),
+    m("G5-version-change-retired-only-with-registry",
+      "H1: a changed Core version replaces admitted authority without the gate", RUNTIME, [(
+        "                observation.version is not None\n"
+        "                and self._retire_observed_version_change(\n",
+        "                registry and registry.enabled\n"
+        "                and observation.version is not None\n"
+        "                and self._retire_observed_version_change(\n",
+    )]),
+    m("G6-incompatible-withdrawal-not-recovery",
+      "H1: an incompatible withdrawal is not armed as recovery (no retired_at, no flap)", RUNTIME, [(
+        "        if was_admitted:\n"
+        "            # Withdrawn for any reason: restoration passes the same gate.\n"
+        "            self._enter_recovery_locked(now)\n",
+        "",
+    )]),
+    m("G7-material-retirement-not-recovery",
+      "H1: a material (version/registry) retirement is not armed as recovery", RUNTIME, [(
+        "        if was_admitted:\n"
+        "            self._enter_recovery_locked(now)\n"
+        "        self._counters[\"retirements\"] += 1\n",
+        "        self._counters[\"retirements\"] += 1\n",
+    )]),
+    m("G8-confirmation-spacing-only-in-transient-recovery",
+      "H1: confirmations of a never-initialized Core are paced as backoff, not confirmation spacing", RUNTIME, [(
+        "            if self._confirming_locked():\n",
+        "            if self._recovery_active and self._recovery_confirmations > 0:\n",
+    )]),
+    m("L1-refusals-counted-as-confirmations",
+      "L1: refused on-demand calls inflate counters.recovery_confirmations", RUNTIME, [(
+        "                        self._counters[\"recovery_on_demand_refusals\"] += 1\n",
+        "                        self._counters[\"recovery_confirmations\"] += 1\n",
+    )]),
     m("R9-no-flap-escalation",
       "brief: flapping is not escalated (same confirmations inside the flap window)", RUNTIME, [(
         "                CORE_RECOVERY_FLAP_CONFIRMATIONS if flap\n",

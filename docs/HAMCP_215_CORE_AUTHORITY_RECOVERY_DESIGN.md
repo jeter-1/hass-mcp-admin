@@ -80,27 +80,62 @@ emitted.
    `CORE_RECONCILIATION_INTERVAL_SECONDS` (300 s). It cannot be woken early,
    has no backoff or jitter, and does not record when the next attempt runs. A
    persistent failure retries every 300 s forever, silently.
-3. **The counters do not support "never recovered for ~2 h".**
-   - Attempts 27 = successes 26 + failures 1, and the snapshot shows one
-     retirement, so no attempt was in flight. After each failure, base code
-     makes another attempt within 300 s (finding 2); that attempt increments
-     `verification_attempts`, and each further failure increments
-     `verification_failures`.
-   - A Core outage that lasted about 2 h would therefore show about 24
-     failures. One failure followed by no further attempt means the retirement
-     happened within roughly one retry interval before the snapshot.
-   - The start of the outage cannot be determined from the counters. Its exact
-     transport cause cannot be determined from any existing surface: the
-     reason code went only to the audit file, and the exception class was
-     discarded (`observation.py:318-320`).
+3. **Which state the live health shows, and why it had not recovered.** The
+   independent review of `4e677ec` confirmed that base already retried
+   automatically (finding 2). The live snapshot is consistent with that, and
+   identifies one exact state:
+   - `initialized` false with `observed_core_version` and `current_generation`
+     both null is produced only by R1 (`runtime.py:188-192` clears the
+     generation, `_observation` and `_initialized`). A published unavailable or
+     incompatible generation would show `initialized` true and a generation
+     (`runtime.py:313-319`). R3 (`runtime.py:593-615`) keeps the observation, so
+     the version would not be null. R2 needs the registry and a changed Core
+     version, and HA did not restart.
+   - One failure and one retirement with no further attempt is the R1a
+     early-failure path: a verification fails (or the lifecycle watcher cannot
+     re-attach), `runtime.py:261-269` calls R1 (retirements +1,
+     `runtime.py:194-195`) and `_audit_early_failure` (failures +1,
+     `runtime.py:372`). R1b followed by a failed reprobe ends in the same state.
+     So does the connection-fence race (`runtime.py:296-303`).
+   - Attempts 27 = successes 26 + failures 1, so no attempt was in flight. Base
+     successes count only admitting publications (`runtime.py:321-328`), so
+     every attempt before the last one admitted.
+   - Reprobes 26 = attempts − 1 startup (`runtime.py:240-241`). At the 300 s
+     interval, 26 reprobes span about 7,800 s. The reported uptime at discovery
+     was about 2 h 13 min (7,980 s), so the supervisor ran on schedule
+     throughout. Supervisor death is excluded: `application.py:526-560` runs it
+     under `FIRST_COMPLETED`, so its exit would have ended the server.
+   - The failed attempt was therefore the last one. It happened about
+     2–8 minutes before the 17:49Z snapshot (no earlier than the 25th periodic
+     interval, about 17:41Z). The register's "between 15:43Z and 17:49Z" is the
+     window in which the failure could have happened, not the outage's length.
+   - Base would have retried once at +300 s (`runtime.py:436-438`,
+     `:450-452`), about 17:46–17:54Z. The owner restarted the add-on at about
+     17:55Z, at or just after that retry was due. Nothing records whether it ran
+     or failed. Under base code it could only have succeeded, failed silently or
+     been preempted.
+   - **Conclusion.** The counters do not support an authority outage of about
+     2 h: one would show about 24 failures. Authority had been withdrawn for
+     minutes at discovery. It looked permanent because base gave no signal at
+     all: no log (base `runtime.py` has no logger call), no next-attempt time,
+     no recovery state, and a flat 300 s wait. The exact transport cause stays
+     unknown: the reason code went only to the audit file, and the exception
+     class was discarded (`observation.py:318-320`).
+   - This change makes the same state visible and short.
+     `test_live_incident_state_recovers_automatically` boots the production
+     source and watcher, runs 25 successful supervisor wakes, then one failed
+     wake (as a failed probe, and as a socket close followed by a failed
+     reprobe). It asserts the exact live health (`initialized` false, version
+     and generation null, attempts 27, successes 26, failures 1, retirements 1,
+     reprobes 26, restorations 0). It then shows the supervisor recovering
+     automatically through the restoration gate: a 20 s backoff, then two
+     complete background confirmations about 16.5 s apart, with
+     `recovery_state`, the failure reason and `next_recovery_attempt_at`
+     visible throughout.
    - The pre-counter section of `reconcile_once` (the reconciliation lock,
      `refresh_if_due`, `_sync_registry_authority`) cannot block indefinitely:
-     the registry is disabled by default, or bounded by the timeouts above.
-   - If the owner saw `initialized: false` at observations more than about
-     5 minutes apart with unchanged counters, that would indicate a stalled
-     supervisor. No code path reproduces such a stall. This change adds
-     `last_attempt_at` and `next_recovery_attempt_at`, so a stall is
-     distinguishable next time.
+     the registry is disabled by default, or bounded by the timeouts above. A
+     hang inside an attempt would leave attempts above successes + failures.
 4. **Why nothing logged.**
    - `ha_core_readmission/` and the gateway's Core wiring contain no logger
      calls at all.
@@ -148,12 +183,26 @@ All constants live in `ha_core_readmission/runtime.py`.
   The attempt counts toward restoration only if the coordinator's pure
   evaluation (`CoreReadmissionCoordinator.preview_admitted`, which has no side
   effects) admits at least one capability.
-- **Hysteresis.**
-  - After admitted authority is withdrawn by a transient failure or a
-    connection movement, recovery is active (`_enter_recovery_locked`).
-    Restoring authority then requires `CORE_RECOVERY_CONFIRMATIONS = 2`
-    consecutive complete verifications with the same confirmation key: the
-    observed version and the exact set of admitted capabilities.
+- **Hysteresis: one restoration gate.** Correction after the independent
+  review of `4e677ec` (H1). Every state in which no authority is admitted
+  passes the same gate, whatever the reason:
+  - a transient retirement or connection movement
+  - an incompatible Core (an unreviewed version, or evidence failing its
+    reviewed contract)
+  - an unavailable generation
+  - a Core never initialized after the boot sequence
+  - a changed Core version, or moved registry authority
+
+  Restoring authority requires `CORE_RECOVERY_CONFIRMATIONS = 2` (3 after a
+  flap) consecutive complete background verifications with the same
+  confirmation key: the Core identity, the observed version and the exact set
+  of admitted reviewed contracts (capability and contract fingerprint). Each
+  withdrawal of admitted authority arms recovery (`_enter_recovery_locked`,
+  which records `retired_at` and the flap count), including the incompatible
+  and material-retirement paths. A changed Core version now retires the
+  admitted generation with or without the registry, so the new version passes
+  the gate. The background check that observed the new version counts as its
+  first confirmation.
   - A complete verification that does not yet publish sets
     `recovery_state = confirming` and logs `core_authority_recovery_confirming`.
     The supervisor then waits `CORE_RECOVERY_CONFIRMATION_SECONDS = 15` × (1 +
@@ -173,19 +222,34 @@ All constants live in `ha_core_readmission/runtime.py`.
     the catalog every few seconds.
   - **Supervisor-paced only.** Only the `periodic`,
     `identity_or_connection_change` and `failure_retry` triggers can count a
-    confirmation or publish. On-demand verifications during recovery, such as
-    `mutation_pre_dispatch` and `configuration_reverification`, are refused
-    without publishing and cannot shorten the spacing. Their failures still
-    restart the count.
+    confirmation or publish. Every other trigger is on demand:
+    `mutation_pre_dispatch`, `mutation_verification`,
+    `configuration_reverification`, `fan_authority`, any unknown name (for
+    example a health or tool probe), and `startup`/`startup_retry` once the
+    boot sequence has ended. From any non-admitted state, an on-demand
+    verification that would admit is refused without publishing. It is not
+    counted and does not change the streak or the supervisor's next attempt.
+    It is counted separately in `counters.recovery_on_demand_refusals` and
+    logged at INFO as `core_authority_recovery_on_demand_refused`. Its failures
+    still restart the count.
+  - **Counter (L1).** `counters.recovery_confirmations` counts only accepted
+    background confirmations, including the final one that restores. One
+    transient recovery adds exactly 2 (3 after a flap).
   - **Trade-off.** Every lifecycle-socket movement now waits one confirmation
     interval (about 15–18 s) before authority returns. This includes the
     reconnect after a Core update or restart. Previously authority returned on
     the immediate reprobe. This is the hysteresis the brief requires.
     **Josh accepted this delay on 2026-10-20**; Core-backed tools refuse
     during it.
-- **Startup is unchanged.** First admission after process start publishes on
-  the first complete verification, because no previously admitted authority is
-  being restored. A startup failure is logged and paced by the same backoff.
+- **First admission is not restoration.** The production boot sequence
+  (`reconcile_until_initialized`: `startup`, then `startup_retry`) of a freshly
+  configured runtime publishes on its first complete verification, because no
+  previously admitted authority is being restored. So does the first
+  background verification of a runtime that has made no attempt yet. The boot
+  window closes at the first admission, at the end of the boot sequence, and
+  after any attempt that is not a boot attempt. A Core that is still not
+  initialized after that passes the restoration gate. A startup failure is
+  logged and paced by the same backoff.
 - **Incompatibility.** A complete, identity-agreeing observation that admits
   nothing publishes the existing fail-closed generation. Examples are an
   unreviewed Core version, or a reviewed version whose evidence fails its
@@ -196,8 +260,11 @@ All constants live in `ha_core_readmission/runtime.py`.
     admitted authority was replaced.
   - It is re-checked at the normal periodic interval (300 s) without backoff.
     `next_recovery_attempt_at` records that time.
-  - A later admitting verification restores it and logs
-    `core_authority_restored`.
+  - It stays withdrawn while incompatible. Once a background re-check admits,
+    that check is the first confirmation of the same gate. Confirmation
+    spacing then applies, and the final confirmation logs
+    `core_authority_restored`. One successful verification never restores it,
+    and an on-demand one never counts.
 
   Identity disagreement or an incomplete observation remains a failed
   verification and backs off. It never publishes admitted authority.
@@ -251,8 +318,10 @@ All constants live in `ha_core_readmission/runtime.py`.
   - `confirmations`, `confirmations_required`
   - `last_restored_at`
 
-  All existing counters stay. Three new counters are added:
-  `recovery_attempts`, `recovery_confirmations` and `authority_restorations`.
+  All existing counters stay. Four new counters are added:
+  `recovery_attempts`, `recovery_confirmations` (accepted background
+  confirmations only), `recovery_on_demand_refusals` and
+  `authority_restorations`.
   This is an additive public-health change, authorized by the task.
 
 ### C. Dependents
@@ -298,21 +367,38 @@ The gateway code is not changed. This change makes no changes to:
 
 ## Validation
 
-- `tests/test_hamcp215_core_authority_recovery.py` (16 tests) covers:
+- `tests/test_hamcp215_core_authority_recovery.py` (26 tests) covers:
   - every transient trigger going from retirement to automatic restoration,
     with the catalog and index back:
     - REST HTTP failure, connection loss, timeout and authentication failure
     - lifecycle-watcher attach failure and timeout
   - one supervisor recovering without a restart, with the exact event sequence
   - a persistent failure backing off to the cap, logging and refusing
-  - a startup failure being logged and paced
-  - an incompatibility staying retired and being re-checked without backoff
+  - a startup failure being logged, paced and restored only through the gate
+  - a successful boot sequence admitting without confirmation, and a failed
+    boot sequence leaving a never-initialized Core gated
+  - an incompatibility staying retired and being re-checked without backoff,
+    then restored only after two background confirmations once compatible
+  - the reviewer's H1 reproductions, through the production collector and
+    lifecycle watcher: an incompatible contract, with and without one prior
+    periodic confirmation; an unreviewed version followed by on-demand
+    verification; the counter after on-demand attempts; partial and stale
+    observations
+  - a matrix of every disposition (transient, socket moved, incompatible,
+    unreviewed version, unavailable, never initialized, version changed) ×
+    {background success, on-demand success, mixed}
+  - a pristine runtime never admitting on demand
+  - the live incident's exact state (initialized false, version and
+    generation null, 27 attempts) recovering automatically through the
+    gate, for both the probe and the socket fault
   - the confirmation count restarting on each of these:
     - a failure
     - a connection move
     - a monitorless failure
     - a different version
-  - on-demand verification during recovery being refused and not counting
+  - on-demand verification (every on-demand trigger name, plus unknown
+    names) being refused, not counting, and counted only in
+    `recovery_on_demand_refusals`
   - flap escalation and window expiry
   - rapid flapping never publishing between confirmations
   - jitter bounds
@@ -322,12 +408,38 @@ The gateway code is not changed. This change makes no changes to:
   - the dependency index refusing during the outage and resuming
 - Updated existing tests:
   - `tests/test_rc3_postcore_regressions.py` pinned the fixed 300 s retry.
+    Its failed-first-attempt test now shows the never-initialized Core
+    passing the gate (two background confirmations).
   - `tests/test_ha_core_2026_9_integration.py` had two lifecycle tests that
     expected immediate republication after a connection movement. They now
-    assert the confirming state first.
-- `docs/evidence/hamcp215-mutations/run_mutations.py` (19 mutations, 19
+    assert the confirming state first; the version-transition test restores
+    through the gate.
+  - The H1 gate removes two test-only shortcuts that production never used:
+    admission on an arbitrary named (on-demand) trigger, and a single
+    reconciliation restoring authority after a version or signed-registry
+    change. `tests/support/core_gate.py` adds `reconcile_through_gate`, which
+    runs background verifications while the gate is confirming. Fresh
+    runtimes now admit with `startup`, as production does
+    (`application.py` `reconcile_until_initialized`), and restorations use the
+    helper. Affected: `test_alarmo_inspection_core_authority`,
+    `test_automation_baseline_capture`, `test_beta_v2`,
+    `test_core_2026_10_device_registry` (also used by
+    `test_hamcp069a_entity_metadata_readmission` and
+    `test_upstream_8_6_compatibility`), `test_core_semantic_continuity`,
+    `test_core_update_continuity`, `test_dashboard_analysis_catalog`,
+    `test_hamcp162_yaml_admission`, `test_hamcp175_power_fan_admission`,
+    `test_hamcp200_path_safety`, `test_rc4_device_identifier_contract`,
+    `test_typed_core_container_contract` and `test_typed_core_continuity`.
+    No assertion about refusal, dispatch counts or authority was weakened.
+  - The disposable-lane scripts get the same change (CI evidence only):
+    `scripts/core_registry_contract_lane.py` (shared by the real-HA,
+    ha-mcp 8.5.0 container and dashboard-analysis lanes),
+    `scripts/alarmo_inspection_contract_acceptance.py`,
+    `scripts/entity_metadata_contract_acceptance.py` and
+    `scripts/automation_baseline_contract_acceptance.py`.
+- `docs/evidence/hamcp215-mutations/run_mutations.py` (28 mutations, 28
   killed; results in `results.json`) must fail on each of these:
-  - no recovery loop. This one is killed by the runner's 120 s timeout,
+  - no recovery loop. This one is killed by the runner's default 900 s timeout,
     not by an assertion. Without the paced loop, the retirement's own
     reprobe hint re-wakes the supervisor immediately: 12,557 attempts in
     15 s were measured. The unpaced chain starves the event loop. This is
@@ -344,3 +456,10 @@ The gateway code is not changed. This change makes no changes to:
   - each of the retirement, verification-failure, attempt, restoration and
     catalog log events dropped
   - `last_failure_reason` or `retired_at` not recorded
+  - H1 gate (G1-G8): an incompatible Core bypassing the gate; the boot
+    window left open after boot, after a failed attempt, or opened by an
+    on-demand trigger; a version-change retirement applied only with a
+    registry; an incompatible withdrawal or a material retirement not
+    entering recovery; confirmation spacing applied only during transient
+    recovery
+  - L1: refused on-demand attempts counted in `recovery_confirmations`

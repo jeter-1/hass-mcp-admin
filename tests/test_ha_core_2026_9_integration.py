@@ -86,6 +86,7 @@ from tests.test_ha_core_capability_auto_readmission import (  # noqa: E402
     _evidence,
     _snapshot,
 )
+from tests.support.core_gate import reconcile_through_gate  # noqa: E402
 from tests.f3_synthetic_adapter import (  # noqa: E402
     prepared_dashboard_operation,
 )
@@ -2324,7 +2325,9 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         plan_created_at = datetime.now(timezone.utc).isoformat()
 
         source.snapshot = _core_2026_9_snapshot()
-        await runtime.reconcile_once("identity_or_connection_change")
+        # HAMCP-215 H1: the version change retires the admitted generation;
+        # restoration needs the agreeing background confirmations.
+        await reconcile_through_gate(runtime, "identity_or_connection_change")
         health = runtime.health_snapshot()
         self.assertGreater(health["current_generation"], old_generation)
         self.assertEqual(health["compatible_count"], len(CORE_CAPABILITY_PROFILES))

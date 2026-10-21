@@ -441,7 +441,7 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
             runtime = CoreRuntime()
             runtimes.append(runtime)
             runtime.configure(configured, release_registry=registry)
-            await runtime.reconcile_once("hamcp179_entity_metadata_disposable")
+            await runtime.reconcile_once("startup")
             assert runtime.health_snapshot()["compatible_count"] == len(references)
             return runtime
 

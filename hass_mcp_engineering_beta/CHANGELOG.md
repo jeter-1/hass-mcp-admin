@@ -7,27 +7,31 @@ Builds on 2.4.1-beta.25.
 - Retry a failed Core verification with bounded exponential backoff and ±20%
   jitter: 20 s, doubling, capped at 240 s. This replaces the fixed 300 s
   `failure_retry`.
-- Restore transiently withdrawn authority only after
-  `CORE_RECOVERY_CONFIRMATIONS = 2` consecutive complete verifications by the
-  supervisor, spaced about 15 s apart, with the same version and admitted
-  capability set. A retirement within 600 s of a restoration needs 3, at
-  doubled spacing. Any failure, connection move, or version or capability-set
-  change restarts the count. On-demand verification during recovery is
-  refused and does not count.
+- Pass every non-admitted state (transient retirement, incompatible,
+  unavailable, never initialized after boot, changed version or registry
+  authority) through one restoration gate: `CORE_RECOVERY_CONFIRMATIONS = 2`
+  consecutive complete background verifications by the supervisor, spaced
+  about 15 s apart, with the same Core identity, version and admitted reviewed
+  contracts. A retirement within 600 s of a restoration needs 3, at doubled
+  spacing. Any failure, connection move, or identity, version or contract
+  change restarts the count. Only the boot sequence's first admission is
+  exempt. On-demand verification never confirms or restores from any state;
+  it is refused and counted in `recovery_on_demand_refusals`.
 - Keep a complete but unadmitted observation retired
   (`recovery_state: incompatible`). Re-check it every reconciliation interval
-  without backoff.
+  without backoff; once compatible it passes the same gate.
 - Log `core_authority_verification_failed`, `core_authority_retired`,
   `core_authority_capabilities_withdrawn`, `core_catalog_tools_withdrawn`,
   `core_catalog_tools_restored`, `core_authority_recovery_attempt`,
   `core_authority_recovery_confirming`, `core_authority_recovery_reset` and
   `core_authority_restored` at WARNING, and `core_authority_recovery_scheduled`
-  at INFO. Each carries a bounded reason or detail and an `at` timestamp. Probe
+  and `core_authority_recovery_on_demand_refused` at INFO. Each carries a bounded reason or detail and an `at` timestamp. Probe
   failures are classified into closed `core_probe_*` details.
 - Add `home_assistant_core_authority.recovery` to health, with recovery state,
   failure reason, detail and time, retirement, attempt, next-attempt and
   restoration times, and confirmations. Add the counters `recovery_attempts`,
-  `recovery_confirmations` and `authority_restorations`.
+  `recovery_confirmations` (accepted confirmations only),
+  `recovery_on_demand_refusals` and `authority_restorations`.
 - A lifecycle-socket movement, including the reconnect after a Core restart,
   now waits one confirmation interval (about 15–18 s) before authority returns.
   Core-backed tools refuse during it. Josh accepted this on 2026-10-20.

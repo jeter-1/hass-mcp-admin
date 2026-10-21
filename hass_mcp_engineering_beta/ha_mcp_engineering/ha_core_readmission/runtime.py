@@ -44,9 +44,12 @@ CORE_RECOVERY_RETRY_BASE_SECONDS = 20.0
 CORE_RECOVERY_RETRY_CAP_SECONDS = 240.0
 CORE_RECOVERY_RETRY_JITTER = 0.2
 CORE_RECOVERY_MAX_BACKOFF_LEVEL = 8
-# Hysteresis: authority withdrawn by a transient failure is republished only
-# after consecutive complete verifications spaced by the confirmation delay. A
-# retirement soon after a restoration is a flap and needs one more, slower.
+# Hysteresis: one restoration gate covers every non-admitted state (transient
+# retirement, incompatible, unavailable, never initialized after boot, changed
+# version or registry authority). Authority is published again only after
+# consecutive complete background verifications agreeing on identity, version
+# and reviewed contracts, spaced by the confirmation delay. A retirement soon
+# after a restoration is a flap and needs one more, slower.
 CORE_RECOVERY_CONFIRMATIONS = 2
 CORE_RECOVERY_CONFIRMATION_SECONDS = 15.0
 CORE_RECOVERY_FLAP_WINDOW_SECONDS = 600.0
@@ -60,12 +63,19 @@ _RECOVERY_REASONS = frozenset({
     "core_observed_version_changed", "core_registry_authority_changed",
     "core_authority_incompatible", "core_generation_replaced",
 })
-# Only supervisor-paced attempts may count toward recovery confirmation. An
-# on-demand caller (for example mutation pre-dispatch) during recovery is
-# refused without publishing and cannot shorten the confirmation spacing.
+# Only supervisor-paced attempts may count toward recovery confirmation. Any
+# other trigger is on demand (mutation pre-dispatch, reverification, tool and
+# health callers, unknown names): while authority is not admitted it is refused
+# without publishing, is never counted and cannot shorten the spacing.
 _RECOVERY_CONFIRMATION_TRIGGERS = frozenset({
     "periodic", "identity_or_connection_change", "failure_retry",
 })
+# First admission is not restoration: only the boot sequence of a freshly
+# configured runtime (or its first background verification) may admit without
+# the gate. The window closes at the first admission, at the end of the boot
+# sequence, and after any attempt that is not a boot attempt.
+_BOOT_TRIGGERS = frozenset({"startup", "startup_retry"})
+_FIRST_ADMISSION_TRIGGERS = _BOOT_TRIGGERS | _RECOVERY_CONFIRMATION_TRIGGERS
 logger = get_logger("core_authority")
 
 
@@ -142,6 +152,7 @@ class CoreRuntime:
             "audit_write_failures": 0,
             "recovery_attempts": 0,
             "recovery_confirmations": 0,
+            "recovery_on_demand_refusals": 0,
             "authority_restorations": 0,
         }
         self._monotonic: Callable[[], float] = time.monotonic
@@ -153,6 +164,7 @@ class CoreRuntime:
         # Whether the published generation admits any capability.
         self._admitted = False
         self._admitted_capabilities: frozenset[str] = frozenset()
+        self._first_admission_open = True
         self._recovery_active = False
         self._recovery_state = "initializing"
         self._consecutive_failures = 0
@@ -274,6 +286,7 @@ class CoreRuntime:
                 self._last_material_change_at = now
                 self._admitted = False
                 self._admitted_capabilities = frozenset()
+                confirming = self._recovery_confirmations > 0
                 if retired_generation is not None:
                     self._counters["retirements"] += 1
                     if was_admitted or self._recovery_active:
@@ -284,16 +297,20 @@ class CoreRuntime:
                         reason, retired_generation, now, detail=detail,
                         admitted=was_admitted,
                     ))
-                elif self._recovery_active and self._recovery_confirmations:
+                elif confirming:
                     # A movement inside the confirmation window restarts the
-                    # consecutive verification count.
-                    self._enter_recovery_locked(now)
+                    # consecutive verification count in every gated state.
+                    if self._recovery_active:
+                        self._enter_recovery_locked(now)
+                    self._recovery_state = "retrying"
                     records.append(self._recovery_record_locked(
                         "core_authority_recovery_reset",
                         "Home Assistant Core connection moved during recovery confirmation",
                         now,
                         reason=reason if reason in _RECOVERY_REASONS else "other",
                     ))
+                self._recovery_confirmations = 0
+                self._recovery_confirmation_key = None
                 self._append_event_locked(
                     "core_connection_changed",
                     "core_connection_changed",
@@ -344,7 +361,15 @@ class CoreRuntime:
                     self._counters["reprobes"] += 1
                 attempt_at = datetime.now(timezone.utc)
                 self._last_attempt_at = attempt_at
-                if self._recovery_active or trigger == "failure_retry":
+                first_admission = (
+                    self._first_admission_open
+                    and trigger in _FIRST_ADMISSION_TRIGGERS
+                )
+                if trigger not in _BOOT_TRIGGERS:
+                    self._first_admission_open = False
+                if trigger in _RECOVERY_CONFIRMATION_TRIGGERS and (
+                    self._recovery_active or trigger == "failure_retry"
+                ):
                     self._counters["recovery_attempts"] += 1
                     self._recovery_state = "retrying"
                     self._next_recovery_attempt_at = None
@@ -355,11 +380,18 @@ class CoreRuntime:
                     ))
             self._emit(records)
             observation = await collector.collect()
+            # A newly observed Core version cannot keep the preceding generation
+            # usable: it is a new authority that passes the restoration gate,
+            # and with a registry it may await external compatibility data.
+            if (
+                observation.version is not None
+                and self._retire_observed_version_change(
+                    observation.version,
+                    admitted_only=not (registry and registry.enabled),
+                )
+            ):
+                prior_observation = None
             if registry and registry.enabled and observation.version is not None:
-                # A newly observed Core version cannot keep the preceding
-                # generation usable while we await external compatibility data.
-                if self._retire_observed_version_change(observation.version):
-                    prior_observation = None
                 if not compiled_exact_authority(observation.version):
                     refreshed = await registry.refresh_for_missing_release(
                         server_name=CORE_IDENTITY, version=observation.version
@@ -437,30 +469,31 @@ class CoreRuntime:
                 ):
                     self._reprobe_event.set()
                     failure_reason = "core_registry_changed_during_selection"
-                if failure_reason is None and self._recovery_active:
-                    # Hysteresis: after a transient withdrawal, publish again
-                    # only after consecutive complete verifications admit the
-                    # same version and reviewed contracts. Each confirmation is
-                    # a full probe; nothing earlier is replayed or cached.
+                # The single restoration gate: whenever no authority is
+                # admitted (whatever the reason), an admitting publication
+                # needs consecutive complete background verifications agreeing
+                # on identity, version and reviewed contracts. Only the boot
+                # window's first admission is exempt; on-demand never admits.
+                gated = not self._admitted and not first_admission
+                if failure_reason is None and gated:
+                    # Each confirmation is a full probe; nothing earlier is
+                    # replayed or cached.
                     admitted_preview = self._coordinator.preview_admitted(
                         observation, authority
                     )
-                    if admitted_preview:
-                        key = (observation.version, admitted_preview)
-                        if trigger not in _RECOVERY_CONFIRMATION_TRIGGERS:
-                            pass
-                        elif key == self._recovery_confirmation_key:
+                    if admitted_preview and trigger in _RECOVERY_CONFIRMATION_TRIGGERS:
+                        key = (
+                            observation.identity, observation.version,
+                            admitted_preview,
+                        )
+                        if key == self._recovery_confirmation_key:
                             self._recovery_confirmations += 1
                         else:
                             self._recovery_confirmation_key = key
                             self._recovery_confirmations = 1
-                        if (
-                            trigger not in _RECOVERY_CONFIRMATION_TRIGGERS
-                            or key != self._recovery_confirmation_key
-                            or self._recovery_confirmations < self._recovery_required
-                        ):
+                        self._counters["recovery_confirmations"] += 1
+                        if self._recovery_confirmations < self._recovery_required:
                             confirmation_pending = True
-                            self._counters["recovery_confirmations"] += 1
                             self._recovery_state = "confirming"
                             self._append_event_locked(
                                 "core_reconciliation",
@@ -471,8 +504,25 @@ class CoreRuntime:
                                 "core_authority_recovery_confirming",
                                 "Home Assistant Core verified; confirming stability before restoring authority",
                                 now,
-                                trigger=trigger if trigger in _AUDIT_TRIGGERS else "other",
+                                trigger=trigger,
                             )]
+                    elif admitted_preview:
+                        # Refused without publishing or counting; the streak
+                        # and the supervisor's schedule are left unchanged.
+                        confirmation_pending = True
+                        self._counters["recovery_on_demand_refusals"] += 1
+                        self._append_event_locked(
+                            "core_reconciliation",
+                            "core_recovery_on_demand_refused",
+                            None,
+                        )
+                        records = [self._recovery_record_locked(
+                            "core_authority_recovery_on_demand_refused",
+                            "On-demand Home Assistant Core verification cannot restore authority",
+                            now,
+                            level=logging.INFO,
+                            trigger=trigger if trigger in _AUDIT_TRIGGERS else "other",
+                        )]
                 if failure_reason is None and not confirmation_pending:
                     # Publish the decision generation and its exact observation
                     # under one runtime lock.  Routes and health must never see a
@@ -503,7 +553,7 @@ class CoreRuntime:
                             self._counters["retirements"] += 1
                     records = self._record_publication_locked(
                         result, observation, collector, admitted_now, changed,
-                        prior_observation is not None, now,
+                        prior_observation is not None, now, restoring=gated,
                     )
                     self._append_event_locked(
                         "core_reconciliation",
@@ -544,6 +594,8 @@ class CoreRuntime:
         changed: bool,
         replaced: bool,
         now: datetime,
+        *,
+        restoring: bool,
     ) -> list[tuple[int, str, str, dict[str, Any]]]:
         """Update recovery state after one coordinator publication."""
 
@@ -560,9 +612,7 @@ class CoreRuntime:
         self._admitted = admitted_now
         self._admitted_capabilities = current
         if admitted_now:
-            restoring = (
-                self._recovery_active or self._recovery_state == "incompatible"
-            )
+            self._first_admission_open = False
             failed_attempts = self._consecutive_failures
             confirmations = self._recovery_confirmations
             self._consecutive_failures = 0
@@ -586,7 +636,7 @@ class CoreRuntime:
                     now,
                     admitted_count=len(current),
                     failed_attempts=failed_attempts,
-                    verified_confirmations=max(1, confirmations),
+                    verified_confirmations=confirmations,
                     outage_seconds=round(outage, 3) if outage is not None else None,
                 ))
             elif self._recovery_state not in {"restored", "stable"}:
@@ -604,6 +654,9 @@ class CoreRuntime:
             observation.identity_agrees
             and observation.reason_code == "observation_complete"
         )
+        if was_admitted:
+            # Withdrawn for any reason: restoration passes the same gate.
+            self._enter_recovery_locked(now)
         if complete:
             # The exact Core was observed but no reviewed contract admits it.
             # Keep it withdrawn and re-check it on the reconciliation interval.
@@ -616,8 +669,6 @@ class CoreRuntime:
                 if observation.reason_code in _OBSERVATION_REASONS else "other"
             )
             detail = self._failure_detail(collector, observation)
-            if was_admitted:
-                self._enter_recovery_locked(now)
         if was_admitted and changed:
             records.append(self._retirement_record_locked(
                 reason, result.previous_generation, now, detail=detail,
@@ -790,6 +841,10 @@ class CoreRuntime:
                 break
             await sleep(delay)
             snapshot = await self.reconcile_once("startup_retry")
+        with self._lock:
+            # The boot sequence is over: a never-initialized Core now passes
+            # the restoration gate like any other non-admitted state.
+            self._first_admission_open = False
         return snapshot
 
     async def supervise(
@@ -838,7 +893,7 @@ class CoreRuntime:
                     recovering = (
                         self._recovery_active
                         and self._recovery_state != "incompatible"
-                    )
+                    ) or self._confirming_locked()
                     retry = recovering or not (
                         snapshot["initialized"] and snapshot["identity_agreement"]
                     )
@@ -858,6 +913,11 @@ class CoreRuntime:
                 monitor_task.cancel()
                 await asyncio.gather(monitor_task, return_exceptions=True)
 
+    def _confirming_locked(self) -> bool:
+        """Whether a gated confirmation sequence is under way."""
+
+        return not self._admitted and self._recovery_confirmations > 0
+
     def _schedule_recovery_attempt(
         self, *, base: float, cap: float, confirmation: float, sample: float
     ) -> float:
@@ -868,10 +928,7 @@ class CoreRuntime:
         except (TypeError, ValueError):
             unit = 0.5
         with self._lock:
-            confirming = (
-                self._recovery_active and self._recovery_confirmations > 0
-            )
-            if confirming:
+            if self._confirming_locked():
                 spacing = confirmation * (2 ** min(
                     self._flap_count, CORE_RECOVERY_MAX_BACKOFF_LEVEL
                 ))
@@ -1023,9 +1080,14 @@ class CoreRuntime:
         if attached:
             self.request_reconciliation(connection_changed=True)
 
-    def _retire_observed_version_change(self, version: str) -> bool:
+    def _retire_observed_version_change(
+        self, version: str, *, admitted_only: bool = False
+    ) -> bool:
         with self._lock:
             if self._observation is None or self._observation.version == version:
+                return False
+            if admitted_only and not self._admitted:
+                # Nothing usable to withdraw; the gate already applies.
                 return False
             retired = self._coordinator.retire_current_generation()
             self._published_registry_token = None
@@ -1046,13 +1108,15 @@ class CoreRuntime:
     def _material_retirement_locked(
         self, retired: int | None, reason: str, now: datetime
     ) -> list[tuple[int, str, str, dict[str, Any]]]:
-        """Withdraw for changed authority material; re-evaluate without hysteresis."""
+        """Withdraw for changed authority material; restoration is gated."""
 
         was_admitted = self._admitted
         self._admitted = False
         self._admitted_capabilities = frozenset()
         if retired is None:
             return []
+        if was_admitted:
+            self._enter_recovery_locked(now)
         self._counters["retirements"] += 1
         return [self._retirement_record_locked(
             reason, retired, now, admitted=was_admitted

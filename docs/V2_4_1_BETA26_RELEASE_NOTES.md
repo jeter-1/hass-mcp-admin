@@ -35,7 +35,11 @@ was written to the add-on log.
   loss, an authentication failure, or a lifecycle-watcher socket move. This is
   the designed fail-closed behavior, and it is kept.
 - **Why it did not visibly recover.** The only retry was a fixed 300 s
-  `failure_retry`, with no backoff and no visibility.
+  `failure_retry`, with no backoff and no visibility. The counters show the
+  failure was the last of 27 attempts, minutes before the 17:49Z snapshot, so
+  authority had been withdrawn for minutes, not about 2 hours. The pending
+  300 s retry gave no sign, and the add-on restart came at about the time it
+  was due (design Part 1, finding 3).
 - **Why it was silent.** The Core-authority code had no logger calls. Outcomes
   went only to the audit file, and the transport cause was discarded.
 
@@ -45,22 +49,29 @@ was written to the add-on log.
    retried after 20 s, then 40, 80, 160, and 240 s thereafter. Each delay has
    ±20% jitter and never exceeds the cap. It replaces the fixed 300 s retry.
 2. **Restore only after complete re-verification, with hysteresis.**
-   - **What re-verification means.** Authority withdrawn by a transient
-     returns only after **2 consecutive complete verifications** with the same
-     Core version and the same admitted capability set. A complete verification
-     is a two-snapshot stable observation with the authenticated lifecycle
-     watcher attached, evaluated against the reviewed contract.
+   - **One restoration gate.** Whenever no Core authority is admitted, for
+     any reason, authority returns only after **2 consecutive complete
+     background verifications** by the supervisor with the same Core identity,
+     version and admitted reviewed contracts. This covers a transient
+     retirement, an incompatible or unavailable Core, a Core never initialized
+     after the boot sequence, and a changed Core version. A complete
+     verification is a two-snapshot stable observation with the authenticated
+     lifecycle watcher attached, evaluated against the reviewed contract. Only
+     the boot sequence's first admission is exempt.
    - **Spacing.** The verifications are about 15 s apart. The count restarts
      on any failure, a different version or capability set, or a connection
      move.
    - **Flapping.** A retirement within 10 minutes of a restoration needs
      **3** verifications, at doubled spacing.
-   - **On-demand verification.** A verification triggered on demand, for
-     example by mutation pre-dispatch, is refused during recovery and cannot
-     confirm it.
+   - **On-demand verification.** A verification triggered on demand (mutation
+     pre-dispatch or verification, configuration reverification, the fan
+     authority, any tool or health caller) never confirms or restores, from any
+     state. It is refused without publishing and counted in
+     `recovery_on_demand_refusals`.
 3. **Incompatibility stays retired.** A complete observation that no reviewed
    contract admits stays withdrawn (`recovery_state: incompatible`). It is
-   re-checked every reconciliation interval (300 s) without backoff.
+   re-checked every reconciliation interval (300 s) without backoff. When it
+   becomes compatible, it passes the same gate.
 4. **WARNING logs.** The `core_authority` logger emits one WARNING event for
    each of these:
    - a verification failure, with a bounded reason and transport detail such
@@ -72,7 +83,8 @@ was written to the add-on log.
    - a confirmation and a confirmation reset
    - a restoration (with the outage duration)
 
-   Each scheduled retry is logged at INFO with its time. Every event carries
+   Each scheduled retry, and each refused on-demand verification, is logged
+   at INFO with its time. Every event carries
    an ISO-8601 UTC `at`. No exception text, URL or token is logged.
 5. **Health recovery fields (additive).** `get_server_health` →
    `home_assistant_core_authority.recovery` reports:
@@ -85,9 +97,10 @@ was written to the add-on log.
    - `confirmations`, `confirmations_required`
    - `last_restored_at`
 
-   Three new counters are added: `recovery_attempts`,
-   `recovery_confirmations` and `authority_restorations`. Existing counters
-   are unchanged.
+   Four new counters are added: `recovery_attempts`,
+   `recovery_confirmations` (accepted background confirmations only),
+   `recovery_on_demand_refusals` and `authority_restorations`. Existing
+   counters are unchanged.
 6. **Dependents resume.** Restoration publishes a new generation through the
    unchanged path:
    - the gateway restores every withheld delegated tool and the YAML reader
@@ -146,13 +159,17 @@ and fail closed, exactly as during any outage. This is the hysteresis the
 HAMCP-215 brief requires. **Josh accepted this delay on 2026-10-20.** After a
 Core restart or update, expect Core-backed tools to refuse for about 15–18 s
 after Core is reachable again, with health showing `recovery_state:
-confirming`, and then to resume without restarting Engineering.
+confirming`, and then to resume without restarting Engineering. The same
+gate now applies to a changed Core version, a changed signed-registry
+authority for the running Core, an incompatible Core that becomes compatible,
+and a Core not initialized after the boot sequence: each needs the same
+background confirmations (about 15 s), and tools refuse until they complete.
 
 ## Compatibility and rollback
 
 - **Stored formats.** No stored format changes. Recovery state is in memory
   only and starts at `initializing` on each process start.
-- **Health.** The `recovery` object and the three counters are additive.
+- **Health.** The `recovery` object and the four counters are additive.
 - **Audit.** Audit events are unchanged in shape. Logging is additive.
 - **Rollback** is reinstalling the beta.25 artifact. That returns to the fixed
   300 s retry and silent retirement. It also returns to the vulnerable

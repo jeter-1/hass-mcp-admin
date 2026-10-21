@@ -956,7 +956,7 @@ class CoreTests(Harness):
 
         core = october.CoreRuntime()
         core.configure(object(), source=Source(), release_registry=registry)
-        await core.reconcile_once("synthetic_hamcp162")
+        await core.reconcile_once("startup")
         return core
 
     async def test_both_supported_cores_admit_and_lease_each_read(self):

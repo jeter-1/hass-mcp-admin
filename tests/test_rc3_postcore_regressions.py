@@ -20,6 +20,7 @@ from mcp.server.fastmcp import FastMCP
 
 from tests import test_ha_core_2026_9_integration as core_tests
 from tests import test_dependency_build_authority as dependency_tests
+from tests.support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.capabilities import replace_dynamic_upstream_capabilities
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
 from ha_mcp_engineering.clients.websocket import HomeAssistantWebSocketClient
@@ -294,7 +295,14 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         # HAMCP-215: the first retry uses the bounded backoff base, not 300 s.
         self.assertEqual(self.clock.delays, [CORE_RECOVERY_RETRY_BASE_SECONDS])
         delay.set_result(None)
-        await self.until(lambda: self.core.initialized)
+        # HAMCP-215 H1: the failed boot attempt closed the boot window, so a
+        # Core that never initialized passes the restoration gate. The retry is
+        # the first background confirmation (no audit while confirming); the
+        # next bounded retry confirms and admits.
+        self.assertFalse(self.core.initialized)
+        await self.settle_recovery()
+        self.assertEqual(len(self.clock.delays), 2)
+        self.assertEqual(self.core.health_snapshot()["counters"]["recovery_confirmations"], 2)
         self.assertEqual(len(events), 2)
         self.assertEqual(events[-1]["analysis_summary"]["trigger"], "failure_retry")
         self.assertEqual(events[-1]["result_status"], "success")
@@ -410,7 +418,7 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
                         for record in self.network.records:
                             record[field] = value
                         before = deepcopy(self.network.records)
-                        health = await self.core.reconcile_once("synthetic_display")
+                        health = await reconcile_through_gate(self.core)
                         self.assertEqual(health["compatible_count"], 17)
                         self.assertEqual(self.network.records, before)
                         for capability in DEVICE_CAPABILITIES:
@@ -423,7 +431,7 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(field=field, value=value):
                     self.network.records = deepcopy(original)
                     self.network.records[1][field] = value
-                    health = await self.core.reconcile_once("synthetic_wrong_type")
+                    health = await reconcile_through_gate(self.core)
                     self.assertEqual(health["compatible_count"], 14)
                     missing = {
                         p["capability_id"] for p in health["authority_profiles"]
@@ -442,7 +450,7 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
                 self.network.records = deepcopy(original)
                 self.network.records[1]["name_by_user"] = ""
                 self.network.records[1][field] = value
-                health = await self.core.reconcile_once("synthetic_invalid_registry")
+                health = await reconcile_through_gate(self.core)
                 self.assertEqual(health["compatible_count"], 14)
                 for capability in DEVICE_CAPABILITIES:
                     self.assertIsNone(self.core.acquire((capability,)))
@@ -452,7 +460,7 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         self.network.version = "2026.9.2"
         for record in self.network.records:
             record["name"] = ""
-        await self.core.reconcile_once("synthetic_unreviewed_patch")
+        await reconcile_through_gate(self.core)
         for capability in DEVICE_CAPABILITIES:
             self.assertIsNone(self.core.acquire((capability,)))
 
@@ -480,7 +488,7 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(baseline), 88)
 
         self.network.records[0]["name"] = False
-        await self.core.reconcile_once("synthetic_malformed_display")
+        await reconcile_through_gate(self.core)
         await gateway.initialize(server)
         self.assertEqual(len(registered_tools(server)), 83)
         self.assertEqual({x["tool"] for x in gateway.health_snapshot()["core_withheld_tools"]},
@@ -491,7 +499,7 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
 
         self.network.records[0]["name"] = ""
         self.network.records[1]["name_by_user"] = "N" * 129
-        await self.core.reconcile_once("synthetic_valid_display")
+        await reconcile_through_gate(self.core)
         await gateway.initialize(server)
         restored = {tool.name: tool.model_dump(mode="json") for tool in await server.list_tools()}
         self.assertEqual(restored, baseline)

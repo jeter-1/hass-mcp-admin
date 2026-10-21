@@ -44,16 +44,20 @@ The review needs a security section covering:
 - **No new reachability.** No new write, service call, reload, restart,
   fallback or forwarding is reachable. Recovery reuses the existing
   verification pipeline (design §A).
-- **No admission during recovery.** While recovery is active, no route, lease,
-  catalog entry or dependency evidence is admitted. On-demand triggers cannot
-  confirm or publish.
+- **No admission during recovery.** While no authority is admitted, no route,
+  lease, catalog entry or dependency evidence is admitted until the
+  restoration gate passes. On-demand triggers cannot confirm or publish from
+  any state.
 - **Restoration requires complete re-verification.** That means a stable
   two-snapshot observation, the authenticated lifecycle watcher, the registry,
   connection and monitor fences, and reviewed-contract admission, with a
   matching confirmation key.
-- **Hysteresis.** Restoration needs 2 confirmations, or 3 when it flaps. Any
-  failure, connection move, or version or capability-set change restarts the
-  count.
+- **One restoration gate (H1).** Every non-admitted disposition (transient,
+  incompatible, unavailable, never initialized after boot, changed version or
+  registry authority) needs 2 background confirmations, or 3 when it flaps,
+  agreeing on identity, version and reviewed contracts. Any failure,
+  connection move, or identity, version or contract change restarts the
+  count. Only the boot sequence's first admission is exempt.
 - **Bounded logs and health.** Log and health content is closed-set reasons
   and details, timestamps and counts. There is no exception text, URL or token.
 
@@ -68,7 +72,7 @@ Preserve the following:
 - workflows;
 - every dependency except `certifi`.
 
-The health `recovery` object and the three new counters are the only
+The health `recovery` object and the four new counters are the only
 public-surface change. They are additive and authorized by the task.
 
 ### Dependency (HAMCP-217)
@@ -111,7 +115,7 @@ hold:
 
 No test reaches a live system.
 
-- `tests/test_hamcp215_core_authority_recovery.py` (16 tests) covers:
+- `tests/test_hamcp215_core_authority_recovery.py` (26 tests) covers:
   - each transient (REST HTTP failure, connection loss, timeout and
     authentication failure; lifecycle-watcher attach failure and timeout),
     going from retirement through backoff and confirmations to automatic
@@ -121,14 +125,28 @@ No test reaches a live system.
   - flapping escalating and never toggling between confirmations;
   - calls being refused during the outage, with zero dispatch, and succeeding
     afterwards;
-  - log levels, reasons and health fields.
+  - log levels, reasons and health fields;
+  - the independent review's reproductions, through the production collector
+    and lifecycle watcher: an incompatible contract, and an unreviewed version,
+    restored by neither one on-demand nor one periodic verification;
+  - a matrix of every non-admitted disposition × {background, on-demand,
+    mixed} with no restoration before the full background confirmations;
+  - `recovery_confirmations` counting only accepted confirmations (L1);
+  - the exact live beta.24 health state (Part 1) recovering automatically.
 - Two lifecycle tests in `tests/test_ha_core_2026_9_integration.py` now assert
   the confirming state before republication. Recovery-delay assertions in
   `tests/test_rc3_postcore_regressions.py` follow the new backoff.
-- Mutations (`docs/evidence/hamcp215-mutations/`): 19 of 19 killed,
+- Existing tests and disposable-lane scripts that admitted Core on an
+  on-demand trigger, or expected one reconciliation to restore authority after
+  a version or signed-registry change, now admit with `startup` (as production
+  does) or restore through `tests/support/core_gate.py`
+  `reconcile_through_gate`. The full list is in the design document's
+  Validation section. No refusal, dispatch or authority assertion was
+  weakened. The script changes are evidenced only by the disposable CI lanes.
+- Mutations (`docs/evidence/hamcp215-mutations/`): 28 of 28 killed,
   including all of these:
-  - no recovery loop (killed by the 120 s runner timeout: an unpaced retry
-    chain)
+  - no recovery loop (killed by the runner's default 900 s timeout: an
+    unpaced retry chain)
   - fixed-interval retry
   - restoration without confirmation, the recovery gate or the lifecycle fence
   - no hysteresis or no flap escalation
@@ -136,6 +154,10 @@ No test reaches a live system.
   - each WARNING event (retirement, verification failure, attempt,
     restoration, catalog change) removed
   - health fields not recorded
+  - an on-demand verification counted as a confirmation; an incompatible
+    Core bypassing the gate; the boot window left open; a changed version
+    replacing authority without the gate; refused calls counted as
+    confirmations (L1)
 
 ## 2. Release CI and publication
 
@@ -182,8 +204,8 @@ transient.
      - `last_restored_at`
    - timestamps that are ISO-8601 UTC or null;
    - `consecutive_failures: 0` when stable;
-   - the counters `recovery_attempts`, `recovery_confirmations` and
-     `authority_restorations` present.
+   - the counters `recovery_attempts`, `recovery_confirmations`,
+     `recovery_on_demand_refusals` and `authority_restorations` present.
 4. **Logs.** Confirm that the add-on log at startup contains no
    `core_authority_*` WARNING events unless a failure occurred. If a failure
    did occur, confirm that each WARNING event names a bounded reason and an
