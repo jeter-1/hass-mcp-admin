@@ -103,9 +103,17 @@ retry shape carried a retry warning.
   generic `homeassistant` or unknown-service call with an area, device,
   floor, label or templated target now needs the acknowledgement, as does a
   wording change to a notification that runs before a protected effect.
-  `light`, `fan` and `climate` calls with such targets, unknown services
-  with no target, and effects reached only through a called script are not
-  flagged (residual).
+  `light`, `fan` and `climate` calls with such targets, and unknown
+  services with no target, are not flagged (residual).
+- **Called scripts.** A call to a script that contains a protected effect,
+  directly or through further scripts, is compared as that effect, reached at
+  the calling step. A guard, trigger, mode or wait change before
+  `script.close_…` therefore needs the acknowledgement. A call to a script
+  that cannot be resolved (templated name, unknown, unreadable or
+  blueprint-backed, cycle, more than 8 levels) is `unresolved` and needs it
+  too. An unchanged call stays `equivalent`. A called script edited outside
+  the plan after plan creation is not re-read at dispatch (residual).
+  `automation.*` and `scene.*` calls are not followed.
 
 - **Policy snapshots.** `f2-v1` and `f2-v2` stay readable. A pending `f2-v2`
   plan fails its policy snapshot under `f2-v3` and must be replanned; terminal
@@ -125,6 +133,9 @@ retry shape carried a retry warning.
   historical `elevated_risk_acknowledgement` slot. Authority version 3
   bundles stay valid for plans that do not need it. Task approval evidence
   records the acknowledged set as a digest and a count.
+  A configuration operation that calls a script also stores
+  `called_scripts`, the called-script snapshot bound into the plan hash. The
+  key is absent otherwise, so other records are byte-identical.
 - **Public output (additive).** The new `ApprovalActionKind` value, reason
   codes, the `safety_critical_acknowledgement` review section, the OD-4 values,
   the audit events and the two error codes.
@@ -136,9 +147,11 @@ retry shape carried a retry warning.
 - **Rollback** is reinstalling the beta.25 artifact. beta.25 cannot parse the
   new action kind: it moves any plan record that names it to the plan
   store's quarantine directory and counts it as corrupt. Reinstalling beta.26
-  does not restore a quarantined record. Before a rollback, apply, reject or
-  let expire each plan that needs the safety-critical acknowledgement. Other
-  `f2-v3` plans fail their policy snapshot on beta.25 and must be replanned.
+  does not restore a quarantined record. beta.25 also quarantines a plan
+  record with a `called_scripts` field, which any plan calling a script has.
+  Before a rollback, apply, reject or let expire each plan that needs the
+  safety-critical acknowledgement or calls a script. Other `f2-v3` plans fail
+  their policy snapshot on beta.25 and must be replanned.
 - **Boundaries.** No new tool, provider, upstream dispatch, direct-HA fallback
   or forwarding. The only new write reachability is the existing governed
   configuration apply for exact plans that were `prohibited` before and now

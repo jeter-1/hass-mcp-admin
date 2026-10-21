@@ -87,6 +87,20 @@ No test reaches a live system.
   acknowledgement dispatches once.
   Controls keep plan approval only. The PR001 verdicts are unchanged, and
   comparisons are deterministic.
+- `tests/test_hamcp213_called_script_effects.py` (16 tests): protected
+  effects reached through called scripts, through both the configuration
+  service and the F3 runtime. A condition, trigger, mode, wait, branch or
+  pre-effect reference change before a garage-closing script call is
+  `changed`, as is an added or removed call; the `script.turn_on` and
+  `homeassistant.turn_on` entity forms resolve through the registry. A
+  templated or variable script name, a selector target, an unknown,
+  unreadable or blueprint-backed script, a non-script registry row, a cycle
+  and a chain deeper than 8 are `unresolved`. A script calling a script that
+  unlocks keeps the OD-6(b) floor, even when the call is `equivalent`. An
+  unchanged call stays `equivalent` with plan approval only; a non-protected
+  callee and `script.reload` are `none`. A callee changed in the same plan is
+  compared by its own operation. The PR001 verdicts are unchanged, and the
+  snapshot is bound into the plan hash and the policy subject.
 - `tests/test_hamcp213_f2_v2_rollback_confinement.py` (8 tests): only F3
   rollback creation, and reverification of a consumed task, admit an `f2-v2`
   plan; every other path refuses `f2-v2` plans without a state change or a
@@ -99,7 +113,9 @@ No test reaches a live system.
   review corrections add: a templated target or service treated as `none`,
   unresolved targets ignored, reference steps compared by presence and order
   or signature only, the unlock and disarm floor disabled or bypassed, and an
-  id-only comparison memo. The PR lists counts and logs.
+  id-only comparison memo. The called-script comparison adds: script calls
+  ignored, and an unresolvable called script treated as `none`. The PR lists
+  counts and logs.
 
 ## 2. Release CI and publication
 
@@ -117,8 +133,8 @@ Never invent future image identities. Retain the beta.25 artifacts and the
 known-good earlier artifacts for recovery.
 
 Rollback is reinstalling the beta.25 artifact, after applying, rejecting or
-expiring each plan that needs the safety-critical acknowledgement (beta.25
-quarantines those records).
+expiring each plan that needs the safety-critical acknowledgement or calls a
+script (beta.25 quarantines those records).
 
 ## 3. Installed Engineering
 
@@ -138,7 +154,9 @@ Steps 1 to 4 are read-only. Step 5 needs its own owner authorization.
    required actions `["plan_approval"]` and the comparison verdict
    `equivalent`. Create, without approving, an update that adds a step ahead
    of the close. Confirm `["plan_approval", "safety_critical_acknowledgement"]`.
-   Planning does not write or trigger anything.
+   Create, without approving, an update that adds a condition ahead of a call
+   to a garage-closing script. Confirm the same required actions and a row
+   for the garage cover. Planning does not write or trigger anything.
 4. **Review page.** Open the Ingress panel for the second plan. Confirm one
    required checkbox per listed object, and that submitting plan approval
    alone leaves the plan at `pending_safety_critical_acknowledgement`. Reject

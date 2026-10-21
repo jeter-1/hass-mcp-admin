@@ -504,8 +504,8 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
      name is templated or uses `service_template`. Registry selectors are
      never resolved, which is stricter than resolving them through the
      registry. A templated service name may be an unlock or disarm, so it
-     carries the OD-6(b) floor. `light`, `fan` and `climate` calls and
-     transitive callees are not flagged (residual).
+     carries the OD-6(b) floor. `light`, `fan` and `climate` calls are not
+     flagged (residual).
    - **Reference steps before an effect (H2).** A reference-only step that
      can run before a protected effect is compared in full: service, every
      data field (nested data included), target, `continue_on_error`,
@@ -521,11 +521,51 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
      includes an `equivalent` unlock in an otherwise-edited automation. Under
      current policy, the legacy contract-v1 route refuses such a change
      (`prohibited`). Historical `f2-v1` and `f2-v2` recomputation is unchanged.
+   - **Called scripts (owner correction).** A call to a script is compared
+     as that script's protected effects, reached at the calling step. The
+     forms are `script.<key>`, `script.turn_on`, `turn_off` or `toggle` with
+     script entities, and `homeassistant.turn_on`, `turn_off` or `toggle`
+     with script entities. Effects through further scripts count, up to 8
+     levels. The calling step's reachability is compared as for a direct
+     effect: triggers, conditions, mode, waits, abort points, branch, and
+     reference-only steps before it (OD-10). Rows name the protected object
+     (for example `cover.garage_main`). An unlock or disarm reached this way
+     keeps the OD-6(b) floor.
+     - Plan creation captures the called scripts through governed reads into
+       the new operation field `called_scripts` (`called-script-snapshot-v1`).
+       It holds the normalized configuration of each called script, the
+       current and proposed configuration for a script changed in the same
+       plan, and the registry resolution of each script entity. The snapshot
+       is bound into the plan hash and the policy subject
+       (`called_scripts_hash`). The comparison stays pure: it reads only the
+       stored operation, so challenge, decision and dispatch recompute the
+       same rows.
+     - It is `unresolved`, with the floor, when the called script cannot be
+       resolved. The reason codes are: `called_script_dynamic` (a templated or
+       variable name, or a selector target), `called_script_unknown`,
+       `called_script_unreadable` (a read error, a blueprint-backed script, or
+       an unsafe body), `called_script_entity_unresolved` (a registry row that
+       is not a script), `called_script_depth_exceeded`, `called_script_cycle`,
+       `called_script_not_captured` (no snapshot entry) and
+       `called_script_bounds_exceeded` (more than 16 called scripts or 256
+       callee analyses).
+     - A change to the called script itself stays covered by script parity on
+       that script's own operation.
+     - **Deviation.** The governance path reuses the dependency index's
+       script-call grammar (`dependency/script_calls.py`), not the index's
+       loaded configurations. Those configurations are diagnostic evidence
+       and never authority, so the configurations are read through the
+       governed configuration read at plan creation.
+     - **Residual.** A called script edited outside the plan after plan
+       creation is not re-read at dispatch, and the plan keeps its creation
+       snapshot. `automation.trigger`, `automation.turn_on` and `scene.*`
+       stay transitive-only and are not followed.
 
 **Effect on the audit plan:** see D6. The owner's real plan replaced the
 earlier inference from the audit description, and the predicted verdicts held.
-The review corrections leave them unchanged (op1 `none`, op2 `changed`, op3
-`equivalent`, op4 `none`).
+The review corrections and the called-script comparison leave them
+unchanged (op1 `none`, op2 `changed`, op3 `equivalent`, op4 `none`). The
+anonymized audit operations call no script.
 
 ### D3. Policy mapping (replaces `policy.py:567-591` for protected effects)
 
