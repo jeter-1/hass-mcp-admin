@@ -1,0 +1,1559 @@
+{
+ "baseline": {
+  "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp132_recorder_settings",
+   "test_hamcp132_unregistered_entities"
+  ],
+  "returncode": 0,
+  "tests": 109,
+  "seconds": 8.8,
+  "summary": "OK (skipped=1)"
+ },
+ "mutation_count": 80,
+ "killed": 80,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "D1-default-reported-configured",
+   "design_item": "design 7: core_default only when the source is complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "{\"value\": default, \"origin\": \"core_default\", \"pin\": f.CORE_PIN}",
+     "{\"value\": default, \"origin\": \"configured\", \"pin\": f.CORE_PIN}"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/D1-default-reported-configured.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_complete_file_reports_configured_and_core_defaults (test_hamcp132_recorder_settings.SettingsTests.test_complete_file_reports_configured_and_core_defaults)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "D2-default-applied-with-packages-present",
+   "design_item": "design 7: core_default only when the source is complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "        if packages == \"absent\":\n            return None",
+     "        if packages != \"unreadable\":\n            return None"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/D2-default-applied-with-packages-present.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_packages_present_makes_unwritten_keys_unknown_not_defaults (test_hamcp132_recorder_settings.SettingsTests.test_packages_present_makes_unwritten_keys_unknown_not_defaults)"
+   ],
+   "seconds": 3.4
+  },
+  {
+   "id": "D3-default-applied-with-include",
+   "design_item": "design 7: core_default only when the source is complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "        if self._opaque(recorder):\n            return \"include_not_followed\"",
+     "        if False:\n            return \"include_not_followed\""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/D3-default-applied-with-include.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key (test_hamcp132_recorder_settings.SettingsTests.test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key)"
+   ],
+   "seconds": 3.7
+  },
+  {
+   "id": "D4-default-applied-yaml-unavailable",
+   "design_item": "design 7: core_default only when the source is complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "            if reason is None:\n                result[key] = {\"value\": default,",
+     "            if reason in (None, \"yaml_unavailable\"):\n                result[key] = {\"value\": default,"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/D4-default-applied-yaml-unavailable.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reader_not_admitted_is_partial_with_runtime_still_reported (test_hamcp132_recorder_settings.SettingsTests.test_reader_not_admitted_is_partial_with_runtime_still_reported)"
+   ],
+   "seconds": 3.6
+  },
+  {
+   "id": "D5-default-applied-when-truncated",
+   "design_item": "design 7: core_default only when the source is complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "        if recorder[\"found\"] and _truncated(recorder):\n            return \"yaml_truncated\"",
+     "        if False:\n            return \"yaml_truncated\""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/D5-default-applied-when-truncated.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_truncated_recorder_value_is_unknown (test_hamcp132_recorder_settings.SettingsTests.test_truncated_recorder_value_is_unknown)"
+   ],
+   "seconds": 3.7
+  },
+  {
+   "id": "D5b-filter-computed-when-truncated",
+   "design_item": "design 7: core_default only when the source is complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "        if recorder[\"found\"] and _truncated(recorder):\n            self.omit(\"filter_unknown:yaml_truncated\")",
+     "        if False:\n            self.omit(\"filter_unknown:yaml_truncated\")"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/D5b-filter-computed-when-truncated.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_truncated_recorder_value_is_unknown (test_hamcp132_recorder_settings.SettingsTests.test_truncated_recorder_value_is_unknown)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "D6-filter-computed-with-packages-present",
+   "design_item": "design 7: core_default only when the source is complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "        if packages != \"absent\":\n            # Packages merge",
+     "        if packages == \"unreadable\":\n            # Packages merge"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/D6-filter-computed-with-packages-present.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_packages_present_makes_unwritten_keys_unknown_not_defaults (test_hamcp132_recorder_settings.SettingsTests.test_packages_present_makes_unwritten_keys_unknown_not_defaults)"
+   ],
+   "seconds": 3.3
+  },
+  {
+   "id": "D7-db-default-location-with-packages",
+   "design_item": "design 7: core_default only when the source is complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "db.update({\"origin\": \"core_default_location\"} if reason is None",
+     "db.update({\"origin\": \"core_default_location\"} if reason in (None, \"packages_present\")"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/D7-db-default-location-with-packages.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_packages_present_makes_unwritten_keys_unknown_not_defaults (test_hamcp132_recorder_settings.SettingsTests.test_packages_present_makes_unwritten_keys_unknown_not_defaults)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "D8-packages-unreadable-reported-complete",
+   "design_item": "design 7: core_default only when the source is complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "\"complete\" if package_state in {\"absent\", \"present\"} else \"unavailable\",",
+     "\"complete\","
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/D8-packages-unreadable-reported-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_provider_exception_text_never_in_public_failure (test_hamcp132_recorder_settings.CredentialTests.test_provider_exception_text_never_in_public_failure)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "L1-db-url-value-returned",
+   "design_item": "design 7: db_url withheld",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "            db[\"origin\"] = \"configured\"",
+     "            db.update(origin=\"configured\", value=written[c.DB_URL_KEY])"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/L1-db-url-value-returned.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_db_url_is_withheld_for_every_written_form (test_hamcp132_recorder_settings.CredentialTests.test_db_url_is_withheld_for_every_written_form)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "L2-secret-reference-returned",
+   "design_item": "design 7: db_url withheld",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "return {\"value\": None, \"origin\": \"configured\", \"value_withheld\": True,",
+     "return {\"value\": value, \"origin\": \"configured\", \"value_withheld\": True,"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/L2-secret-reference-returned.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_scalar_references_and_markers_are_withheld (test_hamcp132_recorder_settings.CredentialTests.test_scalar_references_and_markers_are_withheld)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "L3-recorder-known-secrets-dropped",
+   "design_item": "design 7: db_url withheld",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "sanitize_untrusted_data(envelope, known_secrets=self.known_secrets,",
+     "sanitize_untrusted_data(envelope, known_secrets=(),"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/L3-recorder-known-secrets-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_known_secret_in_filter_text_is_redacted_and_partial (test_hamcp132_recorder_settings.CredentialTests.test_known_secret_in_filter_text_is_redacted_and_partial)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "L4-unrecognized-keys-reported",
+   "design_item": "design 7: db_url withheld",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "            result[\"unrecognized_key_count\"] = unrecognized",
+     "            result[\"unrecognized_key_count\"] = unrecognized\n            result[\"unrecognized\"] = {k: v for k, v in written.items() if k not in c.RECOGNIZED_KEYS}"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/L4-unrecognized-keys-reported.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key (test_hamcp132_recorder_settings.SettingsTests.test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key)"
+   ],
+   "seconds": 3.3
+  },
+  {
+   "id": "P1-failed-yaml-source-complete",
+   "design_item": "design 7: a failing source is partial with an exact reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "\"unavailable\" if recorder is None else",
+     "\"complete\" if recorder is None else"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/P1-failed-yaml-source-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_provider_exception_text_never_in_public_failure (test_hamcp132_recorder_settings.CredentialTests.test_provider_exception_text_never_in_public_failure)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "P2-failed-recorder-info-complete",
+   "design_item": "design 7: a failing source is partial with an exact reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "\"complete\" if runtime[\"status\"] == \"available\" else (",
+     "\"complete\" if True else ("
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/P2-failed-recorder-info-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_prior_telemetry_error_restored_on_partial (test_hamcp132_recorder_settings.AuthorityTests.test_prior_telemetry_error_restored_on_partial)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "P3-partial-entity-options-complete",
+   "design_item": "design 7: a failing source is partial with an exact reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "\"complete\" if answered == len(entity_ids) else \"partial\",",
+     "\"complete\","
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/P3-partial-entity-options-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "P4-report-always-complete",
+   "design_item": "design 7: a failing source is partial with an exact reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "envelope[\"complete\"] = not projector.omissions and all(",
+     "envelope[\"complete\"] = True or all("
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/P4-report-always-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_prior_telemetry_error_restored_on_partial (test_hamcp132_recorder_settings.AuthorityTests.test_prior_telemetry_error_restored_on_partial)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "P5-source-omission-dropped",
+   "design_item": "design 7: a failing source is partial with an exact reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "                projector.omit(f\"source_{source['status']}:{source['source']}\")",
+     "                pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/P5-source-omission-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_runtime_failure_shapes (test_hamcp132_recorder_settings.RuntimeTests.test_runtime_failure_shapes)"
+   ],
+   "seconds": 3.3
+  },
+  {
+   "id": "P6-audit-success-on-partial",
+   "design_item": "design 7: a failing source is partial with an exact reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "telemetry.result_status = \"success\" if result[\"complete\"] else \"partial\"",
+     "telemetry.result_status = \"success\""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/P6-audit-success-on-partial.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unknown_command_means_recorder_not_set_up_never_not_recording (test_hamcp132_recorder_settings.RuntimeTests.test_unknown_command_means_recorder_not_set_up_never_not_recording)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "P7-batch-error-text-reflected",
+   "design_item": "design 7: a failing source is partial with an exact reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "except HomeAssistantApiError:\n            reason = \"command_failed\"",
+     "except HomeAssistantApiError as exc:\n            reason = str(exc) or \"command_failed\""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/P7-batch-error-text-reflected.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_batch_exceptions_map_to_closed_reasons (test_hamcp132_recorder_settings.RuntimeTests.test_batch_exceptions_map_to_closed_reasons)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "P8-entity-reply-shape-loosened",
+   "design_item": "design 7: a failing source is partial with an exact reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "set(value) == {\"recording_disabled_by\"}",
+     "\"recording_disabled_by\" in value"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/P8-entity-reply-shape-loosened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "P9-response-budget-trim-silent",
+   "design_item": "design 7: a failing source is partial with an exact reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "                projector.omit(\"filter_lists_not_listed_response_bytes\")\n                changed = True",
+     "                return sanitize_untrusted_data({**envelope, \"filters\": filters}, known_secrets=self.known_secrets, max_string=c.MAX_FILTER_TEXT).value"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/P9-response-budget-trim-silent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_large_filter_lists_become_counts_within_the_budget (test_hamcp132_recorder_settings.FilterTests.test_large_filter_lists_become_counts_within_the_budget)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "F1-cases-4a-4b-swapped",
+   "design_item": "design 7: filter cases 1-6 against Core's truth table",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/entity_filter.py",
+     "    if case == INCLUDE_DOMAIN_OR_GLOB:\n        def entity_filter_4a",
+     "    if case == EXCLUDE_DOMAIN_OR_GLOB:\n        def entity_filter_4a"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/entity_filter.py",
+     "    if case == EXCLUDE_DOMAIN_OR_GLOB:\n        def entity_filter_4b",
+     "    if case == INCLUDE_DOMAIN_OR_GLOB:\n        def entity_filter_4b"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/F1-cases-4a-4b-swapped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_port_matches_core_truth_table_for_every_case (test_hamcp132_recorder_settings.FilterTruthTableTests.test_port_matches_core_truth_table_for_every_case)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "F2-exclude-domains-honoured-in-4a",
+   "design_item": "design 7: filter cases 1-6 against Core's truth table",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/entity_filter.py",
+     "                entity_id not in exclude_e\n                and (",
+     "                entity_id not in exclude_e\n                and split_entity_id(entity_id)[0] not in exclude_d\n                and ("
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/F2-exclude-domains-honoured-in-4a.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_port_matches_core_truth_table_for_every_case (test_hamcp132_recorder_settings.FilterTruthTableTests.test_port_matches_core_truth_table_for_every_case)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "F3-4b-include-entities-override-lost",
+   "design_item": "design 7: filter cases 1-6 against Core's truth table",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/entity_filter.py",
+     "                return entity_id in include_e\n",
+     "                return False\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/F3-4b-include-entities-override-lost.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_port_matches_core_truth_table_for_every_case (test_hamcp132_recorder_settings.FilterTruthTableTests.test_port_matches_core_truth_table_for_every_case)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "F4-exclude-domains-ignored-flag-lost",
+   "design_item": "design 7: filter cases 1-6 against Core's truth table",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "\"exclude_domains_ignored\": (recorder_filter.case == f.INCLUDE_DOMAIN_OR_GLOB",
+     "\"exclude_domains_ignored\": (False"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/F4-exclude-domains-ignored-flag-lost.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_case_4a_reports_ignored_exclude_domains_and_state_changed (test_hamcp132_recorder_settings.FilterTests.test_case_4a_reports_ignored_exclude_domains_and_state_changed)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "V1-drift-resolved-as-agree",
+   "design_item": "design 7: disagreement gives filter_drift",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "row[\"agreement\"] = \"agree\" if core == computed else \"filter_drift\"",
+     "row[\"agreement\"] = \"agree\""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/V1-drift-resolved-as-agree.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "V2-drift-omission-dropped",
+   "design_item": "design 7: disagreement gives filter_drift",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "                self.omit(\"filter_drift:\" + entity_id)",
+     "                pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/V2-drift-omission-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_filter_drift_is_reported_never_resolved (test_hamcp132_recorder_settings.FilterTests.test_filter_drift_is_reported_never_resolved)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "V3-core-answer-replaced-by-computed",
+   "design_item": "design 7: disagreement gives filter_drift",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "{\"entity_id\": entity_id, \"core_recorded\": core,",
+     "{\"entity_id\": entity_id, \"core_recorded\": computed if computed is not None else core,"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/V3-core-answer-replaced-by-computed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "U1-unknown-command-not-recording",
+   "design_item": "design 7: unknown_command means recorder not set up",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "            return {\"status\": \"unavailable\",\n                    \"reason\": \"recorder_not_set_up\" if value == \"unknown_command\" else \"command_failed\"}",
+     "            return ({\"status\": \"available\", \"recording\": False} if value == \"unknown_command\"\n                    else {\"status\": \"unavailable\", \"reason\": \"command_failed\"})"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/U1-unknown-command-not-recording.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unknown_command_means_recorder_not_set_up_never_not_recording (test_hamcp132_recorder_settings.RuntimeTests.test_unknown_command_means_recorder_not_set_up_never_not_recording)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "U2-entity-unknown-command-not-recorded",
+   "design_item": "design 7: unknown_command means recorder not set up",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "                    reason = \"recorder_not_set_up\" if value == \"unknown_command\" else \"command_failed\"",
+     "                    core, reason = (False, None) if value == \"unknown_command\" else (None, \"command_failed\")"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/U2-entity-unknown-command-not-recorded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "R1-directly-written-entity-dropped",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "row.update(platform=None, platform_status=\"directly_written_state\")",
+     "continue"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R1-directly-written-entity-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_byte_budget_trims_rows_and_reports_partial (test_hamcp132_unregistered_entities.FailureTests.test_byte_budget_trims_rows_and_reports_partial)"
+   ],
+   "seconds": 7.9
+  },
+  {
+   "id": "R2-definition-location-asserted",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "\"definition_location\": \"not_determinable\",",
+     "\"definition_location\": \"configuration.yaml\","
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R2-definition-location-asserted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_healthy_reconciliation_and_call_order (test_hamcp132_unregistered_entities.ReconciliationTests.test_healthy_reconciliation_and_call_order)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "R3-partial-search-reported-complete",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "sources[-1].update(status=\"partial\" if failed < len(searched) else \"unavailable\",",
+     "sources[-1].update(status=\"complete\" if failed < len(searched) else \"unavailable\","
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R3-partial-search-reported-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_per_entity_search_failures (test_hamcp132_unregistered_entities.SearchTests.test_per_entity_search_failures)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "R4-search-unavailable-silent",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "                omit(\"config_entry_unknown:search_related_unavailable\")",
+     "                pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R4-search-unavailable-silent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_whole_search_batch_failure (test_hamcp132_unregistered_entities.SearchTests.test_whole_search_batch_failure)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "R5-ambiguous-entry-guessed",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "        return None, \"ambiguous\"",
+     "        return entries[0], \"resolved\""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R5-ambiguous-entry-guessed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_healthy_reconciliation_and_call_order (test_hamcp132_unregistered_entities.ReconciliationTests.test_healthy_reconciliation_and_call_order)"
+   ],
+   "seconds": 8.6
+  },
+  {
+   "id": "R6-limit-truncation-silent",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "            omit(\"entities_not_listed_limit\")",
+     "            pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R6-limit-truncation-silent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_domain_scope_and_limit_truncation (test_hamcp132_unregistered_entities.ReconciliationTests.test_domain_scope_and_limit_truncation)"
+   ],
+   "seconds": 8.4
+  },
+  {
+   "id": "R7-one-inventory-enough",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "if states is None or registry is None:",
+     "if states is None and registry is None:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R7-one-inventory-enough.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_states_or_registry_unavailable_is_an_error (test_hamcp132_unregistered_entities.FailureTests.test_states_or_registry_unavailable_is_an_error)"
+   ],
+   "seconds": 10.5
+  },
+  {
+   "id": "R8-malformed-registry-silent",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "            omit(\"malformed_registry_rows_not_reconciled\")",
+     "            pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R8-malformed-registry-silent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_malformed_rows_are_counted_not_reconciled (test_hamcp132_unregistered_entities.ReconciliationTests.test_malformed_rows_are_counted_not_reconciled)"
+   ],
+   "seconds": 8.8
+  },
+  {
+   "id": "R9-invalid-platform-value-reported",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "platform if type(platform) is str and c.DOMAIN.fullmatch(platform) else None",
+     "platform if type(platform) is str else None"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R9-invalid-platform-value-reported.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_invalid_platform_value_is_not_reported (test_hamcp132_unregistered_entities.PlatformTests.test_invalid_platform_value_is_not_reported)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "R10-domains-string-split",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "\"domains\": list(domains) if type(domains) is tuple else domains}",
+     "\"domains\": list(domains)}"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R10-domains-string-split.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_invalid_arguments_dispatch_nothing (test_hamcp132_unregistered_entities.AuthorityTests.test_invalid_arguments_dispatch_nothing)"
+   ],
+   "seconds": 7.8
+  },
+  {
+   "id": "R11-reconciliation-known-secrets-dropped",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "sanitize_untrusted_data(envelope, known_secrets=self.known_secrets, max_string=255)",
+     "sanitize_untrusted_data(envelope, known_secrets=(), max_string=255)"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R11-reconciliation-known-secrets-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_known_secret_in_reported_text_is_redacted (test_hamcp132_unregistered_entities.FailureTests.test_known_secret_in_reported_text_is_redacted)"
+   ],
+   "seconds": 8.3
+  },
+  {
+   "id": "R12-byte-budget-trim-silent",
+   "design_item": "design 7: reconciliation platform, search failure partial",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "                omit(\"entities_not_listed_response_bytes\")",
+     "                pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/R12-byte-budget-trim-silent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_byte_budget_trims_rows_and_reports_partial (test_hamcp132_unregistered_entities.FailureTests.test_byte_budget_trims_rows_and_reports_partial)"
+   ],
+   "seconds": 8.6
+  },
+  {
+   "id": "S1-purge-reachable-in-batch",
+   "design_item": "design 7: no write reachability, Core gate, exact batch allowlist",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py",
+     "    \"recorder/info\": frozenset({\"type\"}),\n}",
+     "    \"recorder/info\": frozenset({\"type\"}),\n    \"recorder/purge\": frozenset({\"type\"}),\n}"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py",
+     "if command_type == \"recorder/info\":",
+     "if command_type in {\"recorder/info\", \"recorder/purge\"}:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/S1-purge-reachable-in-batch.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "S2-entity-options-identity-loosened",
+   "design_item": "design 7: no write reachability, Core gate, exact batch allowlist",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py",
+     "    \"recorder/entity_options/get\": STRICT_ENTITY_ID,\n}",
+     "    \"recorder/entity_options/get\": re.compile(r\".+\"),\n}"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/S2-entity-options-identity-loosened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "S3-search-entity-identity-loosened",
+   "design_item": "design 7: no write reachability, Core gate, exact batch allowlist",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py",
+     "    \"entity\": STRICT_ENTITY_ID,\n}",
+     "    \"entity\": re.compile(r\".+\"),\n}"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/S3-search-entity-identity-loosened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "S4-recorder-info-extra-keys",
+   "design_item": "design 7: no write reachability, Core gate, exact batch allowlist",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py",
+     "    if command_type == \"recorder/info\":\n        return True\n",
+     "    if command_type == \"recorder/info\":\n        return True\n    if command_type == \"recorder/entity_options/get\" and \"entity_id\" in payload:\n        return True\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/S4-recorder-info-extra-keys.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "S5-recorder-core-gate-narrowed",
+   "design_item": "design 7: no write reachability, Core gate, exact batch allowlist",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+     "\"get_recorder_settings\": (\"core.basic_rest_read\", \"core.basic_websocket_read\"),",
+     "\"get_recorder_settings\": (\"core.basic_websocket_read\",),"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/S5-recorder-core-gate-narrowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_core_gate_mapping (test_hamcp132_recorder_settings.RegistrationTests.test_core_gate_mapping)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "S6-reconciliation-core-gate-narrowed",
+   "design_item": "design 7: no write reachability, Core gate, exact batch allowlist",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+     "        \"core.basic_rest_read\", \"core.basic_websocket_read\", \"core.non_device_registry_read\",\n    ),",
+     "        \"core.basic_rest_read\", \"core.basic_websocket_read\",\n    ),"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/S6-reconciliation-core-gate-narrowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_core_gate_mapping (test_hamcp132_unregistered_entities.RegistrationTests.test_core_gate_mapping)"
+   ],
+   "seconds": 9.9
+  },
+  {
+   "id": "S7-pre-sdk-validation-removed",
+   "design_item": "design 7: no write reachability, Core gate, exact batch allowlist",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/routing.py",
+     "if tool_name == \"get_recorder_settings\" or tool_name == \"get_unregistered_entities\":",
+     "if False:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/S7-pre-sdk-validation-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material (test_hamcp132_recorder_settings.RegistrationTests.test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material)"
+   ],
+   "seconds": 4.3
+  },
+  {
+   "id": "S8-audit-records-entity-ids",
+   "design_item": "design 7: no write reachability, Core gate, exact batch allowlist",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/routing.py",
+     "\"entity_count\": len(entity_ids) if type(entity_ids) is list and len(entity_ids) <= 50 else None,",
+     "\"entity_count\": len(entity_ids) if type(entity_ids) is list and len(entity_ids) <= 50 else None, \"entity_ids\": entity_ids,"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/S8-audit-records-entity-ids.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_gateway_positive_output_and_audit (test_hamcp132_recorder_settings.RegistrationTests.test_gateway_positive_output_and_audit)"
+   ],
+   "seconds": 3.4
+  },
+  {
+   "id": "A1-recorder-no-recheck-after-batch",
+   "design_item": "authority and caller checks",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "        if self.authority() != authority:\n            raise c.RecorderSettingsError(\"authority_unavailable\")\n        return outcomes, reason",
+     "        return outcomes, reason"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/A1-recorder-no-recheck-after-batch.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_authority_change_during_any_read_fails_closed (test_hamcp132_recorder_settings.AuthorityTests.test_authority_change_during_any_read_fails_closed)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "A2-recorder-no-recheck-after-yaml",
+   "design_item": "authority and caller checks",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "        if self.authority() != authority:\n            raise c.RecorderSettingsError(\"authority_unavailable\")\n        return gateway_envelope(result, path)",
+     "        return gateway_envelope(result, path)"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/A2-recorder-no-recheck-after-yaml.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_yaml_result_read_under_changed_authority_is_not_projected (test_hamcp132_recorder_settings.AuthorityTests.test_yaml_result_read_under_changed_authority_is_not_projected)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "A3-recorder-anonymous-accepted",
+   "design_item": "authority and caller checks",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "if current_caller_id() == \"anonymous\":",
+     "if False:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/A3-recorder-anonymous-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_anonymous_caller_refused_before_dispatch (test_hamcp132_recorder_settings.AuthorityTests.test_anonymous_caller_refused_before_dispatch)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "A4-recorder-missing-authorizer-accepted",
+   "design_item": "authority and caller checks",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "or telemetry is None or telemetry.core_dispatch_authorizer is None\n",
+     "or telemetry is None\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/A4-recorder-missing-authorizer-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_missing_dispatch_authorizer_or_request_refused (test_hamcp132_recorder_settings.AuthorityTests.test_missing_dispatch_authorizer_or_request_refused)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "A5-reconciliation-no-recheck-after-read",
+   "design_item": "authority and caller checks",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "        if self.authority() != authority:\n            raise c.EntityReconciliationError(\"authority_unavailable\")\n        return raw",
+     "        return raw"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/A5-reconciliation-no-recheck-after-read.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_authority_change_during_any_read_fails_closed (test_hamcp132_unregistered_entities.AuthorityTests.test_authority_change_during_any_read_fails_closed)"
+   ],
+   "seconds": 12.0
+  },
+  {
+   "id": "A6-reconciliation-anonymous-accepted",
+   "design_item": "authority and caller checks",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "if current_caller_id() == \"anonymous\":",
+     "if False:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/A6-reconciliation-anonymous-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unavailable_route_anonymous_or_no_authorizer_dispatch_nothing (test_hamcp132_unregistered_entities.AuthorityTests.test_unavailable_route_anonymous_or_no_authorizer_dispatch_nothing)"
+   ],
+   "seconds": 20.6
+  },
+  {
+   "id": "A7-recorder-tuple-or-string-split",
+   "design_item": "authority and caller checks",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "{\"entity_ids\": list(entity_ids) if type(entity_ids) is tuple else entity_ids}",
+     "{\"entity_ids\": list(entity_ids)}"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/A7-recorder-tuple-or-string-split.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_invalid_entity_ids_refused_before_dispatch (test_hamcp132_recorder_settings.EntityTests.test_invalid_entity_ids_refused_before_dispatch)"
+   ],
+   "seconds": 7.7
+  },
+  {
+   "id": "Y1-yaml-path-allowlist-removed",
+   "design_item": "fixed YAML paths and envelope identity",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "if yaml_path not in YAML_CONFIG_PATHS:",
+     "if yaml_path is None:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/Y1-yaml-path-allowlist-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_admitted_reader_dispatches_only_contract_paths (test_hamcp132_recorder_settings.YamlConfigReaderTests.test_admitted_reader_dispatches_only_contract_paths)"
+   ],
+   "seconds": 11.2
+  },
+  {
+   "id": "Y2-yaml-fallback-envelope-accepted",
+   "design_item": "fixed YAML paths and envelope identity",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "            or metadata.get(\"fallback_occurred\") is not False\n",
+     ""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/Y2-yaml-fallback-envelope-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_yaml_unavailable_variants_name_the_exact_reason (test_hamcp132_recorder_settings.SettingsTests.test_yaml_unavailable_variants_name_the_exact_reason)"
+   ],
+   "seconds": 8.3
+  },
+  {
+   "id": "Y3-yaml-other-path-accepted",
+   "design_item": "fixed YAML paths and envelope identity",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "or type(data) is not dict or data.get(\"yaml_path\") != yaml_path",
+     "or type(data) is not dict"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/Y3-yaml-other-path-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_yaml_unavailable_variants_name_the_exact_reason (test_hamcp132_recorder_settings.SettingsTests.test_yaml_unavailable_variants_name_the_exact_reason)"
+   ],
+   "seconds": 5.1
+  },
+  {
+   "id": "Y4-yaml-error-code-reflected",
+   "design_item": "fixed YAML paths and envelope identity",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "return None, code if code in c.YAML_FAILURE_CODES else \"yaml_read_failed\"",
+     "return None, code if code else \"yaml_read_failed\""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/Y4-yaml-error-code-reflected.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_yaml_unavailable_variants_name_the_exact_reason (test_hamcp132_recorder_settings.SettingsTests.test_yaml_unavailable_variants_name_the_exact_reason)"
+   ],
+   "seconds": 3.9
+  },
+  {
+   "id": "H1-recorder-omissions-appended-after-sanitization",
+   "design_item": "H1: the complete final envelope is sanitized once, nothing appended after",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "envelope = {**report, \"omissions\": list(projector.omissions)}",
+     "envelope = dict(report)"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "return sanitized.value",
+     "return {**sanitized.value, \"omissions\": list(projector.omissions)}"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/H1-recorder-omissions-appended-after-sanitization.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_planted_secret_never_appears_in_any_response_field (test_hamcp132_recorder_settings.FinalEnvelopeSanitizationTests.test_planted_secret_never_appears_in_any_response_field)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "H2-reconciliation-omissions-appended-after-sanitization",
+   "design_item": "H1: the complete final envelope is sanitized once, nothing appended after",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "envelope = {**result, \"omissions\": list(omissions)}",
+     "envelope = dict(result)"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "return sanitized.value",
+     "return {**sanitized.value, \"omissions\": list(omissions)}"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/H2-reconciliation-omissions-appended-after-sanitization.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_planted_secret_never_appears_in_any_response_field (test_hamcp132_unregistered_entities.FinalEnvelopeSanitizationTests.test_planted_secret_never_appears_in_any_response_field)"
+   ],
+   "seconds": 8.4
+  },
+  {
+   "id": "H3-recorder-redaction-not-partial",
+   "design_item": "H1: the complete final envelope is sanitized once, nothing appended after",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "and \"redacted_by_policy\" not in projector.omissions:",
+     "and False:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/H3-recorder-redaction-not-partial.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_known_secret_in_filter_text_is_redacted_and_partial (test_hamcp132_recorder_settings.CredentialTests.test_known_secret_in_filter_text_is_redacted_and_partial)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "H4-reconciliation-redaction-not-partial",
+   "design_item": "H1: the complete final envelope is sanitized once, nothing appended after",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/entity_reconciliation/service.py",
+     "and \"redacted_by_policy\" not in omissions:",
+     "and False:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/H4-reconciliation-redaction-not-partial.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_known_secret_in_reported_text_is_redacted (test_hamcp132_unregistered_entities.FailureTests.test_known_secret_in_reported_text_is_redacted)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "M1-parser-dependent-reported-fails-core-schema",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "if any(outcome != outcomes[0] for outcome in outcomes[1:]):\n                # The reader",
+     "if outcomes[0][0] and any(outcome != outcomes[0] for outcome in outcomes[1:]):\n                # The reader"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M1-parser-dependent-reported-fails-core-schema.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_paired_spellings_never_yield_an_unestablished_claim (test_hamcp132_recorder_settings.YamlSpellingTests.test_paired_spellings_never_yield_an_unestablished_claim)"
+   ],
+   "seconds": 7.4
+  },
+  {
+   "id": "M2-parser-dependent-reported-definite",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "if any(outcome != outcomes[0] for outcome in outcomes[1:]):\n                # The reader",
+     "if False:\n                # The reader"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M2-parser-dependent-reported-definite.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_genuinely_invalid_values_still_fail_core_schema (test_hamcp132_recorder_settings.YamlSpellingTests.test_genuinely_invalid_values_still_fail_core_schema)"
+   ],
+   "seconds": 7.3
+  },
+  {
+   "id": "M3-parser-dependent-filter-list-fails-core-schema",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "return \"parser_dependent\" if dependent else None",
+     "return \"fails_core_schema\" if dependent else None"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M3-parser-dependent-filter-list-fails-core-schema.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_filter_lists_with_differing_readings_are_not_computed (test_hamcp132_recorder_settings.YamlSpellingTests.test_filter_lists_with_differing_readings_are_not_computed)"
+   ],
+   "seconds": 7.3
+  },
+  {
+   "id": "M4-yaml11-boolean-family-ignored",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "if _YAML11_BOOL.match(value):",
+     "if False:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M4-yaml11-boolean-family-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_filter_lists_with_differing_readings_are_not_computed (test_hamcp132_recorder_settings.YamlSpellingTests.test_filter_lists_with_differing_readings_are_not_computed)"
+   ],
+   "seconds": 7.2
+  },
+  {
+   "id": "M5-yaml11-sexagesimal-ignored",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)\\Z\"\"\", re.X)",
+     ")\\Z\"\"\", re.X)"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M5-yaml11-sexagesimal-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_paired_spellings_never_yield_an_unestablished_claim (test_hamcp132_recorder_settings.YamlSpellingTests.test_paired_spellings_never_yield_an_unestablished_claim)"
+   ],
+   "seconds": 7.3
+  },
+  {
+   "id": "M6-plain-integer-reported-spelling-dependent",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "    if type(value) is float and math.isfinite(value):",
+     "    if type(value) in (int, float) and math.isfinite(value):"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M6-plain-integer-reported-spelling-dependent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_no_redaction_keeps_the_envelope_complete (test_hamcp132_recorder_settings.FinalEnvelopeSanitizationTests.test_no_redaction_keeps_the_envelope_complete)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "M7-exponent-float-ignored",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "if type(value) is float and math.isfinite(value):",
+     "if False:"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M7-exponent-float-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_genuinely_invalid_values_still_fail_core_schema (test_hamcp132_recorder_settings.YamlSpellingTests.test_genuinely_invalid_values_still_fail_core_schema)"
+   ],
+   "seconds": 7.1
+  },
+  {
+   "id": "M8-parser-dependent-omission-dropped",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "                self.omit(f\"setting_parser_dependent:{key}\")",
+     "                pass"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M8-parser-dependent-omission-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_reviewer_reproductions_are_parser_dependent (test_hamcp132_recorder_settings.YamlSpellingTests.test_reviewer_reproductions_are_parser_dependent)"
+   ],
+   "seconds": 7.4
+  },
+  {
+   "id": "M9-quoted-string-treated-as-unquoted",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "        if _YAML12_NOT_STRING.match(value):\n            return None\n",
+     ""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M9-quoted-string-treated-as-unquoted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quoted_strings_are_definite_strings (test_hamcp132_recorder_settings.YamlSpellingTests.test_quoted_strings_are_definite_strings)"
+   ],
+   "seconds": 7.0
+  },
+  {
+   "id": "M10-spec-booleans-y-n-read-as-yaml11-booleans",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "|on|On|ON|off|Off|OFF)\\Z\")",
+     "|on|On|ON|off|Off|OFF|y|Y|n|N)\\Z\")"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M10-spec-booleans-y-n-read-as-yaml11-booleans.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_paired_spellings_never_yield_an_unestablished_claim (test_hamcp132_recorder_settings.YamlSpellingTests.test_paired_spellings_never_yield_an_unestablished_claim)"
+   ],
+   "seconds": 7.2
+  },
+  {
+   "id": "M11-numeric-spelling-disclosure-dropped",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/service.py",
+     "\"yaml_numeric_spelling\": c.YAML_NUMERIC_SPELLING_LIMITATION,",
+     ""
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M11-numeric-spelling-disclosure-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_common_integers_are_definite (test_hamcp132_recorder_settings.YamlSpellingTests.test_common_integers_are_definite)"
+   ],
+   "seconds": 6.8
+  },
+  {
+   "id": "M12-yaml12-boolean-quoting-lost",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "(?:true|True|TRUE|false|False|FALSE\n",
+     "(?:\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M12-yaml12-boolean-quoting-lost.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quoted_strings_are_definite_strings (test_hamcp132_recorder_settings.YamlSpellingTests.test_quoted_strings_are_definite_strings)"
+   ],
+   "seconds": 7.6
+  },
+  {
+   "id": "M13-yaml12-float-quoting-lost",
+   "design_item": "M1: a value whose YAML 1.1 reading differs is parser_dependent",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "|[-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?\n",
+     "\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/M13-yaml12-float-quoting-lost.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quoted_strings_are_definite_strings (test_hamcp132_recorder_settings.YamlSpellingTests.test_quoted_strings_are_definite_strings)"
+   ],
+   "seconds": 7.2
+  },
+  {
+   "id": "REVIEW-1-reverse-entity-options-association",
+   "design_item": "independent review: each Core verdict stays associated with its requested entity",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/projection.py",
+     "ok, value = outcomes[index]",
+     "ok, value = outcomes[-index - 1]"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-c2/mutation-logs/REVIEW-1-reverse-entity-options-association.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
+   ],
+   "seconds": 2.4
+  }
+ ]
+}

@@ -801,6 +801,26 @@ class AuthenticatedMcpGateway:
                         send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
                     )
                     return
+            if tool_name == "get_recorder_settings" or tool_name == "get_unregistered_entities":
+                if tool_name == "get_recorder_settings":
+                    from .recorder_settings.contracts import validate_arguments as validate_hamcp132
+                    error, message = "InvalidRecorderSettingsRequest", "Invalid recorder settings arguments."
+                else:
+                    from .entity_reconciliation.contracts import validate_arguments as validate_hamcp132
+                    error, message = "InvalidUnregisteredEntitiesRequest", "Invalid unregistered entity arguments."
+                try:
+                    validate_hamcp132(raw_parameters)
+                except ValueError:
+                    telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                    failure = FailureResponse(
+                        operation=tool_name, error=error,
+                        error_code=telemetry.error_code, message=message,
+                        retryable=False, request_id=request_id,
+                    )
+                    await self._respond_mcp_tool_result(
+                        send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
+                    )
+                    return
             if tool_name == "capture_automation_baseline":
                 from .audit_baseline.capture_contracts import validate_arguments, CaptureError
                 try:
@@ -1092,7 +1112,7 @@ class AuthenticatedMcpGateway:
                         "upstream_attempted": False,
                     }
                     resource_ids = {}
-                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
+                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -1287,6 +1307,26 @@ class AuthenticatedMcpGateway:
                         "provider": "engineering", "fallback": "none",
                     }
                     resource_ids = {}
+                elif tool_name == "get_recorder_settings":
+                    # Only a bounded count is retained; entity IDs, rejected
+                    # keys and malformed values are never copied into the audit.
+                    entity_ids = parameters.get("entity_ids", [])
+                    audit_parameters = {
+                        "profile": "recorder-settings-read-v1",
+                        "entity_count": len(entity_ids) if type(entity_ids) is list and len(entity_ids) <= 50 else None,
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
+                elif tool_name == "get_unregistered_entities":
+                    domains = parameters.get("domains")
+                    limit = parameters.get("limit", 200)
+                    audit_parameters = {
+                        "profile": "unregistered-entities-read-v1",
+                        "domain_count": len(domains) if type(domains) is list and len(domains) <= 50 else None,
+                        "limit": limit if type(limit) is int and 1 <= limit <= 500 else None,
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
                 elif tool_name == "run_held_read_canary":
                     # Canary arguments and upstream result content are
                     # untrusted and may contain sensitive Home Assistant data.
@@ -1373,6 +1413,8 @@ class AuthenticatedMcpGateway:
                             "get_core_log_history",
                             "get_integration_inspection",
                             "get_backup_inventory",
+                            "get_recorder_settings",
+                            "get_unregistered_entities",
                             "capture_automation_baseline",
                             "dashboard_integrity_analysis",
                         }

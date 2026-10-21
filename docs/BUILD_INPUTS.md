@@ -27,7 +27,9 @@ GHSA-42vr-xj54-vc7v; both runtime/test locks and the declared inventory agree.
 2.4.1-beta.22 updates `aiohttp` from 3.14.3 to 3.14.4 for GHSA-2g87-pp6c-29x5,
 CVE-2026-111063 and CVE-2026-111064, and `yarl` from 1.24.5 to 1.25.1, the new
 floor in aiohttp 3.14.4's `Requires-Dist`; no other package changes in either
-lock or the inventory. Only reviewed wheel hashes for the two architectures
+lock or the inventory. 2.4.1-beta.26 updates only `certifi` from 2026.7.22 to
+2026.10.19 for GHSA-6q48-6c7w-9gw2 in both locks and the inventory; certifi
+has no `Requires-Dist` and `requirements.txt` is unchanged. Only reviewed wheel hashes for the two architectures
 are admitted. Binary-only download refuses source distributions; hash-enforced,
 index-free installation uses those downloaded wheels. No source build, apt
 compiler toolchain or floating setuptools/Cython/wheel build environment remains.
