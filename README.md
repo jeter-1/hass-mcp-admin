@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.26** is a break-fix for Home Assistant Core
+Engineering **2.4.1-beta.27** is a break-fix for Home Assistant Core
 authority (HAMCP-215). After a transient verification failure, Core authority
 now recovers on its own:
 - a bounded, jittered backoff (20 s doubling to a 240 s cap) replaces the
@@ -15,9 +15,17 @@ and restoration is now a bounded WARNING log event. Health's
 failure reason and time, and the next attempt. Fail-closed behavior during
 recovery is unchanged. After a Core restart or update, Core-backed tools refuse
 for about 15–18 s until the confirmation completes; Josh accepted this delay.
-The release also bumps `certifi` to 2026.10.19 for GHSA-6q48-6c7w-9gw2
-(HAMCP-217). No tool, schema, permission or descriptor changes (88
+No tool, schema, permission or descriptor changes (88
 tools, 89 with the optional YAML reader). Read the
+[2.4.1-beta.27 release notes](docs/V2_4_1_BETA27_RELEASE_NOTES.md) and
+[2.4.1-beta.27 acceptance contract](docs/V2_4_1_BETA27_ACCEPTANCE.md).
+
+It builds on beta.26 below.
+
+Engineering **2.4.1-beta.26** is a dependency security release (HAMCP-217).
+It upgrades `certifi` to 2026.10.19 for GHSA-6q48-6c7w-9gw2, removing the
+`emSign ECC Root CA - G3` root from the bundle that Engineering's httpx MCP
+clients trust. No runtime code, tool, schema or descriptor changes. Read the
 [2.4.1-beta.26 release notes](docs/V2_4_1_BETA26_RELEASE_NOTES.md) and
 [2.4.1-beta.26 acceptance contract](docs/V2_4_1_BETA26_ACCEPTANCE.md).
 

@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.4.1-beta.26 - Core authority recovery and visibility (HAMCP-215)
+## 2.4.1-beta.27 - Core authority recovery and visibility (HAMCP-215)
 
-Builds on 2.4.1-beta.25.
+Builds on 2.4.1-beta.26.
 
 - Retry a failed Core verification with bounded exponential backoff and ±20%
   jitter: 20 s, doubling, capped at 240 s. This replaces the fixed 300 s
@@ -35,12 +35,21 @@ Builds on 2.4.1-beta.25.
 - A lifecycle-socket movement, including the reconnect after a Core restart,
   now waits one confirmation interval (about 15–18 s) before authority returns.
   Core-backed tools refuse during it. Josh accepted this on 2026-10-20.
-- Bump `certifi` 2026.7.22 → 2026.10.19 in both hashed locks and
-  `build-inputs.json` for GHSA-6q48-6c7w-9gw2 (HAMCP-217, folded in). The bundle
-  loses only the `emSign ECC Root CA - G3` root. There are no transitive
-  changes. `tests/test_hamcp217_certifi_20261019_contract.py` pins the
-  Engineering httpx trust.
 - No tool, schema, descriptor, permission, workflow or stored-format change.
+
+## 2.4.1-beta.26 - certifi 2026.10.19 dependency security release (HAMCP-217)
+
+Builds on 2.4.1-beta.25. Split from HAMCP-215 by Josh's decision so that
+other pull requests can merge; HAMCP-215 receives it through `main`.
+
+- Bump `certifi` 2026.7.22 → 2026.10.19 in both hashed locks and
+  `build-inputs.json` for GHSA-6q48-6c7w-9gw2 (PYSEC-2026-4320). The bundle
+  loses only the `emSign ECC Root CA - G3` root. There are no transitive
+  changes, and `requirements.txt` is unchanged.
+  `tests/test_hamcp217_certifi_20261019_contract.py` pins the Engineering
+  httpx trust.
+- No runtime code, tool, schema, descriptor, permission, workflow or
+  stored-format change. Stable v1 does not pin certifi.
 
 ## 2.4.1-beta.25 - Loaded script configuration (HAMCP-212)
 

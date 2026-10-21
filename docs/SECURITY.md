@@ -653,7 +653,7 @@ frames and time. Inherited behaviour changes are listed in the
 `tests/test_hamcp211_aiohttp_3144_contract.py`. Stable v1.1.2 still pins
 `aiohttp==3.9.5` and is unchanged.
 
-The `2.4.1-beta.26` release (HAMCP-215, with HAMCP-217 folded in) advances
+The `2.4.1-beta.26` dependency-security release (HAMCP-217) advances
 `certifi` to 2026.10.19 for GHSA-6q48-6c7w-9gw2. The new bundle drops the
 `emSign ECC Root CA - G3` root, whose intermediates have compromised keys.
 Engineering's httpx-based MCP clients verify against `certifi.where()`: the
