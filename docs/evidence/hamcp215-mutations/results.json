@@ -5,11 +5,11 @@
       "tests.test_hamcp215_core_authority_recovery"
     ],
     "returncode": 0,
-    "seconds": 9.9,
+    "seconds": 12.0,
     "summary": "OK"
   },
-  "mutation_count": 38,
-  "killed": 38,
+  "mutation_count": 45,
+  "killed": 45,
   "survived": [],
   "python": "3.12.14",
   "results": [
@@ -27,11 +27,13 @@
         "tests.test_hamcp215_core_authority_recovery"
       ],
       "log": "R1-no-recovery-loop.log",
-      "returncode": -9,
+      "returncode": 1,
       "killed": true,
       "killed_by_import_or_syntax_error": false,
-      "first_failures": [],
-      "seconds": 201.6
+      "first_failures": [
+        "FAIL test_background_recovery_within_required_attempts (tests.test_hamcp215_core_authority_recovery.BoundedRecovery.test_background_recovery_within_required_attempts)"
+      ],
+      "seconds": 3.1
     },
     {
       "id": "R1b-fixed-interval-retry",
@@ -73,10 +75,9 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)",
-        "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
+        "FAIL test_background_recovery_within_required_attempts (tests.test_hamcp215_core_authority_recovery.BoundedRecovery.test_background_recovery_within_required_attempts)"
       ],
-      "seconds": 2.1
+      "seconds": 3.1
     },
     {
       "id": "R3-restore-skips-recovery-gate",
@@ -84,7 +85,7 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
       "replacements": [
         [
-          "                if failure_reason is None and gated:\n",
+          "                if stale_reason is None and failure_reason is None and gated:\n",
           "                if False:\n"
         ]
       ],
@@ -96,10 +97,9 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)",
-        "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
+        "FAIL test_background_recovery_within_required_attempts (tests.test_hamcp215_core_authority_recovery.BoundedRecovery.test_background_recovery_within_required_attempts)"
       ],
-      "seconds": 2.1
+      "seconds": 3.1
     },
     {
       "id": "R4-restore-without-lifecycle-fence",
@@ -121,7 +121,7 @@
       "first_failures": [
         "ERROR test_catalog_and_yaml_reader_resume_after_transient (tests.test_hamcp215_core_authority_recovery.Recovery.test_catalog_and_yaml_reader_resume_after_transient)"
       ],
-      "seconds": 4.7
+      "seconds": 4.6
     },
     {
       "id": "R5-confirmation-key-ignored",
@@ -195,7 +195,7 @@
       "first_failures": [
         "FAIL test_connection_move_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_connection_move_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 3.0
+      "seconds": 3.1
     },
     {
       "id": "R8-on-demand-trigger-confirms",
@@ -225,8 +225,8 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
       "replacements": [
         [
-          "                gated = not self._admitted and not first_admission\n",
-          "                gated = (not self._admitted and not first_admission\n                         and self._recovery_state != \"incompatible\")\n"
+          "                gated = not self._admitted and not boot_claim\n",
+          "                gated = (not self._admitted and not boot_claim\n                         and self._recovery_state != \"incompatible\")\n"
         ]
       ],
       "tests": [
@@ -240,7 +240,7 @@
         "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)",
         "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
       ],
-      "seconds": 3.8
+      "seconds": 4.0
     },
     {
       "id": "G2-boot-window-left-open",
@@ -248,8 +248,8 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
       "replacements": [
         [
-          "            # the restoration gate like any other non-admitted state.\n            self._spend_boot_exception_locked()\n",
-          "            pass\n"
+          "                # passes the restoration gate like any other non-admitted state.\n                self._spend_boot_exception_locked()\n",
+          "                pass\n"
         ]
       ],
       "tests": [
@@ -270,7 +270,7 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
       "replacements": [
         [
-          "                if trigger not in _BOOT_TRIGGERS:\n                    self._spend_boot_exception_locked()\n",
+          "                if trigger not in _BOOT_TRIGGERS and not stamp.boot_available:\n                    self._spend_boot_exception_locked()\n",
           ""
         ]
       ],
@@ -285,7 +285,7 @@
         "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)",
         "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)"
       ],
-      "seconds": 7.3
+      "seconds": 7.5
     },
     {
       "id": "G3b-failed-verification-keeps-boot-exception",
@@ -305,9 +305,9 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_failed_boot_attempt_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_failed_boot_attempt_spends_the_boot_exception)"
+        "FAIL test_concurrent_boot_attempt_cannot_reuse_a_spent_exemption (tests.test_hamcp215_core_authority_recovery.Recovery.test_concurrent_boot_attempt_cannot_reuse_a_spent_exemption)"
       ],
-      "seconds": 5.0
+      "seconds": 3.0
     },
     {
       "id": "G3c-boot-retries-continue-after-spent",
@@ -329,7 +329,7 @@
       "first_failures": [
         "FAIL test_failed_boot_attempt_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_failed_boot_attempt_spends_the_boot_exception)"
       ],
-      "seconds": 9.4
+      "seconds": 9.3
     },
     {
       "id": "E1-reinit-rearms-boot-exception",
@@ -349,10 +349,9 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)",
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
       ],
-      "seconds": 2.2
+      "seconds": 2.0
     },
     {
       "id": "E2-admission-keeps-boot-exception",
@@ -394,10 +393,9 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)",
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
       ],
-      "seconds": 2.0
+      "seconds": 2.1
     },
     {
       "id": "E4-reinit-starts-on-periodic-pacing",
@@ -463,7 +461,7 @@
       "first_failures": [
         "FAIL test_registry_move_seen_on_demand_resets_the_streak (tests.test_hamcp215_core_authority_recovery.SignedRegistryKey.test_registry_move_seen_on_demand_resets_the_streak)"
       ],
-      "seconds": 10.0
+      "seconds": 13.0
     },
     {
       "id": "K3-key-reset-not-logged",
@@ -485,7 +483,7 @@
       "first_failures": [
         "FAIL test_reviewer_on_demand_version_change_resets_the_streak (tests.test_hamcp215_core_authority_recovery.Recovery.test_reviewer_on_demand_version_change_resets_the_streak)"
       ],
-      "seconds": 9.4
+      "seconds": 10.0
     },
     {
       "id": "K4-incomplete-observation-is-key-change",
@@ -507,7 +505,7 @@
       "first_failures": [
         "FAIL test_monitorless_failure_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_monitorless_failure_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 6.8
+      "seconds": 7.0
     },
     {
       "id": "G4-on-demand-first-admission",
@@ -530,7 +528,7 @@
         "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)",
         "FAIL test_pristine_runtime_never_admits_on_demand (tests.test_hamcp215_core_authority_recovery.Recovery.test_pristine_runtime_never_admits_on_demand)"
       ],
-      "seconds": 7.1
+      "seconds": 7.6
     },
     {
       "id": "G5-version-change-retired-only-with-registry",
@@ -575,7 +573,7 @@
       "first_failures": [
         "FAIL test_every_disposition_needs_full_background_confirmation (tests.test_hamcp215_core_authority_recovery.Recovery.test_every_disposition_needs_full_background_confirmation)"
       ],
-      "seconds": 3.9
+      "seconds": 4.0
     },
     {
       "id": "G7-material-retirement-not-recovery",
@@ -619,7 +617,7 @@
       "first_failures": [
         "FAIL test_failed_boot_attempt_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_failed_boot_attempt_spends_the_boot_exception)"
       ],
-      "seconds": 4.9
+      "seconds": 5.1
     },
     {
       "id": "L1-refusals-counted-as-confirmations",
@@ -641,7 +639,7 @@
       "first_failures": [
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
       ],
-      "seconds": 2.1
+      "seconds": 2.2
     },
     {
       "id": "R9-no-flap-escalation",
@@ -663,7 +661,7 @@
       "first_failures": [
         "FAIL test_flapping_requires_more_spaced_confirmations_and_does_not_toggle (tests.test_hamcp215_core_authority_recovery.Recovery.test_flapping_requires_more_spaced_confirmations_and_does_not_toggle)"
       ],
-      "seconds": 5.1
+      "seconds": 5.2
     },
     {
       "id": "B1-no-backoff-growth",
@@ -685,7 +683,7 @@
       "first_failures": [
         "FAIL test_failure_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_failure_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 4.9
+      "seconds": 5.3
     },
     {
       "id": "B2-backoff-uncapped",
@@ -707,7 +705,7 @@
       "first_failures": [
         "FAIL test_incompatibility_stays_retired_and_is_rechecked_without_backoff (tests.test_hamcp215_core_authority_recovery.Recovery.test_incompatibility_stays_retired_and_is_rechecked_without_backoff)"
       ],
-      "seconds": 5.5
+      "seconds": 5.7
     },
     {
       "id": "V1-retirement-not-logged",
@@ -729,7 +727,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.1
+      "seconds": 3.3
     },
     {
       "id": "V2-verification-failure-not-logged",
@@ -751,7 +749,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.1
+      "seconds": 3.2
     },
     {
       "id": "V3-recovery-attempt-not-logged",
@@ -773,7 +771,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.1
+      "seconds": 3.3
     },
     {
       "id": "V4-restoration-not-logged",
@@ -795,7 +793,7 @@
       "first_failures": [
         "FAIL test_connection_move_during_confirmation_restarts_the_count (tests.test_hamcp215_core_authority_recovery.Recovery.test_connection_move_during_confirmation_restarts_the_count)"
       ],
-      "seconds": 2.9
+      "seconds": 3.1
     },
     {
       "id": "V5-catalog-change-not-logged",
@@ -817,7 +815,7 @@
       "first_failures": [
         "FAIL test_catalog_and_yaml_reader_resume_after_transient (tests.test_hamcp215_core_authority_recovery.Recovery.test_catalog_and_yaml_reader_resume_after_transient)"
       ],
-      "seconds": 2.8
+      "seconds": 2.9
     },
     {
       "id": "H1-failure-reason-not-recorded",
@@ -839,7 +837,7 @@
       "first_failures": [
         "FAIL test_each_transient_retires_then_restores_after_confirmed_reverification (tests.test_hamcp215_core_authority_recovery.Recovery.test_each_transient_retires_then_restores_after_confirmed_reverification)"
       ],
-      "seconds": 3.1
+      "seconds": 3.3
     },
     {
       "id": "H2-retired-at-not-recorded",
@@ -859,10 +857,163 @@
       "killed": true,
       "killed_by_import_or_syntax_error": false,
       "first_failures": [
-        "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)",
         "FAIL test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
       ],
-      "seconds": 2.1
+      "seconds": 2.0
+    },
+    {
+      "id": "S1-publication-generation-unchecked",
+      "design_item": "H1 (review of 2ad04a3): publication does not re-check the work's generation and owner",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "                stale_reason = self._stale_work_reason_locked(stamp)\n                boot_claim = stamp.boot_available and not self._admitted\n",
+          "                stale_reason = None\n                boot_claim = stamp.boot_available and not self._admitted\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "S1-publication-generation-unchecked.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_rebuild_at_publication_discards_the_verification (tests.test_hamcp215_core_authority_recovery.Recovery.test_rebuild_at_publication_discards_the_verification)"
+      ],
+      "seconds": 8.8
+    },
+    {
+      "id": "S2-boot-claim-not-rechecked",
+      "design_item": "H1 (review of 2ad04a3): a boot-exemption claim is taken from the start-time snapshot without a publication re-check",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "                    stale_reason is None\n                    and boot_claim\n                    and self._boot_exception_spent\n",
+          "                    False\n                    and boot_claim\n                    and self._boot_exception_spent\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "S2-boot-claim-not-rechecked.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_concurrent_boot_attempt_cannot_reuse_a_spent_exemption (tests.test_hamcp215_core_authority_recovery.Recovery.test_concurrent_boot_attempt_cannot_reuse_a_spent_exemption)"
+      ],
+      "seconds": 3.0
+    },
+    {
+      "id": "S3-resume-points-unchecked",
+      "design_item": "H1 (review of 2ad04a3): superseded work keeps running after a resume point (publication alone discards it)",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "        if reason is None:\n            return None\n        return self._discard_stale_work(trigger, phase, reason)\n",
+          "        return None\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "S3-resume-points-unchecked.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_retiring_the_supervisor_discards_its_in_flight_work (tests.test_hamcp215_core_authority_recovery.Recovery.test_retiring_the_supervisor_discards_its_in_flight_work)"
+      ],
+      "seconds": 9.3
+    },
+    {
+      "id": "S4-supervisor-retirement-keeps-generation",
+      "design_item": "H1 (review of 2ad04a3): retiring the supervisor does not retire its runtime generation",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "                    self._runtime_generation += 1\n                    monitor_task = self._connection_monitor_task\n",
+          "                    monitor_task = self._connection_monitor_task\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "S4-supervisor-retirement-keeps-generation.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_retiring_the_supervisor_discards_its_in_flight_work (tests.test_hamcp215_core_authority_recovery.Recovery.test_retiring_the_supervisor_discards_its_in_flight_work)"
+      ],
+      "seconds": 9.5
+    },
+    {
+      "id": "S5-configure-keeps-old-watcher",
+      "design_item": "H1 (review of 2ad04a3): re-initialization forgets, but does not stop, the previous lifecycle watcher",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "        self._cancel_retired_monitor(retired_monitor)\n\n",
+          "\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "S5-configure-keeps-old-watcher.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "ERROR test_any_admission_spends_the_boot_exception (tests.test_hamcp215_core_authority_recovery.Recovery.test_any_admission_spends_the_boot_exception)"
+      ],
+      "seconds": 4.1
+    },
+    {
+      "id": "S6-superseded-supervisor-continues",
+      "design_item": "H1 (review of 2ad04a3): a supervisor of a replaced configuration keeps reconciling",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "            if owner is self._configuration_owner:\n                return False\n",
+          "            if True:\n                return False\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "S6-superseded-supervisor-continues.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "ERROR test_superseded_supervisor_stops_without_touching_the_new_configuration (tests.test_hamcp215_core_authority_recovery.Recovery.test_superseded_supervisor_stops_without_touching_the_new_configuration)"
+      ],
+      "seconds": 12.7
+    },
+    {
+      "id": "S7-deferred-background-spend-dropped",
+      "design_item": "H1 (review of 2ad04a3): a background attempt that could claim the exemption never spends it",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py",
+      "replacements": [
+        [
+          "                    if self._stale_work_reason_locked(stamp) is None:\n                        self._spend_boot_exception_locked()\n",
+          "                    pass\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp215_core_authority_recovery"
+      ],
+      "log": "S7-deferred-background-spend-dropped.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_cancelled_first_background_verification_spends_the_exemption (tests.test_hamcp215_core_authority_recovery.Recovery.test_cancelled_first_background_verification_spends_the_exemption)"
+      ],
+      "seconds": 2.2
     }
   ]
 }

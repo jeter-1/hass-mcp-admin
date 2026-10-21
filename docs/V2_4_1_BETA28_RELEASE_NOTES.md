@@ -66,6 +66,15 @@ invalidated. Nothing was written to the add-on log.
      through the full gate. A failed first startup check ends the boot
      sequence's retries; the supervisor then recovers on backoff pacing
      (about 20 s, then the confirmations).
+   - **Superseded work is discarded.** A verification still in flight when
+     the application is rebuilt or re-initialized, or when its supervisor is
+     retired, can never publish: each verification records its runtime
+     generation, configuration and boot-exemption availability when it
+     starts, and admission re-checks them atomically. Superseded work is
+     logged at INFO (`core_authority_stale_work_discarded`) and counts as
+     nothing. A re-initialization also stops the previous lifecycle watcher,
+     and a superseded supervisor stops at its next wake
+     (`core_authority_supervisor_retired`, INFO).
    - **Spacing.** The verifications are about 15 s apart. The count restarts
      on any failure or connection move, and on **any** observation, background
      or on demand, of a different Core identity, version, signed-registry
@@ -107,10 +116,11 @@ invalidated. Nothing was written to the add-on log.
    - `confirmations`, `confirmations_required`
    - `last_restored_at`
 
-   Four new counters are added: `recovery_attempts`,
+   Five new counters are added: `recovery_attempts`,
    `recovery_confirmations` (accepted background confirmations only),
-   `recovery_on_demand_refusals` and `authority_restorations`. Existing
-   counters are unchanged.
+   `recovery_on_demand_refusals`, `authority_restorations` and
+   `stale_work_discards` (superseded work discarded; diagnostic only).
+   Existing counters are unchanged.
 6. **Dependents resume.** Restoration publishes a new generation through the
    unchanged path:
    - the gateway restores every withheld delegated tool and the YAML reader
@@ -142,7 +152,7 @@ of the running application also passes the gate.
 
 - **Stored formats.** No stored format changes. Recovery state is in memory
   only and starts at `initializing` on each process start.
-- **Health.** The `recovery` object and the four counters are additive.
+- **Health.** The `recovery` object and the five counters are additive.
 - **Audit.** Audit events are unchanged in shape. Logging is additive.
 - **Rollback** is reinstalling the beta.27 artifact. That returns to the fixed
   300 s retry and silent retirement, and keeps `certifi` 2026.10.19. Do not

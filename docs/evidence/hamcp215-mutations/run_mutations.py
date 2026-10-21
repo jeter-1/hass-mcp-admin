@@ -13,9 +13,11 @@ Usage:
 Optional ``--only ID [ID ...]`` reruns a subset; ``--workers N`` sets the
 number of tree copies run concurrently (default 2).
 
-Run it under a memory cap. The R1 mutant (no recovery loop) never finishes
-and its memory grows without bound; uncapped, it can exhaust host memory
-before the ``--timeout``. The recorded results.json came from:
+Run it under a memory cap. The R1 mutant (no recovery loop) is killed by
+assertion within about a second (``BoundedRecovery``, adopted from the review
+of 2ad04a3); the cap stays as a guard in case a mutant never finishes and
+its memory grows without bound before the ``--timeout``. The recorded
+results.json came from:
     systemd-run --user -p MemoryMax=3G -p MemorySwapMax=0 \
         -p OOMPolicy=continue --working-directory=<repo> <the command above>
 """
@@ -81,7 +83,7 @@ MUTATIONS = [
     )]),
     m("R3-restore-skips-recovery-gate",
       "brief: restore without the recovery verification gate at all", RUNTIME, [(
-        "                if failure_reason is None and gated:\n",
+        "                if stale_reason is None and failure_reason is None and gated:\n",
         "                if False:\n",
     )]),
     m("R4-restore-without-lifecycle-fence",
@@ -122,19 +124,19 @@ MUTATIONS = [
     )]),
     m("G1-incompatible-bypasses-gate",
       "H1: an incompatible (or unreviewed-version) Core restores outside the gate", RUNTIME, [(
-        "                gated = not self._admitted and not first_admission\n",
-        "                gated = (not self._admitted and not first_admission\n"
+        "                gated = not self._admitted and not boot_claim\n",
+        "                gated = (not self._admitted and not boot_claim\n"
         "                         and self._recovery_state != \"incompatible\")\n",
     )]),
     m("G2-boot-window-left-open",
       "H1: never initialized after the boot sequence admits on one background success", RUNTIME, [(
-        "            # the restoration gate like any other non-admitted state.\n"
-        "            self._spend_boot_exception_locked()\n",
-        "            pass\n",
+        "                # passes the restoration gate like any other non-admitted state.\n"
+        "                self._spend_boot_exception_locked()\n",
+        "                pass\n",
     )]),
     m("G3-failed-attempt-keeps-boot-window",
       "H1: a non-boot first attempt leaves the boot exception unspent", RUNTIME, [(
-        "                if trigger not in _BOOT_TRIGGERS:\n"
+        "                if trigger not in _BOOT_TRIGGERS and not stamp.boot_available:\n"
         "                    self._spend_boot_exception_locked()\n",
         "",
     )]),
@@ -276,6 +278,54 @@ MUTATIONS = [
       "brief: health retired_at not recorded", RUNTIME, [(
         "            self._retired_at = now\n",
         "            pass\n",
+    )]),
+    # -- H1 (review of 2ad04a3): superseded in-flight work is discarded ----
+    m("S1-publication-generation-unchecked",
+      "H1 (review of 2ad04a3): publication does not re-check the work's generation and owner", RUNTIME, [(
+        "                stale_reason = self._stale_work_reason_locked(stamp)\n"
+        "                boot_claim = stamp.boot_available and not self._admitted\n",
+        "                stale_reason = None\n"
+        "                boot_claim = stamp.boot_available and not self._admitted\n",
+    )]),
+    m("S2-boot-claim-not-rechecked",
+      "H1 (review of 2ad04a3): a boot-exemption claim is taken from the start-time snapshot without a publication re-check", RUNTIME, [(
+        "                    stale_reason is None\n"
+        "                    and boot_claim\n"
+        "                    and self._boot_exception_spent\n",
+        "                    False\n"
+        "                    and boot_claim\n"
+        "                    and self._boot_exception_spent\n",
+    )]),
+    m("S3-resume-points-unchecked",
+      "H1 (review of 2ad04a3): superseded work keeps running after a resume point (publication alone discards it)", RUNTIME, [(
+        "        if reason is None:\n"
+        "            return None\n"
+        "        return self._discard_stale_work(trigger, phase, reason)\n",
+        "        return None\n",
+    )]),
+    m("S4-supervisor-retirement-keeps-generation",
+      "H1 (review of 2ad04a3): retiring the supervisor does not retire its runtime generation", RUNTIME, [(
+        "                    self._runtime_generation += 1\n"
+        "                    monitor_task = self._connection_monitor_task\n",
+        "                    monitor_task = self._connection_monitor_task\n",
+    )]),
+    m("S5-configure-keeps-old-watcher",
+      "H1 (review of 2ad04a3): re-initialization forgets, but does not stop, the previous lifecycle watcher", RUNTIME, [(
+        "        self._cancel_retired_monitor(retired_monitor)\n\n",
+        "\n",
+    )]),
+    m("S6-superseded-supervisor-continues",
+      "H1 (review of 2ad04a3): a supervisor of a replaced configuration keeps reconciling", RUNTIME, [(
+        "            if owner is self._configuration_owner:\n"
+        "                return False\n",
+        "            if True:\n"
+        "                return False\n",
+    )]),
+    m("S7-deferred-background-spend-dropped",
+      "H1 (review of 2ad04a3): a background attempt that could claim the exemption never spends it", RUNTIME, [(
+        "                    if self._stale_work_reason_locked(stamp) is None:\n"
+        "                        self._spend_boot_exception_locked()\n",
+        "                    pass\n",
     )]),
 ]
 

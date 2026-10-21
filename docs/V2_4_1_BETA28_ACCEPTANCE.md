@@ -68,6 +68,13 @@ The review needs a security section covering:
   production constructs exactly one runtime per process. A re-initialization
   (application rebuild, `configure`, collector restart) restores through the
   full gate.
+- **Superseded work is discarded (H1, review of 2ad04a3).** Every
+  verification records the runtime generation, configuration owner and
+  boot-exemption availability when it starts. Publication re-checks them
+  under the lock that admits, issues leases and restores the catalog, and
+  each resume point re-checks generation and owner. Superseded work is
+  logged at INFO with a bounded reason and counts as nothing. `configure`
+  stops the previous lifecycle watcher, and a superseded supervisor stops.
 - **Changed keys reset the streak (H2, review of a6e66a8).** Any failure or
   connection move, and any observation, background **or on demand**, of a
   changed identity, version, signed-registry authority or reviewed contract
@@ -86,7 +93,7 @@ Preserve the following:
 - workflows;
 - every dependency and both hashed locks (unchanged from beta.27).
 
-The health `recovery` object and the four new counters are the only
+The health `recovery` object and the five new counters are the only
 public-surface change. They are additive and authorized by the task.
 
 ### Accepted restoration delay
@@ -129,6 +136,16 @@ No test reaches a live system.
     and repeated re-initializations, each needing the full background
     confirmations; a failed boot ending the boot retries; production
     constructing one runtime whose latch only `__init__` arms;
+  - the second delta review's H1 reproduction (review of 2ad04a3): a startup
+    verification suspended across two application rebuilds is discarded,
+    through the factory and through `configure`; superseded work suspended
+    at every await, for boot, background and on-demand triggers; a rebuild
+    at publication; repeated rebuilds; a concurrent boot attempt after the
+    exemption was spent; a cancelled or raising first background attempt
+    still spending it; superseded supervisors. Each case then needs the
+    current configuration's full background confirmations;
+  - the adopted R1 bounded-recovery assertion: each background recovery
+    attempt is scheduled within one second;
   - the delta review's H2 reproductions: a different Core version, a changed
     reviewed contract and a moved signed-registry authority seen on demand
     each reset the streak, then need fresh background confirmations; a
@@ -156,12 +173,10 @@ No test reaches a live system.
   `reconcile_through_gate`. The full list is in the design document's
   Validation section. No refusal, dispatch or authority assertion was
   weakened. The script changes are evidenced only by the disposable CI lanes.
-- Mutations (`docs/evidence/hamcp215-mutations/`): 38 of 38 killed,
+- Mutations (`docs/evidence/hamcp215-mutations/`): 45 of 45 killed,
   including all of these:
-  - no recovery loop (killed without an assertion: the unpaced retry
-    chain never lets the suite finish. The recorded run ended it by
-    exhausting a 3 GB memory cap after 202 s, return code -9; an uncapped
-    run hits the 900 s timeout or the host's OOM killer)
+  - no recovery loop (killed by the bounded-recovery assertion within about
+    a second; the runner still runs under a memory cap)
   - fixed-interval retry
   - restoration without confirmation, the recovery gate or the lifecycle fence
   - no hysteresis or no flap escalation
@@ -177,6 +192,11 @@ No test reaches a live system.
     failed verification or a non-boot check not spending it; boot retries
     continuing after it is spent; a re-initialization dropping the
     withdrawal; the supervisor waiting a full interval after a re-init
+  - H1 superseded work: publication not re-checking generation and owner;
+    a boot-exemption claim not re-checked at publication; resume points not
+    checked; supervisor retirement keeping the generation; the old watcher
+    left running; a superseded supervisor continuing; a background attempt
+    never spending the exemption
   - H2: an on-demand changed key ignored; the signed-registry authority left
     out of the key; the key reset not logged; a failed (incomplete) probe
     reported as a key change
@@ -227,7 +247,8 @@ transient.
    - timestamps that are ISO-8601 UTC or null;
    - `consecutive_failures: 0` when stable;
    - the counters `recovery_attempts`, `recovery_confirmations`,
-     `recovery_on_demand_refusals` and `authority_restorations` present.
+     `recovery_on_demand_refusals`, `authority_restorations` and
+     `stale_work_discards` present.
 4. **Logs.** Confirm that the add-on log at startup contains no
    `core_authority_*` WARNING events unless a failure occurred. If a failure
    did occur, confirm that each WARNING event names a bounded reason and an

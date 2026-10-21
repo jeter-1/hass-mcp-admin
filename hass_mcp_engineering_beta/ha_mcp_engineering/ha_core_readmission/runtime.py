@@ -82,6 +82,16 @@ _RECOVERY_CONFIRMATION_TRIGGERS = frozenset({
 # never re-arms it: any later re-initialization passes the full gate.
 _BOOT_TRIGGERS = frozenset({"startup", "startup_retry"})
 _FIRST_ADMISSION_TRIGGERS = _BOOT_TRIGGERS | _RECOVERY_CONFIRMATION_TRIGGERS
+# HAMCP-215 H1: work that outlives its configuration is discarded, never
+# published. Bounded reasons and phases for the INFO discard record.
+_STALE_WORK_REASONS = frozenset({
+    "core_configuration_replaced", "core_runtime_generation_replaced",
+    "core_boot_exemption_spent",
+})
+_STALE_WORK_PHASES = frozenset({
+    "reconciliation_lock", "registry_refresh", "observation",
+    "monitor_attachment", "publication",
+})
 logger = get_logger("core_authority")
 
 
@@ -104,6 +114,22 @@ _OBSERVATION_REASONS = frozenset({
     "core_observation_unstable", "transport_unavailable", "authentication_failed",
     "observation_complete",
 })
+
+
+@dataclass(frozen=True)
+class _WorkStamp:
+    """What one reconciliation work item was entitled to when it started.
+
+    ``generation`` is the runtime generation (advanced by every configure and
+    by supervisor retirement; never reused), ``owner`` the configuration that
+    started the work, and ``boot_available`` whether the one-shot boot
+    exemption was unspent at start for a trigger that may use it. Publication
+    re-checks all three under the runtime lock; a mismatch discards the work.
+    """
+
+    generation: int
+    owner: object
+    boot_available: bool
 
 
 @dataclass(frozen=True)
@@ -160,11 +186,17 @@ class CoreRuntime:
             "recovery_confirmations": 0,
             "recovery_on_demand_refusals": 0,
             "authority_restorations": 0,
+            "stale_work_discards": 0,
         }
         self._monotonic: Callable[[], float] = time.monotonic
         # One-shot boot exception (see ``_BOOT_TRIGGERS``). Assigned False only
         # here; ``_spend_boot_exception_locked`` is its only other writer.
         self._boot_exception_spent = False
+        # HAMCP-215 H1 work fence (see ``_WorkStamp``). Neither value is ever
+        # reset: a superseded configuration's in-flight work cannot match a
+        # later one.
+        self._runtime_generation = 0
+        self._configuration_owner: object = object()
         self._reset_recovery_locked()
 
     def _reset_recovery_locked(self) -> None:
@@ -197,6 +229,70 @@ class CoreRuntime:
 
         self._boot_exception_spent = True
 
+    def _work_stamp(self, trigger: str, *, owner: object | None = None) -> _WorkStamp:
+        """Record what one work item may claim, at the moment it starts."""
+
+        with self._lock:
+            return _WorkStamp(
+                generation=self._runtime_generation,
+                owner=self._configuration_owner if owner is None else owner,
+                boot_available=(
+                    not self._boot_exception_spent
+                    and trigger in _FIRST_ADMISSION_TRIGGERS
+                ),
+            )
+
+    def _stale_work_reason_locked(self, stamp: _WorkStamp) -> str | None:
+        """Why work stamped ``stamp`` no longer belongs to this runtime."""
+
+        if stamp.owner is not self._configuration_owner:
+            return "core_configuration_replaced"
+        if stamp.generation != self._runtime_generation:
+            return "core_runtime_generation_replaced"
+        return None
+
+    def _stale_work(
+        self, stamp: _WorkStamp, trigger: str, phase: str
+    ) -> dict[str, Any] | None:
+        """Discard superseded work at a resume point; ``None`` while current."""
+
+        with self._lock:
+            reason = self._stale_work_reason_locked(stamp)
+        if reason is None:
+            return None
+        return self._discard_stale_work(trigger, phase, reason)
+
+    def _discard_stale_work(
+        self, trigger: str, phase: str, reason: str
+    ) -> dict[str, Any]:
+        """Drop one superseded result: logged at INFO, it counts as nothing."""
+
+        with self._lock:
+            # Diagnostic only: never a verification, failure or confirmation.
+            self._counters["stale_work_discards"] += 1
+            record = self._recovery_record_locked(
+                "core_authority_stale_work_discarded",
+                "Superseded Home Assistant Core verification discarded",
+                datetime.now(timezone.utc),
+                level=logging.INFO,
+                reason=reason if reason in _STALE_WORK_REASONS else "other",
+                phase=phase if phase in _STALE_WORK_PHASES else "other",
+                trigger=trigger if trigger in _AUDIT_TRIGGERS else "other",
+            )
+        self._emit([record])
+        return self.health_snapshot()
+
+    def _cancel_retired_monitor(self, task: asyncio.Task[None] | None) -> None:
+        """Best-effort stop of a superseded lifecycle watcher."""
+
+        if task is None or task.done():
+            return
+        try:
+            task.cancel()
+        except RuntimeError:
+            # Its event loop is already closed; it can never run again.
+            pass
+
     def configure(
         self,
         settings: Any,
@@ -221,6 +317,12 @@ class CoreRuntime:
                 settings, profile_selector=registry.probe_profile_for
             )
         with self._lock:
+            # Every configure is a new runtime generation and owner: work
+            # started under an earlier one is discarded at its next resume
+            # point and can never publish (``_WorkStamp``).
+            self._runtime_generation += 1
+            self._configuration_owner = object()
+            retired_monitor = self._connection_monitor_task
             # ``CORE_READMISSION`` is process-global, while test and embedding
             # callers may configure and serve it from successive event loops.
             # Recreate loop-bound coordination primitives at the same startup
@@ -235,7 +337,9 @@ class CoreRuntime:
             self._audit_sink = audit_sink
             self._coordinator = CoreReadmissionCoordinator(CORE_RUNTIME_CAPABILITY_PROFILES)
             self._observation = None
-            self._connection_epoch = 0
+            # Never reused: an epoch captured under an earlier configuration
+            # cannot match this one.
+            self._connection_epoch += 1
             self._connection_monitor_task = None
             self._connection_monitor_token = None
             self._connection_monitor_version = None
@@ -267,6 +371,7 @@ class CoreRuntime:
                 elif self._recovery_active:
                     self._recovery_state = "retrying"
             self._configured = True
+        self._cancel_retired_monitor(retired_monitor)
 
     @property
     def configured(self) -> bool:
@@ -374,13 +479,36 @@ class CoreRuntime:
             listener()
 
     async def reconcile_once(self, trigger: str = "periodic") -> dict[str, Any]:
+        return await self._reconcile(trigger, self._work_stamp(trigger))
+
+    async def _reconcile(self, trigger: str, stamp: _WorkStamp) -> dict[str, Any]:
+        try:
+            return await self._reconcile_serialized(trigger, stamp)
+        finally:
+            if stamp.boot_available and trigger not in _BOOT_TRIGGERS:
+                # A background attempt that could claim the exemption spends it
+                # when it ends instead of when it starts, so its own claim
+                # survives the publication re-check. Releasing the asyncio lock
+                # does not yield, so no queued attempt runs before this spend.
+                # Superseded work never touches the current latch.
+                with self._lock:
+                    if self._stale_work_reason_locked(stamp) is None:
+                        self._spend_boot_exception_locked()
+
+    async def _reconcile_serialized(
+        self, trigger: str, stamp: _WorkStamp
+    ) -> dict[str, Any]:
         async with self._reconciliation_lock:
+            if (stale := self._stale_work(stamp, trigger, "reconciliation_lock")) is not None:
+                return stale
             collector = self._collector
             if collector is None:
                 raise RuntimeError("Core readmission is not configured")
             registry = self._release_registry
             if registry is not None:
                 await registry.refresh_if_due()
+                if (stale := self._stale_work(stamp, trigger, "registry_refresh")) is not None:
+                    return stale
             self._sync_registry_authority()
             collection_token = (
                 registry.collection_token() if registry and registry.enabled else None
@@ -394,11 +522,7 @@ class CoreRuntime:
                     self._counters["reprobes"] += 1
                 attempt_at = datetime.now(timezone.utc)
                 self._last_attempt_at = attempt_at
-                first_admission = (
-                    not self._boot_exception_spent
-                    and trigger in _FIRST_ADMISSION_TRIGGERS
-                )
-                if trigger not in _BOOT_TRIGGERS:
+                if trigger not in _BOOT_TRIGGERS and not stamp.boot_available:
                     self._spend_boot_exception_locked()
                 if trigger in _RECOVERY_CONFIRMATION_TRIGGERS and (
                     self._recovery_active or trigger == "failure_retry"
@@ -413,6 +537,8 @@ class CoreRuntime:
                     ))
             self._emit(records)
             observation = await collector.collect()
+            if (stale := self._stale_work(stamp, trigger, "observation")) is not None:
+                return stale
             # A newly observed Core version cannot keep the preceding generation
             # usable: it is a new authority that passes the restoration gate,
             # and with a registry it may await external compatibility data.
@@ -429,15 +555,21 @@ class CoreRuntime:
                     refreshed = await registry.refresh_for_missing_release(
                         server_name=CORE_IDENTITY, version=observation.version
                     )
+                    if (stale := self._stale_work(stamp, trigger, "registry_refresh")) is not None:
+                        return stale
                     self._sync_registry_authority()
                     if refreshed and registry.collection_token() != collection_token:
                         # One bounded recollection after a missing-release fetch.
                         # A later concurrent change refuses this attempt below.
                         collection_token = registry.collection_token()
                         observation = await collector.collect()
+                        if (stale := self._stale_work(stamp, trigger, "observation")) is not None:
+                            return stale
             monitor_required, monitor_ready, newly_attached = (
                 await self._ensure_connection_monitor(observation)
             )
+            if (stale := self._stale_work(stamp, trigger, "monitor_attachment")) is not None:
+                return stale
             if monitor_required and not monitor_ready:
                 # A failed or incomplete observation cannot leave the prior
                 # monitored generation usable.  Retire it just as an observed
@@ -463,6 +595,8 @@ class CoreRuntime:
                 # the watcher.  Recollect the complete two-snapshot evidence
                 # under that authenticated lifecycle fence before publishing.
                 observation = await collector.collect()
+                if (stale := self._stale_work(stamp, trigger, "observation")) is not None:
+                    return stale
             if registry and registry.enabled and registry.collection_token() != collection_token:
                 self._sync_registry_authority()
                 self._reprobe_event.set()
@@ -489,7 +623,23 @@ class CoreRuntime:
             audit_sink = None
             audit_event = None
             with self._lock:
-                if connection_epoch != self._connection_epoch:
+                # The publication fence, atomic with everything published
+                # below (admission, leases, listeners and catalog restoration
+                # all follow only from this block). Work from a replaced
+                # configuration or runtime generation is discarded, and so is
+                # a boot-exemption claim once the latch is spent: it was valid
+                # at start but no longer has an owner.
+                stale_reason = self._stale_work_reason_locked(stamp)
+                boot_claim = stamp.boot_available and not self._admitted
+                if (
+                    stale_reason is None
+                    and boot_claim
+                    and self._boot_exception_spent
+                ):
+                    stale_reason = "core_boot_exemption_spent"
+                if stale_reason is not None:
+                    pass  # Discarded after the lock, below: never a failure.
+                elif connection_epoch != self._connection_epoch:
                     failure_reason = "core_connection_generation_stale"
                 elif monitor_required and (
                     self._connection_monitor_version != observation.version
@@ -508,9 +658,9 @@ class CoreRuntime:
                 # on identity, version, selected registry authority and
                 # reviewed contracts. Only the one-shot boot exception is
                 # exempt; on-demand never admits.
-                gated = not self._admitted and not first_admission
+                gated = not self._admitted and not boot_claim
                 gate_records: list[tuple[int, str, str, dict[str, Any]]] = []
-                if failure_reason is None and gated:
+                if stale_reason is None and failure_reason is None and gated:
                     # Each confirmation is a full probe; nothing earlier is
                     # replayed or cached.
                     admitted_preview = self._coordinator.preview_admitted(
@@ -582,7 +732,11 @@ class CoreRuntime:
                             level=logging.INFO,
                             trigger=trigger if trigger in _AUDIT_TRIGGERS else "other",
                         )]
-                if failure_reason is None and not confirmation_pending:
+                if (
+                    stale_reason is None
+                    and failure_reason is None
+                    and not confirmation_pending
+                ):
                     # Publish the decision generation and its exact observation
                     # under one runtime lock.  Routes and health must never see a
                     # new generation paired with the prior observation.
@@ -635,6 +789,8 @@ class CoreRuntime:
                         )
                         else None
                     )
+            if stale_reason is not None:
+                return self._discard_stale_work(trigger, "publication", stale_reason)
             if failure_reason is not None:
                 self._audit_early_failure(trigger, observation, failure_reason)
                 return self.health_snapshot()
@@ -896,9 +1052,16 @@ class CoreRuntime:
         retry_delays: tuple[float, ...] = (0.25, 1.0, 3.0),
         sleep: Callable[[float], Any] = asyncio.sleep,
     ) -> dict[str, Any]:
-        snapshot = await self.reconcile_once("startup")
+        with self._lock:
+            # The boot sequence belongs to the configuration it started under.
+            owner = self._configuration_owner
+        snapshot = await self._reconcile("startup", self._work_stamp("startup", owner=owner))
         for delay in retry_delays:
             with self._lock:
+                if owner is not self._configuration_owner:
+                    # Replaced mid-sequence: the new configuration owns the
+                    # rest of the boot, so this one neither retries nor spends.
+                    return snapshot
                 # Once the one-shot exception is spent (a failed verification,
                 # or a re-initialization), a boot retry can no longer admit:
                 # restoration belongs to the supervisor's background gate.
@@ -906,11 +1069,14 @@ class CoreRuntime:
             if snapshot.get("identity_agreement") or exhausted:
                 break
             await sleep(delay)
-            snapshot = await self.reconcile_once("startup_retry")
+            snapshot = await self._reconcile(
+                "startup_retry", self._work_stamp("startup_retry", owner=owner)
+            )
         with self._lock:
-            # The boot sequence is over: a never-initialized Core now passes
-            # the restoration gate like any other non-admitted state.
-            self._spend_boot_exception_locked()
+            if owner is self._configuration_owner:
+                # The boot sequence is over: a never-initialized Core now
+                # passes the restoration gate like any other non-admitted state.
+                self._spend_boot_exception_locked()
         return snapshot
 
     async def supervise(
@@ -929,6 +1095,8 @@ class CoreRuntime:
             raise ValueError("Core recovery delays must be positive")
         cap = min(retry_cap_seconds, interval_seconds)
         with self._lock:
+            # A supervisor serves only the configuration it started under.
+            owner = self._configuration_owner
             # A runtime past its boot exception that holds no authority (a
             # failed boot or a re-initialization) starts on recovery pacing
             # rather than waiting a full reconciliation interval.
@@ -939,6 +1107,8 @@ class CoreRuntime:
             )
         try:
             while True:
+                if self._supervisor_retired(owner):
+                    return
                 if retry:
                     # Failure/monitor retirement can itself set the wakeup.
                     # Coalesce those hints during one bounded, jittered backoff
@@ -961,8 +1131,14 @@ class CoreRuntime:
                         trigger = "identity_or_connection_change"
                     except TimeoutError:
                         trigger = "periodic"
+                if self._supervisor_retired(owner):
+                    return
                 self._reprobe_event.clear()
-                snapshot = await self.reconcile_once(trigger)
+                snapshot = await self._reconcile(
+                    trigger, self._work_stamp(trigger, owner=owner)
+                )
+                if self._supervisor_retired(owner):
+                    return
                 with self._lock:
                     recovering = (
                         self._recovery_active
@@ -977,15 +1153,38 @@ class CoreRuntime:
                             timezone.utc
                         ) + timedelta(seconds=interval_seconds)
         finally:
+            monitor_task = None
             with self._lock:
-                monitor_task = self._connection_monitor_task
-                self._connection_monitor_task = None
-                self._connection_monitor_token = None
-                self._connection_monitor_version = None
-                self._connection_monitor_epoch = None
+                if owner is self._configuration_owner:
+                    # Retiring the supervisor retires its runtime generation:
+                    # work still in flight from it is discarded. A replaced
+                    # configuration's watcher was already stopped by configure;
+                    # the current one is never touched from here.
+                    self._runtime_generation += 1
+                    monitor_task = self._connection_monitor_task
+                    self._connection_monitor_task = None
+                    self._connection_monitor_token = None
+                    self._connection_monitor_version = None
+                    self._connection_monitor_epoch = None
             if monitor_task is not None:
                 monitor_task.cancel()
                 await asyncio.gather(monitor_task, return_exceptions=True)
+
+    def _supervisor_retired(self, owner: object) -> bool:
+        """Whether a supervisor's configuration was replaced; logged once."""
+
+        with self._lock:
+            if owner is self._configuration_owner:
+                return False
+            record = self._recovery_record_locked(
+                "core_authority_supervisor_retired",
+                "Superseded Home Assistant Core supervisor stopped",
+                datetime.now(timezone.utc),
+                level=logging.INFO,
+                reason="core_configuration_replaced",
+            )
+        self._emit([record])
+        return True
 
     def _confirming_locked(self) -> bool:
         """Whether a gated confirmation sequence is under way."""

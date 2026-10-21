@@ -91,6 +91,85 @@ def _events(records, event):
     return [record for record in records if getattr(record, "event", None) == event]
 
 
+class _Hold:
+    """Suspend selected calls of ``owner.<name>`` until each is released.
+
+    Calls are counted from installation. ``after`` suspends once the original
+    call has returned instead of before it runs.
+    """
+
+    def __init__(self, owner, name, *calls, after=False):
+        self.entered = {call: asyncio.Event() for call in calls or (1,)}
+        self.released = {call: asyncio.Event() for call in self.entered}
+        original = getattr(owner, name)
+        count = 0
+
+        async def held(*args, **kwargs):
+            nonlocal count
+            count += 1
+            call = count
+            if call in self.entered and not after:
+                self.entered[call].set()
+                await self.released[call].wait()
+            result = await original(*args, **kwargs)
+            if call in self.entered and after:
+                self.entered[call].set()
+                await self.released[call].wait()
+            return result
+
+        setattr(owner, name, held)
+
+    async def wait(self, call=1):
+        await asyncio.wait_for(self.entered[call].wait(), 2)
+
+    def release(self, call=1):
+        self.released[call].set()
+
+
+class BoundedRecovery(unittest.IsolatedAsyncioTestCase):
+    """R1 (review of 2ad04a3): each recovery attempt is scheduled promptly.
+
+    Adopted from the reviewer's bounded check: a supervisor that stopped
+    scheduling bounded attempts fails here by assertion within one second,
+    not by exhausting a resource.
+    """
+
+    async def test_background_recovery_within_required_attempts(self):
+        source = _FlakySource(core_tests._core_2026_9_snapshot())
+        core = CoreRuntime()
+        core.configure(object(), source=source)
+        await core.reconcile_until_initialized()
+        waits = asyncio.Queue()
+
+        async def sleep(delay):
+            ready = asyncio.get_running_loop().create_future()
+            await waits.put((delay, ready))
+            await ready
+
+        source.fail = True
+        core.request_reconciliation()
+        supervisor = asyncio.create_task(core.supervise(sleep=sleep, jitter=lambda: 0.5))
+        try:
+            for _ in range(CORE_RECOVERY_CONFIRMATIONS):
+                try:
+                    _delay, ready = await asyncio.wait_for(waits.get(), 1)
+                except TimeoutError:
+                    self.fail("background recovery did not schedule its next bounded attempt")
+                self.assertIsNone(core.acquire(CAPABILITY))
+                source.fail = False
+                ready.set_result(None)
+            for _ in range(100):
+                await asyncio.sleep(0)
+                if core.route_status(CAPABILITY)["available"]:
+                    break
+            self.assertTrue(core.route_status(CAPABILITY)["available"])
+            self.assertEqual(core.health_snapshot()["counters"]["recovery_confirmations"],
+                             CORE_RECOVERY_CONFIRMATIONS)
+        finally:
+            supervisor.cancel()
+            await asyncio.gather(supervisor, return_exceptions=True)
+
+
 class Recovery(unittest.IsolatedAsyncioTestCase):
     # Borrow the RC3 harness without re-running its tests in this module.
     asyncSetUp = rc3.PostCoreRegressions.asyncSetUp
@@ -369,14 +448,14 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         core.configure(object(), source=source)
         triggers = []
 
-        async def early_fence(trigger):
+        async def early_fence(trigger, _stamp):
             triggers.append(trigger)
             return {"identity_agreement": False, "initialized": False}
 
-        core.reconcile_once = early_fence
+        core._reconcile = early_fence
         await core.reconcile_until_initialized(
             retry_delays=(0.25,), sleep=lambda _delay: asyncio.sleep(0))
-        del core.reconcile_once
+        del core._reconcile
         self.assertEqual(triggers, ["startup", "startup_retry"])
         self.assertTrue(core._boot_exception_spent)
         await core.reconcile_once("periodic")
@@ -754,10 +833,10 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(recovery["recovery_state"], "retrying")
             self.assertIsNotNone(recovery["retired_at"])
         if previous_monitor is not None:
-            # configure() forgets, but does not stop, the previous lifecycle
-            # watcher (unchanged from base); stop it so its socket closes.
-            previous_monitor.cancel()
-            await asyncio.gather(previous_monitor, return_exceptions=True)
+            # configure() stops the previous lifecycle watcher (H1, review of
+            # 2ad04a3); wait until its socket has closed.
+            await asyncio.wait_for(asyncio.gather(previous_monitor, return_exceptions=True), 2)
+            self.assertTrue(previous_monitor.done())
         self.assertTrue(self.core._boot_exception_spent)
         await self.core.reconcile_until_initialized()
         self.assertIsNone(self.core.acquire(CAPABILITY), "re-init reopened first admission")
@@ -861,6 +940,355 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.supervisor = asyncio.create_task(self.core.supervise(
             interval_seconds=300, sleep=self.clock.sleep, jitter=lambda: 0.5))
         await self.recover_through_confirmation(CORE_RECOVERY_RETRY_BASE_SECONDS)
+        self.assert_authority_round_trip()
+
+    # -- H1 (review of 2ad04a3): superseded in-flight work is discarded -----
+    # A verification records its runtime generation, configuration owner and
+    # boot-exemption availability when it starts; publication re-checks all
+    # three under the runtime lock, and every resume point re-checks the
+    # first two. Superseded work is discarded at INFO and counts as nothing.
+    # Every case ends with the current configuration restoring only through
+    # its own complete background streak.
+
+    async def rebuild(self, *, through_application=False):
+        """Re-initialize the same runtime; configure stops its old watcher."""
+        previous = self.core._connection_monitor_task
+        if through_application:
+            from dataclasses import replace
+            import tempfile
+            from ha_mcp_engineering import application
+
+            temp = tempfile.TemporaryDirectory(prefix="hamcp215-rebuild-")
+            self.addCleanup(temp.cleanup)
+            settings = replace(self.settings, audit_path=temp.name + "/audit.jsonl",
+                               governance_path=temp.name + "/governance")
+            with patch.object(application, "CORE_READMISSION", self.core):
+                application.create_application(
+                    settings, core_snapshot_source=AiohttpCoreSnapshotSource(settings))
+        else:
+            self.core.configure(self.settings, source=AiohttpCoreSnapshotSource(self.settings))
+        if previous is not None:
+            # Would time out if configure had only forgotten the watcher.
+            await asyncio.wait_for(asyncio.gather(previous, return_exceptions=True), 2)
+            self.assertTrue(previous.done())
+
+    async def finish_stale(self, release, tasks, phases, *, reason=None, withheld=True):
+        """Let superseded work resume; it is discarded and changes nothing."""
+        counters = self.counters()
+        discards = counters.pop("stale_work_discards")
+        recovery = self.recovery()
+        generation = self.core.health_snapshot()["current_generation"]
+        with self.assertLogs(LOGGER, level="INFO") as logs:
+            release()
+            await asyncio.wait_for(asyncio.gather(*tasks), 5)
+        after = self.counters()
+        self.assertEqual(after.pop("stale_work_discards"), discards + len(phases))
+        self.assertEqual(after, counters)
+        self.assertEqual(self.recovery(), recovery)
+        self.assertEqual(self.core.health_snapshot()["current_generation"], generation)
+        if withheld:
+            self.assertIsNone(self.core.acquire(CAPABILITY), "superseded work published")
+        discarded = _events(logs.records, "core_authority_stale_work_discarded")
+        self.assertEqual(sorted(record.safe_context["phase"] for record in discarded),
+                         sorted(phases))
+        for record in discarded:
+            self.assertEqual(record.levelno, logging.INFO)
+            self.assertIn(record.safe_context["reason"], {
+                "core_configuration_replaced", "core_runtime_generation_replaced",
+                "core_boot_exemption_spent",
+            } if reason is None else {reason})
+        for event in ("core_authority_verification_failed", "core_authority_restored",
+                      "core_authority_retired", "core_authority_recovery_confirming",
+                      "core_authority_recovery_attempt"):
+            self.assertEqual(_events(logs.records, event), [], event)
+        self.assert_logs_safe(logs.records)
+
+    async def assert_current_streak(self, required=CORE_RECOVERY_CONFIRMATIONS):
+        """Only the current configuration's background verifications restore."""
+        self.assertEqual(self.recovery()["confirmations_required"], required)
+        self.assertEqual(self.counters()["recovery_confirmations"], 0)
+        for trigger in ON_DEMAND:
+            await self.core.reconcile_once(trigger)
+            self.assertIsNone(self.core.acquire(CAPABILITY), trigger)
+        for count in range(1, required):
+            await self.core.reconcile_once("periodic")
+            self.assertIsNone(self.core.acquire(CAPABILITY), count)
+            self.assertEqual(self.recovery()["confirmations"], count)
+        await self.core.reconcile_once("periodic")
+        self.assert_authority_round_trip()
+        self.assertEqual(self.counters()["recovery_confirmations"], required)
+        self.assertEqual(self.counters()["authority_restorations"], 1)
+
+    async def withdraw_by_rebuild_if_admitted(self):
+        """Leave the current configuration withdrawn with the latch spent."""
+        authority = self.core.acquire(CAPABILITY)
+        if authority is not None:
+            self.core.release(authority)
+            await self.rebuild()
+        self.assertTrue(self.core._boot_exception_spent)
+        self.assertIsNone(self.core.acquire(CAPABILITY))
+
+    async def test_reviewer_suspended_boot_cannot_cross_a_rebuild(self):
+        # Reviewer production-path reproduction (review of 2ad04a3), through
+        # the application factory and through configure: a startup
+        # verification suspended in its snapshot capture outlives two
+        # rebuilds, the second of which withdrew a later boot's admission.
+        for through_application in (True, False):
+            with self.subTest(through_application=through_application):
+                await self.fresh_core()
+                hold = _Hold(self.core._source, "capture_core_snapshot", 1)
+                pending = asyncio.create_task(self.core.reconcile_once("startup"))
+                await hold.wait()
+                await self.rebuild(through_application=through_application)
+                await self.core.reconcile_until_initialized()
+                self.assert_authority_round_trip()  # the new boot's own admission
+                await self.rebuild(through_application=through_application)
+                self.assertIsNone(self.core.acquire(CAPABILITY))
+                self.assertTrue(self.core._boot_exception_spent)
+                await self.finish_stale(hold.release, [pending], ["observation"],
+                                        reason="core_configuration_replaced")
+                await self.core.reconcile_until_initialized()
+                await self.assert_current_streak()
+
+    async def test_superseded_work_suspended_at_each_await_is_discarded(self):
+        # Every resume point of a verification, for a boot, a background and
+        # an on-demand trigger. ``lock`` queues the work behind a held boot.
+        def capture(call):
+            return lambda core: (core._source, "capture_core_snapshot", (call,), False)
+
+        points = {
+            "reconciliation_lock": (capture(1), ["observation", "reconciliation_lock"]),
+            "registry_refresh": (
+                lambda core: (core._release_registry, "refresh_if_due", (1,), False),
+                ["registry_refresh"]),
+            "observation": (capture(1), ["observation"]),
+            "monitor_attachment": (
+                lambda core: (core, "_ensure_connection_monitor", (1,), True),
+                ["monitor_attachment"]),
+            "monitor_recollection": (capture(3), ["observation"]),
+        }
+        for point, (target, phases) in points.items():
+            for trigger in ("startup", "periodic", "failure_retry", "mutation_pre_dispatch"):
+                with self.subTest(point=point, trigger=trigger):
+                    await self.fresh_core()
+                    owner, name, calls, after = target(self.core)
+                    hold = _Hold(owner, name, *calls, after=after)
+                    tasks = []
+                    if point == "reconciliation_lock":
+                        tasks.append(asyncio.create_task(self.core.reconcile_once("startup")))
+                    tasks.append(asyncio.create_task(self.core.reconcile_once(trigger)))
+                    await hold.wait(calls[0])
+                    for _ in range(3):
+                        await asyncio.sleep(0)  # any queued work is stamped
+                    await self.rebuild()
+                    await self.core.reconcile_until_initialized()
+                    await self.withdraw_by_rebuild_if_admitted()
+                    await self.finish_stale(lambda: hold.release(calls[0]), tasks, phases)
+                    await self.core.reconcile_until_initialized()
+                    await self.assert_current_streak()
+
+    async def test_rebuild_at_publication_discards_the_verification(self):
+        # No await separates authority selection from publication, so only
+        # the publication re-check sees a rebuild made from inside it.
+        for trigger in ("startup", "periodic", "mutation_pre_dispatch"):
+            with self.subTest(trigger=trigger):
+                await self.fresh_core()
+                previous = []
+                select = self.core._authority_provider
+
+                def rebuilding_selection(version):
+                    previous.append(self.core._connection_monitor_task)
+                    self.core.configure(
+                        self.settings, source=AiohttpCoreSnapshotSource(self.settings))
+                    return select(version)
+
+                self.core._authority_provider = rebuilding_selection
+                with self.assertLogs(LOGGER, level="INFO") as logs:
+                    await self.core.reconcile_once(trigger)
+                await asyncio.wait_for(asyncio.gather(*previous, return_exceptions=True), 2)
+                counters = self.counters()
+                self.assertEqual(counters.pop("stale_work_discards"), 1)
+                self.assertEqual(set(counters.values()), {0}, counters)
+                self.assertIsNone(self.core.acquire(CAPABILITY))
+                [record] = _events(logs.records, "core_authority_stale_work_discarded")
+                self.assertEqual((record.safe_context["phase"], record.safe_context["reason"]),
+                                 ("publication", "core_configuration_replaced"))
+                self.assertEqual(_events(logs.records, "core_authority_verification_failed"), [])
+                if trigger == "mutation_pre_dispatch":
+                    # An on-demand attempt spends the exemption when it starts.
+                    await self.core.reconcile_until_initialized()
+                    await self.assert_current_streak()
+                else:
+                    # Positive control: the exemption the superseded attempt
+                    # could not use still admits the current first boot.
+                    self.assertFalse(self.core._boot_exception_spent)
+                    await self.boot()
+                    self.assertEqual(self.counters()["recovery_confirmations"], 0)
+
+    async def test_stale_work_from_several_generations_is_all_discarded(self):
+        tasks, holds = [], []
+        for trigger in ("startup", "periodic", "mutation_pre_dispatch", "failure_retry"):
+            hold = _Hold(self.core._source, "capture_core_snapshot", 1)
+            tasks.append(asyncio.create_task(self.core.reconcile_once(trigger)))
+            await hold.wait()
+            holds.append(hold)
+            await self.rebuild()
+        await self.core.reconcile_until_initialized()
+        await self.withdraw_by_rebuild_if_admitted()
+
+        def release_newest_first():
+            for hold in reversed(holds):
+                hold.release()
+
+        await self.finish_stale(release_newest_first, tasks, ["observation"] * len(tasks),
+                                reason="core_configuration_replaced")
+        await self.assert_current_streak()
+
+    async def test_stale_work_cannot_shorten_a_flap_restoration(self):
+        await self.boot()
+        await self.withdraw()
+        for _ in range(CORE_RECOVERY_CONFIRMATIONS):
+            await self.core.reconcile_once("periodic")
+        self.assert_authority_round_trip()  # restored: the flap window is open
+        hold = _Hold(self.core._source, "capture_core_snapshot", 1)
+        pending = asyncio.create_task(self.core.reconcile_once("periodic"))
+        await hold.wait()
+        await self.rebuild()  # withdraws restored authority inside the window
+        await self.core.reconcile_until_initialized()
+        await self.finish_stale(hold.release, [pending], ["observation"],
+                                reason="core_configuration_replaced")
+        # configure() zeroed the restoration counter, as in base.
+        await self.assert_current_streak(CORE_RECOVERY_FLAP_CONFIRMATIONS)
+
+    async def test_concurrent_boot_attempt_cannot_reuse_a_spent_exemption(self):
+        # Same configuration: a boot attempt queued while the exemption was
+        # open must not claim it after another attempt's failure spent it.
+        source = _FlakySource(core_tests._core_2026_9_snapshot())
+        await self.stop_core()
+        self.core = CoreRuntime()
+        self.core.configure(object(), source=source)
+        hold = _Hold(source, "capture_core_snapshot", 1, 2)
+        first = asyncio.create_task(self.core.reconcile_once("startup"))
+        await hold.wait(1)
+        second = asyncio.create_task(self.core.reconcile_once("startup"))
+        for _ in range(3):
+            await asyncio.sleep(0)  # the second attempt is stamped and queued
+        self.assertFalse(self.core._boot_exception_spent)
+        source.fail = True
+        hold.release(1)
+        await asyncio.wait_for(first, 2)
+        self.assertTrue(self.core._boot_exception_spent)  # its failure spent it
+        await hold.wait(2)
+        source.fail = False
+        await self.finish_stale(lambda: hold.release(2), [second], ["publication"],
+                                reason="core_boot_exemption_spent")
+        await self.assert_current_streak()
+
+    async def test_concurrent_healthy_boot_attempts_admit_once_without_discard(self):
+        # Positive control: overlapping attempts of one configuration that
+        # both see Core healthy publish normally; nothing is discarded.
+        source = _FlakySource(core_tests._core_2026_9_snapshot())
+        await self.stop_core()
+        self.core = CoreRuntime()
+        self.core.configure(object(), source=source)
+        hold = _Hold(source, "capture_core_snapshot", 1)
+        first = asyncio.create_task(self.core.reconcile_once("startup"))
+        await hold.wait()
+        second = asyncio.create_task(self.core.reconcile_once("periodic"))
+        for _ in range(3):
+            await asyncio.sleep(0)
+        hold.release()
+        await asyncio.wait_for(asyncio.gather(first, second), 2)
+        self.assert_authority_round_trip()
+        counters = self.counters()
+        self.assertEqual((counters["stale_work_discards"], counters["recovery_confirmations"],
+                          counters["verification_successes"]), (0, 0, 2))
+
+    async def test_fresh_runtime_first_background_verification_still_admits(self):
+        # Positive control: deferring the spend keeps the first background
+        # verification of a never-booted runtime an ungated first admission.
+        await self.core.reconcile_once("periodic")
+        self.assert_authority_round_trip()
+        self.assertTrue(self.core._boot_exception_spent)
+        counters = self.counters()
+        self.assertEqual((counters["stale_work_discards"], counters["recovery_confirmations"]),
+                         (0, 0))
+
+    async def assert_aborted_background_attempt_spent_the_exemption(self):
+        """After an unpublished first background attempt, the gate applies.
+
+        Only background triggers here: an on-demand probe would spend the
+        latch itself and hide a missing deferred spend.
+        """
+        self.assertTrue(self.core._boot_exception_spent)
+        self.assertIsNone(self.core.acquire(CAPABILITY))
+        for count in range(1, CORE_RECOVERY_CONFIRMATIONS):
+            await self.core.reconcile_once("periodic")
+            self.assertIsNone(self.core.acquire(CAPABILITY), count)
+            self.assertEqual(self.recovery()["confirmations"], count)
+        await self.core.reconcile_once("periodic")
+        self.assert_authority_round_trip()
+        self.assertEqual(self.counters()["recovery_confirmations"],
+                         CORE_RECOVERY_CONFIRMATIONS)
+
+    async def test_cancelled_first_background_verification_spends_the_exemption(self):
+        # The deferred spend also covers a background attempt that never
+        # publishes: cancelled mid-capture, it still spends the exemption.
+        hold = _Hold(self.core._source, "capture_core_snapshot", 1)
+        pending = asyncio.create_task(self.core.reconcile_once("periodic"))
+        await hold.wait()
+        pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
+        self.assertTrue(pending.cancelled())
+        await self.assert_aborted_background_attempt_spent_the_exemption()
+
+    async def test_raising_first_background_verification_spends_the_exemption(self):
+        # As above, for a background attempt whose collector raises.
+        with patch.object(self.core._collector, "collect",
+                          side_effect=RuntimeError("synthetic collector fault")):
+            with self.assertRaises(RuntimeError):
+                await self.core.reconcile_once("periodic")
+        await self.assert_aborted_background_attempt_spent_the_exemption()
+
+    async def test_superseded_supervisor_stops_without_touching_the_new_configuration(self):
+        await self.admit()
+        self.induce("connection")
+        delay = await self.release(CORE_RECOVERY_RETRY_BASE_SECONDS)
+        superseded, self.supervisor = self.supervisor, None
+        self.network.mode = "ok"
+        await self.rebuild()
+        await self.core.reconcile_until_initialized()
+        monitor = self.core._connection_monitor_task
+        self.assertIsNotNone(monitor)
+        counters, recovery = self.counters(), self.recovery()
+        with self.assertLogs(LOGGER, level="INFO") as logs:
+            delay.set_result(None)
+            await asyncio.wait_for(superseded, 2)  # it returns; nothing raised
+        self.assertEqual(len(_events(logs.records, "core_authority_supervisor_retired")), 1)
+        self.assertEqual((self.counters(), self.recovery()), (counters, recovery))
+        self.assertIs(self.core._connection_monitor_task, monitor)
+        self.assertFalse(monitor.done())
+        await self.assert_current_streak()
+
+    async def test_retiring_the_supervisor_discards_its_in_flight_work(self):
+        # Retirement of the current supervisor advances the runtime
+        # generation: on-demand work still in flight cannot publish after it.
+        await self.boot()
+        self.start_supervisor()
+        await self.until(lambda: self.counters()["reprobes"]
+                         and not self.core._reconciliation_lock.locked())
+        hold = _Hold(self.core._source, "capture_core_snapshot", 1)
+        pending = asyncio.create_task(self.core.reconcile_once("mutation_pre_dispatch"))
+        await hold.wait()
+        self.supervisor.cancel()
+        await asyncio.gather(self.supervisor, return_exceptions=True)
+        self.supervisor = None
+        # Retirement leaves the boot's admission in place (unchanged from
+        # base); the superseded work must not re-publish over it.
+        published = self.core.current_observation
+        await self.finish_stale(hold.release, [pending], ["observation"],
+                                reason="core_runtime_generation_replaced", withheld=False)
+        self.assertIs(self.core.current_observation, published)
         self.assert_authority_round_trip()
 
     def test_production_constructs_exactly_one_runtime_and_never_rearms(self):

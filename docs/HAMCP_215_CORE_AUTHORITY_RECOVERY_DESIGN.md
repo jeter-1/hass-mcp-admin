@@ -280,7 +280,12 @@ All constants live in `ha_core_readmission/runtime.py`.
     the boot sequence;
   - any withdrawal of admitted authority (`_enter_recovery_locked`) or
     retirement (`_material_retirement_locked`, `request_reconciliation`);
-  - any attempt that is not a boot attempt;
+  - any attempt that is not a boot attempt: an on-demand attempt when it
+    starts, and a background attempt (`periodic`,
+    `identity_or_connection_change`, `failure_retry`) when it ends, so that
+    its own first-admission claim survives the publication re-check below
+    (H1, review of 2ad04a3). "When it ends" includes cancellation and an
+    exception, unless the attempt was superseded;
   - the end of the boot sequence.
 
   `configure` never re-arms it. Production constructs exactly one
@@ -298,6 +303,48 @@ All constants live in `ha_core_readmission/runtime.py`.
   starts on recovery pacing, not the 300 s interval: one backoff delay (about
   20 s), then the background confirmations. Josh accepted this pause for a
   Core not initialized at boot on 2026-10-20. A startup failure is logged.
+- **Superseded in-flight work is discarded (H1, review of 2ad04a3).** The
+  review reproduced, through the application factory, a startup verification
+  suspended in its snapshot capture that outlived two rebuilds and then
+  admitted authority with zero confirmations. Every verification therefore
+  carries a `_WorkStamp`, taken when it is requested (before it queues for
+  the reconciliation lock):
+  - the runtime generation, `_runtime_generation`, incremented by every
+    `configure` (application rebuild, re-initialization, collector restart)
+    and by the retirement of the current configuration's supervisor;
+  - the configuration owner, a fresh object on every `configure`;
+  - whether the boot exemption was available at start (a boot or
+    background trigger, latch unspent).
+
+  At publication, under the same lock as admission, lease issue, listener
+  notification and catalog restoration, the work must still have the current
+  generation and owner, and a boot-exemption claim must still find the latch
+  unspent. Otherwise its result is discarded. The resume point after every
+  await (the reconciliation lock, a registry refresh, each observation, the
+  watcher attachment) checks the generation and owner too, so superseded work
+  stops before it touches the current configuration's counters or watcher. A
+  discard is logged at INFO as `core_authority_stale_work_discarded` with a
+  closed-set `reason` (`core_configuration_replaced`,
+  `core_runtime_generation_replaced`, `core_boot_exemption_spent`), `phase`
+  and `trigger`, and counted only in `stale_work_discards`. It is never a
+  verification, a failure or a confirmation, and it never changes recovery
+  state. The current configuration restores only through its own background
+  confirmations.
+
+  Where possible, in-flight work is also stopped. `configure` cancels the
+  previous lifecycle watcher; base only forgot it. The connection epoch is
+  never reused across configurations. A supervisor whose configuration was
+  replaced stops at its next wake and logs `core_authority_supervisor_retired`
+  at INFO, without touching the new configuration's watcher or counters. A
+  boot sequence whose configuration was replaced neither retries nor spends
+  the new configuration's latch. The publication re-check is the guarantee
+  either way.
+
+  "Retirement" here means retiring the runtime (a superseded configuration
+  or supervisor). Retiring Core authority within one configuration
+  (a connection move, version change or registry move) stays fenced by the
+  existing connection epoch, watcher epoch and registry token. Those remain
+  recorded failures, as before.
 - **Incompatibility.** A complete, identity-agreeing observation that admits
   nothing publishes the existing fail-closed generation. Examples are an
   unreviewed Core version, or a reviewed version whose evidence fails its
@@ -341,6 +388,8 @@ All constants live in `ha_core_readmission/runtime.py`.
   | `core_authority_recovery_reset` | WARNING | a connection movement restarts confirmation (`reason`) |
   | `core_authority_restored` | WARNING | authority is restored (`admitted_count`, `failed_attempts`, `verified_confirmations`, `outage_seconds`) |
   | `core_authority_recovery_scheduled` | INFO | the supervisor schedules a retry or confirmation (`delay_seconds`, `next_attempt_at`) |
+  | `core_authority_stale_work_discarded` | INFO | superseded in-flight work is discarded (`reason`, `phase`, `trigger`) |
+  | `core_authority_supervisor_retired` | INFO | a supervisor of a replaced configuration stops (`reason`) |
 
 - **Failure detail.** `CoreObservationCollector.last_failure_detail`
   classifies the snapshot exception (`observation.classify_probe_failure`) into
@@ -366,10 +415,11 @@ All constants live in `ha_core_readmission/runtime.py`.
   - `confirmations`, `confirmations_required`
   - `last_restored_at`
 
-  All existing counters stay. Four new counters are added:
+  All existing counters stay. Five new counters are added:
   `recovery_attempts`, `recovery_confirmations` (accepted background
-  confirmations only), `recovery_on_demand_refusals` and
-  `authority_restorations`.
+  confirmations only), `recovery_on_demand_refusals`,
+  `authority_restorations` and `stale_work_discards` (diagnostic only; added
+  for H1, review of 2ad04a3).
   This is an additive public-health change, authorized by the task.
 
 ### C. Dependents
@@ -415,7 +465,7 @@ The gateway code is not changed. This change makes no changes to:
 
 ## Validation
 
-- `tests/test_hamcp215_core_authority_recovery.py` (43 tests) covers:
+- `tests/test_hamcp215_core_authority_recovery.py` (56 tests) covers:
   - every transient trigger going from retirement to automatic restoration,
     with the catalog and index back:
     - REST HTTP failure, connection loss, timeout and authentication failure
@@ -452,6 +502,29 @@ The gateway code is not changed. This change makes no changes to:
     no attempt reached a verification outcome; and an AST pin that
     production builds one runtime and only `__init__` and
     `_spend_boot_exception_locked` write the latch
+  - superseded in-flight work (H1, review of 2ad04a3), every case ending
+    with the current configuration restoring only through its own
+    background confirmations:
+    - the reviewer's production-path reproduction, through the application
+      factory and through `configure`
+    - work suspended at every await (reconciliation lock, registry refresh,
+      observation, watcher attachment, the recollection after attachment)
+      for a boot, two background and an on-demand trigger
+    - a rebuild made from inside authority selection, which only the
+      publication re-check sees; for a boot trigger the exemption it could
+      not use still admits the current boot (positive control)
+    - work from several generations, released newest first
+    - stale work inside a flap window (3 confirmations)
+    - a concurrent boot attempt of one configuration claiming an exemption
+      that another attempt's failure spent; two healthy concurrent attempts
+      as a positive control; a fresh runtime's first background verification
+      still admitting, and one that is cancelled or raises still spending the
+      exemption, so the next background verification is gated
+    - a superseded supervisor stopping without touching the new
+      configuration, and on-demand work outliving the current supervisor's
+      retirement
+  - bounded recovery (R1, adopted from the review of 2ad04a3): each
+    background recovery attempt is scheduled within one second
   - a changed key observed on demand restarting the streak (H2, review of
     a6e66a8): the reviewer's version A→B→A reproduction; a changed reviewed
     contract; a moved signed-registry authority; concurrent background and
@@ -516,18 +589,16 @@ The gateway code is not changed. This change makes no changes to:
     `scripts/alarmo_inspection_contract_acceptance.py`,
     `scripts/entity_metadata_contract_acceptance.py` and
     `scripts/automation_baseline_contract_acceptance.py`.
-- `docs/evidence/hamcp215-mutations/run_mutations.py` (38 mutations, 38
-  killed; results in `results.json`) must fail on each of these:
-  - no recovery loop. This one is killed without an assertion. Without the
-    paced loop, the retirement's own reprobe hint re-wakes the supervisor
-    immediately: 12,557 attempts in 15 s were measured. The unpaced chain
-    starves the event loop and its memory grows without bound, so the
-    suite never finishes. The recorded run (`results.json`) ended it by
-    exhausting a 3 GB cgroup memory cap after 202 s (return code -9); the
-    pre-merge run hit the runner's default 900 s timeout (return code -1).
-    Run the runner under a memory cap: uncapped, this mutant can exhaust
-    host memory first. This is the retry chain that base code's fixed sleep
-    also prevented.
+- `docs/evidence/hamcp215-mutations/run_mutations.py` (45 mutations, 45 killed;
+  results in `results.json`) must fail on each of these:
+  - no recovery loop. Without the paced loop, the retirement's own reprobe
+    hint re-wakes the supervisor immediately: 12,557 attempts in 15 s were
+    measured, and the unpaced chain's memory grows without bound. This is
+    the retry chain that base code's fixed sleep also prevented. The
+    `BoundedRecovery` assertion (R1, adopted from the review of 2ad04a3)
+    now kills it within about a second. Before it, the mutant was killed
+    only by exhausting a 3 GB cgroup memory cap or the 900 s timeout. Keep
+    the runner under a memory cap anyway.
   - fixed-interval (base 300 s) retry
   - restoration without confirmation or without the recovery gate
   - restoration without the lifecycle fence
@@ -553,6 +624,12 @@ The gateway code is not changed. This change makes no changes to:
     continuing after it is spent; a re-initialization dropping the
     withdrawal of admitted authority; a supervisor started after a re-init
     waiting a full interval
+  - H1 superseded work (S1-S7, review of 2ad04a3): publication not
+    re-checking generation and owner; a boot-exemption claim taken from the
+    start-time snapshot without a publication re-check; resume points not
+    checked; supervisor retirement keeping the generation; `configure`
+    leaving the old watcher running; a superseded supervisor continuing; a
+    background attempt never spending the exemption
   - H2 changed key (K1-K4): an on-demand changed key ignored; the
     signed-registry authority left out of the key; the reset logged with the
     wrong reason; a failed (incomplete) probe reported as a key change
