@@ -1,0 +1,454 @@
+{
+ "schema": "hamcp132-filter-truth-table-v1",
+ "provenance": {
+  "core_version": "2026.10.1",
+  "core_commit": "abe1fdd7cd6b4de1715c87b6fd87d92699514ef9",
+  "source_path": "homeassistant/helpers/entityfilter.py",
+  "source_sha256": "0ce66e76729c568f4c23d90166f378524cf7a6ebd67b11110ab2c6a20a1136c2",
+  "functions_extracted": [
+   "_convert_globs_to_pattern",
+   "generate_filter",
+   "_generate_filter_from_sets_and_pattern_lists"
+  ],
+  "extracted_sha256": "3c7128abd5ce4e59acc3eb0825a2c33860836d92e49a100cef43c9657ca77b89",
+  "stubs": [
+   "split_entity_id (homeassistant/core.py)",
+   "lru_cache (functools)",
+   "MAX_EXPECTED_ENTITY_IDS"
+  ],
+  "generator": "docs/evidence/hamcp132/generate_filter_truth_table.py"
+ },
+ "entities": [
+  "light.kitchen",
+  "light.porch",
+  "light.excluded_one",
+  "sensor.temperature",
+  "sensor.power_meter",
+  "sensor.excluded_power",
+  "sensor.kept_power",
+  "switch.heater",
+  "switch.pump",
+  "binary_sensor.door",
+  "automation.wake",
+  "climate.hall"
+ ],
+ "cases": [
+  {
+   "id": "case1_no_filter",
+   "core_branch": "1",
+   "include": {
+    "domains": [],
+    "entities": [],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [],
+    "entities": [],
+    "entity_globs": []
+   },
+   "recorded": {
+    "light.kitchen": true,
+    "light.porch": true,
+    "light.excluded_one": true,
+    "sensor.temperature": true,
+    "sensor.power_meter": true,
+    "sensor.excluded_power": true,
+    "sensor.kept_power": true,
+    "switch.heater": true,
+    "switch.pump": true,
+    "binary_sensor.door": true,
+    "automation.wake": true,
+    "climate.hall": true
+   }
+  },
+  {
+   "id": "case2_include_domain",
+   "core_branch": "2",
+   "include": {
+    "domains": [
+     "light"
+    ],
+    "entities": [],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [],
+    "entities": [],
+    "entity_globs": []
+   },
+   "recorded": {
+    "light.kitchen": true,
+    "light.porch": true,
+    "light.excluded_one": true,
+    "sensor.temperature": false,
+    "sensor.power_meter": false,
+    "sensor.excluded_power": false,
+    "sensor.kept_power": false,
+    "switch.heater": false,
+    "switch.pump": false,
+    "binary_sensor.door": false,
+    "automation.wake": false,
+    "climate.hall": false
+   }
+  },
+  {
+   "id": "case2_include_entity_and_glob",
+   "core_branch": "2",
+   "include": {
+    "domains": [],
+    "entities": [
+     "switch.heater"
+    ],
+    "entity_globs": [
+     "sensor.*_power"
+    ]
+   },
+   "exclude": {
+    "domains": [],
+    "entities": [],
+    "entity_globs": []
+   },
+   "recorded": {
+    "light.kitchen": false,
+    "light.porch": false,
+    "light.excluded_one": false,
+    "sensor.temperature": false,
+    "sensor.power_meter": false,
+    "sensor.excluded_power": true,
+    "sensor.kept_power": true,
+    "switch.heater": true,
+    "switch.pump": false,
+    "binary_sensor.door": false,
+    "automation.wake": false,
+    "climate.hall": false
+   }
+  },
+  {
+   "id": "case3_exclude_domain",
+   "core_branch": "3",
+   "include": {
+    "domains": [],
+    "entities": [],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [
+     "light"
+    ],
+    "entities": [],
+    "entity_globs": []
+   },
+   "recorded": {
+    "light.kitchen": false,
+    "light.porch": false,
+    "light.excluded_one": false,
+    "sensor.temperature": true,
+    "sensor.power_meter": true,
+    "sensor.excluded_power": true,
+    "sensor.kept_power": true,
+    "switch.heater": true,
+    "switch.pump": true,
+    "binary_sensor.door": true,
+    "automation.wake": true,
+    "climate.hall": true
+   }
+  },
+  {
+   "id": "case3_exclude_entity_and_glob",
+   "core_branch": "3",
+   "include": {
+    "domains": [],
+    "entities": [],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [],
+    "entities": [
+     "switch.pump"
+    ],
+    "entity_globs": [
+     "sensor.*power*"
+    ]
+   },
+   "recorded": {
+    "light.kitchen": true,
+    "light.porch": true,
+    "light.excluded_one": true,
+    "sensor.temperature": true,
+    "sensor.power_meter": false,
+    "sensor.excluded_power": false,
+    "sensor.kept_power": false,
+    "switch.heater": true,
+    "switch.pump": false,
+    "binary_sensor.door": true,
+    "automation.wake": true,
+    "climate.hall": true
+   }
+  },
+  {
+   "id": "case4a_include_domain_exclude_entity",
+   "core_branch": "4a",
+   "include": {
+    "domains": [
+     "light"
+    ],
+    "entities": [],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [],
+    "entities": [
+     "light.excluded_one"
+    ],
+    "entity_globs": []
+   },
+   "recorded": {
+    "light.kitchen": true,
+    "light.porch": true,
+    "light.excluded_one": false,
+    "sensor.temperature": false,
+    "sensor.power_meter": false,
+    "sensor.excluded_power": false,
+    "sensor.kept_power": false,
+    "switch.heater": false,
+    "switch.pump": false,
+    "binary_sensor.door": false,
+    "automation.wake": false,
+    "climate.hall": false
+   }
+  },
+  {
+   "id": "case4a_exclude_domains_ignored",
+   "core_branch": "4a",
+   "include": {
+    "domains": [
+     "light"
+    ],
+    "entities": [],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [
+     "sensor",
+     "light"
+    ],
+    "entities": [],
+    "entity_globs": []
+   },
+   "recorded": {
+    "light.kitchen": true,
+    "light.porch": true,
+    "light.excluded_one": true,
+    "sensor.temperature": false,
+    "sensor.power_meter": false,
+    "sensor.excluded_power": false,
+    "sensor.kept_power": false,
+    "switch.heater": false,
+    "switch.pump": false,
+    "binary_sensor.door": false,
+    "automation.wake": false,
+    "climate.hall": false
+   }
+  },
+  {
+   "id": "case4a_include_glob_exclude_glob",
+   "core_branch": "4a",
+   "include": {
+    "domains": [],
+    "entities": [],
+    "entity_globs": [
+     "sensor.*"
+    ]
+   },
+   "exclude": {
+    "domains": [],
+    "entities": [],
+    "entity_globs": [
+     "sensor.excluded_*"
+    ]
+   },
+   "recorded": {
+    "light.kitchen": false,
+    "light.porch": false,
+    "light.excluded_one": false,
+    "sensor.temperature": true,
+    "sensor.power_meter": true,
+    "sensor.excluded_power": true,
+    "sensor.kept_power": true,
+    "switch.heater": false,
+    "switch.pump": false,
+    "binary_sensor.door": false,
+    "automation.wake": false,
+    "climate.hall": false
+   }
+  },
+  {
+   "id": "case4a_domain_include_glob_exclude",
+   "core_branch": "4a",
+   "include": {
+    "domains": [
+     "sensor"
+    ],
+    "entities": [],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [],
+    "entities": [],
+    "entity_globs": [
+     "sensor.excluded_*"
+    ]
+   },
+   "recorded": {
+    "light.kitchen": false,
+    "light.porch": false,
+    "light.excluded_one": false,
+    "sensor.temperature": true,
+    "sensor.power_meter": true,
+    "sensor.excluded_power": false,
+    "sensor.kept_power": true,
+    "switch.heater": false,
+    "switch.pump": false,
+    "binary_sensor.door": false,
+    "automation.wake": false,
+    "climate.hall": false
+   }
+  },
+  {
+   "id": "case4a_include_entity_beats_exclude_entity",
+   "core_branch": "4a",
+   "include": {
+    "domains": [
+     "switch"
+    ],
+    "entities": [
+     "light.excluded_one"
+    ],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [],
+    "entities": [
+     "light.excluded_one",
+     "switch.pump"
+    ],
+    "entity_globs": []
+   },
+   "recorded": {
+    "light.kitchen": false,
+    "light.porch": false,
+    "light.excluded_one": true,
+    "sensor.temperature": false,
+    "sensor.power_meter": false,
+    "sensor.excluded_power": false,
+    "sensor.kept_power": false,
+    "switch.heater": true,
+    "switch.pump": false,
+    "binary_sensor.door": false,
+    "automation.wake": false,
+    "climate.hall": false
+   }
+  },
+  {
+   "id": "case4b_exclude_domain_include_entity_override",
+   "core_branch": "4b",
+   "include": {
+    "domains": [],
+    "entities": [
+     "sensor.kept_power"
+    ],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [
+     "sensor"
+    ],
+    "entities": [],
+    "entity_globs": []
+   },
+   "recorded": {
+    "light.kitchen": true,
+    "light.porch": true,
+    "light.excluded_one": true,
+    "sensor.temperature": false,
+    "sensor.power_meter": false,
+    "sensor.excluded_power": false,
+    "sensor.kept_power": true,
+    "switch.heater": true,
+    "switch.pump": true,
+    "binary_sensor.door": true,
+    "automation.wake": true,
+    "climate.hall": true
+   }
+  },
+  {
+   "id": "case4b_exclude_glob_include_entity",
+   "core_branch": "4b",
+   "include": {
+    "domains": [],
+    "entities": [
+     "sensor.excluded_power",
+     "light.porch"
+    ],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [],
+    "entities": [
+     "light.porch"
+    ],
+    "entity_globs": [
+     "sensor.excluded_*"
+    ]
+   },
+   "recorded": {
+    "light.kitchen": true,
+    "light.porch": false,
+    "light.excluded_one": true,
+    "sensor.temperature": true,
+    "sensor.power_meter": true,
+    "sensor.excluded_power": true,
+    "sensor.kept_power": true,
+    "switch.heater": true,
+    "switch.pump": true,
+    "binary_sensor.door": true,
+    "automation.wake": true,
+    "climate.hall": true
+   }
+  },
+  {
+   "id": "case6_include_entities_with_exclude_entities",
+   "core_branch": "6",
+   "include": {
+    "domains": [],
+    "entities": [
+     "switch.heater",
+     "light.kitchen"
+    ],
+    "entity_globs": []
+   },
+   "exclude": {
+    "domains": [],
+    "entities": [
+     "light.kitchen",
+     "switch.pump"
+    ],
+    "entity_globs": []
+   },
+   "recorded": {
+    "light.kitchen": true,
+    "light.porch": false,
+    "light.excluded_one": false,
+    "sensor.temperature": false,
+    "sensor.power_meter": false,
+    "sensor.excluded_power": false,
+    "sensor.kept_power": false,
+    "switch.heater": true,
+    "switch.pump": false,
+    "binary_sensor.door": false,
+    "automation.wake": false,
+    "climate.hall": false
+   }
+  }
+ ]
+}

@@ -613,6 +613,55 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.27` definition visibility slice (HAMCP-132) adds two read-only
+tools. Neither adds a permission, add-on option, HTTP client, Supervisor call,
+route template, fallback or write path.
+
+- **`get_recorder_settings`** issues Core WebSocket `recorder/info`. For up to
+  50 entities it issues `recorder/entity_options/get`, which is admin-only but
+  read-only. Each runs in its own pipelined batch. It also uses the admitted
+  ha-mcp YAML reader through a new gateway `yaml_config_reader` route:
+  - Engineering builds the only argument, one of three fixed
+    `configuration.yaml` paths;
+  - the reader's L1–L4 projection, Core gate and response seal apply
+    unchanged;
+  - the route's authority is rechecked before and after every read, through
+    the same `_bounded_route_current` check as the HAMCP-212 script reader.
+
+  The shared sanitizer redacts URL userinfo only for `http(s)` and has no
+  `db_url` rule. So the recorder projection is a positive allowlist of the
+  keys recognized from Core's recorder schema:
+  - `db_url` is reduced to `value_withheld` and a default-location flag;
+  - a `!secret` or `!env_var` reference is withheld with its name;
+  - unrecognized keys are counted, never copied.
+
+  Tests plant database URLs under several schemes and credential needles, and
+  check that none appears in the serialized output.
+- **`get_unregistered_entities`** issues:
+  - REST `GET /api/states`;
+  - WebSocket `config/entity_registry/list` and `entity/source`;
+  - batched `search/related` with `item_type: entity`.
+
+  None of these is admin-only.
+
+The pipelined batch allowlist gains exactly two shapes, each with an exact
+key set and a strict entity-ID pattern. AST tests pin the new modules to these
+reads. Arguments are validated before SDK coercion. The audit carries counts
+and source outcomes, never entity IDs. Both tools are mapped in the HAMCP-164
+Core gate.
+
+Each tool assembles its complete response before sanitizing. This covers the
+report, omissions, warnings, limitations and every entity ID, platform, config
+entry and filter item. The tool then runs the strict shared sanitizer once on
+that final envelope. The access secret and the Home Assistant token are
+passed as known secrets. Nothing is appended afterwards, and any redaction
+makes the report partial. An earlier head appended entity-bearing omissions
+after sanitization (review finding H1 on `de1433f`). Tests now plant a known
+secret in every identifier-bearing field, through the authenticated gateway,
+and check that the serialized response never contains it. See the
+[implementation notes](HAMCP_132_SLICE1_IMPLEMENTATION_NOTES.md). Stable
+v1.1.2 is unchanged.
+
 The `2.4.1-beta.24` backup inventory (HAMCP-130) adds the read-only
 `get_backup_inventory` tool. It makes exactly two fixed Core WebSocket reads,
 `backup/config/info` and `backup/info`, through Engineering's existing
