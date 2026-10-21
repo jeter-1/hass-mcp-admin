@@ -17,8 +17,9 @@ none of which has a side effect:
   component's).
 
 No ``ha_mcp_tools/*`` component command, options flow, ``.storage`` file,
-Supervisor endpoint or other delegated tool is reachable from this package
-(owner decision (iii) holds the component commands pending review).
+Supervisor endpoint or other delegated tool is reachable from this package.
+The component is not used, now or in a later slice (owner decision,
+2026-10-21, ``docs/HAMCP_132_SLICE2_COMPONENT_REVIEW.md`` section 11).
 """
 
 from __future__ import annotations

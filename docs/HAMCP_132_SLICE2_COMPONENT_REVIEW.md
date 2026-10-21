@@ -276,7 +276,7 @@ internally.
 - **Even `2.2.1` unlocks nothing.** It is reported as
   `version_only_unverified_tree` and never unlocks a definition read.
 
-## 9. Implemented behaviour in slice 2 (pending the decision)
+## 9. Implemented behaviour in slice 2
 
 `get_configuration_definitions` follows (b) and the fail-closed rule:
 
@@ -284,7 +284,7 @@ internally.
   (`reviewed_version_only_unverified_tree`, `component_version_unreviewed` or
   `not_installed`), the config-entry state and the loaded status.
 - **No component commands.** It sends no `ha_mcp_tools/*` command and reports
-  `component_commands: not_used_pending_owner_review`.
+  `component_commands: not_used_owner_decision` (section 11).
 - **UI-defined definitions** are always reported as
   `definition_not_readable_without_flow`.
 
@@ -296,9 +296,27 @@ internally.
 - The component's HTTP, OAuth and webhook views, the embedded server, and the
   event-bus approval path. These were not reviewed in depth.
 
-## 11. Decision requested
+## 11. Owner decision (Josh, 2026-10-21)
 
-Josh: approve, reject or defer the use of `ha_mcp_tools/config_entries` for
-UI-defined helper definitions under the conditions in section 8 (a). The
-recommendation is **reject for slice 2**. The diagnosis in section 8 (b)
-needs no component command and is implemented regardless.
+**Rejected, now and for later slices.** The `ha_mcp_tools` component is not
+used by Engineering for definition reads, in slice 2 or in a later slice. It
+is a broad administrative surface with writes (section 2), and it cannot
+return UI-defined definitions anyway: `entry.data`, where the SQL `db_url`
+lives, is never returned (section 3).
+
+Consequences:
+
+- UI-defined definitions are reported as
+  `definition_not_readable_without_flow` (owner decision (i) of the design
+  note stands).
+- Capability diagnosis uses only Core's own reads: `config_entries/get`
+  (`domain: ha_mcp_tools`), `manifest/get` (`integration: ha_mcp_tools`) and
+  `GET /api/config` `components` (section 8 (b)).
+- No `ha_mcp_tools/*` command is reachable from Engineering, and the report
+  says so with `component_commands: not_used_owner_decision`.
+- The conditions in section 8 (a) are moot. A future change of direction
+  would need a new owner decision and its own exact-source review.
+
+The original request read: approve, reject or defer the use of
+`ha_mcp_tools/config_entries` for UI-defined helper definitions under the
+conditions in section 8 (a); the recommendation was reject for slice 2.
