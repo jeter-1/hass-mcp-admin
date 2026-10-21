@@ -101,7 +101,12 @@ class ExecutionTests(ConfigurationPlanTestCase):
                     codes=[code for d in self.runtime.children.declarations_for_task(task.task_id)
                            if self.runtime.children.get(d['child_id']) is not None
                            for e in self.runtime.children.get(d['child_id']).to_dict()['events'] for code in e['diagnostic_codes']]
-                    self.assertIn('retry_bundle_state_mismatch',codes)
+                    # HAMCP-213 (H5): the automations call the script this
+                    # plan updates, so a drifted written script refuses the
+                    # next caller child as a stale in-plan callee first.
+                    expected=('stale_called_script' if changed=='script' and prefix<5
+                              else 'retry_bundle_state_mismatch')
+                    self.assertIn(expected,codes)
                     self.gateway.write=original_write
                     self.gateway.read=original_read
 

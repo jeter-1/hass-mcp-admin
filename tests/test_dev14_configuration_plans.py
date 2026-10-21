@@ -1921,6 +1921,10 @@ class ApplyTests(ConfigurationPlanTestCase):
                 ("read", "input_number", "input_number.hvac_target"),
                 ("read", "script", "set_hvac_comfort"),
                 ("read", "automation", "apply_hvac_comfort"),
+                # HAMCP-213 (H5): the automation calls the script this plan
+                # updates, so the callee is checked before consumption and
+                # again before the automation write.
+                ("read", "script", "set_hvac_comfort"),
                 ("read", "input_number", "input_number.hvac_target"),
                 (
                     "write",
@@ -1938,6 +1942,7 @@ class ApplyTests(ConfigurationPlanTestCase):
                 ),
                 ("read", "script", "set_hvac_comfort"),
                 ("read", "automation", "apply_hvac_comfort"),
+                ("read", "script", "set_hvac_comfort"),
                 (
                     "write",
                     "update",
@@ -2028,9 +2033,11 @@ class ApplyTests(ConfigurationPlanTestCase):
         changed["description"] = "Changed after the all-target preflight"
         target = ("script", "set_hvac_comfort")
         # Plan creation already read the target once. The next read is the
-        # all-target apply preflight; mutate on the operation-local re-read.
+        # all-target apply preflight, then the pre-consumption check of the
+        # script as an in-plan callee (HAMCP-213, H5); mutate on the
+        # operation-local re-read.
         self.gateway.replace_on_read_count[
-            (target, self.gateway.read_counts[target] + 2)
+            (target, self.gateway.read_counts[target] + 3)
         ] = changed
         self.gateway.calls.clear()
 
@@ -2118,8 +2125,10 @@ class ApplyTests(ConfigurationPlanTestCase):
         target = ("script", "set_hvac_comfort")
         changed = copy.deepcopy(CURRENT_SCRIPT)
         changed["description"] = "Externally changed after preflight"
+        # Preflight, then the in-plan callee check (HAMCP-213, H5), then the
+        # operation-local re-read.
         self.gateway.replace_on_read_count[
-            (target, self.gateway.read_counts[target] + 2)
+            (target, self.gateway.read_counts[target] + 3)
         ] = changed
         self.gateway.calls.clear()
 
