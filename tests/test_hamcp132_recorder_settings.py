@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests"), str(ROOT)]
 
 import httpx  # noqa: E402
+import yaml as yaml11  # noqa: E402  PyYAML, the YAML 1.1 loader beneath Core's annotatedyaml
 
 import hamcp162_synthetic as syn  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
@@ -49,7 +50,7 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 )
 from ha_mcp_engineering.recorder_settings import contracts as c  # noqa: E402
 from ha_mcp_engineering.recorder_settings import entity_filter as f  # noqa: E402
-from ha_mcp_engineering.recorder_settings.projection import gateway_envelope  # noqa: E402
+from ha_mcp_engineering.recorder_settings.projection import gateway_envelope, yaml11_readings  # noqa: E402
 from ha_mcp_engineering.recorder_settings.service import (  # noqa: E402
     RECORDER_SETTINGS,
     RecorderSettingsRuntime,
@@ -422,6 +423,158 @@ class SettingsTests(Base):
         self.assertEqual(report["settings"]["unrecognized_key_count"], 2)
         self.assertIn("unrecognized_recorder_keys_not_reported", report["omissions"])
         self.assertFalse(report["complete"])
+
+
+# Plain (unquoted) spellings whose YAML 1.1 and YAML 1.2 readings differ, with
+# the value the YAML 1.2 reader returns. Observed with PyYAML 6.0.2 (YAML 1.1)
+# and ruamel.yaml 0.19.1 ``typ="safe"`` (YAML 1.2); the YAML 1.1 side is
+# re-derived from PyYAML in every test, the YAML 1.2 side is recorded here.
+YAML12_READS = {
+    "off": "off", "Off": "Off", "OFF": "OFF", "on": "on", "ON": "ON", "yes": "yes", "Yes": "Yes",
+    "YES": "YES", "no": "no", "NO": "NO", "1:20": "1:20", "1:20.5": "1:20.5", "190:20:30": "190:20:30",
+    "010": 10, "0010": 10, "0_10": 10, "012_3": 123, "-010": -10, "08": 8, "09": 9,
+    "1e3": 1000.0, "1.0e3": 1000.0,
+}
+FIELD_VALIDATORS = {"commit_interval": "int_min_0", "purge_keep_days": "int_min_1", "auto_purge": "boolean"}
+
+
+def core_outcome(field, loaded):
+    """(valid, value) for what Core's YAML 1.1 loader produced, under the ported validator."""
+
+    try:
+        if FIELD_VALIDATORS[field] == "boolean":
+            return True, f.boolean(loaded)
+        return True, f.coerce_int(loaded, 1 if field == "purge_keep_days" else 0)
+    except f.FilterValueInvalid:
+        return False, None
+
+
+def plausible_core_outcomes(field, spelling):
+    """Core's outcome for every spelling the reader cannot tell apart from ``spelling``."""
+
+    read = YAML12_READS[spelling]
+    if type(read) is str:
+        # Quoted or not, the YAML 1.2 reader returns the same string.
+        others = ['"' + spelling + '"']
+    else:
+        # The reader's number is also what its plain decimal spelling reads as.
+        others = [repr(read)]
+    loaded = [yaml11.safe_load(f"k: {text}")["k"] for text in (spelling, *others)]
+    return [core_outcome(field, value) for value in loaded]
+
+
+class YamlSpellingTests(Base):
+    """M1: a value whose YAML 1.1 reading differs is parser-dependent, never a definite claim."""
+
+    async def test_reviewer_reproductions_are_parser_dependent(self):
+        cases = {
+            "commit_interval": ("off", [("quoted", False, None), ("unquoted", True, 0)]),
+            "purge_keep_days": ("yes", [("quoted", False, None), ("unquoted", True, 1)]),
+            "db_max_retries": (10, [("no_leading_zero", True, 10), ("leading_zero", True, 8)]),
+            "db_retry_wait": ("1:20", [("quoted", False, None), ("unquoted", True, 80)]),
+        }
+        report = await self.run_report(yaml({key: value for key, (value, _) in cases.items()}))
+        for key, (value, readings) in cases.items():
+            with self.subTest(key):
+                self.assertEqual(report["settings"][key], {
+                    "value": None, "origin": "configured", "validity": "parser_dependent",
+                    "reason": "yaml_1_1_reading_differs", "as_read": value,
+                    "readings": [{"spelling": spelling, "valid": valid, "value": coerced}
+                                 for spelling, valid, coerced in readings]})
+                self.assertNotIn("invalid", report["settings"][key])
+                self.assertIn(f"setting_parser_dependent:{key}", report["omissions"])
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["completeness"], "partial")
+
+    async def test_paired_spellings_never_yield_an_unestablished_claim(self):
+        seen = set()
+        for spelling, read in YAML12_READS.items():
+            for field in FIELD_VALIDATORS:
+                with self.subTest(spelling=spelling, field=field):
+                    report = await self.run_report(yaml({field: read}))
+                    entry = report["settings"][field]
+                    outcomes = plausible_core_outcomes(field, spelling)
+                    seen.add("parser_dependent" if entry.get("validity") else
+                             "invalid" if entry.get("invalid") else "definite")
+                    if entry.get("validity") == "parser_dependent":
+                        readings = {(item["valid"], item["value"]) for item in entry["readings"]}
+                        for outcome in outcomes:
+                            self.assertIn(outcome, readings)
+                        self.assertGreater(len(set(outcomes)), 1)
+                    elif entry.get("invalid"):
+                        self.assertEqual(entry["reason"], "fails_core_schema")
+                        self.assertTrue(all(not valid for valid, _ in outcomes), outcomes)
+                    else:
+                        self.assertEqual({(True, entry["value"])}, set(outcomes))
+        self.assertEqual(seen, {"parser_dependent", "invalid", "definite"})
+
+    async def test_genuinely_invalid_values_still_fail_core_schema(self):
+        # Every reading fails: no spelling makes these valid under Core.
+        report = await self.run_report(yaml({
+            "purge_keep_days": "off", "commit_interval": -10, "auto_repack": "sometimes",
+            "db_max_retries": "never", "db_retry_wait": [1], "auto_purge": 1.5}))
+        s = report["settings"]
+        for key in ("purge_keep_days", "commit_interval", "auto_repack", "db_max_retries", "db_retry_wait"):
+            with self.subTest(key):
+                self.assertTrue(s[key]["invalid"])
+                self.assertEqual(s[key]["reason"], "fails_core_schema")
+        # 1.5 is a valid boolean; its exponent spelling would not be.
+        self.assertEqual(s["auto_purge"]["validity"], "parser_dependent")
+
+    async def test_values_every_reading_agrees_on_stay_definite(self):
+        report = await self.run_report(yaml({
+            "auto_purge": "off", "auto_repack": "YES", "commit_interval": 7, "purge_keep_days": "5",
+            "db_max_retries": 0}))
+        s = report["settings"]
+        self.assertEqual(s["auto_purge"], {"value": False, "origin": "configured", "as_written": "off"})
+        self.assertEqual(s["auto_repack"], {"value": True, "origin": "configured", "as_written": "YES"})
+        self.assertEqual(s["commit_interval"], {"value": 7, "origin": "configured"})
+        self.assertEqual(s["purge_keep_days"], {"value": 5, "origin": "configured", "as_written": "5"})
+        self.assertEqual(s["db_max_retries"], {"value": 0, "origin": "configured"})
+        self.assertFalse(any(item.startswith("setting_parser_dependent:") for item in report["omissions"]))
+        self.assertTrue(report["complete"])
+
+    async def test_filter_lists_with_differing_readings_are_not_computed(self):
+        variants = {
+            "domain_on": ({"include": {"domains": ["on"]}}, "parser_dependent"),
+            "event_type_yes": ({"exclude": {"event_types": ["yes", "call_service"]}}, "parser_dependent"),
+            "single_glob_off": ({"exclude": {"entity_globs": "off"}}, "parser_dependent"),
+            "entity_sexagesimal": ({"exclude": {"entities": ["1:20"]}}, "fails_core_schema"),
+            "entity_off": ({"exclude": {"entities": ["off"]}}, "fails_core_schema"),
+        }
+        for label, (recorder, reason) in variants.items():
+            with self.subTest(label):
+                report = await self.run_report(yaml(recorder), entity_ids=["light.kitchen"])
+                self.assertEqual(report["filters"], {"origin": "unknown", "computable": False, "reason": reason})
+                self.assertIn(f"filter_unknown:{reason}", report["omissions"])
+                self.assertIsNone(report["entities"][0]["computed_recorded"])
+                # The authoritative per-entity Core answer is retained.
+                self.assertEqual(report["entities"][0]["core_recorded"], True)
+
+    def test_yaml_1_1_port_matches_pyyaml(self):
+        for spelling, read in YAML12_READS.items():
+            with self.subTest(spelling):
+                loaded = yaml11.safe_load(f"k: {spelling}")["k"]
+                kind, readings = yaml11_readings(read)
+                self.assertEqual(kind, {str: "unquoted", int: "leading_zero", float: "exponent"}[type(read)])
+                if type(read) is float:
+                    # The spelling is not recoverable; the reading is a
+                    # representative one that YAML 1.1 also keeps a string.
+                    self.assertIs(type(loaded), str)
+                    self.assertEqual(yaml11.safe_load(f"k: {readings[0]}")["k"], readings[0])
+                else:
+                    self.assertEqual(readings, [loaded])
+        # A float's exponent spelling is a YAML 1.1 string.
+        for value in (1000.0, 1.5, -0.25):
+            (reading,) = yaml11_readings(value)[1]
+            self.assertEqual(yaml11.safe_load(f"k: {reading}")["k"], reading)
+        for value in (0, 1, 7, -7, True, False, "light", "sensor.temperature", ".inf", float("inf")):
+            with self.subTest(value=value):
+                if value == ".inf":
+                    # Both versions read ``.inf`` as a float; only a string spelling reaches here.
+                    self.assertEqual(yaml11_readings(value), ("unquoted", [float("inf")]))
+                else:
+                    self.assertIsNone(yaml11_readings(value))
 
 
 class CredentialTests(Base):
@@ -1022,8 +1175,76 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record["analysis_summary"]["fallback"], "none")
 
 
-async def serve_through_gateway(arguments, yaml_values=None, ws_values=None):
-    service, _reader, _client, core, _telemetry, token = setup(yaml_values, ws_values)
+# A lowercase synthetic access secret that is also a valid entity object id,
+# so it can reach every identifier-bearing field. Assembled at test time.
+ENTITY_SECRET = syn.needle("finalenvelope").lower()
+
+
+class FinalEnvelopeSanitizationTests(Base):
+    """H1: the strict sanitizer runs on the complete final envelope, once."""
+
+    async def test_reviewer_reproduction_drift_omission_through_gateway(self):
+        entity = "sensor." + ENTITY_SECRET
+        response, data, audit = await serve_through_gateway(
+            {"entity_ids": [entity]}, yaml({"exclude": {"entities": [entity]}}), access_secret=ENTITY_SECRET)
+        self.assertTrue(data["success"], data)
+        report = data["data"]
+        self.assertEqual(report["entities"][0]["agreement"], "filter_drift")
+        self.assertTrue(any(item.startswith("filter_drift:") for item in report["omissions"]))
+        self.assertIn("redacted_by_policy", report["omissions"])
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["completeness"], "partial")
+        self.assertNotIn(ENTITY_SECRET, response)
+        self.assertNotIn(ENTITY_SECRET, audit)
+
+    async def test_planted_secret_never_appears_in_any_response_field(self):
+        entity = "sensor." + ENTITY_SECRET
+        failed = "light." + ENTITY_SECRET
+        recorder = {
+            "purge_keep_days": "yes", "commit_interval": "1:20",
+            "include": {"domains": [ENTITY_SECRET], "entity_globs": ["sensor.*" + ENTITY_SECRET],
+                        "entities": ["switch." + ENTITY_SECRET]},
+            "exclude": {"entities": [entity], "entity_globs": [ENTITY_SECRET + ".*"],
+                        "event_types": [ENTITY_SECRET]},
+        }
+
+        def options(payloads):
+            return [(False, {"code": "unknown_error", "message": ENTITY_SECRET})
+                    if item["entity_id"] == failed else RECORDED for item in payloads]
+
+        async def run(known_secrets):
+            service, *_rest, token = setup(
+                yaml(recorder), {"recorder/info": (True, dict(INFO)), c.ENTITY_OPTIONS_TYPE: options},
+                known_secrets=known_secrets)
+            try:
+                return await service.report([entity, failed, "light.kitchen"])
+            finally:
+                end_request(token)
+
+        # Control: unprotected, the text reaches every identifier-bearing field.
+        control = await run(())
+        for field in ("filters", "entities", "omissions"):
+            self.assertIn(ENTITY_SECRET, json.dumps(control[field]), field)
+        report = await run((ENTITY_SECRET,))
+        text = json.dumps(report)
+        self.assertNotIn(ENTITY_SECRET, text)
+        self.assertEqual(len(report["entities"]), 3)
+        for field in ("settings", "filters", "entities", "omissions", "sources", "coverage"):
+            self.assertNotIn(ENTITY_SECRET, json.dumps(report[field]), field)
+        self.assertIn("redacted_by_policy", report["omissions"])
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["completeness"], "partial")
+
+    async def test_no_redaction_keeps_the_envelope_complete(self):
+        report = await self.run_report(entity_ids=["light.kitchen"])
+        self.assertNotIn("redacted_by_policy", report["omissions"])
+        self.assertTrue(report["complete"])
+        self.assertEqual(report["completeness"], "complete")
+
+
+async def serve_through_gateway(arguments, yaml_values=None, ws_values=None, *, access_secret=ACCESS_SECRET):
+    service, _reader, _client, core, _telemetry, token = setup(
+        yaml_values, ws_values, known_secrets=(HA_TOKEN, access_secret))
     end_request(token)
     core.acquire = Mock(return_value=object())
     core.consume = Mock(return_value=())
@@ -1043,7 +1264,7 @@ async def serve_through_gateway(arguments, yaml_values=None, ws_values=None):
 
     with tempfile.TemporaryDirectory() as directory:
         audit_path = Path(directory) / "audit.jsonl"
-        config_ = settings(audit_path=str(audit_path))
+        config_ = settings(audit_path=str(audit_path), access_secret=access_secret)
         gateway = AuthenticatedMcpGateway(app, config_, AuditLogger(str(audit_path), config_.access_secret),
                                           core_runtime=core)
         with patch.object(RECORDER_SETTINGS, "service", service), patch.object(public, "SETTINGS", config_):
@@ -1163,8 +1384,10 @@ class YamlConfigReaderTests(yaml_admission.Harness):
         finally:
             end_request(token)
         # The synthetic peer answers every path with ``{"purge_keep_days": 10}``,
-        # so packages are reported present and unwritten keys unknown.
-        self.assertEqual(report["settings"]["purge_keep_days"], {"value": 10, "origin": "configured"})
+        # so packages are reported present and unwritten keys unknown. The
+        # parsed 10 may have been spelled ``010`` (8 under YAML 1.1).
+        self.assertEqual(report["settings"]["purge_keep_days"]["validity"], "parser_dependent")
+        self.assertEqual(report["settings"]["purge_keep_days"]["as_read"], 10)
         self.assertEqual(report["packages"], "present")
         self.assertEqual(report["settings"]["auto_purge"]["reason"], "packages_present")
         self.assertEqual(source(report, "configuration_yaml:recorder")["status"], "complete")

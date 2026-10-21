@@ -391,7 +391,11 @@ class FailureTests(Base):
         values["entity/source"] = {e: {"domain": "template"} for e in many}
         values["search/related"] = {e: (False, "not_found") for e in many}
         report = await self.run_report(values)
-        self.assertEqual(len(report["omissions"]), 50)
+        identified = [item for item in report["omissions"] if item.startswith("config_entry_unknown:")]
+        self.assertEqual(len(identified), c.MAX_OMITTED_ENTITY_IDS)
+        # The cap never drops the closed omission that names the failed source.
+        self.assertIn("source_unavailable:search/related", report["omissions"])
+        self.assertEqual(len(report["omissions"]), c.MAX_OMITTED_ENTITY_IDS + 1)
 
 
 class AuthorityTests(Base):
@@ -642,6 +646,108 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record["parameters"]["limit"], 10)
         self.assertNotIn("sensor.yaml_template", json.dumps(record))
         core.finish.assert_called_once()
+
+
+# A lowercase synthetic access secret that is also a valid domain and object
+# id, so it can reach every identifier-bearing field. Assembled at test time.
+ENTITY_SECRET = syn.needle("finalenvelope").lower()
+
+
+async def serve_through_gateway(arguments, values, *, access_secret):
+    service, _rest, _socket, core, _telemetry, token, _calls = setup(
+        values, known_secrets=(HA_TOKEN, access_secret))
+    end_request(token)
+    core.acquire = Mock(return_value=object())
+    core.consume = Mock(return_value=())
+    core.revalidate = Mock(return_value=True)
+    core.finish = Mock(return_value=True)
+    core.release = Mock(return_value=True)
+
+    async def app(scope, receive, send):
+        rpc = json.loads((await receive())["body"])
+        tool = registered_tools(get_registered_server())["get_unregistered_entities"]
+        rendered = await tool.run(rpc["params"]["arguments"])
+        result = {"jsonrpc": "2.0", "id": rpc["id"],
+                  "result": {"content": [{"type": "text", "text": rendered}], "isError": False}}
+        await send({"type": "http.response.start", "status": 200,
+                    "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": json.dumps(result).encode()})
+
+    with tempfile.TemporaryDirectory() as directory:
+        audit_path = Path(directory) / "audit.jsonl"
+        config_ = settings(audit_path=str(audit_path), access_secret=access_secret)
+        gateway = AuthenticatedMcpGateway(app, config_, AuditLogger(str(audit_path), config_.access_secret),
+                                          core_runtime=core)
+        with patch.object(ENTITY_RECONCILIATION, "service", service), patch.object(public, "SETTINGS", config_):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=gateway),
+                                         base_url="http://127.0.0.1:8100") as http:
+                response = await http.post(f"/{config_.access_secret}/mcp", json={
+                    "jsonrpc": "2.0", "id": "synthetic-request", "method": "tools/call",
+                    "params": {"name": "get_unregistered_entities", "arguments": arguments}})
+        audit = audit_path.read_text()
+    core.finish.assert_called_once()
+    return response.text, json.loads(response.json()["result"]["content"][0]["text"]), audit
+
+
+class FinalEnvelopeSanitizationTests(Base):
+    """H1: the strict sanitizer runs on the complete final envelope, once."""
+
+    async def test_reviewer_reproduction_failed_related_read_through_gateway(self):
+        entity = "sensor." + ENTITY_SECRET
+        values = {"states": states(entity), "config/entity_registry/list": [],
+                  "entity/source": {entity: {"domain": "template"}},
+                  "search/related": {entity: (False, "synthetic_failure")}}
+        response, data, audit = await serve_through_gateway({}, values, access_secret=ENTITY_SECRET)
+        self.assertTrue(data["success"], data)
+        report = data["data"]
+        self.assertEqual(report["entities"][0]["config_entry_status"], "command_failed")
+        self.assertTrue(any(item.startswith("config_entry_unknown:") for item in report["omissions"]))
+        self.assertIn("redacted_by_policy", report["omissions"])
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["completeness"], "partial")
+        self.assertNotIn(ENTITY_SECRET, response)
+        self.assertNotIn(ENTITY_SECRET, audit)
+
+    async def test_planted_secret_never_appears_in_any_response_field(self):
+        failed = "sensor." + ENTITY_SECRET
+        resolved = ENTITY_SECRET + ".synthetic"
+        direct = ENTITY_SECRET + ".directly_written"
+        values = {"states": states(failed, resolved, direct, "sensor.yaml_template"),
+                  "config/entity_registry/list": [],
+                  "entity/source": {failed: {"domain": "template"}, resolved: {"domain": ENTITY_SECRET},
+                                    "sensor.yaml_template": {"domain": "template"}},
+                  "search/related": {failed: (False, "synthetic_failure"),
+                                     resolved: (True, {"config_entry": [ENTITY_SECRET]}),
+                                     "sensor.yaml_template": (True, {"config_entry": [ENTRY]})}}
+
+        async def run(known_secrets):
+            service, *_rest, token, _calls = setup(copy.deepcopy(values), known_secrets=known_secrets)
+            try:
+                return await service.report(("sensor", ENTITY_SECRET), c.DEFAULT_LIMIT)
+            finally:
+                end_request(token)
+
+        # Control: unprotected, the text reaches every identifier-bearing field.
+        control = await run(())
+        for field in ("scope", "entities", "omissions"):
+            self.assertIn(ENTITY_SECRET, json.dumps(control[field]), field)
+        rows = self.rows(control)
+        self.assertEqual(rows[resolved]["platform"], ENTITY_SECRET)
+        self.assertEqual(rows[resolved]["config_entry_id"], ENTITY_SECRET)
+        report = await run((ENTITY_SECRET,))
+        self.assertNotIn(ENTITY_SECRET, json.dumps(report))
+        self.assertEqual(len(report["entities"]), 4)
+        self.assertIn("redacted_by_policy", report["omissions"])
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["completeness"], "partial")
+
+    async def test_no_redaction_keeps_the_envelope_complete(self):
+        values = healthy()
+        values["states"] = states(*REGISTERED, "sensor.yaml_template")
+        report = await self.run_report(values)
+        self.assertNotIn("redacted_by_policy", report["omissions"])
+        self.assertTrue(report["complete"])
+        self.assertEqual(report["completeness"], "complete")
 
 
 if __name__ == "__main__":

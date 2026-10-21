@@ -172,7 +172,9 @@ class RecorderSettingsService:
             if source["status"] != "complete":
                 projector.omit(f"source_{source['status']}:{source['source']}")
 
-        result: dict[str, Any] = {
+        if all(source["status"] in {"unavailable", "refused"} for source in sources):
+            raise c.RecorderSettingsError("sources_unavailable")
+        report: dict[str, Any] = {
             "schema": c.SCHEMA,
             "observed_at": iso(started),
             "core_pin": CORE_PIN,
@@ -186,32 +188,15 @@ class RecorderSettingsService:
                 "includes_followed": False,
                 "packages_read": False,
                 "yaml_parse": "ha-mcp YAML 1.2; Home Assistant loads YAML 1.1",
+                "yaml_numeric_spelling": c.YAML_NUMERIC_SPELLING_LIMITATION,
                 "entities_requested": len(entity_ids),
                 "entities_answered_by_core": sum(1 for row in entities if row["core_recorded"] is not None),
                 "yaml_reader": reader.provenance if reader is not None else None,
             },
             "sources": sources,
+            "upstream_calls": yaml_reads,
         }
-        sanitized = sanitize_untrusted_data(result, known_secrets=self.known_secrets,
-                                            max_string=c.MAX_FILTER_TEXT)
-        if sanitized.failed_closed:
-            raise c.RecorderSettingsError("sources_unavailable")
-        if sanitized.redacted_field_count or sanitized.truncated_field_count:
-            projector.omit("redacted_by_policy")
-        result = sanitized.value
-        if len(json.dumps(result, separators=(",", ":"), default=str)) > c.RESPONSE_BUDGET:
-            for part in ("include", "exclude"):
-                lists = result["filters"].get(part)
-                if type(lists) is dict:
-                    result["filters"][part] = {key: {"count": len(value), "listed": False}
-                                               for key, value in lists.items()}
-            projector.omit("filter_lists_not_listed_response_bytes")
-        result["omissions"] = list(projector.omissions)
-        result["complete"] = not projector.omissions and all(
-            source["status"] == "complete" for source in sources)
-        result["completeness"] = "complete" if result["complete"] else "partial"
-        if all(source["status"] in {"unavailable", "refused"} for source in sources):
-            raise c.RecorderSettingsError("sources_unavailable")
+        result = self._finish(report, projector, sources)
         if telemetry:
             telemetry.error_code = prior_error
             telemetry.result_status = "success" if result["complete"] else "partial"
@@ -222,8 +207,46 @@ class RecorderSettingsService:
                                   "reason": s["reason"]} for s in sources],
                 entity_count=len(entity_ids),
             )
-        result["upstream_calls"] = yaml_reads
         return result
+
+    def _finish(self, report: dict, projector: Projector, sources: list[dict]) -> dict:
+        """The single exit point: the complete envelope, sanitized once.
+
+        Every field the caller can see, the omissions with their identifiers
+        included, is assembled first and the strict sanitizer runs over the
+        whole envelope with the known secrets. Nothing is added afterwards; a
+        change (a redaction omission, collapsed filter lists) rebuilds the
+        envelope and sanitizes it again.
+        """
+
+        while True:
+            envelope = {**report, "omissions": list(projector.omissions)}
+            envelope["complete"] = not projector.omissions and all(
+                source["status"] == "complete" for source in sources)
+            envelope["completeness"] = "complete" if envelope["complete"] else "partial"
+            sanitized = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets,
+                                                max_string=c.MAX_FILTER_TEXT)
+            if sanitized.failed_closed:
+                raise c.RecorderSettingsError("sources_unavailable")
+            changed = False
+            if (sanitized.redacted_field_count or sanitized.truncated_field_count) \
+                    and "redacted_by_policy" not in projector.omissions:
+                # HAMCP-191: a redaction anywhere makes the report partial.
+                projector.omit("redacted_by_policy")
+                changed = True
+            if len(json.dumps(sanitized.value, separators=(",", ":"), default=str)) > c.RESPONSE_BUDGET \
+                    and "filter_lists_not_listed_response_bytes" not in projector.omissions:
+                filters = dict(report["filters"])
+                for part in ("include", "exclude"):
+                    lists = filters.get(part)
+                    if type(lists) is dict:
+                        filters[part] = {key: {"count": len(value), "listed": False}
+                                         for key, value in lists.items()}
+                report = {**report, "filters": filters}
+                projector.omit("filter_lists_not_listed_response_bytes")
+                changed = True
+            if not changed:
+                return sanitized.value
 
 
 class RecorderSettingsRuntime:

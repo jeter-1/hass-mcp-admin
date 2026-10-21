@@ -66,6 +66,14 @@ RECOGNIZED_KEYS = frozenset(SCALAR_SETTINGS) | frozenset(DEPRECATED_SETTINGS) | 
     DB_URL_KEY, *FILTER_KEYS,
 }
 
+# The reader returns parsed values, never spellings. Values whose YAML 1.1
+# reading can differ are reported ``parser_dependent`` (projection.py); these
+# spelling cannot be recognized from the parsed value at all.
+YAML_NUMERIC_SPELLING_LIMITATION = (
+    "not observable: a 0o-prefixed integer is a number under YAML 1.2 but a string "
+    "under YAML 1.1; every integer is reported as if it were not spelled that way"
+)
+
 # recorder/info reply keys (basic_websocket_api.py:21-54) and their JSON types.
 RUNTIME_FIELDS = MappingProxyType({
     "backlog": (int, type(None)),

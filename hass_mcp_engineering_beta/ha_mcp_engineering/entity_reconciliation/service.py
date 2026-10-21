@@ -44,6 +44,19 @@ def _entity_ids(rows: Any) -> tuple[set[str], int] | None:
     return found, malformed
 
 
+def _excess_rows(envelope: dict) -> int:
+    """How many trailing entity rows put a sanitized envelope over budget."""
+
+    rows = envelope["entities"]
+    size = len(json.dumps(envelope, separators=(",", ":"), default=str))
+    excess = 0
+    while excess < len(rows) and size > c.RESPONSE_BUDGET:
+        # A row and its separating comma leave the serialized envelope.
+        size -= len(json.dumps(rows[len(rows) - 1 - excess], separators=(",", ":"), default=str)) + 1
+        excess += 1
+    return excess
+
+
 def _platforms(value: Any) -> dict[str, str | None] | None:
     """``entity/source`` rows; an invalid platform value is kept as ``None``."""
 
@@ -152,7 +165,7 @@ class EntityReconciliationService:
         omissions: list[str] = []
 
         def omit(item: str) -> None:
-            if item not in omissions and len(omissions) < 50:
+            if item not in omissions:
                 omissions.append(item)
 
         raw = await self._read("states", lambda: self.rest_client.request("GET", rest_path("/states")),
@@ -237,7 +250,10 @@ class EntityReconciliationService:
                 row.update(platform=platforms[entity_id], platform_status="entity_source")
             if entity_id in related:
                 row["config_entry_id"], row["config_entry_status"] = related[entity_id]
-                if row["config_entry_status"] in {"command_failed", "invalid_response"}:
+                if row["config_entry_status"] in {"command_failed", "invalid_response"} \
+                        and sum(item.startswith("config_entry_unknown:") for item in omissions) \
+                        < c.MAX_OMITTED_ENTITY_IDS:
+                    # Capped; the row itself still carries the status.
                     omit("config_entry_unknown:" + entity_id)
             elif row["platform_status"] == "directly_written_state":
                 row.update(config_entry_id=None, config_entry_status="not_applicable")
@@ -266,24 +282,10 @@ class EntityReconciliationService:
             },
             "sources": sources,
         }
-        sanitized = sanitize_untrusted_data(result, known_secrets=self.known_secrets, max_string=255)
-        if sanitized.failed_closed:
-            raise c.EntityReconciliationError("sources_unavailable")
-        if sanitized.redacted_field_count or sanitized.truncated_field_count:
-            omit("redacted_by_policy")
-        result = sanitized.value
-        while result["entities"] and len(json.dumps(
-                result, separators=(",", ":"), default=str)) > c.RESPONSE_BUDGET:
-            result["entities"].pop()
-            result["counts"]["listed"] -= 1
-            result["truncated"] = True
-            omit("entities_not_listed_response_bytes")
         for source in sources:
             if source["status"] != "complete":
                 omit(f"source_{source['status']}:{source['source']}")
-        result["omissions"] = omissions
-        result["complete"] = not omissions
-        result["completeness"] = "complete" if result["complete"] else "partial"
+        result = self._finish(result, omissions, omit)
         if telemetry:
             telemetry.error_code = prior_error
             telemetry.result_status = "success" if result["complete"] else "partial"
@@ -295,6 +297,39 @@ class EntityReconciliationService:
                 entity_count=len(result["entities"]),
             )
         return result
+
+    def _finish(self, result: dict, omissions: list[str], omit: Callable[[str], None]) -> dict:
+        """The single exit point: the complete envelope, sanitized once.
+
+        Every field the caller can see, the omissions with their entity IDs
+        included, is assembled first and the strict sanitizer runs over the
+        whole envelope with the known secrets. Nothing is added afterwards; a
+        change (a redaction omission, entities dropped for the byte budget)
+        rebuilds the envelope and sanitizes it again.
+        """
+
+        while True:
+            envelope = {**result, "omissions": list(omissions)}
+            envelope["complete"] = not omissions
+            envelope["completeness"] = "complete" if envelope["complete"] else "partial"
+            sanitized = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets, max_string=255)
+            if sanitized.failed_closed:
+                raise c.EntityReconciliationError("sources_unavailable")
+            changed = False
+            if (sanitized.redacted_field_count or sanitized.truncated_field_count) \
+                    and "redacted_by_policy" not in omissions:
+                # HAMCP-191: a redaction anywhere makes the report partial.
+                omit("redacted_by_policy")
+                changed = True
+            excess = _excess_rows(sanitized.value)
+            if excess:
+                kept = len(result["entities"]) - excess
+                result = {**result, "entities": result["entities"][:kept], "truncated": True,
+                          "counts": {**result["counts"], "listed": kept}}
+                omit("entities_not_listed_response_bytes")
+                changed = True
+            if not changed:
+                return sanitized.value
 
 
 class EntityReconciliationRuntime:

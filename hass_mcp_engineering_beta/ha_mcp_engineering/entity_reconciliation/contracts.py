@@ -42,6 +42,7 @@ MAX_LIMIT = 500
 MAX_DOMAINS = 50
 # Compact JSON budget for the report inside the 60,000-character envelope.
 RESPONSE_BUDGET = 50_000
+MAX_OMITTED_ENTITY_IDS = 50
 
 DOMAIN = re.compile(r"(?!_)(?!.*__)[0-9a-z_]{1,64}(?<!_)\Z", re.ASCII)
 
