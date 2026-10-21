@@ -7,6 +7,10 @@ position, before the shared sanitizer runs (``service.py``):
 - ``db_url`` (``contracts.WITHHELD_KEYS``), whatever its value;
 - a ``!secret`` or ``!env_var`` reference (its name included);
 - any string carrying a YAML reader redaction or truncation marker;
+- any string carrying a URI with userinfo (``<scheme>://user:password@...``)
+  in any position, the reader's own C'1 predicate: the reader already redacts
+  it, and this check keeps a database URL inside an allowlisted text field
+  (a SQL ``query``, a template) withheld without depending on the reader;
 - any nested key the YAML reader's credential or connection predicates match.
   Those predicates are not applied to the allowlisted keys themselves: they
   match substrings ("uri" in "during"), and the allowlisted keys are Core's
@@ -21,7 +25,7 @@ from typing import Any
 
 from ..entity_ids import STRICT_ENTITY_ID
 from ..entity_reconciliation.contracts import DOMAIN
-from ..providers.upstream_yaml_reader import canonical, is_connection_key, is_credential_key
+from ..providers.upstream_yaml_reader import _userinfo, canonical, is_connection_key, is_credential_key
 from ..recorder_settings.projection import _is_include, _is_reference, _truncated
 from . import contracts as c
 from . import schemas as s
@@ -54,6 +58,17 @@ def _reader_marker(value: Any) -> bool:
     # A connection URI is rendered as ``<scheme>://[REDACTED:connection_uri]``,
     # so the marker is matched anywhere in the string.
     return isinstance(value, str) and ("[REDACTED:" in value or "[TRUNCATED:" in value)
+
+
+def _userinfo_text(value: Any) -> bool:
+    if type(value) is not str:
+        return False
+    try:
+        canonical_text, _rounds = canonical(value)
+    except Exception:
+        # Text the reader's canonicalization refuses is never copied.
+        return True
+    return _userinfo(canonical_text)
 
 
 def _credential_shaped(key: str) -> bool:
@@ -117,6 +132,9 @@ class Definitions:
         if _reader_marker(value):
             record["withheld"].append(path)
             return {"withheld": "reader_redaction"}
+        if _userinfo_text(value):
+            record["withheld"].append(path)
+            return {"withheld": "credential_uri"}
         if type(value) is dict:
             projected = {}
             for key, child in value.items():

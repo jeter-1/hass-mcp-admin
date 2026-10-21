@@ -65,11 +65,14 @@ def _registry(value: Any) -> dict[str, dict] | None:
         platform = row.get("platform")
         unique_id = row.get("unique_id")
         entry = row.get("config_entry_id")
+        disabled_by = row.get("disabled_by")
         rows[entity_id] = {
             "platform": platform if type(platform) is str and DOMAIN.fullmatch(platform) else None,
             "unique_id": unique_id if type(unique_id) is str else None,
             "config_entry_id": entry if type(entry) is str and diagnosis.ENTRY_ID.fullmatch(entry) else None,
-            "disabled_by": row.get("disabled_by") if type(row.get("disabled_by")) is str else None,
+            # A closed value: Core's reason, or ``unrecognized`` when set to anything else.
+            "disabled_by": disabled_by if disabled_by in diagnosis.DISABLED_BY else (
+                None if disabled_by is None else "unrecognized"),
         }
     return rows
 
@@ -418,17 +421,38 @@ class ConfigurationDefinitionsService:
                 changed = True
             size = len(json.dumps(sanitized.value, separators=(",", ":"), default=str))
             if size > c.RESPONSE_BUDGET:
-                if report["definitions"]:
-                    report = {**report, "definitions": report["definitions"][:-1]}
-                    omit("definitions_not_listed_response_bytes")
-                elif report["ui_entries"]:
-                    report = {**report, "ui_entries": report["ui_entries"][:-1]}
-                    omit("ui_entries_not_listed_response_bytes")
+                # Drop trailing rows by their sanitized sizes, then rebuild and
+                # sanitize again: one pass per change, not one per row, so a
+                # large report does not hold the event loop.
+                for key, omission in (("definitions", "definitions_not_listed_response_bytes"),
+                                      ("ui_entries", "ui_entries_not_listed_response_bytes")):
+                    if report[key]:
+                        kept = report[key][:-_overflow(report[key], sanitized.value.get(key),
+                                                       size - c.RESPONSE_BUDGET)]
+                        report = {**report, key: kept}
+                        if key == "definitions":
+                            report["coverage"] = {**report["coverage"], "definitions_listed": len(kept)}
+                        omit(omission)
+                        break
                 else:
                     raise c.ConfigurationDefinitionsError("sources_unavailable")
                 changed = True
             if not changed:
                 return sanitized.value
+
+
+def _overflow(rows: list, sanitized_rows: Any, excess: int) -> int:
+    """How many trailing rows cover ``excess`` compact JSON characters (at least one)."""
+
+    if type(sanitized_rows) is not list or len(sanitized_rows) != len(rows):
+        return 1
+    dropped = freed = 0
+    for row in reversed(sanitized_rows):
+        if freed >= excess:
+            break
+        freed += len(json.dumps(row, separators=(",", ":"), default=str)) + 1
+        dropped += 1
+    return max(dropped, 1)
 
 
 class ConfigurationDefinitionsRuntime:

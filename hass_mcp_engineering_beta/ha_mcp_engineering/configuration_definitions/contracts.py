@@ -29,6 +29,7 @@ from typing import Any
 
 from ..entity_ids import STRICT_ENTITY_ID
 from ..errors import ErrorCode, GovernanceError
+from ..recorder_settings.contracts import YAML_FAILURE_CODES as _RECORDER_YAML_FAILURE_CODES
 
 REGISTRY_COMMAND = MappingProxyType({"type": "config/entity_registry/list"})
 SOURCE_COMMAND = MappingProxyType({"type": "entity/source"})
@@ -58,9 +59,10 @@ MAX_TITLE = 255
 
 ALLOWED_ARGUMENTS = frozenset({"entity_ids", "integrations"})
 
-YAML_FAILURE_CODES = frozenset({
-    "yaml_reader_not_admitted", "yaml_read_failed", "yaml_read_response_identity_invalid",
-})
+# The closed reasons a YAML source can carry: the shared reader envelope's
+# codes (``recorder_settings.projection.gateway_envelope``) plus the local
+# refusal when the reader route is not admitted.
+YAML_FAILURE_CODES = _RECORDER_YAML_FAILURE_CODES | {"yaml_reader_not_admitted"}
 
 # Withheld in every position, whatever the reader returned (design section
 # 6): the reader may leave a sqlite URL visible under a connection key (R11).

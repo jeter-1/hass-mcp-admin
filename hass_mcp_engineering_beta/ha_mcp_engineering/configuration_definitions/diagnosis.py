@@ -139,7 +139,9 @@ def entity(entity_id: str, *, state: str | None, states_read: bool, registry_row
             reasons.extend(f"source_entity_unavailable:{item}"
                            for item in unavailable[:MAX_SOURCE_SIGNALS])
             return {"classification": "dependency_unavailable", "reasons": reasons}
-    if platform is None and definition is None and entry_id is None:
+    # Without the one matched definition its dependencies were not checked, so
+    # an entity of a supported platform is not called entity-level.
+    if definition is None and entry_id is None and match.get("method") != "not_applicable":
         return {"classification": "undetermined", "reasons": reasons + ["definition_not_matched"]}
     return {"classification": "entity_level", "reasons": reasons}
 
