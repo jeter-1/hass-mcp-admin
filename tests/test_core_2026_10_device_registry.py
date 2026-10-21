@@ -15,6 +15,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 from core_registry_fixtures import CoreSigner, core_entry, core_revocation, NOW
+from support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.ha_core_readmission.device_registry import (
     DeviceRegistrySchema, MAX_DEVICE_RECORD_BYTES, MAX_DEVICE_RECORDS,
     assess_device_registry, assess_device_entity_semantics,
@@ -249,7 +250,8 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
             generated_at=NOW,
         )
         self.assertTrue(await self.registry.refresh())
-        return await self.core.reconcile_once('synthetic_october_registry')
+        # A withheld Core admitted by a new signed profile passes the gate.
+        return await reconcile_through_gate(self.core)
 
     async def test_observation_alone_withholds_then_exact_signed_profile_admits(self):
         before = await self.core.reconcile_once('synthetic_missing_authority')

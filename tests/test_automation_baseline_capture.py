@@ -667,7 +667,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                 registry=CoreReleaseRegistry(enabled=True,public_key=signer.public_key_base64,cache_path=Path(directory)/'registry.json',fetcher=fetch,now=lambda:NOW)
                 self.assertTrue(await registry.refresh())
                 runtime=CoreRuntime();runtime.configure(SimpleNamespace(),source=Source(registry,'2026.9.3',typed_operations=True),release_registry=registry)
-                await runtime.reconcile_once('synthetic-baseline')
+                await runtime.reconcile_once('startup')
                 lease=runtime.acquire(c.REQUIREMENTS)
                 self.assertEqual(lease is not None,case=='exact')
                 commits=runtime.consume(lease) if lease else None

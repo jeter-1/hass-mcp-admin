@@ -22,6 +22,7 @@ from ha_mcp_engineering.ha_core_readmission.probe_profiles import (
     CHILD_DEVICE_PROBE_PROFILE, CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
 )
 from ha_mcp_engineering.ha_core_readmission.profiles import CORE_CAPABILITY_PROFILES, CORE_TYPED_OPERATION_PROFILES, compiled_exact_authority
+from ha_mcp_engineering.ha_core_readmission.runtime import CORE_RECOVERY_FLAP_CONFIRMATIONS
 from ha_mcp_engineering.signed_registry import canonical_json
 
 
@@ -52,6 +53,22 @@ def lane_entry(version):
     if entry.get("image_index_digest") != binding.image_index_digest:
         raise ValueError("disposable Core fixture digest mismatch")
     return entry
+
+
+async def reconcile_through_gate(runtime, trigger="periodic"):
+    """Admit newly signed authority the way the supervisor does (HAMCP-215).
+
+    A withheld or retired Core is published again only after consecutive
+    complete background verifications; an on-demand trigger never admits. Each
+    verification is a full probe of the disposable Core, bounded by the flap
+    confirmation count, and nothing runs once the outcome is known.
+    """
+    snapshot = await runtime.reconcile_once(trigger)
+    for _ in range(CORE_RECOVERY_FLAP_CONFIRMATIONS - 1):
+        if snapshot["recovery"]["recovery_state"] != "confirming":
+            break
+        snapshot = await runtime.reconcile_once(trigger)
+    return snapshot
 
 
 async def configure_with_test_authority(runtime, configured, *, cache_path, expected_image,
@@ -101,7 +118,8 @@ async def configure_with_test_authority(runtime, configured, *, cache_path, expe
     assert runtime.current_observation.version == entry["version"]
     payload = signed
     assert await registry.refresh()
-    await runtime.reconcile_once("core_test_signed_data_available")
+    # The withheld Core is admitted only through the restoration gate.
+    await reconcile_through_gate(runtime)
     after = runtime.health_snapshot()
     assert after["compatible_count"] == len(profiles)
     assert all(p["authority_source"] == "verified_compatibility"

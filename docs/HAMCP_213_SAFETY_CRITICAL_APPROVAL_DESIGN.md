@@ -840,11 +840,12 @@ a design-validation prototype of D2, not runtime code):
   and `f2-v2` records untouched.
 - **Rollback and re-upgrade (PR 1, batch 4, H6; owner decision).** beta.27
   quarantines every `f2-v3` plan record at startup, and deletes it if the
-  quarantine move fails. That behavior is in released code and is accepted
+  quarantine move fails. beta.28 (HAMCP-215), the rollback target once this
+  PR was restaged as beta.29, keeps that plan storage unchanged. That behavior is in released code and is accepted
   as a documented risk. It is mitigated by the rollback procedure in
   `docs/EXTERNAL_APPROVAL.md`: take a fresh Home Assistant backup (which
   includes the Engineering add-on data), finish or reject pending plans, then
-  roll back. On re-upgrade, beta.28 scans the quarantine directories at
+  roll back. On re-upgrade, beta.29 scans the quarantine directories at
   startup, before cleanup and recovery. It restores each record whose bytes
   are canonical, parse as a supported plan, match the file name's identifier
   and namespace, and pass the stored-plan content screen. Restoration links
@@ -853,7 +854,7 @@ a design-validation prototype of D2, not runtime code):
   Unverifiable, conflicting or ambiguous records stay quarantined and are
   reported in health (`quarantine_restoration`). Restoration grants no
   authority: a restored pending plan is validated like any other. Records
-  beta.27 deleted are recoverable only from the backup.
+  an older version deleted are recoverable only from the backup.
 
 ### D9. Security section (for the implementation PR)
 

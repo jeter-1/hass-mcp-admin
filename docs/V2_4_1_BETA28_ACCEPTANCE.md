@@ -1,15 +1,15 @@
 # Engineering 2.4.1-beta.28 acceptance
 
-This contract covers HAMCP-213 PR 1: the physical-effect comparison, policy
-`f2-v3` and the safety-critical acknowledgement. It builds on 2.4.1-beta.27
-(HAMCP-132), which builds on 2.4.1-beta.26 (HAMCP-217) and 2.4.1-beta.25
-(HAMCP-212).
+This contract covers HAMCP-215: recovery and visibility for Home Assistant Core
+authority (break-fix). It builds on 2.4.1-beta.27 (HAMCP-132, recorder
+settings and unregistered entities), which builds on 2.4.1-beta.26 (HAMCP-217,
+`certifi` 2026.10.19, split out of this work by Josh on 2026-10-20).
 
 See also:
 - Release notes:
   [`V2_4_1_BETA28_RELEASE_NOTES.md`](V2_4_1_BETA28_RELEASE_NOTES.md).
-- Design: [`HAMCP_213_SAFETY_CRITICAL_APPROVAL_DESIGN.md`](HAMCP_213_SAFETY_CRITICAL_APPROVAL_DESIGN.md).
-- Owner decisions: [ADR-022](architecture/ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md#owner-decision-record-hamcp-213-safety-critical-acknowledgement).
+- Design and Part 1 root cause:
+  [`HAMCP_215_CORE_AUTHORITY_RECOVERY_DESIGN.md`](HAMCP_215_CORE_AUTHORITY_RECOVERY_DESIGN.md).
 
 **Release target.** `2.4.1-beta.28`. It is staged by one owner-authorized run
 of `scripts/promote_next_release.py --apply` on a base that already carries
@@ -21,13 +21,22 @@ The contract separates four stages:
 3. publication;
 4. installed Engineering acceptance.
 
-Completing one stage grants nothing for the next.
+It authorizes none of the later stages.
 
 ## 1. Source and offline acceptance
 
 Bind the following:
-- Josh's HAMCP-213 objective and owner decisions OD-1 to OD-10 (register row
-  HAMCP-213);
+- Josh's HAMCP-215 objective: recover Core authority automatically after
+  transient failures, never fail silently, and keep fail-closed behavior
+  during uncertainty;
+- Josh's 2026-10-20 decisions:
+  - ship HAMCP-217 (the certifi bump) separately as beta.26 and restage this
+    work as the next beta (beta.28, after HAMCP-132 shipped as beta.27);
+  - accept the confirmation wait before Core authority returns after a
+    lifecycle-watcher socket move, and the same wait (about 15 s) after a
+    Core version change, a moved signed-registry authority, an incompatible
+    Core becoming compatible, or a Core not initialized at boot (see
+    **Accepted restoration delay**);
 - `2.4.1-beta.28` materialized in all three version authorities, with exact
   acceptance and release-note resolution from `scripts/codex-context.py` and
   no staged declaration left over;
@@ -36,128 +45,161 @@ Bind the following:
 - the Evidence tier log named in the PR.
 
 The review needs a security section covering:
-- the new reachable writes: exact automation and script plans that were
-  `prohibited` under `f2-v2` now reach the existing governed apply, only after
-  plan approval and, where required, the acknowledgement;
-- a false `equivalent` (main risk), and the mutation evidence for each
-  comparison rule;
-- acknowledgement forgery: exact object set and hash, same administrator,
-  single-use CSRF, expiry, Ingress-only grant and the independent dispatch
-  check;
-- the two read-only `f2-v2` exceptions (F3 rollback creation, and
-  reverification of a consumed task) and their confinement;
-- the beta.27 rollback quarantine of every plan record written under
-  `f2-v3`, beta.27's deletion when its quarantine move fails (accepted
-  released behavior, protected by the pre-rollback backup), and the startup
-  restoration of verified quarantined records on re-upgrade;
-- the in-plan callee check: the caller compared against the post-plan
-  callee, and the live callee verified before each caller write;
-- the allowlist comparison, the review-bounds floor and the called-script
-  fingerprint recheck before approval consumption and before each write.
+- **No new reachability.** No new write, service call, reload, restart,
+  fallback or forwarding is reachable. Recovery reuses the existing
+  verification pipeline (design §A).
+- **No admission during recovery.** While no authority is admitted, no route,
+  lease, catalog entry or dependency evidence is admitted until the
+  restoration gate passes. On-demand triggers cannot confirm or publish from
+  any state.
+- **Restoration requires complete re-verification.** That means a stable
+  two-snapshot observation, the authenticated lifecycle watcher, the registry,
+  connection and monitor fences, and reviewed-contract admission, with a
+  matching confirmation key.
+- **One restoration gate (H1).** Every non-admitted disposition (transient,
+  incompatible, unavailable, not initialized at boot, changed version or
+  registry authority, re-initialization) needs 2 background confirmations, or
+  3 when it flaps, agreeing on identity, version, selected signed-registry
+  authority and reviewed contracts.
+- **One-shot boot exception (H1, review of a6e66a8).** Only the first
+  admission of the process's boot sequence is exempt, and only while the
+  process has never admitted, retired or failed. Any admission, failure,
+  retirement or non-boot check spends it; only a new process re-arms it, and
+  production constructs exactly one runtime per process. A re-initialization
+  (application rebuild, `configure`, collector restart) restores through the
+  full gate.
+- **Superseded work is discarded (H1, review of 2ad04a3).** Every
+  verification records the runtime generation, configuration owner and
+  boot-exemption availability when it starts. Publication re-checks them
+  under the lock that admits, issues leases and restores the catalog, and
+  each resume point re-checks generation and owner. Superseded work is
+  logged at INFO with a bounded reason and counts as nothing. `configure`
+  stops the previous lifecycle watcher, and a superseded supervisor stops.
+- **Changed keys reset the streak (H2, review of a6e66a8).** Any failure or
+  connection move, and any observation, background **or on demand**, of a
+  changed identity, version, signed-registry authority or reviewed contract
+  set, restarts the count. On-demand checks may reset it but never add to it.
+- **Bounded logs and health.** Log and health content is closed-set reasons
+  and details, timestamps and counts. There is no exception text, URL or token.
 
 Preserve the following:
 - stable v1.1.2;
+- persisted formats;
 - every tool descriptor and input schema (90 tools, 91 with the optional YAML
   reader admitted, as in beta.27);
-- the Beta 33 retained-effect proof, the garage inverse and the retry-transfer
-  paths, except that none applies where an unlock or disarm effect is or may
-  be present;
 - probe fingerprints, Core capability profiles, owner-signed Core registry
   entries and the signed ha-mcp registry;
 - the HOLD and the support window;
-- workflows and dependencies.
+- workflows;
+- every dependency and both hashed locks (unchanged from beta.27).
+
+The health `recovery` object and the five new counters are the only
+public-surface change. They are additive and authorized by the task.
+
+### Accepted restoration delay
+
+After any lifecycle-watcher socket move, including a Home Assistant Core
+restart or update, Core authority returns only after one confirmation
+interval, about 15–18 s once Core is reachable. Core-backed tools refuse
+during that wait. Josh accepted this on 2026-10-20, and also accepted, the
+same day, the same wait (about 15 s of background confirmations) after a Core
+version change, a moved signed-registry authority, an incompatible Core
+becoming compatible, and a Core not initialized at boot. The last one first
+waits one backoff delay (about 20 s). Acceptance treats a refusal in any of
+these windows as expected, not as a defect, provided the following hold:
+- health shows `recovery_state: confirming`;
+- authority returns without restarting Engineering.
 
 ### Offline proof
 
 No test reaches a live system.
 
-- `tests/test_hamcp213_safety_critical_acknowledgement.py` (16 tests): useful
-  success (exact acknowledgement dispatches once and verifies), plan approval
-  alone never dispatches, forged or drifted object sets, other principal,
-  replayed CSRF, expiry, stale state without a write, the 32-object bound, no
-  tool grant, one required checkbox per object, notification text and
-  version 3 hash stability.
-- `tests/test_hamcp213_pr001_fixtures.py` (8 tests): the anonymized PR001
-  plan gives op1 `none` (standard), op2 `changed` (elevated with the
-  acknowledgement), op3 `equivalent` (plan approval only) and op4 `none`; the
-  whole plan is approvable and dispatches only after the acknowledgement; the
-  seven design mutations each give `changed`.
-- `tests/test_hamcp213_physical_effect_regressions.py` (11 tests): one test per
-  E013 symptom, the unlock floor, the unresolved target, and the abort-point,
-  mode, run-occupancy and reference-only rules.
-- `tests/test_hamcp213_review_corrections.py` (16 tests): every
-  independent-review reproduction through both the configuration service and
-  the F3 runtime. H1: templated, variable-driven, area, device, floor and
-  label targets and templated service names are `unresolved`. H2: reference
-  steps before an effect compared in full. H3: unlock and disarm always
-  require the acknowledgement, and no shortcut applies to them. Each needs
-  the acknowledgement, plan approval alone writes nothing, and the exact
-  acknowledgement dispatches once.
-  Controls keep plan approval only. The PR001 verdicts are unchanged, and
-  comparisons are deterministic.
-- `tests/test_hamcp213_called_script_effects.py` (18 tests): protected
-  effects reached through called scripts, through both the configuration
-  service and the F3 runtime. A condition, trigger, mode, wait, branch or
-  pre-effect reference change before a garage-closing script call is
-  `changed`, as is an added or removed call; the `script.turn_on` and
-  `homeassistant.turn_on` entity forms resolve through the registry. A
-  templated or variable script name, a selector target, an unknown,
-  unreadable or blueprint-backed script, a non-script registry row, a cycle
-  are `unresolved`; a chain deeper than 8 is `prohibited` with no write. A script calling a script that
-  unlocks keeps the OD-6(b) floor, even when the call is `equivalent`. An
-  unchanged call stays `equivalent` with plan approval only; a non-protected
-  callee and `script.reload` are `none`. The PR001 verdicts are unchanged, and the
-  snapshot is bound into the plan hash and the policy subject.
-- `tests/test_hamcp213_structural_inversion.py` (32 tests): the
-  ignorable-differences table matches the design table, and the comparison
-  ignores only those keys; an `enabled` flag on a step, option or branch and
-  an unknown key on an effect path are `changed`. A change past the review
-  bounds, or with more than 32 objects to acknowledge, is `prohibited` on the
-  service path, in F3 and on the legacy route, keeping the unlock floor. A
-  called script edited or unreadable after plan creation refuses as
-  `stale_target_state` (`stale_called_script`) before approval consumption
-  and before the write, with no write, through both the configuration
-  service and the F3 runtime.
-- `tests/test_hamcp213_in_plan_callee.py` (19 tests): a called script the
-  same plan changes, through the configuration service and the F3 runtime.
-  The reviewer reproduction (guard removal first, callee turned into an
-  unlock after approval) refuses before the caller write, as does drift
-  before or after the callee's own write and a callee reverted to its
-  pre-plan body after that write; F3 resume and recovery refuse it before
-  and between children. An unchanged in-plan callee applies in both orders.
-  A plan turning the callee into an unlock while removing the caller's
-  guard requires the acknowledgement on the caller, in both orders, and
-  applies once acknowledged.
-- `tests/test_hamcp213_quarantine_restore.py` (9 tests): f2-v3 records
-  quarantined exactly as beta.27 does are restored on re-upgrade,
-  byte-identical, listed, and an approved one still applies; restoration is
-  idempotent, completes an interrupted restoration, never overwrites a
-  record, and keeps truncated, non-canonical, misnamed, secret-bearing,
-  wrong-namespace, symbolic-link and ambiguous records quarantined and
-  reported in storage health. It runs before cleanup and recovery.
-- `tests/test_hamcp213_f2_v2_rollback_confinement.py` (8 tests): only F3
-  rollback creation, and reverification of a consumed task, admit an `f2-v2`
-  plan; every other path refuses `f2-v2` plans without a state change or a
-  write.
-- `tests/test_configuration_reverification.py`: a task applied by the shipped
-  beta6 writer under `f2-v2` still reverifies after the upgrade.
-- Mutations, each killed: the reference-only table, the abort-point rule (both
-  directions), the mode rule, the run-occupancy rule, the object-set check,
-  the dispatch check, and three widenings of the `f2-v2` exception. The
-  review corrections add: a templated target or service treated as `none`,
-  unresolved targets ignored, reference steps compared by presence and order
-  or signature only, the unlock and disarm floor disabled or bypassed, and an
-  id-only comparison memo. The called-script comparison adds: script calls
-  ignored, and an unresolvable called script treated as `none`. Correction
-  batch 3 adds: `enabled` removed from the comparison, an unknown key
-  treated as ignorable, overflow mapped to a weaker class, and the callee
-  fingerprint recheck removed. Correction batch 4 adds: the in-plan callee
-  analyzed against its pre-plan body only, the dispatch check skipping it,
-  expecting its pre-plan state after its write, and F3 checking every child
-  as if nothing were written; and for restoration: none on re-upgrade,
-  canonical bytes, content screen or namespace not verified, an existing
-  record overwritten, and unverifiable records not reported. The PR lists
-  counts and logs.
+- `tests/test_hamcp215_core_authority_recovery.py` (43 tests) covers:
+  - each transient (REST HTTP failure, connection loss, timeout and
+    authentication failure; lifecycle-watcher attach failure and timeout),
+    going from retirement through backoff and confirmations to automatic
+    restoration of the catalog and the index;
+  - a persistent failure backing off to the cap, logging and refusing;
+  - an incompatibility staying retired and being re-checked without backoff;
+  - flapping escalating and never toggling between confirmations;
+  - calls being refused during the outage, with zero dispatch, and succeeding
+    afterwards;
+  - log levels, reasons and health fields;
+  - the independent review's reproductions, through the production collector
+    and lifecycle watcher: an incompatible contract, and an unreviewed version,
+    restored by neither one on-demand nor one periodic verification;
+  - a matrix of every non-admitted disposition × {background, on-demand,
+    mixed} with no restoration before the full background confirmations;
+  - `recovery_confirmations` counting only accepted confirmations (L1);
+  - the delta review's H1 reproductions: an application rebuild and a
+    `configure` re-initialization, after a retirement or a normal admission,
+    and repeated re-initializations, each needing the full background
+    confirmations; a failed boot ending the boot retries; production
+    constructing one runtime whose latch only `__init__` arms;
+  - the second delta review's H1 reproduction (review of 2ad04a3): a startup
+    verification suspended across two application rebuilds is discarded,
+    through the factory and through `configure`; superseded work suspended
+    at every await, for boot, background and on-demand triggers; a rebuild
+    at publication; repeated rebuilds; a concurrent boot attempt after the
+    exemption was spent; a cancelled or raising first background attempt
+    still spending it; superseded supervisors. Each case then needs the
+    current configuration's full background confirmations;
+  - the adopted R1 bounded-recovery assertion: each background recovery
+    attempt is scheduled within one second;
+  - the delta review's H2 reproductions: a different Core version, a changed
+    reviewed contract and a moved signed-registry authority seen on demand
+    each reset the streak, then need fresh background confirmations; a
+    same-key on-demand check neither resets nor adds; concurrent mixed checks
+    count only the background one;
+  - the live beta.24 health state (Part 1) recovering automatically, with the
+    production delegated catalog (the reviewed ha-mcp 8.5.0 capture, 29
+    Core-backed tools including the YAML reader) and the dependency index
+    attached. It reproduces every Part 1 counter except lease attempts and
+    failures (11/2), which come from live tool calls. It reproduces the
+    counters, not the live timing, and does not establish which ha-mcp
+    version ran live.
+- Two lifecycle tests in `tests/test_ha_core_2026_9_integration.py` now assert
+  the confirming state before republication. Two reconfiguration tests
+  (`test_reconfiguration_rebinds_async_primitives_to_the_serving_loop` there,
+  and `test_reconfiguration_cannot_reuse_old_generation_evidence` in
+  `tests/test_core_semantic_continuity.py`) now assert that the
+  re-initialized runtime is not admitted by `startup` and then restores
+  through the gate. Recovery-delay assertions in
+  `tests/test_rc3_postcore_regressions.py` follow the new backoff.
+- Existing tests and disposable-lane scripts that admitted Core on an
+  on-demand trigger, or expected one reconciliation to restore authority after
+  a version or signed-registry change, now admit with `startup` (as production
+  does) or restore through `tests/support/core_gate.py`
+  `reconcile_through_gate`. The full list is in the design document's
+  Validation section. No refusal, dispatch or authority assertion was
+  weakened. The script changes are evidenced only by the disposable CI lanes.
+- Mutations (`docs/evidence/hamcp215-mutations/`): 45 of 45 killed,
+  including all of these:
+  - no recovery loop (killed by the bounded-recovery assertion within about
+    a second; the runner still runs under a memory cap)
+  - fixed-interval retry
+  - restoration without confirmation, the recovery gate or the lifecycle fence
+  - no hysteresis or no flap escalation
+  - fixed or uncapped backoff
+  - each WARNING event (retirement, verification failure, attempt,
+    restoration, catalog change) removed
+  - health fields not recorded
+  - an on-demand verification counted as a confirmation; an incompatible
+    Core bypassing the gate; the boot window left open; a changed version
+    replacing authority without the gate; refused calls counted as
+    confirmations (L1)
+  - H1: re-initialization re-arming the boot exception; an admission, a
+    failed verification or a non-boot check not spending it; boot retries
+    continuing after it is spent; a re-initialization dropping the
+    withdrawal; the supervisor waiting a full interval after a re-init
+  - H1 superseded work: publication not re-checking generation and owner;
+    a boot-exemption claim not re-checked at publication; resume points not
+    checked; supervisor retirement keeping the generation; the old watcher
+    left running; a superseded supervisor continuing; a background attempt
+    never spending the exemption
+  - H2: an on-demand changed key ignored; the signed-registry authority left
+    out of the key; the key reset not logged; a failed (incomplete) probe
+    reported as a key change
 
 ## 2. Release CI and publication
 
@@ -171,28 +213,15 @@ handoff. Verify the following with the shipped verifiers:
 - the immutable version and commit images;
 - provenance and SBOM.
 
-Never invent future image identities. Retain the beta.27 artifacts and the
-known-good earlier artifacts for recovery.
+Never invent future image identities. Retain the beta.27 and beta.26
+artifacts and the known-good earlier artifacts for recovery.
 
-Rollback is reinstalling the beta.27 artifact. beta.27 rejects policy
-version `f2-v3`, so it quarantines every plan record beta.28 wrote, terminal
-ones included. **beta.27 may delete those records:** if its quarantine move
-fails, its released code removes the record instead, and this release cannot
-change that. The backup is the protection. Roll back only in this order:
-1. Take a fresh Home Assistant backup that includes the Engineering add-on
-   and its data.
-2. Finish or reject every pending plan.
-3. Roll back to beta.27.
-
-On re-upgrade, startup restores the quarantined records it can verify to
-normal repository access, without replacing any record; anything it cannot
-verify stays quarantined and is listed in storage health
-(`quarantine_restoration`). A deleted record can only come back from the
-step-1 backup. Execution-task records stay readable.
+No stored format changes. Rollback is reinstalling the beta.27 artifact.
 
 ## 3. Installed Engineering
 
-Steps 1 to 4 are read-only. Step 5 needs its own owner authorization.
+Steps 1 to 4 are read-only. Step 5 is an optional, owner-run controlled
+transient.
 
 1. **Installed-image binding.** Separately authorize installation of the
    published Engineering artifact. Bind the running add-on to:
@@ -203,21 +232,51 @@ Steps 1 to 4 are read-only. Step 5 needs its own owner authorization.
    - 90 tools, or 91 with the optional YAML reader admitted;
    - every descriptor unchanged from beta.27;
    - Core signed selection, storage and audit health, and zero fallback.
-3. **Planning only.** Create, without approving, a wording-only update plan
-   for an automation that closes a garage cover. Confirm `elevated_admin`,
-   required actions `["plan_approval"]` and the comparison verdict
-   `equivalent`. Create, without approving, an update that adds a step ahead
-   of the close. Confirm `["plan_approval", "safety_critical_acknowledgement"]`.
-   Create, without approving, an update that adds a condition ahead of a call
-   to a garage-closing script. Confirm the same required actions and a row
-   for the garage cover. Planning does not write or trigger anything.
-4. **Review page.** Open the Ingress panel for the second plan. Confirm one
-   required checkbox per listed object, and that submitting plan approval
-   alone leaves the plan at `pending_safety_critical_acknowledgement`. Reject
-   both plans afterwards.
-5. **Authorized success (owner-authorized only).** If Josh authorizes a real
-   change, apply one acknowledged plan and confirm readback verification and
-   the `safety_critical_acknowledgement_granted` audit event.
+3. **Health recovery fields (live).** Read `get_server_health` and record
+   `home_assistant_core_authority`:
+   - `initialized: true`;
+   - `recovery.recovery_state` `stable`, or `restored` if a recovery has
+     occurred since start;
+   - `recovery` contains exactly these keys:
+     - `recovery_state`, `consecutive_failures`
+     - `last_failure_reason`, `last_failure_detail`, `last_failure_at`
+     - `retired_at`, `last_attempt_at`, `next_recovery_attempt_at`,
+       `retry_delay_seconds`
+     - `confirmations`, `confirmations_required`
+     - `last_restored_at`
+   - timestamps that are ISO-8601 UTC or null;
+   - `consecutive_failures: 0` when stable;
+   - the counters `recovery_attempts`, `recovery_confirmations`,
+     `recovery_on_demand_refusals`, `authority_restorations` and
+     `stale_work_discards` present.
+4. **Logs.** Confirm that the add-on log at startup contains no
+   `core_authority_*` WARNING events unless a failure occurred. If a failure
+   did occur, confirm that each WARNING event names a bounded reason and an
+   `at` timestamp and contains no token or exception text.
+5. **Optional controlled transient (owner-run).** This step is a live Home
+   Assistant action. Only Josh may authorize and perform it. It is not part of
+   source acceptance.
+   1. Restart Home Assistant Core. Do not restart Engineering.
+   2. While Core is down, `get_server_health` should show:
+      - `initialized: false`;
+      - `recovery_state` `backing_off` or `retrying`;
+      - a bounded `last_failure_reason` and `last_failure_detail`;
+      - `retired_at` set;
+      - `next_recovery_attempt_at` within the backoff schedule (20, 40, 80,
+        160, 240 s, ±20%).
+   3. Core-backed tools should be refused, and the log should contain
+      `core_authority_verification_failed`, `core_authority_retired` and
+      `core_catalog_tools_withdrawn`.
+   4. Once Core is back, health should pass through `confirming` with
+      `confirmations_required: 2`, then reach `restored` with
+      `last_restored_at` set. Expect the accepted wait of about 15–18 s
+      between Core being reachable and restoration. The log should contain
+      `core_authority_recovery_attempt`,
+      `core_authority_recovery_confirming`, `core_authority_restored` and
+      `core_catalog_tools_restored`.
+   5. All of this must happen without restarting Engineering.
+   6. Repeat step 2 (catalog) and one read-only Core-backed call; both should
+      succeed.
 
 No push, CI trigger, signing, publication, installation or live action is
 authorized by source completion.

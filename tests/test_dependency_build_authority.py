@@ -28,6 +28,7 @@ from ha_mcp_engineering.errors import (
     HomeAssistantUnavailableError,
 )
 from ha_mcp_engineering.governance.helper_dependency import HelperDependencyRiskService
+from ha_mcp_engineering.ha_core_readmission.runtime import CORE_RECOVERY_FLAP_CONFIRMATIONS
 from ha_mcp_engineering.request_context import current_telemetry
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway
 from ha_mcp_engineering.tools import analysis
@@ -226,8 +227,17 @@ class DependencyBuildAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(callback())
         self.assertEqual(before, {name: spy.call_count for name, spy in self.spies.items()})
 
+    async def restore_core_authority(self):
+        # HAMCP-215: after a retirement, publication requires the bounded
+        # recovery confirmations from a supervisor-paced trigger.
+        for _ in range(CORE_RECOVERY_FLAP_CONFIRMATIONS):
+            await self.core.reconcile_once("identity_or_connection_change")
+            if self.core.initialized:
+                return
+        self.fail("Core authority did not recover within the bounded confirmations")
+
     async def unrelated_authority(self):
-        await self.core.reconcile_once("synthetic_unrelated_read")
+        await self.restore_core_authority()
         authority = self.core.acquire(("core.basic_rest_read",))
         self.assertIsNotNone(authority)
         commits = self.core.consume(authority)
@@ -517,7 +527,7 @@ class DependencyBuildAuthorityTests(unittest.IsolatedAsyncioTestCase):
         telemetry, callback = self.contexts[-1]
         self.core.request_reconciliation(connection_changed=True)
         self.assertFalse(callback())
-        await self.core.reconcile_once("synthetic_core_recovered")
+        await self.restore_core_authority()
         before = self.spies["acquire"].call_count
         self.assertFalse(callback())
         self.assertFalse(telemetry.authorize_core_dispatch())

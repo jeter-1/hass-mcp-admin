@@ -593,7 +593,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(await registry.refresh())
                 runtime = CoreRuntime()
                 runtime.configure(SimpleNamespace(), source=ProjectedCoreSource(registry, version), release_registry=registry)
-                await runtime.reconcile_once('synthetic-dashboard')
+                await runtime.reconcile_once('startup')
                 lease = runtime.acquire(c.REQUIREMENTS)
                 self.assertEqual(lease is not None, omitted is None)
                 commits = runtime.consume(lease) if lease else None

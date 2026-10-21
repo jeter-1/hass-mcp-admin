@@ -289,6 +289,34 @@ class CoreReadmissionCoordinator:
             self.begin_reconciliation(observation, authority)
         )
 
+    def preview_admitted(
+        self,
+        observation: CoreObservation,
+        authority: tuple[CoreAuthoritySelection, ...],
+    ) -> tuple[tuple[str, str], ...]:
+        """Return the admitted ``(capability, contract)`` pairs; never publishes.
+
+        HAMCP-215 recovery confirmation uses the same pure evaluation that
+        ``complete_reconciliation`` applies, without allocating, retiring, or
+        publishing a generation.
+        """
+
+        if not isinstance(observation, CoreObservation):
+            raise CoreReadmissionError("reconciliation_observation_invalid")
+        if (
+            not isinstance(authority, tuple)
+            or len(authority) > MAX_AUTHORITY_SELECTIONS
+            or any(not isinstance(item, CoreAuthoritySelection) for item in authority)
+        ):
+            raise CoreReadmissionError("reconciliation_authority_invalid")
+        with self._lock:
+            decisions = self._evaluate(observation, authority)
+        return tuple(sorted(
+            (item.capability_id, item.contract_fingerprint)
+            for item in decisions
+            if item.disposition.admitted
+        ))
+
     def retire_current_generation(self) -> int | None:
         """Retire current authority before replacement evidence is collected."""
 

@@ -179,7 +179,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
             assert await registry.refresh()
             runtime=CoreRuntime();runtimes.append(runtime)
             runtime.configure(configured,release_registry=registry)
-            await runtime.reconcile_once('native_baseline_disposable')
+            await runtime.reconcile_once('startup')
             assert runtime.health_snapshot()['compatible_count']==len(references)
             return runtime
         def service(runtime, options=configured):

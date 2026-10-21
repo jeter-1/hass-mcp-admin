@@ -778,7 +778,7 @@ class ToolRefusalTests(unittest.TestCase):
             rate_limit_burst=1000,
         )
         gateway = create_application(settings, core_snapshot_source=SyntheticCoreSource())
-        asyncio.run(CORE_READMISSION.reconcile_once("synthetic-application-startup"))
+        asyncio.run(CORE_READMISSION.reconcile_once("startup"))
         asyncio.run(
             GOVERNANCE.require().f3_runtime.recover_once("synthetic-application-startup")
         )

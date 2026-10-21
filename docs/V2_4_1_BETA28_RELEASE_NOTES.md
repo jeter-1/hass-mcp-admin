@@ -1,206 +1,162 @@
 # Engineering 2.4.1-beta.28 release notes
 
-Engineering 2.4.1-beta.28 makes exact automation and script changes that touch
-a protected physical object actionable with an owner acknowledgement instead
-of refusing them (HAMCP-213 PR 1, policy `f2-v3`). It compares the before and
-after physical effects of each operation, asks for plan approval only when
-they are equivalent, and adds a per-object safety-critical acknowledgement
-when they changed or cannot be determined. It applies Josh's owner decisions
-OD-1 to OD-10, recorded in
-[ADR-022](architecture/ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md#owner-decision-record-hamcp-213-safety-critical-acknowledgement).
+Engineering 2.4.1-beta.28 is a break-fix for Home Assistant Core authority
+(HAMCP-215). It fixes two defects:
 
-Design: [`HAMCP_213_SAFETY_CRITICAL_APPROVAL_DESIGN.md`](HAMCP_213_SAFETY_CRITICAL_APPROVAL_DESIGN.md).
+- Core authority now **recovers automatically** after a transient verification
+  failure.
+- Every failure, retirement, catalog withdrawal, recovery attempt and
+  restoration is now **logged and visible in health**.
+
+Fail-closed behavior during uncertainty is unchanged.
+
+Design and the Part 1 root cause (every retirement path, with reproductions):
+[`HAMCP_215_CORE_AUTHORITY_RECOVERY_DESIGN.md`](HAMCP_215_CORE_AUTHORITY_RECOVERY_DESIGN.md).
 Acceptance: [`V2_4_1_BETA28_ACCEPTANCE.md`](V2_4_1_BETA28_ACCEPTANCE.md).
-Contract: [External approval](EXTERNAL_APPROVAL.md#safety-critical-acknowledgement).
 
 beta.28 follows 2.4.1-beta.27 (HAMCP-132, recorder settings and unregistered
-entities), which follows 2.4.1-beta.26 (HAMCP-217, certifi 2026.10.19) and
-2.4.1-beta.25 (HAMCP-212, loaded script configuration). It includes
-everything in them. It adds no dependency change: both hashed locks are
-beta.27's.
+entities) and 2.4.1-beta.26 (HAMCP-217, `certifi` 2026.10.19), and includes
+everything in them. It changes no dependency. No tool, input
+schema, description, signed registry, HOLD, support window, workflow or
+stable-v1 change is included. The tool catalog is unchanged from beta.27: 90 tools, or
+91 with the optional YAML reader admitted.
 
-No tool, input schema, tool description, signed registry, HOLD, support
-window, workflow or stable-v1 change is included. The tool catalog is
-unchanged from beta.27 (90 tools, 91 with the optional YAML reader). Plan and
-approval outputs gain additive values, listed under Compatibility.
+**What happened (beta.24 live, 2026-10-20).** One verification failed out of 27
+attempts. Core authority was retired, 29 Core-backed tools were withdrawn
+(the YAML reader withheld `core_unavailable`), and the dependency index was
+invalidated. Nothing was written to the add-on log.
 
-**What it fixes.** Under `f2-v2`, any update that kept or reworded a step near
-a lock, alarm panel, valve, water control or garage cover was `prohibited`,
-including a wording-only notification change (audit symptom E013). A
-logbook mention of a garage cover counted as a target, a notification routed
-by service name was reported as an omitted target, and plans outside the
-retry shape carried a retry warning.
+- **Why it retired.** A single whole-snapshot transient retires the
+  generation. That can be a REST `/config` or WebSocket timeout, a connection
+  loss, an authentication failure, or a lifecycle-watcher socket move. This is
+  the designed fail-closed behavior, and it is kept.
+- **Why it did not visibly recover.** The only retry was a fixed 300 s
+  `failure_retry`, with no backoff and no visibility. The counters show the
+  failure was the last of 27 attempts. That it came shortly before the 17:49Z
+  snapshot, so that authority had been withdrawn for minutes rather than about
+  2 hours, is an **inference** from the counters, not an observation: no
+  failure timestamp was recorded, and the reprobe counter also counts
+  event-driven wakes. The pending 300 s retry gave no sign (design Part 1,
+  finding 3).
+- **Why it was silent.** The Core-authority code had no logger calls. Outcomes
+  went only to the audit file, and the transport cause was discarded.
 
 ## Changes
 
-1. **Physical-effect comparison** (`governance/physical_effects.py`, model
-   `physical-effect-comparison-v1`). Each automation or script create or
-   update is compared before and after, per protected object, with verdict
-   `none`, `equivalent`, `changed` or `unresolved`.
-   - Reference-only services (the closed set `logbook.log`,
-     `system_log.write`, `notify.*` and `persistent_notification.*`) never
-     name an effect.
-   - Run mode is compared. Waits and delays after the last effect keep a run
-     occupied and count.
-   - Conservative OD-10: a reference step marked `continue_on_error` is
-     ignored only when no effect follows it. Added ahead of an effect, it is
-     `changed`, because it can still abort the run.
-   - An unknown service on a protected object counts as an effect. Unknown
-     structure is `unresolved`.
-   - An effect-capable call (`cover`, `lock`, `alarm_control_panel`,
-     `valve`, `siren`, `switch`, `water_heater`, `homeassistant.turn_on`,
-     `turn_off` or `toggle`, an unknown service, or a device action of those
-     domains) whose target is templated, variable-driven, or an area, device,
-     floor or label selector is `unresolved`. So is any call whose service
-     name is templated (`service_template` included). Registry selectors are
-     not resolved.
-   - A reference-only step that can run before a protected effect is
-     compared in full: nested data, target, `continue_on_error`, `enabled`
-     and position relative to conditions, waits and branches. Any difference,
-     wording included, is `changed`. Wording after the last effect stays
-     `equivalent`.
-   - The comparison is an allowlist. Only the keys in the design's
-     ignorable-differences table (D2 item 8) are ignored, such as an
-     `alias` on a step, option or branch. Anything else that differs on an effect
-     path is `changed`, including an `enabled` flag (on a step, a `choose`
-     option or a `parallel` branch) and a key Engineering does not know.
-   - Review bounds (nesting depth 24, 4096 steps, called scripts 8 deep or
-     16 distinct, 256 callee analyses) are a floor, not a verdict. A change
-     past them is `prohibited` on every route, reason
-     `safety_critical_review_bounds_exceeded`, with the unlock or disarm
-     floor computed first.
-2. **Policy mapping** (`f2-v3`):
+1. **Automatic recovery with bounded backoff.** A failed verification is
+   retried after 20 s, then 40, 80, 160, and 240 s thereafter. Each delay has
+   ±20% jitter and never exceeds the cap. It replaces the fixed 300 s retry.
+2. **Restore only after complete re-verification, with hysteresis.**
+   - **One restoration gate.** Whenever no Core authority is admitted, for
+     any reason, authority returns only after **2 consecutive complete
+     background verifications** by the supervisor with the same Core identity,
+     version, selected signed-registry authority and admitted reviewed
+     contracts. This covers a transient retirement, an incompatible or
+     unavailable Core, a Core not initialized at boot, a changed Core version
+     and a moved signed-registry authority. A complete verification is a
+     two-snapshot stable observation with the authenticated lifecycle watcher
+     attached, evaluated against the reviewed contract.
+   - **One-shot boot exception.** The only exemption is the first admission
+     of the process's boot sequence, and it is a one-shot latch: it applies
+     only while this process has never admitted Core authority, never
+     retired one and never failed a verification. Any admission, failure,
+     retirement or non-boot check spends it, and nothing but a new process
+     re-arms it. A re-initialization of the running application (application
+     rebuild, runtime reconfiguration, collector restart) therefore restores
+     through the full gate. A failed first startup check ends the boot
+     sequence's retries; the supervisor then recovers on backoff pacing
+     (about 20 s, then the confirmations).
+   - **Superseded work is discarded.** A verification still in flight when
+     the application is rebuilt or re-initialized, or when its supervisor is
+     retired, can never publish: each verification records its runtime
+     generation, configuration and boot-exemption availability when it
+     starts, and admission re-checks them atomically. Superseded work is
+     logged at INFO (`core_authority_stale_work_discarded`) and counts as
+     nothing. A re-initialization also stops the previous lifecycle watcher,
+     and a superseded supervisor stops at its next wake
+     (`core_authority_supervisor_retired`, INFO).
+   - **Spacing.** The verifications are about 15 s apart. The count restarts
+     on any failure or connection move, and on **any** observation, background
+     or on demand, of a different Core identity, version, signed-registry
+     authority or reviewed contract set.
+   - **Flapping.** A retirement within 10 minutes of a restoration needs
+     **3** verifications, at doubled spacing.
+   - **On-demand verification.** A verification triggered on demand (mutation
+     pre-dispatch or verification, configuration reverification, the fan
+     authority, any tool or health caller) never confirms or restores, from any
+     state. It is refused without publishing and counted in
+     `recovery_on_demand_refusals`. It can **reset** the confirmation count
+     (when it observes a changed key, as above) but never **add** to it.
+3. **Incompatibility stays retired.** A complete observation that no reviewed
+   contract admits stays withdrawn (`recovery_state: incompatible`). It is
+   re-checked every reconciliation interval (300 s) without backoff. When it
+   becomes compatible, it passes the same gate.
+4. **WARNING logs.** The `core_authority` logger emits one WARNING event for
+   each of these:
+   - a verification failure, with a bounded reason and transport detail such
+     as `core_probe_timeout` or `core_lifecycle_monitor_attach_failed`
+   - a retirement
+   - a partial capability withdrawal
+   - a catalog withdrawal and a catalog restoration (with tool counts)
+   - a recovery attempt
+   - a confirmation and a confirmation reset
+   - a restoration (with the outage duration)
 
-   | Verdict | Policy | Required actions |
-   | --- | --- | --- |
-   | `none` | as before | as before |
-   | `equivalent` | `elevated_admin` | `plan_approval` |
-   | `changed` or `unresolved` | `elevated_admin`, risk delta `high` | `plan_approval`, `safety_critical_acknowledgement` |
-   | any, with an incomplete execution contract | `prohibited` | none |
+   Each scheduled retry, and each refused on-demand verification, is logged
+   at INFO with its time. Every event carries
+   an ISO-8601 UTC `at`. No exception text, URL or token is logged.
+5. **Health recovery fields (additive).** `get_server_health` →
+   `home_assistant_core_authority.recovery` reports:
+   - `recovery_state`: one of `initializing`, `stable`, `retrying`,
+     `backing_off`, `confirming`, `restored`, `incompatible`
+   - `consecutive_failures`
+   - `last_failure_reason`, `last_failure_detail`, `last_failure_at`
+   - `retired_at`, `last_attempt_at`, `next_recovery_attempt_at`,
+     `retry_delay_seconds`
+   - `confirmations`, `confirmations_required`
+   - `last_restored_at`
 
-   An unlock or disarm effect always requires the acknowledgement (OD-6(b),
-   which supersedes part of ADR-012). If the comparison finds no protected
-   effect while the risk classifier does, the plan is `prohibited`. The Beta 33
-   retained-effect proof, the garage inverse and the retry-transfer paths are
-   unchanged and are evaluated first, except where an unlock or disarm effect
-   is or may be present: none of them applies there. On the legacy
-   contract-v1 route, such an unlock or disarm change is `prohibited`. Script updates join automation updates
-   as exact writes.
-3. **Safety-critical acknowledgement** (Ingress panel only, action authority
-   version 4). After plan approval, the panel lists each protected object with
-   its verdict and before/after effects, each with a required checkbox. The
-   submitted object set and comparison hash must match the recomputed values
-   exactly, or nothing is recorded (`safety_critical_acknowledgement_mismatch`).
-   The same administrator, single-use CSRF, expiry and stale-page rules apply.
-   Dispatch rechecks the acknowledgement independently of the bundle state
-   (`safety_critical_acknowledgement_required`), so plan approval alone never
-   dispatches such a plan. No MCP tool can grant it. The F3 operational adapter
-   refuses a bundle bound to it. A plan with more than 32 objects to
-   acknowledge is `prohibited`
-   (`too_many_protected_objects_to_review_split_the_change`).
-4. **Risk precision (E013).** A logbook or system-log mention is not a target.
-   A notify call routed by service name has no omitted target. The retry
-   warning appears only for a real retry candidate. The recipient reason
-   appears only when the recipient set changes.
-5. **Disclosure rename (OD-4).** `principal_separation_status.reason` reports
-   `no_decision_recorded`, or `not_approvable` for a prohibited plan, instead of
-   `no_external_approver_exists`. Stored records are not rewritten.
-6. **Audit and errors.** New events `safety_critical_acknowledgement_requested`,
-   `_granted` and `_failed`. New stable error codes
-   `safety_critical_acknowledgement_required` and
-   `safety_critical_acknowledgement_mismatch`. The advisory push notification
-   names the acknowledgement step; it carries no authority.
+   Five new counters are added: `recovery_attempts`,
+   `recovery_confirmations` (accepted background confirmations only),
+   `recovery_on_demand_refusals`, `authority_restorations` and
+   `stale_work_discards` (superseded work discarded; diagnostic only).
+   Existing counters are unchanged.
+6. **Dependents resume.** Restoration publishes a new generation through the
+   unchanged path:
+   - the gateway restores every withheld delegated tool and the YAML reader
+   - the dependency index rebuilds against the new generation
+   - typed providers lease the new generation
+
+## Accepted behavior change (owner decision)
+
+Every lifecycle-socket movement now waits one confirmation interval (about
+15–18 s) before Core authority returns. This includes the reconnect after a
+Home Assistant Core update or restart. Previously the immediate reprobe
+restored authority at once. During that wait, Core-backed tools are withheld
+and fail closed, exactly as during any outage. This is the hysteresis the
+HAMCP-215 brief requires. **Josh accepted this delay on 2026-10-20.** After a
+Core restart or update, expect Core-backed tools to refuse for about 15–18 s
+after Core is reachable again, with health showing `recovery_state:
+confirming`, and then to resume without restarting Engineering.
+
+The same gate applies to a changed Core version, a moved signed-registry
+authority for the running Core, an incompatible Core that becomes compatible,
+and a Core not initialized at boot. Each needs the same background
+confirmations (about 15 s), and tools refuse until they complete. **Josh
+accepted these additional cases on 2026-10-20 as well.** A Core not
+initialized at boot first waits one backoff delay (about 20 s), because a
+failed startup check spends the one-shot boot exception. A re-initialization
+of the running application also passes the gate.
 
 ## Compatibility and rollback
 
-- **More acknowledgements by design.** A cover, switch, siren, water heater,
-  generic `homeassistant` or unknown-service call with an area, device,
-  floor, label or templated target now needs the acknowledgement, as does a
-  wording change to a notification that runs before a protected effect.
-  `light`, `fan` and `climate` calls with such targets, and unknown
-  services with no target, are not flagged (residual).
-- **Called scripts.** A call to a script that contains a protected effect,
-  directly or through further scripts, is compared as that effect, reached at
-  the calling step. A guard, trigger, mode or wait change before
-  `script.close_…` therefore needs the acknowledgement. A call to a script
-  that cannot be resolved (templated name, unknown, unreadable or
-  blueprint-backed, cycle, more than 8 levels) is `unresolved` and needs it
-  too. An unchanged call stays `equivalent`. Each called script's
-  fingerprint is bound to the plan. It is re-read before approval is
-  consumed and again before each write. A callee edited outside the plan, or
-  unreadable, refuses as `stale_target_state` (reason `stale_called_script`)
-  with no write, on the service path and in F3; replan.
-  `automation.*` and `scene.*` calls are not followed.
-- **A called script the same plan changes.** The caller is compared against
-  both the script's current body and the body the plan proposes (the
-  post-plan world, and the state a non-atomic plan can stop in). A plan that
-  turns a called script into an unlock while removing a caller's guard needs
-  the acknowledgement on the caller, in either operation order. Before each
-  caller write (service, F3 apply, resume and recovery) the live script is
-  read and must match its exact expected state at that point in the plan's
-  order: its pre-plan state while the plan has not written it, the plan's
-  proposed state once it has. Anything else refuses the caller as
-  `stale_target_state` (reason `stale_called_script`) with no write.
-
-- **Policy snapshots.** `f2-v1` and `f2-v2` stay readable. A pending `f2-v2`
-  plan fails its policy snapshot under `f2-v3` and must be replanned; terminal
-  records are not rewritten. Two read-only exceptions admit an exact `f2-v2`
-  snapshot. F3 rollback creation admits an applied source as evidence; the
-  inverse is evaluated under `f2-v3`. `reverify_configuration_task` admits
-  the consumed plan of the task it reverifies, as beta.27 does; it reads
-  and records receipts and never dispatches.
-- **Upgrade with work in flight.** A task still executing at upgrade under an
-  `f2-v2` plan cannot regain authority: startup reconciliation moves it to
-  manual review (the existing fail-closed path). Let in-flight tasks finish
-  before upgrading.
-- **Stored records (additive).** Plans may carry the new action kind in
-  `required_acknowledgements`, and an acknowledgement record with
-  `kind: safety_critical_acknowledgement`, `authority_version: 4`,
-  `safety_critical_projection_hash` and `acknowledged_objects`. It uses the
-  historical `elevated_risk_acknowledgement` slot. Authority version 3
-  bundles stay valid for plans that do not need it. Task approval evidence
-  records the acknowledged set as a digest and a count.
-  A configuration operation that calls a script also stores
-  `called_scripts`, the called-script snapshot bound into the plan hash. The
-  key is absent otherwise, so other records are byte-identical.
-- **Public output (additive).** The new `ApprovalActionKind` value, reason
-  codes, the `safety_critical_acknowledgement` review section, the OD-4 values,
-  the audit events and the two error codes.
-- **Sanitizer.** The acknowledgement review is a seventh allow-listed
-  `rescan_stored_plan` call site (governance family), like the plan review
-  summary.
-- **Health.** The elevated-acknowledgement counters do not count safety-critical
-  acknowledgements; their keys are unchanged. Plan storage health adds
-  `quarantine_restoration` (see Rollback).
-- **Rollback** is reinstalling the beta.27 artifact. beta.27 cannot read any
-  plan record that beta.28 writes. Every new plan carries policy version
-  `f2-v3`, and beta.27 accepts only `f2-v1` and `f2-v2`. At load it moves
-  each such record, pending or terminal (applied included), byte for byte to
-  the plan store's `quarantine/<plan_id>.<seconds>.corrupt` and counts it as
-  corrupt. A record that names the new action kind, or carries
-  `called_scripts`, fails on that too. Execution-task records stay readable.
-  **beta.27 may delete these records:** if its quarantine move fails (for
-  example, the quarantine directory is not writable), its released code
-  removes the record instead. This PR cannot change beta.27; the backup in
-  step 1 is the protection. Roll back only in this order:
-  1. Take a fresh Home Assistant backup that includes the Engineering add-on
-     and its data (a full backup does).
-  2. Finish or reject every pending plan: apply it, or reject it.
-  3. Roll back to beta.27.
-
-  **On re-upgrade** to beta.28, startup restores each quarantined record to
-  normal repository access when its integrity is verified (it parses, its
-  bytes are exactly this version's canonical record, its identifier and
-  namespace match, and it passes the stored-plan content screen). A
-  restoration never replaces an existing record, is idempotent and is
-  logged. A record that cannot be verified, or that conflicts, stays
-  quarantined and is listed with its reason in storage health
-  (`quarantine_restoration`: `restored`, `retained`, `retained_records`). A
-  record beta.27 deleted cannot be restored from the store; restore the step-1
-  backup instead. Executed offline: the reviewer's 11 configuration-plan
-  stores (12 records) quarantined by the exact beta.27 code are all restored
-  byte-identical; by source, every plan creation path stamps `f2-v3`.
-- **Boundaries.** No new tool, provider, upstream dispatch, direct-HA fallback
-  or forwarding. The only new write reachability is the existing governed
-  configuration apply for exact plans that were `prohibited` before and now
-  carry the owner's acknowledgement.
+- **Stored formats.** No stored format changes. Recovery state is in memory
+  only and starts at `initializing` on each process start.
+- **Health.** The `recovery` object and the five counters are additive.
+- **Audit.** Audit events are unchanged in shape. Logging is additive.
+- **Rollback** is reinstalling the beta.27 artifact. That returns to the fixed
+  300 s retry and silent retirement, and keeps `certifi` 2026.10.19. Do not
+  roll back past beta.26: beta.25 carries the vulnerable `certifi` 2026.7.22.
+  No state needs migration.
+- **Boundaries.** No write, service call, reload, restart or fallback becomes
+  reachable. No route or lease is admitted while recovery is active.
