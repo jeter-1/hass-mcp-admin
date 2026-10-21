@@ -107,11 +107,16 @@ from .configuration_eligibility import (
     script_baseline,
 )
 from .physical_effects import (
+    CALLED_SCRIPT_MODEL,
     MAX_ACKNOWLEDGED_OBJECTS,
+    MAX_CALL_DEPTH,
+    MAX_CALLED_SCRIPTS,
     acknowledgement_object_token,
+    called_script_references,
     compare_operation,
     compare_physical_effects,
     plan_acknowledgement_binding,
+    script_storage_key,
 )
 from . import configuration_rollback_eligibility as inverse_eligibility
 from .policy import (
@@ -1010,6 +1015,10 @@ class ChangeGovernanceService:
                 if operation.semantic_projection_hash is not None:
                     immutable_operation["semantic_projection_hash"] = (
                         operation.semantic_projection_hash
+                    )
+                if operation.called_scripts is not None:
+                    immutable_operation["called_scripts_hash"] = stable_hash(
+                        operation.called_scripts
                     )
                 immutable_operations.append(immutable_operation)
             immutable = {
@@ -3621,6 +3630,7 @@ class ChangeGovernanceService:
         current: dict[str, Any] | None = None,
         normalized_current: dict[str, Any] | None = None,
         normalized_proposed: dict[str, Any] | None = None,
+        called_scripts: dict[str, Any] | None = None,
     ) -> ChangeRiskAssessment:
         if resource_type == "helper":
             return ChangeRiskAssessment(
@@ -3674,7 +3684,11 @@ class ChangeGovernanceService:
             else ChangeOperation.UPDATE_AUTOMATION
         )
         comparison = compare_physical_effects(
-            resource_type, action, normalized_current, normalized_proposed
+            resource_type,
+            action,
+            normalized_current,
+            normalized_proposed,
+            called_scripts,
         )
         risk = classify_risk(
             legacy_operation,
@@ -3707,6 +3721,165 @@ class ChangeGovernanceService:
                 for reason in risk.reasons
             ]
         return risk
+
+    async def _capture_called_scripts(
+        self, operations: list[ConfigurationOperation]
+    ) -> None:
+        """Capture the scripts each automation or script operation calls.
+
+        HAMCP-213: a call to a script counts as that script's protected
+        effects. The called scripts are read through the same governed
+        configuration and entity-registry reads as the plan's own targets,
+        normalized, and stored on the operation so the comparison stays pure
+        and is bound by the plan hash. A script that this plan also changes
+        is summarized over its current and proposed configurations. A script
+        that cannot be read, is unknown, or carries prohibited data is
+        recorded as unresolved (its configuration is never persisted); the
+        comparison then requires the acknowledgement.
+        """
+
+        in_plan = {
+            operation.target_id: operation
+            for operation in operations
+            if operation.resource_type == "script"
+        }
+        scripts: dict[str, dict[str, Any]] = {}
+        entities: dict[str, Any] = {}
+
+        async def read_script(key: str) -> dict[str, Any]:
+            if key in scripts:
+                return scripts[key]
+            planned = in_plan.get(key)
+            if planned is not None:
+                configs = [
+                    config
+                    for config in (
+                        planned.normalized_current_config,
+                        planned.normalized_proposed_config,
+                    )
+                    if isinstance(config, dict)
+                ]
+                entry: dict[str, Any] = (
+                    {"configs": configs}
+                    if configs
+                    else {"unresolved": "called_script_unreadable"}
+                )
+            else:
+                try:
+                    current = await self._read_configuration_resource(
+                        "script", key
+                    )
+                    if current is None:
+                        entry = {"unresolved": "called_script_unknown"}
+                    elif (
+                        not isinstance(current, dict)
+                        or "use_blueprint" in current
+                        or persistence_safety_errors(
+                            current, self.sensitive_values
+                        )
+                    ):
+                        entry = {"unresolved": "called_script_unreadable"}
+                    else:
+                        normalized = normalize_resource_config("script", current)
+                        entry = (
+                            {"configs": [normalized]}
+                            if isinstance(normalized, dict)
+                            else {"unresolved": "called_script_unreadable"}
+                        )
+                except Exception:  # noqa: BLE001 - recorded as unresolved
+                    entry = {"unresolved": "called_script_unreadable"}
+            scripts[key] = entry
+            return entry
+
+        async def resolve_entity(entity_id: str) -> Any:
+            if entity_id in entities:
+                return entities[entity_id]
+            try:
+                entry = await self._read_configuration_resource(
+                    ENTITY_METADATA_RESOURCE_TYPE, entity_id
+                )
+                unique_id = entry.get("unique_id") if isinstance(entry, dict) else None
+                if entry is None:
+                    value: Any = {"unresolved": "called_script_unknown"}
+                elif (
+                    entry.get("platform") == "script"
+                    and script_storage_key(unique_id) is not None
+                ):
+                    value = unique_id
+                else:
+                    value = {"unresolved": "called_script_entity_unresolved"}
+            except Exception:  # noqa: BLE001 - recorded as unresolved
+                value = {"unresolved": "called_script_unreadable"}
+            entities[entity_id] = value
+            return value
+
+        for operation in operations:
+            if operation.resource_type not in {"automation", "script"} or (
+                operation.action not in {"create", "update"}
+            ):
+                continue
+            reached: dict[str, Any] = {}
+            reached_entities: dict[str, Any] = {}
+            frontier = [
+                (operation.resource_type, config)
+                for config in (
+                    operation.normalized_current_config,
+                    operation.normalized_proposed_config,
+                )
+                if isinstance(config, dict)
+            ]
+            for _depth in range(MAX_CALL_DEPTH):
+                next_frontier: list[tuple[str, Any]] = []
+                for resource_type, config in frontier:
+                    keys, script_entities = called_script_references(
+                        resource_type, config
+                    )
+                    for entity_id in script_entities:
+                        if entity_id in reached_entities:
+                            continue
+                        if len(reached_entities) >= MAX_CALLED_SCRIPTS:
+                            break
+                        value = await resolve_entity(entity_id)
+                        reached_entities[entity_id] = value
+                        if isinstance(value, str):
+                            keys = [*keys, value]
+                    for key in keys:
+                        if key in reached:
+                            continue
+                        if len(reached) >= MAX_CALLED_SCRIPTS:
+                            # Uncaptured scripts are unresolved in the comparison.
+                            break
+                        entry = await read_script(key)
+                        reached[key] = entry
+                        next_frontier.extend(
+                            ("script", config) for config in entry.get("configs", [])
+                        )
+                frontier = next_frontier
+                if not frontier:
+                    break
+            if not reached and not reached_entities:
+                continue
+            operation.called_scripts = deepcopy(
+                {
+                    "model": CALLED_SCRIPT_MODEL,
+                    "scripts": {key: reached[key] for key in sorted(reached)},
+                    "entities": {
+                        key: reached_entities[key]
+                        for key in sorted(reached_entities)
+                    },
+                }
+            )
+            operation.risk = self._configuration_risk(
+                operation.operation_id,
+                operation.resource_type,
+                operation.action,
+                operation.dry_run_results,
+                operation.proposed_config,
+                current=operation.current_config,
+                normalized_current=operation.normalized_current_config,
+                normalized_proposed=operation.normalized_proposed_config,
+                called_scripts=operation.called_scripts,
+            )
 
     @staticmethod
     def _script_retry_candidate(operations: list[ConfigurationOperation]) -> bool:
@@ -5423,6 +5596,7 @@ class ChangeGovernanceService:
             seen_operation_ids.add(operation_id)
             seen_targets.add(target_key)
 
+        await self._capture_called_scripts(prepared)
         # Prove the complete immutable composition before risk/policy projection.
         # Existing unmarked records are never retrofitted by this creation path.
         retry_proof = derive_proof(prepared)

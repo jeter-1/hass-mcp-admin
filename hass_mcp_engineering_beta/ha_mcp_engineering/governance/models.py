@@ -348,6 +348,10 @@ class ConfigurationOperation:
     dry_run_results: dict[str, Any] = field(default_factory=dict)
     semantic_projection: dict[str, Any] | None = None
     semantic_projection_hash: str | None = None
+    # HAMCP-213: scripts this automation or script calls, captured at plan
+    # creation for the pure protected-effect comparison; bound by the plan
+    # hash. ``None`` for every other resource and for older records.
+    called_scripts: dict[str, Any] | None = None
     execution_status: StepExecutionStatus = StepExecutionStatus.PENDING
     execution_receipt: dict[str, Any] | None = None
     snapshot: ChangeSnapshot | None = None
@@ -374,6 +378,7 @@ class ConfigurationOperation:
         data["verification"] = ChangeVerification(**data.get("verification", {}))
         data.setdefault("semantic_projection", None)
         data.setdefault("semantic_projection_hash", None)
+        data.setdefault("called_scripts", None)
         data.setdefault("execution_receipt", None)
         data.setdefault("post_apply_fingerprint", None)
         data.setdefault("failure_information", None)
@@ -537,6 +542,8 @@ class ChangePlan:
                 operation.pop("semantic_projection", None)
             if operation.get("semantic_projection_hash") is None:
                 operation.pop("semantic_projection_hash", None)
+            if operation.get("called_scripts") is None:
+                operation.pop("called_scripts", None)
         return value
 
     @classmethod

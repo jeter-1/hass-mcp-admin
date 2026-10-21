@@ -238,6 +238,10 @@ def _configuration_plan_hash(plan: ChangePlan) -> str:
             immutable_operation["semantic_projection_hash"] = (
                 operation.semantic_projection_hash
             )
+        if operation.called_scripts is not None:
+            immutable_operation["called_scripts_hash"] = stable_hash(
+                operation.called_scripts
+            )
         immutable_operations.append(immutable_operation)
     immutable: dict[str, object] = {
         "contract_version": plan.contract_version,

@@ -1146,6 +1146,11 @@ def policy_subject_payload(plan: ChangePlan) -> dict[str, Any]:
                 if operation.semantic_projection_hash is not None
                 else {}
             ),
+            **(
+                {"called_scripts_hash": stable_hash(operation.called_scripts)}
+                if operation.called_scripts is not None
+                else {}
+            ),
         }
         for operation in sorted(plan.operations, key=lambda item: item.order)
     ]

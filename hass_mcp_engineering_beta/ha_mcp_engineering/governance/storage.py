@@ -238,6 +238,7 @@ REFUSE_ON_UPDATE: tuple[tuple[str, ...], ...] = (
     (*_OP, "action"), (*_OP, "target_id"), (*_OP, "helper_type"),
     (*_OP, "proposed_config"), (*_OP, "current_config"),
     (*_OP, "normalized_proposed_config"), (*_OP, "normalized_current_config"),
+    (*_OP, "called_scripts"),
     (*_OP, "snapshot", "config"),
     ("operational", "family"), ("operational", "operation"),
     ("operational", "requested_name"), ("operational", "provider"),

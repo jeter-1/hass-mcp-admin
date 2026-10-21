@@ -31,6 +31,20 @@ Every reference-only step that can run before a protected effect in the same
 run path is compared in full (service, all data including nested data,
 target, ``continue_on_error``, ``enabled`` and position), because any change
 to it can change whether the effect is reached (OD-10, review H2).
+
+A call to a script (``script.<key>``, ``script.turn_on``/``toggle``/
+``turn_off`` or ``homeassistant.turn_on``/``toggle``/``turn_off`` with a
+literal script entity) counts as the protected effects of the called script,
+directly or through further scripts up to ``MAX_CALL_DEPTH``. The called
+scripts come from the operation's ``called_scripts`` snapshot, captured from
+the governed configuration and entity-registry reads when the plan is created
+and bound by the plan hash; the comparison itself stays pure. Both sides of
+the operation use the same callee summary, so the calling step's reachability
+is compared exactly as for a direct effect, while a change to the called
+script itself is compared by that script's own operation (script parity). A
+call whose script cannot be resolved (templated or variable name, unknown,
+unreadable or uncaptured script, depth limit, cycle) is ``unresolved`` and
+may be an unlock or disarm (the OD-6(b) floor applies).
 """
 
 from __future__ import annotations
@@ -38,6 +52,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from ..dependency.script_calls import (
+    _BUILTINS as _SCRIPT_BUILTIN_SERVICES,
+    _ENTITY as _SCRIPT_ENTITY,
+    _SERVICE as _SCRIPT_SERVICE,
+)
 from .normalize import stable_hash
 from .risk import (
     SAFETY_CRITICAL_SERVICES,
@@ -108,6 +127,28 @@ MAX_EFFECTS_PER_ROW = 16
 MAX_PATH_LENGTH = 160
 MAX_OBJECT_ID_LENGTH = 255
 MAX_BUTTON_IDS = 32
+# Called scripts (HAMCP-213 PR 1 review): one operation may reach at most
+# MAX_CALLED_SCRIPTS distinct scripts, MAX_CALL_DEPTH calls deep.
+MAX_CALL_DEPTH = 8
+MAX_CALLED_SCRIPTS = 16
+MAX_CALLEE_ANALYSES = 256
+
+CALLED_SCRIPT_MODEL = "called-script-snapshot-v1"
+# Script storage keys, as bound by Home Assistant's service names
+# (dependency/script_calls.py, docs/SCRIPT_CALL_DEPENDENCIES.md).
+_SCRIPT_TURN_SERVICES = frozenset({"turn_on", "turn_off", "toggle"})
+CALLED_SCRIPT_UNRESOLVED_REASONS = frozenset(
+    {
+        "called_script_dynamic",
+        "called_script_unknown",
+        "called_script_unreadable",
+        "called_script_entity_unresolved",
+        "called_script_not_captured",
+        "called_script_depth_exceeded",
+        "called_script_cycle",
+        "called_script_bounds_exceeded",
+    }
+)
 
 
 class _Unbounded(Exception):
@@ -315,8 +356,158 @@ def _shell(step: dict[str, Any]) -> dict[str, Any]:
     return shell
 
 
+def _script_key(value: Any) -> str | None:
+    if isinstance(value, str):
+        match = _SCRIPT_SERVICE.fullmatch(f"script.{value}")
+        if match and value not in _SCRIPT_BUILTIN_SERVICES:
+            return value
+    return None
+
+
+def script_storage_key(value: Any) -> str | None:
+    """Return ``value`` when it is a callable script storage key."""
+
+    return _script_key(value)
+
+
+def called_script_call_targets(
+    service: str, step: dict[str, Any]
+) -> tuple[list[str], list[str], bool]:
+    """Return ``(storage keys, script entity ids, unresolved)`` for one call.
+
+    ``script.<key>`` binds the script's storage key; the turn/toggle forms
+    name script entities, which the plan resolves through the entity
+    registry. ``unresolved`` is set when the call may run a script that the
+    grammar cannot name (templated, variable, area, device, floor or label
+    target, or none). ``script.reload`` runs no script.
+    """
+
+    keys: list[str] = []
+    entities: list[str] = []
+    if not service.startswith("script.") and service not in _GENERIC_EFFECT_SERVICES:
+        return keys, entities, False
+    name = service.split(".", 1)[1]
+    if service.startswith("script.") and name == "reload":
+        return keys, entities, False
+    if service.startswith("script.") and name not in _SCRIPT_TURN_SERVICES:
+        key = _script_key(name)
+        if key is None:
+            return keys, entities, True
+        return [key], entities, False
+    targets, dynamic, other = _call_targets(step, include_data_entity=True)
+    scripts = [item for item in targets if item.startswith("script.")]
+    unresolved = False
+    if service.startswith("script."):
+        # script.turn_on/toggle/turn_off act only on script entities.
+        unresolved = dynamic or other or not targets or len(scripts) != len(targets)
+    for entity_id in scripts:
+        if _SCRIPT_ENTITY.fullmatch(entity_id):
+            entities.append(entity_id)
+        else:
+            unresolved = True
+    return keys, sorted(set(entities)), unresolved
+
+
+class _CalledScripts:
+    """Pure resolver over one operation's captured called-script snapshot."""
+
+    def __init__(self, snapshot: Any) -> None:
+        valid = (
+            isinstance(snapshot, dict)
+            and snapshot.get("model") == CALLED_SCRIPT_MODEL
+        )
+        scripts = snapshot.get("scripts") if valid else None
+        entities = snapshot.get("entities") if valid else None
+        self.scripts = scripts if isinstance(scripts, dict) else {}
+        self.entities = entities if isinstance(entities, dict) else {}
+        self.analyses = 0
+        self._memo: dict[tuple[str, tuple[str, ...]], Any] = {}
+
+    def entity_key(self, entity_id: str) -> tuple[str | None, str | None]:
+        """Return ``(storage key, unresolved reason)`` for a script entity."""
+
+        entry = self.entities.get(entity_id)
+        if entry is None:
+            return None, "called_script_not_captured"
+        key = _script_key(entry)
+        if key is not None:
+            return key, None
+        reason = entry.get("unresolved") if isinstance(entry, dict) else None
+        if reason not in CALLED_SCRIPT_UNRESOLVED_REASONS:
+            reason = "called_script_entity_unresolved"
+        return None, reason
+
+    def summary(
+        self, key: str, stack: tuple[str, ...]
+    ) -> str | tuple[list[_Effect], list[tuple[str, str, bool]]]:
+        """Return the called script's protected effects, or why it is unresolved."""
+
+        if key in stack:
+            return "called_script_cycle"
+        if len(stack) + 1 > MAX_CALL_DEPTH:
+            return "called_script_depth_exceeded"
+        memo_key = (key, stack)
+        if memo_key in self._memo:
+            return self._memo[memo_key]
+        entry = self.scripts.get(key)
+        result: Any
+        if not isinstance(entry, dict):
+            result = "called_script_not_captured"
+        elif "configs" not in entry:
+            reason = entry.get("unresolved")
+            result = (
+                reason
+                if reason in CALLED_SCRIPT_UNRESOLVED_REASONS
+                else "called_script_unreadable"
+            )
+        else:
+            result = self._analyze_configs(key, entry["configs"], (*stack, key))
+        self._memo[memo_key] = result
+        return result
+
+    def _analyze_configs(
+        self, key: str, configs: Any, stack: tuple[str, ...]
+    ) -> str | tuple[list[_Effect], list[tuple[str, str, bool]]]:
+        if (
+            not isinstance(configs, list)
+            or not 1 <= len(configs) <= 2
+            or not all(isinstance(config, dict) for config in configs)
+        ):
+            return "called_script_unreadable"
+        effects: list[_Effect] = []
+        unresolved: list[tuple[str, str, bool]] = []
+        # A called script that the same plan changes is summarized over its
+        # current and proposed bodies, identically for both caller sides.
+        for config in configs:
+            self.analyses += 1
+            if self.analyses > MAX_CALLEE_ANALYSES:
+                raise _Unbounded("called scripts")
+            analyzer = _Analyzer(self, stack)
+            try:
+                analyzer.walk(config.get("sequence", []), "sequence", False, 0)
+                for entity_id, _reason in _blueprint_inputs(config):
+                    analyzer._add_unresolved(
+                        entity_id, "unresolved_blueprint_input", False
+                    )
+            except (_Unbounded, RecursionError, TypeError, ValueError):
+                return "called_script_bounds_exceeded"
+            for effect in analyzer.effects:
+                if effect not in effects:
+                    effects.append(effect)
+            for item in analyzer.unresolved:
+                if item not in unresolved:
+                    unresolved.append(item)
+        return effects, unresolved
+
+
 class _Analyzer:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        callees: _CalledScripts | None = None,
+        stack: tuple[str, ...] = (),
+    ) -> None:
+        self.callees = callees if callees is not None else _CalledScripts(None)
+        self.stack = stack
         self.steps = 0
         self.effects: list[_Effect] = []
         self.unresolved: list[tuple[str, str, bool]] = []
@@ -394,6 +585,8 @@ class _Analyzer:
                 floor,
             )
             effect = True
+        if self._called_script_effects(service, step, path):
+            effect = True
         if service in _TRANSITIVE_EXACT_SERVICES or service.startswith(
             _TRANSITIVE_SERVICE_PREFIXES
         ):
@@ -405,6 +598,61 @@ class _Analyzer:
             self.transitive.append(f"{service}:{callee}" if callee != service else service)
             effect = True
         return effect
+
+    def _called_script_effects(
+        self, service: str, step: dict[str, Any], path: str
+    ) -> bool:
+        """Record the protected effects of every script this call runs."""
+
+        keys, entities, unresolved = called_script_call_targets(service, step)
+        found = False
+        if unresolved:
+            # A templated, variable or selector target may run any script,
+            # including one that unlocks or disarms.
+            self._add_unresolved(
+                f"{service}@{path}"[:MAX_OBJECT_ID_LENGTH],
+                "called_script_dynamic",
+                True,
+            )
+            found = True
+        resolved: list[str] = list(keys)
+        for entity_id in entities:
+            key, reason = self.callees.entity_key(entity_id)
+            if key is None:
+                self._add_unresolved(
+                    f"{entity_id}@{path}"[:MAX_OBJECT_ID_LENGTH], str(reason), True
+                )
+                found = True
+            elif key not in resolved:
+                resolved.append(key)
+        for key in resolved:
+            summary = self.callees.summary(key, self.stack)
+            if isinstance(summary, str):
+                self._add_unresolved(
+                    f"script.{key}@{path}"[:MAX_OBJECT_ID_LENGTH], summary, True
+                )
+                found = True
+                continue
+            inner_effects, inner_unresolved = summary
+            for inner in inner_effects:
+                self.relevant = True
+                found = True
+                self.effects.append(
+                    _Effect(
+                        inner.object_id,
+                        f"script.{key}>{inner.service}",
+                        f"{path}>script.{key}:{inner.path}",
+                        inner.data_keys,
+                        inner.reason,
+                        inner.floor,
+                    )
+                )
+            for inner_key, code, floor in inner_unresolved:
+                self._add_unresolved(
+                    f"script.{key}>{inner_key}"[:MAX_OBJECT_ID_LENGTH], code, floor
+                )
+                found = True
+        return found
 
     def _device_effect(self, step: dict[str, Any], path: str) -> bool:
         domain = step.get("domain")
@@ -661,12 +909,16 @@ def _blueprint_inputs(config: dict[str, Any]) -> list[tuple[str, str]]:
     return found
 
 
-def _analyze(resource_type: str, config: dict[str, Any] | None) -> _Side:
+def _analyze(
+    resource_type: str,
+    config: dict[str, Any] | None,
+    callees: _CalledScripts | None = None,
+) -> _Side:
     if config is None:
         return _Side([], [], [], set(), False, None)
     if not isinstance(config, dict):
         raise _Unbounded("config")
-    analyzer = _Analyzer()
+    analyzer = _Analyzer(callees)
     body = config.get(_BODY_KEY[resource_type], [])
     structure = analyzer.walk(body, _BODY_KEY[resource_type], False, 0)
     for entity_id, _reason in _blueprint_inputs(config):
@@ -780,14 +1032,20 @@ def compare_physical_effects(
     action: str,
     normalized_current: dict[str, Any] | None,
     normalized_proposed: dict[str, Any] | None,
+    called_scripts: dict[str, Any] | None = None,
 ) -> PhysicalEffectComparison:
-    """Compare protected effects of one automation or script operation."""
+    """Compare protected effects of one automation or script operation.
+
+    ``called_scripts`` is the operation's captured called-script snapshot;
+    without it every script call is ``unresolved``.
+    """
 
     if resource_type not in SUPPORTED_RESOURCE_TYPES or action not in SUPPORTED_ACTIONS:
         return NONE_COMPARISON
     try:
-        before = _analyze(resource_type, normalized_current)
-        after = _analyze(resource_type, normalized_proposed)
+        callees = _CalledScripts(called_scripts)
+        before = _analyze(resource_type, normalized_current, callees)
+        after = _analyze(resource_type, normalized_proposed, callees)
     except (_Unbounded, RecursionError, TypeError, ValueError) as exc:
         reason = (
             "comparison_bounds_exceeded"
@@ -907,7 +1165,50 @@ def compare_operation(operation: Any) -> PhysicalEffectComparison:
         str(getattr(operation, "action", "")),
         getattr(operation, "normalized_current_config", None),
         getattr(operation, "normalized_proposed_config", None),
+        getattr(operation, "called_scripts", None),
     )
+
+
+def called_script_references(
+    resource_type: str, config: Any
+) -> tuple[list[str], list[str]]:
+    """Return the literal script keys and script entities a body calls.
+
+    Used only to capture the called-script snapshot; the comparison
+    resolves the same forms through :func:`called_script_call_targets`.
+    Malformed or unbounded bodies return what was found so far; the
+    comparison reports them itself.
+    """
+
+    keys: list[str] = []
+    entities: list[str] = []
+    if not isinstance(config, dict) or resource_type not in _BODY_KEY:
+        return keys, entities
+    pending: list[tuple[Any, int]] = [(config.get(_BODY_KEY[resource_type]), 0)]
+    visited = 0
+    while pending:
+        value, depth = pending.pop()
+        try:
+            steps = _as_steps(value)
+        except _Unbounded:
+            continue
+        for step in steps:
+            visited += 1
+            if visited > MAX_STEPS or depth > MAX_DEPTH or not isinstance(step, dict):
+                continue
+            service, dynamic = _step_service(step)
+            if service is not None and not dynamic:
+                found_keys, found_entities, _unresolved = called_script_call_targets(
+                    service, step
+                )
+                keys.extend(key for key in found_keys if key not in keys)
+                entities.extend(item for item in found_entities if item not in entities)
+            try:
+                children = list(_children(step))
+            except _Unbounded:
+                continue
+            pending.extend((child, depth + 1) for _label, child, _loop in children)
+    return keys, entities
 
 
 def plan_acknowledgement_binding(operations: Iterable[Any]) -> dict[str, Any] | None:
