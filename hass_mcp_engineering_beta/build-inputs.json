@@ -20,7 +20,7 @@
     "annotated-types": "0.8.0",
     "anyio": "4.15.1",
     "attrs": "26.1.0",
-    "certifi": "2026.7.22",
+    "certifi": "2026.10.19",
     "cffi": "2.1.1",
     "click": "8.5.0",
     "cryptography": "50.0.0",
@@ -54,6 +54,6 @@
     "uvicorn": "0.51.0",
     "yarl": "1.25.1"
   },
-  "runtime_lock_sha256": "d466020b95979de297d1d3980b9ede21ec4c62dbb91d4ac8bec8388f9e9910ca",
+  "runtime_lock_sha256": "f0ed2856e5c30ade513a3088e173a5b103782754bb450f3955746106109e229c",
   "schema_version": 1
 }

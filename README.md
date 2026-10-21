@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.26** adds two read-only tools (HAMCP-132 slice 1).
+Engineering **2.4.1-beta.27** adds two read-only tools (HAMCP-132 slice 1).
 `get_recorder_settings` reports the recorder's effective settings, each with
 its origin: written in `configuration.yaml`, Core's default, or `unknown` with
 the reason, such as packages that could supply the key. It also reports
@@ -10,6 +10,15 @@ returns `db_url` or secret names. `get_unregistered_entities` lists entities
 that have a state but no registry entry, with their platform and config entry.
 The definition file is never guessed. Static tools 62, advertised catalog 90
 (91 with the optional YAML reader). Read the
+[2.4.1-beta.27 release notes](docs/V2_4_1_BETA27_RELEASE_NOTES.md) and
+[2.4.1-beta.27 acceptance contract](docs/V2_4_1_BETA27_ACCEPTANCE.md).
+
+It builds on beta.26 below.
+
+Engineering **2.4.1-beta.26** is a dependency security release (HAMCP-217).
+It upgrades `certifi` to 2026.10.19 for GHSA-6q48-6c7w-9gw2, removing the
+`emSign ECC Root CA - G3` root from the bundle that Engineering's httpx MCP
+clients trust. No runtime code, tool, schema or descriptor changes. Read the
 [2.4.1-beta.26 release notes](docs/V2_4_1_BETA26_RELEASE_NOTES.md) and
 [2.4.1-beta.26 acceptance contract](docs/V2_4_1_BETA26_ACCEPTANCE.md).
 
@@ -282,7 +291,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.25 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.26 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

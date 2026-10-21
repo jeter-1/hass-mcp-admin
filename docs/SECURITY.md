@@ -613,7 +613,7 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
-The `2.4.1-beta.26` definition visibility slice (HAMCP-132) adds two read-only
+The `2.4.1-beta.27` definition visibility slice (HAMCP-132) adds two read-only
 tools. Neither adds a permission, add-on option, HTTP client, Supervisor call,
 route template, fallback or write path.
 
@@ -701,6 +701,16 @@ frames and time. Inherited behaviour changes are listed in the
 [release notes](V2_4_1_BETA22_RELEASE_NOTES.md) and pinned by
 `tests/test_hamcp211_aiohttp_3144_contract.py`. Stable v1.1.2 still pins
 `aiohttp==3.9.5` and is unchanged.
+
+The `2.4.1-beta.26` dependency-security release (HAMCP-217) advances
+`certifi` to 2026.10.19 for GHSA-6q48-6c7w-9gw2. The new bundle drops the
+`emSign ECC Root CA - G3` root, whose intermediates have compromised keys.
+Engineering's httpx-based MCP clients verify against `certifi.where()`: the
+SDK default client and the dashboard-analysis delegate. Its aiohttp clients use
+the interpreter default store. The signed registries are additionally
+signature-verified. `tests/test_hamcp217_certifi_20261019_contract.py` pins
+exact bundle trust and refusal of roots outside it. The base image's CA store
+is unchanged.
 
 Published 2.2.2 retains the Host/Origin configuration risk tracked in issue #62.
 Engineering 2.2.3 adds an Engineering-owned policy before all MCP gateway paths.

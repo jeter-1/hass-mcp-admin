@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.4.1-beta.26 - Recorder settings and unregistered entities (HAMCP-132)
+## 2.4.1-beta.27 - Recorder settings and unregistered entities (HAMCP-132)
 
-Builds on 2.4.1-beta.25.
+Builds on 2.4.1-beta.26.
 
 - Add `get_recorder_settings`, a read-only tool that reports the recorder's
   effective settings. Each setting carries an `origin` (`configured`,
@@ -39,6 +39,20 @@ Builds on 2.4.1-beta.25.
   gate.
 - Catalog 90 tools (91 with the optional YAML reader). No existing tool,
   schema, descriptor, permission, workflow or dependency change.
+
+## 2.4.1-beta.26 - certifi 2026.10.19 dependency security release (HAMCP-217)
+
+Builds on 2.4.1-beta.25. Split from HAMCP-215 by Josh's decision so that
+other pull requests can merge; HAMCP-215 receives it through `main`.
+
+- Bump `certifi` 2026.7.22 → 2026.10.19 in both hashed locks and
+  `build-inputs.json` for GHSA-6q48-6c7w-9gw2 (PYSEC-2026-4320). The bundle
+  loses only the `emSign ECC Root CA - G3` root. There are no transitive
+  changes, and `requirements.txt` is unchanged.
+  `tests/test_hamcp217_certifi_20261019_contract.py` pins the Engineering
+  httpx trust.
+- No runtime code, tool, schema, descriptor, permission, workflow or
+  stored-format change. Stable v1 does not pin certifi.
 
 ## 2.4.1-beta.25 - Loaded script configuration (HAMCP-212)
 

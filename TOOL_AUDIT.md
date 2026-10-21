@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-## Read-only recorder settings and unregistered entities (2.4.1-beta.26, HAMCP-132)
+## Read-only recorder settings and unregistered entities (2.4.1-beta.27, HAMCP-132)
 
 `get_recorder_settings` and `get_unregistered_entities` are native read-only
 evidence: `engineering_native` routing, `risk=read`, no fallback.
