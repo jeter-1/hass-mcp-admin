@@ -21,9 +21,11 @@ from .risk import SAFETY_CRITICAL_SERVICES
 from .configuration_eligibility import bound_proof, local_member_marked, markers
 from . import configuration_rollback_eligibility as inverse_eligibility
 from .physical_effects import (
+    MAX_ACKNOWLEDGED_OBJECTS,
     VERDICT_EQUIVALENT,
     VERDICT_NONE,
     compare_operation,
+    plan_acknowledgement_binding,
 )
 from .entity_metadata import ENTITY_METADATA_RESOURCE_TYPE
 from .entity_metadata_planning import POLICY_TRIGGER as ENTITY_METADATA_POLICY_TRIGGER
@@ -587,6 +589,32 @@ def _entity_metadata_operation_policy(
     return incomplete
 
 
+SAFETY_CRITICAL_REVIEW_BOUNDS_EXCEEDED = "safety_critical_review_bounds_exceeded"
+SPLIT_THE_CHANGE = "too_many_protected_objects_to_review_split_the_change"
+
+
+def _review_bounds_exceeded(
+    risk_delta: RiskDelta, *, unlock_or_disarm: bool
+) -> OperationPolicyClassification:
+    """Prohibit an incomplete safety-critical review (HAMCP-213 review H3)."""
+
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        max(risk_delta, RiskDelta.HIGH, key=lambda item: _RISK_RANK[item]),
+        PhysicalConsequence.SAFETY_CRITICAL,
+        tuple(
+            sorted(
+                {
+                    SAFETY_CRITICAL_REVIEW_BOUNDS_EXCEEDED,
+                    SPLIT_THE_CHANGE,
+                    "supported_configuration_change",
+                    *(("unlock_or_disarm_effect",) if unlock_or_disarm else ()),
+                }
+            )
+        ),
+    )
+
+
 def configuration_operation_policy(
     operation: ConfigurationOperation,
     *,
@@ -619,11 +647,21 @@ def configuration_operation_policy(
 
     if unlock_or_disarm_floor is None:
         unlock_or_disarm_floor = safety_critical_comparison
-    unlock_or_disarm = bool(
-        unlock_or_disarm_floor
+    comparison = (
+        compare_operation(operation)
+        if unlock_or_disarm_floor
         and operation.resource_type in {"automation", "script"}
-        and compare_operation(operation).unlock_or_disarm
+        else None
     )
+    if comparison is not None and comparison.bounds_exceeded:
+        # Review H3: a comparison that exceeded a reviewed bound is
+        # incomplete. It is prohibited on every route, before any shortcut,
+        # and never a weaker class; the floor scan still reports an unlock
+        # or disarm in its reason codes.
+        return _review_bounds_exceeded(
+            risk_delta, unlock_or_disarm=comparison.unlock_or_disarm
+        )
+    unlock_or_disarm = bool(comparison is not None and comparison.unlock_or_disarm)
     if unlock_or_disarm and owner_authoritative and safety_critical_comparison:
         # Review H3 / OD-6(b): where an unlock or disarm effect is (or may
         # be) present, no shortcut (retained effect, garage inverse, retry
@@ -1015,6 +1053,23 @@ def _single_plan_policy(
                 PhysicalConsequence.SAFETY_CRITICAL,
                 ("configuration_retry_proof_invalid",),
             ),)
+        if safety_critical_comparison:
+            binding = plan_acknowledgement_binding(plan.operations)
+            if (
+                binding is not None
+                and len(binding["objects"]) > MAX_ACKNOWLEDGED_OBJECTS
+            ):
+                # Review H3: more acknowledgement rows than one review can
+                # bind is an incomplete review, never an unbindable one.
+                return (
+                    _review_bounds_exceeded(
+                        RiskDelta.HIGH,
+                        unlock_or_disarm=any(
+                            compare_operation(op).unlock_or_disarm
+                            for op in plan.operations
+                        ),
+                    ),
+                )
         return tuple(
             configuration_operation_policy(
                 operation,

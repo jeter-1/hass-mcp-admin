@@ -585,6 +585,36 @@ class _RetryBundleAdapter(_SequenceLockAdapter):
         return await self._bundle_observation(await self._adapter.recover(prepared, context=context))
 
 
+class _CalledScriptFreshnessAdapter:
+    """Refuse a child whose plan's called-script evidence is stale.
+
+    HAMCP-213 review H5: every preflight (first dispatch, re-apply, recovery
+    and pre-intent retry) re-reads the scripts each operation of the plan
+    calls and compares them with the snapshot bound into the plan. Any
+    difference is a preflight rejection before approval consumption and
+    before any write.
+    """
+
+    def __init__(self, adapter: Any, check: Any):
+        self._adapter = adapter
+        self._check = check
+        self.capabilities = adapter.capabilities
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._adapter, name)
+
+    async def preflight(self, prepared: Any, *, acquired_locks: tuple[Any, ...]):
+        stale = await self._check()
+        if stale is not None:
+            self._adapter._increment("stale_rejections")
+            return self._adapter._preflight_rejected(
+                prepared, (str(stale["reason"]),)
+            )
+        return await self._adapter.preflight(
+            prepared, acquired_locks=acquired_locks
+        )
+
+
 class _LegacyConflictAdapter:
     """Refuse new dispatch while a conflicting historical task is active."""
 
@@ -2670,6 +2700,11 @@ class F3RuntimeIntegration:
                 )
             else:
                 adapter = _SequenceLockAdapter(adapter, complete_requests)
+            if plan.contract_version == 2:
+                adapter = _CalledScriptFreshnessAdapter(
+                    adapter,
+                    lambda: self.service._called_scripts_stale(plan.operations),
+                )
         else:
             if getattr(prepared, "capability_id", None) == DASHBOARD_CAPABILITY_ID:
                 if (

@@ -3738,13 +3738,52 @@ class ChangeGovernanceService:
         comparison then requires the acknowledgement.
         """
 
+        cache: dict[str, dict[str, Any]] = {}
+        for operation in operations:
+            snapshot = await self._called_script_snapshot(
+                operation, operations, cache
+            )
+            if snapshot is None:
+                continue
+            operation.called_scripts = snapshot
+            operation.risk = self._configuration_risk(
+                operation.operation_id,
+                operation.resource_type,
+                operation.action,
+                operation.dry_run_results,
+                operation.proposed_config,
+                current=operation.current_config,
+                normalized_current=operation.normalized_current_config,
+                normalized_proposed=operation.normalized_proposed_config,
+                called_scripts=operation.called_scripts,
+            )
+
+    async def _called_script_snapshot(
+        self,
+        operation: ConfigurationOperation,
+        operations: list[ConfigurationOperation],
+        cache: dict[str, dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Build one operation's called-script snapshot from governed reads.
+
+        Used at plan creation and, unchanged, at every dispatch to prove the
+        snapshot is still current (HAMCP-213 review H5). ``cache`` holds the
+        reads of one capture or one verification. A script changed by the
+        same plan is taken from the plan's own configurations, never read.
+        Reads beyond ``MAX_CALLED_SCRIPTS`` mark the snapshot ``truncated``.
+        """
+
+        if operation.resource_type not in {"automation", "script"} or (
+            operation.action not in {"create", "update"}
+        ):
+            return None
         in_plan = {
-            operation.target_id: operation
-            for operation in operations
-            if operation.resource_type == "script"
+            item.target_id: item
+            for item in operations
+            if item.resource_type == "script"
         }
-        scripts: dict[str, dict[str, Any]] = {}
-        entities: dict[str, Any] = {}
+        scripts = cache.setdefault("scripts", {})
+        entities = cache.setdefault("entities", {})
 
         async def read_script(key: str) -> dict[str, Any]:
             if key in scripts:
@@ -3813,73 +3852,97 @@ class ChangeGovernanceService:
             entities[entity_id] = value
             return value
 
-        for operation in operations:
-            if operation.resource_type not in {"automation", "script"} or (
-                operation.action not in {"create", "update"}
-            ):
-                continue
-            reached: dict[str, Any] = {}
-            reached_entities: dict[str, Any] = {}
-            frontier = [
-                (operation.resource_type, config)
-                for config in (
-                    operation.normalized_current_config,
-                    operation.normalized_proposed_config,
+        reached: dict[str, Any] = {}
+        reached_entities: dict[str, Any] = {}
+        truncated = False
+        frontier = [
+            (operation.resource_type, config)
+            for config in (
+                operation.normalized_current_config,
+                operation.normalized_proposed_config,
+            )
+            if isinstance(config, dict)
+        ]
+        for _depth in range(MAX_CALL_DEPTH):
+            next_frontier: list[tuple[str, Any]] = []
+            for resource_type, config in frontier:
+                keys, script_entities = called_script_references(
+                    resource_type, config
                 )
-                if isinstance(config, dict)
-            ]
-            for _depth in range(MAX_CALL_DEPTH):
-                next_frontier: list[tuple[str, Any]] = []
-                for resource_type, config in frontier:
-                    keys, script_entities = called_script_references(
-                        resource_type, config
+                for entity_id in script_entities:
+                    if entity_id in reached_entities:
+                        continue
+                    if len(reached_entities) >= MAX_CALLED_SCRIPTS:
+                        truncated = True
+                        break
+                    value = await resolve_entity(entity_id)
+                    reached_entities[entity_id] = value
+                    if isinstance(value, str):
+                        keys = [*keys, value]
+                for key in keys:
+                    if key in reached:
+                        continue
+                    if len(reached) >= MAX_CALLED_SCRIPTS:
+                        # Review H3: an uncaptured script is a bound overflow.
+                        truncated = True
+                        break
+                    entry = await read_script(key)
+                    reached[key] = entry
+                    next_frontier.extend(
+                        ("script", config) for config in entry.get("configs", [])
                     )
-                    for entity_id in script_entities:
-                        if entity_id in reached_entities:
-                            continue
-                        if len(reached_entities) >= MAX_CALLED_SCRIPTS:
-                            break
-                        value = await resolve_entity(entity_id)
-                        reached_entities[entity_id] = value
-                        if isinstance(value, str):
-                            keys = [*keys, value]
-                    for key in keys:
-                        if key in reached:
-                            continue
-                        if len(reached) >= MAX_CALLED_SCRIPTS:
-                            # Uncaptured scripts are unresolved in the comparison.
-                            break
-                        entry = await read_script(key)
-                        reached[key] = entry
-                        next_frontier.extend(
-                            ("script", config) for config in entry.get("configs", [])
-                        )
-                frontier = next_frontier
-                if not frontier:
-                    break
-            if not reached and not reached_entities:
+            frontier = next_frontier
+            if not frontier:
+                break
+        if not reached and not reached_entities:
+            return None
+        snapshot: dict[str, Any] = {
+            "model": CALLED_SCRIPT_MODEL,
+            "scripts": {key: reached[key] for key in sorted(reached)},
+            "entities": {
+                key: reached_entities[key] for key in sorted(reached_entities)
+            },
+        }
+        if truncated:
+            snapshot["truncated"] = True
+        return deepcopy(snapshot)
+
+    async def _called_scripts_stale(
+        self,
+        operations: list[ConfigurationOperation],
+        *,
+        only: ConfigurationOperation | None = None,
+    ) -> dict[str, str] | None:
+        """Re-read every operation's called scripts; name the first stale one.
+
+        HAMCP-213 review H5: the called-script snapshot is review evidence
+        bound by the plan hash and the comparison projection. Every dispatch
+        path (configuration service, F3 first dispatch, resume and recovery)
+        rebuilds it from fresh governed reads before any write and refuses the
+        plan as stale when any operation's snapshot differs. Returns ``None``
+        when every snapshot is current. ``only`` limits the check to one
+        operation; the whole plan still decides which scripts are in-plan.
+        """
+
+        cache: dict[str, dict[str, Any]] = {}
+        for operation in sorted(operations, key=lambda item: item.order):
+            if operation.resource_type not in {"automation", "script"}:
                 continue
-            operation.called_scripts = deepcopy(
-                {
-                    "model": CALLED_SCRIPT_MODEL,
-                    "scripts": {key: reached[key] for key in sorted(reached)},
-                    "entities": {
-                        key: reached_entities[key]
-                        for key in sorted(reached_entities)
-                    },
+            if only is not None and operation is not only:
+                continue
+            try:
+                fresh = await self._called_script_snapshot(
+                    operation, operations, cache
+                )
+            except Exception:  # noqa: BLE001 - an unreadable snapshot is stale
+                fresh = {"unreadable": True}
+            if stable_hash(fresh) != stable_hash(operation.called_scripts):
+                return {
+                    "operation_id": operation.operation_id,
+                    "resource_id": operation.target_id,
+                    "reason": "stale_called_script",
                 }
-            )
-            operation.risk = self._configuration_risk(
-                operation.operation_id,
-                operation.resource_type,
-                operation.action,
-                operation.dry_run_results,
-                operation.proposed_config,
-                current=operation.current_config,
-                normalized_current=operation.normalized_current_config,
-                normalized_proposed=operation.normalized_proposed_config,
-                called_scripts=operation.called_scripts,
-            )
+        return None
 
     @staticmethod
     def _script_retry_candidate(operations: list[ConfigurationOperation]) -> bool:
@@ -11631,6 +11694,19 @@ class ChangeGovernanceService:
                             },
                         )
                     preflight[operation.operation_id] = current
+                # HAMCP-213 review H5: the called scripts are review evidence
+                # too; a changed callee refuses the plan as stale.
+                stale_callee = await self._called_scripts_stale(plan.operations)
+                if stale_callee is not None:
+                    self._record(
+                        plan,
+                        "change_apply_rejected",
+                        "rejected",
+                        error_code=ErrorCode.STALE_TARGET_STATE.value,
+                    )
+                    raise GovernanceError(
+                        ErrorCode.STALE_TARGET_STATE, details=stale_callee
+                    )
             except GovernanceError:
                 raise
             except Exception as exc:
@@ -11731,11 +11807,20 @@ class ChangeGovernanceService:
                         "resource_revalidation_unavailable"
                     )
                     prewrite_failure_category = type(exc).__name__
+                if (
+                    prewrite_failure_reason is None
+                    and await self._called_scripts_stale(
+                        plan.operations, only=operation
+                    )
+                    is not None
+                ):
+                    prewrite_failure_reason = "stale_called_script"
 
                 if prewrite_failure_reason is not None:
                     stale_target = prewrite_failure_reason in {
                         "resource_identity_mismatch",
                         "stale_target_state",
+                        "stale_called_script",
                     }
                     root_error = (
                         ErrorCode.STALE_TARGET_STATE

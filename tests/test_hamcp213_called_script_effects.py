@@ -326,15 +326,6 @@ GATED_CASES = (
         },
     ),
     Case(
-        "depth_limit",
-        "automation",
-        rc.automation(run("review_chain_0")),
-        rc.automation(run("review_chain_0"), description=EDITED),
-        VERDICT_UNRESOLVED,
-        True,
-        scripts=CHAIN_SCRIPTS,
-    ),
-    Case(
         "unknown_script_entity",
         "automation",
         rc.automation(turn_on("script.review_unregistered")),
@@ -365,6 +356,19 @@ GATED_CASES = (
         scripts=GARAGE_SCRIPTS,
         unreadable=((REGISTRY, GARAGE_ENTITY),),
     ),
+)
+
+# Review H3 (batch 3): a call chain past MAX_CALL_DEPTH is an incomplete
+# review. It keeps the unlock/disarm floor and is prohibited, never a weaker
+# class ("too many protected objects to review: split the change").
+DEPTH_LIMIT = Case(
+    "depth_limit",
+    "automation",
+    rc.automation(run("review_chain_0")),
+    rc.automation(run("review_chain_0"), description=EDITED),
+    VERDICT_UNRESOLVED,
+    True,
+    scripts=CHAIN_SCRIPTS,
 )
 
 PLAN_APPROVAL_ONLY_CASES = (
@@ -444,18 +448,35 @@ class _CalledScriptChecks(rc._ReviewCorrectionChecks):
             self.gateway.configs[("script", key)] = copy.deepcopy(config)
         for entity_id, entry in case.registry.items():
             self.gateway.configs[(REGISTRY, entity_id)] = copy.deepcopy(entry)
-        original = self.service.gateway
-        if case.unreadable:
-            self.service.gateway = _UnreadableGateway(original, case.unreadable)
-        try:
-            return await super().create(case)
-        finally:
-            self.service.gateway = original
+        # The reads stay unreadable through apply: a callee that becomes
+        # readable after planning is stale evidence (review H5) and refuses.
+        original = getattr(self, "_readable_gateway", None) or self.service.gateway
+        self._readable_gateway = original
+        self.service.gateway = (
+            _UnreadableGateway(original, case.unreadable)
+            if case.unreadable
+            else original
+        )
+        return await super().create(case)
 
     async def test_called_script_effects_require_the_acknowledgement(self):
         for case in GATED_CASES:
             with self.subTest(case=case.name):
                 await self.assert_acknowledgement_gated(case)
+
+    async def test_depth_limit_is_prohibited_with_no_write(self):
+        writes = len(self.writes())
+        created, operation, target = await self.create(DEPTH_LIMIT)
+        comparison = compare_operation(operation)
+        self.assertTrue(comparison.bounds_exceeded)
+        self.assertTrue(comparison.unlock_or_disarm)
+        self.assertEqual(created["policy_decision"]["policy_class"], "prohibited")
+        with self.assertRaises(GovernanceError):
+            self.service.approve(created["plan_id"], created["plan_hash"])
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(len(self.writes()), writes)
+        self.assertEqual(self.gateway.configs[target], DEPTH_LIMIT.before)
 
     async def test_unchanged_or_non_protected_calls_keep_plan_approval_only(self):
         for case in PLAN_APPROVAL_ONLY_CASES:
@@ -492,7 +513,7 @@ class _CalledScriptChecks(rc._ReviewCorrectionChecks):
             "non_script_registry_entity": "called_script_entity_unresolved",
             "unreadable_script_entity": "called_script_unreadable",
         }
-        cases = {case.name: case for case in GATED_CASES}
+        cases = {case.name: case for case in (*GATED_CASES, DEPTH_LIMIT)}
         for name, reason in expected.items():
             with self.subTest(case=name):
                 _created, operation, _target = await self.create(cases[name])

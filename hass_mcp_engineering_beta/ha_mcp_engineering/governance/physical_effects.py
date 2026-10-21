@@ -49,7 +49,7 @@ may be an unlock or disarm (the OD-6(b) floor applies).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Iterable
 
 from ..dependency.script_calls import (
@@ -110,13 +110,80 @@ _TRANSITIVE_SERVICE_PREFIXES = ("script.",)
 _SAFETY_CRITICAL_DEVICE_ACTIONS = frozenset(
     {("lock", "unlock"), ("alarm_control_panel", "disarm")}
 )
-_DISPLAY_DATA_KEYS = frozenset({"message", "title"})
-_DISPLAY_STEP_KEYS = frozenset({"alias"})
-_CONTEXT_EXCLUDED_KEYS = {
-    "automation": frozenset({"action", "alias", "description"}),
-    "script": frozenset({"sequence", "alias", "description", "icon"}),
-}
+# Allowlist of ignorable differences (HAMCP-213 PR 1 review, batch 3). The
+# normalized current and proposed configurations must be identical on every
+# run path except for exactly these reviewed fields; any other difference at
+# any level, including ``enabled`` flags, ``mode``/``max``, variables,
+# ``continue_on_error``, waits and timeouts, response handling and every
+# unknown or unreviewed key, is ``changed``. The design document
+# (docs/HAMCP_213_SAFETY_CRITICAL_APPROVAL_DESIGN.md, D2 item 8) carries the
+# same table, and a test asserts that the two are equal. Each row is
+# ``(scope, field, condition)``.
+IGNORABLE_DIFFERENCES: tuple[tuple[str, str, str], ...] = (
+    ("automation", "alias", "display name"),
+    ("automation", "description", "display text"),
+    ("script", "alias", "display name"),
+    ("script", "description", "display text"),
+    ("script", "icon", "display icon"),
+    ("step", "alias", "display name of any action step"),
+    ("choose_option", "alias", "display name of a choose option"),
+    ("parallel_branch", "alias", "display name of a parallel branch wrapper"),
+    (
+        "reference_step_after_effects",
+        "data.message",
+        "template-free text of a reference-only step that runs after every protected effect on its path",
+    ),
+    (
+        "reference_step_after_effects",
+        "data.title",
+        "template-free text of a reference-only step that runs after every protected effect on its path",
+    ),
+    (
+        "reference_step_after_effects",
+        "data.data",
+        "notification payload of a reference-only step that runs after every protected effect on its path",
+    ),
+    (
+        "reference_step_after_effects",
+        "entity_id placement",
+        "step, target or data placement and list form of the same entity ids",
+    ),
+    (
+        "reference_step_after_effects",
+        "action/service key",
+        "the legacy service key spelling of the same reference-only service",
+    ),
+    (
+        "non_aborting_reference_step_after_effects",
+        "*",
+        "a reference-only step with continue_on_error: true that runs after every protected effect on its path",
+    ),
+)
+
+
+def _ignorable(scope: str) -> frozenset[str]:
+    return frozenset(
+        field for row_scope, field, _condition in IGNORABLE_DIFFERENCES
+        if row_scope == scope
+    )
+
+
+_DISPLAY_DATA_KEYS = frozenset(
+    field.split(".", 1)[1]
+    for field in _ignorable("reference_step_after_effects")
+    if field in {"data.message", "data.title"}
+)
+_DISPLAY_STEP_KEYS = _ignorable("step")
+_CHOOSE_OPTION_IGNORED_KEYS = _ignorable("choose_option")
+_PARALLEL_BRANCH_IGNORED_KEYS = _ignorable("parallel_branch")
 _BODY_KEY = {"automation": "action", "script": "sequence"}
+# The body is compared as the run structure; every other configuration key
+# is the reachability context, compared verbatim.
+_CONTEXT_EXCLUDED_KEYS = {
+    resource_type: frozenset({body, *_ignorable(resource_type)})
+    for resource_type, body in _BODY_KEY.items()
+}
+_PARALLEL_BRANCH_WRAPPER_KEYS = frozenset({"sequence", "alias", "enabled"})
 _TARGET_SELECTORS = ("entity_id", "device_id", "area_id", "floor_id", "label_id")
 _UNLOCK_OR_DISARM = "unlock_or_disarm_effect"
 
@@ -148,6 +215,27 @@ CALLED_SCRIPT_UNRESOLVED_REASONS = frozenset(
         "called_script_cycle",
         "called_script_bounds_exceeded",
     }
+)
+
+
+# Review H3: a comparison that exceeded a reviewed bound is incomplete. It is
+# never a weaker class: policy prohibits it ("too many protected objects to
+# review: split the change"), while the independent unlock/disarm floor scan
+# still reports any unlock or disarm.
+BOUNDS_EXCEEDED_REASONS = frozenset(
+    {
+        "comparison_bounds_exceeded",
+        "comparison_input_invalid",
+        "comparison_object_collision",
+        "called_script_depth_exceeded",
+        "called_script_bounds_exceeded",
+    }
+)
+MAX_FLOOR_SCAN_NODES = 200_000
+# Subtrees that hold call arguments, never a step; the floor scan does not
+# treat a mapping inside them as an action.
+_FLOOR_SCAN_ARGUMENT_KEYS = frozenset(
+    {"data", "data_template", "target", "variables", "event_data", "event_data_template"}
 )
 
 
@@ -307,7 +395,7 @@ def _children(step: dict[str, Any]) -> Iterable[tuple[str, Any, bool]]:
         if not isinstance(branches, list):
             raise _Unbounded("parallel")
         for index, branch in enumerate(branches):
-            if isinstance(branch, dict) and set(branch) <= {"sequence", "alias", "enabled"}:
+            if _branch_wrapper(branch):
                 yield f"parallel[{index}].sequence", branch.get("sequence", []), False
             else:
                 yield f"parallel[{index}]", [branch], False
@@ -328,32 +416,65 @@ def _as_steps(value: Any) -> list[Any]:
     return value
 
 
-def _shell(step: dict[str, Any]) -> dict[str, Any]:
-    """Return the step without nested step lists or display aliases."""
+def _branch_wrapper(branch: Any) -> bool:
+    """Whether a parallel branch is a ``sequence`` wrapper, not a step."""
 
-    shell = {k: v for k, v in step.items() if k not in _DISPLAY_STEP_KEYS}
-    if isinstance(shell.get("choose"), list):
-        shell["choose"] = [
-            {k: v for k, v in option.items() if k not in {"sequence", "alias"}}
-            if isinstance(option, dict)
-            else option
-            for option in shell["choose"]
-        ]
-    elif isinstance(shell.get("choose"), dict):
-        shell["choose"] = {
-            k: v for k, v in shell["choose"].items() if k not in {"sequence", "alias"}
-        }
+    return isinstance(branch, dict) and set(branch) <= _PARALLEL_BRANCH_WRAPPER_KEYS
+
+
+def _without(value: dict[str, Any], keys: frozenset[str]) -> dict[str, Any]:
+    return {key: item for key, item in value.items() if key not in keys}
+
+
+def _rebuild(step: dict[str, Any], walked: dict[str, list[Any]]) -> dict[str, Any]:
+    """Return ``step`` verbatim with its nested step lists normalized.
+
+    Only the ignorable fields of :data:`IGNORABLE_DIFFERENCES` are removed.
+    Every nested step list that :func:`_children` yields is replaced in place
+    by its normalized form, so every wrapper field (a parallel branch's
+    ``enabled``, a choose option's conditions, a repeat's ``while``) stays
+    in the compared structure. Keys that :func:`_children` does not walk,
+    such as ``then`` without ``if``, are kept verbatim.
+    """
+
+    node = _without(step, _DISPLAY_STEP_KEYS)
     if "choose" in step:
-        shell.pop("default", None)
-    for key in ("then", "else", "parallel"):
-        shell.pop(key, None)
-    if isinstance(shell.get("repeat"), dict):
-        shell["repeat"] = {
-            k: v for k, v in shell["repeat"].items() if k != "sequence"
-        }
-    if "sequence" in shell and not {"choose", "repeat", "parallel", "if"}.intersection(step):
-        shell.pop("sequence")
-    return shell
+        choices = step["choose"]
+        options = [choices] if isinstance(choices, dict) else choices
+        rebuilt = []
+        for index, option in enumerate(options):
+            item = _without(option, _CHOOSE_OPTION_IGNORED_KEYS)
+            if "sequence" in option:
+                item["sequence"] = walked[f"choose[{index}].sequence"]
+            rebuilt.append(item)
+        node["choose"] = rebuilt[0] if isinstance(choices, dict) else rebuilt
+        if "default" in step:
+            node["default"] = walked["default"]
+    if "if" in step:
+        for label in ("then", "else"):
+            if label in step:
+                node[label] = walked[label]
+    if "repeat" in step:
+        repeat = dict(step["repeat"])
+        if "sequence" in repeat:
+            repeat["sequence"] = walked["repeat.sequence"]
+        node["repeat"] = repeat
+    if "parallel" in step:
+        branches = step["parallel"]
+        items = [branches] if isinstance(branches, dict) else branches
+        rebuilt = []
+        for index, branch in enumerate(items):
+            if _branch_wrapper(branch):
+                item = _without(branch, _PARALLEL_BRANCH_IGNORED_KEYS)
+                if "sequence" in branch:
+                    item["sequence"] = walked[f"parallel[{index}].sequence"]
+                rebuilt.append({"branch": item})
+            else:
+                rebuilt.append({"branch_step": walked[f"parallel[{index}]"]})
+        node["parallel"] = rebuilt[0] if isinstance(branches, dict) else rebuilt
+    if "sequence" in walked:
+        node["sequence"] = walked["sequence"]
+    return node
 
 
 def _script_key(value: Any) -> str | None:
@@ -420,6 +541,12 @@ class _CalledScripts:
         entities = snapshot.get("entities") if valid else None
         self.scripts = scripts if isinstance(scripts, dict) else {}
         self.entities = entities if isinstance(entities, dict) else {}
+        # A capture that hit MAX_CALLED_SCRIPTS left scripts unread (H3).
+        self.not_captured = (
+            "called_script_bounds_exceeded"
+            if valid and snapshot.get("truncated") is True
+            else "called_script_not_captured"
+        )
         self.analyses = 0
         self._memo: dict[tuple[str, tuple[str, ...]], Any] = {}
 
@@ -428,7 +555,7 @@ class _CalledScripts:
 
         entry = self.entities.get(entity_id)
         if entry is None:
-            return None, "called_script_not_captured"
+            return None, self.not_captured
         key = _script_key(entry)
         if key is not None:
             return key, None
@@ -452,7 +579,7 @@ class _CalledScripts:
         entry = self.scripts.get(key)
         result: Any
         if not isinstance(entry, dict):
-            result = "called_script_not_captured"
+            result = self.not_captured
         elif "configs" not in entry:
             reason = entry.get("unresolved")
             result = (
@@ -801,7 +928,6 @@ class _Analyzer:
                 else:
                     normalized.append(_reference_signature(service, step))
                 continue
-            node: dict[str, Any] = {"step": _shell(step)}
             children = list(_children(step))
             # Parallel branches run concurrently: an effect in any branch can
             # follow (or be cut short by) a reference step in a sibling.
@@ -810,6 +936,7 @@ class _Analyzer:
                 for label, child, _loops in children
                 if label.startswith("parallel[")
             )
+            walked: dict[str, list[Any]] = {}
             for label, child, loops in children:
                 child_steps = _as_steps(child)
                 follows = (
@@ -817,8 +944,10 @@ class _Analyzer:
                     or parallel_effect
                     or (loops and self.contains_effect(child_steps))
                 )
-                node[label] = self.walk(child_steps, f"{here}.{label}", follows, depth + 1)
-            normalized.append(node)
+                walked[label] = self.walk(
+                    child_steps, f"{here}.{label}", follows, depth + 1
+                )
+            normalized.append(_rebuild(step, walked))
         return normalized
 
 
@@ -855,38 +984,45 @@ def _reference_step(step: dict[str, Any]) -> dict[str, Any]:
 
 
 def _reference_signature(service: str, step: dict[str, Any]) -> dict[str, Any]:
-    """Signature of a reference step after which no protected effect can run."""
+    """Signature of a reference step after which no protected effect can run.
 
-    entities, dynamic, other = _call_targets(step, include_data_entity=True)
-    data = step.get("data") if isinstance(step.get("data"), dict) else {}
-    kept_data = {
-        key: value
-        for key, value in data.items()
-        if key not in _DISPLAY_DATA_KEYS and key not in {"data", "entity_id"}
-    }
-    templated_text = {
-        key: value
-        for key, value in data.items()
-        if key in _DISPLAY_DATA_KEYS
-        and (not isinstance(value, str) or _has_template(value))
-    }
-    others = {
-        key: value
-        for key, value in step.items()
-        if key
-        not in {"action", "service", "data", "target", "alias", *_TARGET_SELECTORS}
-    }
+    Everything is kept except the ``reference_step_after_effects`` rows of
+    :data:`IGNORABLE_DIFFERENCES`: the display alias, template-free
+    ``message``/``title`` text, the nested ``data.data`` payload, where and
+    in which list form the entity ids are written, and the ``service`` key
+    spelling. Every other field, including non-entity selectors and a
+    non-mapping ``data``, is kept verbatim.
+    """
+
+    entities, dynamic, _other = _call_targets(step, include_data_entity=True)
+    kept: dict[str, Any] = {}
+    for key, value in step.items():
+        if key in _DISPLAY_STEP_KEYS or key in {"action", "service", "entity_id"}:
+            continue
+        if key == "target" and isinstance(value, dict):
+            remainder = _without(value, frozenset({"entity_id"}))
+            if remainder:
+                kept["target"] = remainder
+        elif key == "data" and isinstance(value, dict):
+            remainder = {
+                name: item
+                for name, item in value.items()
+                if name not in {"data", "entity_id"}
+                and not (
+                    name in _DISPLAY_DATA_KEYS
+                    and isinstance(item, str)
+                    and not _has_template(item)
+                )
+            }
+            if remainder:
+                kept["data"] = remainder
+        else:
+            kept[key] = value
     return {
         "reference_call": service,
         "entity_ids": entities,
         "dynamic_target": dynamic,
-        "other_selectors": other,
-        "target": step.get("target") if not isinstance(step.get("target"), dict) else {
-            k: v for k, v in step["target"].items() if k != "entity_id"
-        },
-        "data": kept_data,
-        "templated_text": templated_text,
-        "step": others,
+        "step": kept,
     }
 
 
@@ -907,6 +1043,79 @@ def _blueprint_inputs(config: dict[str, Any]) -> list[tuple[str, str]]:
             if reason is not None:
                 found.append((value.strip().lower(), reason))
     return found
+
+
+def _unlock_or_disarm_scan(
+    resource_type: str,
+    configs: Iterable[Any],
+    called_scripts: Any,
+) -> bool:
+    """Whether an unlock or disarm is, or may be, present anywhere (OD-6(b)).
+
+    Review H3: this floor is computed first and independently of every
+    comparison bound, so a comparison that is incomplete still reports it.
+    The scan is iterative and grammar-free: any mapping outside a call's
+    argument subtrees that names ``lock.unlock`` or
+    ``alarm_control_panel.alarm_disarm``, a templated or ``service_template``
+    service, a lock unlock or alarm disarm device action, or a script call
+    that the snapshot does not resolve, counts. Every captured called script
+    is scanned too. Exceeding the scan budget or malformed input counts as
+    present.
+    """
+
+    callees = _CalledScripts(called_scripts)
+    pending: list[Any] = [
+        config.get(_BODY_KEY[resource_type]) if isinstance(config, dict) else config
+        for config in configs
+        if config is not None
+    ]
+    for entry in callees.scripts.values():
+        if not isinstance(entry, dict) or "configs" not in entry:
+            # An unresolved callee may unlock or disarm.
+            return True
+        configs_value = entry["configs"]
+        if not isinstance(configs_value, list):
+            return True
+        pending.extend(
+            config.get("sequence") if isinstance(config, dict) else config
+            for config in configs_value
+        )
+    visited = 0
+    try:
+        while pending:
+            value = pending.pop()
+            visited += 1
+            if visited > MAX_FLOOR_SCAN_NODES:
+                return True
+            if isinstance(value, list):
+                pending.extend(value)
+                continue
+            if not isinstance(value, dict):
+                continue
+            service, dynamic = _step_service(value)
+            if dynamic or service in SAFETY_CRITICAL_SERVICES:
+                return True
+            if (value.get("domain"), value.get("type")) in _SAFETY_CRITICAL_DEVICE_ACTIONS:
+                return True
+            if service is not None:
+                keys, entities, unresolved = called_script_call_targets(service, value)
+                if unresolved:
+                    return True
+                for entity_id in entities:
+                    key, _reason = callees.entity_key(entity_id)
+                    if key is None:
+                        return True
+                    keys = [*keys, key]
+                if any(key not in callees.scripts for key in keys):
+                    return True
+            pending.extend(
+                item
+                for key, item in value.items()
+                if key not in _FLOOR_SCAN_ARGUMENT_KEYS
+            )
+    except (RecursionError, TypeError, ValueError):
+        return True
+    return False
 
 
 def _analyze(
@@ -942,10 +1151,19 @@ class PhysicalEffectComparison:
     projection: dict[str, Any] | None
     projection_hash: str | None
     acknowledgement_objects: tuple[str, ...]
+    # The independent OD-6(b) floor scan (review H3); see
+    # :func:`_unlock_or_disarm_scan`.
+    floor: bool = False
 
     @property
     def protected(self) -> bool:
         return self.verdict != VERDICT_NONE
+
+    @property
+    def bounds_exceeded(self) -> bool:
+        """Whether a reviewed bound was exceeded, so the result is incomplete."""
+
+        return bool(BOUNDS_EXCEEDED_REASONS.intersection(self.reason_codes))
 
     @property
     def acknowledgement_required(self) -> bool:
@@ -956,7 +1174,9 @@ class PhysicalEffectComparison:
         """Whether any row is, or may be, an unlock or disarm effect (OD-6(b))."""
 
         rows = (self.projection or {}).get("rows", [])
-        return any(_UNLOCK_OR_DISARM in row.get("reason_codes", []) for row in rows)
+        return self.floor or any(
+            _UNLOCK_OR_DISARM in row.get("reason_codes", []) for row in rows
+        )
 
 
 NONE_COMPARISON = PhysicalEffectComparison(VERDICT_NONE, (), None, None, ())
@@ -973,17 +1193,52 @@ def _effect_summary(effects: list[_Effect]) -> list[dict[str, Any]]:
     ]
 
 
-def _unbounded_comparison(resource_type: str, action: str, reason: str) -> PhysicalEffectComparison:
+def _called_script_fingerprints(called_scripts: Any) -> dict[str, Any] | None:
+    """Content fingerprints of every captured callee (review H5).
+
+    Bound into the comparison projection (and so the projection hash), so
+    the evidence names the exact called-script content it was computed
+    from; dispatch re-reads the callees and refuses a stale snapshot.
+    """
+
+    if not isinstance(called_scripts, dict) or called_scripts.get("model") != CALLED_SCRIPT_MODEL:
+        return None
+    scripts = called_scripts.get("scripts")
+    entities = called_scripts.get("entities")
+    return {
+        "snapshot": stable_hash(called_scripts),
+        "scripts": {
+            str(key): stable_hash(value)
+            for key, value in sorted((scripts if isinstance(scripts, dict) else {}).items())
+        },
+        "entities": {
+            str(key): stable_hash(value)
+            for key, value in sorted((entities if isinstance(entities, dict) else {}).items())
+        },
+    }
+
+
+def _unbounded_comparison(
+    resource_type: str,
+    action: str,
+    reason: str,
+    *,
+    floor: bool,
+    fingerprints: dict[str, Any] | None,
+) -> PhysicalEffectComparison:
     row = {
         "object_id": "configuration",
         "verdict": ROW_UNRESOLVED,
         "protection": "comparison_bounds",
-        "reason_codes": [reason],
+        "reason_codes": [reason] + ([_UNLOCK_OR_DISARM] if floor else []),
         "before": [],
         "after": [],
         "acknowledgement_required": True,
     }
-    return _finish(resource_type, action, VERDICT_UNRESOLVED, [reason], [row], set(), set(), [], [])
+    return _finish(
+        resource_type, action, VERDICT_UNRESOLVED, [reason], [row],
+        set(), set(), [], [], floor=floor, fingerprints=fingerprints,
+    )
 
 
 def _finish(
@@ -996,8 +1251,11 @@ def _finish(
     buttons_after: set[str],
     transitive_before: list[str],
     transitive_after: list[str],
+    *,
+    floor: bool,
+    fingerprints: dict[str, Any] | None,
 ) -> PhysicalEffectComparison:
-    projection = {
+    projection: dict[str, Any] = {
         "model": COMPARISON_MODEL,
         "resource_type": resource_type,
         "action": action,
@@ -1013,6 +1271,10 @@ def _finish(
             "after": sorted(set(transitive_after))[:MAX_ROWS],
         },
     }
+    if fingerprints is not None:
+        projection["called_script_fingerprints"] = fingerprints
+    if floor:
+        projection["unlock_or_disarm_floor"] = True
     acknowledgement = tuple(
         sorted(
             row["object_id"] for row in rows if row["acknowledgement_required"]
@@ -1024,6 +1286,7 @@ def _finish(
         projection,
         stable_hash(projection),
         acknowledgement,
+        floor,
     )
 
 
@@ -1042,6 +1305,14 @@ def compare_physical_effects(
 
     if resource_type not in SUPPORTED_RESOURCE_TYPES or action not in SUPPORTED_ACTIONS:
         return NONE_COMPARISON
+    # Review H3: the unlock/disarm floor comes first, independent of bounds.
+    try:
+        floor = _unlock_or_disarm_scan(
+            resource_type, (normalized_current, normalized_proposed), called_scripts
+        )
+    except Exception:  # noqa: BLE001 - an unscannable input keeps the floor
+        floor = True
+    fingerprints = _called_script_fingerprints(called_scripts)
     try:
         callees = _CalledScripts(called_scripts)
         before = _analyze(resource_type, normalized_current, callees)
@@ -1052,9 +1323,11 @@ def compare_physical_effects(
             if isinstance(exc, (_Unbounded, RecursionError))
             else "comparison_input_invalid"
         )
-        return _unbounded_comparison(resource_type, action, reason)
+        return _unbounded_comparison(
+            resource_type, action, reason, floor=floor, fingerprints=fingerprints
+        )
     if not before.relevant and not after.relevant:
-        return NONE_COMPARISON
+        return replace(NONE_COMPARISON, floor=floor)
 
     reasons: list[str] = []
     unresolved = before.unresolved + after.unresolved
@@ -1093,7 +1366,10 @@ def compare_physical_effects(
     if len(objects) + len(unresolved_rows) > MAX_ROWS or any(
         len(object_id) > MAX_OBJECT_ID_LENGTH for object_id in objects
     ):
-        return _unbounded_comparison(resource_type, action, "comparison_bounds_exceeded")
+        return _unbounded_comparison(
+            resource_type, action, "comparison_bounds_exceeded",
+            floor=floor, fingerprints=fingerprints,
+        )
     rows: list[dict[str, Any]] = []
     for object_id in sorted(objects):
         sides = objects[object_id]
@@ -1143,7 +1419,10 @@ def compare_physical_effects(
             }
         )
     if any(row["object_id"] in {r["object_id"] for r in rows[:i]} for i, row in enumerate(rows)):
-        return _unbounded_comparison(resource_type, action, "comparison_object_collision")
+        return _unbounded_comparison(
+            resource_type, action, "comparison_object_collision",
+            floor=floor, fingerprints=fingerprints,
+        )
     return _finish(
         resource_type,
         action,
@@ -1154,6 +1433,8 @@ def compare_physical_effects(
         after.buttons,
         before.transitive,
         after.transitive,
+        floor=floor,
+        fingerprints=fingerprints,
     )
 
 
