@@ -100,6 +100,8 @@ class RoutingPolicy:
     def resolve(self, capability: ProviderCapability) -> RoutingDecision:
         if capability == ProviderCapability.CORE_LOG_HISTORY:
             return RoutingDecision(capability, CapabilityRoute.ENGINEERING_NATIVE, "supervisor_core_logs")
+        if capability == ProviderCapability.INCIDENT_LOGS:
+            return RoutingDecision(capability, CapabilityRoute.ENGINEERING_NATIVE, "supervisor_incident_logs")
         if capability in _ENGINEERING_NATIVE:
             return RoutingDecision(capability, CapabilityRoute.ENGINEERING_NATIVE, "engineering")
         if capability in _STANDARD_PREFERRED:
@@ -144,6 +146,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_logbook": ProviderCapability.LOGBOOK_READ,
     "get_error_log": ProviderCapability.ERROR_LOG_READ,
     "get_core_log_history": ProviderCapability.CORE_LOG_HISTORY,
+    "get_incident_logs": ProviderCapability.INCIDENT_LOGS,
     "list_automations": ProviderCapability.AUTOMATION_LIST,
     "get_automation_config": ProviderCapability.AUTOMATION_CONFIG,
     "list_devices": ProviderCapability.DEVICE_REGISTRY_READ,
@@ -450,6 +453,18 @@ def core_log_policy_allows_read() -> bool:
         decision.capability == ProviderCapability.CORE_LOG_HISTORY
         and decision.route == CapabilityRoute.ENGINEERING_NATIVE
         and decision.preferred_provider == "supervisor_core_logs"
+        and not decision.fallback_providers
+        and not decision.explicit_direct_fallback_allowed
+    )
+
+
+def incident_logs_policy_allows_read() -> bool:
+    """HAMCP-131: fixed Supervisor journal reads only; no forwarding or fallback."""
+    decision = routing_for_tool("get_incident_logs")
+    return (
+        decision.capability == ProviderCapability.INCIDENT_LOGS
+        and decision.route == CapabilityRoute.ENGINEERING_NATIVE
+        and decision.preferred_provider == "supervisor_incident_logs"
         and not decision.fallback_providers
         and not decision.explicit_direct_fallback_allowed
     )

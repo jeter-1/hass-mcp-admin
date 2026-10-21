@@ -1112,7 +1112,7 @@ class AuthenticatedMcpGateway:
                         "upstream_attempted": False,
                     }
                     resource_ids = {}
-                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
+                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_incident_logs", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -1327,6 +1327,24 @@ class AuthenticatedMcpGateway:
                         "provider": "engineering", "fallback": "none",
                     }
                     resource_ids = {}
+                elif tool_name == "get_incident_logs":
+                    # HAMCP-131: only validated source keys and bounded values;
+                    # the text filter, times and cursor are never copied.
+                    from .incident_logs.contracts import validate_arguments as validate_hamcp131
+                    try:
+                        checked = validate_hamcp131(parameters)
+                    except ValueError:
+                        checked = None
+                    audit_parameters = {
+                        "profile": "incident-window-journal-read-v1",
+                        "sources": list(checked["sources"]) if checked else None,
+                        "min_level": checked["min_level"] if checked else None,
+                        "limit": checked["limit"] if checked else None,
+                        "text_filter_present": bool(checked and checked["text"] is not None),
+                        "cursor_present": bool(checked and checked["cursor"] is not None),
+                        "provider": "supervisor_incident_logs", "fallback": "none",
+                    }
+                    resource_ids = {}
                 elif tool_name == "run_held_read_canary":
                     # Canary arguments and upstream result content are
                     # untrusted and may contain sensitive Home Assistant data.
@@ -1411,6 +1429,7 @@ class AuthenticatedMcpGateway:
                             "handoff_generation",
                             "run_held_read_canary",
                             "get_core_log_history",
+                            "get_incident_logs",
                             "get_integration_inspection",
                             "get_backup_inventory",
                             "get_recorder_settings",

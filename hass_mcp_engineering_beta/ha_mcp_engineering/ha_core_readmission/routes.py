@@ -222,6 +222,12 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
             "and must remain available while Core is down; it consumes no "
             "Core API authority.",
         ),
+        "get_incident_logs": CoreIndependence(
+            CORE_INDEPENDENT_SUPERVISOR_ONLY,
+            "Reads the Core and own add-on journals through fixed Supervisor "
+            "API routes and must remain available while Core is down; it "
+            "consumes no Core API authority.",
+        ),
         "get_blueprint": CoreIndependence(
             CORE_INDEPENDENT_MOUNTED_SOURCE,
             "Reads bounded blueprint YAML from the read-only mounted "

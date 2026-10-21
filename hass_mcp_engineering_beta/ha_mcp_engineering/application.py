@@ -187,6 +187,7 @@ def create_application(
     from .backup_inventory.service import BACKUP_INVENTORY
     from .recorder_settings.service import RECORDER_SETTINGS
     from .entity_reconciliation.service import ENTITY_RECONCILIATION
+    from .incident_logs.service import INCIDENT_LOGS
     server = get_registered_server()
     audit = AuditLogger(
         settings.audit_path,
@@ -210,6 +211,8 @@ def create_application(
     ENTITY_RECONCILIATION.configure(HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings),
                                     CORE_READMISSION, settings)
     AUTOMATION_BASELINE_CAPTURE.configure(settings, CORE_READMISSION)
+    # HAMCP-131: no I/O here; the add-on credential is read per request.
+    INCIDENT_LOGS.configure(settings)
     gateway = AuthenticatedMcpGateway(
         server.streamable_http_app(),
         settings,

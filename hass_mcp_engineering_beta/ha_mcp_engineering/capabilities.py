@@ -139,6 +139,15 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "retention_coverage": "unknown",
     },
     {
+        "tool": "get_incident_logs", "category": "evidence",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native",
+        "provider": "supervisor_incident_logs", "fallback": "none",
+        "policy": "incident_window_journal_read_v1", "direct_write_allowed": False,
+        "source": "supervisor_journal", "transport": "supervisor_api",
+        "retention_coverage": "reported_per_source",
+    },
+    {
         "tool": "control_power", "category": "ordinary_runtime_action",
         "status": "beta_native", "risk": "physical_action", "additive": True,
         "operation_class": "typed_power", "routing": "engineering_native",
@@ -528,6 +537,17 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "security_justification": "Fixed Supervisor GET /core/logs only; owner-approved homeassistant role is broader at the process boundary, but no caller-selected endpoint or write is exposed.",
         "trust_mode": "reviewed_native_read",
         "trust_profile": "bounded_core_journal_read_v1",
+    },
+    {
+        "tool": "get_incident_logs", "capability": "incident_logs",
+        "required_semantics": "One bounded time window merged across readable journal sources with per-source coverage, retention edge, gaps, filter skips, a signed continuity-checked cursor and every unreadable source reported with its exact reason.",
+        "standard_ha_mcp_coverage": "semantically_unsuitable",
+        "direct_ha_coverage": "not_used",
+        "selected_provider": "supervisor_incident_logs", "fallback_policy": "none",
+        "completeness": "partial_with_reasons_when_any_source_unavailable_gapped_or_limited",
+        "security_justification": "Fixed Supervisor GET /core/logs and /addons/self/logs only, admitted for role homeassistant; Supervisor, host and other add-on logs need role manager and are reported unavailable with zero requests; strict sanitizer at one exit.",
+        "trust_mode": "reviewed_native_read",
+        "trust_profile": "incident_window_journal_read_v1",
     },
     {
         "tool": "control_power", "capability": "typed_power_execution",

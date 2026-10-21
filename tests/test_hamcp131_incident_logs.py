@@ -1,0 +1,619 @@
+"""HAMCP-131 incident-window log reads. Offline: loopback peer, synthetic data.
+
+The peer (``incident_logs_journal_sim``) follows the pinned Supervisor
+2026.09.1 log response shape and journal-gatewayd v257.9 ``Range``
+arithmetic; see its docstring and ``docs/HAMCP_131_INCIDENT_LOGS.md``.
+"""
+
+from __future__ import annotations
+
+import ast
+import base64
+from dataclasses import replace
+import inspect
+import json
+from pathlib import Path
+import sys
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta"))
+
+from incident_logs_journal_sim import SupervisorSim, ms, start  # noqa: E402
+
+from ha_mcp_engineering.configuration import Settings  # noqa: E402
+from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    CORE_INDEPENDENT_STATIC_TOOLS, CORE_INDEPENDENT_SUPERVISOR_ONLY,
+)
+from ha_mcp_engineering.incident_logs import contracts as c  # noqa: E402
+from ha_mcp_engineering.incident_logs import service as service_module  # noqa: E402
+from ha_mcp_engineering.incident_logs.cursor import CursorCodec  # noqa: E402
+from ha_mcp_engineering.incident_logs.service import IncidentLogService  # noqa: E402
+from ha_mcp_engineering.incident_logs.transport import JournalTransport  # noqa: E402
+from ha_mcp_engineering.providers.routing import (  # noqa: E402
+    incident_logs_policy_allows_read, routing_for_tool,
+)
+from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
+from ha_mcp_engineering.tools import incident_logs as tool_module  # noqa: E402
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PACKAGE = ROOT / "hass_mcp_engineering_beta" / "ha_mcp_engineering"
+# Synthetic, unmistakable credentials (assembled so no committed literal is
+# secret-shaped).
+SUPERVISOR_TOKEN = "synthetic-supervisor-" + "credential-131"
+HA_TOKEN = "synthetic-ha-" + "credential-131"
+ACCESS_SECRET = "synthetic-access-" + "secret-131"
+NOW = ms("2026-10-19T13:30:00.000")
+CORE = "/core/logs"
+SELF = "/addons/self/logs"
+
+
+def core_line(text: str, level: str, ts_ms: int) -> str:
+    stamp = service_module.datetime.fromtimestamp(ts_ms / 1000, service_module.timezone.utc)
+    return f"{stamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]} {level} (MainThread) [synthetic.component] {text}"
+
+
+def fill(journal, first: str, count: int, step_ms: int, label: str, level: str = "INFO",
+         **kwargs):
+    base = ms(first)
+    return [journal.add(base + i * step_ms, core_line(f"{label} event {i}", level, base + i * step_ms),
+                        **kwargs)
+            for i in range(count)]
+
+
+def message_ids(page: dict) -> list[str]:
+    return [entry["source"] + "|" + entry["message"].split("] ", 1)[1] for entry in page["entries"]]
+
+
+class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.sim = SupervisorSim(SUPERVISOR_TOKEN)
+        self.runner, self.url = await start(self.sim)
+        self.addAsyncCleanup(self.runner.cleanup)
+        self.clock = [NOW / 1000]
+        self.service = self.make_service()
+
+    def make_service(self, token: str = SUPERVISOR_TOKEN) -> IncidentLogService:
+        transport = JournalTransport(token_source=lambda: token, timeout_seconds=2.0, base_url=self.url)
+        codec = CursorCodec("incident_logs", key=b"k" * 32, clock=lambda: self.clock[0])
+        return IncidentLogService(transport, known_secrets=(HA_TOKEN, ACCESS_SECRET), codec=codec,
+                                  clock=lambda: NOW)
+
+    async def read(self, service=None, caller="synthetic_authenticated_caller", **arguments):
+        telemetry, token = begin_request()
+        telemetry.caller_id = caller
+        try:
+            return await (service or self.service).read(arguments)
+        finally:
+            end_request(token)
+
+    async def read_all(self, **arguments) -> list[dict]:
+        pages = [await self.read(**arguments)]
+        while pages[-1]["next_cursor"]:
+            self.assertLess(len(pages), 200)
+            pages.append(await self.read(**arguments, cursor=pages[-1]["next_cursor"]))
+        return pages
+
+    def expected(self, sources: list[str], start_ms: int, end_ms: int) -> list[str]:
+        rows = []
+        for position, source in enumerate(sources):
+            path = CORE if source == "core" else SELF
+            for entry in self.sim.journal(path).entries:
+                if start_ms <= entry.ts_ms < end_ms:
+                    rows.append((entry.ts_ms, position, entry.seq,
+                                 source + "|" + entry.message.split("] ", 1)[1]))
+        return [row[3] for row in sorted(rows)]
+
+    def source(self, page: dict, key: str) -> dict:
+        return next(row for row in page["sources"] if row["source"] == key)
+
+    # -- motivating incident ------------------------------------------------
+
+    async def test_motivating_incident_window_across_sources_with_coverage(self):
+        core = self.sim.journal(CORE)
+        base = ms("2026-10-19T11:00:00.000")
+        for i in range(240):
+            ts = base + i * 30_000
+            core.add(ts, core_line(f"heartbeat {i}", "INFO", ts))
+            if i == 122:
+                failure = ts + 2_123
+                core.add(failure, core_line(
+                    "Thermostat — Apply Setpoints: Error executing script. Error for call_service "
+                    "at pos 1: climate.mudroom_thermostat returned 503 Service Unavailable",
+                    "ERROR", failure))
+                core.add(failure, "Traceback (most recent call last):")
+        fill(self.sim.journal(SELF), "2026-10-19T11:58:00.000", 10, 30_000, "self")
+        page = await self.read(sources=["core", "supervisor", "addon:self", "addon:zwave_js"],
+                               start="2026-10-19T11:55:00Z", end="2026-10-19T12:05:00Z",
+                               min_level="error")
+        self.assertEqual(page["returned"], 2)
+        entry, traceback = page["entries"]
+        self.assertEqual(entry["ts"], "2026-10-19T12:01:02.123Z")
+        self.assertEqual((entry["source"], entry["process"], entry["level"], entry["level_basis"]),
+                         ("core", "homeassistant[77]", "error", "parsed"))
+        self.assertIn("climate.mudroom_thermostat returned 503", entry["message"])
+        core_row = self.source(page, "core")
+        self.assertEqual(core_row["status"], "complete")
+        self.assertEqual(core_row["reason"], "end_reached")
+        self.assertEqual(core_row["start_location"], "exact")
+        self.assertEqual(core_row["earliest_available"], "2026-10-19T11:00:00.000Z")
+        self.assertEqual(core_row["latest_available"], "2026-10-19T12:59:30.000Z")
+        self.assertFalse(core_row["retention_edge_reached"])
+        # The traceback line is its own journal entry: it inherits ERROR.
+        self.assertEqual((traceback["level"], traceback["level_basis"]), ("error", "inherited"))
+        self.assertEqual(core_row["skipped_by_filter"], 20)
+        self.assertEqual(core_row["entries_returned"], 2)
+        for key, pattern in (("supervisor", r"^/supervisor/.+$"), ("addon:zwave_js", r"^/addons/[^/]+/(?!security).+$")):
+            row = self.source(page, key)
+            self.assertEqual((row["status"], row["reason"], row["requests"], row["route"]),
+                             ("unavailable", "authority_not_granted", 0, None))
+            self.assertEqual(row["required_route_pattern"], pattern)
+            self.assertIn(f"source_unavailable:{key}", page["omissions"])
+        self.assertEqual([row["source"] for row in page["sources"]],
+                         ["core", "supervisor", "addon:self", "addon:zwave_js"])
+        self.assertTrue(all(path.split("?")[0] in (CORE, SELF) for _, path, _ in self.sim.calls))
+        self.assertTrue(all(method == "GET" for method, _, _ in self.sim.calls))
+        self.assertFalse(page["complete"])
+
+    async def test_inherited_level_on_unparsed_entry(self):
+        journal = self.sim.journal(CORE)
+        journal.add(ms("2026-10-19T12:00:00.000"), core_line("first", "ERROR", ms("2026-10-19T12:00:00.000")))
+        journal.add(ms("2026-10-19T12:00:00.000"), "  File \"synthetic.py\", line 1")
+        journal.add(ms("2026-10-19T12:00:01.000"), core_line("later", "INFO", ms("2026-10-19T12:00:01.000")))
+        page = await self.read(sources=["core"], start="2026-10-19T11:59:00Z", end="2026-10-19T12:01:00Z")
+        self.assertEqual([(e["level"], e["level_basis"]) for e in page["entries"]],
+                         [("error", "parsed"), ("error", "inherited"), ("info", "parsed")])
+
+    # -- window edges --------------------------------------------------------
+
+    async def test_window_edges_start_inclusive_end_exclusive(self):
+        journal = self.sim.journal(CORE)
+        for text in ("11:59:59.999", "12:00:00.000", "12:00:00.001", "12:09:59.999", "12:10:00.000",
+                     "12:10:00.001"):
+            ts = ms(f"2026-10-19T{text}")
+            journal.add(ts, core_line(text, "INFO", ts))
+        page = await self.read(sources=["core"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:10:00Z")
+        self.assertEqual([e["ts"][11:23] for e in page["entries"]],
+                         ["12:00:00.000", "12:00:00.001", "12:09:59.999"])
+        self.assertEqual(self.source(page, "core")["reason"], "end_reached")
+        self.assertTrue(page["complete"])
+        self.assertIsNone(page["next_cursor"])
+
+    async def test_window_bound_and_argument_refusals_send_nothing(self):
+        cases = [
+            {"sources": ["core"], "start": "2026-10-19T06:00:00Z", "end": "2026-10-19T12:00:00.001Z"},
+            {"sources": ["core"], "start": "2026-10-19T12:00:00Z", "end": "2026-10-19T12:00:00Z"},
+            {"sources": ["core"], "start": "2026-10-19T12:00:00"},
+            {"sources": ["core"], "start": "2026-10-19T12:00:00.0001Z"},
+            {"sources": ["core"], "start": "2026-10-19T13:00:00Z", "end": "2026-10-19T13:40:00Z"},
+            {"sources": ["core"] * 2, "start": "2026-10-19T12:00:00Z"},
+            {"sources": ["core", "supervisor", "host", "addon:self", "addon:a"], "start": "2026-10-19T12:00:00Z"},
+            {"sources": ["core"], "start": "2026-10-19T12:00:00Z", "limit": 201},
+            {"sources": ["core"], "start": "2026-10-19T12:00:00Z", "limit": True},
+            {"sources": ["core"], "start": "2026-10-19T12:00:00Z", "min_level": "warn"},
+            {"sources": ["core"], "start": "2026-10-19T12:00:00Z", "text": "x" * 129},
+            {"sources": ["core"], "start": "2026-10-19T12:00:00Z", "text": "a\nb"},
+            {"sources": ["core"], "start": "2026-10-19T12:00:00Z", "regex": ".*"},
+        ]
+        self.assertEqual(c.MAX_WINDOW_SECONDS, 21600)
+        for arguments in cases:
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(c.IncidentLogsError) as caught:
+                    await self.read(**arguments)
+                self.assertEqual(caught.exception.reason, "invalid_arguments")
+        self.assertEqual(self.sim.calls, [])
+        # Exactly six hours is accepted.
+        await self.read(sources=["core"], start="2026-10-19T06:00:00Z", end="2026-10-19T12:00:00Z")
+
+    async def test_retention_edge_and_empty_and_after_tail(self):
+        fill(self.sim.journal(CORE), "2026-10-19T12:00:00.000", 5, 1000, "core")
+        page = await self.read(sources=["core", "addon:self"], start="2026-10-19T11:00:00Z",
+                               end="2026-10-19T12:30:00Z")
+        row = self.source(page, "core")
+        self.assertEqual((row["status"], row["start_location"], row["retention_edge_reached"]),
+                         ("partial", "retention_edge", True))
+        self.assertEqual(row["gaps"], [{"from": "2026-10-19T11:00:00.000Z", "to": "2026-10-19T12:00:00.000Z",
+                                        "reason": "before_retention_edge"}])
+        self.assertIn("before_retention_edge:core", page["omissions"])
+        self.assertEqual(page["entries"][0]["ts"], "2026-10-19T12:00:00.000Z")
+        self.assertEqual(page["returned"], 5)
+        empty = self.source(page, "addon:self")
+        self.assertEqual((empty["status"], empty["reason"], empty["requests"]), ("complete", "empty_journal", 1))
+        later = await self.read(sources=["core"], start="2026-10-19T12:10:00Z", end="2026-10-19T12:20:00Z")
+        self.assertEqual(self.source(later, "core")["reason"], "window_after_tail")
+        self.assertEqual(later["returned"], 0)
+        self.assertEqual(later["limitations"][-1], "An empty result never proves an event did not occur.")
+
+    async def test_retention_edge_head_returned_once_across_pages(self):
+        fill(self.sim.journal(CORE), "2026-10-19T12:00:00.000", 9, 1000, "core")
+        pages = await self.read_all(sources=["core"], start="2026-10-19T11:00:00Z",
+                                    end="2026-10-19T12:30:00Z", limit=2)
+        ids = [i for page in pages for i in message_ids(page)]
+        self.assertEqual(ids, self.expected(["core"], ms("2026-10-19T11:00:00.000"), ms("2026-10-19T12:30:00.000")))
+
+    async def test_large_journal_locates_exact_start_within_budget(self):
+        fill(self.sim.journal(CORE), "2026-10-19T09:00:00.000", 6000, 1000, "core")
+        page = await self.read(sources=["core"], start="2026-10-19T10:00:00.500Z",
+                               end="2026-10-19T10:10:00Z", limit=5)
+        self.assertEqual(page["entries"][0]["ts"], "2026-10-19T10:00:01.000Z")
+        row = self.source(page, "core")
+        self.assertEqual(row["start_location"], "exact")
+        self.assertLessEqual(row["requests"], c.MAX_REQUESTS_PER_SOURCE)
+        # Bisection stops within one page of the start.
+        self.assertLess(row["outside_window"], c.PAGE_ENTRIES)
+
+    async def test_start_beyond_probe_reach_is_a_disclosed_gap(self):
+        fill(self.sim.journal(CORE), "2026-10-19T09:00:00.000", 400, 1000, "core")
+        with patch.object(c, "PROBE_DISTANCES", (4, 8)):
+            page = await self.read(sources=["core"], start="2026-10-19T09:00:30Z", end="2026-10-19T10:00:00Z")
+        row = self.source(page, "core")
+        self.assertEqual((row["status"], row["start_location"]), ("partial", "not_located"))
+        self.assertEqual(row["gaps"][0]["reason"], "start_not_located")
+        self.assertIn("start_not_located:core", page["omissions"])
+
+    # -- pagination ---------------------------------------------------------
+
+    async def test_pagination_identical_timestamps_no_duplicates_or_skips(self):
+        core, own = self.sim.journal(CORE), self.sim.journal(SELF)
+        base = ms("2026-10-19T12:00:00.000")
+        for i in range(130):
+            ts = base + (i // 7) * 1000  # runs of seven identical timestamps
+            core.add(ts, core_line(f"core event {i}", "INFO", ts))
+            if i % 3 == 0:
+                own.add(ts, core_line(f"self event {i}", "INFO", ts))
+        with patch.object(c, "PAGE_ENTRIES", 6):
+            pages = await self.read_all(sources=["core", "addon:self"], start="2026-10-19T12:00:00Z",
+                                        end="2026-10-19T12:00:15Z", limit=5)
+        ids = [i for page in pages for i in message_ids(page)]
+        self.assertEqual(ids, self.expected(["core", "addon:self"], base, base + 15_000))
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(page["returned"] <= 5 for page in pages))
+        self.assertFalse(pages[-1]["has_more"])
+
+    async def test_pagination_with_filter_counts_skips(self):
+        core = self.sim.journal(CORE)
+        base = ms("2026-10-19T12:00:00.000")
+        for i in range(60):
+            core.add(base + i, core_line(f"core event {i}", "WARNING" if i % 4 == 0 else "INFO", base + i))
+        pages = await self.read_all(sources=["core"], start="2026-10-19T12:00:00Z",
+                                    end="2026-10-19T12:01:00Z", min_level="warning", limit=4)
+        ids = [i for page in pages for i in message_ids(page)]
+        self.assertEqual(ids, [f"core|core event {i}" for i in range(0, 60, 4)])
+        self.assertEqual(sum(self.source(p, "core")["skipped_by_filter"] for p in pages), 45)
+
+    async def test_text_filter_is_literal(self):
+        core = self.sim.journal(CORE)
+        base = ms("2026-10-19T12:00:00.000")
+        core.add(base, core_line("value a.c here", "INFO", base))
+        core.add(base + 1, core_line("value abc here", "INFO", base + 1))
+        page = await self.read(sources=["core"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:01:00Z",
+                               text="A.C")
+        self.assertEqual(message_ids(page), ["core|value a.c here"])
+        self.assertTrue(page["filters"]["text_filter_applied"])
+
+    async def test_vacuum_between_pages_fails_closed_as_stale(self):
+        fill(self.sim.journal(CORE), "2026-10-19T12:00:00.000", 30, 1000, "core")
+        first = await self.read(sources=["core"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:10:00Z",
+                                limit=10)
+        self.sim.journal(CORE).vacuum(15)
+        with self.assertRaises(GovernanceError) as caught:
+            await self.read(sources=["core"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:10:00Z",
+                            limit=10, cursor=first["next_cursor"])
+        self.assertEqual(caught.exception.code, ErrorCode.STALE_CURSOR)
+        self.assertEqual(caught.exception.details["reason"], "journal_continuity_broken")
+
+    async def test_vacuum_inside_a_call_fails_the_source_with_a_gap(self):
+        fill(self.sim.journal(CORE), "2026-10-19T12:00:00.000", 40, 1000, "core")
+        with patch.object(c, "PAGE_ENTRIES", 5):
+            calls = len(self.sim.calls)
+            # Locate takes one tail and one head probe; vacuum before page two.
+            self.sim.mutate_before[calls + 4] = lambda sim: sim.journal(CORE).vacuum(20)
+            page = await self.read(sources=["core"], start="2026-10-19T11:00:00Z", end="2026-10-19T12:30:00Z",
+                                   limit=50)
+        row = self.source(page, "core")
+        self.assertEqual((row["status"], row["reason"]), ("failed", "continuity_broken"))
+        self.assertEqual(row["gaps"][-1]["reason"], "unread_after_failure")
+        self.assertIn("source_failed:core", page["omissions"])
+        self.assertFalse(page["complete"])
+        # The first page holds the unread head plus PAGE_ENTRIES entries.
+        self.assertEqual(page["returned"], 6)
+
+    async def test_cursor_integrity_query_binding_and_expiry(self):
+        fill(self.sim.journal(CORE), "2026-10-19T12:00:00.000", 30, 1000, "core")
+        arguments = {"sources": ["core"], "start": "2026-10-19T12:00:00Z", "end": "2026-10-19T12:10:00Z",
+                     "limit": 10}
+        first = await self.read(**arguments)
+        cursor = first["next_cursor"]
+        payload, signature = cursor.split(".")
+        tampered = base64.urlsafe_b64encode(
+            base64.urlsafe_b64decode(payload + "==").replace(b'"v":1', b'"v":2')
+        ).decode().rstrip("=") + "." + signature
+        calls = len(self.sim.calls)
+        for bad, code, reason in (
+            (tampered, ErrorCode.INVALID_CURSOR, "integrity_or_format_invalid"),
+            ("not-a-cursor", ErrorCode.INVALID_CURSOR, "integrity_or_format_invalid"),
+        ):
+            with self.assertRaises(GovernanceError) as caught:
+                await self.read(**arguments, cursor=bad)
+            self.assertEqual((caught.exception.code, caught.exception.details["reason"]), (code, reason))
+        with self.assertRaises(GovernanceError) as caught:
+            await self.read(**dict(arguments, min_level="error"), cursor=cursor)
+        self.assertEqual(caught.exception.details["reason"], "query_mismatch")
+        with self.assertRaises(GovernanceError) as caught:
+            await self.read(**dict(arguments, sources=["core", "addon:self"]), cursor=cursor)
+        self.assertEqual(caught.exception.details["reason"], "query_mismatch")
+        self.clock[0] += 3601
+        with self.assertRaises(GovernanceError) as caught:
+            await self.read(**arguments, cursor=cursor)
+        self.assertEqual((caught.exception.code, caught.exception.details["reason"]),
+                         (ErrorCode.STALE_CURSOR, "cursor_expired"))
+        self.assertEqual(len(self.sim.calls), calls)
+        # Another process (another key) cannot use it.
+        other = IncidentLogService(self.service.transport, codec=CursorCodec("incident_logs", key=b"o" * 32))
+        with self.assertRaises(GovernanceError):
+            await self.read(service=other, **arguments, cursor=cursor)
+        decoded = json.loads(base64.urlsafe_b64decode(payload + "=="))
+        self.assertNotIn("core event", json.dumps(decoded))
+
+    async def test_defaulted_end_is_fixed_by_the_cursor(self):
+        fill(self.sim.journal(CORE), "2026-10-19T13:00:00.000", 30, 1000, "core")
+        arguments = {"sources": ["core"], "start": "2026-10-19T12:59:00Z", "limit": 10}
+        pages = await self.read_all(**arguments)
+        self.assertEqual({page["window"]["end"] for page in pages}, {"2026-10-19T13:30:00.000Z"})
+        self.assertTrue(all(page["window"]["end_defaulted"] for page in pages))
+        self.assertEqual(sum(page["returned"] for page in pages), 30)
+
+    # -- unavailability -----------------------------------------------------
+
+    async def test_http_refusals_are_reported_per_source(self):
+        fill(self.sim.journal(CORE), "2026-10-19T12:00:00.000", 3, 1000, "core")
+        for status, reason in ((401, "authority_refused"), (403, "authority_refused"),
+                               (404, "route_or_addon_unavailable"), (502, "supervisor_http_error")):
+            with self.subTest(status=status):
+                self.sim.status = {SELF: status}
+                page = await self.read(sources=["core", "addon:self"], start="2026-10-19T12:00:00Z",
+                                       end="2026-10-19T12:10:00Z")
+                row = self.source(page, "addon:self")
+                self.assertEqual((row["status"], row["reason"], row["http_status"]),
+                                 ("unavailable", reason, status))
+                self.assertEqual(page["returned"], 3)
+                self.assertIn("source_unavailable:addon:self", page["omissions"])
+                self.assertNotIn("synthetic refusal", json.dumps(page))
+
+    async def test_all_statically_unavailable_refuses_with_zero_requests(self):
+        with self.assertRaises(c.IncidentLogsError) as caught:
+            await self.read(sources=["supervisor", "host", "addon:zwave_js"], start="2026-10-19T12:00:00Z")
+        self.assertEqual(caught.exception.reason, "sources_unavailable")
+        self.assertEqual(self.sim.calls, [])
+
+    async def test_stopped_addon_logs_remain_readable_and_wrong_shape_fails(self):
+        # A stopped add-on's journal persists; the endpoint still serves it.
+        fill(self.sim.journal(SELF), "2026-10-19T12:00:00.000", 2, 1000, "self")
+        page = await self.read(sources=["addon:self"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:10:00Z")
+        self.assertEqual(page["returned"], 2)
+        self.sim.content_type = "text/html"
+        page = await self.read(sources=["addon:self"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:10:00Z")
+        self.assertEqual(self.source(page, "addon:self")["reason"], "representation_invalid")
+        self.assertEqual(page["returned"], 0)
+
+    async def test_anonymous_or_missing_credential_is_refused_before_requests(self):
+        with self.assertRaises(c.IncidentLogsError) as caught:
+            await self.read(caller="anonymous", sources=["core"], start="2026-10-19T12:00:00Z")
+        self.assertEqual(caught.exception.reason, "authority_unavailable")
+        with self.assertRaises(c.IncidentLogsError):
+            await self.read(service=self.make_service(token=""), sources=["core"], start="2026-10-19T12:00:00Z")
+        self.assertEqual(self.sim.calls, [])
+
+    async def test_slug_traversal_is_refused_with_zero_requests(self):
+        for token in ("addon:../core", "addon:..", "addon:.", "addon:a/b", "addon:%2e%2e", "addon:a%2fb",
+                      "addon:", "addon:A", "addon:a b", "addon:a?x=1", "addon:a#b", "addon:\\x",
+                      "addon:" + "a" * 65, "Core", "addons:x", "addon:self/../../core"):
+            with self.subTest(token=token):
+                with self.assertRaises(c.IncidentLogsError):
+                    await self.read(sources=[token], start="2026-10-19T12:00:00Z")
+        self.assertEqual(self.sim.calls, [])
+
+    # -- secrets ------------------------------------------------------------
+
+    async def test_planted_secrets_never_reach_any_output_field(self):
+        bearer = "synthetic-bearer-" + "value-131"
+        password = "synthetic-pass" + "word-131"
+        webhook = "synthetic-webhook-" + "id-131"
+        url_token = "synthetic-url-" + "token-131"
+        planted = [
+            f"Authorization: Bearer {bearer}",
+            f"connecting with password={password}",
+            f"POST https://example.invalid/api/webhook/{webhook}",
+            f"fetch https://user:{password}@example.invalid/x?access_token={url_token}",
+            f"supervisor token {SUPERVISOR_TOKEN}",
+            f"token={HA_TOKEN}",
+            ACCESS_SECRET,
+        ]
+        own = self.sim.journal(SELF)
+        base = ms("2026-10-19T12:00:00.000")
+        for i, text in enumerate(planted):
+            own.add(base + i * 10, core_line(text, "ERROR", base + i * 10), identifier="synthetic_addon")
+        own.add(base + 100, f"continuation start\napi_key: {bearer}", identifier="synthetic_addon")
+        own.add(base + 200, core_line("x" * 1990 + f" password={password}", "ERROR", base + 200),
+                identifier="synthetic_addon")
+        fill(self.sim.journal(CORE), "2026-10-19T12:00:00.000", 3, 50, "core")
+        secrets = (bearer, password, webhook, url_token, SUPERVISOR_TOKEN, HA_TOKEN, ACCESS_SECRET)
+        pages = await self.read_all(sources=["core", "addon:self"], start="2026-10-19T12:00:00Z",
+                                    end="2026-10-19T12:10:00Z", limit=3)
+        for page in pages:
+            rendered = json.dumps(page)
+            for secret in secrets:
+                self.assertNotIn(secret, rendered)
+            if page["next_cursor"]:
+                body = base64.urlsafe_b64decode(page["next_cursor"].split(".")[0] + "==").decode()
+                for secret in secrets:
+                    self.assertNotIn(secret, body)
+        entries = [e for page in pages for e in page["entries"]]
+        self.assertEqual(len(entries), 12)
+        planted_rows = [e for e in entries if "core event" not in e["message"]]
+        # The long entry is cut at the character bound before its secret.
+        self.assertEqual([e.get("message_truncated", False) for e in planted_rows], [False] * 8 + [True])
+        self.assertTrue(all("[REDACTED:" in e["message"] for e in planted_rows[:8]))
+        self.assertTrue(any("redacted_by_policy" in page["omissions"] for page in pages))
+        # The filter only sees sanitized text, so it cannot probe a secret.
+        probe = await self.read(sources=["addon:self"], start="2026-10-19T12:00:00Z",
+                                end="2026-10-19T12:10:00Z", text=bearer[:30])
+        self.assertEqual(probe["returned"], 0)
+
+    async def test_long_message_truncation_keeps_markers_whole(self):
+        base = ms("2026-10-19T12:00:00.000")
+        text = "y" * 1985 + " password=" + "synthetic-long-" + "secret-131"
+        self.sim.journal(CORE).add(base, core_line(text, "INFO", base))
+        page = await self.read(sources=["core"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:10:00Z")
+        entry = page["entries"][0]
+        self.assertTrue(entry["message_truncated"])
+        self.assertLessEqual(len(entry["message"]), c.MAX_MESSAGE_CHARS)
+        opener = entry["message"].rfind("[REDACTED:")
+        self.assertTrue(opener == -1 or "]" in entry["message"][opener:])
+        self.assertIn("message_characters_limit", page["omissions"])
+
+    async def test_response_byte_ceiling_shrinks_the_page(self):
+        base = ms("2026-10-19T12:00:00.000")
+        for i in range(60):
+            self.sim.journal(CORE).add(base + i, core_line(f"{i} " + "z" * 1900, "INFO", base + i))
+        pages = await self.read_all(sources=["core"], start="2026-10-19T12:00:00Z",
+                                    end="2026-10-19T12:10:00Z", limit=60)
+        self.assertIn("response_bytes_limit", pages[0]["omissions"])
+        self.assertLess(pages[0]["returned"], 60)
+        for page in pages:
+            self.assertLessEqual(len(json.dumps(page, separators=(",", ":"))), c.RESPONSE_BUDGET)
+        self.assertEqual(sum(page["returned"] for page in pages), 60)
+
+    # -- single exit ----------------------------------------------------------
+
+    async def test_sanitizers_run_only_in_the_single_exit(self):
+        callers = []
+        real_lines, real_data = service_module.sanitize_log_lines, service_module.sanitize_untrusted_data
+
+        def spy(real):
+            def wrapper(*args, **kwargs):
+                callers.append(inspect.stack()[1].function)
+                return real(*args, **kwargs)
+            return wrapper
+
+        fill(self.sim.journal(CORE), "2026-10-19T12:00:00.000", 20, 1000, "core")
+        with patch.object(service_module, "sanitize_log_lines", spy(real_lines)), \
+                patch.object(service_module, "sanitize_untrusted_data", spy(real_data)):
+            await self.read(sources=["core", "addon:self"], start="2026-10-19T12:00:00Z",
+                            end="2026-10-19T12:10:00Z", limit=5)
+        self.assertTrue(callers)
+        self.assertEqual(set(callers), {"_finish"})
+        tree = ast.parse((PACKAGE / "incident_logs" / "service.py").read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+                if names & {"sanitize_log_lines", "sanitize_untrusted_data"}:
+                    self.assertEqual(node.name, "_finish")
+        for module in ("transport.py", "journal.py", "contracts.py", "cursor.py"):
+            tree = ast.parse((PACKAGE / "incident_logs" / module).read_text(encoding="utf-8"))
+            imported = {alias.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+                        for alias in node.names}
+            self.assertFalse({name for name in imported if "sanitiz" in name}, module)
+
+    # -- static read-only and registration ----------------------------------
+
+    def test_read_only_static_surface(self):
+        files = sorted((PACKAGE / "incident_logs").glob("*.py")) + [PACKAGE / "tools" / "incident_logs.py"]
+        for path in files:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute):
+                    self.assertNotIn(node.attr, {"post", "put", "patch", "delete", "request", "ws_connect",
+                                                 "read_text", "read_bytes", "unlink", "write"}, path.name)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                    self.assertNotIn(node.func.id, {"open", "eval", "exec"}, path.name)
+                if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "rest_path":
+                    self.assertIn(node.args[0].value, {"/core/logs", "/addons/self/logs"})
+        source = (PACKAGE / "incident_logs" / "transport.py").read_text(encoding="utf-8")
+        self.assertEqual(source.count("session.get("), 1)
+        self.assertIn("allow_redirects=False", source)
+
+    def test_routing_core_gate_and_catalog(self):
+        decision = routing_for_tool("get_incident_logs")
+        self.assertEqual(decision.preferred_provider, "supervisor_incident_logs")
+        self.assertEqual(decision.fallback_providers, ())
+        self.assertTrue(incident_logs_policy_allows_read())
+        independence = CORE_INDEPENDENT_STATIC_TOOLS["get_incident_logs"]
+        self.assertEqual(independence.basis, CORE_INDEPENDENT_SUPERVISOR_ONLY)
+        from ha_mcp_engineering.capabilities import BETA_NATIVE_CAPABILITIES
+        entry = next(item for item in BETA_NATIVE_CAPABILITIES if item["tool"] == "get_incident_logs")
+        self.assertEqual((entry["risk"], entry["fallback"], entry["direct_write_allowed"]), ("read", "none", False))
+        from ha_mcp_engineering.tools import registry
+        tool = registry._SDK_TOOLS.get("get_incident_logs")
+        self.assertTrue(tool.annotations.readOnlyHint)
+        self.assertFalse(tool.annotations.destructiveHint)
+        self.assertFalse(tool.parameters["additionalProperties"])
+        self.assertEqual(tool.parameters["required"], ["sources", "start"])
+
+    def test_policy_refuses_when_routing_drifts(self):
+        from ha_mcp_engineering.providers import routing
+        drifted = replace(routing_for_tool("get_incident_logs"), fallback_providers=("direct_ha_api",))
+        with patch.object(routing, "routing_for_tool", return_value=drifted):
+            self.assertFalse(routing.incident_logs_policy_allows_read())
+
+
+class IncidentLogToolTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.sim = SupervisorSim(SUPERVISOR_TOKEN)
+        self.runner, url = await start(self.sim)
+        self.addAsyncCleanup(self.runner.cleanup)
+        self.settings = Settings(
+            ha_url="http://127.0.0.1:9", ha_token=HA_TOKEN, access_secret=ACCESS_SECRET, port=8100,
+            audit_path="unused-synthetic-audit.jsonl", rate_limit_per_minute=120, rate_limit_burst=20,
+            destructive_services=frozenset(), ha_timeout_seconds=1.0,
+        )
+        runtime = service_module.IncidentLogsRuntime()
+        runtime.service = IncidentLogService(
+            JournalTransport(token_source=lambda: SUPERVISOR_TOKEN, timeout_seconds=1.0, base_url=url),
+            known_secrets=(HA_TOKEN, ACCESS_SECRET),
+        )
+        for patcher in (patch.object(tool_module, "INCIDENT_LOGS", runtime),
+                        patch.object(tool_module, "SETTINGS", self.settings)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    async def call(self, arguments: dict) -> dict:
+        telemetry, token = begin_request()
+        telemetry.caller_id = "synthetic_authenticated_caller"
+        try:
+            tool = tool_module.registered_tool()
+            return json.loads(await tool.run(arguments))
+        finally:
+            end_request(token)
+
+    async def test_tool_success_metadata_and_raw_refusal(self):
+        recent = service_module.now_ms() - 60_000
+        self.sim.journal(CORE).add(recent, core_line("synthetic recent", "INFO", recent))
+        start_text = c.format_ms(recent - 1000)
+        result = await self.call({"sources": ["core", "supervisor"], "start": start_text})
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["returned"], 1)
+        self.assertEqual(result["metadata"]["provider"], "supervisor_incident_logs")
+        self.assertFalse(result["metadata"]["fallback_occurred"])
+        self.assertEqual(result["metadata"]["completeness"], "partial")
+        calls = len(self.sim.calls)
+        for bad in ({"sources": ["addon:../core"], "start": start_text},
+                    {"sources": ["core"], "start": start_text, "extra": 1},
+                    {"sources": ["core"], "start": start_text, "limit": "5"}):
+            refused = await self.call(bad)
+            self.assertFalse(refused["success"])
+            self.assertNotIn("../core", json.dumps(refused))
+        self.assertEqual(len(self.sim.calls), calls)
+
+    async def test_policy_drift_refuses_before_any_request(self):
+        with patch.object(tool_module, "incident_logs_policy_allows_read", return_value=False):
+            result = await self.call({"sources": ["core"], "start": c.format_ms(service_module.now_ms() - 60_000)})
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], "provider_prohibited")
+        self.assertEqual(self.sim.calls, [])
+
+
+if __name__ == "__main__":
+    unittest.main()
