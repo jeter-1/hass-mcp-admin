@@ -590,9 +590,11 @@ class _CalledScriptFreshnessAdapter:
 
     HAMCP-213 review H5: every preflight (first dispatch, re-apply, recovery
     and pre-intent retry) re-reads the scripts each operation of the plan
-    calls and compares them with the snapshot bound into the plan. Any
-    difference is a preflight rejection before approval consumption and
-    before any write.
+    calls and compares them with the snapshot bound into the plan. A script
+    the same plan changes is read too and must be in its exact state for
+    this child's position in the plan's order (batch 4 H5). Any difference
+    is a preflight rejection before approval consumption and before any
+    write.
     """
 
     def __init__(self, adapter: Any, check: Any):
@@ -2701,9 +2703,18 @@ class F3RuntimeIntegration:
             else:
                 adapter = _SequenceLockAdapter(adapter, complete_requests)
             if plan.contract_version == 2:
+                # Batch 4 H5: a script this plan changes is checked against
+                # its exact state before this child's operation is written.
+                dispatch_order = next(
+                    operation.order
+                    for operation in plan.operations
+                    if operation.operation_id == declaration["operation_id"]
+                )
                 adapter = _CalledScriptFreshnessAdapter(
                     adapter,
-                    lambda: self.service._called_scripts_stale(plan.operations),
+                    lambda: self.service._called_scripts_stale(
+                        plan.operations, dispatch_order=dispatch_order
+                    ),
                 )
         else:
             if getattr(prepared, "capability_id", None) == DASHBOARD_CAPABILITY_ID:

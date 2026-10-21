@@ -3763,14 +3763,25 @@ class ChangeGovernanceService:
         operation: ConfigurationOperation,
         operations: list[ConfigurationOperation],
         cache: dict[str, dict[str, Any]],
+        *,
+        dispatch_order: int | None = None,
     ) -> dict[str, Any] | None:
         """Build one operation's called-script snapshot from governed reads.
 
         Used at plan creation and, unchanged, at every dispatch to prove the
         snapshot is still current (HAMCP-213 review H5). ``cache`` holds the
-        reads of one capture or one verification. A script changed by the
-        same plan is taken from the plan's own configurations, never read.
-        Reads beyond ``MAX_CALLED_SCRIPTS`` mark the snapshot ``truncated``.
+        reads of one capture or one verification. Reads beyond
+        ``MAX_CALLED_SCRIPTS`` mark the snapshot ``truncated``.
+
+        A script changed by the same plan is summarized from the plan's own
+        bodies: its proposed (post-plan) body and its current body, since a
+        non-atomic plan can stop with a caller written and the callee not
+        (batch 4 H5). At plan creation (``dispatch_order`` ``None``) it is
+        not read. At dispatch, before the operation at ``dispatch_order`` is
+        written, it is read live and must match its exact expected state at
+        that point in the plan's order: the plan's proposed fingerprint when
+        its own operation is ordered earlier (already written), otherwise its
+        pre-plan fingerprint. Any other state makes the snapshot stale.
         """
 
         if operation.resource_type not in {"automation", "script"} or (
@@ -3789,6 +3800,26 @@ class ChangeGovernanceService:
             if key in scripts:
                 return scripts[key]
             planned = in_plan.get(key)
+            if planned is not None and dispatch_order is not None:
+                # Batch 4 H5: observe, never substitute stored bodies.
+                try:
+                    live = await self._read_configuration_resource(
+                        "script", key
+                    )
+                    current_matches = (
+                        live is None
+                        or resource_identity_matches("script", key, live)
+                    ) and resource_fingerprint("script", live) == (
+                        self._in_plan_callee_expected_fingerprint(
+                            planned, dispatch_order
+                        )
+                    )
+                except Exception:  # noqa: BLE001 - unobservable is stale
+                    current_matches = False
+                if not current_matches:
+                    entry = {"stale": "called_script_in_plan_state_mismatch"}
+                    scripts[key] = entry
+                    return entry
             if planned is not None:
                 configs = [
                     config
@@ -3907,11 +3938,31 @@ class ChangeGovernanceService:
             snapshot["truncated"] = True
         return deepcopy(snapshot)
 
+    @staticmethod
+    def _in_plan_callee_expected_fingerprint(
+        planned: ConfigurationOperation, dispatch_order: int
+    ) -> str:
+        """The exact state a script the plan changes has before a write.
+
+        Batch 4 H5: both dispatch paths write in ``order`` and stop at the
+        first failure, so before the operation at ``dispatch_order`` is
+        written every earlier operation has been written and verified and no
+        later one has been attempted.
+        """
+
+        if planned.order < dispatch_order:
+            return resource_fingerprint(
+                "script",
+                None if planned.action == "delete" else planned.proposed_config,
+            )
+        return planned.current_state_fingerprint
+
     async def _called_scripts_stale(
         self,
         operations: list[ConfigurationOperation],
         *,
         only: ConfigurationOperation | None = None,
+        dispatch_order: int | None = None,
     ) -> dict[str, str] | None:
         """Re-read every operation's called scripts; name the first stale one.
 
@@ -3922,8 +3973,16 @@ class ChangeGovernanceService:
         plan as stale when any operation's snapshot differs. Returns ``None``
         when every snapshot is current. ``only`` limits the check to one
         operation; the whole plan still decides which scripts are in-plan.
+        ``dispatch_order`` is the order of the operation about to be written
+        (``None``: before the first write). Scripts the plan itself changes
+        are read live and checked against their state at that point (batch 4
+        H5).
         """
 
+        if dispatch_order is None:
+            dispatch_order = min(
+                (operation.order for operation in operations), default=0
+            )
         cache: dict[str, dict[str, Any]] = {}
         for operation in sorted(operations, key=lambda item: item.order):
             if operation.resource_type not in {"automation", "script"}:
@@ -3932,7 +3991,7 @@ class ChangeGovernanceService:
                 continue
             try:
                 fresh = await self._called_script_snapshot(
-                    operation, operations, cache
+                    operation, operations, cache, dispatch_order=dispatch_order
                 )
             except Exception:  # noqa: BLE001 - an unreadable snapshot is stale
                 fresh = {"unreadable": True}
@@ -11810,7 +11869,9 @@ class ChangeGovernanceService:
                 if (
                     prewrite_failure_reason is None
                     and await self._called_scripts_stale(
-                        plan.operations, only=operation
+                        plan.operations,
+                        only=operation,
+                        dispatch_order=operation.order,
                     )
                     is not None
                 ):
