@@ -47,7 +47,11 @@ The review needs a security section covering:
 - the two read-only `f2-v2` exceptions (F3 rollback creation, and
   reverification of a consumed task) and their confinement;
 - the beta.27 rollback quarantine of every plan record written under
-  `f2-v3`;
+  `f2-v3`, beta.27's deletion when its quarantine move fails (accepted
+  released behavior, protected by the pre-rollback backup), and the startup
+  restoration of verified quarantined records on re-upgrade;
+- the in-plan callee check: the caller compared against the post-plan
+  callee, and the live callee verified before each caller write;
 - the allowlist comparison, the review-bounds floor and the called-script
   fingerprint recheck before approval consumption and before each write.
 
@@ -102,8 +106,7 @@ No test reaches a live system.
   are `unresolved`; a chain deeper than 8 is `prohibited` with no write. A script calling a script that
   unlocks keeps the OD-6(b) floor, even when the call is `equivalent`. An
   unchanged call stays `equivalent` with plan approval only; a non-protected
-  callee and `script.reload` are `none`. A callee changed in the same plan is
-  compared by its own operation. The PR001 verdicts are unchanged, and the
+  callee and `script.reload` are `none`. The PR001 verdicts are unchanged, and the
   snapshot is bound into the plan hash and the policy subject.
 - `tests/test_hamcp213_structural_inversion.py` (32 tests): the
   ignorable-differences table matches the design table, and the comparison
@@ -115,6 +118,23 @@ No test reaches a live system.
   `stale_target_state` (`stale_called_script`) before approval consumption
   and before the write, with no write, through both the configuration
   service and the F3 runtime.
+- `tests/test_hamcp213_in_plan_callee.py` (19 tests): a called script the
+  same plan changes, through the configuration service and the F3 runtime.
+  The reviewer reproduction (guard removal first, callee turned into an
+  unlock after approval) refuses before the caller write, as does drift
+  before or after the callee's own write and a callee reverted to its
+  pre-plan body after that write; F3 resume and recovery refuse it before
+  and between children. An unchanged in-plan callee applies in both orders.
+  A plan turning the callee into an unlock while removing the caller's
+  guard requires the acknowledgement on the caller, in both orders, and
+  applies once acknowledged.
+- `tests/test_hamcp213_quarantine_restore.py` (9 tests): f2-v3 records
+  quarantined exactly as beta.27 does are restored on re-upgrade,
+  byte-identical, listed, and an approved one still applies; restoration is
+  idempotent, completes an interrupted restoration, never overwrites a
+  record, and keeps truncated, non-canonical, misnamed, secret-bearing,
+  wrong-namespace, symbolic-link and ambiguous records quarantined and
+  reported in storage health. It runs before cleanup and recovery.
 - `tests/test_hamcp213_f2_v2_rollback_confinement.py` (8 tests): only F3
   rollback creation, and reverification of a consumed task, admit an `f2-v2`
   plan; every other path refuses `f2-v2` plans without a state change or a
@@ -131,7 +151,13 @@ No test reaches a live system.
   ignored, and an unresolvable called script treated as `none`. Correction
   batch 3 adds: `enabled` removed from the comparison, an unknown key
   treated as ignorable, overflow mapped to a weaker class, and the callee
-  fingerprint recheck removed. The PR lists counts and logs.
+  fingerprint recheck removed. Correction batch 4 adds: the in-plan callee
+  analyzed against its pre-plan body only, the dispatch check skipping it,
+  expecting its pre-plan state after its write, and F3 checking every child
+  as if nothing were written; and for restoration: none on re-upgrade,
+  canonical bytes, content screen or namespace not verified, an existing
+  record overwritten, and unverifiable records not reported. The PR lists
+  counts and logs.
 
 ## 2. Release CI and publication
 
@@ -148,11 +174,21 @@ handoff. Verify the following with the shipped verifiers:
 Never invent future image identities. Retain the beta.27 artifacts and the
 known-good earlier artifacts for recovery.
 
-Rollback is reinstalling the beta.27 artifact, after applying, rejecting or
-expiring every pending plan. beta.27 rejects policy version `f2-v3`, so it
-quarantines every plan record beta.28 wrote, terminal ones included; keep a
-plan store backup if that history matters. Execution-task records stay
-readable.
+Rollback is reinstalling the beta.27 artifact. beta.27 rejects policy
+version `f2-v3`, so it quarantines every plan record beta.28 wrote, terminal
+ones included. **beta.27 may delete those records:** if its quarantine move
+fails, its released code removes the record instead, and this release cannot
+change that. The backup is the protection. Roll back only in this order:
+1. Take a fresh Home Assistant backup that includes the Engineering add-on
+   and its data.
+2. Finish or reject every pending plan.
+3. Roll back to beta.27.
+
+On re-upgrade, startup restores the quarantined records it can verify to
+normal repository access, without replacing any record; anything it cannot
+verify stays quarantined and is listed in storage health
+(`quarantine_restoration`). A deleted record can only come back from the
+step-1 backup. Execution-task records stay readable.
 
 ## 3. Installed Engineering
 

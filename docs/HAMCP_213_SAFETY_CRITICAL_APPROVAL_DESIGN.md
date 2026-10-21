@@ -428,7 +428,9 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
      button ids are recorded as reference evidence and shown (OD-9).
    - **Transitive calls** (`script.*`, `script.turn_on`, `automation.trigger`,
      `scene.turn_on`) are effects keyed by callee id. A callee updated in the
-     same plan gets its own comparison.
+     same plan gets its own comparison, and every caller in the plan is
+     analyzed against the post-plan callee (batch 4, H5; see "Callee
+     changed in the same plan" below).
 2. **Effect record**: (service, the resolved target set limited to protected
    objects, canonical data excluding display-only fields, and the control path
    of enclosing `choose`, `if`, `repeat`, `parallel` and `sequence` positions
@@ -582,6 +584,22 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
        difference, a script that became readable or unreadable included,
        refuses the plan as stale (`STALE_TARGET_STATE`, reason
        `stale_called_script`) with no write; the owner replans.
+     - **Callee changed in the same plan (H5, batch 4).** When the plan also
+       updates or deletes a called script, the caller's analysis uses that
+       script's current and proposed configurations together, recursively
+       within the same bounds. This covers the post-plan world and the
+       intermediate state a non-atomic stop can leave. The unlock and disarm
+       floor and the acknowledgement requirement derive from that union, so
+       a light-only callee changed to unlock, with the caller's guard removed,
+       requires the acknowledgement in either operation order. Before each
+       caller write (configuration service apply, F3 first dispatch, resume
+       and recovery), the live callee is read and its fingerprint compared
+       with the pre-plan fingerprint when the callee's operation comes later
+       in the plan, or with the proposed configuration's fingerprint (absent
+       for a delete) when it comes earlier. A mismatch refuses the caller as
+       stale with no write. The union is deliberately conservative: a
+       callee-first plan can require an acknowledgement that the final state
+       alone would not.
      - **Residual.** `automation.trigger`, `automation.turn_on` and
        `scene.*` stay transitive-only and are not followed.
 
@@ -820,6 +838,22 @@ a design-validation prototype of D2, not runtime code):
   `safety_critical_acknowledgement_mismatch`. Keeping the policy subject
   unchanged leaves the historical policy projections and hashes for `f2-v1`
   and `f2-v2` records untouched.
+- **Rollback and re-upgrade (PR 1, batch 4, H6; owner decision).** beta.27
+  quarantines every `f2-v3` plan record at startup, and deletes it if the
+  quarantine move fails. That behavior is in released code and is accepted
+  as a documented risk. It is mitigated by the rollback procedure in
+  `docs/EXTERNAL_APPROVAL.md`: take a fresh Home Assistant backup (which
+  includes the Engineering add-on data), finish or reject pending plans, then
+  roll back. On re-upgrade, beta.28 scans the quarantine directories at
+  startup, before cleanup and recovery. It restores each record whose bytes
+  are canonical, parse as a supported plan, match the file name's identifier
+  and namespace, and pass the stored-plan content screen. Restoration links
+  the record into place without overwriting, removes byte-identical
+  duplicates left by an interrupted restore, and is logged and idempotent.
+  Unverifiable, conflicting or ambiguous records stay quarantined and are
+  reported in health (`quarantine_restoration`). Restoration grants no
+  authority: a restored pending plan is validated like any other. Records
+  beta.27 deleted are recoverable only from the backup.
 
 ### D9. Security section (for the implementation PR)
 

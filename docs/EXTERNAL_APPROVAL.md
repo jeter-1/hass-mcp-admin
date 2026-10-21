@@ -366,6 +366,14 @@ any write it recomputes the comparison and refuses with
 matches the current objects and hash. Plan approval alone never dispatches such
 a plan. The F3 operational adapter refuses a bundle bound to this action.
 
+A script that the same plan changes is compared, for each caller, against both
+its current body and the body the plan proposes, so a plan that turns a called
+script into an unlock while removing a caller's guard needs this action on the
+caller. Before each caller write, on the service path and in F3 apply, resume
+and recovery, the live script must match its exact expected state at that
+point in the plan's order (pre-plan before the plan writes it, proposed
+after); otherwise the caller refuses as `stale_target_state` with no write.
+
 ## Apply and rollback enforcement
 
 Apply requires every prior governance gate plus authority version `3`, the
@@ -426,6 +434,32 @@ legacy approval counts, and the last safe approval failure category. The
 elevated-acknowledgement counters do not count safety-critical
 acknowledgements. These metrics are observability only and never authorize a
 change.
+
+## Rollback from beta.28 to beta.27
+
+beta.28 stamps every new plan with policy version `f2-v3`, which beta.27
+cannot read. On load beta.27 moves each such plan record, pending or terminal,
+byte for byte to `quarantine/<plan_id>.<seconds>.corrupt` in the plan store.
+**beta.27 may delete those records:** when that move fails (for example, the
+quarantine directory is not writable), its released code removes the record
+instead. beta.27 cannot be changed; the backup below is the protection.
+
+Roll back only in this order:
+
+1. Take a fresh Home Assistant backup that includes the Engineering add-on and
+   its data (a full backup does).
+2. Finish or reject every pending plan: apply it, or reject it.
+3. Roll back to beta.27.
+
+On re-upgrade, startup restores each quarantined record whose integrity it
+verifies (it parses, its bytes are exactly the canonical record, its
+identifier and namespace match, and it passes the stored-plan content screen)
+to normal repository access. Restoration never replaces an existing record, is
+idempotent and is logged. Records it cannot verify stay quarantined and are
+listed, with a reason, in plan storage health under `quarantine_restoration`.
+A record beta.27 deleted can only be recovered from the step-1 backup.
+Restoration grants no authority: a restored plan's approvals, expiry and
+dispatch checks are evaluated exactly as for any stored plan.
 
 ## Upgrade to authority version 3
 

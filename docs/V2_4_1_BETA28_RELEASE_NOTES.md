@@ -131,6 +131,16 @@ retry shape carried a retry warning.
   unreadable, refuses as `stale_target_state` (reason `stale_called_script`)
   with no write, on the service path and in F3; replan.
   `automation.*` and `scene.*` calls are not followed.
+- **A called script the same plan changes.** The caller is compared against
+  both the script's current body and the body the plan proposes (the
+  post-plan world, and the state a non-atomic plan can stop in). A plan that
+  turns a called script into an unlock while removing a caller's guard needs
+  the acknowledgement on the caller, in either operation order. Before each
+  caller write (service, F3 apply, resume and recovery) the live script is
+  read and must match its exact expected state at that point in the plan's
+  order: its pre-plan state while the plan has not written it, the plan's
+  proposed state once it has. Anything else refuses the caller as
+  `stale_target_state` (reason `stale_called_script`) with no write.
 
 - **Policy snapshots.** `f2-v1` and `f2-v2` stay readable. A pending `f2-v2`
   plan fails its policy snapshot under `f2-v3` and must be replanned; terminal
@@ -160,18 +170,36 @@ retry shape carried a retry warning.
   `rescan_stored_plan` call site (governance family), like the plan review
   summary.
 - **Health.** The elevated-acknowledgement counters do not count safety-critical
-  acknowledgements; their keys are unchanged.
+  acknowledgements; their keys are unchanged. Plan storage health adds
+  `quarantine_restoration` (see Rollback).
 - **Rollback** is reinstalling the beta.27 artifact. beta.27 cannot read any
   plan record that beta.28 writes. Every new plan carries policy version
   `f2-v3`, and beta.27 accepts only `f2-v1` and `f2-v2`. At load it moves
-  each such record, pending or terminal (applied included), to the plan
-  store's quarantine directory and counts it as corrupt. A record that names
-  the new action kind, or carries `called_scripts`, fails on that too.
-  Reinstalling beta.28 does not restore a quarantined record. Execution-task
-  records stay readable. Before a rollback, apply, reject or let expire every
-  pending plan, and keep the plan store backup if the plan history matters.
-  Executed offline for configuration plans; by source, every plan creation
-  path stamps `f2-v3`.
+  each such record, pending or terminal (applied included), byte for byte to
+  the plan store's `quarantine/<plan_id>.<seconds>.corrupt` and counts it as
+  corrupt. A record that names the new action kind, or carries
+  `called_scripts`, fails on that too. Execution-task records stay readable.
+  **beta.27 may delete these records:** if its quarantine move fails (for
+  example, the quarantine directory is not writable), its released code
+  removes the record instead. This PR cannot change beta.27; the backup in
+  step 1 is the protection. Roll back only in this order:
+  1. Take a fresh Home Assistant backup that includes the Engineering add-on
+     and its data (a full backup does).
+  2. Finish or reject every pending plan: apply it, or reject it.
+  3. Roll back to beta.27.
+
+  **On re-upgrade** to beta.28, startup restores each quarantined record to
+  normal repository access when its integrity is verified (it parses, its
+  bytes are exactly this version's canonical record, its identifier and
+  namespace match, and it passes the stored-plan content screen). A
+  restoration never replaces an existing record, is idempotent and is
+  logged. A record that cannot be verified, or that conflicts, stays
+  quarantined and is listed with its reason in storage health
+  (`quarantine_restoration`: `restored`, `retained`, `retained_records`). A
+  record beta.27 deleted cannot be restored from the store; restore the step-1
+  backup instead. Executed offline: the reviewer's 11 configuration-plan
+  stores (12 records) quarantined by the exact beta.27 code are all restored
+  byte-identical; by source, every plan creation path stamps `f2-v3`.
 - **Boundaries.** No new tool, provider, upstream dispatch, direct-HA fallback
   or forwarding. The only new write reachability is the existing governed
   configuration apply for exact plans that were `prohibited` before and now

@@ -539,7 +539,13 @@ Plans are stored only in beta add-on data, by default under
 `/data/governance/change_plans`. Each uses a random 128-bit ID and an atomic
 write-and-replace operation. Records survive restarts. Terminal records are
 retained for 90 days by default. Invalid or corrupt records are quarantined and
-counted in health output rather than preventing startup.
+counted in health output rather than preventing startup. At startup, before
+cleanup and recovery, records an older version quarantined (for example
+beta.27 after a rollback from beta.28) are restored when their canonical
+bytes, identifier, namespace and content screen verify. Restoration never
+overwrites an existing record, is idempotent and is logged. Records that do
+not verify stay quarantined and are reported under `quarantine_restoration`
+in health output.
 
 Proposals containing access-secret, token, authorization, cookie, password,
 API-key, webhook-ID, or authenticated MCP URL fields are rejected before

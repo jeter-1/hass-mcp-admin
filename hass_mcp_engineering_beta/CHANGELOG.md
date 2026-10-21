@@ -33,6 +33,12 @@ Builds on 2.4.1-beta.27.
   approval is consumed and before each write. A changed or unreadable callee
   refuses as `stale_target_state` (reason `stale_called_script`) with no
   write, on the service path and in F3.
+- A called script the same plan updates or deletes is analyzed with its
+  current and proposed configurations together, so callers are judged
+  against the post-plan callee. Before each caller write the live callee must
+  match its pre-plan fingerprint (callee not yet written) or its proposed
+  fingerprint (callee already written); otherwise the caller refuses as
+  stale with no write, including on F3 resume and recovery.
 - Dispatch rechecks the exact acknowledged object set and comparison hash
   independently of the bundle state; plan approval alone never dispatches.
 - E013 precision: logbook mentions are not targets, notify routed by name has
@@ -47,8 +53,16 @@ Builds on 2.4.1-beta.27.
   admitted only as read-only evidence: as an F3 rollback source, and when
   reverifying its own consumed task.
 - Rollback to beta.27 quarantines every plan record written under `f2-v3`,
-  terminal ones included (beta.27 accepts only `f2-v1` and `f2-v2`); finish
-  or reject pending plans first. Execution-task records stay readable.
+  terminal ones included (beta.27 accepts only `f2-v1` and `f2-v2`). If the
+  quarantine move fails, beta.27 deletes the record; the backup is the
+  protection. Procedure: take a fresh Home Assistant backup (it includes the
+  Engineering add-on data), finish or reject pending plans, then roll back.
+  Execution-task records stay readable.
+- On startup, beta.28 restores plan records an older version quarantined,
+  before cleanup and recovery. Only records whose canonical bytes, plan
+  identifier, namespace and content screen verify are restored. Restoration
+  never overwrites, is idempotent and is logged. Anything else stays
+  quarantined and is reported in health (`quarantine_restoration`).
 
 ## 2.4.1-beta.27 - Recorder settings and unregistered entities (HAMCP-132)
 
