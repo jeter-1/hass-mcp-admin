@@ -77,7 +77,8 @@ tests in `tests/test_hamcp132_recorder_settings.py` or
    `config_entry_status: ambiguous`. One is never chosen.
 10. **`entity_reconciliation` imports `rest_path`.** The states read uses the
     REST client's existing `GET /states` route through the shared
-    `rest_path` helper. No `ROUTE_TEMPLATES` entry is added.
+    `rest_path` helper. The path is a string literal, as the HAMCP-200
+    path-safety scan requires. No `ROUTE_TEMPLATES` entry is added.
 11. **Tuple and string argument hardening.** The service entry points
     normalize only a tuple to a list. A string, mapping, set or `None` goes to
     validation unchanged and is refused before any dispatch. A string is never

@@ -28,7 +28,6 @@ from typing import Any
 from ..entity_ids import STRICT_ENTITY_ID
 from ..errors import ErrorCode, GovernanceError
 
-STATES_PATH = "/states"
 REGISTRY_COMMAND = MappingProxyType({"type": "config/entity_registry/list"})
 SOURCE_COMMAND = MappingProxyType({"type": "entity/source"})
 SEARCH_TYPE = "search/related"

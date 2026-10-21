@@ -801,7 +801,7 @@ class AuthenticatedMcpGateway:
                         send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
                     )
                     return
-            if tool_name in {"get_recorder_settings", "get_unregistered_entities"}:
+            if tool_name == "get_recorder_settings" or tool_name == "get_unregistered_entities":
                 if tool_name == "get_recorder_settings":
                     from .recorder_settings.contracts import validate_arguments as validate_hamcp132
                     error, message = "InvalidRecorderSettingsRequest", "Invalid recorder settings arguments."

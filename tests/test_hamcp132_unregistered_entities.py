@@ -484,7 +484,6 @@ class NoWritePathTests(unittest.IsolatedAsyncioTestCase):
     def test_fixed_contract(self):
         self.assertEqual(dict(c.REGISTRY_COMMAND), {"type": "config/entity_registry/list"})
         self.assertEqual(dict(c.SOURCE_COMMAND), {"type": "entity/source"})
-        self.assertEqual(c.STATES_PATH, "/states")
         self.assertEqual(c.search_payload("light.x"), {"type": "search/related", "item_type": "entity",
                                                        "item_id": "light.x"})
         with self.assertRaises(TypeError):
@@ -516,7 +515,7 @@ class NoWritePathTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(literals, {"/states", "config/entity_registry/list", "entity/source", "search/related"})
         self.assertEqual(client_attributes, {("rest_client", "request"), ("client", "command"),
                                              ("client", "command_batch")})
-        self.assertEqual(rest_calls, ['self.rest_client.request(\'GET\', rest_path(c.STATES_PATH))'])
+        self.assertEqual(rest_calls, ["self.rest_client.request('GET', rest_path('/states'))"])
         self.assertEqual(clients_imports, [("clients.paths", ["rest_path"])])
         service = ast.parse(self.sources()["service.py"])
         commands = [ast.unparse(node.args[0]) for node in ast.walk(service)

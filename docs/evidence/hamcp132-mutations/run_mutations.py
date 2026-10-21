@@ -204,7 +204,7 @@ MUTATIONS = [
       (ROUTES, '        "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",\n    ),',
        '        "core.basic_rest_read", "core.basic_websocket_read",\n    ),')),
     m("S7-pre-sdk-validation-removed", ROW8,
-      (ROUTING, 'if tool_name in {"get_recorder_settings", "get_unregistered_entities"}:', 'if False:')),
+      (ROUTING, 'if tool_name == "get_recorder_settings" or tool_name == "get_unregistered_entities":', 'if False:')),
     m("S8-audit-records-entity-ids", ROW8,
       (ROUTING, '"entity_count": len(entity_ids) if type(entity_ids) is list and len(entity_ids) <= 50 else None,',
        '"entity_count": len(entity_ids) if type(entity_ids) is list and len(entity_ids) <= 50 else None,'

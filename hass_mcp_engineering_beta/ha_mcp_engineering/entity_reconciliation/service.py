@@ -155,7 +155,7 @@ class EntityReconciliationService:
             if item not in omissions and len(omissions) < 50:
                 omissions.append(item)
 
-        raw = await self._read("states", lambda: self.rest_client.request("GET", rest_path(c.STATES_PATH)),
+        raw = await self._read("states", lambda: self.rest_client.request("GET", rest_path("/states")),
                                authority, sources)
         states = _entity_ids(raw) if sources[-1]["status"] == "complete" else None
         if sources[-1]["status"] == "complete" and states is None:
