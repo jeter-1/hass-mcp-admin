@@ -53,7 +53,8 @@ MAX_UI_ENTRIES = 50
 MAX_OMITTED_ITEMS = 50
 # Compact JSON budget for the report inside the 60,000-character envelope.
 RESPONSE_BUDGET = 50_000
-MAX_TEXT = 1_024
+MAX_TEXT = 4_096
+MAX_TITLE = 255
 
 ALLOWED_ARGUMENTS = frozenset({"entity_ids", "integrations"})
 
