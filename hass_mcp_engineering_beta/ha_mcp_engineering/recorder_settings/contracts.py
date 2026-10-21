@@ -66,12 +66,19 @@ RECOGNIZED_KEYS = frozenset(SCALAR_SETTINGS) | frozenset(DEPRECATED_SETTINGS) | 
     DB_URL_KEY, *FILTER_KEYS,
 }
 
-# The reader returns parsed values, never spellings. Values whose YAML 1.1
-# reading can differ are reported ``parser_dependent`` (projection.py); these
-# spelling cannot be recognized from the parsed value at all.
+# The reader returns parsed values, never spellings. A returned string whose
+# YAML 1.1 reading can differ is reported ``parser_dependent``
+# (projection.py). An integer is reported as parsed, with this standing
+# disclosure (owner decision, 2026-10-20).
 YAML_NUMERIC_SPELLING_LIMITATION = (
-    "not observable: a 0o-prefixed integer is a number under YAML 1.2 but a string "
-    "under YAML 1.1; every integer is reported as if it were not spelled that way"
+    "the written spelling is not observed; an integer written with a leading zero "
+    "(e.g. 010) would be read by Home Assistant's YAML 1.1 loader as octal (08 and 09 "
+    "as strings), and a 0o-prefixed integer (e.g. 0o10) as a string"
+)
+YAML_PARSE_DISCLOSURE = (
+    "ha-mcp YAML 1.2; Home Assistant loads YAML 1.1. A returned string is taken as "
+    "quoted when the ruamel.yaml 0.19.1 YAML 1.2 resolver would read its plain spelling "
+    "as another type; the reader's installed ruamel.yaml version is not observed"
 )
 
 # recorder/info reply keys (basic_websocket_api.py:21-54) and their JSON types.

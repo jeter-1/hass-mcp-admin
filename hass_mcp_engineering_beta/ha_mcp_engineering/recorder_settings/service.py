@@ -187,7 +187,7 @@ class RecorderSettingsService:
                 "configuration_source": "configuration.yaml on disk, not the loaded configuration",
                 "includes_followed": False,
                 "packages_read": False,
-                "yaml_parse": "ha-mcp YAML 1.2; Home Assistant loads YAML 1.1",
+                "yaml_parse": c.YAML_PARSE_DISCLOSURE,
                 "yaml_numeric_spelling": c.YAML_NUMERIC_SPELLING_LIMITATION,
                 "entities_requested": len(entity_ids),
                 "entities_answered_by_core": sum(1 for row in entities if row["core_recorded"] is not None),

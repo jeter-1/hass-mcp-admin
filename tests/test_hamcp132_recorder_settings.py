@@ -14,6 +14,7 @@ import ast
 import copy
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import sys
@@ -50,6 +51,7 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 )
 from ha_mcp_engineering.recorder_settings import contracts as c  # noqa: E402
 from ha_mcp_engineering.recorder_settings import entity_filter as f  # noqa: E402
+from ha_mcp_engineering.recorder_settings import projection  # noqa: E402
 from ha_mcp_engineering.recorder_settings.projection import gateway_envelope, yaml11_readings  # noqa: E402
 from ha_mcp_engineering.recorder_settings.service import (  # noqa: E402
     RECORDER_SETTINGS,
@@ -426,15 +428,37 @@ class SettingsTests(Base):
 
 
 # Plain (unquoted) spellings whose YAML 1.1 and YAML 1.2 readings differ, with
-# the value the YAML 1.2 reader returns. Observed with PyYAML 6.0.2 (YAML 1.1)
-# and ruamel.yaml 0.19.1 ``typ="safe"`` (YAML 1.2); the YAML 1.1 side is
-# re-derived from PyYAML in every test, the YAML 1.2 side is recorded here.
+# the value the YAML 1.2 reader returns, plus the spec booleans ``y``/``n``
+# that both read as strings. Observed with PyYAML 6.0.2 (YAML 1.1) and
+# ruamel.yaml 0.19.1 ``typ="rt"`` (YAML 1.2, the reader's loader); the YAML 1.1
+# side is re-derived from PyYAML in every test, the YAML 1.2 side is recorded
+# here.
 YAML12_READS = {
     "off": "off", "Off": "Off", "OFF": "OFF", "on": "on", "ON": "ON", "yes": "yes", "Yes": "Yes",
     "YES": "YES", "no": "no", "NO": "NO", "1:20": "1:20", "1:20.5": "1:20.5", "190:20:30": "190:20:30",
-    "010": 10, "0010": 10, "0_10": 10, "012_3": 123, "-010": -10, "08": 8, "09": 9,
+    "y": "y", "Y": "Y", "n": "n", "N": "N",
     "1e3": 1000.0, "1.0e3": 1000.0,
 }
+# Plain integer spellings the reader returns as a number while YAML 1.1 reads
+# them differently. The spelling is not observed, so owner decision 1
+# (2026-10-20) reports the number as definite and discloses the difference in
+# ``coverage.yaml_numeric_spelling``.
+YAML12_INTEGER_READS = {
+    "010": 10, "0010": 10, "0_10": 10, "012_3": 123, "-010": -10, "08": 8, "09": 9, "0o10": 8,
+}
+# Strings ruamel.yaml 0.19.1's YAML 1.2 resolver reads as another type when
+# plain (recorded from ``YAML(typ="rt")``): a reader string with this text was
+# quoted, and a quoted scalar is a string under YAML 1.1 as well.
+YAML12_QUOTED_ONLY = (
+    "010", "0010", "10", "14", "30", "365", "+10", "-010", "08", "0o10", "0x1F", "0b101", "1_000",
+    "0_10", "1.5", "1e3", "1.5e3", "1E3", ".5", "1.", ".inf", "-.inf", ".nan", "true", "True",
+    "FALSE", "null", "Null", "~", "",
+)
+# Strings the same resolver keeps strings when plain (recorded likewise).
+YAML12_PLAIN_STRINGS = (
+    "on", "off", "yes", "No", "y", "n", "1:20", "1:20.5", "_1", "0o", "0b2", "0xg", "e3", ".e3",
+    "1e", ".", "nULL", "tRUE", "light", "sensor.temperature",
+)
 FIELD_VALIDATORS = {"commit_interval": "int_min_0", "purge_keep_days": "int_min_1", "auto_purge": "boolean"}
 
 
@@ -470,7 +494,6 @@ class YamlSpellingTests(Base):
         cases = {
             "commit_interval": ("off", [("quoted", False, None), ("unquoted", True, 0)]),
             "purge_keep_days": ("yes", [("quoted", False, None), ("unquoted", True, 1)]),
-            "db_max_retries": (10, [("no_leading_zero", True, 10), ("leading_zero", True, 8)]),
             "db_retry_wait": ("1:20", [("quoted", False, None), ("unquoted", True, 80)]),
         }
         report = await self.run_report(yaml({key: value for key, (value, _) in cases.items()}))
@@ -507,6 +530,82 @@ class YamlSpellingTests(Base):
                     else:
                         self.assertEqual({(True, entry["value"])}, set(outcomes))
         self.assertEqual(seen, {"parser_dependent", "invalid", "definite"})
+
+    async def test_common_integers_are_definite(self):
+        # Owner decision 1: an integer is reported as parsed, never parser-dependent.
+        for value in (10, 14, 30, 365):
+            with self.subTest(value=value):
+                report = await self.run_report(yaml({
+                    "purge_keep_days": value, "commit_interval": value, "db_max_retries": value,
+                    "db_retry_wait": value}))
+                for key in ("purge_keep_days", "commit_interval", "db_max_retries", "db_retry_wait"):
+                    self.assertEqual(report["settings"][key], {"value": value, "origin": "configured"})
+                self.assertFalse(any(item.startswith("setting_parser_dependent:")
+                                     for item in report["omissions"]))
+                self.assertTrue(report["complete"])
+                self.assertEqual(report["coverage"]["yaml_numeric_spelling"],
+                                 c.YAML_NUMERIC_SPELLING_LIMITATION)
+
+    async def test_integer_spellings_are_disclosed_not_detected(self):
+        for spelling, read in YAML12_INTEGER_READS.items():
+            with self.subTest(spelling):
+                # The disclosed difference is real: YAML 1.1 reads the spelling otherwise.
+                self.assertNotEqual(yaml11.safe_load(f"k: {spelling}")["k"], read)
+                self.assertIsNone(yaml11_readings(read))
+                report = await self.run_report(yaml({"db_max_retries": read}))
+                entry = report["settings"]["db_max_retries"]
+                if read < 0:
+                    self.assertEqual(entry, {"value": None, "origin": "configured", "invalid": True,
+                                             "reason": "fails_core_schema", "as_written": read})
+                else:
+                    self.assertEqual(entry, {"value": read, "origin": "configured"})
+                self.assertEqual(report["coverage"]["yaml_numeric_spelling"],
+                                 c.YAML_NUMERIC_SPELLING_LIMITATION)
+        for text in ("leading zero", "010", "octal", "0o10"):
+            self.assertIn(text, c.YAML_NUMERIC_SPELLING_LIMITATION)
+        self.assertLessEqual(len(c.YAML_NUMERIC_SPELLING_LIMITATION), c.MAX_FILTER_TEXT)
+        self.assertLessEqual(len(c.YAML_PARSE_DISCLOSURE), c.MAX_FILTER_TEXT)
+
+    async def test_quoted_strings_are_definite_strings(self):
+        for text in YAML12_QUOTED_ONLY:
+            with self.subTest(text=text):
+                # Quoted, YAML 1.1 reads the same string.
+                self.assertEqual(yaml11.safe_load(f'k: "{text}"')["k"], text)
+                self.assertIsNone(yaml11_readings(text))
+        report = await self.run_report(yaml({
+            "commit_interval": "010", "purge_keep_days": "365", "db_max_retries": "1.5",
+            "auto_purge": "true", "include": {"domains": ["010", "true", "1.5", "null"]}}),
+            entity_ids=["light.kitchen"])
+        s = report["settings"]
+        self.assertEqual(s["commit_interval"], {"value": 10, "origin": "configured", "as_written": "010"})
+        self.assertEqual(s["purge_keep_days"], {"value": 365, "origin": "configured", "as_written": "365"})
+        self.assertEqual(s["db_max_retries"], {"value": None, "origin": "configured", "invalid": True,
+                                               "reason": "fails_core_schema", "as_written": "1.5"})
+        self.assertEqual(s["auto_purge"], {"value": True, "origin": "configured", "as_written": "true"})
+        self.assertEqual(report["filters"]["include"]["domains"], ["010", "true", "1.5", "null"])
+        self.assertFalse(any(item.startswith(("setting_parser_dependent:", "filter_unknown:"))
+                             for item in report["omissions"]))
+        self.assertEqual(report["coverage"]["yaml_parse"], c.YAML_PARSE_DISCLOSURE)
+
+    async def test_spec_booleans_y_n_are_plain_strings(self):
+        # PyYAML's YAML 1.1 boolean resolver does not list y/Y/n/N.
+        resolvers = [regexp for regexp_tag, regexp in yaml11.resolver.Resolver.yaml_implicit_resolvers["y"]
+                     if regexp_tag == "tag:yaml.org,2002:bool"]
+        self.assertEqual(len(resolvers), 1)
+        for text in ("y", "Y", "n", "N"):
+            with self.subTest(text=text):
+                self.assertIsNone(resolvers[0].match(text))
+                self.assertEqual(yaml11.safe_load(f"k: {text}")["k"], text)
+                self.assertIsNone(yaml11_readings(text))
+        report = await self.run_report(yaml({
+            "auto_purge": "y", "auto_repack": "n", "include": {"domains": ["y", "n"]}}),
+            entity_ids=["light.kitchen"])
+        for key, text in (("auto_purge", "y"), ("auto_repack", "n")):
+            self.assertEqual(report["settings"][key], {"value": None, "origin": "configured", "invalid": True,
+                                                       "reason": "fails_core_schema", "as_written": text})
+        self.assertEqual(report["filters"]["include"]["domains"], ["y", "n"])
+        self.assertFalse(any(item.startswith(("setting_parser_dependent:", "filter_unknown:"))
+                             for item in report["omissions"]))
 
     async def test_genuinely_invalid_values_still_fail_core_schema(self):
         # Every reading fails: no spelling makes these valid under Core.
@@ -555,8 +654,12 @@ class YamlSpellingTests(Base):
         for spelling, read in YAML12_READS.items():
             with self.subTest(spelling):
                 loaded = yaml11.safe_load(f"k: {spelling}")["k"]
+                if loaded == read:
+                    # Read alike under both versions (``y``/``n``).
+                    self.assertIsNone(yaml11_readings(read))
+                    continue
                 kind, readings = yaml11_readings(read)
-                self.assertEqual(kind, {str: "unquoted", int: "leading_zero", float: "exponent"}[type(read)])
+                self.assertEqual(kind, {str: "unquoted", float: "exponent"}[type(read)])
                 if type(read) is float:
                     # The spelling is not recoverable; the reading is a
                     # representative one that YAML 1.1 also keeps a string.
@@ -568,13 +671,31 @@ class YamlSpellingTests(Base):
         for value in (1000.0, 1.5, -0.25):
             (reading,) = yaml11_readings(value)[1]
             self.assertEqual(yaml11.safe_load(f"k: {reading}")["k"], reading)
-        for value in (0, 1, 7, -7, True, False, "light", "sensor.temperature", ".inf", float("inf")):
+        for value in (0, 1, 7, -7, 8, 9, 10, 14, 30, 365, -10, True, False, "light", "sensor.temperature",
+                      ".inf", "010", float("inf")):
             with self.subTest(value=value):
-                if value == ".inf":
-                    # Both versions read ``.inf`` as a float; only a string spelling reaches here.
-                    self.assertEqual(yaml11_readings(value), ("unquoted", [float("inf")]))
-                else:
-                    self.assertIsNone(yaml11_readings(value))
+                self.assertIsNone(yaml11_readings(value))
+
+    def test_yaml_1_2_quoting_port_matches_recorded_ruamel(self):
+        for text in YAML12_QUOTED_ONLY:
+            with self.subTest(quoted=text):
+                self.assertTrue(projection._YAML12_NOT_STRING.match(text))
+        for text in YAML12_PLAIN_STRINGS:
+            with self.subTest(plain=text):
+                self.assertIsNone(projection._YAML12_NOT_STRING.match(text))
+
+    @unittest.skipUnless(importlib.util.find_spec("ruamel") and importlib.util.find_spec("ruamel.yaml"),
+                         "ruamel.yaml is not installed; the recorded table is checked instead")
+    def test_yaml_1_2_quoting_port_matches_installed_ruamel(self):
+        import io
+
+        from ruamel.yaml import YAML
+
+        loader = YAML(typ="rt")
+        for text in (*YAML12_QUOTED_ONLY, *YAML12_PLAIN_STRINGS, *YAML12_READS, *YAML12_INTEGER_READS):
+            with self.subTest(text=text):
+                loaded = loader.load(io.StringIO(f"k: {text}\n"))["k"]
+                self.assertEqual(bool(projection._YAML12_NOT_STRING.match(text)), not isinstance(loaded, str))
 
 
 class CredentialTests(Base):
@@ -1385,9 +1506,8 @@ class YamlConfigReaderTests(yaml_admission.Harness):
             end_request(token)
         # The synthetic peer answers every path with ``{"purge_keep_days": 10}``,
         # so packages are reported present and unwritten keys unknown. The
-        # parsed 10 may have been spelled ``010`` (8 under YAML 1.1).
-        self.assertEqual(report["settings"]["purge_keep_days"]["validity"], "parser_dependent")
-        self.assertEqual(report["settings"]["purge_keep_days"]["as_read"], 10)
+        # parsed integer is definite (owner decision 1).
+        self.assertEqual(report["settings"]["purge_keep_days"], {"value": 10, "origin": "configured"})
         self.assertEqual(report["packages"], "present")
         self.assertEqual(report["settings"]["auto_purge"]["reason"], "packages_present")
         self.assertEqual(source(report, "configuration_yaml:recorder")["status"], "complete")

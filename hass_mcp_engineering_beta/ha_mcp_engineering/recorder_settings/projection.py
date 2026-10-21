@@ -29,15 +29,13 @@ UNKNOWN_REASONS = (
 # (``resolver.py`` implicit resolvers, ``constructor.py`` construct_yaml_bool,
 # _int and _float), the loader beneath Core's annotatedyaml. The reader
 # parses YAML 1.2 and returns only the parsed value, never the spelling, so a
-# string it returns may have been an unquoted YAML 1.1 boolean or number, an
-# integer may have been spelled with a leading zero (base 8, or a string,
-# under YAML 1.1) and a float with an exponent but no decimal point (a string
-# under YAML 1.1).
+# string it returns may have been an unquoted YAML 1.1 boolean or number.
+# PyYAML's boolean resolver (PyYAML 6.0.2 ``resolver.py``) is
+# ``^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$``:
+# the YAML 1.1 specification's ``y``/``n`` are not booleans there, so they are
+# plain strings under both versions.
 _YAML11_BOOL = re.compile(r"(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE"
                           r"|on|On|ON|off|Off|OFF)\Z")
-# YAML 1.1 specification booleans that PyYAML does not resolve. annotatedyaml
-# 1.0.2's resolver was not inspected, so these are parser-dependent too.
-_YAML11_SPEC_BOOL = re.compile(r"(?:y|Y|n|N)\Z")
 _YAML11_FLOAT = re.compile(r"""(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?
                                |\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?
                                |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*
@@ -48,6 +46,25 @@ _YAML11_INT = re.compile(r"""(?:[-+]?0b[0-1_]+
                              |[-+]?(?:0|[1-9][0-9_]*)
                              |[-+]?0x[0-9a-fA-F_]+
                              |[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)\Z""", re.X)
+
+
+# The reader's YAML 1.2 plain-scalar resolution, ported from ruamel.yaml
+# 0.19.1 (``resolver.py`` implicit resolvers tagged ``(1, 2)``: bool, float,
+# int and null), the version in the reviewed ha-mcp component dependency
+# contract. A string the reader returns whose plain spelling this resolver
+# reads as something else must have been quoted, and a quoted scalar is a
+# string under YAML 1.1 too.
+_YAML12_NOT_STRING = re.compile(r"""(?:true|True|TRUE|false|False|FALSE
+                                    |[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+]?[0-9]+)?
+                                    |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
+                                    |[-+]?\.[0-9_]+(?:[eE][-+][0-9]+)?
+                                    |[-+]?\.(?:inf|Inf|INF)
+                                    |\.(?:nan|NaN|NAN)
+                                    |[-+]?0b[0-1_]+
+                                    |[-+]?0o?[0-7_]+
+                                    |(?=[-+0-9])[-+]?[0-9_]+  # ruamel dispatches ints on -+0-9
+                                    |[-+]?0x[0-9a-fA-F_]+
+                                    |~|null|Null|NULL|)\Z""", re.X)
 
 
 def _sexagesimal(text: str) -> float:
@@ -95,26 +112,21 @@ def yaml11_readings(value: Any) -> tuple[str, list[Any]] | None:
     spelling under which Home Assistant's YAML 1.1 loader would read
     something else, and what it would read; ``None`` when no spelling of the
     value reads differently that this projection can recognize.
+
+    An integer is ``None``: its spelling is not observed, and a leading-zero
+    or ``0o`` spelling is disclosed in ``coverage.yaml_numeric_spelling``
+    instead (owner decision, 2026-10-20).
     """
 
     if type(value) is str:
+        if _YAML12_NOT_STRING.match(value):
+            return None
         if _YAML11_BOOL.match(value):
             return "unquoted", [value.lower() in {"yes", "true", "on"}]
-        if _YAML11_SPEC_BOOL.match(value):
-            return "unquoted", [value in {"y", "Y"}]
         if _YAML11_INT.match(value):
             return "unquoted", [_yaml11_int(value)]
         if _YAML11_FLOAT.match(value):
             return "unquoted", [_yaml11_float(value)]
-        return None
-    if type(value) is int:
-        digits = str(abs(value))
-        if abs(value) >= 8 and set(digits) <= set("01234567"):
-            # ``010`` is 10 under YAML 1.2 and 8 under YAML 1.1.
-            return "leading_zero", [(-1 if value < 0 else 1) * int(digits, 8)]
-        if set(digits) & {"8", "9"}:
-            # ``08`` is 8 under YAML 1.2 and the string ``"08"`` under YAML 1.1.
-            return "leading_zero", [("-" if value < 0 else "") + "0" + digits]
         return None
     if type(value) is float and math.isfinite(value):
         # ``1e3`` is 1000.0 under YAML 1.2; YAML 1.1 floats need a decimal
@@ -125,7 +137,7 @@ def yaml11_readings(value: Any) -> tuple[str, list[Any]] | None:
 
 
 # The spelling under which YAML 1.1 reads the same as the YAML 1.2 reader.
-_AS_READ_SPELLING = {"unquoted": "quoted", "leading_zero": "no_leading_zero", "exponent": "decimal_point"}
+_AS_READ_SPELLING = {"unquoted": "quoted", "exponent": "decimal_point"}
 
 
 def _is_include(value: Any) -> bool:
