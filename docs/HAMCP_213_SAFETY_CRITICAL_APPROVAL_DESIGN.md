@@ -512,8 +512,8 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
      `enabled`, and its position relative to conditions, waits and branches.
      Only the display `alias` is ignored. Any difference is `changed`. This
      supersedes the template-free `message`/`title` allowance in item 4 for
-     such steps. A reference step after the last effect still compares by
-     signature only, so trailing wording stays `equivalent`.
+     such steps. A reference step after the last effect differs only in the
+     ignorable fields of item 8, so trailing wording stays `equivalent`.
    - **Unlock and disarm floor (H3, OD-6(b)).** Where an unlock or disarm
      effect is or may be present, no shortcut applies: the Beta 33
      retained-effect proof, the garage inverse and the retry transfer are
@@ -521,6 +521,21 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
      includes an `equivalent` unlock in an otherwise-edited automation. Under
      current policy, the legacy contract-v1 route refuses such a change
      (`prohibited`). Historical `f2-v1` and `f2-v2` recomputation is unchanged.
+   - **Bounds overflow (H3, batch 3).** The unlock/disarm floor is computed
+     first by a grammar-free scan of the whole configuration and every
+     captured callee, independent of every comparison bound. It is set by a
+     literal or templated unlock or disarm service, a device lock or disarm
+     action, an unresolved script call, or a scan that itself exceeds its
+     node budget. When any comparison bound is exceeded (more than 32
+     protected objects, the step or nesting bound, an invalid or colliding
+     object, more than 8 call levels, more than 16 called scripts or 256
+     callee analyses), the review is incomplete. The policy class is then
+     `prohibited` on every route, the legacy contract-v1 route included,
+     with the reason codes `safety_critical_review_bounds_exceeded` and
+     `too_many_protected_objects_to_review_split_the_change`; it is never a
+     weaker class. A plan whose acknowledgement binding would exceed 32
+     objects in total is prohibited the same way. The floor still adds
+     `unlock_or_disarm_effect` to the reason codes.
    - **Called scripts (owner correction).** A call to a script is compared
      as that script's protected effects, reached at the calling step. The
      forms are `script.<key>`, `script.turn_on`, `turn_off` or `toggle` with
@@ -545,10 +560,11 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
        variable name, or a selector target), `called_script_unknown`,
        `called_script_unreadable` (a read error, a blueprint-backed script, or
        an unsafe body), `called_script_entity_unresolved` (a registry row that
-       is not a script), `called_script_depth_exceeded`, `called_script_cycle`,
-       `called_script_not_captured` (no snapshot entry) and
-       `called_script_bounds_exceeded` (more than 16 called scripts or 256
-       callee analyses).
+       is not a script), `called_script_cycle` and
+       `called_script_not_captured` (no snapshot entry). The bound reasons
+       `called_script_depth_exceeded` and `called_script_bounds_exceeded`
+       (more than 16 called scripts or 256 callee analyses, or a truncated
+       snapshot) are bound overflows and prohibited (H3, batch 3).
      - A change to the called script itself stays covered by script parity on
        that script's own operation.
      - **Deviation.** The governance path reuses the dependency index's
@@ -556,10 +572,50 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
        loaded configurations. Those configurations are diagnostic evidence
        and never authority, so the configurations are read through the
        governed configuration read at plan creation.
-     - **Residual.** A called script edited outside the plan after plan
-       creation is not re-read at dispatch, and the plan keeps its creation
-       snapshot. `automation.trigger`, `automation.turn_on` and `scene.*`
-       stay transitive-only and are not followed.
+     - **Stale callee (H5, batch 3).** The comparison projection binds the
+       snapshot's fingerprints (`called_script_fingerprints`: the snapshot
+       hash, each script entry hash and each entity resolution hash). Every
+       dispatch path rebuilds each operation's snapshot from fresh governed
+       reads before approval is consumed and again immediately before each
+       write: the configuration service apply, F3 first dispatch, resume and
+       recovery (a preflight adapter on every contract-v2 child). Any
+       difference, a script that became readable or unreadable included,
+       refuses the plan as stale (`STALE_TARGET_STATE`, reason
+       `stale_called_script`) with no write; the owner replans.
+     - **Residual.** `automation.trigger`, `automation.turn_on` and
+       `scene.*` stay transitive-only and are not followed.
+
+8. **Allowlist of ignorable differences (PR 1, review batch 3, H4).** The
+   comparison is inverted. On every run path that can reach a protected
+   effect, directly or through a called script, the normalized before and
+   after structures must be identical except for the fields below. Any other
+   difference at any level is `changed`: `enabled` on a step, block, branch,
+   parallel or sequence member, choose option or condition; `mode` and
+   `max`; variables; `continue_on_error`; wait and timeout values; response
+   handling; and unknown keys. Unknown or unreviewed keys are never
+   ignorable. The table is `IGNORABLE_DIFFERENCES` in
+   `governance/physical_effects.py`; a test asserts that it equals this one.
+   "After effects" means a reference-only step that runs strictly after
+   every protected effect on its path.
+
+<!-- ignorable-differences:start -->
+| Scope | Field | Condition |
+| --- | --- | --- |
+| `automation` | `alias` | display name |
+| `automation` | `description` | display text |
+| `script` | `alias` | display name |
+| `script` | `description` | display text |
+| `script` | `icon` | display icon |
+| `step` | `alias` | display name of any action step |
+| `choose_option` | `alias` | display name of a choose option |
+| `parallel_branch` | `alias` | display name of a parallel branch wrapper |
+| `reference_step_after_effects` | `data.message` | template-free text of a reference-only step that runs after every protected effect on its path |
+| `reference_step_after_effects` | `data.title` | template-free text of a reference-only step that runs after every protected effect on its path |
+| `reference_step_after_effects` | `data.data` | notification payload of a reference-only step that runs after every protected effect on its path |
+| `reference_step_after_effects` | `entity_id placement` | step, target or data placement and list form of the same entity ids |
+| `reference_step_after_effects` | `action/service key` | the legacy service key spelling of the same reference-only service |
+| `non_aborting_reference_step_after_effects` | `*` | a reference-only step with continue_on_error: true that runs after every protected effect on its path |
+<!-- ignorable-differences:end -->
 
 **Effect on the audit plan:** see D6. The owner's real plan replaced the
 earlier inference from the audit description, and the predicted verdicts held.

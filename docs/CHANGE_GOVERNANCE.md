@@ -422,7 +422,19 @@ service or target is templated, variable-driven or a registry selector is
 script, reached at the calling step, up to 8 levels of further scripts; a
 called script that cannot be resolved is `unresolved`. An unlock or disarm
 effect always requires that acknowledgement (owner decision OD-6(b), ADR-022). A write that
-is not exact remains prohibited. See
+is not exact remains prohibited. The comparison is an allowlist: on any path
+that can reach a protected effect, every difference other than the reviewed
+ignorable fields (display names and descriptions, and the wording of
+reference-only steps that run after every protected effect) is `changed`,
+including `enabled` flags and unknown keys. A review that exceeds a comparison
+bound (for example more than 32 protected objects, or the called-script depth
+or count limits) is `prohibited` on every route, the legacy route included,
+with the reasons `safety_critical_review_bounds_exceeded` and
+`too_many_protected_objects_to_review_split_the_change`. Engineering re-reads
+every called script before the approval is consumed and again before each
+write; a called script that changed since plan creation refuses the apply as
+`stale_target_state` (reason `stale_called_script`) with no write. See the
+HAMCP-213 design, D2 items 7 and 8, and
 [External approval](EXTERNAL_APPROVAL.md#safety-critical-acknowledgement).
 
 Governed configuration reads, writes, verification, and rollback are
