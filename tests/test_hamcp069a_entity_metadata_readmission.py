@@ -175,6 +175,7 @@ REVIEWED_EMPTY_STATIC_ROUTES = frozenset(
         "get_change_plan",
         "get_core_log_history",
         "get_execution_task",
+        "get_incident_logs",
         "list_capabilities",
         "list_change_plans",
         "list_execution_tasks",
