@@ -4,7 +4,12 @@ Positive allowlist: only the keys named in ``schemas`` are copied from a
 definition; every other key is counted, never copied. Withheld in every
 position, before the shared sanitizer runs (``service.py``):
 
-- ``db_url`` (``contracts.WITHHELD_KEYS``), whatever its value;
+- ``db_url`` (``contracts.WITHHELD_KEYS``), whatever its value. A SQL
+  definition's own ``db_url`` field is a fixed policy redaction (owner
+  decision, 2026-10-22): it is reported in place as
+  ``{"redacted_by_policy": "database_url"}`` and not listed in ``withheld``,
+  so it alone leaves the report complete. A ``db_url`` anywhere else (nested,
+  or in another integration's definition) is listed in ``withheld``;
 - a ``!secret`` or ``!env_var`` reference (its name included);
 - any string or nested key carrying an invisible, format or control
   character, in its original text or after a bounded percent-decode
@@ -207,7 +212,10 @@ class Definitions:
         fields = {}
         for key, value in entry.items():
             if type(key) is str and key in c.WITHHELD_KEYS:
-                record["withheld"].append(f"{path}.{key}")
+                if key == "db_url" and record.get("integration") == c.POLICY_REDACTED_INTEGRATION:
+                    fields[key] = c.db_url_policy_redaction()
+                else:
+                    record["withheld"].append(f"{path}.{key}")
             elif type(key) is str and key in allowed:
                 fields[key] = self._value(value, f"{path}.{key}", record)
             else:

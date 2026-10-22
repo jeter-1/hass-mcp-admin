@@ -69,6 +69,19 @@ YAML_FAILURE_CODES = _RECORDER_YAML_FAILURE_CODES | {"yaml_reader_not_admitted"}
 # 6): the reader may leave a sqlite URL visible under a connection key (R11).
 WITHHELD_KEYS = frozenset({"db_url"})
 
+# Owner decision (Josh, 2026-10-22): a SQL definition's own ``db_url`` is a
+# fixed policy redaction, not missing evidence. It is reported in place as
+# this marker and does not make the report partial; the exemption is the
+# single allowlist entry ``credentials.POLICY_REDACTIONS`` reads. Any other
+# ``db_url`` (nested, or in another integration's definition) stays withheld.
+POLICY_REDACTION_KEY = "redacted_by_policy"
+DB_URL_POLICY_KIND = "database_url"
+POLICY_REDACTED_INTEGRATION = "sql"
+
+
+def db_url_policy_redaction() -> dict[str, str]:
+    return {POLICY_REDACTION_KEY: DB_URL_POLICY_KIND}
+
 LABELLED_KEY_DISCLOSURE = (
     "keys with a label (for example 'template 2:' or 'sensor kitchen:') cannot be addressed by the "
     "YAML reader and are not read"

@@ -73,7 +73,9 @@ schemas (`schemas.py`). Unrecognized keys are counted, never copied.
 
 What is always withheld:
 - **`db_url`**, in every position: at the top level, nested, and inside
-  lists.
+  lists. A SQL definition's own `db_url` is a fixed policy redaction,
+  reported as `{"redacted_by_policy": "database_url"}` in its `fields`
+  (below); everywhere else it is withheld.
 - A `!secret` or `!env_var` reference, with its name.
 - Any nested user-defined key that looks like a credential or connection key.
 - A credential-bearing URI inside an allowlisted text field, such as a SQL
@@ -108,9 +110,29 @@ envelope at the single exit point finds every withheld form: a
 `{"withheld": <kind>}` value, a non-empty `withheld` list on a definition,
 and each dropped key. Each affected item is named in `omissions`
 (`withheld:definitions[3]`, `withheld:ui_entries[0]`), at most 20, then
-`withheld_items_not_listed:<n>`, and the report is partial. **Because
-`db_url` is always withheld, a report with a SQL definition is always
-partial** (owner decision pending; see the PR).
+`withheld_items_not_listed:<n>`, and the report is partial.
+
+**A fixed policy redaction is not missing evidence** (owner decision, Josh,
+2026-10-22). A SQL definition's own `db_url`, under the `sql:` key or a
+legacy `platform: sql` sensor, is never read out: its `fields.db_url` is
+always `{"redacted_by_policy": "database_url"}`. That is a policy, not a
+gap in the evidence, so it does not make the report partial and is not an
+omission. The exemption is an explicit, narrow allowlist inside the same
+final-envelope scan (`credentials.POLICY_REDACTIONS`, one entry: SQL
+`fields.db_url`), not a skipped scan. Everything else is still withheld and
+partial:
+- a `db_url` in any other integration (a template block, a group, a utility
+  meter, a legacy template) or nested inside another field;
+- a credential in any other field of a SQL definition (its query, column,
+  unit, value template or availability);
+- invisible or format characters, unverifiable titles and confusables;
+- a `redacted_by_policy`-shaped value that came from configuration rather
+  than from the projection.
+
+So a SQL definition whose only redaction is its `db_url` is complete; the
+same definition with any other withheld item is partial. The sanitizer's
+own `redacted_by_policy` omission (HAMCP-191), which records a redaction by
+the shared sanitizer, is unrelated and still makes the report partial.
 
 What is disclosed but never followed:
 - `!include` at any level, and packages. The report says each was not
@@ -390,6 +412,10 @@ regression suite is kept unchanged as `tests/test_pr294_corr2_extra.py`.
    scan of the final envelope now makes any withheld form, anywhere, a
    partial report with a named omission per affected item.
 
+Owner decision after that review (Josh, 2026-10-22): the SQL `db_url`
+policy redaction above is not missing evidence and no longer makes a report
+partial. Every other withholding still does.
+
 ## Compatibility and rollback
 
 - **Additive.** One new tool; no existing descriptor or schema changes.
@@ -414,6 +440,7 @@ regression suite is kept unchanged as `tests/test_pr294_corr2_extra.py`.
   - A YAML-projected value with an invisible, format or control character
     (an emoji with a variation selector included) is withheld whole as
     `[withheld:unverifiable_text]` (by design; the report is partial).
-  - Every withholding makes the report partial, so a report with a SQL
-    definition (its `db_url` always withheld) is always partial.
+  - Every withholding makes the report partial, except the fixed SQL
+    `db_url` policy redaction (`{"redacted_by_policy": "database_url"}`),
+    which is not missing evidence (owner decision, 2026-10-22).
   - A template blueprint block is not expanded; it is a disclosed gap.

@@ -78,6 +78,15 @@ leg removed, a dropped invisible key leaving the report complete) and
 ignored, dropped keys ignored, the item list unbounded, omission text
 scanned as items, completeness or the omission list ignoring the scan).
 
+The owner decision of 2026-10-22 (a SQL definition's own ``db_url`` is a
+fixed policy redaction, reported as ``{"redacted_by_policy":
+"database_url"}``, that leaves the report complete) adds ``B4-P*``: the
+policy allowlist broadened to every withheld marker (the required mutant),
+its kind, integration, field, path-shape, single-key or index checks
+removed, a configured value shaped like the marker not treated as withheld,
+the marker emitted for another integration's ``db_url``, the SQL ``db_url``
+listed as withheld again, and its value copied instead of the marker.
+
 Usage:
     python docs/evidence/hamcp132-mutations/run_mutations.py \
         --work ~/hamcp132-work/mut --output docs/evidence/hamcp132-mutations/results.json
@@ -146,6 +155,7 @@ B2_BLUEPRINT = "delta review M3: an unprojected blueprint is a definition gap"
 B2_IDENTITY = "delta review M4: a malformed registry identity is invalid, never matched, never absent"
 B3_INVISIBLE = "corr2 review R2-H1: invisible, format or control text is withheld whole, never screened and shown"
 B3_COMPLETE = "corr2 review R2-M1: any withheld form anywhere in the final envelope makes the report partial"
+B4_POLICY = "owner decision 2026-10-22: only the SQL db_url policy redaction leaves a report complete"
 
 
 def m(identifier, item, *replacements):
@@ -374,7 +384,10 @@ MUTATIONS = [
     # --- Slice 2: get_configuration_definitions ---------------------------
     m("B-L1-db-url-projected-as-field", B_LEAK,
       (DPROJ, '            if type(key) is str and key in c.WITHHELD_KEYS:\n'
-              '                record["withheld"].append(f"{path}.{key}")\n'
+              '                if key == "db_url" and record.get("integration") == c.POLICY_REDACTED_INTEGRATION:\n'
+              '                    fields[key] = c.db_url_policy_redaction()\n'
+              '                else:\n'
+              '                    record["withheld"].append(f"{path}.{key}")\n'
               '            elif type(key) is str and key in allowed:',
        '            if type(key) is str and (key in allowed or key in c.WITHHELD_KEYS):')),
     # Removing only the nested ``WITHHELD_KEYS`` test is an equivalent mutant:
@@ -688,7 +701,7 @@ MUTATIONS = [
     m("B3-M1-final-envelope-withheld-scan-removed", B3_COMPLETE,
       (DSVC, '            if items != withheld_items:\n', '            if False:\n')),
     m("B3-M2-withheld-dict-form-ignored", B3_COMPLETE,
-      (DCRED, '        return item.get("withheld") not in (None, "", [], ())', '        return False')),
+      (DCRED, '        return (item.get("withheld") not in (None, "", [], ())', '        return (False')),
     m("B3-M3-withheld-marker-string-ignored", B3_COMPLETE,
       (DCRED, '        return item in (WITHHELD_MARKER, UNVERIFIABLE_MARKER)', '        return False')),
     m("B3-M4-dropped-keys-ignored", B3_COMPLETE,
@@ -702,6 +715,42 @@ MUTATIONS = [
     m("B3-M8-withheld-items-not-listed", B3_COMPLETE,
       (DSVC, 'listed = list(omissions) + [item for item in withheld_items if item not in omissions]',
        'listed = list(omissions)')),
+    # --- Slice 2 owner decision (Josh, 2026-10-22): db_url policy redaction --
+    m("B4-P1-policy-allowlist-broadened-to-all-withheld-markers", B4_POLICY,
+      (DCRED, '    not exempt, so it counts as withheld.\n    """\n\n',
+       '    not exempt, so it counts as withheld.\n    """\n\n    return True\n')),
+    m("B4-P2-allowlist-kind-check-removed", B4_POLICY,
+      (DCRED, '(integration, path[3], item[c.POLICY_REDACTION_KEY]) in POLICY_REDACTIONS',
+       '(integration, path[3], c.DB_URL_POLICY_KIND) in POLICY_REDACTIONS')),
+    m("B4-P3-allowlist-integration-check-removed", B4_POLICY,
+      (DCRED, '(integration, path[3], item[c.POLICY_REDACTION_KEY]) in POLICY_REDACTIONS',
+       '(c.POLICY_REDACTED_INTEGRATION, path[3], item[c.POLICY_REDACTION_KEY]) in POLICY_REDACTIONS')),
+    m("B4-P4-allowlist-field-check-removed", B4_POLICY,
+      (DCRED, '(integration, path[3], item[c.POLICY_REDACTION_KEY]) in POLICY_REDACTIONS',
+       '(integration, "db_url", item[c.POLICY_REDACTION_KEY]) in POLICY_REDACTIONS')),
+    m("B4-P5-allowlist-path-depth-check-removed", B4_POLICY,
+      (DCRED, '    if (len(path) != 4 or path[0]', '    if (len(path) < 4 or path[0]')),
+    m("B4-P6-allowlist-definitions-list-check-removed", B4_POLICY,
+      (DCRED, 'or path[0] != "definitions" or type(path[1])', 'or type(path[1])')),
+    m("B4-P7-allowlist-fields-segment-check-removed", B4_POLICY,
+      (DCRED, '            or path[2] != "fields" or type(path[3]) is not str):',
+       '            or type(path[3]) is not str):')),
+    m("B4-P8-allowlist-single-key-check-removed", B4_POLICY,
+      (DCRED, 'if type(item) is not dict or len(item) != 1 or type(',
+       'if type(item) is not dict or type(')),
+    m("B4-P9-allowlist-boolean-index-accepted", B4_POLICY,
+      (DCRED, ' or type(path[1]) is not int\n', ' or type(path[1]) not in (int, bool)\n')),
+    m("B4-P10-configured-policy-marker-not-withheld", B4_POLICY,
+      (DCRED, '\n                or c.POLICY_REDACTION_KEY in item)', ')')),
+    m("B4-P11-policy-marker-for-every-integration", B4_POLICY,
+      (DPROJ, 'if key == "db_url" and record.get("integration") == c.POLICY_REDACTED_INTEGRATION:',
+       'if key == "db_url":')),
+    m("B4-P12-sql-db-url-listed-as-withheld", B4_POLICY,
+      (DPROJ, '                    fields[key] = c.db_url_policy_redaction()\n',
+       '                    record["withheld"].append(f"{path}.{key}")\n')),
+    m("B4-P13-sql-db-url-value-copied", B4_POLICY,
+      (DPROJ, '                    fields[key] = c.db_url_policy_redaction()\n',
+       '                    fields[key] = value\n')),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

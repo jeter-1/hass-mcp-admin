@@ -331,6 +331,9 @@ def walk_strings(value):
         yield value
 
 
+POLICY_DB_URL = {"redacted_by_policy": "database_url"}
+
+
 class Base(unittest.IsolatedAsyncioTestCase):
     async def run_report(self, yaml_values=None, core_values=None, entity_ids=(), integrations=(), **kwargs):
         self.env = setup(yaml_values, core_values, **kwargs)
@@ -339,7 +342,16 @@ class Base(unittest.IsolatedAsyncioTestCase):
         text = json.dumps(report)
         for value in NEEDLES:
             self.assertNotIn(value, text)
-        self.assertNotIn("db_url", json.dumps([d["fields"] for d in report["definitions"]]))
+        # A SQL definition's own db_url is reported only as the fixed policy
+        # marker (owner decision); no other db_url text appears in any field.
+        rest = []
+        for definition in report["definitions"]:
+            fields = dict(definition["fields"])
+            if "db_url" in fields:
+                self.assertEqual(definition["integration"], "sql")
+                self.assertEqual(fields.pop("db_url"), POLICY_DB_URL)
+            rest.append(fields)
+        self.assertNotIn("db_url", json.dumps(rest))
         return report
 
     @staticmethod
@@ -355,6 +367,11 @@ class Base(unittest.IsolatedAsyncioTestCase):
             self.assertIn(item, report["omissions"])
         self.assertFalse(report["complete"])
         self.assertEqual(report["completeness"], "partial")
+
+    def assert_complete(self, report):
+        self.assertEqual(report["omissions"], [])
+        self.assertTrue(report["complete"])
+        self.assertEqual(report["completeness"], "complete")
 
 
 def expected(definition):
@@ -428,10 +445,13 @@ class PinnedShapeTests(unittest.TestCase):
         rows = self.by_id(sql=[*owner_sql(), {"name": "{{ 'templated' }}", "query": "SELECT 1;", "column": "x"},
                                {"name": "Café", "query": "SELECT 1;", "column": "x"}, "not a mapping"])
         first = rows["sql[0]"]
-        self.assertEqual(first["fields"], {"name": "Database Free Space", "unique_id": "sql_db_free_space",
+        # Owner decision: the SQL db_url is a fixed policy redaction, reported
+        # in place and not listed as withheld.
+        self.assertEqual(first["fields"], {"name": "Database Free Space", "db_url": POLICY_DB_URL,
+                                           "unique_id": "sql_db_free_space",
                                            "query": "SELECT free_mb FROM synthetic_space;", "column": "free_mb",
                                            "unit_of_measurement": "MB"})
-        self.assertEqual(first["withheld"], ["sql[0].db_url"])
+        self.assertEqual(first["withheld"], [])
         self.assertEqual(expected(first),
                          [entity_row("sensor", "sql_db_free_space", "sensor.database_free_space", "name")])
         self.assertEqual(expected(rows["sql[2]"]), [entity_row("sensor", None, None, None, "name_is_template")])
@@ -550,9 +570,9 @@ class PinnedShapeTests(unittest.TestCase):
             row = rows[key]
             self.assertEqual((row["form"], row["status"], row["integration"], row["expected_entities"]),
                              ("legacy_platform", "unsupported_legacy_platform", integration, []))
-        self.assertEqual(rows["sensor[0]"]["withheld"], ["sensor[0].db_url"])
-        self.assertEqual(rows["sensor[0]"]["fields"], {"platform": "sql", "name": "Old SQL", "query": "SELECT 1;",
-                                                       "column": "x"})
+        self.assertEqual(rows["sensor[0]"]["withheld"], [])
+        self.assertEqual(rows["sensor[0]"]["fields"], {"platform": "sql", "name": "Old SQL", "db_url": POLICY_DB_URL,
+                                                       "query": "SELECT 1;", "column": "x"})
         self.assertEqual(rows["sensor[1]"]["fields"], {"platform": "template"})
         self.assertEqual(rows["sensor[1]"]["unrecognized_key_count"], 1)
 
@@ -621,15 +641,14 @@ class OwnerShapeTests(Base):
                          ["sql[0]", "sql[1]", "group.downstairs_lights", "sensor[0]", "sensor[1]", "sensor[2]"])
         definitions = self.definitions(report)
         for key in ("sql[0]", "sql[1]"):
-            self.assertEqual(definitions[key]["withheld"], [f"{key}.db_url"])
-            self.assertNotIn("db_url", definitions[key]["fields"])
+            self.assertEqual(definitions[key]["withheld"], [])
+            self.assertEqual(definitions[key]["fields"]["db_url"], POLICY_DB_URL)
         # The renamed derivative is matched by unique_id, not by its derived ID.
         water = definitions["sensor[2]"]["expected_entities"][0]
         self.assertEqual((water["derived_entity_id"], water["match"]["entity_id"], water["match"]["method"]),
                          ("sensor.sensor_water_total_derivative", "sensor.water_rate", "exact_unique_id"))
-        # R2-M1: the always-withheld db_url makes each SQL definition a withheld item.
-        self.assertEqual(report["omissions"], ["withheld:definitions[0]", "withheld:definitions[1]"])
-        self.assert_partial(report)
+        # Owner decision: the SQL db_url policy redaction alone leaves the report complete.
+        self.assert_complete(report)
         self.assertEqual(report["packages"], "absent")
         self.assertEqual(report["schema"], c.SCHEMA)
         self.assertEqual(report["core_pin"], s.CORE_PIN)
@@ -678,11 +697,13 @@ class CredentialTests(Base):
             "template[0].sensor[0].variables[0].db_url", "template[0].sensor[0].variables[0].password",
             "template[0].sensor[0].variables[0].api_key", "template[0].sensor[0].variables[0].database_connection"])
         self.assertEqual(rows["template[0].sensor[0]"]["fields"]["attributes"], {"label": "kept"})
-        self.assertEqual(rows["sql[0]"]["withheld"], ["sql[0].db_url"])
+        self.assertEqual(rows["sql[0]"]["withheld"], [])
+        self.assertEqual(rows["sql[0]"]["fields"]["db_url"], POLICY_DB_URL)
         self.assertEqual(rows["sql[0]"]["unrecognized_key_count"], 1)
         self.assertEqual(rows["group.lights"]["withheld"], ["group.lights.db_url"])
         self.assertEqual(rows["utility_meter.meter"]["withheld"], ["utility_meter.meter.db_url"])
-        self.assertEqual(rows["sensor[0]"]["withheld"], ["sensor[0].db_url"])
+        self.assertEqual(rows["sensor[0]"]["withheld"], [])
+        self.assertEqual(rows["sensor[0]"]["fields"]["db_url"], POLICY_DB_URL)
         self.assertEqual(rows["sensor[1]"]["withheld"], ["sensor[1].filters[0].db_url"])
         self.assertEqual(rows["sensor[1]"]["fields"]["filters"], [{"filter": "lowpass"}])
         text = json.dumps(report)
@@ -713,7 +734,7 @@ class CredentialTests(Base):
         report = await self.run_report(values, integrations=("sql", "template"))
         rows = self.definitions(report)
         self.assertEqual(rows["sql[0]"]["fields"]["query"], {"withheld": "credential_uri"})
-        self.assertEqual(rows["sql[0]"]["withheld"], ["sql[0].db_url", "sql[0].query"])
+        self.assertEqual(rows["sql[0]"]["withheld"], ["sql[0].query"])
         self.assertEqual(rows["template[0].sensor[0]"]["fields"]["state"], {"withheld": "credential_uri"})
         self.assertEqual(rows["template[0].sensor[0]"]["fields"]["attributes"],
                          {"note": [{"withheld": "credential_uri"}]})
@@ -991,7 +1012,7 @@ class MatchingTests(Base):
                                             "reasons": ["no_state", "legacy_platform_unsupported"]})
         legacy = self.definitions(report)["sensor[0]"]
         self.assertEqual((legacy["status"], legacy["expected_entities"], legacy["withheld"]),
-                         ("unsupported_legacy_platform", [], ["sensor[0].db_url"]))
+                         ("unsupported_legacy_platform", [], []))
 
     async def test_definition_side_results(self):
         sql = [*owner_sql(), {"name": "No Row", "unique_id": "never_registered", "query": "q", "column": "c"}]
@@ -1036,8 +1057,8 @@ class PackagesAndIncludeTests(Base):
                     self.assertEqual(self.entities(report)[OWNER_ENTITIES[0]]["definition"]["method"],
                                      "exact_unique_id")
                 else:
-                    # Only the listed SQL definition's withheld db_url (R2-M1).
-                    self.assertEqual(report["omissions"], ["withheld:definitions[0]"])
+                    # The listed SQL definition's db_url is a policy redaction only.
+                    self.assert_complete(report)
                 self.assertNotIn("energy.yaml", json.dumps(report))
 
     async def test_homeassistant_node_decides_a_not_found_packages_key(self):
@@ -1136,7 +1157,7 @@ class SourceFailureTests(Base):
         report = await self.run_report(entity_ids=("sensor.database_size",))
         self.assertEqual(source(report, "manifest/get:ha_mcp_tools")["status"], "complete")
         self.assertTrue(all(row["status"] == "complete" for row in report["sources"]))
-        self.assertEqual(report["omissions"], ["withheld:definitions[0]"])
+        self.assert_complete(report)
 
     async def test_yaml_failures(self):
         for name, result, reason in (
@@ -1744,9 +1765,11 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["data"]["schema"], c.SCHEMA)
         self.assertEqual(data["metadata"]["data_providers"], ["direct_ha_api", "upstream_read_gateway"])
         self.assertEqual(data["metadata"]["upstream_calls"], 8)
-        # R2-M1: the two SQL definitions' withheld db_url values.
-        self.assertEqual(data["metadata"]["completeness"], "partial")
-        self.assertEqual(data["data"]["omissions"], ["withheld:definitions[0]", "withheld:definitions[1]"])
+        # Owner decision: the two SQL db_url policy redactions leave it complete.
+        self.assertEqual(data["metadata"]["completeness"], "complete")
+        self.assertEqual(data["data"]["omissions"], [])
+        self.assertEqual([d["fields"]["db_url"] for d in data["data"]["definitions"][:2]],
+                         [POLICY_DB_URL, POLICY_DB_URL])
         self.assertFalse(data["metadata"]["fallback_occurred"])
         self.assertNotIn("upstream_calls", data["data"])
         for value in NEEDLES:
@@ -2800,11 +2823,13 @@ class WithheldCompletenessTests(Base):
             "invisible_value": template(attributes={"a": "x" + chr(0x200B)}),
             "invisible_key": template(attributes={"a" + chr(0x200D): "x"}),
             "known_secret_at_exit": template(attributes={"a": "{{ '" + HA_TOKEN + "' }}"}),
-            "fixed_db_url_field": owner_yaml(sql=[owner_sql()[0]]),
+            # Only a SQL definition's own db_url is a policy redaction.
+            "template_block_db_url": owner_yaml(template=[{"db_url": db_url(), "sensor": [{"name": "Probe",
+                                                                                          "state": "on"}]}]),
         }
         for name, values in cases.items():
             with self.subTest(name):
-                integration = "sql" if name == "fixed_db_url_field" else "template"
+                integration = "template"
                 report = await self.run_report(values, integrations=(integration,))
                 self.assert_partial(report, "withheld:definitions[0]")
 
@@ -2870,3 +2895,198 @@ class WithheldCompletenessTests(Base):
         self.assertEqual(credentials.withheld_items(envelope, [(("coverage", "<key>"), credentials.WITHHELD_MARKER)]), [
             "withheld:definitions[1]", "withheld:definitions[2]", "withheld:definitions[3]",
             "withheld:ui_entries[0]", "withheld:coverage"])
+
+
+class PolicyRedactionTests(Base):
+    """Owner decision (Josh, 2026-10-22): the SQL db_url is a fixed policy redaction, not missing evidence.
+
+    It is reported in place as ``{"redacted_by_policy": "database_url"}`` and
+    does not make the report partial. The exemption is one allowlist entry in
+    the single final-envelope scan; every other withholding stays partial.
+    """
+
+    @staticmethod
+    def item(report, definition_id):
+        index = [d["definition_id"] for d in report["definitions"]].index(definition_id)
+        return f"withheld:definitions[{index}]"
+
+    @staticmethod
+    def legacy_sql(**fields):
+        return {"platform": "sql", "name": "Old SQL", "db_url": db_url("sqlite"), "query": "SELECT 1;",
+                "column": "x", **fields}
+
+    async def test_sql_definition_with_only_db_url_redacted_is_complete(self):
+        cases = {
+            "sql_key": (owner_yaml(sql=owner_sql()), ("sql[0]", "sql[1]")),
+            "legacy_platform": (owner_yaml(sensor=[self.legacy_sql()]), ("sensor[0]",)),
+        }
+        for name, (values, keys) in cases.items():
+            with self.subTest(name):
+                report = await self.run_report(values, integrations=("sql",))
+                rows = self.definitions(report)
+                for key in keys:
+                    self.assertEqual(rows[key]["integration"], "sql")
+                    self.assertEqual(rows[key]["fields"]["db_url"], POLICY_DB_URL)
+                    self.assertEqual(rows[key]["withheld"], [])
+                self.assert_complete(report)
+                text = json.dumps(report)
+                for scheme in ("postgresql", "mysql", "sqlite"):
+                    self.assertNotIn(scheme + syn.SCHEME_SEPARATOR, text)
+                self.assertNotIn(DB_PASSWORD, text)
+
+    async def test_db_url_plus_any_other_withholding_is_partial(self):
+        sql = owner_sql()[0]
+        template = [{"sensor": [{"name": "Probe", "state": {"secret_ref": SECRET_NAME}}]}]
+        cases = {
+            # The same SQL definition also withholds another field.
+            "invisible_query": (owner_yaml(sql=[{**sql, "query": "SELECT 1;" + chr(0x200B)}]),
+                                ("sql",), "sql[0]", "sql[0]"),
+            "reference_column": (owner_yaml(sql=[{**sql, "column": {"secret_ref": SECRET_NAME}}]),
+                                 ("sql",), "sql[0]", "sql[0]"),
+            "nested_db_url": (owner_yaml(sql=[{**sql, "availability": {"db_url": db_url()}}]),
+                              ("sql",), "sql[0]", "sql[0]"),
+            "legacy_reference": (owner_yaml(sql=[], sensor=[self.legacy_sql(column={"env_var_ref": ENV_NAME})]),
+                                 ("sql",), "sensor[0]", "sensor[0]"),
+            # Another definition withholds something; only it is named.
+            "other_definition": (owner_yaml(sql=[sql], template=template),
+                                 ("sql", "template"), "sql[0]", "template[0].sensor[0]"),
+        }
+        for name, (values, integrations, sql_id, withheld_id) in cases.items():
+            with self.subTest(name):
+                report = await self.run_report(values, integrations=integrations)
+                self.assertEqual(self.definitions(report)[sql_id]["fields"]["db_url"], POLICY_DB_URL)
+                item = self.item(report, withheld_id)
+                self.assert_partial(report, item)
+                self.assertEqual([i for i in report["omissions"] if i.startswith("withheld:")], [item])
+        # A withheld title elsewhere in the report.
+        core = owner_core()
+        core["config_entries/get"]["template"][0]["title"] = "K" + non_ascii(0xFC) + "che"
+        report = await self.run_report(owner_yaml(sql=[sql]), core_values=core, integrations=("sql", "template"))
+        self.assertEqual(self.definitions(report)["sql[0]"]["fields"]["db_url"], POLICY_DB_URL)
+        self.assert_partial(report, "withheld:ui_entries[0]")
+        self.assertNotIn("withheld:definitions[0]", report["omissions"])
+
+    async def test_credential_in_a_non_db_url_sql_field_is_partial(self):
+        sql = owner_sql()[0]
+        cases = {
+            "query": {**sql, "query": "SELECT 1 -- " + db_url()},
+            "column": {**sql, "column": db_url("mssql")},
+            "unit_of_measurement": {**sql, "unit_of_measurement": db_url()},
+            "value_template": {**sql, "value_template": "{{ '" + db_url() + "' }}"},
+            "availability": {**sql, "availability": {"note": db_url()}},
+        }
+        for name, entry in cases.items():
+            with self.subTest(name):
+                report = await self.run_report(owner_yaml(sql=[entry]), integrations=("sql",))
+                row = self.definitions(report)["sql[0]"]
+                self.assertEqual(row["fields"]["db_url"], POLICY_DB_URL)
+                self.assertTrue(row["withheld"])
+                self.assertNotIn("sql[0].db_url", row["withheld"])
+                self.assert_partial(report, self.item(report, "sql[0]"))
+                self.assertNotIn(DB_PASSWORD, json.dumps(report))
+        report = await self.run_report(owner_yaml(sql=[], sensor=[self.legacy_sql(query="SELECT 1 -- " + db_url())]),
+                                       integrations=("sql",))
+        self.assert_partial(report, self.item(report, "sensor[0]"))
+        self.assertNotIn(DB_PASSWORD, json.dumps(report))
+
+    async def test_db_url_outside_a_sql_definition_stays_withheld(self):
+        cases = {
+            "template_block": (owner_yaml(template=[{"db_url": db_url(), "sensor": [{"name": "P", "state": "on"}]}]),
+                               "template"),
+            "group": (owner_yaml(group={"lights": {"entities": ["light.kitchen"], "db_url": db_url()}}), "group"),
+            "utility_meter": (owner_yaml(utility_meter={"m": {"source": "sensor.energy_total", "db_url": db_url()}}),
+                              "utility_meter"),
+            "legacy_template": (owner_yaml(sensor=[{"platform": "template", "db_url": db_url(),
+                                                    "sensors": {"t": {"value_template": "{{ 1 }}"}}}]), "template"),
+        }
+        for name, (values, integration) in cases.items():
+            with self.subTest(name):
+                report = await self.run_report(values, integrations=(integration,))
+                withheld = [row for row in report["definitions"] if row["withheld"]]
+                self.assertEqual(len(withheld), 1)
+                self.assertEqual(len(withheld[0]["withheld"]), 1)
+                self.assertTrue(withheld[0]["withheld"][0].endswith(".db_url"))
+                for row in report["definitions"]:
+                    self.assertNotIn("db_url", row["fields"])
+                self.assert_partial(report, self.item(report, withheld[0]["definition_id"]))
+
+    async def test_a_policy_marker_from_configuration_is_not_exempt(self):
+        # A YAML value shaped like the marker is not the fixed redaction.
+        marker = {"redacted_by_policy": "database_url"}
+        cases = {
+            "template_attribute": (owner_yaml(template=[{"sensor": [{"name": "P", "state": "on",
+                                                                     "attributes": {"a": dict(marker)}}]}]),
+                                   "template"),
+            "sql_query": (owner_yaml(sql=[{**owner_sql()[0], "query": dict(marker)}]), "sql"),
+            "sql_nested": (owner_yaml(sql=[{**owner_sql()[0], "availability": {"db_url_note": dict(marker)}}]), "sql"),
+        }
+        for name, (values, integration) in cases.items():
+            with self.subTest(name):
+                report = await self.run_report(values, integrations=(integration,))
+                self.assert_partial(report, "withheld:definitions[0]")
+        # The SQL db_url's own value is never shown, whatever it is.
+        report = await self.run_report(owner_yaml(sql=[{**owner_sql()[0], "db_url": dict(marker, extra="x")}]),
+                                       integrations=("sql",))
+        self.assertEqual(self.definitions(report)["sql[0]"]["fields"]["db_url"], POLICY_DB_URL)
+        self.assert_complete(report)
+
+    async def test_exit_point_marker_outside_the_allowlist_is_partial(self):
+        env = setup()
+        self.addCleanup(end_request, env.token)
+        base = await env.service.report((), ("sql",))
+        self.assertEqual(base["definitions"][0]["fields"]["db_url"], POLICY_DB_URL)
+        self.assert_complete(base)
+        variants = {
+            "other_kind": lambda report: report["definitions"][0]["fields"].update(
+                db_url={"redacted_by_policy": "other"}),
+            "extra_key": lambda report: report["definitions"][0]["fields"].update(
+                db_url={"redacted_by_policy": "database_url", "note": "x"}),
+            "other_field": lambda report: report["definitions"][0]["fields"].update(query=dict(POLICY_DB_URL)),
+            "other_integration": lambda report: report["definitions"][0].update(integration="template"),
+            "top_level": lambda report: report.update(probe=dict(POLICY_DB_URL)),
+        }
+        for name, change in variants.items():
+            with self.subTest(name):
+                report = copy.deepcopy(base)
+                change(report)
+                omissions = list(report.pop("omissions"))
+                result = env.service._finish(report, omissions, omissions.append)
+                self.assertFalse(result["complete"])
+                self.assertEqual(result["completeness"], "partial")
+                self.assertTrue(any(item.startswith("withheld:") for item in result["omissions"]))
+
+    def test_allowlist_is_exactly_the_sql_db_url(self):
+        from ha_mcp_engineering.configuration_definitions import credentials
+
+        self.assertEqual(credentials.POLICY_REDACTIONS, frozenset({("sql", "db_url", "database_url")}))
+        self.assertEqual(c.db_url_policy_redaction(), POLICY_DB_URL)
+        self.assertIsNot(c.db_url_policy_redaction(), c.db_url_policy_redaction())
+        sql = {"integration": "sql", "fields": {"db_url": dict(POLICY_DB_URL)}}
+        path = ("definitions", 0, "fields", "db_url")
+        self.assertTrue(credentials.policy_redaction({"definitions": [sql]}, path, POLICY_DB_URL))
+        refused = {
+            "other_kind": ({"definitions": [sql]}, path, {"redacted_by_policy": "other"}),
+            "non_text_kind": ({"definitions": [sql]}, path, {"redacted_by_policy": 1}),
+            "extra_key": ({"definitions": [sql]}, path, {**POLICY_DB_URL, "x": 1}),
+            "withheld_form": ({"definitions": [sql]}, path, {"withheld": "db_url"}),
+            "string": ({"definitions": [sql]}, path, credentials.WITHHELD_MARKER),
+            "other_field": ({"definitions": [sql]}, ("definitions", 0, "fields", "query"), POLICY_DB_URL),
+            "nested": ({"definitions": [sql]}, ("definitions", 0, "fields", "db_url", "db_url"), POLICY_DB_URL),
+            "not_fields": ({"definitions": [sql]}, ("definitions", 0, "attributes", "db_url"), POLICY_DB_URL),
+            "other_list": ({"definitions": [sql], "ui_entries": [sql]}, ("ui_entries", 0, "fields", "db_url"),
+                           POLICY_DB_URL),
+            "index_out_of_range": ({"definitions": [sql]}, ("definitions", 1, "fields", "db_url"), POLICY_DB_URL),
+            "boolean_index": ({"definitions": [sql, sql]}, ("definitions", True, "fields", "db_url"), POLICY_DB_URL),
+            "other_integration": ({"definitions": [{**sql, "integration": "template"}]}, path, POLICY_DB_URL),
+            "no_integration": ({"definitions": [{"fields": sql["fields"]}]}, path, POLICY_DB_URL),
+            "definitions_not_a_list": ({"definitions": {0: sql}}, path, POLICY_DB_URL),
+        }
+        for name, (envelope, at, item) in refused.items():
+            with self.subTest(name):
+                self.assertFalse(credentials.policy_redaction(envelope, at, item))
+        envelope = {"definitions": [sql, {"integration": "template", "fields": {"db_url": dict(POLICY_DB_URL)}},
+                                    {"integration": "sql", "fields": {"query": dict(POLICY_DB_URL)}},
+                                    {"integration": "sql", "fields": {"db_url": {"redacted_by_policy": "other"}}}],
+                    "ui_entries": [{"title": dict(POLICY_DB_URL)}]}
+        self.assertEqual(credentials.withheld_items(envelope, []), [
+            "withheld:definitions[1]", "withheld:definitions[2]", "withheld:definitions[3]", "withheld:ui_entries[0]"])

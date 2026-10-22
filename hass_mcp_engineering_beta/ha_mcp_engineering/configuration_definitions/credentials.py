@@ -51,6 +51,13 @@ string, a ``{"withheld": <kind>}`` value, a non-empty ``withheld`` path list,
 a dropped key) and names each affected item (``withheld:definitions[3]``) in
 a bounded omission list; any such omission makes the report partial.
 
+**A fixed policy redaction is not missing evidence** (owner decision, Josh,
+2026-10-22). The scan also finds every ``{"redacted_by_policy": <kind>}``
+value and treats it as withheld unless ``policy_redaction`` matches it to an
+entry of ``POLICY_REDACTIONS``. That allowlist has one entry: a SQL
+definition's own ``fields.db_url`` with kind ``database_url``. Every other
+withholding still makes the report partial.
+
 The checks read the reader's canonical form (percent-decoded, NFKC,
 casefold) with a bounded confusable fold on top (``fold_confusables``):
 the known look-alikes of ``/``, ``:`` and ``@`` that NFKC leaves unchanged
@@ -71,6 +78,7 @@ from typing import Any
 from urllib.parse import unquote_to_bytes
 
 from ..providers.upstream_yaml_reader import MAX_DECODE_ROUNDS, _userinfo, canonical
+from . import contracts as c
 
 WITHHELD_MARKER = "[withheld:credential_text]"
 OMISSION = "credential_text_withheld"
@@ -79,6 +87,10 @@ UNVERIFIABLE_OMISSION = "unverifiable_text_withheld"
 WITHHELD_ITEM_PREFIX = "withheld:"
 MAX_WITHHELD_ITEMS = 20
 WITHHELD_ITEMS_NOT_LISTED = "withheld_items_not_listed"
+
+# The only policy redactions that leave a report complete, as (integration,
+# definition field, kind): the owner decision of 2026-10-22, db_url only.
+POLICY_REDACTIONS = frozenset({(c.POLICY_REDACTED_INTEGRATION, "db_url", c.DB_URL_POLICY_KIND)})
 
 # Invisible, format and control characters (R2-H1): these Unicode categories
 # (tab, line feed and carriage return excepted) and every
@@ -296,8 +308,31 @@ def _withheld_form(item: Any) -> bool:
     if type(item) is str:
         return item in (WITHHELD_MARKER, UNVERIFIABLE_MARKER)
     if type(item) is dict:
-        return item.get("withheld") not in (None, "", [], ())
+        return (item.get("withheld") not in (None, "", [], ())
+                or c.POLICY_REDACTION_KEY in item)
     return False
+
+
+def policy_redaction(envelope: dict, path: tuple, item: Any) -> bool:
+    """Whether ``item`` at ``path`` is an allowlisted fixed policy redaction.
+
+    Only ``{"redacted_by_policy": <kind>}`` exactly, at
+    ``definitions[<n>].fields.<field>`` of a definition whose integration,
+    field and kind are one entry of ``POLICY_REDACTIONS``. Anything else is
+    not exempt, so it counts as withheld.
+    """
+
+    if type(item) is not dict or len(item) != 1 or type(item.get(c.POLICY_REDACTION_KEY)) is not str:
+        return False
+    if (len(path) != 4 or path[0] != "definitions" or type(path[1]) is not int
+            or path[2] != "fields" or type(path[3]) is not str):
+        return False
+    definitions = envelope.get("definitions")
+    if type(definitions) is not list or not 0 <= path[1] < len(definitions):
+        return False
+    definition = definitions[path[1]]
+    integration = definition.get("integration") if type(definition) is dict else None
+    return (integration, path[3], item[c.POLICY_REDACTION_KEY]) in POLICY_REDACTIONS
 
 
 def _item_name(path: tuple) -> str:
@@ -328,7 +363,7 @@ def withheld_items(envelope: dict, dropped: list[tuple[tuple, str]] = (),
             names.append(name)
 
     def scan(item: Any, path: tuple) -> None:
-        if _withheld_form(item):
+        if _withheld_form(item) and not policy_redaction(envelope, path, item):
             note(path)
         if type(item) is dict:
             for key, child in item.items():

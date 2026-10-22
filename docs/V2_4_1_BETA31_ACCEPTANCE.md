@@ -64,7 +64,9 @@ The review needs a security section covering:
   `.storage` file or Supervisor endpoint is reachable. There is no new
   batch-allowlist shape, and no write, reload, service call, flow, fallback
   or forwarding reachability.
-- **Withholding.** `db_url` is withheld in every position. So are `!secret`
+- **Withholding.** `db_url` is withheld in every position, except that a
+  SQL definition's own `fields.db_url` is the fixed policy redaction
+  `{"redacted_by_policy": "database_url"}`. So are `!secret`
   and `!env_var` references with their names, credential-shaped nested keys,
   and credential URIs inside allowlisted text, a gap the shared sanitizer
   does not cover. The projection is a positive allowlist. Unrecognized keys
@@ -93,8 +95,18 @@ The review needs a security section covering:
   string. Templates, units such as `°C` and accented names are shown.
 - **Anything withheld is partial.** One scan of the final envelope names
   each item with any withheld form (`withheld:definitions[3]`), at most 20
-  then `withheld_items_not_listed:<n>`, and makes the report partial. A
-  report with a SQL definition is therefore always partial (`db_url`).
+  then `withheld_items_not_listed:<n>`, and makes the report partial.
+- **A fixed policy redaction is not missing evidence (owner decision, Josh,
+  2026-10-22).** A SQL definition's own `db_url` (the `sql:` key or a legacy
+  `platform: sql` sensor) is reported as
+  `{"redacted_by_policy": "database_url"}` and does not make the report
+  partial. The exemption is an explicit allowlist with one entry inside the
+  same scan (`credentials.POLICY_REDACTIONS`), not a skipped scan. A
+  `db_url` in any other integration or nested position, a credential in any
+  other SQL field, invisible text, unverifiable titles, confusables and a
+  policy-shaped value from configuration are still withheld and partial.
+  The sanitizer's `redacted_by_policy` omission (HAMCP-191) is a different
+  thing and still makes the report partial.
 - **Truthfulness.**
   - A heuristic match is never reported as exact, and its confidence names
     the signals behind it.
@@ -125,6 +137,9 @@ The review needs a security section covering:
 - **Second delta review corrections.** R2-H1 and R2-M1 from the review of
   `5f6acb0`, listed in the release notes. The reviewer's suite is kept
   unchanged as `tests/test_pr294_corr2_extra.py`.
+- **Owner decision on policy redaction.** The SQL `db_url` policy redaction
+  leaves a report complete (above); both reviewer suites are unchanged and
+  pass.
 
 Preserve the following:
 - stable v1.1.2;
@@ -141,7 +156,7 @@ Preserve the following:
 No test reaches a live system. Every fixture is synthetic, and every
 credential-shaped string is assembled at test time.
 
-`tests/test_hamcp132_configuration_definitions.py` (144 tests) covers:
+`tests/test_hamcp132_configuration_definitions.py` (151 tests) covers:
 - pinned shapes for each projected form: template blocks (including trigger
   and blueprint blocks), the SQL integration key (list and single),
   old-style groups, utility meters, `sensor:` and `binary_sensor:` platforms,
@@ -244,7 +259,17 @@ credential-shaped string is assembled at test time.
     key, `db_url`, non-text key, unsupported value, invisible value and key,
     known secret, withheld titles, a dropped key at the exit point) partial
     with its named item; the item list bounded; omission text never itself
-    an item; nothing withheld stays complete.
+    an item; nothing withheld stays complete;
+  - the policy redaction: a SQL definition (the `sql:` key and a legacy
+    platform) with only its `db_url` redacted is complete with the
+    `redacted_by_policy` marker; the same plus any other withheld item
+    (invisible query, reference, nested `db_url`, another withheld
+    definition, a withheld title) is partial; a credential in a non-`db_url`
+    SQL field is partial; a `db_url` outside a SQL definition stays withheld
+    and partial; a policy-shaped value from configuration is not exempt; an
+    exit-point marker outside the allowlist (another kind, extra key, another
+    field, another integration, top level) is partial; and the allowlist is
+    exactly the SQL `db_url`.
 
 The existing suites that pin the tool count, sanitizer sites, Core gate and
 reader purpose are updated. The Evidence tier on the PR head is the complete
@@ -342,6 +367,18 @@ The second delta-review mutants cover:
 - the item list unbounded, omission text scanned as items, `complete`
   ignoring the items and the items not listed (`B3-M5` to `B3-M8`).
 
+The owner policy-decision mutants cover:
+- the policy allowlist broadened to every withheld marker (`B4-P1`);
+- each allowlist check removed: the redaction kind, the integration, the
+  field, the path depth, the `definitions` list, the `fields` segment and
+  the single-key shape (`B4-P2` to `B4-P8`);
+- a boolean list index accepted (`B4-P9`);
+- a policy-shaped value from configuration not treated as withheld
+  (`B4-P10`);
+- the marker emitted for every integration, the SQL `db_url` listed as
+  withheld again, and the `db_url` value copied into the marker
+  (`B4-P11` to `B4-P13`).
+
 ## 2. Release CI and publication
 
 Require exact-head CI before release acceptance. Pending or unavailable jobs
@@ -387,9 +424,11 @@ creates, opens a flow or calls a service.
      `expected_entities`;
    - `diagnosis.classification` and `reasons`. For any entity that is
      unavailable, check that the reasons agree with what Josh knows about it;
-   - for both SQL definitions, that `withheld` lists `db_url` and `fields`
-     has no `db_url`, and that `omissions` names each one
-     (`withheld:definitions[<n>]`) with the report partial.
+   - for both SQL definitions, that `fields.db_url` is exactly
+     `{"redacted_by_policy": "database_url"}`, that `withheld` does not list
+     `db_url`, and that `omissions` has no `withheld:definitions[<n>]` for
+     them. With nothing else withheld and every source complete, the report
+     is complete; any `withheld:` omission must name another withheld item.
 
    Also record:
    - every `sources[]` status and reason, `packages`, `omissions` and
@@ -401,9 +440,9 @@ creates, opens a flow or calls a service.
      secret name or state value.
 4. **By integration (live read).** Call `get_configuration_definitions` with
    `integrations: ["sql", "filter", "derivative", "group"]`. Confirm:
-   - the six definitions appear, with `db_url` withheld and the report
-     partial with a `withheld:definitions[<n>]` omission for each SQL
-     definition;
+   - the six definitions appear, each SQL definition with `fields.db_url`
+     as the `redacted_by_policy` marker and no `withheld:definitions[<n>]`
+     omission for it;
    - any UI-created entries of those integrations are listed under
      `ui_entries` as `definition_not_readable_without_flow`, with no options
      or data;

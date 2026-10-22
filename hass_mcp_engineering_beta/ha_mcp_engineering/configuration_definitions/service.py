@@ -487,7 +487,10 @@ class ConfigurationDefinitionsService:
         runs over it with the known secrets. One scan of that envelope
         (``credentials.withheld_items``, R2-M1) names every item with
         anything withheld in any form; any such item makes the report
-        partial. Nothing is added afterwards; a
+        partial. The scan's only exemption is the explicit, narrow allowlist
+        of fixed policy redactions (``credentials.POLICY_REDACTIONS``: a SQL
+        definition's own ``fields.db_url`` marker, owner decision 2026-10-22),
+        which is not missing evidence. Nothing is added afterwards; a
         change (a withholding or redaction omission, definitions or entries
         dropped for the byte budget) rebuilds the envelope and screens and
         sanitizes it again.

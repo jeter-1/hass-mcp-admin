@@ -689,6 +689,19 @@ shape, fallback or write path.
   the final envelope at the exit point finds every withheld form and names
   each affected item in a bounded omission list (at most 20, then a count);
   any such item makes the report partial.
+- **A fixed policy redaction is not missing evidence (owner decision, Josh,
+  2026-10-22).** A SQL definition's own `db_url` (the `sql:` key or a legacy
+  `platform: sql` sensor) is always replaced with
+  `{"redacted_by_policy": "database_url"}`, never read out. The final-envelope
+  scan still runs over it; an explicit allowlist inside that scan
+  (`credentials.POLICY_REDACTIONS`, exactly one entry: integration `sql`,
+  field `db_url`, kind `database_url`, at `definitions[<n>].fields.db_url`)
+  is the only form it does not count. A `db_url` in any other integration or
+  nested position, a credential in any other SQL field, invisible text,
+  unverifiable titles, confusables, and a `redacted_by_policy`-shaped value
+  that came from configuration are all still withheld and partial. The
+  sanitizer's own `redacted_by_policy` omission (HAMCP-191) is unrelated and
+  still makes the report partial.
 
 Arguments are validated before SDK coercion and rejected without echoing
 them. The audit records counts and source outcomes only. Stable v1.1.2 is

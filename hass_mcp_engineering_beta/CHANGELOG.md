@@ -44,8 +44,13 @@ Builds on 2.4.1-beta.30.
   with an invisible, format or control character, literal or
   percent-encoded, is withheld whole as `[withheld:unverifiable_text]`, never
   screened and shown (R2-H1); any withheld form anywhere in the final report
-  makes it partial, naming each affected item (`withheld:definitions[3]`), so
-  a report with a SQL definition is always partial (R2-M1).
+  makes it partial, naming each affected item (`withheld:definitions[3]`)
+  (R2-M1).
+- Owner decision (Josh, 2026-10-22): a SQL definition's own `db_url` is a
+  fixed policy redaction, not missing evidence. It is reported as
+  `{"redacted_by_policy": "database_url"}` and, through an explicit
+  allowlist inside the same final-envelope scan (SQL `fields.db_url` only),
+  leaves the report complete. Every other withholding is still partial.
 - Catalog: 65 static tools, 93 advertised (94 with the optional YAML reader).
   No existing descriptor, schema, stored format, dependency or workflow
   changes.
