@@ -281,6 +281,9 @@ Output:
   `text_explicit_offset` or `uncertain`) and `time_zone`; an uncertain entry
   has `ts: null` and `timestamp_uncertain` (`reason`, `candidates`), plus
   `window_membership_uncertain` when not every candidate is in the window.
+  HAMCP-220 review 1 adds `ordering_uncertain` on an entry whose order
+  against an unresolved local time, in its own source or across sources, is
+  not established.
 - `sources[]`, one row per requested source:
   - `status` (`complete`, `partial`, `failed`, `unavailable`) and `reason`;
   - `route`, `requests`, `http_status`;
@@ -290,8 +293,12 @@ Output:
     `outside_window`;
   - `gaps[]`, each with a reason;
   - `timestamp_basis` (`verified_pages`, `unverified_pages`,
-    `text_rendering`), `timestamp_uncertain_at_window_edge`, and
-    `timestamp_uncertain_bounds` when a retention edge time is uncertain;
+    `text_rendering`, `resolved_entries`, `unresolved_entries`),
+    `timestamp_uncertain_at_window_edge`, `ordering_uncertain` (a count),
+    and `timestamp_uncertain_bounds` when a retention edge time is
+    uncertain;
+  - `zone_mismatch` when the source failed closed on a time-zone
+    disagreement (see `docs/HAMCP_220_INCIDENT_LOG_TIMESTAMPS.md`);
   - for unavailable sources: `required_role`, `required_route_pattern` and
     `detail`.
 - `omissions[]` with reasons, plus `truncated`, `has_more`, `next_cursor`,

@@ -121,21 +121,50 @@ from the journal prefix.
 `hass_mcp_engineering_beta/Dockerfile`) ships the IANA zone database, so
 `zoneinfo` resolves zone names.
 
-### Decision for review: zone source
+### Owner decision (review 1, H1): zone source
 
-The task asks for Home Assistant's zone. The fix reads it from the add-on's
-`TZ`, which Supervisor sets, and not from Core `/api/config`. There are two
-reasons:
-- `get_incident_logs` is declared Core-independent (`routes.py` L227, a
-  protected file).
-- A new Supervisor or Core route would need the protected HAMCP-200 route
-  registry (`paths.py`).
+The first candidate read the zone from the add-on's `TZ`. Review 1 found
+that wrong after a Home Assistant zone change: `TZ` keeps the zone Supervisor
+held when the add-on last started (the Chicago/Panama reproduction). Josh
+authorized reading Home Assistant's configured zone from Core's
+`/api/config` (read-only), through the registered HAMCP-200 `/config` route,
+including the protected route and registration files. This supersedes the
+`TZ` decision.
 
-The cost: after a Home Assistant zone change, until this add-on restarts,
-the text no longer matches the add-on zone. Calibration then fails that page
-closed as `timestamp_basis_mismatch`; it never reads it in the wrong zone.
-If Josh prefers `/api/config` or `/info`, that is a separately scoped change
-to the protected files.
+- **The zone.** `incident_logs/zone.py` (new) makes one `GET /api/config` per
+  call that reads a journal, through `HomeAssistantRestClient`. It reads
+  `time_zone`, which Core owns and may change at runtime.
+- **Authority.** `get_incident_logs` acquires no gateway Core lease, so the
+  route can be reached while Core is down. The zone reader therefore
+  acquires, commits and revalidates its own `core.basic_rest_read` lease.
+  It chains any prior dispatch authorizer and restores the caller's
+  authorizer and error code afterwards. `routes.py` now classifies the tool
+  as `CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY`, not
+  `CORE_INDEPENDENT_SUPERVISOR_ONLY`.
+- **Failure.** If the lease is refused, or the read errors, times out
+  (5 s) or returns a malformed payload, the zone is `unavailable`. Every
+  readable source is then `unavailable` with `time_zone_unavailable`, zero
+  journal requests, and a partial read. The add-on `TZ` and UTC are never
+  substituted. **Consequence:** while Core is down, `get_incident_logs`
+  reads no journal.
+- **The add-on `TZ` is a cross-check only.** When it names a different zone
+  whose UTC offset differs from Home Assistant's at any minute of the window,
+  every source fails closed. Each gets `timestamp_basis_mismatch` and
+  `zone_mismatch.reason: addon_time_zone_offset_differs`, with
+  `offsets_first_differ_at`; zones that agree over the window
+  (`same_offsets_in_window`) pass. A missing or invalid `TZ` is disclosed as
+  `addon_time_zone_unavailable`, and the read is partial.
+- **The first-entry check stays as confirmation.** If the page's
+  `X-First-Cursor` realtime disagrees with the text read in Home Assistant's
+  zone (Supervisor still rendering an older zone, for example), the source is
+  partial with `zone_mismatch.reason: first_entry_realtime_disagrees`.
+  A single-entry resolution read that disagrees gives
+  `entry_realtime_disagrees`.
+- **Runtime zone change.** The zone is read again on every call, so a
+  continuation after a change is read in the new zone. If the new zone and
+  the add-on `TZ` disagree, the continuation is refused as above. A cursor
+  whose anchor entry's text was rendered again in another zone fails as
+  `journal_continuity_broken`, because its digest covers the raw text.
 
 ## Part 2: Fix
 
@@ -145,21 +174,39 @@ to the protected files.
    - Each page's first entry takes its exact time from the `X-First-Cursor`
      `t=` field (`ts_basis: journal_realtime_utc`).
    - That entry also calibrates the page. Each rendering hypothesis (Home
-     Assistant's zone, and UTC for Supervisor 2026.09.1) survives only if it
-     maps the first entry's text to its realtime within 1 ms.
+     Assistant's zone from `/api/config`, and UTC for Supervisor 2026.09.1)
+     survives only if it maps the first entry's text to its realtime within
+     1 ms.
    - If none survives, the page fails closed as `timestamp_basis_mismatch`.
 2. **The other entries are read from their text, in the surviving
    rendering** (`text_local_tz`, with `time_zone`).
    - Supervisor's offset form is read exactly (`text_explicit_offset`) and
      is checked against the realtime too.
    - A page mixing the two forms fails as `timestamp_form_mixed`.
-3. **Uncertain times are never guessed.**
+3. **Uncertain times are resolved, or disclosed (review 1, M1).**
    - A local time that occurs twice (DST fall-back), never occurs
-     (spring-forward), or on which the surviving renderings disagree, gets
-     `ts: null` and `ts_basis: uncertain`.
-   - It also gets `timestamp_uncertain: {reason, candidates}`, keeping every
-     candidate instant.
-   - Ordering uses the earliest candidate.
+     (spring-forward), or on which the surviving renderings disagree, is
+     resolved exactly when the budget allows. One single-entry read at
+     (page cursor, index) returns that entry as a page's first entry, with
+     its journal realtime. The entry's digest and one of its candidates
+     must match, or the source fails closed.
+   - Resolution reads use the shared request budget. One forward page is
+     kept in reserve for each open source that has not read a page yet.
+     They are counted in `timestamp_basis.resolved_entries` and
+     `unresolved_entries`. An uncertain tail entry is resolved too, so that
+     "after the tail" is decided on its exact time.
+   - An entry left unresolved gets `ts: null`, `ts_basis: uncertain` and
+     `timestamp_uncertain: {reason, candidates}`.
+   - **Ordering.** Entries are merged by their source's running maximum
+     time, so each source keeps its journal order. An unresolved entry, an
+     entry that precedes an earlier, later-timed entry of its source, and
+     every row of any source up to the latest candidate of an emitted
+     unresolved entry are all marked `ordering_uncertain`. That last bound
+     is carried to the next page in the signed cursor (`o`), so later pages
+     never claim an order around the span either. Any such row makes the
+     read partial, with `ordering_uncertain:<source>`.
+     Earliest-candidate ordering is never asserted, within a page or across
+     pages.
    - "Before the window", "after the tail" and the retention edge are
      decided by the latest candidate. "End reached" is decided by the
      earliest.
@@ -171,9 +218,10 @@ to the protected files.
 5. **No realtime.** If the cursor has no `t=` field, the text is read in
    Home Assistant's zone only. The page counts as unverified and the read is
    partial (`timestamp_basis_unverified:<source>`).
-6. **Zone failure.** A missing or invalid `TZ` makes every readable source
-   `unavailable` with `time_zone_unavailable`, zero requests, and a partial
-   read. UTC is never assumed.
+6. **Zone failure.** See the owner decision above: an unreadable Home
+   Assistant zone reads no journal and is never replaced by the add-on `TZ`
+   or UTC. An unreadable zone or any zone disagreement never yields a
+   complete read, including one that returns zero entries.
 
 ### Output
 
@@ -183,22 +231,46 @@ The time fields are additive. The schema id stays `incident-logs-v1`, but
 - **Entries** gain:
   - `ts_basis` and `time_zone`;
   - `timestamp_uncertain` when uncertain;
-  - `window_membership_uncertain` when the entry is at a window edge.
+  - `window_membership_uncertain` when the entry is at a window edge;
+  - `ordering_uncertain` when its order is not established.
 - **Source rows** gain:
   - `timestamp_basis` (`verified_pages`, `unverified_pages`,
-    `text_rendering`);
-  - `timestamp_uncertain_at_window_edge`;
+    `text_rendering`, `resolved_entries`, `unresolved_entries`);
+  - `timestamp_uncertain_at_window_edge` and `ordering_uncertain` (counts);
   - `timestamp_uncertain_bounds` when an `earliest_available` or
-    `latest_available` is uncertain (that bound is then `null`).
-- **The envelope** gains `time_basis` (`preferred`, `time_zone`,
-  `time_zone_source`, `time_zone_status`, `uncertain_entries`) and the pin
-  `supervisor_text_timestamps`.
+    `latest_available` is uncertain (that bound is then `null`);
+  - `zone_mismatch` (`reason`, `home_assistant_time_zone`,
+    `addon_time_zone`, and `offsets_first_differ_at` for an add-on
+    difference) when the source failed closed on a zone disagreement.
+- **The envelope** gains `time_basis`:
+  - `preferred`, plus `time_zone`, `time_zone_source`
+    (`home_assistant_api_config_time_zone`), `time_zone_status`
+    (`not_read`, `loaded`, `unavailable`) and `time_zone_reads`;
+  - `addon_time_zone`, `addon_time_zone_source` and
+    `addon_time_zone_status` (`not_read`, `agrees`,
+    `same_offsets_in_window`, `differs`, `unavailable`);
+  - `uncertain_entries` and `ordering_uncertain_entries`.
 
-### What does not change
+  It also gains the pin `supervisor_text_timestamps`.
+- **New omissions:** `time_zone_unavailable`, `addon_time_zone_unavailable`,
+  `zone_mismatch:<source>` and `ordering_uncertain:<source>`.
 
-Cursor format and signing, continuity digests, the locate and bisection
-algorithm, request and byte budgets, authority reporting, sanitization at the
-single exit, the routes, permissions and add-on configuration.
+### What changes and what does not
+
+- **Changes (review 1):**
+  - one Core `GET /api/config` per call that reads a journal, under its own
+    lease;
+  - the tool's Core-independence basis;
+  - the `o` field in the signed cursor payload;
+  - resolution reads inside the existing request budget.
+- **Unchanged:**
+  - cursor signing and continuity digests;
+  - the locate and bisection algorithm;
+  - the request and byte bounds;
+  - authority reporting;
+  - sanitization at the single exit;
+  - the Supervisor routes;
+  - permissions and add-on configuration.
 
 ## Tests and mutations
 
@@ -207,18 +279,39 @@ single exit, the routes, permissions and add-on configuration.
   real-shape cursors. It covers:
   - Chicago, UTC, Asia/Kolkata and Asia/Tokyo;
   - the live reproduction;
-  - DST fall-back and spring-forward;
+  - DST fall-back and spring-forward, both resolved and beyond the budget;
+  - a multi-page fall-back with two sources;
+  - ordering uncertainty carried to the next page;
   - window edges in local time and UTC;
   - Core and `addon:self` ordering;
-  - zone read failure;
-  - a stale zone;
+  - zone read failure (refused, malformed, raising, unreadable);
+  - the Home Assistant zone used when the add-on `TZ` is stale;
+  - zones that agree except across a DST transition (Denver/Phoenix);
+  - a Home Assistant zone change at runtime;
+  - a one-hour rendering error refused;
   - a cursor without realtime.
+
+  `ZoneReaderTests` drive the real `HomeAssistantRestClient` against a
+  loopback `/api/config`. They cover:
+  - the reader's own committed lease;
+  - no request when the lease is refused or uncommitted;
+  - revalidation failure, errors and the bounded timeout;
+  - authorizer chaining and restoration, and the preserved error code.
+- `tests/test_hamcp220_review1_probes.py` and
+  `tests/test_hamcp220_review1_tool_local_probe.py` are the review 1
+  reviewer's probes, unchanged.
 - `tests/test_hamcp131_incident_logs.py` runs every HAMCP-131 test twice: once
   with the 2026.09.1 UTC rendering, and once with 2026.10.3 local rendering
-  in America/Chicago (`IncidentLogLocalRenderTests`).
+  in America/Chicago (`IncidentLogLocalRenderTests`). It also checks:
+  - the zone reader is wired in;
+  - a refused Core lease reads no zone and no journal.
 - `docs/evidence/hamcp220-mutations/` holds the mutation evidence:
   - text parsed as UTC;
   - an ambiguous or nonexistent time resolved silently;
   - zone fallback to UTC;
   - calibration bypassed;
-  - the HAMCP-131 set, with the five fragments this change moved retargeted.
+  - Home Assistant's zone bypassed (`H1*`), including the add-on `TZ` used
+    when it differs and the reviewer's widened tolerance;
+  - ambiguous-span ordering asserted (`M1*`), including earliest-candidate
+    ordering across ambiguous pages;
+  - the HAMCP-131 set, with the fragments this change moved retargeted.
