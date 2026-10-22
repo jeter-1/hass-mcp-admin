@@ -44,10 +44,15 @@ OVERLAP_US = 1000
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 100
 MAX_UPSTREAM_CALLS = 12
-# A continued page re-reads every finished-slice range the previous page
-# returned states from, one call each (review M1). A page touches at most
-# MAX_UPSTREAM_CALLS slices, so this budget always suffices.
-MAX_VERIFY_CALLS = MAX_UPSTREAM_CALLS
+# A continued page re-reads ALL history the read has returned so far: every
+# finished slice from offset 0 to its total and the current slice from offset
+# 0 to the cursor, in chunks of VERIFY_CHUNK entries (review M1). A page whose
+# next continuation would need more than MAX_VERIFY_CALLS verification reads
+# issues no cursor (omission continuation_verification_limit), so every issued
+# cursor is verifiable within the bound. 40 calls cover one call for each of
+# the at most 28 slices plus 12 further chunks.
+VERIFY_CHUNK = 100
+MAX_VERIFY_CALLS = 40
 # Entries before a slice start: the recorder's start state plus rows inside
 # the 1 ms overlap. More is not the pinned shape; the bound keeps every
 # verification range within one bounded request.

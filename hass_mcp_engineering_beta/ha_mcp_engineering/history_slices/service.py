@@ -2,13 +2,15 @@
 
 The window is cut into fixed slices; each slice is one absolute-bounded
 ``ha_get_history`` request (ascending, minimal) paged by offset. The
-cursor binds a keyed chained digest of every offset range the page
-consumed in a slice it returned states from; a continued page re-reads
-those ranges and compares them before reading on. Every new slice compares
-the state prevailing at its start with the last state already read, so a
-purge, a late write, an in-place change of returned history or a changed
-provider contract fails closed as stale instead of silently skipping or
-repeating states.
+cursor carries cumulative continuity evidence for ALL history the read has
+returned since its first page: the total and a keyed chained digest of
+every finished slice (offset 0 to its total) and a chained digest of the
+current slice from offset 0 to the cursor. A continued page re-reads that
+entire range in bounded chunks and compares it before reading on. Every new
+slice compares the state prevailing at its start with the last state
+already read, so a purge, a late write, an in-place change of returned
+history on any earlier page or a changed provider contract fails closed as
+stale instead of silently skipping or repeating states.
 
 ``_finish`` is the only place this module sanitizes and the only place the
 response is built.
@@ -40,8 +42,10 @@ LIMITATIONS = (
     "reports that state at the requested start, not at the time the state began.",
     "A continuation is refused as stale when earlier history changed between pages (purge, a late "
     "recorder commit near the present, or a different provider contract); restart without the cursor.",
-    "A continued page re-verifies the exact content the previous page returned; history returned two "
-    "or more pages back is checked only through offset, overlap and slice-start continuity.",
+    "A continued page re-reads and compares all history the read returned on every earlier page, in "
+    "chunks of at most 100 entries and at most 40 verification reads per page; when the next "
+    "continuation would need more, no cursor is issued (continuation_verification_limit) and a new "
+    "read must start at coverage.complete_until.",
     "Empty output never proves a state change did not occur.",
 )
 
@@ -66,9 +70,10 @@ class Position:
     x: str | None = None
     m: int = 0
     checked: bool = False
-    # This page's verification ranges (review M1): offsets [f, o) of slice k
-    # with the chained digest h, and each finished slice this page returned
-    # states from as (slice, from, total, chained digest).
+    # Cumulative continuity evidence for every page of the read (review M1):
+    # offsets [f, o) of slice k with the chained digest h, and every finished
+    # slice as (slice, from, total, chained digest). f and every from are 0:
+    # the evidence always starts at the read's first entry.
     f: int = 0
     h: str | None = None
     g: tuple[tuple[int, int, int, str], ...] = ()
@@ -103,8 +108,6 @@ class Scan:
     window_start_seen: bool = False
     calls: int = 0
     verify_calls: int = 0
-    # The first read of a continued page re-reads the cursor's range [f, o).
-    verify_range: bool = False
     failure: str | None = None
     stopped: str | None = None
     gateway_partial: bool = False
@@ -132,11 +135,10 @@ class HistorySliceService:
     def _chain(self, previous: str | None, entry_digest: str) -> str:
         return self.codec.digest("chain", ((previous or "") + entry_digest).encode("ascii"))
 
-    def _chain_all(self, states) -> str | None:
-        chained = None
-        for ts_us, state in states:
-            chained = self._chain(chained, self._entry_digest(ts_us, state))
-        return chained
+    def _slice_digest(self, chained: str | None) -> str:
+        """A finished slice's chained digest; a slice with no entries has one too."""
+
+        return chained if chained is not None else self.codec.digest("chain", b"")
 
     def _state_digest(self, state: str) -> str:
         return self.codec.digest("state", json.dumps(state, ensure_ascii=True).encode("ascii"))
@@ -195,27 +197,30 @@ class HistorySliceService:
             or not all(digest(position[key]) for key in ("a", "s", "x", "h"))
             or (position["o"] > 0) != (position["a"] is not None)
             or (position["o"] > 0) != (position["h"] is not None)
-            or not 0 <= position["f"] <= max(0, position["o"] - 1)
+            or position["f"] != 0
             or not self._valid_ranges(position["g"], position["k"])
         ):
             raise c.cursor_error(False, "integrity_or_format_invalid")
         if payload.get("r") != self._contract_digest(reader):
             raise c.cursor_error(True, "provider_contract_changed")
-        return Position(position["k"], position["o"], position["a"], position["s"], position["x"],
-                        position["m"], bool(position["c"]), position["f"], position["h"],
-                        tuple(tuple(row) for row in position["g"]))
+        resumed = Position(position["k"], position["o"], position["a"], position["s"], position["x"],
+                           position["m"], bool(position["c"]), position["f"], position["h"],
+                           tuple(tuple(row) for row in position["g"]))
+        if verification_calls(resumed) > c.MAX_VERIFY_CALLS:
+            raise c.cursor_error(False, "integrity_or_format_invalid")
+        return resumed
 
     @staticmethod
     def _valid_ranges(ranges: Any, current: int) -> bool:
-        if type(ranges) is not list or len(ranges) > c.MAX_VERIFY_CALLS:
+        """Exactly one row per finished slice 0..current-1, each from offset 0."""
+
+        if type(ranges) is not list or len(ranges) != current:
             return False
-        previous = -1
-        for row in ranges:
+        for index, row in enumerate(ranges):
             if (type(row) is not list or len(row) != 4 or any(type(value) is not int for value in row[:3])
-                    or not previous < row[0] < current or not 0 <= row[1] < row[2] <= 1_000_000
+                    or row[0] != index or row[1] != 0 or not 0 <= row[2] <= 1_000_000
                     or type(row[3]) is not str or len(row[3]) != 32):
                 return False
-            previous = row[0]
         return True
 
     async def _read(self, args: dict, reader) -> dict:
@@ -229,7 +234,6 @@ class HistorySliceService:
                 scan.failure = await self._verify_ranges(scan, args, reader, position)
             except Discontinuity:
                 raise c.cursor_error(True, "history_continuity_broken") from None
-            scan.verify_range = position.o > 0
         while position.k < slices and len(scan.emitted) < args["limit"] and scan.failure is None:
             if scan.calls >= c.MAX_UPSTREAM_CALLS:
                 scan.stopped = "upstream_call_limit"
@@ -258,25 +262,44 @@ class HistorySliceService:
         return result
 
     async def _verify_ranges(self, scan: Scan, args: dict, reader, position: Position) -> str | None:
-        """Re-read each finished-slice range the previous page returned states from.
+        """Re-read ALL history the read returned on earlier pages (review M1).
 
-        The total must be unchanged and the chained digest of the exact
-        offsets equal, so any change to returned history, including an
-        in-place change or a balanced insert and delete, is a continuity
-        break (review M1). Returns an upstream failure reason or None.
+        Every finished slice is re-read from its first offset to its total,
+        which must be unchanged, and the current slice from its first offset
+        to the cursor offset. The chained digests of the exact offsets must
+        be equal, so any change anywhere in returned history, including an
+        in-place change or a balanced insert and delete on any earlier page,
+        is a continuity break. The evidence stays in the position, so the
+        next cursor covers this page's history as well. Returns an upstream
+        failure reason or None.
         """
 
-        for index, offset_from, total, chained in position.g:
-            if scan.verify_calls >= c.MAX_VERIFY_CALLS or not reader.current():
-                return "provider_authority_changed" if not reader.current() else "verification_call_limit"
-            scan.verify_calls += 1
-            parsed = await self._fetch(args, reader, index, offset_from, total - offset_from + 1)
-            if type(parsed) is str:
-                return parsed
-            states, upstream_total, _ = parsed
-            if upstream_total != total or len(states) != total - offset_from or self._chain_all(states) != chained:
+        ranges = [(index, offset_from, total, total, chained) for index, offset_from, total, chained in position.g]
+        if position.o > 0:
+            ranges.append((position.k, position.f, position.o, None, position.h))
+        for index, offset_from, offset_to, total, chained in ranges:
+            digest, offset = None, offset_from
+            while True:
+                if scan.verify_calls >= c.MAX_VERIFY_CALLS:
+                    return "verification_call_limit"
+                if not reader.current():
+                    return "provider_authority_changed"
+                limit = max(1, min(c.VERIFY_CHUNK, offset_to - offset))
+                scan.verify_calls += 1
+                parsed = await self._fetch(args, reader, index, offset, limit)
+                if type(parsed) is str:
+                    return parsed
+                states, upstream_total, _ = parsed
+                if (upstream_total != total if total is not None else upstream_total < offset_to) or (
+                        len(states) != min(limit, offset_to - offset)):
+                    raise Discontinuity
+                for state in states:
+                    digest = self._chain(digest, self._entry_digest(*state))
+                offset += len(states)
+                if offset >= offset_to:
+                    break
+            if (self._slice_digest(digest) if total is not None else digest) != chained:
                 raise Discontinuity
-        position.g = ()
         return None
 
     @staticmethod
@@ -293,10 +316,8 @@ class HistorySliceService:
 
         start_us, end_us = c.slice_bounds(args["start_us"], args["end_us"], position.k)
         need = args["limit"] - len(scan.emitted)
-        verify = scan.verify_range
-        # The first read of a continued page re-reads the previous page's
-        # whole range in this slice; later reads overlap by one state.
-        overlap = position.o - position.f if verify else (1 if position.o > 0 else 0)
+        # Every read after the slice's first overlaps by one state.
+        overlap = 1 if position.o > 0 else 0
         request_offset = position.o - overlap
         request_limit = min(need + overlap + 2, c.MAX_LIMIT + 3 + overlap)
         if not reader.current():
@@ -319,14 +340,7 @@ class HistorySliceService:
         row.upstream_total = total
         row.gateway_partial = row.gateway_partial or gateway_partial
         scan.gateway_partial = scan.gateway_partial or gateway_partial
-        if verify:
-            scan.verify_range = False
-            if len(states) < overlap or self._chain_all(states[:overlap]) != position.h:
-                raise Discontinuity
-            states = states[overlap:]
-            # This page's range starts at the verified last consumed state.
-            position.f, position.h = position.o - 1, self._chain(None, position.a)
-        elif overlap:
+        if overlap:
             if not states or self._entry_digest(*states[0]) != position.a:
                 raise Discontinuity
             states = states[1:]
@@ -364,10 +378,10 @@ class HistorySliceService:
             row.finished = True
             if row.entries_before_slice is None:
                 row.entries_before_slice = position.m
-            if row.returned or (position.k == 0 and not args["cursor"]):
-                # Returned history (a state, or the window-start state on a
-                # first page) is re-verified by the next page.
-                position.g = (*position.g, (position.k, position.f, position.o, position.h))
+            # Every finished slice, including one without states, is
+            # returned history (its states, its start state and the claim
+            # that it holds nothing more); every later page re-verifies it.
+            position.g = (*position.g, (position.k, position.f, position.o, self._slice_digest(position.h)))
             position.k += 1
             position.o, position.a, position.m, position.f, position.h = 0, None, 0, 0, None
             position.x, position.checked = position.s, False
@@ -402,7 +416,13 @@ class HistorySliceService:
             next_position = kept[-1][3] if cut else position
             has_more = (next_position.k < slices
                         and scan.failure not in {"continuity_broken", "representation_invalid"})
+            # Every issued cursor must be verifiable within the bound; past
+            # it the read ends here and a new read starts at complete_until.
+            capped = has_more and verification_calls(next_position) > c.MAX_VERIFY_CALLS
+            has_more = has_more and not capped
             reasons = list(omissions)
+            if capped:
+                reasons.append("continuation_verification_limit")
             if scan.stopped:
                 reasons.append(scan.stopped)
             if scan.failure:
@@ -433,7 +453,7 @@ class HistorySliceService:
             else:
                 start_state = "reported_on_first_page_only"
             lookahead = scan.emitted[emit_cap][0] if cut else scan.next_ts
-            complete_until = self._complete_until(scan, args, kept, has_more, next_position, lookahead)
+            complete_until = self._complete_until(scan, args, kept, has_more or capped, next_position, lookahead)
             envelope = {
                 "schema": c.SCHEMA,
                 "entity_id": args["entity_id"],
@@ -518,6 +538,14 @@ class HistorySliceService:
             "finished": row.finished and returned == row.returned,
             "gateway_redacted_or_truncated": row.gateway_partial,
         }
+
+
+def verification_calls(position: Position) -> int:
+    """Verification reads a continuation from ``position`` needs (review M1)."""
+
+    chunks = lambda count: max(1, -(-count // c.VERIFY_CHUNK))  # noqa: E731
+    calls = sum(chunks(total - offset_from) for _, offset_from, total, _ in position.g)
+    return calls + (chunks(position.o - position.f) if position.o > 0 else 0)
 
 
 def _parse(raw: Any, entity_id: str, offset: int):

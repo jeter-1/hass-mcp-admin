@@ -291,10 +291,11 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         while pages[-1]["next_cursor"]:
             pages.append(await self.read(start=start, end=end, limit=100, cursor=pages[-1]["next_cursor"]))
         self.assertEqual(states(pages), [(us("2026-10-18T23:00:00"), "late")])
-        # 28 slice reads plus one re-verification of the first page's
-        # window-start range (review M1).
-        self.assertEqual(sum(page["upstream_calls"] for page in pages), 29)
-        self.assertEqual(sum(page["verification_calls"] for page in pages), 1)
+        # 28 slice reads plus the cumulative re-verification of every slice
+        # already returned, one call each (review M1): 12 on the second page
+        # and 24 on the third.
+        self.assertEqual([page["verification_calls"] for page in pages], [0, 12, 24])
+        self.assertEqual(sum(page["upstream_calls"] for page in pages), 28 + 36)
 
     async def test_defaulted_end_is_fixed_by_the_cursor(self):
         self.recorder.add(us("2026-10-19T10:00:00"), "a")
@@ -321,7 +322,139 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(second["has_more"])
         rest = await self.read_all(end=END, limit=4, cursor=second["next_cursor"])
         self.assertEqual(states([first, *rest]), oracle(self.recorder, S0, S2))
-        self.assertEqual(rest[0]["verification_calls"], 1)
+        # Finished slice 0 and the consumed prefix of slice 1.
+        self.assertEqual(rest[0]["verification_calls"], 2)
+
+    async def stale_after(self, change, *, pages: int, limit: int = 1, end: str = END) -> None:
+        """Read ``pages`` pages, apply ``change``, and require the next page to be stale."""
+
+        page = await self.read(end=end, limit=limit)
+        for _ in range(pages - 1):
+            page = await self.read(end=end, limit=limit, cursor=page["next_cursor"])
+        self.assertIsNotNone(page["next_cursor"])
+        change()
+        with self.assertRaises(GovernanceError) as raised:
+            await self.read(end=end, limit=limit, cursor=page["next_cursor"])
+        self.assertEqual(raised.exception.code, ErrorCode.STALE_CURSOR)
+        self.assertEqual(raised.exception.details["reason"], "history_continuity_broken")
+
+    async def test_a_change_to_history_returned_on_any_earlier_page_is_stale(self):
+        # Review M1 residual: the evidence is cumulative, so a change to any
+        # state returned on any earlier page (not only the previous one) is
+        # stale, in the current slice and in a finished slice.
+        self.seed()
+        returned = [ts for ts, _ in oracle(self.recorder, S0, S2)]
+        for after in range(2, len(returned)):
+            for target in returned[:after - 1]:
+                for kind in ("in_place", "balanced"):
+                    with self.subTest(pages=after, target=target, kind=kind):
+                        self.setUp()
+                        self.seed()
+
+                        def change(target=target, kind=kind):
+                            rows = [(ts, f"changed {state}" if ts == target and kind == "in_place" else state)
+                                    for ts, state in self.recorder.rows if kind == "in_place" or ts != target]
+                            self.recorder.rows = rows
+                            if kind == "balanced":
+                                self.recorder.add(target - 1, "inserted")
+                        await self.stale_after(change, pages=after)
+
+    async def test_a_change_to_the_window_start_state_pages_later_is_stale(self):
+        self.seed()
+
+        def change():
+            self.recorder.rows = [(ts, "cool" if ts < S0 else state) for ts, state in self.recorder.rows]
+        await self.stale_after(change, pages=4)
+
+    async def test_a_late_state_in_an_already_covered_empty_slice_is_stale(self):
+        # A finished slice that returned nothing is still returned history:
+        # its coverage claimed no state there.
+        window = {"start": "2026-10-18T18:00:00Z", "end": END}
+        self.recorder.add(us("2026-10-18T18:00:00") - 5, "start")
+        self.recorder.add(us("2026-10-18T19:00:00"), "a")
+        for minute in range(3):
+            self.recorder.add(at(f"07:0{minute}:00"), f"later {minute}")
+        first = await self.read(**window, limit=2)
+        self.assertEqual([row["slice"] for row in first["coverage"]["slices"]], [0, 1, 2])
+        self.assertEqual(first["coverage"]["slices"][1]["returned"], 0)
+        second = await self.read(**window, limit=1, cursor=first["next_cursor"])
+        self.recorder.add(at("02:00:00"), "late")
+        with self.assertRaises(GovernanceError) as raised:
+            await self.read(**window, limit=5, cursor=second["next_cursor"])
+        self.assertEqual(raised.exception.code, ErrorCode.STALE_CURSOR)
+
+    async def test_unchanged_history_reverifies_everything_returned_and_completes(self):
+        self.seed()
+        pages = await self.read_all(limit=1)
+        self.assertEqual(states(pages), oracle(self.recorder, S0, S2))
+        self.assertTrue(pages[-1]["complete"])
+        # Each continuation re-reads all history returned so far: finished
+        # slice 0 once slice 1 is reached, and the current slice's prefix.
+        self.assertEqual([page["verification_calls"] for page in pages], [0, 1, 1, 1, 2, 2])
+
+    async def test_cumulative_verification_is_chunked_and_bounded(self):
+        self.recorder.add(S0 - 5, "start")
+        for second in range(250):
+            self.recorder.add(at("01:00:00") + second * 10**6, f"s{second}")
+        pages = [await self.read(end=END, limit=100)]
+        for _ in range(2):
+            pages.append(await self.read(end=END, limit=100, cursor=pages[-1]["next_cursor"]))
+        # 101 entries after page 1 (start state + 100), 201 after page 2:
+        # chunks of at most VERIFY_CHUNK entries.
+        self.assertEqual([page["verification_calls"] for page in pages], [0, 2, 3])
+        self.assertLessEqual(max(call["limit"] for call in self.recorder.calls), c.MAX_LIMIT + 3)
+        self.assertEqual(states(pages), oracle(self.recorder, S0, S2))
+        self.assertTrue(pages[-1]["complete"])
+
+    async def test_a_continuation_past_the_verification_bound_issues_no_cursor(self):
+        self.recorder.add(S0 - 5, "start")
+        for second in range(60):
+            self.recorder.add(at("01:00:00") + second * 10**6, f"s{second}")
+        with patch.object(c, "VERIFY_CHUNK", 1):
+            pages = [await self.read(end=END, limit=10)]
+            while pages[-1]["next_cursor"]:
+                pages.append(await self.read(end=END, limit=10, cursor=pages[-1]["next_cursor"]))
+        # The prefix grows 11, 21, 31 entries; 41 would exceed 40 calls.
+        self.assertEqual([page["verification_calls"] for page in pages], [0, 11, 21, 31])
+        last = pages[-1]
+        self.assertEqual((last["has_more"], last["next_cursor"], last["complete"], last["completeness"]),
+                         (False, None, False, "partial"))
+        self.assertIn("continuation_verification_limit", last["omissions"])
+        self.assertEqual(states(pages), oracle(self.recorder, S0, S2)[:40])
+        # The bound is the last returned state, never the window end.
+        self.assertEqual(last["coverage"]["complete_until"],
+                         {"at": "2026-10-19T01:00:39.000000+00:00", "inclusive": True})
+        self.assertEqual(coverage_violations(pages, oracle(self.recorder, S0, S2)), [])
+
+    async def test_cursor_evidence_must_cover_the_whole_read(self):
+        self.seed()
+        first = await self.read(end=END, limit=4)
+        payload = self.service.codec.decode(first["next_cursor"])
+        self.assertEqual(len(payload["p"]["g"]), 1)
+        forged = (
+            ("finished slice dropped", {"g": []}),
+            ("finished slice from a later offset", {"g": [[0, 1, *payload["p"]["g"][0][2:]]]}),
+            ("current slice from a later offset", {"f": 1}),
+            ("unbounded verification", {"g": [[0, 0, 5000, payload["p"]["g"][0][3]]]}),
+        )
+        for label, change in forged:
+            with self.subTest(label):
+                cursor = self.service.codec.encode({**payload, "p": {**payload["p"], **change}})
+                with self.assertRaises(GovernanceError) as raised:
+                    await self.read(end=END, limit=4, cursor=cursor)
+                self.assertEqual(raised.exception.code, ErrorCode.INVALID_CURSOR)
+                self.assertEqual(raised.exception.details["reason"], "integrity_or_format_invalid")
+
+    def test_the_largest_cumulative_cursor_fits_the_cursor_bound(self):
+        # 28 slices in 7 days: the evidence of 27 finished slices, each at
+        # the largest offset, still fits MAX_CURSOR_CHARS.
+        self.assertEqual(c.slice_count(0, c.MAX_SPAN_SECONDS * 1_000_000), 28)
+        digest = "f" * 32
+        position = service_module.Position(27, 1_000_000, digest, digest, digest, 100, True, 0, digest,
+                                           tuple((i, 0, 1_000_000, digest) for i in range(27)))
+        cursor = self.service.codec.encode({"v": 1, "q": digest, "e": 10**17, "r": digest,
+                                            "p": position.payload()})
+        self.assertLessEqual(len(cursor), c.MAX_CURSOR_CHARS)
 
     async def test_pre_slice_states_spanning_reads_are_neither_repeated_nor_skipped(self):
         # Several states in the overlap millisecond fill the first read of a
@@ -936,6 +1069,27 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
             pages.append(await self.gateway_read(service, limit=2, cursor=pages[-1]["next_cursor"]))
         self.assertEqual(states(pages), oracle(recorder, S0, S2))
         self.assertTrue(pages[-1]["complete"])
+
+    async def test_change_two_pages_back_is_stale_through_the_gateway(self):
+        # Review M1 residual through the admitted gateway: page 1 returns
+        # 01:00 and 02:00; after two more pages 01:00 changes in place.
+        recorder = Recorder()
+        self.five_states(recorder)
+        gateway, transport = await self.history_gateway("8.6.0", recorder)
+        service = HistorySliceService(lambda: gateway.history_reader(audit=Mock()), known_secrets=(HA_TOKEN,))
+        pages = [await self.gateway_read(service, limit=2)]
+        for _ in range(2):
+            pages.append(await self.gateway_read(service, limit=1, cursor=pages[-1]["next_cursor"]))
+        self.assertEqual([item["at"][11:19] for page in pages for item in page["states"]],
+                         ["01:00:00", "02:00:00", "03:00:00", "04:00:00"])
+        recorder.rows = [(ts, "cool" if ts == at("01:00:00") else state) for ts, state in recorder.rows]
+        sent = len(transport.sent)
+        with self.assertRaises(GovernanceError) as raised:
+            await self.gateway_read(service, limit=1, cursor=pages[-1]["next_cursor"])
+        self.assertEqual(raised.exception.code, ErrorCode.STALE_CURSOR)
+        # One verification read of the slice prefix, nothing read beyond it.
+        verify = [arguments for name, arguments in transport.sent[sent:] if name == "ha_get_history"]
+        self.assertEqual([(a["offset"], a["limit"]) for a in verify], [(0, 5)])
 
     async def test_reader_refuses_unvalidated_arguments_with_zero_dispatch(self):
         gateway, transport = await self.history_gateway("8.5.0", Recorder())
