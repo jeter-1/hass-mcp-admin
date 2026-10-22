@@ -1,6 +1,7 @@
 """Disposable loopback native peers and pre-decode limits; no household access."""
 
 import asyncio
+import gc
 import json
 from pathlib import Path
 import sys
@@ -251,9 +252,16 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_deadline_no_retry_and_closes(self):
         self.delay = .1
         self.client._read_timeout = .02
-        async with self.client.collection("2026.9.4", self.authorize, self.budget) as peer:
-            with self.assertRaises(c.AnalysisError) as error:
-                await peer.read("states")
+        # The 20 ms window must hold the request, not a full collection of
+        # earlier suite state (60-90 ms once the whole suite is discovered).
+        gc.collect()
+        gc.disable()
+        try:
+            async with self.client.collection("2026.9.4", self.authorize, self.budget) as peer:
+                with self.assertRaises(c.AnalysisError) as error:
+                    await peer.read("states")
+        finally:
+            gc.enable()
         self.assertEqual(error.exception.reason, "timeout")
         self.assertEqual(self.calls, ["states"])
         self.assertTrue(peer.session.closed)
