@@ -1,6 +1,6 @@
 {
  "baseline": {
-  "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/baseline.log",
+  "log_path": "mutation-logs/baseline.log",
   "modules": [
    "test_hamcp131_incident_logs",
    "test_hamcp131_history_slices",
@@ -9,7 +9,7 @@
   ],
   "returncode": 0,
   "tests": 180,
-  "seconds": 26.5,
+  "seconds": 33.7,
   "summary": "OK"
  },
  "mutation_count": 31,
@@ -27,14 +27,14 @@
      "            if entry.ts_ms > args[\"end_ms\"]:"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/W1-incident-end-inclusive.log",
+   "log_path": "mutation-logs/W1-incident-end-inclusive.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_motivating_incident_window_across_sources_with_coverage (test_hamcp131_incident_logs.IncidentLogTests.test_motivating_incident_window_across_sources_with_coverage)"
    ],
-   "seconds": 2.5
+   "seconds": 3.1
   },
   {
    "id": "W2-incident-start-exclusive",
@@ -46,14 +46,14 @@
      "entry.ts_ms > args[\"start_ms\"]))"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/W2-incident-start-exclusive.log",
+   "log_path": "mutation-logs/W2-incident-start-exclusive.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_http_refusals_are_reported_per_source (test_hamcp131_incident_logs.IncidentLogTests.test_http_refusals_are_reported_per_source)"
    ],
-   "seconds": 2.3
+   "seconds": 2.7
   },
   {
    "id": "W3-locate-head-at-start-not-retention-edge",
@@ -65,14 +65,14 @@
      "        if head.ts_ms > start:"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/W3-locate-head-at-start-not-retention-edge.log",
+   "log_path": "mutation-logs/W3-locate-head-at-start-not-retention-edge.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_oldest_entry_exactly_at_start_is_returned_at_the_retention_edge (test_hamcp131_incident_logs.IncidentLogTests.test_oldest_entry_exactly_at_start_is_returned_at_the_retention_edge)"
    ],
-   "seconds": 2.7
+   "seconds": 3.3
   },
   {
    "id": "W4-locate-tail-at-start-treated-after-tail",
@@ -84,14 +84,14 @@
      "        if scan.tail_ts <= start:"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/W4-locate-tail-at-start-treated-after-tail.log",
+   "log_path": "mutation-logs/W4-locate-tail-at-start-treated-after-tail.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_long_message_truncation_keeps_markers_whole (test_hamcp131_incident_logs.IncidentLogTests.test_long_message_truncation_keeps_markers_whole)"
    ],
-   "seconds": 2.4
+   "seconds": 3.1
   },
   {
    "id": "W5-locate-tail-page-start-edge",
@@ -103,14 +103,14 @@
      "        if first.ts_ms <= start:"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/W5-locate-tail-page-start-edge.log",
+   "log_path": "mutation-logs/W5-locate-tail-page-start-edge.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_tail_entry_exactly_at_start_is_not_consumed (test_hamcp131_incident_logs.IncidentLogTests.test_tail_entry_exactly_at_start_is_not_consumed)"
    ],
-   "seconds": 3.7
+   "seconds": 4.6
   },
   {
    "id": "W6-history-state-at-slice-start-pre-slice",
@@ -122,14 +122,14 @@
      "            if ts_us <= start_us:\n                if position.checked:"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/W6-history-state-at-slice-start-pre-slice.log",
+   "log_path": "mutation-logs/W6-history-state-at-slice-start-pre-slice.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_history_slices.HistorySliceTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 6.6
+   "seconds": 8.0
   },
   {
    "id": "W7-history-overlap-millisecond-lost",
@@ -141,14 +141,14 @@
      "c.format_us(start_us)"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/W7-history-overlap-millisecond-lost.log",
+   "log_path": "mutation-logs/W7-history-overlap-millisecond-lost.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_failure_before_any_state_is_failed_with_a_cursor (test_hamcp131_history_slices.HistorySliceTests.test_failure_before_any_state_is_failed_with_a_cursor)"
    ],
-   "seconds": 6.4
+   "seconds": 8.1
   },
   {
    "id": "W8-history-slice-end-inclusive",
@@ -160,14 +160,14 @@
      "return lower, min(end_us, lower + SLICE_SECONDS * 1_000_000) + 1"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/W8-history-slice-end-inclusive.log",
+   "log_path": "mutation-logs/W8-history-slice-end-inclusive.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_changed_slice_start_state_is_stale_at_a_slice_transition (test_hamcp131_history_slices.HistorySliceTests.test_changed_slice_start_state_is_stale_at_a_slice_transition)"
    ],
-   "seconds": 6.5
+   "seconds": 7.8
   },
   {
    "id": "C1-consumed-anchor-returned-again",
@@ -179,14 +179,14 @@
      "start_index = 0 if first_page else 1"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/C1-consumed-anchor-returned-again.log",
+   "log_path": "mutation-logs/C1-consumed-anchor-returned-again.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_defaulted_end_is_fixed_by_the_cursor (test_hamcp131_incident_logs.IncidentLogTests.test_defaulted_end_is_fixed_by_the_cursor)"
    ],
-   "seconds": 2.2
+   "seconds": 2.7
   },
   {
    "id": "C2-resume-repeats-last-returned-entry",
@@ -198,14 +198,14 @@
      "\"lv\": views[scan.position][count - 1][\"level\"],\n                                            \"r\": 0}"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/C2-resume-repeats-last-returned-entry.log",
+   "log_path": "mutation-logs/C2-resume-repeats-last-returned-entry.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_defaulted_end_is_fixed_by_the_cursor (test_hamcp131_incident_logs.IncidentLogTests.test_defaulted_end_is_fixed_by_the_cursor)"
    ],
-   "seconds": 2.2
+   "seconds": 2.7
   },
   {
    "id": "C3-resume-skips-next-entry",
@@ -217,14 +217,14 @@
      "            consumed[position] = min(index + 2, len(scan.items))\n"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/C3-resume-skips-next-entry.log",
+   "log_path": "mutation-logs/C3-resume-skips-next-entry.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_defaulted_end_is_fixed_by_the_cursor (test_hamcp131_incident_logs.IncidentLogTests.test_defaulted_end_is_fixed_by_the_cursor)"
    ],
-   "seconds": 2.2
+   "seconds": 2.6
   },
   {
    "id": "C4-resume-cursor-points-past-entry",
@@ -236,14 +236,14 @@
      "{\"c\": item.cursor, \"k\": item.index + 1, \"d\": item.digest,"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/C4-resume-cursor-points-past-entry.log",
+   "log_path": "mutation-logs/C4-resume-cursor-points-past-entry.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_defaulted_end_is_fixed_by_the_cursor (test_hamcp131_incident_logs.IncidentLogTests.test_defaulted_end_is_fixed_by_the_cursor)"
    ],
-   "seconds": 2.2
+   "seconds": 2.6
   },
   {
    "id": "C5-history-overlap-state-repeated",
@@ -255,14 +255,14 @@
      "            states = states[0:]\n"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/C5-history-overlap-state-repeated.log",
+   "log_path": "mutation-logs/C5-history-overlap-state-repeated.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_defaulted_end_is_fixed_by_the_cursor (test_hamcp131_history_slices.HistorySliceTests.test_defaulted_end_is_fixed_by_the_cursor)"
    ],
-   "seconds": 6.4
+   "seconds": 7.9
   },
   {
    "id": "C6-history-offset-skips-a-state",
@@ -274,14 +274,14 @@
      "request_offset = position.o - overlap + 1\n"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/C6-history-offset-skips-a-state.log",
+   "log_path": "mutation-logs/C6-history-offset-skips-a-state.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_admitted_reader_sends_only_the_fixed_argument_shape (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_admitted_reader_sends_only_the_fixed_argument_shape)"
    ],
-   "seconds": 5.8
+   "seconds": 7.0
   },
   {
    "id": "C7-history-cut-page-resumes-after-dropped-states",
@@ -293,14 +293,14 @@
      "next_position = position"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/C7-history-cut-page-resumes-after-dropped-states.log",
+   "log_path": "mutation-logs/C7-history-cut-page-resumes-after-dropped-states.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_response_byte_ceiling_shrinks_the_page_and_resumes (test_hamcp131_history_slices.HistorySliceTests.test_response_byte_ceiling_shrinks_the_page_and_resumes)"
    ],
-   "seconds": 6.8
+   "seconds": 8.4
   },
   {
    "id": "C8-history-slice-start-check-skipped",
@@ -312,14 +312,14 @@
      "            if False:\n                raise Discontinuity"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/C8-history-slice-start-check-skipped.log",
+   "log_path": "mutation-logs/C8-history-slice-start-check-skipped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_break_after_the_first_check_is_partial_without_a_cursor (test_hamcp131_history_slices.HistorySliceTests.test_break_after_the_first_check_is_partial_without_a_cursor)"
    ],
-   "seconds": 6.4
+   "seconds": 7.7
   },
   {
    "id": "U1-unavailable-source-rows-dropped",
@@ -331,14 +331,14 @@
      "            for key in ():\n                reason = c.unavailable_reason(key)"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/U1-unavailable-source-rows-dropped.log",
+   "log_path": "mutation-logs/U1-unavailable-source-rows-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_motivating_incident_window_across_sources_with_coverage (test_hamcp131_incident_logs.IncidentLogTests.test_motivating_incident_window_across_sources_with_coverage)"
    ],
-   "seconds": 2.6
+   "seconds": 3.1
   },
   {
    "id": "U2-unavailable-source-omission-dropped",
@@ -350,14 +350,14 @@
      "                if row[\"status\"] not in (\"complete\", \"unavailable\"):"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/U2-unavailable-source-omission-dropped.log",
+   "log_path": "mutation-logs/U2-unavailable-source-omission-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_http_refusals_are_reported_per_source (test_hamcp131_incident_logs.IncidentLogTests.test_http_refusals_are_reported_per_source)"
    ],
-   "seconds": 2.3
+   "seconds": 2.8
   },
   {
    "id": "U3-failed-source-row-dropped",
@@ -369,14 +369,14 @@
      "                if scan.failure is None:\n                    source_rows.append(self._source_row(scan, consumed, skipped, outside, emitted))"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/U3-failed-source-row-dropped.log",
+   "log_path": "mutation-logs/U3-failed-source-row-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_http_refusals_are_reported_per_source (test_hamcp131_incident_logs.IncidentLogTests.test_http_refusals_are_reported_per_source)"
    ],
-   "seconds": 2.2
+   "seconds": 2.8
   },
   {
    "id": "U4-source-gap-omission-dropped",
@@ -388,14 +388,14 @@
      "                for gap in ():\n                    reasons.append("
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/U4-source-gap-omission-dropped.log",
+   "log_path": "mutation-logs/U4-source-gap-omission-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_retention_edge_and_empty_and_after_tail (test_hamcp131_incident_logs.IncidentLogTests.test_retention_edge_and_empty_and_after_tail)"
    ],
-   "seconds": 3.6
+   "seconds": 4.3
   },
   {
    "id": "U5-history-failure-omission-dropped",
@@ -407,14 +407,14 @@
      "            if False:\n                reasons.append(scan.failure)"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/U5-history-failure-omission-dropped.log",
+   "log_path": "mutation-logs/U5-history-failure-omission-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_break_after_the_first_check_is_partial_without_a_cursor (test_hamcp131_history_slices.HistorySliceTests.test_break_after_the_first_check_is_partial_without_a_cursor)"
    ],
-   "seconds": 6.5
+   "seconds": 8.1
   },
   {
    "id": "Z1-incident-entries-sanitized-before-merge",
@@ -431,14 +431,14 @@
      "            result = type(\"R\", (), {\"value\": envelope, \"failed_closed\": False, \"redacted_field_count\": 0})\n"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/Z1-incident-entries-sanitized-before-merge.log",
+   "log_path": "mutation-logs/Z1-incident-entries-sanitized-before-merge.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 2.3
+   "seconds": 2.7
   },
   {
    "id": "Z2-history-states-sanitized-before-merge",
@@ -455,14 +455,14 @@
      "            result = type(\"R\", (), {\"value\": envelope, \"failed_closed\": False, \"redacted_field_count\": 0})\n"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/Z2-history-states-sanitized-before-merge.log",
+   "log_path": "mutation-logs/Z2-history-states-sanitized-before-merge.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_history_slices.HistorySliceTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 6.9
+   "seconds": 7.6
   },
   {
    "id": "Z3-incident-exit-known-secrets-dropped",
@@ -474,14 +474,14 @@
      "            result = sanitize_untrusted_data(envelope, known_secrets=(), registry=registry)\n"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/Z3-incident-exit-known-secrets-dropped.log",
+   "log_path": "mutation-logs/Z3-incident-exit-known-secrets-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 2.7
+   "seconds": 2.6
   },
   {
    "id": "Z4-history-exit-known-secrets-dropped",
@@ -493,14 +493,14 @@
      "            result = sanitize_untrusted_data(envelope, known_secrets=(), registry=registry)\n"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/Z4-history-exit-known-secrets-dropped.log",
+   "log_path": "mutation-logs/Z4-history-exit-known-secrets-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_history_slices.HistorySliceTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 7.4
+   "seconds": 7.8
   },
   {
    "id": "Z5-incident-redaction-leaves-result-complete",
@@ -512,14 +512,14 @@
      "            if False:"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/Z5-incident-redaction-leaves-result-complete.log",
+   "log_path": "mutation-logs/Z5-incident-redaction-leaves-result-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 2.8
+   "seconds": 2.7
   },
   {
    "id": "Z6-incident-line-sanitizer-known-secrets-dropped",
@@ -531,14 +531,14 @@
      "sanitize_log_lines(lines, known_secrets=())"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/Z6-incident-line-sanitizer-known-secrets-dropped.log",
+   "log_path": "mutation-logs/Z6-incident-line-sanitizer-known-secrets-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_planted_secrets_never_reach_any_output_field (test_hamcp131_incident_logs.IncidentLogTests.test_planted_secrets_never_reach_any_output_field)"
    ],
-   "seconds": 3.9
+   "seconds": 3.7
   },
   {
    "id": "S1-slug-guard-removed",
@@ -555,14 +555,14 @@
      "    if False:"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/S1-slug-guard-removed.log",
+   "log_path": "mutation-logs/S1-slug-guard-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_slug_traversal_is_refused_with_zero_requests (test_hamcp131_incident_logs.IncidentLogTests.test_slug_traversal_is_refused_with_zero_requests)"
    ],
-   "seconds": 4.5
+   "seconds": 4.6
   },
   {
    "id": "S2-slug-interpolated-into-template",
@@ -574,14 +574,14 @@
      "    if source_key.startswith(\"addon:\"):\n        return rest_path(f\"/addons/{source_key[6:]}/logs\", query=QUERY)"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/S2-slug-interpolated-into-template.log",
+   "log_path": "mutation-logs/S2-slug-interpolated-into-template.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_read_only_static_surface (test_hamcp131_incident_logs.IncidentLogTests.test_read_only_static_surface)"
    ],
-   "seconds": 3.8
+   "seconds": 4.0
   },
   {
    "id": "S3-slug-as-plain-string-path",
@@ -593,14 +593,14 @@
      "        return \"/addons/\" + source_key[6:] + \"/logs\""
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/S3-slug-as-plain-string-path.log",
+   "log_path": "mutation-logs/S3-slug-as-plain-string-path.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_http_refusals_are_reported_per_source (test_hamcp131_incident_logs.IncidentLogTests.test_http_refusals_are_reported_per_source)"
    ],
-   "seconds": 2.8
+   "seconds": 2.7
   },
   {
    "id": "A1-other-addon-treated-readable",
@@ -612,14 +612,14 @@
      "    if source_key in READABLE_ROUTES or source_key.startswith(\"addon:\"):\n        return None"
     ]
    ],
-   "log_path": "/home/josh/.cache/hamcp131/mut/mutation-logs/A1-other-addon-treated-readable.log",
+   "log_path": "mutation-logs/A1-other-addon-treated-readable.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_all_statically_unavailable_refuses_with_zero_requests (test_hamcp131_incident_logs.IncidentLogTests.test_all_statically_unavailable_refuses_with_zero_requests)"
    ],
-   "seconds": 2.7
+   "seconds": 2.5
   }
  ]
 }

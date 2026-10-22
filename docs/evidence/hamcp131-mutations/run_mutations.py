@@ -220,7 +220,7 @@ def main() -> int:
     baseline_log.write_text(output, encoding="utf-8")
     summary = output.strip().splitlines()[-1] if output.strip() else ""
     ran = re.search(r"^Ran (\d+) tests?", output, re.MULTILINE)
-    baseline = {"log_path": str(baseline_log), "modules": list(MODULES), "returncode": code,
+    baseline = {"log_path": baseline_log.relative_to(work).as_posix(), "modules": list(MODULES), "returncode": code,
                 "tests": int(ran.group(1)) if ran else None, "seconds": round(seconds, 1), "summary": summary}
     print(f"baseline rc={code} {summary} ({seconds:.0f}s)", flush=True)
     if code != 0:
@@ -239,7 +239,7 @@ def main() -> int:
         log_path = log_dir / f"{mutation['id']}.log"
         log_path.write_text(output, encoding="utf-8")
         results.append({
-            **mutation, "log_path": str(log_path), "returncode": code, "killed": code != 0,
+            **mutation, "log_path": log_path.relative_to(work).as_posix(), "returncode": code, "killed": code != 0,
             "killed_by_import_or_syntax_error": any(
                 marker in output for marker in ("ImportError", "SyntaxError", "Failed to import")),
             "first_failures": failures[:3], "seconds": round(seconds, 1),
