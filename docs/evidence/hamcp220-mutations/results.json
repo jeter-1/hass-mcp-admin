@@ -12,8 +12,8 @@
    "test_hamcp220_review1_tool_local_probe"
   ],
   "returncode": 0,
-  "tests": 340,
-  "seconds": 48.4,
+  "tests": 311,
+  "seconds": 40.6,
   "summary": "OK"
  },
  "mutation_count": 69,
@@ -36,9 +36,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_home_assistant_zone_change_at_runtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_home_assistant_zone_change_at_runtime)"
+    "FAIL test_home_assistant_zone_change_at_runtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_home_assistant_zone_change_at_runtime)"
    ],
-   "seconds": 39.2
+   "seconds": 36.8
   },
   {
    "id": "H1b-addon-tz-preferred",
@@ -55,9 +55,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_home_assistant_zone_change_at_runtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_home_assistant_zone_change_at_runtime)"
+    "FAIL test_home_assistant_zone_change_at_runtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_home_assistant_zone_change_at_runtime)"
    ],
-   "seconds": 38.0
+   "seconds": 36.2
   },
   {
    "id": "H1c-unreadable-zone-falls-back-to-addon-tz",
@@ -76,7 +76,7 @@
    "first_failures": [
     "FAIL test_refused_core_lease_reads_no_zone_and_no_journal (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_refused_core_lease_reads_no_zone_and_no_journal)"
    ],
-   "seconds": 2.3
+   "seconds": 2.2
   },
   {
    "id": "H1d-addon-offset-difference-ignored",
@@ -93,9 +93,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "ERROR test_home_assistant_zone_change_at_runtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_home_assistant_zone_change_at_runtime)"
+    "ERROR test_home_assistant_zone_change_at_runtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_home_assistant_zone_change_at_runtime)"
    ],
-   "seconds": 38.3
+   "seconds": 35.7
   },
   {
    "id": "H1e-first-entry-tolerance-one-hour",
@@ -112,9 +112,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_rendering_one_hour_from_home_assistants_zone_is_refused (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_rendering_one_hour_from_home_assistants_zone_is_refused)"
+    "FAIL test_rendering_one_hour_from_home_assistants_zone_is_refused (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_rendering_one_hour_from_home_assistants_zone_is_refused)"
    ],
-   "seconds": 41.2
+   "seconds": 38.3
   },
   {
    "id": "H1f-zone-lease-not-revalidated",
@@ -133,7 +133,7 @@
    "first_failures": [
     "FAIL test_reads_time_zone_under_its_own_committed_basic_rest_read (test_hamcp220_incident_log_timestamps.ZoneReaderTests.test_reads_time_zone_under_its_own_committed_basic_rest_read)"
    ],
-   "seconds": 41.3
+   "seconds": 38.7
   },
   {
    "id": "H1g-zone-post-read-check-dropped",
@@ -152,7 +152,7 @@
    "first_failures": [
     "FAIL test_reads_time_zone_under_its_own_committed_basic_rest_read (test_hamcp220_incident_log_timestamps.ZoneReaderTests.test_reads_time_zone_under_its_own_committed_basic_rest_read)"
    ],
-   "seconds": 40.0
+   "seconds": 38.8
   },
   {
    "id": "H1h-zone-read-error-code-leaks",
@@ -171,7 +171,7 @@
    "first_failures": [
     "FAIL test_authorizer_is_chained_and_restored (test_hamcp220_incident_log_timestamps.ZoneReaderTests.test_authorizer_is_chained_and_restored)"
    ],
-   "seconds": 39.2
+   "seconds": 39.0
   },
   {
    "id": "M1a-earliest-candidate-order-across-pages",
@@ -188,9 +188,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_long_fall_back_through_two_sources_drains_in_journal_order (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_long_fall_back_through_two_sources_drains_in_journal_order)"
+    "FAIL test_long_fall_back_through_two_sources_drains_in_journal_order (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_long_fall_back_through_two_sources_drains_in_journal_order)"
    ],
-   "seconds": 39.8
+   "seconds": 39.9
   },
   {
    "id": "M1b-bound-is-latest-entry-not-running-max",
@@ -207,9 +207,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_long_fall_back_through_two_sources_drains_in_journal_order (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_long_fall_back_through_two_sources_drains_in_journal_order)"
+    "FAIL test_long_fall_back_through_two_sources_drains_in_journal_order (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_long_fall_back_through_two_sources_drains_in_journal_order)"
    ],
-   "seconds": 40.0
+   "seconds": 39.7
   },
   {
    "id": "M1c-uncertain-entry-not-marked",
@@ -226,9 +226,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_fall_back_hour_entries_are_uncertain_with_both_readings (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_fall_back_hour_entries_are_uncertain_with_both_readings)"
+    "FAIL test_fall_back_hour_entries_are_uncertain_with_both_readings (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_fall_back_hour_entries_are_uncertain_with_both_readings)"
    ],
-   "seconds": 35.9
+   "seconds": 35.1
   },
   {
    "id": "M1d-uncertain-span-not-extended",
@@ -245,9 +245,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_long_fall_back_through_two_sources_drains_in_journal_order (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_long_fall_back_through_two_sources_drains_in_journal_order)"
+    "FAIL test_long_fall_back_through_two_sources_drains_in_journal_order (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_long_fall_back_through_two_sources_drains_in_journal_order)"
    ],
-   "seconds": 39.0
+   "seconds": 38.0
   },
   {
    "id": "M1e-ordering-omission-dropped",
@@ -264,9 +264,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_fall_back_hour_entries_are_uncertain_with_both_readings (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_fall_back_hour_entries_are_uncertain_with_both_readings)"
+    "FAIL test_fall_back_hour_entries_are_uncertain_with_both_readings (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_fall_back_hour_entries_are_uncertain_with_both_readings)"
    ],
-   "seconds": 36.0
+   "seconds": 35.9
   },
   {
    "id": "M1f-ordering-carry-dropped",
@@ -283,9 +283,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_long_fall_back_through_two_sources_drains_in_journal_order (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_long_fall_back_through_two_sources_drains_in_journal_order)"
+    "FAIL test_long_fall_back_through_two_sources_drains_in_journal_order (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_long_fall_back_through_two_sources_drains_in_journal_order)"
    ],
-   "seconds": 38.9
+   "seconds": 38.1
   },
   {
    "id": "M1g-tail-not-resolved",
@@ -302,9 +302,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_an_uncertain_tail_is_resolved_before_window_after_tail (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_an_uncertain_tail_is_resolved_before_window_after_tail)"
+    "FAIL test_an_uncertain_tail_is_resolved_before_window_after_tail (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_an_uncertain_tail_is_resolved_before_window_after_tail)"
    ],
-   "seconds": 35.2
+   "seconds": 35.3
   },
   {
    "id": "M1h-disagreeing-resolution-accepted",
@@ -321,9 +321,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_an_unresolvable_single_entry_read_fails_closed (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_an_unresolvable_single_entry_read_fails_closed)"
+    "FAIL test_an_unresolvable_single_entry_read_fails_closed (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_an_unresolvable_single_entry_read_fails_closed)"
    ],
-   "seconds": 35.5
+   "seconds": 35.4
   },
   {
    "id": "M1i-resolution-reserve-ignored",
@@ -340,9 +340,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_resolution_reads_keep_a_page_for_the_other_source (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_resolution_reads_keep_a_page_for_the_other_source)"
+    "FAIL test_resolution_reads_keep_a_page_for_the_other_source (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_resolution_reads_keep_a_page_for_the_other_source)"
    ],
-   "seconds": 39.3
+   "seconds": 39.1
   },
   {
    "id": "T1a-renderings-utc-only",
@@ -397,9 +397,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_fall_back_hour_entries_are_uncertain_with_both_readings (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_fall_back_hour_entries_are_uncertain_with_both_readings)"
+    "FAIL test_fall_back_hour_entries_are_uncertain_with_both_readings (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_fall_back_hour_entries_are_uncertain_with_both_readings)"
    ],
-   "seconds": 35.3
+   "seconds": 36.6
   },
   {
    "id": "T2a-ambiguous-fold-0-chosen",
@@ -416,9 +416,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_an_uncertain_tail_is_resolved_before_window_after_tail (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_an_uncertain_tail_is_resolved_before_window_after_tail)"
+    "FAIL test_an_uncertain_tail_is_resolved_before_window_after_tail (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_an_uncertain_tail_is_resolved_before_window_after_tail)"
    ],
-   "seconds": 35.8
+   "seconds": 35.5
   },
   {
    "id": "T2b-nonexistent-fold-0-chosen",
@@ -435,9 +435,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_spring_forward_nonexistent_time_without_realtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_spring_forward_nonexistent_time_without_realtime)"
+    "FAIL test_spring_forward_nonexistent_time_without_realtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_spring_forward_nonexistent_time_without_realtime)"
    ],
-   "seconds": 39.1
+   "seconds": 38.5
   },
   {
    "id": "T2c-uncertain-entry-given-earliest-time",
@@ -454,9 +454,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_an_uncertain_tail_is_resolved_before_window_after_tail (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_an_uncertain_tail_is_resolved_before_window_after_tail)"
+    "FAIL test_an_uncertain_tail_is_resolved_before_window_after_tail (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_an_uncertain_tail_is_resolved_before_window_after_tail)"
    ],
-   "seconds": 35.8
+   "seconds": 34.9
   },
   {
    "id": "T2d-window-edge-uncertainty-dropped",
@@ -473,9 +473,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_uncertain_entry_at_a_window_edge_makes_the_read_partial (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_uncertain_entry_at_a_window_edge_makes_the_read_partial)"
+    "FAIL test_uncertain_entry_at_a_window_edge_makes_the_read_partial (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_uncertain_entry_at_a_window_edge_makes_the_read_partial)"
    ],
-   "seconds": 38.7
+   "seconds": 39.3
   },
   {
    "id": "T3a-unknown-zone-falls-back-to-utc",
@@ -492,7 +492,7 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_missing_addon_tz_is_disclosed_and_partial (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_missing_addon_tz_is_disclosed_and_partial)"
+    "FAIL test_missing_addon_tz_is_disclosed_and_partial (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_missing_addon_tz_is_disclosed_and_partial)"
    ],
    "seconds": 38.5
   },
@@ -513,7 +513,7 @@
    "first_failures": [
     "FAIL test_refused_core_lease_reads_no_zone_and_no_journal (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_refused_core_lease_reads_no_zone_and_no_journal)"
    ],
-   "seconds": 2.2
+   "seconds": 2.1
   },
   {
    "id": "T3c-service-zone-failure-reads-utc",
@@ -532,7 +532,7 @@
    "first_failures": [
     "FAIL test_refused_core_lease_reads_no_zone_and_no_journal (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_refused_core_lease_reads_no_zone_and_no_journal)"
    ],
-   "seconds": 2.3
+   "seconds": 2.2
   },
   {
    "id": "T4a-rendering-mismatch-accepted",
@@ -549,9 +549,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_home_assistant_zone_change_at_runtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_home_assistant_zone_change_at_runtime)"
+    "FAIL test_home_assistant_zone_change_at_runtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_home_assistant_zone_change_at_runtime)"
    ],
-   "seconds": 35.9
+   "seconds": 35.8
   },
   {
    "id": "T4b-unverified-page-reported-complete",
@@ -568,9 +568,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_fall_back_hour_entries_are_uncertain_with_both_readings (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_fall_back_hour_entries_are_uncertain_with_both_readings)"
+    "FAIL test_fall_back_hour_entries_are_uncertain_with_both_readings (test_hamcp220_incident_log_timestamps.TimeBasisServiceCases.test_fall_back_hour_entries_are_uncertain_with_both_readings)"
    ],
-   "seconds": 35.8
+   "seconds": 35.7
   },
   {
    "id": "W1-incident-end-inclusive",
@@ -589,7 +589,7 @@
    "first_failures": [
     "FAIL test_window_edges_start_inclusive_end_exclusive (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_window_edges_start_inclusive_end_exclusive)"
    ],
-   "seconds": 5.2
+   "seconds": 5.3
   },
   {
    "id": "W2-incident-start-exclusive",
@@ -627,7 +627,7 @@
    "first_failures": [
     "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
    ],
-   "seconds": 8.4
+   "seconds": 8.3
   },
   {
    "id": "W4-locate-tail-at-start-treated-after-tail",
@@ -646,7 +646,7 @@
    "first_failures": [
     "ERROR test_long_message_truncation_keeps_markers_whole (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_long_message_truncation_keeps_markers_whole)"
    ],
-   "seconds": 3.3
+   "seconds": 3.1
   },
   {
    "id": "W5-locate-tail-page-start-edge",
@@ -665,7 +665,7 @@
    "first_failures": [
     "FAIL test_tail_entry_exactly_at_start_is_not_consumed (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_tail_entry_exactly_at_start_is_not_consumed)"
    ],
-   "seconds": 4.9
+   "seconds": 5.0
   },
   {
    "id": "W6-history-state-at-slice-start-pre-slice",
@@ -684,7 +684,7 @@
    "first_failures": [
     "ERROR test_a_change_to_history_returned_on_any_earlier_page_is_stale (test_hamcp131_history_slices.HistorySliceTests.test_a_change_to_history_returned_on_any_earlier_page_is_stale)"
    ],
-   "seconds": 15.0
+   "seconds": 14.9
   },
   {
    "id": "W7-history-overlap-millisecond-lost",
@@ -703,7 +703,7 @@
    "first_failures": [
     "FAIL test_admitted_reader_sends_only_the_fixed_argument_shape (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_admitted_reader_sends_only_the_fixed_argument_shape)"
    ],
-   "seconds": 9.3
+   "seconds": 8.5
   },
   {
    "id": "W8-history-slice-end-inclusive",
@@ -722,7 +722,7 @@
    "first_failures": [
     "ERROR test_a_change_to_history_returned_on_any_earlier_page_is_stale (test_hamcp131_history_slices.HistorySliceTests.test_a_change_to_history_returned_on_any_earlier_page_is_stale)"
    ],
-   "seconds": 15.1
+   "seconds": 15.0
   },
   {
    "id": "C1-consumed-anchor-returned-again",
@@ -779,7 +779,7 @@
    "first_failures": [
     "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
    ],
-   "seconds": 2.6
+   "seconds": 2.5
   },
   {
    "id": "C4-resume-cursor-points-past-entry",
@@ -798,7 +798,7 @@
    "first_failures": [
     "ERROR test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
    ],
-   "seconds": 2.8
+   "seconds": 2.5
   },
   {
    "id": "C5-history-overlap-state-repeated",
@@ -817,7 +817,7 @@
    "first_failures": [
     "ERROR test_change_two_pages_back_is_stale_through_the_gateway (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_change_two_pages_back_is_stale_through_the_gateway)"
    ],
-   "seconds": 11.0
+   "seconds": 10.8
   },
   {
    "id": "C6-history-offset-skips-a-state",
@@ -836,7 +836,7 @@
    "first_failures": [
     "ERROR test_admitted_reader_sends_only_the_fixed_argument_shape (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_admitted_reader_sends_only_the_fixed_argument_shape)"
    ],
-   "seconds": 8.3
+   "seconds": 8.4
   },
   {
    "id": "C7-history-cut-page-resumes-after-dropped-states",
@@ -855,7 +855,7 @@
    "first_failures": [
     "FAIL test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp (test_hamcp131_history_slices.HistorySliceTests.test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp)"
    ],
-   "seconds": 14.5
+   "seconds": 14.7
   },
   {
    "id": "C8-history-slice-start-check-skipped",
@@ -874,7 +874,7 @@
    "first_failures": [
     "FAIL test_break_after_the_first_check_is_partial_without_a_cursor (test_hamcp131_history_slices.HistorySliceTests.test_break_after_the_first_check_is_partial_without_a_cursor)"
    ],
-   "seconds": 14.9
+   "seconds": 15.3
   },
   {
    "id": "U1-unavailable-source-rows-dropped",
@@ -893,7 +893,7 @@
    "first_failures": [
     "FAIL test_only_unauthorized_sources_report_authority_not_granted_per_source (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_only_unauthorized_sources_report_authority_not_granted_per_source)"
    ],
-   "seconds": 2.3
+   "seconds": 2.2
   },
   {
    "id": "U2-unavailable-source-omission-dropped",
@@ -912,7 +912,7 @@
    "first_failures": [
     "FAIL test_only_unauthorized_sources_report_authority_not_granted_per_source (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_only_unauthorized_sources_report_authority_not_granted_per_source)"
    ],
-   "seconds": 2.1
+   "seconds": 2.2
   },
   {
    "id": "U3-failed-source-row-dropped",
@@ -931,7 +931,7 @@
    "first_failures": [
     "FAIL test_refused_core_lease_reads_no_zone_and_no_journal (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_refused_core_lease_reads_no_zone_and_no_journal)"
    ],
-   "seconds": 2.3
+   "seconds": 2.2
   },
   {
    "id": "U4-source-gap-omission-dropped",
@@ -950,7 +950,7 @@
    "first_failures": [
     "FAIL test_retention_edge_and_empty_and_after_tail (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_retention_edge_and_empty_and_after_tail)"
    ],
-   "seconds": 4.8
+   "seconds": 4.6
   },
   {
    "id": "U5-history-failure-omission-dropped",
@@ -969,7 +969,7 @@
    "first_failures": [
     "FAIL test_break_after_the_first_check_is_partial_without_a_cursor (test_hamcp131_history_slices.HistorySliceTests.test_break_after_the_first_check_is_partial_without_a_cursor)"
    ],
-   "seconds": 15.4
+   "seconds": 15.2
   },
   {
    "id": "Z1-incident-entries-sanitized-before-merge",
@@ -993,7 +993,7 @@
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 3.0
+   "seconds": 2.9
   },
   {
    "id": "Z2-history-states-sanitized-before-merge",
@@ -1017,7 +1017,7 @@
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_history_slices.HistorySliceTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 14.6
+   "seconds": 14.4
   },
   {
    "id": "Z3-incident-exit-known-secrets-dropped",
@@ -1036,7 +1036,7 @@
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 3.1
+   "seconds": 3.0
   },
   {
    "id": "Z4-history-exit-known-secrets-dropped",
@@ -1055,7 +1055,7 @@
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_history_slices.HistorySliceTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 15.5
+   "seconds": 15.1
   },
   {
    "id": "Z5-incident-redaction-leaves-result-complete",
@@ -1093,7 +1093,7 @@
    "first_failures": [
     "FAIL test_planted_secrets_never_reach_any_output_field (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_planted_secrets_never_reach_any_output_field)"
    ],
-   "seconds": 4.0
+   "seconds": 4.1
   },
   {
    "id": "S1-slug-guard-removed",
@@ -1117,7 +1117,7 @@
    "first_failures": [
     "FAIL test_slug_traversal_is_refused_with_zero_requests (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_slug_traversal_is_refused_with_zero_requests)"
    ],
-   "seconds": 4.8
+   "seconds": 4.9
   },
   {
    "id": "S2-slug-interpolated-into-template",
@@ -1212,7 +1212,7 @@
    "first_failures": [
     "FAIL test_admitted_reader_sends_only_the_fixed_argument_shape (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_admitted_reader_sends_only_the_fixed_argument_shape)"
    ],
-   "seconds": 8.8
+   "seconds": 8.5
   },
   {
    "id": "R5-history-only-previous-page-reverified",
@@ -1246,7 +1246,7 @@
    "first_failures": [
     "FAIL test_change_two_pages_back_is_stale_through_the_gateway (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_change_two_pages_back_is_stale_through_the_gateway)"
    ],
-   "seconds": 11.5
+   "seconds": 11.0
   },
   {
    "id": "R6-history-cursor-past-the-verification-bound",
@@ -1265,7 +1265,7 @@
    "first_failures": [
     "FAIL test_a_continuation_past_the_verification_bound_issues_no_cursor (test_hamcp131_history_slices.HistorySliceTests.test_a_continuation_past_the_verification_bound_issues_no_cursor)"
    ],
-   "seconds": 15.4
+   "seconds": 15.5
   },
   {
    "id": "R2a-deferred-source-merge-bound-dropped",
@@ -1303,7 +1303,7 @@
    "first_failures": [
     "ERROR test_each_deferral_guard_holds_the_merge_on_its_own (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_each_deferral_guard_holds_the_merge_on_its_own)"
    ],
-   "seconds": 2.9
+   "seconds": 3.0
   },
   {
    "id": "R2b-cutoff-only-holds-open-sources",
@@ -1341,7 +1341,7 @@
    "first_failures": [
     "FAIL test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp (test_hamcp131_history_slices.HistorySliceTests.test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp)"
    ],
-   "seconds": 14.7
+   "seconds": 15.3
   },
   {
    "id": "R4-min-level-type-check-removed",
@@ -1360,7 +1360,7 @@
    "first_failures": [
     "ERROR test_wrong_typed_filters_are_bounded_audited_refusals (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_wrong_typed_filters_are_bounded_audited_refusals)"
    ],
-   "seconds": 2.3
+   "seconds": 2.2
   }
  ]
 }
