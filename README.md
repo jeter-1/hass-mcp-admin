@@ -1,5 +1,21 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.30** adds two read-only tools (HAMCP-131).
+`get_incident_logs` reads one incident window of at most 6 hours from the Core
+journal and Engineering's own add-on journal. It merges them in time order,
+with per-source coverage, gaps, retention edges, filter skips and a signed
+cursor. Supervisor, host and other add-on logs need Supervisor role `manager`.
+They are listed as unavailable with that exact reason and zero requests; no
+role is added. `get_history_slices` reads entity history continuously, through
+the sanitized delegated `ha_get_history` route. It uses fixed 6-hour slices
+over at most 7 days and a cursor that fails closed as stale when earlier
+history changes. Static tools 64, advertised catalog 92 (93 with the optional
+YAML reader). Read the
+[2.4.1-beta.30 release notes](docs/V2_4_1_BETA30_RELEASE_NOTES.md) and
+[2.4.1-beta.30 acceptance contract](docs/V2_4_1_BETA30_ACCEPTANCE.md).
+
+It builds on beta.29 below.
+
 Engineering **2.4.1-beta.29** makes exact automation and script changes that
 touch a protected physical object (lock, alarm panel, valve, water control or
 garage cover) actionable instead of prohibited (HAMCP-213 PR 1, policy
@@ -379,9 +395,9 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**62 static tools plus 28 delegated reads, 90 total** (91 with the optional
-reviewed YAML reader admitted; the 61st and 62nd static tools are HAMCP-132's
-read-only `get_recorder_settings` and `get_unregistered_entities`). The Core inventory represents
+**64 static tools plus 28 delegated reads, 92 total** (93 with the optional
+reviewed YAML reader admitted; the 63rd and 64th static tools are HAMCP-131's
+read-only `get_incident_logs` and `get_history_slices`). The Core inventory represents
 **22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol

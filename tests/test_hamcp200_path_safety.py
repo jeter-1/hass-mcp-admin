@@ -403,7 +403,8 @@ class WebhookReachabilityTests(unittest.TestCase):
                 self.assertNotIn("webhook", template)
                 self.assertIn(
                     template.split("/")[1],
-                    {"addons", "config", "events", "history", "logbook",
+                    # HAMCP-131 adds the fixed Supervisor /core/logs route.
+                    {"addons", "config", "core", "events", "history", "logbook",
                      "services", "states", "template"},
                 )
 
