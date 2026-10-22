@@ -76,8 +76,13 @@ def message_ids(page: dict) -> list[str]:
 
 
 class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
+    # The pinned 2026.09.1 prefix (UTC) read by an add-on whose zone is not
+    # UTC; HAMCP-220 reruns the whole class with 2026.10.3 local rendering.
+    RENDER = "utc"
+    ZONE = "America/Chicago"
+
     async def asyncSetUp(self):
-        self.sim = SupervisorSim(SUPERVISOR_TOKEN)
+        self.sim = SupervisorSim(SUPERVISOR_TOKEN, render=self.RENDER, zone=self.ZONE)
         self.runner, self.url = await start(self.sim)
         self.addAsyncCleanup(self.runner.cleanup)
         self.clock = [NOW / 1000]
@@ -87,7 +92,7 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         transport = JournalTransport(token_source=lambda: token, timeout_seconds=2.0, base_url=self.url)
         codec = CursorCodec("incident_logs", key=b"k" * 32, clock=lambda: self.clock[0])
         return IncidentLogService(transport, known_secrets=(HA_TOKEN, ACCESS_SECRET), codec=codec,
-                                  clock=lambda: NOW)
+                                  clock=lambda: NOW, zone_source=lambda: self.ZONE)
 
     async def read(self, service=None, caller="synthetic_authenticated_caller", **arguments):
         telemetry, token = begin_request()
@@ -532,7 +537,8 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
                          (ErrorCode.STALE_CURSOR, "cursor_expired"))
         self.assertEqual(len(self.sim.calls), calls)
         # Another process (another key) cannot use it.
-        other = IncidentLogService(self.service.transport, codec=CursorCodec("incident_logs", key=b"o" * 32))
+        other = IncidentLogService(self.service.transport, codec=CursorCodec("incident_logs", key=b"o" * 32),
+                                   zone_source=lambda: self.ZONE)
         with self.assertRaises(GovernanceError):
             await self.read(service=other, **arguments, cursor=cursor)
         decoded = json.loads(base64.urlsafe_b64decode(payload + "=="))
@@ -812,7 +818,7 @@ class IncidentLogToolTests(unittest.IsolatedAsyncioTestCase):
         runtime = service_module.IncidentLogsRuntime()
         runtime.service = IncidentLogService(
             JournalTransport(token_source=lambda: SUPERVISOR_TOKEN, timeout_seconds=1.0, base_url=url),
-            known_secrets=(HA_TOKEN, ACCESS_SECRET),
+            known_secrets=(HA_TOKEN, ACCESS_SECRET), zone_source=lambda: "UTC",
         )
         for patcher in (patch.object(tool_module, "INCIDENT_LOGS", runtime),
                         patch.object(tool_module, "SETTINGS", self.settings)):
@@ -902,7 +908,8 @@ class IncidentLogGatewayStackTests(unittest.TestCase):
 
             transport.page = page
             runtime = service_module.IncidentLogsRuntime()
-            runtime.service = IncidentLogService(transport, known_secrets=(HA_TOKEN, ACCESS_SECRET))
+            runtime.service = IncidentLogService(transport, known_secrets=(HA_TOKEN, ACCESS_SECRET),
+                                                 zone_source=lambda: "UTC")
             client = SameThreadAsgiTestClient(gateway, lifespan_app=inner, base_url="http://127.0.0.1:8100")
             with patch.object(tool_module, "INCIDENT_LOGS", runtime), \
                     patch.object(tool_module, "SETTINGS", configured), client:
@@ -962,6 +969,13 @@ class IncidentLogGatewayStackTests(unittest.TestCase):
                          [{"source": key, "status": "unavailable", "reason": "authority_not_granted"}
                           for key in ("supervisor", "host", "addon:zwave_js")])
         self.assertEqual(record["analysis_summary"]["upstream_calls"], 0)
+
+
+
+class IncidentLogLocalRenderTests(IncidentLogTests):
+    """HAMCP-220: every HAMCP-131 behavior under the 2026.10.3 local-time prefix."""
+
+    RENDER = "local"
 
 
 if __name__ == "__main__":

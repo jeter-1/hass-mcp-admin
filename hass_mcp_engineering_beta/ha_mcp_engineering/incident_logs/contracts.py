@@ -31,6 +31,15 @@ from ..errors import ErrorCode, GovernanceError
 SCHEMA = "incident-logs-v1"
 SUPERVISOR_PIN = "2026.09.1 (40e3ee7640a3c44abe67f1a1397f39c3cd949806)"
 GATEWAYD_PIN = "systemd v257.9 journal-gatewayd"
+# HAMCP-220: how Supervisor renders the verbose prefix time, all accepted.
+TEXT_TIMESTAMP_PIN = (
+    "UTC in 2026.09.1 (40e3ee76); naive Home Assistant local time from 2026.10.3 (9493d3a7, #7372); "
+    "an explicit +HH:MM offset is accepted"
+)
+# Supervisor creates the add-on container with ``TZ`` = its time zone, the
+# one Home Assistant Core pushes from its configuration (docker/app.py L237,
+# 2026.10.3) and the one its log formatter renders in.
+TIME_ZONE_SOURCE = "addon_container_TZ_set_by_supervisor"
 
 MAX_SOURCES = 4
 MAX_WINDOW_SECONDS = 6 * 3600

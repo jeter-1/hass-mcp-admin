@@ -20,6 +20,7 @@ from ..observability import METRICS
 from ..request_context import current_telemetry
 from . import contracts as c
 from .journal import JournalShapeError, RawEntry, parse_page, range_header, valid_journal_cursor
+from .timebasis import PageBasis, TimeBasisMismatch, Zone, resolve_page
 
 
 SUPERVISOR_BASE_URL = "http://supervisor"
@@ -46,6 +47,7 @@ class Page:
     download_capped: bool
     incomplete_entry_dropped: bool
     requested: int
+    basis: PageBasis = PageBasis(True, ())
 
 
 @dataclass
@@ -95,7 +97,7 @@ class JournalTransport:
         self._base_url = base_url
 
     async def page(self, source_key: str, *, cursor: str | None, skip: int, count: int,
-                   budget: Budget) -> Page:
+                   budget: Budget, zone: Zone) -> Page:
         route = route_for(source_key)
         url = request_url(self._base_url or SUPERVISOR_BASE_URL, route)
         token = self.token_source()
@@ -148,7 +150,8 @@ class JournalTransport:
                                 break
                             body.extend(chunk)
                         budget.downloaded += len(body)
-                        page = build_page(bytes(body), first, capped=len(body) >= cap, requested=count)
+                        page = build_page(bytes(body), first, capped=len(body) >= cap, requested=count,
+                                          zone=zone)
                         outcome = "complete"
                         return page
         except PageFailure:
@@ -170,8 +173,9 @@ class JournalTransport:
             METRICS.record_provider_result(PROVIDER_ID, outcome, dispatched=True)
 
 
-def build_page(body: bytes, first_cursor: str | None, *, capped: bool, requested: int) -> Page:
-    """Parse a raw body into complete entries; an entry the cap cut is dropped."""
+def build_page(body: bytes, first_cursor: str | None, *, capped: bool, requested: int,
+               zone: Zone) -> Page:
+    """Parse a raw body into complete, time-resolved entries; an entry the cap cut is dropped."""
 
     dropped = False
     if capped or (body and not body.endswith(b"\n")):
@@ -190,5 +194,9 @@ def build_page(body: bytes, first_cursor: str | None, *, capped: bool, requested
         entries = entries[:-1]
     if entries and valid_journal_cursor(first_cursor) is None:
         raise PageFailure("cursor_header_invalid")
-    return Page(tuple(entries), first_cursor if entries else None, len(body),
-                capped, dropped, requested)
+    try:
+        resolved, basis = resolve_page(entries, first_cursor, zone)
+    except TimeBasisMismatch as exc:
+        raise PageFailure(str(exc)) from None
+    return Page(resolved, first_cursor if entries else None, len(body),
+                capped, dropped, requested, basis)
