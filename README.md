@@ -1,5 +1,24 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.30** adds the read-only `get_configuration_definitions`
+tool (HAMCP-132 slice 2). For YAML-defined template, SQL and helper entities
+(template, sql, filter, derivative, statistics, group, integration, min_max,
+history_stats, threshold, trend, utility_meter) it reports:
+- how each is defined in `configuration.yaml`, as an allowlisted projection;
+- how the definition was matched to the entity: exact unique ID, a heuristic
+  with a stated confidence, ambiguous, or not found;
+- why an entity is unavailable, from Core's read-only signals.
+
+It never returns the SQL `db_url`, a credential or a `!secret` name. It
+discloses `!include` and packages without following them, and lists UI-created
+entries as not readable without a flow. The `ha_mcp_tools` component is not
+used. Static tools 63, advertised catalog 91 (92 with the optional YAML
+reader). Read the
+[2.4.1-beta.30 release notes](docs/V2_4_1_BETA30_RELEASE_NOTES.md) and
+[2.4.1-beta.30 acceptance contract](docs/V2_4_1_BETA30_ACCEPTANCE.md).
+
+It builds on beta.29 below.
+
 Engineering **2.4.1-beta.29** makes exact automation and script changes that
 touch a protected physical object (lock, alarm panel, valve, water control or
 garage cover) actionable instead of prohibited (HAMCP-213 PR 1, policy
@@ -379,9 +398,10 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**62 static tools plus 28 delegated reads, 90 total** (91 with the optional
-reviewed YAML reader admitted; the 61st and 62nd static tools are HAMCP-132's
-read-only `get_recorder_settings` and `get_unregistered_entities`). The Core inventory represents
+**63 static tools plus 28 delegated reads, 91 total** (92 with the optional
+reviewed YAML reader admitted; the 61st to 63rd static tools are HAMCP-132's
+read-only `get_recorder_settings`, `get_unregistered_entities` and
+`get_configuration_definitions`). The Core inventory represents
 **22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol

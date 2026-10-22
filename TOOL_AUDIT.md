@@ -2,6 +2,51 @@
 
 Date: 2026-07-10
 
+## Read-only configuration definitions (2.4.1-beta.30, HAMCP-132 slice 2)
+
+`get_configuration_definitions` is native read-only evidence:
+`engineering_native` routing, `risk=read`, policy
+`configuration_definitions_read_v1`, no fallback.
+
+For up to 50 entity IDs and/or whole integrations from a closed set of twelve,
+it reads:
+- `configuration.yaml` paths `template`, `sql`, `group`, `utility_meter`,
+  `sensor` and `binary_sensor`, only those the request needs, plus
+  `homeassistant.packages` and, only to classify a missing packages key,
+  `homeassistant`. These go through the admitted YAML reader's new fixed
+  `configuration_definitions` gateway purpose: attributed, audited as
+  `configuration_definitions_yaml_read`, with no caller-selected path;
+- REST `GET /api/states` (availability only) and `GET /api/config`
+  (`components` only);
+- WebSocket `config/entity_registry/list` and `entity/source`;
+- `config_entries/get` for a closed domain;
+- `manifest/get` for `ha_mcp_tools`.
+
+It returns:
+- each definition as a positive allowlist projection;
+- the match method: `exact_config_entry`, `exact_unique_id`, `heuristic`
+  with `high`/`medium`/`low` confidence, `ambiguous`, `unmatched` or
+  `not_applicable`;
+- a per-entity unavailability diagnosis;
+- a Core-only capability block for the `ha_mcp_tools` component.
+
+What it never does:
+- return `db_url` (in any position), credential keys, credential URIs
+  inside text, reference names or unrecognized keys;
+- follow `!include`, packages or labelled keys (it discloses them and
+  reports partial);
+- read UI-created definitions. They are listed as
+  `definition_not_readable_without_flow`;
+- call any `ha_mcp_tools/*` command (owner decision, 2026-10-21).
+
+The response is sanitized once, with the known secrets, at a single exit
+point. It is mapped in the HAMCP-164 Core gate (`core.basic_rest_read`,
+`core.basic_websocket_read`, `core.non_device_registry_read`). Arguments are
+validated before the SDK, and the audit carries counts only. There is no
+write, reload, flow or service-call path and no new batch-allowlist shape.
+The catalog is 63 static + 28 delegated = 91 (92 with the optional YAML
+reader).
+
 ## Read-only recorder settings and unregistered entities (2.4.1-beta.27, HAMCP-132)
 
 `get_recorder_settings` and `get_unregistered_entities` are native read-only

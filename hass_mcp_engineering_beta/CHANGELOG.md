@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.4.1-beta.30 - Configuration definitions (HAMCP-132 slice 2)
+
+Builds on 2.4.1-beta.29.
+
+- Add the read-only `get_configuration_definitions` tool for up to 50
+  `entity_ids` and/or whole `integrations` from template, sql, filter,
+  derivative, statistics, group, integration, min_max, history_stats,
+  threshold, trend and utility_meter.
+- Project each `configuration.yaml` definition through a positive
+  per-integration allowlist. The admitted YAML reader is used through a new
+  fixed gateway purpose, `configuration_definitions`, with eight paths.
+  `db_url`, credential keys, credential URIs in text and `!secret`/`!env_var`
+  names are withheld in every position. Unrecognized keys are counted only.
+- Match entities to definitions:
+  - `exact_config_entry` (UI-defined: `definition_not_readable_without_flow`);
+  - `exact_unique_id`;
+  - `heuristic`, with `high`, `medium` or `low` confidence;
+  - `ambiguous` (never resolved);
+  - `unmatched` or `not_applicable`.
+- Diagnose unavailability from Core's signals: disabled, config entry, or
+  platform or integration not loaded, dependency unavailable, transient,
+  entity level, not found or undetermined. Report the `ha_mcp_tools`
+  component from Core's own reads only; its commands are not used (owner
+  decision, 2026-10-21).
+- Disclose `!include`, packages and labelled keys without following them. Any
+  unreadable source, trim or redaction makes the report partial. The complete
+  envelope is sanitized once with the known secrets.
+- Catalog: 63 static tools, 91 advertised (92 with the optional YAML reader).
+  No existing descriptor, schema, stored format, dependency or workflow
+  changes.
+
 ## 2.4.1-beta.29 - Safety-critical acknowledgement (HAMCP-213 PR 1)
 
 Builds on 2.4.1-beta.28.

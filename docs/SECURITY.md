@@ -613,6 +613,56 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.30` configuration-definition slice (HAMCP-132 slice 2) adds
+the read-only `get_configuration_definitions` tool. It adds no permission,
+add-on option, HTTP client, Supervisor call, route template, batch-allowlist
+shape, fallback or write path.
+
+- **Reads.** The tool issues:
+  - REST `GET /api/states` (only whether each state exists and is
+    `unavailable` or `unknown`) and `GET /api/config` (`components` only);
+  - WebSocket `config/entity_registry/list` and `entity/source`;
+  - `config_entries/get` with one domain from a closed set;
+  - Core's `manifest/get` for `ha_mcp_tools`.
+
+  Core's `config_entries/get` never includes an entry's `data` or `options`.
+  So a UI-defined SQL entry's `db_url` is never fetched, and UI definitions
+  are reported as not readable without a flow.
+- **No component commands.** The `ha_mcp_tools` custom component exposes
+  admin-only WebSocket commands, including writes and a backup preparation
+  that returns a password. Josh decided on 2026-10-21 that it is not used.
+  No `ha_mcp_tools/*` command is reachable; an AST test pins the package's
+  exact command literals and dispatch.
+- **YAML reader purpose.** The admitted ha-mcp YAML reader is used through a
+  second fixed gateway purpose, `configuration_definitions`:
+  - eight fixed `configuration.yaml` paths and its own audit event;
+  - Engineering builds the only argument;
+  - each purpose's path set is closed, so neither purpose can read the
+    other's paths, and an unknown purpose returns no reader;
+  - L1–L4, the Core gate, the response seal and the before-and-after
+    authority rechecks are unchanged.
+- **Withholding.** The projection is a positive per-integration allowlist
+  from Core 2026.10.1's schemas. The following are withheld:
+  - `db_url`, in every position;
+  - `!secret` and `!env_var` references, with their names;
+  - nested user-defined keys that look like credential or connection keys;
+  - any credential-bearing URI inside an allowlisted text field such as a
+    SQL query. The shared sanitizer redacts userinfo only for `http(s)`.
+
+  Unrecognized keys are counted, never copied. Config-entry `reason` text is
+  withheld. State values are never copied.
+- **One sanitized exit point.** The complete envelope (report, omissions,
+  coverage and every identifier) is sanitized once with the access secret
+  and the Home Assistant token as known secrets. A redaction makes the
+  report partial. Budget trimming rebuilds the envelope and sanitizes it
+  again. Tests plant a known secret in every identifier-bearing field, prove
+  with a control run that it reaches each one, and check through the
+  authenticated gateway that the protected response never contains it.
+
+Arguments are validated before SDK coercion and rejected without echoing
+them. The audit records counts and source outcomes only. Stable v1.1.2 is
+unchanged.
+
 The `2.4.1-beta.27` definition visibility slice (HAMCP-132) adds two read-only
 tools. Neither adds a permission, add-on option, HTTP client, Supervisor call,
 route template, fallback or write path.
