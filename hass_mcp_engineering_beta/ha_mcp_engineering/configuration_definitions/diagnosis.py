@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from . import contracts as c
+from . import credentials
 from . import schemas as s
 
 ENTRY_STATES = frozenset({
@@ -35,11 +36,13 @@ HELPERS_LIST_VERSION = (1, 1, 0)
 MAX_SOURCE_SIGNALS = 5
 
 
-def entry_rows(value: Any, domain: str) -> list[dict] | None:
+def entry_rows(value: Any, domain: str, known_secrets: tuple[str, ...] = ()) -> list[dict] | None:
     """Projected ``config_entries/get`` rows: identity and state only.
 
     The free-form ``reason`` text is withheld; only whether one is present
-    and a pattern-checked translation key are kept.
+    and a pattern-checked translation key are kept. The title is Core free
+    text: the complete original title is shown only when the allowlist
+    clears it (``credentials.display_text``), never truncated first.
     """
 
     if type(value) is not list:
@@ -58,7 +61,8 @@ def entry_rows(value: Any, domain: str) -> list[dict] | None:
         rows.append({
             "entry_id": entry_id,
             "domain": domain,
-            "title": title[:c.MAX_TITLE] if type(title) is str else None,
+            "title": credentials.display_text(title, c.MAX_TITLE, known_secrets)
+            if type(title) is str else None,
             # Values that are not text are malformed, never a set lookup (M4).
             "state": INVALID if type(state) is not str else state if state in ENTRY_STATES else "unrecognized",
             "disabled_by": None if disabled_by is None else INVALID if type(disabled_by) is not str
@@ -99,6 +103,8 @@ def entity(entity_id: str, *, state: str | None, states_read: bool, registry_row
     reasons: list[str] = []
     if not states_read:
         return {"classification": "undetermined", "reasons": ["source_failed:states"]}
+    if registry_row is not None and registry_row.get("identity") == INVALID:
+        return {"classification": "undetermined", "reasons": [f"registry_identity_{INVALID}"]}
     if registry_row is not None and registry_row.get("disabled_by") == INVALID:
         return {"classification": "undetermined", "reasons": [f"registry_disabled_by_{INVALID}"]}
     if state == INVALID:

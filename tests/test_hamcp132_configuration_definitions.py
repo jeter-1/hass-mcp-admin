@@ -744,7 +744,9 @@ class CredentialTests(Base):
         report = await self.run_report(core_values=core, integrations=("template",))
         entries = {row["entry_id"]: row for row in report["ui_entries"]}
         self.assertEqual(set(entries), {UI_ENTRY, "second"})
-        self.assertEqual(len(entries[UI_ENTRY]["title"]), c.MAX_TITLE)
+        # Correction batch 2: an over-length title is withheld whole, never truncated.
+        self.assertEqual(entries[UI_ENTRY]["title"], "[withheld:unverifiable_text]")
+        self.assert_partial(report, "unverifiable_text_withheld")
         self.assertEqual((entries[UI_ENTRY]["reason_present"], entries[UI_ENTRY]["error_reason_translation_key"]),
                          (True, None))
         self.assertEqual(entries["second"], {
@@ -1335,7 +1337,8 @@ class CapabilityTests(unittest.TestCase):
              "reason": EXCEPTION_TEXT, "error_reason_translation_key": "bad key " + UNKNOWN_VALUE,
              "data": {"password": NESTED_PASSWORD}, "options": {"state": UNKNOWN_VALUE}},
             {"entry_id": "../bad", "domain": "template"}, {"entry_id": "other", "domain": "sql"}, "x"], "template")
-        self.assertEqual(rows, [{"entry_id": "ok_1", "domain": "template", "title": "T" * c.MAX_TITLE,
+        # Correction batch 2: an over-length title is withheld whole, never truncated.
+        self.assertEqual(rows, [{"entry_id": "ok_1", "domain": "template", "title": "[withheld:unverifiable_text]",
                                  "state": "loaded", "disabled_by": None, "reason_present": True,
                                  "error_reason_translation_key": None}])
         self.assertIsNone(diagnosis.entry_rows({"entry_id": "x"}, "template"))
@@ -1987,14 +1990,17 @@ class CredentialExitPointTests(Base):
         self.assertEqual(source(report, "config")["reason"], "command_failed")
 
     async def test_ordinary_titles_are_preserved_and_complete(self):
-        for title in ("Living room helper", "Alerts @ home", "Ratio 3:2", "notify me@home", "Port 8123 / API",
-                      "Yes", "on"):
+        # Correction batch 2: a title with "@" is no longer shown (see
+        # FreeTextAllowlistTests); every printable-ASCII title below still is.
+        for title in ("Living room helper", "Ratio 3:2", "Port 8123 / API", "Yes", "on", "T" * c.MAX_TITLE,
+                      "Kitchen (east) #2 - 50% [beta] {x} ~!$^&*_+|;'<>,.?`"):
             with self.subTest(title):
                 core = owner_core()
                 core["config_entries/get"]["template"][0]["title"] = title
                 report = await self.run_report(core_values=core, integrations=("template",))
                 self.assertEqual(report["ui_entries"][0]["title"], title)
                 self.assertNotIn("credential_text_withheld", report["omissions"])
+                self.assertNotIn("unverifiable_text_withheld", report["omissions"])
                 self.assertTrue(report["complete"])
 
     def test_predicate_and_walk(self):
@@ -2322,3 +2328,242 @@ class MalformedSourceValueTests(Base):
         report = await self.run_report(entity_ids=OWNER_ENTITIES, integrations=("template",))
         for name in ("states", "config/entity_registry/list", "config_entries/get:template"):
             self.assertEqual(source(report, name)["status"], "complete")
+
+
+def non_ascii(*code_points):
+    """Text built from code points, so no non-ASCII character is in this file."""
+
+    return "".join(chr(point) for point in code_points)
+
+
+class FreeTextAllowlistTests(Base):
+    """Correction batch 2 (H1, H2): Core free text is shown only through an allowlist.
+
+    The full original title is checked before anything else; a title the
+    allowlist does not clear is withheld whole and the report is partial. An
+    ordinary non-ASCII title is withheld by design (disclosed).
+    """
+
+    UNVERIFIABLE = "[withheld:unverifiable_text]"
+
+    async def title_report(self, title, *, gateway=False):
+        core = owner_core()
+        core["config_entries/get"]["template"][0]["title"] = title
+        if not gateway:
+            report = await self.run_report(core_values=core, integrations=("template",))
+            return report, json.dumps(report), ""
+        response, data, audit = await serve_through_gateway({"integrations": ["template"]}, owner_yaml(), core)
+        self.assertTrue(data["success"])
+        return data["data"], response, audit
+
+    async def test_plain_ascii_titles_are_shown_through_the_gateway(self):
+        for title in ("UI template helper", "Ratio 3:2", "Port 8123 / API", "T" * c.MAX_TITLE):
+            with self.subTest(title):
+                report, response, _audit = await self.title_report(title, gateway=True)
+                self.assertEqual(report["ui_entries"][0]["title"], title)
+                self.assertNotIn("unverifiable_text_withheld", report["omissions"])
+                self.assertTrue(report["complete"])
+
+    async def test_benign_non_ascii_titles_are_withheld_by_design(self):
+        titles = {
+            "latin_umlaut": "K" + non_ascii(0xFC) + "che",
+            "latin_accent": "Caf" + non_ascii(0xE9) + " lights",
+            "cjk": non_ascii(0x6E29, 0x5EA6),
+            "em_dash": "Lights " + non_ascii(0x2014) + " hall",
+            "emoji": "Lamp " + non_ascii(0x1F4A1),
+            "tab": "Lamp\thall",
+            "newline": "Lamp\nhall",
+            "delete": "Lamp" + chr(0x7F),
+        }
+        for name, title in titles.items():
+            with self.subTest(name):
+                report, response, audit = await self.title_report(title, gateway=True)
+                self.assertEqual(report["ui_entries"][0]["title"], self.UNVERIFIABLE)
+                self.assertNotIn(title, response)
+                self.assertNotIn(title, audit)
+                self.assert_partial(report, "unverifiable_text_withheld")
+                self.assertNotIn("credential_text_withheld", report["omissions"])
+
+    async def test_allowlist_refusals_are_withheld_whole(self):
+        value = syn.needle("allowlistvalue")
+        titles = {
+            "at_sign": "Alerts @ home",
+            "address": "notify me@home",
+            "scheme_separator": "see example://" + value,
+            "token_equals": "token=" + value,
+            "api_key_colon": "api_key: " + value,
+            "pwd_colon": "pwd: " + value,
+            "bearer_colon": "Bearer: " + value,
+            "secret_spaced": "client secret = " + value,
+            "auth_header": "Authorization: " + value,
+        }
+        for name, title in titles.items():
+            with self.subTest(name):
+                report, response, _audit = await self.title_report(title)
+                self.assertEqual(report["ui_entries"][0]["title"], self.UNVERIFIABLE)
+                self.assertNotIn(value, response)
+                self.assert_partial(report, "unverifiable_text_withheld")
+
+    async def test_over_length_title_is_withheld_whole_not_truncated(self):
+        report, response, _audit = await self.title_report("T" * (c.MAX_TITLE + 1))
+        self.assertEqual(report["ui_entries"][0]["title"], self.UNVERIFIABLE)
+        self.assertNotIn("T" * 64, response)
+        self.assert_partial(report, "unverifiable_text_withheld")
+
+    async def test_credential_beyond_the_length_bound_is_found_on_the_original(self):
+        # The credential tail lies wholly beyond MAX_TITLE: a check on a
+        # truncated title would see only harmless padding.
+        for suffix in (db_url(), DB_USER + ":" + DB_PASSWORD + "@synthetic.invalid"):
+            with self.subTest(suffix=suffix[:8]):
+                title = "x" * c.MAX_TITLE + " " + suffix
+                report, response, _audit = await self.title_report(title)
+                self.assertEqual(report["ui_entries"][0]["title"], "[withheld:credential_text]")
+                self.assert_no_leak(response)
+                self.assert_partial(report, "credential_text_withheld")
+        # A credential that straddles the bound: its first part alone passes
+        # every check, so only the original value reveals it.
+        credential = DB_USER + ":" + DB_PASSWORD
+        title = "x" * (c.MAX_TITLE - len(credential)) + credential + "@synthetic.invalid"
+        from ha_mcp_engineering.configuration_definitions import credentials
+
+        self.assertEqual(credentials.display_text(title[:c.MAX_TITLE], c.MAX_TITLE), title[:c.MAX_TITLE])
+        self.assertEqual(credentials.display_text(title, c.MAX_TITLE), "[withheld:credential_text]")
+        report, response, _audit = await self.title_report(title)
+        self.assert_no_leak(response)
+        self.assert_partial(report, "credential_text_withheld")
+
+    async def test_known_secret_case_variants(self):
+        from ha_mcp_engineering.configuration_definitions import credentials
+
+        for variant in (ACCESS_SECRET.lower(), ACCESS_SECRET.upper(), ACCESS_SECRET.swapcase(),
+                        "prefix " + HA_TOKEN.lower()):
+            with self.subTest(variant=variant[:8]):
+                self.assertEqual(credentials.display_text(variant, c.MAX_TITLE, (HA_TOKEN, ACCESS_SECRET)),
+                                 "[withheld:credential_text]")
+                report, response, _audit = await self.title_report(variant)
+                self.assertEqual(report["ui_entries"][0]["title"], "[withheld:credential_text]")
+                self.assertNotIn(variant, response)
+                self.assert_partial(report, "credential_text_withheld")
+
+    async def test_confusable_credential_title_reads_as_credential_text(self):
+        confusable = db_url().replace(":", non_ascii(0x2236)).replace("/", non_ascii(0x2215))
+        report, response, _audit = await self.title_report(confusable)
+        self.assertEqual(report["ui_entries"][0]["title"], "[withheld:credential_text]")
+        self.assert_no_leak(response)
+
+    def assert_no_leak(self, text):
+        for needle in LEAK_NEEDLES:
+            self.assertNotIn(needle, text)
+
+
+class ConfusableDefinitionTests(Base):
+    """Correction batch 2 (H2): YAML-projected text is read through the confusable fold."""
+
+    def forms(self):
+        return {
+            "ratio_division": db_url().replace(":", non_ascii(0x2236)).replace("/", non_ascii(0x2215)),
+            "cyrillic_password_field": "Server=db;passw" + non_ascii(0x043E) + "rd=" + DB_PASSWORD,
+            "greek_scheme": "p" + non_ascii(0x03BF) + "stgresql" + non_ascii(0xA789) + "//" + DB_USER + "@db",
+            "fraction_slash_userinfo": "https:" + non_ascii(0x2044, 0x2044) + DB_USER + ":" + DB_PASSWORD
+                                       + "@synthetic.invalid",
+        }
+
+    async def test_confusable_credential_in_a_definition_is_withheld(self):
+        for name, text in self.forms().items():
+            with self.subTest(name):
+                values = owner_yaml(template=[{"sensor": [{"name": "Leak", "state": "{{ '" + text + "' }}"}]}])
+                report = await self.run_report(values, integrations=("template",))
+                serialized = json.dumps(report)
+                self.assertNotIn(DB_PASSWORD, serialized)
+                self.assertNotIn(DB_USER, serialized)
+                # Withheld by the projection (field-level) or at the exit point.
+                self.assertIn(report["definitions"][0]["fields"]["state"],
+                              ({"withheld": "credential_uri"}, "[withheld:credential_text]"))
+
+    def test_fold_is_bounded_and_ordinary_text_is_unchanged(self):
+        from ha_mcp_engineering.configuration_definitions import credentials
+
+        self.assertEqual(credentials.fold_confusables("living room 12:30 / api"), "living room 12:30 / api")
+        self.assertEqual(credentials.fold_confusables(non_ascii(0x2236, 0x2215, 0x043E)), ":/o")
+        for text in ("Living room helper", "sensor.database_size", "12:30"):
+            self.assertFalse(credentials.credential_text(text))
+
+
+class BlueprintGapTests(Base):
+    """Correction batch 2 (M3): an unprojected blueprint block blocks absence."""
+
+    async def test_blueprint_block_makes_absence_undetermined(self):
+        values = owner_yaml(template=[{"use_blueprint": {"path": "synthetic/example.yaml", "input": {}}}])
+        report = await self.run_report(values, entity_ids=("sensor.ghost",), integrations=("template",))
+        self.assertEqual(report["definitions"][0]["status"], "blueprint_not_projected")
+        diagnosis_ = self.entities(report)["sensor.ghost"]["diagnosis"]
+        self.assertEqual(diagnosis_["classification"], "undetermined")
+        self.assertIn("blueprint_definitions_not_projected", diagnosis_["reasons"])
+        self.assertNotIn("definition_absent", diagnosis_["reasons"])
+        self.assert_partial(report, "blueprint_definitions_not_projected")
+
+    async def test_without_a_blueprint_absence_is_still_reported(self):
+        report = await self.run_report(owner_yaml(), entity_ids=("sensor.ghost",), integrations=("template",))
+        self.assertEqual(self.entities(report)["sensor.ghost"]["diagnosis"],
+                         {"classification": "not_found",
+                          "reasons": ["no_state", "definition_absent", "labelled_keys_not_addressable"]})
+        self.assertNotIn("blueprint_definitions_not_projected", report["omissions"])
+
+
+class RegistryIdentityTests(Base):
+    """Correction batch 2 (M4): a malformed registry identity is not a legitimate absence."""
+
+    MALFORMED = {
+        "platform": ({"invalid": True}, ["sql"], 1, True, "Not A Domain"),
+        "unique_id": ({"invalid": True}, ["sql_db_free_space"], 1, True),
+        "config_entry_id": ({"invalid": True}, [UI_ENTRY], 1, True, "bad id!"),
+    }
+
+    async def test_malformed_identity_is_invalid_and_never_matched(self):
+        for field, values in self.MALFORMED.items():
+            for value in values:
+                with self.subTest(field=field, value=repr(value)):
+                    core = owner_core()
+                    core["config/entity_registry/list"][0][field] = value
+                    report = await self.run_report(
+                        core_values=core, entity_ids=("sensor.database_free_space", "sensor.database_size"))
+                    rows = self.entities(report)
+                    broken = rows["sensor.database_free_space"]
+                    self.assertEqual(broken["registry"]["identity"], "invalid_response")
+                    self.assertEqual((broken["registry"]["platform"], broken["registry"]["config_entry_id"],
+                                      broken["registry"]["has_unique_id"]), (None, None, False))
+                    self.assertEqual(broken["definition"], {
+                        "method": "unmatched", "confidence": None, "definition_ids": [],
+                        "reason": "registry_identity_invalid_response"})
+                    self.assertEqual(broken["diagnosis"], {"classification": "undetermined",
+                                                           "reasons": ["registry_identity_invalid_response"]})
+                    self.assertEqual(rows["sensor.database_size"]["definition"]["method"], "exact_unique_id")
+                    self.assertEqual(rows["sensor.database_size"]["registry"]["identity"], "valid")
+                    registry = source(report, "config/entity_registry/list")
+                    self.assertEqual((registry["status"], registry["reason"]), ("partial", "invalid_response"))
+                    self.assertFalse(report["complete"])
+                    # The reverse match never claims the malformed row.
+                    expected_ = [entity for d in report["definitions"] for entity in d["expected_entities"]
+                                 if entity["match"]["entity_id"] == "sensor.database_free_space"]
+                    self.assertEqual(expected_, [])
+
+    async def test_reverse_match_names_the_malformed_identity(self):
+        core = owner_core()
+        core["config/entity_registry/list"][0]["unique_id"] = {"invalid": True}
+        report = await self.run_report(core_values=core, integrations=("sql",))
+        free_space = [entity["match"] for d in report["definitions"] for entity in d["expected_entities"]
+                      if entity["unique_id"] == "sql_db_free_space"]
+        self.assertEqual([(m["entity_id"], m["method"], m["reason"]) for m in free_space],
+                         [(None, "unmatched", "registry_identity_invalid_response")])
+
+    async def test_null_identity_fields_are_a_legitimate_absence(self):
+        core = owner_core()
+        core["config/entity_registry/list"][0].update(unique_id=None, config_entry_id=None)
+        core["config/entity_registry/list"][1].update(platform=None)
+        report = await self.run_report(core_values=core,
+                                       entity_ids=("sensor.database_free_space", "sensor.database_size"))
+        rows = self.entities(report)
+        for entity_id in ("sensor.database_free_space", "sensor.database_size"):
+            self.assertEqual(rows[entity_id]["registry"]["identity"], "valid")
+            self.assertNotEqual(rows[entity_id]["definition"].get("reason"), "registry_identity_invalid_response")
+        self.assertEqual(source(report, "config/entity_registry/list")["status"], "complete")

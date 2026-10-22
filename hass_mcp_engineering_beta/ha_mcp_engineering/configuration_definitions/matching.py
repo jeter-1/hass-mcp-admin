@@ -112,6 +112,10 @@ class Matcher:
         """The match for one entity ID."""
 
         row = self.registry.get(entity_id) if self.registry is not None else None
+        if row is not None and row.get("identity") == "invalid_response":
+            # M4: a malformed registry identity is never matched, exactly or by name.
+            return {"method": "unmatched", "confidence": None, "definition_ids": [],
+                    "reason": "registry_identity_invalid_response"}
         if row is not None:
             entry = row.get("config_entry_id")
             if entry is not None and entry in self.ui_domains:
@@ -171,6 +175,7 @@ class Matcher:
                 readings = expected.get("unique_id_readings") or [expected["unique_id"]]
                 hits = [entity_id for entity_id, row in self.registry.items()
                         if entity_id.split(".", 1)[0] == expected["entity_domain"]
+                        and row.get("identity") != "invalid_response"
                         and row["platform"] == platform and row["unique_id"] in readings
                         and row.get("config_entry_id") is None]
                 if len(hits) > 1:
@@ -187,6 +192,9 @@ class Matcher:
                             result["reason"] = match["reason"]
                     else:
                         result["reason"] = match.get("reason") or "no_registry_entry_with_this_unique_id"
+                elif any(row.get("identity") == "invalid_response" for row in self.registry.values()):
+                    # M4: a malformed registry identity could be this entity.
+                    result["reason"] = "registry_identity_invalid_response"
                 else:
                     result["reason"] = "no_registry_entry_with_this_unique_id"
             elif expected["derived_entity_id"]:

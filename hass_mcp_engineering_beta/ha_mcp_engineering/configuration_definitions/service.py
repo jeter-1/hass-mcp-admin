@@ -69,7 +69,24 @@ def _states(value: Any) -> _Checked | None:
     return _Checked(states, invalid)
 
 
+# Registry identity fields: ``None`` is a legitimate absence; any other value
+# that does not conform is malformed (M4).
+_IDENTITY_FIELDS = (
+    ("platform", lambda value: type(value) is str and DOMAIN.fullmatch(value) is not None),
+    ("unique_id", lambda value: type(value) is str),
+    ("config_entry_id", lambda value: type(value) is str and diagnosis.ENTRY_ID.fullmatch(value) is not None),
+)
+
+
 def _registry(value: Any) -> _Checked | None:
+    """Registry rows by entity ID; a malformed item is kept as ``invalid_response``.
+
+    A row whose platform, unique_id or config_entry_id is present but
+    malformed has ``identity`` ``invalid_response``: its identity fields are
+    ``None`` and it never takes part in matching, so a malformed
+    config_entry_id is not mistaken for an absent one (M4).
+    """
+
     if type(value) is not list:
         return None
     rows = {}
@@ -78,18 +95,20 @@ def _registry(value: Any) -> _Checked | None:
         entity_id = row.get("entity_id") if type(row) is dict else None
         if type(entity_id) is not str or not STRICT_ENTITY_ID.fullmatch(entity_id):
             continue
-        platform = row.get("platform")
-        unique_id = row.get("unique_id")
-        entry = row.get("config_entry_id")
+        identity = {field: row.get(field) for field, _valid in _IDENTITY_FIELDS}
+        malformed = any(identity[field] is not None and not valid(identity[field])
+                        for field, valid in _IDENTITY_FIELDS)
+        if malformed:
+            identity = dict.fromkeys(identity)
+            invalid += 1
         disabled_by = row.get("disabled_by")
         if disabled_by is not None and type(disabled_by) is not str:
             # Malformed: kept as ``invalid_response``, never a set lookup.
             disabled_by = diagnosis.INVALID
             invalid += 1
         rows[entity_id] = {
-            "platform": platform if type(platform) is str and DOMAIN.fullmatch(platform) else None,
-            "unique_id": unique_id if type(unique_id) is str else None,
-            "config_entry_id": entry if type(entry) is str and diagnosis.ENTRY_ID.fullmatch(entry) else None,
+            **identity,
+            "identity": diagnosis.INVALID if malformed else "valid",
             # A closed value: Core's reason, or ``unrecognized`` when set to anything else.
             "disabled_by": disabled_by if disabled_by in diagnosis.DISABLED_BY
             or disabled_by == diagnosis.INVALID else (None if disabled_by is None else "unrecognized"),
@@ -97,8 +116,8 @@ def _registry(value: Any) -> _Checked | None:
     return _Checked(rows, invalid)
 
 
-def _entries(value: Any, domain: str) -> _Checked | None:
-    rows = diagnosis.entry_rows(value, domain)
+def _entries(value: Any, domain: str, known_secrets: tuple[str, ...] = ()) -> _Checked | None:
+    rows = diagnosis.entry_rows(value, domain, known_secrets)
     if rows is None:
         return None
     return _Checked(rows, sum(diagnosis.INVALID in (row["state"], row["disabled_by"]) for row in rows))
@@ -278,6 +297,13 @@ class ConfigurationDefinitionsService:
             yaml_complete = False
             omit("definition_values_include_not_followed")
             yaml_gaps.append("definition_values_include_not_followed")
+        if any(d["status"] == "blueprint_not_projected" for d in definitions):
+            # A blueprint block can define entities this reader never sees
+            # (Core template/config.py:343-349 substitutes the blueprint;
+            # the blueprint file is not followed), so absence is never claimed.
+            yaml_complete = False
+            omit("blueprint_definitions_not_projected")
+            yaml_gaps.append("blueprint_definitions_not_projected")
 
         # 2. Core inventories.
         states, _ = await self._projected(
@@ -308,7 +334,7 @@ class ConfigurationDefinitionsService:
             entries[domain], entry_failures[domain] = await self._projected(
                 sources, f"config_entries/get:{domain}",
                 lambda domain=domain: self.client.command(c.entries_payload(domain)),
-                lambda value, domain=domain: _entries(value, domain), authority)
+                lambda value, domain=domain: _entries(value, domain, self.known_secrets), authority)
         manifest, manifest_failure = await self._projected(
             sources, f"manifest/get:{c.COMPONENT_DOMAIN}",
             lambda: self.client.command(dict(c.MANIFEST_COMMAND)),
@@ -339,6 +365,7 @@ class ConfigurationDefinitionsService:
                     "config_entry_id": row["config_entry_id"] if row else None,
                     "disabled_by": row["disabled_by"] if row else None,
                     "has_unique_id": bool(row and row["unique_id"]),
+                    "identity": row["identity"] if row else None,
                 },
                 "platform": platforms.get(entity_id) if platforms is not None else None,
                 "platform_status": "unknown" if platforms is None else (
@@ -452,9 +479,11 @@ class ConfigurationDefinitionsService:
         """The single exit point: the complete envelope, sanitized once.
 
         Every field the caller can see, the omissions included, is assembled
-        first. Credential text is withheld from every key and string of the
-        whole envelope (``credentials.withhold``: titles, entry metadata,
-        reasons, omissions and definitions alike), then the strict sanitizer
+        first. Core free text was already shown only through the allowlist
+        (``credentials.display_text``). Credential text is withheld from every
+        key and string of the whole envelope (``credentials.withhold``:
+        titles, entry metadata, reasons, omissions and definitions alike),
+        then the strict sanitizer
         runs over it with the known secrets. Nothing is added afterwards; a
         change (a withholding or redaction omission, definitions or entries
         dropped for the byte budget) rebuilds the envelope and screens and
@@ -475,6 +504,11 @@ class ConfigurationDefinitionsService:
             if withheld and credentials.OMISSION not in omissions:
                 # H1: withheld credential text makes the report partial.
                 omit(credentials.OMISSION)
+                changed = True
+            if credentials.contains(envelope, credentials.UNVERIFIABLE_MARKER) \
+                    and credentials.UNVERIFIABLE_OMISSION not in omissions:
+                # Free text the allowlist did not clear makes the report partial.
+                omit(credentials.UNVERIFIABLE_OMISSION)
                 changed = True
             if (sanitized.redacted_field_count or sanitized.truncated_field_count) \
                     and "redacted_by_policy" not in omissions:
