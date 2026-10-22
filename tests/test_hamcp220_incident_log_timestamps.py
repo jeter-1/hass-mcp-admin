@@ -256,6 +256,16 @@ class TimeBasisServiceTests(unittest.IsolatedAsyncioTestCase):
         return [entry["source"] + "|" + entry["message"].rsplit("] ", 1)[1]
                 for page in pages for entry in page["entries"]]
 
+
+class TimeBasisServiceCases(TimeBasisServiceTests):
+    """The service tests.
+
+    ``TimeBasisServiceTests`` holds only the helpers: the review 1 probes
+    import it by name, so a test method on it would be discovered again in
+    their module under the same test id, and the sharded runner refuses
+    duplicate ids.
+    """
+
     async def test_live_reproduction_recent_window_returns_its_entries(self):
         # 2026-10-22: Core and addon:self wrote through 12:34:41Z; the text says
         # 07:34 (America/Chicago). Read at 12:34:48Z, the 11:30Z-12:34Z window
