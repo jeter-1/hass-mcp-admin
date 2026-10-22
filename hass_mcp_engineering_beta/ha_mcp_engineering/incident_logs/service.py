@@ -18,6 +18,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import heapq
+import inspect
 import json
 import os
 from typing import Any, Callable
@@ -27,8 +28,12 @@ from ..sanitization import ReferenceMarkerRegistry, sanitize_log_lines, sanitize
 from . import contracts as c
 from .cursor import CursorCodec
 from .journal import RawEntry, detect_level, level_allows, split_prefix, valid_journal_cursor
-from .timebasis import BASIS_REALTIME, TimeZoneUnavailable, Zone, load_zone
+from .timebasis import (
+    BASIS_REALTIME, CALIBRATION_TOLERANCE_MS, TimeZoneUnavailable, Zone, first_offset_difference,
+    load_zone, realtime_us,
+)
 from .transport import Budget, JournalTransport, Page, PageFailure, route_for
+from .zone import HomeAssistantZoneReader
 
 
 LIMITATIONS = (
@@ -45,10 +50,16 @@ LIMITATIONS = (
     "Times prefer the journal realtime (UTC); Supervisor returns it only for the first entry of each page, "
     "so other entries are read from their text in the rendering that page's first entry verified "
     "(Home Assistant's time zone, or UTC).",
-    "A local time that occurs twice or never (DST) is timestamp_uncertain with every candidate; it is ordered "
-    "by its earliest candidate, and one that may fall on either side of a window edge makes the read partial.",
-    "The time zone is the one Supervisor gave this add-on at its start (TZ); a later Home Assistant time-zone "
-    "change fails pages closed as timestamp_basis_mismatch until the add-on restarts.",
+    "Home Assistant's time zone is read from Core (/api/config) on every call that reads a journal; when it "
+    "cannot be read no journal is read. The add-on's TZ, set when the add-on started, is only compared with "
+    "it: an offset difference anywhere in the window fails every source closed as timestamp_basis_mismatch "
+    "(zone_mismatch) until the add-on restarts.",
+    "A local time that occurs twice or never (DST) is resolved to its journal realtime with one single-entry "
+    "read while the request budget allows; otherwise it is timestamp_uncertain with every candidate and the "
+    "read is partial.",
+    "Around an unresolved local time, entries keep each source's journal order and are marked "
+    "ordering_uncertain: their order against that entry and across sources is not established, on this "
+    "page or the next.",
     "An empty result never proves an event did not occur.",
 )
 
@@ -83,6 +94,9 @@ class Item:
     in_window: bool
     # Some readings of an uncertain time fall inside the window, some not.
     edge_uncertain: bool = False
+    # The merge key: the running maximum of the source's earliest readings,
+    # so a source is always merged in its journal order (HAMCP-220 M1).
+    key: int = 0
 
 
 @dataclass
@@ -108,6 +122,11 @@ class Scan:
     verified_pages: int = 0
     unverified_pages: int = 0
     renderings: set[str] = field(default_factory=set)
+    # Uncertain local times given their journal realtime by a single-entry
+    # read, and those the budget or an unverified page left uncertain.
+    resolved: int = 0
+    unresolved: int = 0
+    zone_mismatch: dict | None = None
     # The request budget ended before the window start was located: the
     # source resumes unlocated on the next page and holds the merge there.
     deferred: bool = False
@@ -120,10 +139,15 @@ class Deferred(Exception):
 class IncidentLogService:
     def __init__(self, transport: JournalTransport, *, known_secrets: tuple[str, ...] = (),
                  codec: CursorCodec | None = None, clock: Callable[[], int] = now_ms,
-                 zone_source: Callable[[], str | None] = lambda: os.environ.get("TZ")):
+                 zone_source: Callable[[], Any] = lambda: None,
+                 addon_zone_source: Callable[[], str | None] = lambda: os.environ.get("TZ")):
         self.transport = transport
-        # Home Assistant's time zone as Supervisor set it for this add-on.
+        # Home Assistant's configured time zone (Core /api/config), read per
+        # call; it may return the name or an awaitable of it. The default
+        # reads nothing, so an unconfigured service reads no journal.
         self.zone_source = zone_source
+        # The add-on container's TZ, compared with it and never used to read.
+        self.addon_zone_source = addon_zone_source
         self.static_secrets = tuple(secret for secret in known_secrets if secret)
         self.codec = codec or CursorCodec("incident_logs")
         self.clock = clock
@@ -166,8 +190,11 @@ class IncidentLogService:
             raise c.cursor_error(False, "query_mismatch")
         end_ms = payload.get("e")
         states = payload.get("s")
-        if type(end_ms) is not int or type(states) is not dict or set(states) != set(readable):
+        ordering = payload.get("o")
+        if (type(end_ms) is not int or type(states) is not dict or set(states) != set(readable)
+                or not (ordering is None or type(ordering) is int)):
             raise c.cursor_error(False, "integrity_or_format_invalid")
+        args["ordering_uncertain_until"] = ordering
         if args["end_defaulted"]:
             try:
                 c.check_window(args["start_ms"], end_ms)
@@ -195,13 +222,12 @@ class IncidentLogService:
         # reported unavailable with its authority reason and required role,
         # with zero requests, never collapsed into a generic refusal.
         readable = [key for key in args["sources"] if c.unavailable_reason(key) is None]
+        args["ordering_uncertain_until"] = None
         states = self._resume(args, readable) if args["cursor"] is not None else None
-        try:
-            args["zone"] = load_zone(self.zone_source())
-        except TimeZoneUnavailable:
-            # Never UTC by default: no source is read without a time basis.
-            args["zone"] = None
         budget = Budget()
+        reading = [key for key in readable
+                   if not states or states.get(key) not in ({"done": 1}, {"failed": 1})]
+        await self._zones(args, reading, budget)
         scans: list[Scan] = []
         for position, key in enumerate(readable):
             scan = Scan(key=key, position=position)
@@ -220,11 +246,9 @@ class IncidentLogService:
                 scan.start_location = "continued"
                 scan.anchor = Anchor(state["c"], state["k"], state["d"], state["t"], bool(state["r"]), state["lv"])
                 scan.max_ts = state["t"]
-                if args["zone"] is None:
-                    scan.failure = "time_zone_unavailable"
+                self._zone_refusal(scan, args)
                 continue
-            if args["zone"] is None:
-                scan.failure = "time_zone_unavailable"
+            if self._zone_refusal(scan, args):
                 continue
             try:
                 await self._locate(scan, args, budget)
@@ -246,6 +270,53 @@ class IncidentLogService:
                 upstream_calls=budget.requests,
             )
         return result
+
+    async def _zones(self, args: dict, reading: list[str], budget: Budget) -> None:
+        """Home Assistant's zone, and the add-on TZ compared with it over the window."""
+
+        args.update(zone=None, zone_status="not_read", zone_reads=0, addon_zone=None,
+                    addon_zone_status="not_read", zone_mismatch=None)
+        if not reading:
+            return
+        args["zone_reads"] = 1
+        try:
+            name = self.zone_source()
+            if inspect.isawaitable(name):
+                name = await name
+            zone = load_zone(name)
+        except Exception:
+            # Never the add-on TZ, never UTC: no source is read without it.
+            args["zone_status"] = "unavailable"
+            return
+        args["zone"], args["zone_status"] = zone, "loaded"
+        try:
+            addon = load_zone(self.addon_zone_source())
+        except Exception:
+            args["addon_zone_status"] = "unavailable"
+            return
+        args["addon_zone"] = addon.name
+        if addon.name == zone.name:
+            args["addon_zone_status"] = "agrees"
+            return
+        at = first_offset_difference(zone, addon, args["start_ms"], args["end_ms"],
+                                     c.ZONE_SAMPLE_SECONDS * 1000)
+        if at is None:
+            args["addon_zone_status"] = "same_offsets_in_window"
+            return
+        args["addon_zone_status"] = "differs"
+        args["zone_mismatch"] = {
+            "reason": "addon_time_zone_offset_differs",
+            "home_assistant_time_zone": zone.name, "addon_time_zone": addon.name,
+            "offsets_first_differ_at": c.format_ms(at),
+        }
+
+    @staticmethod
+    def _zone_refusal(scan: Scan, args: dict) -> bool:
+        if args["zone"] is None:
+            scan.failure = "time_zone_unavailable"
+        elif args["zone_mismatch"] is not None:
+            scan.failure, scan.zone_mismatch = "timestamp_basis_mismatch", dict(args["zone_mismatch"])
+        return scan.failure is not None
 
     async def _page(self, scan: Scan, budget: Budget, *, cursor: str | None, skip: int,
                     count: int, zone: Zone) -> Page:
@@ -282,7 +353,10 @@ class IncidentLogService:
         if not tail.entries:
             scan.finished = "empty_journal"
             return
-        scan.tail_entry = tail.entries[-1]
+        # An uncertain tail is resolved first, so "after the tail" is decided
+        # on its exact time when the budget allows.
+        scan.tail_entry = await self._resolve(scan, args, budget, tail.first_cursor, len(tail.entries) - 1,
+                                              tail.entries[-1], 0, tally=False)
         scan.tail_ts = scan.tail_entry.ts_ms
         if scan.tail_entry.latest_ms < start:
             scan.finished = "window_after_tail"
@@ -361,10 +435,38 @@ class IncidentLogService:
     def _next_anchor(self, scan: Scan) -> Anchor:
         if scan.items:
             item = scan.items[-1]
-            return Anchor(item.cursor, item.index, item.digest, item.entry.ts_ms, True)
+            return Anchor(item.cursor, item.index, item.digest, item.key, True)
         return scan.anchor
 
-    async def _forward(self, scan: Scan, args: dict, budget: Budget) -> None:
+    async def _resolve(self, scan: Scan, args: dict, budget: Budget, cursor: str, index: int,
+                       entry: RawEntry, reserve: int, *, tally: bool = True) -> RawEntry:
+        """An uncertain local time's journal realtime, read as a one-entry page's first entry.
+
+        Only an entry that may be at or after the window start and was read
+        from a verified page is resolved, and only while the budget keeps
+        ``reserve`` requests for sources that have not read a page yet.
+        ``tally`` counts an unresolved entry (the tail is not a returned one).
+        """
+
+        if not entry.uncertain or entry.latest_ms < args["start_ms"]:
+            return entry
+        if (realtime_us(cursor) is None or not budget.available(scan.requests)
+                or budget.requests + reserve >= c.MAX_REQUESTS_PER_CALL):
+            scan.unresolved += tally
+            return entry
+        page = await self._page(scan, budget, cursor=cursor, skip=index, count=1, zone=args["zone"])
+        if not page.entries or self._digest(page.entries[0]) != self._digest(entry):
+            raise PageFailure("continuity_broken")
+        exact = page.entries[0]
+        if exact.basis != BASIS_REALTIME or not any(
+            abs(value - exact.ts_ms) <= CALIBRATION_TOLERANCE_MS for value in entry.candidates
+        ):
+            scan.zone_mismatch = {"reason": "entry_realtime_disagrees"}
+            raise PageFailure("timestamp_basis_mismatch")
+        scan.resolved += 1
+        return exact
+
+    async def _forward(self, scan: Scan, args: dict, budget: Budget, reserve: int = 0) -> None:
         anchor = self._next_anchor(scan)
         first_page = not scan.items and scan.anchor_entry is None
         page = await self._page(scan, budget, cursor=anchor.cursor, skip=anchor.index,
@@ -382,15 +484,16 @@ class IncidentLogService:
         if start_index == 1 and len(entries) == 1 and page.download_capped:
             raise PageFailure("entry_exceeds_download_cap")
         for index in range(start_index, len(entries)):
-            entry = entries[index]
+            entry = await self._resolve(scan, args, budget, page.first_cursor, index, entries[index], reserve)
             # Finished only at an entry whose every reading is at or after end.
             if entry.ts_ms >= args["end_ms"]:
                 scan.finished = "end_reached"
                 return
             possible = entry.possible_in(args["start_ms"], args["end_ms"])
-            scan.items.append(Item(page.first_cursor, index, self._digest(entry), entry, possible,
-                                   possible and not entry.certain_in(args["start_ms"], args["end_ms"])))
             scan.max_ts = max(scan.max_ts, entry.ts_ms)
+            scan.items.append(Item(page.first_cursor, index, self._digest(entry), entry, possible,
+                                   possible and not entry.certain_in(args["start_ms"], args["end_ms"]),
+                                   scan.max_ts))
         if len(entries) < page.requested and not page.download_capped and not page.incomplete_entry_dropped:
             scan.finished = "tail_reached"
 
@@ -409,14 +512,17 @@ class IncidentLogService:
                 return
             cutoff = min(scan.max_ts for scan in open_scans)
             eligible = sum(1 for scan in scans for item in scan.items
-                           if item.in_window and item.entry.ts_ms <= cutoff)
+                           if item.in_window and item.key <= cutoff)
             if eligible >= target:
                 return
             scan = min(open_scans, key=lambda s: (s.max_ts, s.position))
             if not budget.available(scan.requests):
                 return
+            # Resolution reads leave one forward page for each open source
+            # that has none yet, so every source can advance the merge.
+            reserve = sum(1 for other in open_scans if other is not scan and not other.items)
             try:
-                await self._forward(scan, args, budget)
+                await self._forward(scan, args, budget, reserve)
             except PageFailure as failure:
                 scan.failure, scan.status_code = failure.reason, failure.status
 
@@ -433,7 +539,7 @@ class IncidentLogService:
         heap: list[tuple[int, int, int]] = []
         for scan in scans:
             if scan.items:
-                heap.append((scan.items[0].entry.ts_ms, scan.position, 0))
+                heap.append((scan.items[0].key, scan.position, 0))
         heapq.heapify(heap)
         consumed = [0] * len(scans)
         edge = [0] * len(scans)
@@ -463,7 +569,7 @@ class IncidentLogService:
                 edge[position] += 1
             heapq.heappop(heap)
             if index + 1 < len(scan.items):
-                heapq.heappush(heap, (scan.items[index + 1].entry.ts_ms, position, index + 1))
+                heapq.heappush(heap, (scan.items[index + 1].key, position, index + 1))
         return emitted, consumed, skipped, outside, stopped, edge
 
     def _finish(self, scans: list[Scan], args: dict, budget: Budget) -> dict:
@@ -512,6 +618,15 @@ class IncidentLogService:
             views.append(rows)
             redacted_entries.append(changed)
 
+        for scan in scans:
+            if scan.failure == "timestamp_basis_mismatch":
+                # A page's or entry's journal realtime disagreed with the text.
+                mismatch = scan.zone_mismatch or {"reason": "first_entry_realtime_disagrees"}
+                scan.zone_mismatch = {
+                    "reason": mismatch["reason"],
+                    "home_assistant_time_zone": None if args["zone"] is None else args["zone"].name,
+                    "addon_time_zone": args["addon_zone"], **mismatch,
+                }
         emit_cap = args["limit"]
         omissions: list[str] = []
         while True:
@@ -519,6 +634,11 @@ class IncidentLogService:
             entries_out = []
             redacted = False
             truncated_messages = 0
+            # HAMCP-220 M1: an emitted unresolved time may be as late as its
+            # latest candidate, so every later row up to that moment, from any
+            # source and on any later page, has an unestablished order.
+            until = args["ordering_uncertain_until"]
+            disordered = [0] * len(scans)
             for scan, index in emitted:
                 item, view = scan.items[index], views[scan.position][index]
                 redacted = redacted or index in redacted_entries[scan.position]
@@ -545,6 +665,11 @@ class IncidentLogService:
                     }
                 if item.edge_uncertain:
                     row["window_membership_uncertain"] = True
+                if entry.uncertain or item.key > entry.ts_ms or (until is not None and entry.ts_ms <= until):
+                    row["ordering_uncertain"] = True
+                    disordered[scan.position] += 1
+                if entry.uncertain:
+                    until = entry.latest_ms if until is None else max(until, entry.latest_ms)
                 entries_out.append(row)
 
             next_state: dict[str, dict] = {}
@@ -561,7 +686,7 @@ class IncidentLogService:
                 elif count:
                     item = scan.items[count - 1]
                     next_state[scan.key] = {"c": item.cursor, "k": item.index, "d": item.digest,
-                                            "t": item.entry.ts_ms, "lv": views[scan.position][count - 1]["level"],
+                                            "t": item.key, "lv": views[scan.position][count - 1]["level"],
                                             "r": 1}
                 else:
                     anchor = scan.anchor
@@ -569,7 +694,7 @@ class IncidentLogService:
                     # unread, so the next page still returns it.
                     next_state[scan.key] = {"c": anchor.cursor, "k": anchor.index, "d": anchor.digest,
                                             "t": anchor.ts_ms, "lv": anchor.level, "r": int(anchor.consumed)}
-                source_rows.append(self._source_row(scan, consumed, skipped, outside, emitted, edge))
+                source_rows.append(self._source_row(scan, consumed, skipped, outside, emitted, edge, disordered))
             for key in args["sources"]:
                 reason = c.unavailable_reason(key)
                 if reason is not None:
@@ -580,8 +705,11 @@ class IncidentLogService:
                         "route": None, "requests": 0,
                     })
             source_rows.sort(key=lambda row: args["sources"].index(row["source"]))
-            if args["zone"] is None and scans:
+            if args["zone_status"] == "unavailable":
                 reasons.append("time_zone_unavailable")
+            if args["addon_zone_status"] == "unavailable":
+                # The add-on TZ cross-check could not run.
+                reasons.append("addon_time_zone_unavailable")
             for row in source_rows:
                 if row["status"] != "complete":
                     reasons.append(f"source_{row['status']}:{row['source']}")
@@ -591,6 +719,10 @@ class IncidentLogService:
                     reasons.append(f"timestamp_basis_unverified:{row['source']}")
                 if row.get("timestamp_uncertain_at_window_edge"):
                     reasons.append(f"timestamp_uncertain_at_window_edge:{row['source']}")
+                if row.get("zone_mismatch"):
+                    reasons.append(f"zone_mismatch:{row['source']}")
+                if row.get("ordering_uncertain"):
+                    reasons.append(f"ordering_uncertain:{row['source']}")
             has_more = any("c" in state or "u" in state for state in next_state.values())
             if stopped:
                 reasons.append("entries_limit_reached")
@@ -600,9 +732,10 @@ class IncidentLogService:
                 reasons.append("redacted_by_policy")
             next_cursor = None
             if has_more:
-                next_cursor = registry.register_output(self.codec.encode({
-                    "v": 1, "q": self._query_fingerprint(args), "e": args["end_ms"], "s": next_state,
-                }), self.known_secrets)
+                payload = {"v": 1, "q": self._query_fingerprint(args), "e": args["end_ms"], "s": next_state}
+                if until is not None:
+                    payload["o"] = until
+                next_cursor = registry.register_output(self.codec.encode(payload), self.known_secrets)
             reasons = list(dict.fromkeys(reasons))
             envelope = {
                 "schema": c.SCHEMA,
@@ -624,8 +757,13 @@ class IncidentLogService:
                     "preferred": BASIS_REALTIME,
                     "time_zone": None if args["zone"] is None else args["zone"].name,
                     "time_zone_source": c.TIME_ZONE_SOURCE,
-                    "time_zone_status": "unavailable" if args["zone"] is None else "loaded",
+                    "time_zone_status": args["zone_status"],
+                    "time_zone_reads": args["zone_reads"],
+                    "addon_time_zone": args["addon_zone"],
+                    "addon_time_zone_source": c.ADDON_TIME_ZONE_SOURCE,
+                    "addon_time_zone_status": args["addon_zone_status"],
                     "uncertain_entries": sum(1 for row in entries_out if row["ts"] is None),
+                    "ordering_uncertain_entries": sum(disordered),
                 },
                 "pins": {"supervisor": c.SUPERVISOR_PIN, "journal_gateway": c.GATEWAYD_PIN,
                          "supervisor_text_timestamps": c.TEXT_TIMESTAMP_PIN},
@@ -650,7 +788,7 @@ class IncidentLogService:
             return result.value
 
     @staticmethod
-    def _source_row(scan: Scan, consumed, skipped, outside, emitted, edge) -> dict:
+    def _source_row(scan: Scan, consumed, skipped, outside, emitted, edge, disordered) -> dict:
         count = consumed[scan.position]
         taken = scan.items[:count]
         uncertain_bounds: dict[str, list[str]] = {}
@@ -693,11 +831,15 @@ class IncidentLogService:
             "timestamp_basis": {
                 "verified_pages": scan.verified_pages, "unverified_pages": scan.unverified_pages,
                 "text_rendering": sorted(scan.renderings),
+                "resolved_entries": scan.resolved, "unresolved_entries": scan.unresolved,
             },
             "timestamp_uncertain_at_window_edge": edge[scan.position],
+            "ordering_uncertain": disordered[scan.position],
         }
         if uncertain_bounds:
             row["timestamp_uncertain_bounds"] = uncertain_bounds
+        if scan.zone_mismatch is not None:
+            row["zone_mismatch"] = scan.zone_mismatch
         return row
 
 
@@ -734,12 +876,15 @@ class IncidentLogsRuntime:
     def __init__(self):
         self.service: IncidentLogService | None = None
 
-    def configure(self, settings):
+    def configure(self, settings, rest_client=None, core_runtime=None):
+        # HAMCP-220: without a Core client and runtime the zone is never read,
+        # so no journal is read either.
         self.service = IncidentLogService(
             JournalTransport(token_source=lambda: os.environ.get("SUPERVISOR_TOKEN", ""),
                              timeout_seconds=settings.ha_timeout_seconds),
             known_secrets=(settings.ha_token, settings.access_secret),
-            zone_source=lambda: os.environ.get("TZ"),
+            zone_source=HomeAssistantZoneReader(rest_client, core_runtime),
+            addon_zone_source=lambda: os.environ.get("TZ"),
         )
 
     def require(self) -> IncidentLogService:

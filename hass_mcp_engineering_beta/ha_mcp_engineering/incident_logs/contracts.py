@@ -36,10 +36,16 @@ TEXT_TIMESTAMP_PIN = (
     "UTC in 2026.09.1 (40e3ee76); naive Home Assistant local time from 2026.10.3 (9493d3a7, #7372); "
     "an explicit +HH:MM offset is accepted"
 )
-# Supervisor creates the add-on container with ``TZ`` = its time zone, the
-# one Home Assistant Core pushes from its configuration (docker/app.py L237,
-# 2026.10.3) and the one its log formatter renders in.
-TIME_ZONE_SOURCE = "addon_container_TZ_set_by_supervisor"
+# Home Assistant's configured zone, read per call from Core ``GET /api/config``
+# under this tool's own ``core.basic_rest_read`` lease (``zone.py``). The
+# add-on container's ``TZ``, which Supervisor sets once at container creation
+# (docker/app.py L237, 2026.10.3), is only cross-checked against it.
+TIME_ZONE_SOURCE = "home_assistant_api_config_time_zone"
+ADDON_TIME_ZONE_SOURCE = "addon_container_TZ_set_by_supervisor"
+ZONE_READ_DEADLINE_SECONDS = 5.0
+# Offsets are compared at least this often across the window, and at every
+# offset change found, located to the millisecond.
+ZONE_SAMPLE_SECONDS = 60
 
 MAX_SOURCES = 4
 MAX_WINDOW_SECONDS = 6 * 3600

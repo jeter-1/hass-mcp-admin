@@ -259,10 +259,12 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
             "Core API authority.",
         ),
         "get_incident_logs": CoreIndependence(
-            CORE_INDEPENDENT_SUPERVISOR_ONLY,
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
             "Reads the Core and own add-on journals through fixed Supervisor "
-            "API routes and must remain available while Core is down; it "
-            "consumes no Core API authority.",
+            "API routes and must stay reachable while Core is down; for the "
+            "one GET /api/config time-zone read it acquires and commits its "
+            "own core.basic_rest_read authority, and when that read is "
+            "refused or fails no journal is read (time_zone_unavailable).",
         ),
         "get_blueprint": CoreIndependence(
             CORE_INDEPENDENT_MOUNTED_SOURCE,

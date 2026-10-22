@@ -19,10 +19,12 @@ that occurs twice (DST fall-back) or never (spring-forward), or on which the
 surviving renderings disagree, is uncertain: every candidate is kept and
 none is chosen.
 
-The zone is Home Assistant's configured time zone as Supervisor holds it:
-Supervisor sets it as the add-on container's ``TZ`` (``docker/app.py``
-L237, 2026.10.3) and renders the log text with the same value. A missing or
-unknown zone is never replaced by UTC.
+The zone is Home Assistant's configured time zone, read per call from
+Core ``/api/config`` (``zone.py``); Supervisor renders the log text in the
+zone Core pushes to it. The add-on container's ``TZ`` is set once, at
+container creation (``docker/app.py`` L237, 2026.10.3), so it is compared
+with that zone over the requested window (``first_offset_difference``) and
+never used to read text. A missing or unknown zone is never replaced by UTC.
 """
 
 from __future__ import annotations
@@ -89,6 +91,51 @@ def load_zone(name: object) -> Zone:
         return Zone(name, ZoneInfo(name))
     except (ZoneInfoNotFoundError, ValueError, OSError):
         raise TimeZoneUnavailable("time_zone_unknown") from None
+
+
+def _offset(zone: Zone, at_ms: int) -> timedelta:
+    return (_EPOCH + at_ms * _MS).astimezone(zone.tz).utcoffset()
+
+
+def _change(zone: Zone, low: int, high: int) -> int:
+    """The first millisecond in ``(low, high]`` with ``high``'s offset."""
+
+    before = _offset(zone, low)
+    while high - low > 1:
+        middle = (low + high) // 2
+        if _offset(zone, middle) == before:
+            low = middle
+        else:
+            high = middle
+    return high
+
+
+def first_offset_difference(first: Zone, second: Zone, start_ms: int, end_ms: int,
+                            sample_ms: int) -> int | None:
+    """The first millisecond in ``[start, end)`` where the zones' UTC offsets differ.
+
+    Offsets are compared every ``sample_ms`` and at ``end - 1``; an offset
+    change of either zone between two samples is located to the millisecond
+    and compared there too. A zone changing offset twice within one sample
+    interval is not represented in the zone database and is not searched.
+    """
+
+    if end_ms <= start_ms:
+        return None
+    points = list(range(start_ms, end_ms, max(1, sample_ms)))
+    if points[-1] != end_ms - 1:
+        points.append(end_ms - 1)
+    previous = None
+    for point in points:
+        changes = []
+        if previous is not None:
+            changes = sorted(_change(zone, previous, point) for zone in (first, second)
+                             if _offset(zone, previous) != _offset(zone, point))
+        for moment in (*changes, point):
+            if _offset(first, moment) != _offset(second, moment):
+                return moment
+        previous = point
+    return None
 
 
 def realtime_us(cursor: str | None) -> int | None:

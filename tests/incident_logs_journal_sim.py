@@ -136,6 +136,8 @@ class SupervisorSim:
         # Supervisor's own time zone, which may differ from the add-on's TZ.
         self.zone = zone
         self.cursor_realtime = True
+        # Journals whose X-First-Cursor carries no realtime (HAMCP-220 M1).
+        self.no_realtime_paths: set[str] = set()
         self.journals = {"/core/logs": Journal(), "/addons/self/logs": Journal()}
         self.calls: list[tuple[str, str, dict]] = []
         self.status: dict[str, int] = {}
@@ -166,7 +168,8 @@ class SupervisorSim:
         body = "".join(entry.text(self.render, self.zone) + "\n" for entry in selected).encode("utf-8")
         if self.truncate_after is not None:
             body = body[: self.truncate_after]
-        headers = {"X-First-Cursor": selected[0].cursor_text(self.cursor_realtime)} if selected else {}
+        realtime = self.cursor_realtime and request.path not in self.no_realtime_paths
+        headers = {"X-First-Cursor": selected[0].cursor_text(realtime)} if selected else {}
         return web.Response(body=body, headers=headers, content_type=self.content_type,
                             charset="utf-8")
 

@@ -104,7 +104,7 @@ STATIC_CORE_TABLE = {
     "get_recorder_settings": MAPPED,
     "get_unregistered_entities": MAPPED,
     "get_history_slices": MAPPED,
-    "get_incident_logs": SUPERVISOR,
+    "get_incident_logs": DOWNSTREAM,
     "get_blueprint": MOUNTED,
     "get_change_plan": LOCAL,
     "get_core_log_history": SUPERVISOR,

@@ -26,7 +26,7 @@ from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
-    CORE_INDEPENDENT_STATIC_TOOLS, CORE_INDEPENDENT_SUPERVISOR_ONLY,
+    CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY, CORE_INDEPENDENT_STATIC_TOOLS,
 )
 from ha_mcp_engineering.incident_logs import contracts as c  # noqa: E402
 from ha_mcp_engineering.incident_logs import service as service_module  # noqa: E402
@@ -34,6 +34,7 @@ from ha_mcp_engineering.incident_logs.cursor import CursorCodec  # noqa: E402
 from ha_mcp_engineering.incident_logs.journal import RawEntry  # noqa: E402
 from ha_mcp_engineering.incident_logs.service import IncidentLogService  # noqa: E402
 from ha_mcp_engineering.incident_logs.transport import JournalTransport  # noqa: E402
+from ha_mcp_engineering.incident_logs.zone import HomeAssistantZoneReader  # noqa: E402
 from ha_mcp_engineering.mcp_sdk_compatibility import McpSdkToolRegistry  # noqa: E402
 from ha_mcp_engineering.mcp_server import create_mcp_server  # noqa: E402
 from ha_mcp_engineering.providers.routing import (  # noqa: E402
@@ -92,7 +93,8 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         transport = JournalTransport(token_source=lambda: token, timeout_seconds=2.0, base_url=self.url)
         codec = CursorCodec("incident_logs", key=b"k" * 32, clock=lambda: self.clock[0])
         return IncidentLogService(transport, known_secrets=(HA_TOKEN, ACCESS_SECRET), codec=codec,
-                                  clock=lambda: NOW, zone_source=lambda: self.ZONE)
+                                  clock=lambda: NOW, zone_source=lambda: self.ZONE,
+                                  addon_zone_source=lambda: self.ZONE)
 
     async def read(self, service=None, caller="synthetic_authenticated_caller", **arguments):
         telemetry, token = begin_request()
@@ -435,7 +437,7 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         start_ms = args["start_ms"]
         entry = RawEntry(start_ms + 5000, ("core event",), b"core event")
         finished = service_module.Scan(key="core", position=0, finished="end_of_journal", max_ts=start_ms + 5000,
-                                       items=[service_module.Item("c", 0, "d", entry, True)])
+                                       items=[service_module.Item("c", 0, "d", entry, True, key=entry.ts_ms)])
         deferred = service_module.Scan(key="addon:self", position=1, deferred=True, start_location="deferred")
         views = [[{"level": "info", "search": "core event"}], []]
         emitted, consumed, *_ = self.service._walk([finished, deferred], views, args, 10)
@@ -770,16 +772,25 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
 
     def test_read_only_static_surface(self):
         files = sorted((PACKAGE / "incident_logs").glob("*.py")) + [PACKAGE / "tools" / "incident_logs.py"]
+        core_reads, request_attributes = [], []
         for path in files:
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "request":
+                    # HAMCP-220: the one Core read is GET /api/config in zone.py.
+                    core_reads.append((path.name, ast.unparse(node)))
                 if isinstance(node, ast.Attribute):
-                    self.assertNotIn(node.attr, {"post", "put", "patch", "delete", "request", "ws_connect",
+                    self.assertNotIn(node.attr, {"post", "put", "patch", "delete", "ws_connect",
                                                  "read_text", "read_bytes", "unlink", "write"}, path.name)
+                    if node.attr == "request":
+                        request_attributes.append(path.name)
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                     self.assertNotIn(node.func.id, {"open", "eval", "exec"}, path.name)
                 if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "rest_path":
-                    self.assertIn(node.args[0].value, {"/core/logs", "/addons/self/logs"})
+                    allowed = {"/config"} if path.name == "zone.py" else {"/core/logs", "/addons/self/logs"}
+                    self.assertIn(node.args[0].value, allowed, path.name)
+        self.assertEqual(core_reads, [("zone.py", "client.request('GET', rest_path('/config'))")])
+        self.assertEqual(request_attributes, ["zone.py"])
         source = (PACKAGE / "incident_logs" / "transport.py").read_text(encoding="utf-8")
         self.assertEqual(source.count("session.get("), 1)
         self.assertIn("allow_redirects=False", source)
@@ -790,7 +801,9 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decision.fallback_providers, ())
         self.assertTrue(incident_logs_policy_allows_read())
         independence = CORE_INDEPENDENT_STATIC_TOOLS["get_incident_logs"]
-        self.assertEqual(independence.basis, CORE_INDEPENDENT_SUPERVISOR_ONLY)
+        # HAMCP-220: the zone read acquires its own core.basic_rest_read lease.
+        self.assertEqual(independence.basis, CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY)
+        self.assertIn("core.basic_rest_read", independence.justification)
         from ha_mcp_engineering.capabilities import BETA_NATIVE_CAPABILITIES
         entry = next(item for item in BETA_NATIVE_CAPABILITIES if item["tool"] == "get_incident_logs")
         self.assertEqual((entry["risk"], entry["fallback"], entry["direct_write_allowed"]), ("read", "none", False))
@@ -800,6 +813,27 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tool.annotations.destructiveHint)
         self.assertFalse(tool.parameters["additionalProperties"])
         self.assertEqual(tool.parameters["required"], ["sources", "start"])
+
+    def test_configure_wires_the_core_zone_reader_and_the_addon_tz(self):
+        settings = Settings(
+            ha_url="http://127.0.0.1:9", ha_token=HA_TOKEN, access_secret=ACCESS_SECRET, port=8100,
+            audit_path="unused-synthetic-audit.jsonl", rate_limit_per_minute=120, rate_limit_burst=20,
+            destructive_services=frozenset(), ha_timeout_seconds=1.0,
+        )
+        client, core = object(), object()
+        runtime = service_module.IncidentLogsRuntime()
+        runtime.configure(settings, client, core)
+        service = runtime.require()
+        self.assertIsInstance(service.zone_source, HomeAssistantZoneReader)
+        self.assertIs(service.zone_source.client, client)
+        self.assertIs(service.zone_source.core_runtime, core)
+        with patch.dict("os.environ", {"TZ": "America/Panama"}):
+            self.assertEqual(service.addon_zone_source(), "America/Panama")
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertIsNone(service.addon_zone_source())
+        application = (PACKAGE / "application.py").read_text(encoding="utf-8")
+        self.assertIn("INCIDENT_LOGS.configure(settings, HomeAssistantRestClient(settings), CORE_READMISSION)",
+                      application)
 
     def test_policy_refuses_when_routing_drifts(self):
         from ha_mcp_engineering.providers import routing
@@ -822,6 +856,8 @@ class IncidentLogToolTests(unittest.IsolatedAsyncioTestCase):
         runtime.service = IncidentLogService(
             JournalTransport(token_source=lambda: SUPERVISOR_TOKEN, timeout_seconds=1.0, base_url=url),
             known_secrets=(HA_TOKEN, ACCESS_SECRET), zone_source=lambda: "UTC",
+            # No add-on TZ: the cross-check is unavailable and disclosed.
+            addon_zone_source=lambda: None,
         )
         for patcher in (patch.object(tool_module, "INCIDENT_LOGS", runtime),
                         patch.object(tool_module, "SETTINGS", self.settings)):
@@ -875,6 +911,11 @@ class RefusingCore:
         return None
 
 
+class NoCoreRequest:
+    async def request(self, *args, **kwargs):
+        raise AssertionError("no Core request is allowed")
+
+
 class IncidentLogGatewayStackTests(unittest.TestCase):
     """Review M4/M5 reproductions through the production MCP stack.
 
@@ -885,7 +926,7 @@ class IncidentLogGatewayStackTests(unittest.TestCase):
 
     WINDOW = {"start": "2026-10-20T10:00:00+00:00", "end": "2026-10-20T11:00:00+00:00"}
 
-    def call(self, arguments):
+    def call(self, arguments, *, zone_reader: bool = False):
         import tempfile
         with tempfile.TemporaryDirectory() as directory:
             configured = Settings(
@@ -911,8 +952,13 @@ class IncidentLogGatewayStackTests(unittest.TestCase):
 
             transport.page = page
             runtime = service_module.IncidentLogsRuntime()
+            zone_source = lambda: "UTC"  # noqa: E731
+            if zone_reader:
+                # HAMCP-220: the production reader under the refusing Core.
+                zone_source = HomeAssistantZoneReader(NoCoreRequest(), core)
             runtime.service = IncidentLogService(transport, known_secrets=(HA_TOKEN, ACCESS_SECRET),
-                                                 zone_source=lambda: "UTC")
+                                                 zone_source=zone_source)
+            self.core = core
             client = SameThreadAsgiTestClient(gateway, lifespan_app=inner, base_url="http://127.0.0.1:8100")
             with patch.object(tool_module, "INCIDENT_LOGS", runtime), \
                     patch.object(tool_module, "SETTINGS", configured), client:
@@ -931,6 +977,20 @@ class IncidentLogGatewayStackTests(unittest.TestCase):
         tool_records = [record for record in records if record.get("event") == "tool_call"]
         self.assertEqual(len(tool_records), 1, records)
         return rendered, tool_records[0], response.text
+
+    def test_refused_core_lease_reads_no_zone_and_no_journal(self):
+        # HAMCP-220 review 1 H1: the time zone comes from Core under the
+        # tool's own core.basic_rest_read lease; refused, nothing is read.
+        rendered, record, _ = self.call({"sources": ["core", "addon:self"], **self.WINDOW}, zone_reader=True)
+        self.assertTrue(rendered["success"])
+        data = rendered["data"]
+        self.assertEqual(self.core.acquired, [((("core.basic_rest_read",),), {})])
+        self.assertEqual((data["returned"], data["requests"], data["completeness"]), (0, 0, "partial"))
+        self.assertEqual([(row["source"], row["reason"], row["requests"]) for row in data["sources"]],
+                         [("core", "time_zone_unavailable", 0), ("addon:self", "time_zone_unavailable", 0)])
+        self.assertIn("time_zone_unavailable", data["omissions"])
+        self.assertEqual(data["time_basis"]["time_zone_status"], "unavailable")
+        self.assertEqual((record["result_status"], record["error_code"]), ("partial", None))
 
     def test_wrong_typed_filters_are_bounded_audited_refusals(self):
         # Review M4: min_level [] / {} reached ``in LEVEL_RANK`` and escaped
