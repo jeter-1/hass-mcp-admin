@@ -413,6 +413,11 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(c, "VERIFY_CHUNK", 1):
             pages = [await self.read(end=END, limit=10)]
             while pages[-1]["next_cursor"]:
+                # Every issued cursor is verifiable within the bound: one
+                # read per entry (chunk 1), at least one per finished slice.
+                p = self.service.codec.decode(pages[-1]["next_cursor"])["p"]
+                cost = sum(max(1, total - start) for _, start, total, _ in p["g"]) + p["o"] - p["f"]
+                self.assertLessEqual(cost, c.MAX_VERIFY_CALLS)
                 pages.append(await self.read(end=END, limit=10, cursor=pages[-1]["next_cursor"]))
         # The prefix grows 11, 21, 31 entries; 41 would exceed 40 calls.
         self.assertEqual([page["verification_calls"] for page in pages], [0, 11, 21, 31])
