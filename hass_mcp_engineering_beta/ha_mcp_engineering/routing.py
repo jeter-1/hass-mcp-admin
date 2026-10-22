@@ -385,7 +385,6 @@ class AuthenticatedMcpGateway:
         })
         await send({"type": "http.response.body", "body": body})
 
-    @classmethod
     def _pending_admission_details(self, tool_name, parameters) -> dict:
         """Name a 069B profile that no owner-signed registry admits yet.
 
@@ -393,7 +392,11 @@ class AuthenticatedMcpGateway:
         Core unavailability keeps the generic refusal with empty details.
         """
 
-        if tool_name != AVAILABILITY_EXPOSURE_TOOL or self._core_runtime is None:
+        if (
+            tool_name != AVAILABILITY_EXPOSURE_TOOL
+            or self._core_runtime is None
+            or not isinstance(parameters, dict)
+        ):
             return {}
         selected = AVAILABILITY_EXPOSURE_OPERATIONS.get(parameters.get("operation"))
         if selected is None:
@@ -409,6 +412,7 @@ class AuthenticatedMcpGateway:
             "provider_dispatch_occurred": False,
         }
 
+    @classmethod
     async def _respond_mcp_tool_result(
         cls,
         send,
