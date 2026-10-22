@@ -190,7 +190,10 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         page = await self.read(sources=["core"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:10:00Z")
         self.assertEqual([e["ts"][11:23] for e in page["entries"]],
                          ["12:00:00.000", "12:00:00.001", "12:09:59.999"])
-        self.assertEqual(self.source(page, "core")["reason"], "end_reached")
+        row = self.source(page, "core")
+        self.assertEqual(row["reason"], "end_reached")
+        # The scan stops at the entry at exactly end: never consumed, never counted outside.
+        self.assertEqual((row["scanned_to"], row["outside_window"]), ("2026-10-19T12:09:59.999Z", 0))
         self.assertTrue(page["complete"])
         self.assertIsNone(page["next_cursor"])
 

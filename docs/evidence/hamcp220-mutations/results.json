@@ -1,0 +1,1041 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp131_incident_logs",
+   "test_hamcp131_history_slices",
+   "test_hamcp131_history_residual_probes",
+   "test_hamcp191_shared_sanitizer",
+   "test_hamcp200_path_safety",
+   "test_hamcp220_incident_log_timestamps"
+  ],
+  "returncode": 0,
+  "tests": 277,
+  "seconds": 37.9,
+  "summary": "OK"
+ },
+ "mutation_count": 52,
+ "killed": 52,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "T1a-renderings-utc-only",
+   "class": "text parsed as UTC",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/timebasis.py",
+     "    return (zone, Zone(UTC_NAME, timezone.utc))",
+     "    return (Zone(UTC_NAME, timezone.utc),)"
+    ]
+   ],
+   "log_path": "mutation-logs/T1a-renderings-utc-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "T1b-entry-text-read-as-utc",
+   "class": "text parsed as UTC",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/timebasis.py",
+     "        values, reason = local_candidates(entry.stamp, rendering.tz)",
+     "        values, reason = local_candidates(entry.stamp, timezone.utc)"
+    ]
+   ],
+   "log_path": "mutation-logs/T1b-entry-text-read-as-utc.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "T1c-unverified-fallback-read-as-utc",
+   "class": "text parsed as UTC",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/timebasis.py",
+     "        surviving = (zone,)",
+     "        surviving = (Zone(UTC_NAME, timezone.utc),)"
+    ]
+   ],
+   "log_path": "mutation-logs/T1c-unverified-fallback-read-as-utc.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_spring_forward_nonexistent_time_without_realtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_spring_forward_nonexistent_time_without_realtime)"
+   ],
+   "seconds": 36.9
+  },
+  {
+   "id": "T2a-ambiguous-fold-0-chosen",
+   "class": "an ambiguous or nonexistent time resolved silently",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/timebasis.py",
+     "        return candidates, AMBIGUOUS",
+     "        return (first,), None"
+    ]
+   ],
+   "log_path": "mutation-logs/T2a-ambiguous-fold-0-chosen.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_fall_back_hour_entries_are_uncertain_with_both_readings (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_fall_back_hour_entries_are_uncertain_with_both_readings)"
+   ],
+   "seconds": 36.4
+  },
+  {
+   "id": "T2b-nonexistent-fold-0-chosen",
+   "class": "an ambiguous or nonexistent time resolved silently",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/timebasis.py",
+     "    return candidates, NONEXISTENT",
+     "    return (first,), None"
+    ]
+   ],
+   "log_path": "mutation-logs/T2b-nonexistent-fold-0-chosen.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_spring_forward_nonexistent_time_without_realtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_spring_forward_nonexistent_time_without_realtime)"
+   ],
+   "seconds": 37.3
+  },
+  {
+   "id": "T2c-uncertain-entry-given-earliest-time",
+   "class": "an ambiguous or nonexistent time resolved silently",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/timebasis.py",
+     "    if len(ordered) == 1 and not reasons:",
+     "    if ordered:"
+    ]
+   ],
+   "log_path": "mutation-logs/T2c-uncertain-entry-given-earliest-time.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_fall_back_hour_entries_are_uncertain_with_both_readings (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_fall_back_hour_entries_are_uncertain_with_both_readings)"
+   ],
+   "seconds": 37.1
+  },
+  {
+   "id": "T2d-window-edge-uncertainty-dropped",
+   "class": "an ambiguous or nonexistent time resolved silently",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "possible and not entry.certain_in(args[\"start_ms\"], args[\"end_ms\"])))",
+     "False))"
+    ]
+   ],
+   "log_path": "mutation-logs/T2d-window-edge-uncertainty-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_uncertain_entry_at_a_window_edge_makes_the_read_partial (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_uncertain_entry_at_a_window_edge_makes_the_read_partial)"
+   ],
+   "seconds": 37.2
+  },
+  {
+   "id": "T3a-unknown-zone-falls-back-to-utc",
+   "class": "time-zone fallback to UTC",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/timebasis.py",
+     "        raise TimeZoneUnavailable(\"time_zone_unknown\") from None",
+     "        return Zone(UTC_NAME, timezone.utc)"
+    ]
+   ],
+   "log_path": "mutation-logs/T3a-unknown-zone-falls-back-to-utc.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_time_zone_read_failure_is_partial_with_no_request (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_time_zone_read_failure_is_partial_with_no_request)"
+   ],
+   "seconds": 37.1
+  },
+  {
+   "id": "T3b-missing-zone-falls-back-to-utc",
+   "class": "time-zone fallback to UTC",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/timebasis.py",
+     "        raise TimeZoneUnavailable(\"time_zone_invalid\")",
+     "        return Zone(UTC_NAME, timezone.utc)"
+    ]
+   ],
+   "log_path": "mutation-logs/T3b-missing-zone-falls-back-to-utc.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_time_zone_lost_mid_continuation_fails_the_source (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_time_zone_lost_mid_continuation_fails_the_source)"
+   ],
+   "seconds": 37.2
+  },
+  {
+   "id": "T3c-service-zone-failure-reads-utc",
+   "class": "time-zone fallback to UTC",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            args[\"zone\"] = None\n",
+     "            args[\"zone\"] = load_zone(\"UTC\")\n"
+    ]
+   ],
+   "log_path": "mutation-logs/T3c-service-zone-failure-reads-utc.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_time_zone_lost_mid_continuation_fails_the_source (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_time_zone_lost_mid_continuation_fails_the_source)"
+   ],
+   "seconds": 37.6
+  },
+  {
+   "id": "T4a-rendering-mismatch-accepted",
+   "class": "realtime calibration bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/timebasis.py",
+     "        if not surviving:\n            raise TimeBasisMismatch(\"timestamp_basis_mismatch\")",
+     "        if not surviving:\n            surviving = (zone,)"
+    ]
+   ],
+   "log_path": "mutation-logs/T4a-rendering-mismatch-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_supervisor_zone_differs_from_the_addon_zone_fails_closed (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_supervisor_zone_differs_from_the_addon_zone_fails_closed)"
+   ],
+   "seconds": 37.2
+  },
+  {
+   "id": "T4b-unverified-page-reported-complete",
+   "class": "realtime calibration bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                    reasons.append(f\"timestamp_basis_unverified:{row['source']}\")",
+     "                    pass"
+    ]
+   ],
+   "log_path": "mutation-logs/T4b-unverified-page-reported-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_spring_forward_nonexistent_time_without_realtime (test_hamcp220_incident_log_timestamps.TimeBasisServiceTests.test_spring_forward_nonexistent_time_without_realtime)"
+   ],
+   "seconds": 37.9
+  },
+  {
+   "id": "W1-incident-end-inclusive",
+   "class": "window-edge off-by-one",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            if entry.ts_ms >= args[\"end_ms\"]:",
+     "            if entry.ts_ms > args[\"end_ms\"]:"
+    ]
+   ],
+   "log_path": "mutation-logs/W1-incident-end-inclusive.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_window_edges_start_inclusive_end_exclusive (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_window_edges_start_inclusive_end_exclusive)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "W2-incident-start-exclusive",
+   "class": "window-edge off-by-one",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/journal.py",
+     "        return any(start_ms <= value < end_ms for value in self.readings)",
+     "        return any(start_ms < value < end_ms for value in self.readings)"
+    ]
+   ],
+   "log_path": "mutation-logs/W2-incident-start-exclusive.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "W3-locate-head-at-start-not-retention-edge",
+   "class": "window-edge off-by-one",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "        if head.latest >= start:",
+     "        if head.latest > start:"
+    ]
+   ],
+   "log_path": "mutation-logs/W3-locate-head-at-start-not-retention-edge.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "W4-locate-tail-at-start-treated-after-tail",
+   "class": "window-edge off-by-one",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "        if scan.tail_entry.latest_ms < start:",
+     "        if scan.tail_entry.latest_ms <= start:"
+    ]
+   ],
+   "log_path": "mutation-logs/W4-locate-tail-at-start-treated-after-tail.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_long_message_truncation_keeps_markers_whole (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_long_message_truncation_keeps_markers_whole)"
+   ],
+   "seconds": 3.3
+  },
+  {
+   "id": "W5-locate-tail-page-start-edge",
+   "class": "window-edge off-by-one",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "        if first.latest_ms < start:",
+     "        if first.latest_ms <= start:"
+    ]
+   ],
+   "log_path": "mutation-logs/W5-locate-tail-page-start-edge.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_tail_entry_exactly_at_start_is_not_consumed (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_tail_entry_exactly_at_start_is_not_consumed)"
+   ],
+   "seconds": 5.2
+  },
+  {
+   "id": "W6-history-state-at-slice-start-pre-slice",
+   "class": "window-edge off-by-one",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "            if ts_us < start_us:\n                if position.checked:",
+     "            if ts_us <= start_us:\n                if position.checked:"
+    ]
+   ],
+   "log_path": "mutation-logs/W6-history-state-at-slice-start-pre-slice.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_change_to_history_returned_on_any_earlier_page_is_stale (test_hamcp131_history_slices.HistorySliceTests.test_a_change_to_history_returned_on_any_earlier_page_is_stale)"
+   ],
+   "seconds": 15.6
+  },
+  {
+   "id": "W7-history-overlap-millisecond-lost",
+   "class": "window-edge off-by-one",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "c.format_us(lower - c.OVERLAP_US)",
+     "c.format_us(lower)"
+    ]
+   ],
+   "log_path": "mutation-logs/W7-history-overlap-millisecond-lost.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_admitted_reader_sends_only_the_fixed_argument_shape (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_admitted_reader_sends_only_the_fixed_argument_shape)"
+   ],
+   "seconds": 9.1
+  },
+  {
+   "id": "W8-history-slice-end-inclusive",
+   "class": "window-edge off-by-one",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/contracts.py",
+     "return lower, min(end_us, lower + SLICE_SECONDS * 1_000_000)",
+     "return lower, min(end_us, lower + SLICE_SECONDS * 1_000_000) + 1"
+    ]
+   ],
+   "log_path": "mutation-logs/W8-history-slice-end-inclusive.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_change_to_history_returned_on_any_earlier_page_is_stale (test_hamcp131_history_slices.HistorySliceTests.test_a_change_to_history_returned_on_any_earlier_page_is_stale)"
+   ],
+   "seconds": 15.2
+  },
+  {
+   "id": "C1-consumed-anchor-returned-again",
+   "class": "cursor skip or duplicate",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "start_index = 0 if not anchor.consumed and first_page else 1",
+     "start_index = 0 if first_page else 1"
+    ]
+   ],
+   "log_path": "mutation-logs/C1-consumed-anchor-returned-again.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "C2-resume-repeats-last-returned-entry",
+   "class": "cursor skip or duplicate",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "\"lv\": views[scan.position][count - 1][\"level\"],\n                                            \"r\": 1}",
+     "\"lv\": views[scan.position][count - 1][\"level\"],\n                                            \"r\": 0}"
+    ]
+   ],
+   "log_path": "mutation-logs/C2-resume-repeats-last-returned-entry.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "C3-resume-skips-next-entry",
+   "class": "cursor skip or duplicate",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            consumed[position] = index + 1\n",
+     "            consumed[position] = min(index + 2, len(scan.items))\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C3-resume-skips-next-entry.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "C4-resume-cursor-points-past-entry",
+   "class": "cursor skip or duplicate",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "{\"c\": item.cursor, \"k\": item.index, \"d\": item.digest,",
+     "{\"c\": item.cursor, \"k\": item.index + 1, \"d\": item.digest,"
+    ]
+   ],
+   "log_path": "mutation-logs/C4-resume-cursor-points-past-entry.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "C5-history-overlap-state-repeated",
+   "class": "cursor skip or duplicate",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "            states = states[1:]\n",
+     "            states = states[0:]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C5-history-overlap-state-repeated.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_change_two_pages_back_is_stale_through_the_gateway (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_change_two_pages_back_is_stale_through_the_gateway)"
+   ],
+   "seconds": 11.4
+  },
+  {
+   "id": "C6-history-offset-skips-a-state",
+   "class": "cursor skip or duplicate",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "request_offset = position.o - overlap\n",
+     "request_offset = position.o - overlap + 1\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C6-history-offset-skips-a-state.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_admitted_reader_sends_only_the_fixed_argument_shape (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_admitted_reader_sends_only_the_fixed_argument_shape)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "C7-history-cut-page-resumes-after-dropped-states",
+   "class": "cursor skip or duplicate",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "next_position = kept[-1][3] if cut else position",
+     "next_position = position"
+    ]
+   ],
+   "log_path": "mutation-logs/C7-history-cut-page-resumes-after-dropped-states.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp (test_hamcp131_history_slices.HistorySliceTests.test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp)"
+   ],
+   "seconds": 14.9
+  },
+  {
+   "id": "C8-history-slice-start-check-skipped",
+   "class": "cursor skip or duplicate",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "            if before != position.x:\n                raise Discontinuity",
+     "            if False:\n                raise Discontinuity"
+    ]
+   ],
+   "log_path": "mutation-logs/C8-history-slice-start-check-skipped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_break_after_the_first_check_is_partial_without_a_cursor (test_hamcp131_history_slices.HistorySliceTests.test_break_after_the_first_check_is_partial_without_a_cursor)"
+   ],
+   "seconds": 15.6
+  },
+  {
+   "id": "U1-unavailable-source-rows-dropped",
+   "class": "an unavailable source silently omitted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            for key in args[\"sources\"]:\n                reason = c.unavailable_reason(key)",
+     "            for key in ():\n                reason = c.unavailable_reason(key)"
+    ]
+   ],
+   "log_path": "mutation-logs/U1-unavailable-source-rows-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_only_unauthorized_sources_report_authority_not_granted_per_source (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_only_unauthorized_sources_report_authority_not_granted_per_source)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "U2-unavailable-source-omission-dropped",
+   "class": "an unavailable source silently omitted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                if row[\"status\"] != \"complete\":",
+     "                if row[\"status\"] not in (\"complete\", \"unavailable\"):"
+    ]
+   ],
+   "log_path": "mutation-logs/U2-unavailable-source-omission-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_only_unauthorized_sources_report_authority_not_granted_per_source (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_only_unauthorized_sources_report_authority_not_granted_per_source)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "U3-failed-source-row-dropped",
+   "class": "an unavailable source silently omitted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                source_rows.append(self._source_row(scan, consumed, skipped, outside, emitted, edge))",
+     "                if scan.failure is None:\n                    source_rows.append(self._source_row(scan, consumed, skipped, outside, emitted, edge))"
+    ]
+   ],
+   "log_path": "mutation-logs/U3-failed-source-row-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_http_refusals_are_reported_per_source (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_http_refusals_are_reported_per_source)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "U4-source-gap-omission-dropped",
+   "class": "an unavailable source silently omitted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                for gap in row.get(\"gaps\", ()):\n                    reasons.append(",
+     "                for gap in ():\n                    reasons.append("
+    ]
+   ],
+   "log_path": "mutation-logs/U4-source-gap-omission-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_retention_edge_and_empty_and_after_tail (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_retention_edge_and_empty_and_after_tail)"
+   ],
+   "seconds": 4.7
+  },
+  {
+   "id": "U5-history-failure-omission-dropped",
+   "class": "an unavailable source silently omitted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "            if scan.failure:\n                reasons.append(scan.failure)",
+     "            if False:\n                reasons.append(scan.failure)"
+    ]
+   ],
+   "log_path": "mutation-logs/U5-history-failure-omission-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_break_after_the_first_check_is_partial_without_a_cursor (test_hamcp131_history_slices.HistorySliceTests.test_break_after_the_first_check_is_partial_without_a_cursor)"
+   ],
+   "seconds": 15.7
+  },
+  {
+   "id": "Z1-incident-entries-sanitized-before-merge",
+   "class": "sanitizing before merge instead of at the single exit",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                entries_out.append(row)\n",
+     "                entries_out.append(sanitize_untrusted_data(row, known_secrets=self.known_secrets, registry=registry).value)\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            result = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets, registry=registry)\n",
+     "            result = type(\"R\", (), {\"value\": envelope, \"failed_closed\": False, \"redacted_field_count\": 0})\n"
+    ]
+   ],
+   "log_path": "mutation-logs/Z1-incident-entries-sanitized-before-merge.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "Z2-history-states-sanitized-before-merge",
+   "class": "sanitizing before merge instead of at the single exit",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "                scan.emitted.append((ts_us, state, position.k, position.copy()))",
+     "                scan.emitted.append((ts_us, sanitize_untrusted_data(state, known_secrets=self.known_secrets).value, position.k, position.copy()))"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "            result = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets, registry=registry)\n",
+     "            result = type(\"R\", (), {\"value\": envelope, \"failed_closed\": False, \"redacted_field_count\": 0})\n"
+    ]
+   ],
+   "log_path": "mutation-logs/Z2-history-states-sanitized-before-merge.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_history_slices.HistorySliceTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
+   ],
+   "seconds": 14.9
+  },
+  {
+   "id": "Z3-incident-exit-known-secrets-dropped",
+   "class": "sanitizing before merge instead of at the single exit",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            result = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets, registry=registry)\n",
+     "            result = sanitize_untrusted_data(envelope, known_secrets=(), registry=registry)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/Z3-incident-exit-known-secrets-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "Z4-history-exit-known-secrets-dropped",
+   "class": "sanitizing before merge instead of at the single exit",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "            result = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets, registry=registry)\n",
+     "            result = sanitize_untrusted_data(envelope, known_secrets=(), registry=registry)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/Z4-history-exit-known-secrets-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_history_slices.HistorySliceTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
+   ],
+   "seconds": 15.8
+  },
+  {
+   "id": "Z5-incident-redaction-leaves-result-complete",
+   "class": "sanitizing before merge instead of at the single exit",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            if result.redacted_field_count and \"redacted_by_policy\" not in omissions:",
+     "            if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/Z5-incident-redaction-leaves-result-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "Z6-incident-line-sanitizer-known-secrets-dropped",
+   "class": "sanitizing before merge instead of at the single exit",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "sanitize_log_lines(lines, known_secrets=self.known_secrets)",
+     "sanitize_log_lines(lines, known_secrets=())"
+    ]
+   ],
+   "log_path": "mutation-logs/Z6-incident-line-sanitizer-known-secrets-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_planted_secrets_never_reach_any_output_field (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_planted_secrets_never_reach_any_output_field)"
+   ],
+   "seconds": 4.0
+  },
+  {
+   "id": "S1-slug-guard-removed",
+   "class": "a slug passed as a raw path",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/contracts.py",
+     "        path_segment(slug, field=\"sources\")\n",
+     "        pass\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/contracts.py",
+     "    if slug != \"self\" and not _SLUG.fullmatch(slug):",
+     "    if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/S1-slug-guard-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_slug_traversal_is_refused_with_zero_requests (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_slug_traversal_is_refused_with_zero_requests)"
+   ],
+   "seconds": 4.9
+  },
+  {
+   "id": "S2-slug-interpolated-into-template",
+   "class": "a slug passed as a raw path",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/transport.py",
+     "    if source_key == c.SOURCE_SELF:\n        return rest_path(\"/addons/self/logs\", query=QUERY)",
+     "    if source_key.startswith(\"addon:\"):\n        return rest_path(f\"/addons/{source_key[6:]}/logs\", query=QUERY)"
+    ]
+   ],
+   "log_path": "mutation-logs/S2-slug-interpolated-into-template.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_read_only_static_surface (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_read_only_static_surface)"
+   ],
+   "seconds": 4.4
+  },
+  {
+   "id": "S3-slug-as-plain-string-path",
+   "class": "a slug passed as a raw path",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/transport.py",
+     "        return rest_path(\"/addons/self/logs\", query=QUERY)",
+     "        return \"/addons/\" + source_key[6:] + \"/logs\""
+    ]
+   ],
+   "log_path": "mutation-logs/S3-slug-as-plain-string-path.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "A1-other-addon-treated-readable",
+   "class": "static authority table",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/contracts.py",
+     "    if source_key in READABLE_ROUTES:\n        return None",
+     "    if source_key in READABLE_ROUTES or source_key.startswith(\"addon:\"):\n        return None"
+    ]
+   ],
+   "log_path": "mutation-logs/A1-other-addon-treated-readable.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_only_unauthorized_sources_report_authority_not_granted_per_source (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_only_unauthorized_sources_report_authority_not_granted_per_source)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "R1a-history-in-slice-range-anchor-only",
+   "class": "anchor-only continuation staleness",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "        if position.o > 0:\n            ranges.append((position.k, position.f, position.o, None, position.h))\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/R1a-history-in-slice-range-anchor-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_balanced_insert_and_delete_inside_the_previous_page_is_stale (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_balanced_insert_and_delete_inside_the_previous_page_is_stale)"
+   ],
+   "seconds": 9.8
+  },
+  {
+   "id": "R1b-history-finished-slices-not-reverified",
+   "class": "anchor-only continuation staleness",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "        ranges = [(index, offset_from, total, total, chained) for index, offset_from, total, chained in position.g]\n",
+     "        ranges = []\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R1b-history-finished-slices-not-reverified.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_admitted_reader_sends_only_the_fixed_argument_shape (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_admitted_reader_sends_only_the_fixed_argument_shape)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "R5-history-only-previous-page-reverified",
+   "class": "continuity evidence kept for the previous page only",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "                raise Discontinuity\n        return None\n",
+     "                raise Discontinuity\n        position.g = ()\n        if position.o > 0:\n            position.f, position.h = position.o - 1, self._chain(None, position.a)\n        return None\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "            or position[\"f\"] != 0\n",
+     "            or not 0 <= position[\"f\"] <= max(0, position[\"o\"] - 1)\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "        if type(ranges) is not list or len(ranges) != current:\n",
+     "        if type(ranges) is not list or len(ranges) > current:\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "or row[0] != index or row[1] != 0 or not 0 <= row[2] <= 1_000_000",
+     "or not 0 <= row[0] < current or not 0 <= row[1] <= row[2] <= 1_000_000"
+    ]
+   ],
+   "log_path": "mutation-logs/R5-history-only-previous-page-reverified.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_change_two_pages_back_is_stale_through_the_gateway (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_change_two_pages_back_is_stale_through_the_gateway)"
+   ],
+   "seconds": 11.5
+  },
+  {
+   "id": "R6-history-cursor-past-the-verification-bound",
+   "class": "a cursor past the verification bound",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "            capped = has_more and verification_calls(next_position) > c.MAX_VERIFY_CALLS\n",
+     "            capped = False\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R6-history-cursor-past-the-verification-bound.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_continuation_past_the_verification_bound_issues_no_cursor (test_hamcp131_history_slices.HistorySliceTests.test_a_continuation_past_the_verification_bound_issues_no_cursor)"
+   ],
+   "seconds": 15.6
+  },
+  {
+   "id": "R2a-deferred-source-merge-bound-dropped",
+   "class": "a merged page emitting an earlier entry",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "        bounds += [args[\"start_ms\"] - 1 for scan in scans if scan.deferred]\n",
+     "        bounds += []\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R2a-deferred-source-merge-bound-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_deferral_guard_holds_the_merge_on_its_own (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_each_deferral_guard_holds_the_merge_on_its_own)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "R2c-deferred-source-fill-guard-dropped",
+   "class": "a merged page emitting an earlier entry",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            if not open_scans or any(scan.deferred for scan in scans):\n",
+     "            if not open_scans:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R2c-deferred-source-fill-guard-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_each_deferral_guard_holds_the_merge_on_its_own (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_each_deferral_guard_holds_the_merge_on_its_own)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "R2b-cutoff-only-holds-open-sources",
+   "class": "a merged page emitting an earlier entry",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            if cutoff is not None and ts > cutoff:\n                break\n",
+     "            if cutoff is not None and self._open(scan) and ts > cutoff:\n                heapq.heappop(heap)\n                continue\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R2b-cutoff-only-holds-open-sources.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogLocalRenderTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "R3-inclusive-bound-always-claimed",
+   "class": "an inclusive boundary claimed complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "\"inclusive\": lookahead is not None and lookahead > last}",
+     "\"inclusive\": True}"
+    ]
+   ],
+   "log_path": "mutation-logs/R3-inclusive-bound-always-claimed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp (test_hamcp131_history_slices.HistorySliceTests.test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp)"
+   ],
+   "seconds": 14.8
+  },
+  {
+   "id": "R4-min-level-type-check-removed",
+   "class": "min_level type errors escaping",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/contracts.py",
+     "(type(min_level) is not str or min_level not in LEVEL_RANK)",
+     "min_level not in LEVEL_RANK"
+    ]
+   ],
+   "log_path": "mutation-logs/R4-min-level-type-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_wrong_typed_filters_are_bounded_audited_refusals (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_wrong_typed_filters_are_bounded_audited_refusals)"
+   ],
+   "seconds": 2.3
+  }
+ ]
+}
