@@ -44,6 +44,14 @@ OVERLAP_US = 1000
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 100
 MAX_UPSTREAM_CALLS = 12
+# A continued page re-reads every finished-slice range the previous page
+# returned states from, one call each (review M1). A page touches at most
+# MAX_UPSTREAM_CALLS slices, so this budget always suffices.
+MAX_VERIFY_CALLS = MAX_UPSTREAM_CALLS
+# Entries before a slice start: the recorder's start state plus rows inside
+# the 1 ms overlap. More is not the pinned shape; the bound keeps every
+# verification range within one bounded request.
+MAX_ENTRIES_BEFORE_SLICE = 100
 MAX_CURSOR_CHARS = 4096
 MAX_STATE_CHARS = 255
 RESPONSE_BUDGET = 44_000

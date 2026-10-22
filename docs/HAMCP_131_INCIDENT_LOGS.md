@@ -187,8 +187,22 @@ one absolute-bounded request `[S − 1 ms, E)`. The 1 ms overlap places a row
 exactly at a slice boundary inside one request. Requests are ascending, minimal
 and offset-paged. Continuity checks:
 
-- A continued page re-reads the state just before its offset and compares a
-  keyed digest of (timestamp, state).
+- The cursor binds a keyed chained digest of every offset range the previous
+  page consumed: its range in the current slice (from the state before the
+  page's first offset), and each finished slice the page returned states
+  from, with that slice's total (review M1). A continued page re-reads the
+  current-slice range in its first request and each finished-slice range in
+  one verification call (at most 12, reported as `verification_calls`). Any
+  difference, including an in-place change or a balanced insert and delete
+  that keeps every offset and the last state, fails as stale. History
+  returned two or more pages back is checked only through offset, overlap
+  and slice-start continuity.
+- Reads after the first in the same page overlap by one state and compare
+  its keyed digest of (timestamp, state).
+- More than 100 entries before a slice start (the start state plus rows in
+  the 1 ms overlap) is not the pinned shape and fails as
+  `representation_invalid`; the bound keeps every verification range inside
+  one bounded request.
 - A new slice requires the state prevailing before its start to equal the last
   state already read.
 - The signed cursor binds the query fingerprint, the fixed end, the provider
@@ -199,9 +213,9 @@ Outcomes:
 
 | Event | Result |
 |---|---|
-| The first check of a continued call fails | `STALE_CURSOR`, reason `history_continuity_broken` |
+| A verification range or the first check of a continued call differs | `STALE_CURSOR`, reason `history_continuity_broken` |
 | A later check in the same call fails | `partial`, omission `continuity_broken`, no cursor |
-| Upstream failure | `partial` with a resumable cursor |
+| Upstream failure, including a verification read | `partial` with a resumable cursor |
 | Response byte ceiling | the page shrinks, then resumes after the last kept state |
 
 ### Secrets risk per source
@@ -285,11 +299,12 @@ Output:
   page that ends inside a tie, a byte cut, or an unknown next state), the
   bound is exclusive and the cursor offset is the tie-break (review M3);
 - `omissions`, `truncated`, `has_more`, `next_cursor`, `complete`;
-- `upstream_calls` and `provider` (upstream tool and version, route
+- `upstream_calls` (verification calls included), `verification_calls` and
+  `provider` (upstream tool and version, route
   `upstream_read_gateway`, fallback `none`);
 - `bounds` and `limitations`.
 
-Each call makes at most 12 upstream calls.
+Each call makes at most 12 slice reads plus at most 12 verification reads.
 
 ### Shared architecture
 
