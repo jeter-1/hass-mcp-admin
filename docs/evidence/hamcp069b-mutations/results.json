@@ -1,0 +1,296 @@
+{
+  "source_commit": "1f88859 (worktree copy; runtime unchanged since)",
+  "modules": [
+    "tests.test_hamcp069b_entity_availability_exposure_execution",
+    "tests.test_hamcp069b_entity_availability_exposure_admission"
+  ],
+  "baseline_tests": 71,
+  "mutants": 15,
+  "killed": 15,
+  "results": [
+    {
+      "name": "baseline",
+      "exit": 0,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "OK"
+      ],
+      "import_error": false,
+      "failing": [],
+      "killed": true
+    },
+    {
+      "name": "skip_readback",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=3)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_any_other_exposure_side_effect_is_a_mismatch",
+        "test_empty_expose_response_is_not_proof",
+        "test_readback_mismatch_is_terminal_and_never_redispatched"
+      ],
+      "killed": true
+    },
+    {
+      "name": "tolerate_any_new_exposure_key",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_any_other_exposure_side_effect_is_a_mismatch"
+      ],
+      "killed": true
+    },
+    {
+      "name": "drop_protected_floor",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_enable_exposed_protected_object",
+        "test_expose_protected_object"
+      ],
+      "killed": true
+    },
+    {
+      "name": "drop_safety_sensor_protection",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_disable_safety_sensor",
+        "test_protected_object_relabelled_standard_is_prohibited"
+      ],
+      "killed": true
+    },
+    {
+      "name": "drop_feeds_protected_automation",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_disable_feeding_a_safety_critical_automation"
+      ],
+      "killed": true
+    },
+    {
+      "name": "planner_never_elevated",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=6, errors=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_disable_classless_cover_is_protected",
+        "test_disable_feeding_a_safety_critical_automation",
+        "test_disable_safety_sensor",
+        "test_disable_with_unresolved_dependency_evidence_is_elevated",
+        "test_enable_exposed_protected_object",
+        "test_expose_protected_object",
+        "test_standard_approval_alone_cannot_apply_an_elevated_plan"
+      ],
+      "killed": true
+    },
+    {
+      "name": "ignore_stale_state",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=1, errors=36)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_any_other_exposure_side_effect_is_a_mismatch",
+        "test_changed_config_entry_evidence_is_rejected",
+        "test_changed_dependency_evidence_is_rejected",
+        "test_disable_classless_cover_is_protected",
+        "test_disable_feeding_a_safety_critical_automation",
+        "test_disable_is_standard_and_verified_by_registry_readback",
+        "test_disable_safety_sensor",
+        "test_disable_with_unresolved_dependency_evidence_is_elevated",
+        "test_each_child_binds_its_entity_and_selected_profile",
+        "test_eight_entities_apply_in_order",
+        "test_empty_expose_response_is_not_proof",
+        "test_enable_binds_one_config_entry_and_discloses_the_reload",
+        "test_enable_exposed_protected_object",
+        "test_enable_rolls_back_as_a_disable_plan",
+        "test_error_result_is_settled_by_readback",
+        "test_every_flow_uses_only_the_closed_vocabulary",
+        "test_expose_and_unexpose_each_writable_assistant",
+        "test_expose_protected_object",
+        "test_exposure_with_a_stored_prior_is_restored",
+        "test_external_disabled_by_change_is_stale",
+        "test_failed_or_unapplied_forward_is_refused",
+        "test_integration_disabled_entity_can_be_enabled",
+        "test_later_edit_refuses_rollback",
+        "test_new_alexa_key_is_tolerated_and_reported",
+        "test_other_assistant_exposure_change_is_stale",
+        "test_partial_forward_reverses_only_verified_children",
+        "test_readback_mismatch_is_terminal_and_never_redispatched",
+        "test_stop_on_first_failure",
+        "test_tolerated_alexa_key_does_not_block_rollback",
+        "test_unauthorized_dispatch_is_confirmed_not_applied",
+        "test_unrelated_registry_field_change_is_stale",
+        "test_unset_prior_preference_is_not_restorable"
+      ],
+      "killed": true,
+      "note": "Killed only indirectly: a constant strategy fingerprint is rejected at plan creation (\"current-state fingerprint is inconsistent\"). Superseded by skip_stale_check_at_preflight, which reaches the preflight stale check."
+    },
+    {
+      "name": "wrong_assistant_in_command",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_every_flow_uses_only_the_closed_vocabulary",
+        "test_expose_and_unexpose_each_writable_assistant"
+      ],
+      "killed": true
+    },
+    {
+      "name": "planner_allows_multiple_config_entries",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_enable_spanning_config_entries_is_refused"
+      ],
+      "killed": true
+    },
+    {
+      "name": "policy_allows_multiple_config_entries",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_plan_shape_rules"
+      ],
+      "killed": true
+    },
+    {
+      "name": "accept_unregistered_entity",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_unregistered_entity_is_refused"
+      ],
+      "killed": true
+    },
+    {
+      "name": "allow_alexa",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_alexa_is_refused_before_any_read"
+      ],
+      "killed": true
+    },
+    {
+      "name": "cap_8_to_9",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_eight_is_the_cap"
+      ],
+      "killed": true
+    },
+    {
+      "name": "drop_send_allowlist",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=18)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_gateway_refuses_every_never_sent_command_before_io",
+        "test_gateway_refuses_never_sent_and_unknown_commands_before_io"
+      ],
+      "killed": true
+    },
+    {
+      "name": "skip_stale_check_at_preflight",
+      "exit": 1,
+      "tests": [
+        "71"
+      ],
+      "result": [
+        "FAILED (failures=3)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_external_disabled_by_change_is_stale",
+        "test_other_assistant_exposure_change_is_stale",
+        "test_unrelated_registry_field_change_is_stale"
+      ],
+      "killed": true
+    }
+  ]
+}

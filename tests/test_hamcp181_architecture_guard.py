@@ -82,6 +82,9 @@ EXPECTED_CONSUMERS = {
         "F3RuntimeIntegration.decorate_task",
         "F3RuntimeIntegration._dispatch_outcome_counts",
         "_setter_call_not_sent_recorded",
+        # HAMCP-069B: reads only the static ALREADY_PRESENT_CAPABILITY_IDENTITIES
+        # constant (the V9 identity set), never a projected dispatch fact.
+        "F3RuntimeIntegration._entity_metadata_not_dispatched",
     },
     "governance/service.py": {
         "ChangeGovernanceService._build_health_summary",
