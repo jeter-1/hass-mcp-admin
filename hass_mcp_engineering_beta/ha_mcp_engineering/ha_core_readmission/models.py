@@ -65,6 +65,8 @@ class CoreCapabilityClass(str, Enum):
     GOVERNED_CONFIGURATION_OPERATION = "governed_configuration_operation"
     GOVERNANCE_OBSERVABILITY = "governance_observability"
     ENTITY_REGISTRY_METADATA_OPERATION = "entity_registry_metadata_operation"
+    ENTITY_REGISTRY_AVAILABILITY_OPERATION = "entity_registry_availability_operation"
+    ENTITY_ASSISTANT_EXPOSURE_OPERATION = "entity_assistant_exposure_operation"
     UNCLASSIFIED = "unclassified"
 
     @property
@@ -75,6 +77,8 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.F3_MUTATION_VERIFICATION,
             CoreCapabilityClass.GOVERNED_CONFIGURATION_OPERATION,
             CoreCapabilityClass.ENTITY_REGISTRY_METADATA_OPERATION,
+            CoreCapabilityClass.ENTITY_REGISTRY_AVAILABILITY_OPERATION,
+            CoreCapabilityClass.ENTITY_ASSISTANT_EXPOSURE_OPERATION,
             CoreCapabilityClass.UNCLASSIFIED,
         }
 
@@ -94,6 +98,8 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.F3_MUTATION_VERIFICATION,
             CoreCapabilityClass.GOVERNED_CONFIGURATION_OPERATION,
             CoreCapabilityClass.ENTITY_REGISTRY_METADATA_OPERATION,
+            CoreCapabilityClass.ENTITY_REGISTRY_AVAILABILITY_OPERATION,
+            CoreCapabilityClass.ENTITY_ASSISTANT_EXPOSURE_OPERATION,
         }
 
 

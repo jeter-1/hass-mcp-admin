@@ -30,6 +30,8 @@ from .ha_core_readmission.routes import (
     CORE_ROUTE_DELEGATED,
     CORE_ROUTE_UNMAPPED,
     StaticCoreRoute,
+    AVAILABILITY_EXPOSURE_OPERATIONS,
+    AVAILABILITY_EXPOSURE_TOOL,
     StaticToolTargetRefused,
     static_tool_core_route,
     static_tool_target,
@@ -384,6 +386,29 @@ class AuthenticatedMcpGateway:
         await send({"type": "http.response.body", "body": body})
 
     @classmethod
+    def _pending_admission_details(self, tool_name, parameters) -> dict:
+        """Name a 069B profile that no owner-signed registry admits yet.
+
+        Only the selected profile's own admission state is reported; any other
+        Core unavailability keeps the generic refusal with empty details.
+        """
+
+        if tool_name != AVAILABILITY_EXPOSURE_TOOL or self._core_runtime is None:
+            return {}
+        selected = AVAILABILITY_EXPOSURE_OPERATIONS.get(parameters.get("operation"))
+        if selected is None:
+            return {}
+        if self._core_runtime.route_status((selected[1],))["available"]:
+            return {}
+        return {
+            "reason": "pending_signed_registry_admission",
+            "reason_code": "pending_signed_registry_admission",
+            "resource_type": selected[0],
+            "core_capability": selected[1],
+            "plan_created": False,
+            "provider_dispatch_occurred": False,
+        }
+
     async def _respond_mcp_tool_result(
         cls,
         send,
@@ -984,6 +1009,9 @@ class AuthenticatedMcpGateway:
                         error="CoreCapabilityUnavailable",
                         error_code=telemetry.error_code,
                         message=definition.message,
+                        details=self._pending_admission_details(
+                            tool_name, parameters
+                        ),
                         retryable=definition.retryable,
                         timing=Timing(
                             total_ms=telemetry.total_duration_ms

@@ -63,6 +63,18 @@ class ExistingConfigurationGatewayBridge:
             target_id, current, proposed
         )
 
+    async def availability_exposure_preflight_evidence(
+        self,
+        target_id: str,
+        current: dict[str, Any],
+        proposed: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Recheck a 069B child's bound config-entry and consumer evidence."""
+
+        return await self._gateway.availability_exposure_preflight_evidence(
+            target_id, current, proposed
+        )
+
     async def write(
         self,
         action: str,

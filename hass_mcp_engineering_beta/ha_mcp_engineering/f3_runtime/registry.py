@@ -52,6 +52,23 @@ ENTITY_METADATA_REGISTRATION = (
     "update",
 )
 
+# HAMCP-069B: two further code-owned direct registry writes, each admitted
+# only by its own dormant Core profile.
+AVAILABILITY_EXPOSURE_REGISTRATIONS = (
+    (
+        "update_entity_registry_availability_configuration",
+        "entity_registry_availability",
+        "update",
+        "direct-ha-exact-entity-registry-availability-v1",
+    ),
+    (
+        "update_entity_assistant_exposure_configuration",
+        "entity_assistant_exposure",
+        "update",
+        "direct-ha-exact-assistant-exposure-v1",
+    ),
+)
+
 OPERATIONAL_REGISTRATIONS = (
     ("create_full_home_assistant_backup", "create_full_backup", "backup"),
     (
@@ -151,6 +168,32 @@ class ClosedAdapterRegistry:
         entries.extend(
             AdapterRegistration(
                 capability_id=capability,
+                adapter_id="configuration_operation",
+                operation_family="configuration",
+                plan_operation="configuration_plan",
+                target_type=target,
+                action=action,
+                provider_model=provider_model,
+                resource_lock_model="f3-configuration-lock-set-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="exact_registry_readback",
+                recovery_model="exact_configuration_readback",
+                rollback_declaration="governed_reverse_update_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+            for capability, target, action, provider_model in (
+                AVAILABILITY_EXPOSURE_REGISTRATIONS
+            )
+        )
+        entries.extend(
+            AdapterRegistration(
+                capability_id=capability,
                 adapter_id="operational_administration",
                 operation_family="operational_administration",
                 plan_operation=operation,
@@ -232,6 +275,7 @@ class ClosedAdapterRegistry:
                 *OPERATIONAL_REGISTRATIONS,
                 HELPER_STATE_REGISTRATION,
                 ENTITY_METADATA_REGISTRATION,
+                *AVAILABILITY_EXPOSURE_REGISTRATIONS,
                 DASHBOARD_REGISTRATION,
             )
         }
@@ -246,6 +290,7 @@ class ClosedAdapterRegistry:
             direct_helper = entry.capability_id in {
                 HELPER_STATE_REGISTRATION[0],
                 ENTITY_METADATA_REGISTRATION[0],
+                *(item[0] for item in AVAILABILITY_EXPOSURE_REGISTRATIONS),
             }
             if (
                 (
@@ -278,6 +323,7 @@ class ClosedAdapterRegistry:
                     "automation", "script", "input_boolean", "input_number",
                     "backup", "reload_domain", "addon", "home_assistant",
                     "dashboard", "entity_registry_metadata",
+                    "entity_registry_availability", "entity_assistant_exposure",
                 }
             ):
                 raise AdapterRegistryError("F3 route admission binding is invalid")

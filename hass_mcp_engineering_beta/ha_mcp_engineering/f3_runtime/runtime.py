@@ -116,6 +116,15 @@ from ..governance.entity_metadata import (
     entry_fingerprint as entity_metadata_entry_fingerprint,
 )
 from ..governance import entity_metadata_planning
+from ..governance import entity_availability_exposure_planning
+from ..governance.entity_availability_exposure import (
+    BINDINGS_KEY as AVAILABILITY_EXPOSURE_BINDINGS_KEY,
+    CAPABILITY_IDENTITIES as AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES,
+    RESOURCE_TYPES as AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
+    entry_errors as availability_exposure_entry_errors,
+    entry_fingerprint as availability_exposure_entry_fingerprint,
+    without_bindings as availability_exposure_without_bindings,
+)
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
 from ..governance.task_storage import ExecutionTaskStorageError
@@ -1044,6 +1053,13 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
+    async def availability_exposure_preflight_evidence(
+        self, target_id, current, proposed
+    ):
+        return await self.delegate.availability_exposure_preflight_evidence(
+            target_id, current, proposed
+        )
+
     async def write(self, action, resource_type, target_id, proposed_config):
         self.auditor("provider_invocation_started")
         try:
@@ -1299,7 +1315,11 @@ class F3RuntimeIntegration:
             for resource in ("automation", "script", "input_boolean", "input_number")
             for action in ("create", "update")
         }
-        # HAMCP-069A-1: entity registry metadata is update-only.
+        # HAMCP-069A-1 / 069B: entity registry writes are update-only.
+        for resource, identity in AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES.items():
+            configuration_adapters[identity] = ConfigurationOperationAdapter(
+                resource, "update", config_gateway, now=service.now
+            )
         configuration_adapters[
             ENTITY_METADATA_CAPABILITY_IDENTITY
         ] = ConfigurationOperationAdapter(
@@ -2895,7 +2915,8 @@ class F3RuntimeIntegration:
         """
 
         return bool(declarations) and all(
-            declaration["capability_id"] == ENTITY_METADATA_CAPABILITY_IDENTITY
+            declaration["capability_id"]
+            in dispatch_projection.ALREADY_PRESENT_CAPABILITY_IDENTITIES
             and record is not None
             and record.dispatch_intent is None
             and record.dispatch_count == 0

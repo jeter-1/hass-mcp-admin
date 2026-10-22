@@ -63,6 +63,8 @@ PROVIDER_OPERATIONS = {
 }
 NORMALIZATION_MODEL = "entity_availability_exposure_projection_v1"
 BINDINGS_KEY = "plan_bindings"
+# Only Alexa's handler writes a computed default as a side effect.
+TOLERATED_NEW_KEY_ASSISTANTS = ("cloud.alexa",)
 UNAUTHORIZED_REASON = "entity_availability_exposure_update_unauthorized"
 ERROR_RESULT_REASON = "entity_availability_exposure_update_error_result"
 # OD-2c (i): both resource types stay inactive until a signed Core registry
@@ -356,15 +358,15 @@ def without_bindings(entry: dict[str, Any]) -> dict[str, Any]:
 def tolerated_exposure_keys(
     approved: dict[str, Any], observed: dict[str, Any], target_assistant: str | None
 ) -> list[str]:
-    """Return non-target assistants whose absent key became present.
+    """Return the non-target Alexa key if it went from absent to present.
 
     Core's Alexa registry-update handler persists a computed default the first
-    time it evaluates an entity, so a new key on another assistant is reported
-    and tolerated; any other exposure difference is a mismatch.
+    time it evaluates an entity, so only that new key is reported and
+    tolerated; any other exposure difference is a mismatch.
     """
 
     tolerated: list[str] = []
-    for assistant in KNOWN_ASSISTANTS:
+    for assistant in TOLERATED_NEW_KEY_ASSISTANTS:
         if assistant == target_assistant:
             continue
         if (
