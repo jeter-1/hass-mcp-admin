@@ -55,6 +55,18 @@ unique ID or name treated as exact or derived), ``B-E*`` (absence or
 ``B-V*`` (a malformed source value aborting the report or passing a type
 guard).
 
+The delta review's correction batch 2 adds ``tests/test_pr294_delta_review.py``
+(the independent reviewer's suite, unchanged), its two mutants
+``DELTA-REVIEW-1`` (omission text copied without screening) and
+``DELTA-REVIEW-2`` (known secrets dropped from the withholding walk only),
+and ``B2-T*`` (a title truncated before screening, the title allowlist
+bypassed or one of its legs removed), ``B2-K*`` (case-varied known secrets
+missed), ``B2-C*`` (the confusable fold removed), ``B2-U*`` (an
+unverifiable title that leaves the report complete), ``B2-G*`` (an
+unprojected blueprint not a definition gap) and ``B2-I*`` (a malformed
+registry identity accepted, matched, confused with a legitimate absence or
+hidden from the reverse match).
+
 Usage:
     python docs/evidence/hamcp132-mutations/run_mutations.py \
         --work ~/hamcp132-work/mut --output docs/evidence/hamcp132-mutations/results.json
@@ -89,7 +101,7 @@ DPROJ, DSVC, DMATCH, DDIAG, DCON, DCRED = (f"{DEFS}/{name}.py" for name in
                                             "credentials"))
 DTOOL = f"{E}/tools/configuration_definitions.py"
 MODULES = ("test_hamcp132_recorder_settings", "test_hamcp132_unregistered_entities",
-           "test_hamcp132_configuration_definitions")
+           "test_hamcp132_configuration_definitions", "test_pr294_delta_review")
 ROW1 = "design 7: core_default only when the source is complete"
 ROW2 = "design 7: db_url withheld"
 ROW3 = "design 7: a failing source is partial with an exact reason"
@@ -117,6 +129,10 @@ B_REVERSE = "slice 2 review M1: identical ambiguity rules in both match directio
 B_PARSER = "slice 2 review M2: parser-dependent identity is never exact"
 B_EVIDENCE = "slice 2 review M3: diagnosis stays within its evidence"
 B_VALUES = "slice 2 review M4: a malformed value invalidates its item, never the report"
+B2_TEXT = "delta review H1/H2: Core free text shown only through the allowlist, screened whole first"
+B2_FOLD = "delta review H2: YAML-projected text read through the bounded confusable fold"
+B2_BLUEPRINT = "delta review M3: an unprojected blueprint is a definition gap"
+B2_IDENTITY = "delta review M4: a malformed registry identity is invalid, never matched, never absent"
 
 
 def m(identifier, item, *replacements):
@@ -365,8 +381,11 @@ MUTATIONS = [
     m("B-L6-reader-redaction-projected", B_LEAK,
       (DPROJ, '        if _reader_marker(value):', '        if False:')),
     # Since H1 the known secrets are screened twice at the exit point (the
-    # withholding walk, then the sanitizer); dropping them from only one is
-    # an equivalent mutant, so B-L7 drops them from both.
+    # withholding walk, then the sanitizer). B-L7 drops them from both.
+    # Correction (delta review): dropping them from the withholding walk only
+    # is NOT equivalent. It fails three tests and loses the case-varied
+    # known-secret protection, which the sanitizer's exact match does not
+    # give; that single-leg mutant is listed below as DELTA-REVIEW-2.
     m("B-L7-known-secrets-dropped", B_LEAK,
       (DSVC, 'sanitize_untrusted_data(envelope, known_secrets=self.known_secrets,',
        'sanitize_untrusted_data(envelope, known_secrets=(),'),
@@ -576,6 +595,52 @@ MUTATIONS = [
     m("B-V7-invalid-component-entry-classified", B_VALUES,
       (DDIAG, 'if any(item[0] == "undetermined" for item in classifications) and not any(',
        'if False and not any(')),
+    # --- Slice 2 correction batch 2: delta review of PR #294 (head cde9cd1) --
+    m("DELTA-REVIEW-1-omission-credential-bypass", B_EXIT,
+      (DCRED, '                kept[key] = walk(child)',
+       '                kept[key] = child if key == "omissions" else walk(child)')),
+    m("DELTA-REVIEW-2-known-secrets-dropped-from-withholding-only", B_LEAK,
+      (DSVC, 'credentials.withhold(envelope, self.known_secrets)', 'credentials.withhold(envelope, ())')),
+    m("B2-T1-title-truncated-before-screening", B2_TEXT,
+      (DDIAG, 'credentials.display_text(title, c.MAX_TITLE, known_secrets)',
+       'credentials.display_text(title[:c.MAX_TITLE], c.MAX_TITLE, known_secrets)')),
+    m("B2-T2-title-allowlist-bypassed", B2_TEXT,
+      (DDIAG, 'credentials.display_text(title, c.MAX_TITLE, known_secrets)',
+       '(credentials.WITHHELD_MARKER if credentials.credential_text(title, known_secrets) else title)')),
+    m("B2-T3-allowlist-length-leg-removed", B2_TEXT,
+      (DCRED, '    if (len(value) > max_length or not _PRINTABLE_ASCII', '    if (not _PRINTABLE_ASCII')),
+    m("B2-T4-allowlist-printable-ascii-leg-removed", B2_TEXT,
+      (DCRED, ' or not _PRINTABLE_ASCII.fullmatch(value)\n', '\n')),
+    m("B2-T5-allowlist-at-sign-leg-removed", B2_TEXT,
+      (DCRED, '            or "@" in value or "://" in value', '            or "://" in value')),
+    m("B2-T6-allowlist-scheme-separator-leg-removed", B2_TEXT,
+      (DCRED, ' or "://" in value or _KEY_VALUE', ' or _KEY_VALUE')),
+    m("B2-T7-allowlist-key-value-leg-removed", B2_TEXT,
+      (DCRED, ' or _KEY_VALUE.search(value) is not None):', '):')),
+    m("B2-K1-case-varied-known-secret-missed", B2_TEXT,
+      (DCRED, '        or any(secret and fold_confusables(secret.casefold()) in text for secret in known_secrets)\n',
+       '')),
+    m("B2-C1-confusable-fold-removed", B2_FOLD,
+      (DCRED, '    text = fold_confusables(text)\n', '')),
+    m("B2-U1-unverifiable-text-left-complete", B2_TEXT,
+      (DSVC, '            if credentials.contains(envelope, credentials.UNVERIFIABLE_MARKER) \\\n'
+             '                    and credentials.UNVERIFIABLE_OMISSION not in omissions:',
+       '            if False:')),
+    m("B2-G1-blueprint-not-a-gap", B2_BLUEPRINT,
+      (DSVC, '        if any(d["status"] == "blueprint_not_projected" for d in definitions):', '        if False:')),
+    m("B2-I1-malformed-identity-accepted", B2_IDENTITY,
+      (DSVC, '        if malformed:\n            identity = dict.fromkeys(identity)', '        if False:\n            identity = dict.fromkeys(identity)')),
+    m("B2-I2-malformed-identity-matched", B2_IDENTITY,
+      (DMATCH, '        if row is not None and row.get("identity") == "invalid_response":', '        if False:')),
+    m("B2-I3-null-identity-called-malformed", B2_IDENTITY,
+      (DSVC, 'malformed = any(identity[field] is not None and not valid(identity[field])',
+       'malformed = any(not valid(identity[field])')),
+    m("B2-I4-reverse-match-hides-malformed-identity", B2_IDENTITY,
+      (DMATCH, '                elif any(row.get("identity") == "invalid_response" for row in self.registry.values()):',
+       '                elif False:')),
+    m("B2-I5-invalid-identity-diagnosed", B2_IDENTITY,
+      (DDIAG, '    if registry_row is not None and registry_row.get("identity") == INVALID:\n',
+       '    if False:\n')),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)
