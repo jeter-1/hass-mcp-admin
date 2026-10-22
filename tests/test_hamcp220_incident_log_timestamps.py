@@ -775,6 +775,49 @@ class TimeBasisServiceTests(unittest.IsolatedAsyncioTestCase):
                             if e["ts"] is None))
         self.assertFalse(any(p["complete"] for p in pages))
 
+    async def test_long_fall_back_through_two_sources_drains_in_journal_order(self):
+        # Review 1 M1: both journals write through the whole repeated hour,
+        # interleaved; the budget resolves some fold entries and leaves the
+        # rest uncertain. A source's merge position is the latest reading
+        # so far, carried in the cursor: a later page starts no earlier, so
+        # every page advances and every entry is returned once.
+        await self.setup(now="2026-11-01T12:00:00.000")
+        for path in (CORE, SELF):
+            self.sim.journal(path).add(ms("2026-11-01T05:00:00.000"), core_text("older"))
+        self.add(CORE, "2026-11-01T06:01:00.000", 40, 180_000, "core")   # 06:01Z-07:58Z
+        self.add(SELF, "2026-11-01T06:02:00.000", 40, 180_000, "self")   # 06:02Z-07:59Z
+        pages = await self.read_all(sources=["core", "addon:self"], start="2026-11-01T05:30:00Z",
+                                    end="2026-11-01T11:30:00Z", limit=4)
+        for page in pages[:-1]:
+            self.assertTrue(page["entries"], page["omissions"])
+        rows = [(e["source"], e["message"].rsplit("] ", 1)[1]) for p in pages for e in p["entries"]]
+        for key, label in (("core", "core"), ("addon:self", "self")):
+            self.assertEqual([m for s, m in rows if s == key], [f"{label} {i}" for i in range(40)])
+        self.assertTrue(any(e["ts"] is None for p in pages for e in p["entries"]))
+        self.assertTrue(any(e["ts_basis"] == "journal_realtime_utc" for p in pages for e in p["entries"]))
+        self.assert_never_misordered(pages)
+        for page in pages:
+            if any(e.get("ordering_uncertain") for e in page["entries"]):
+                self.assertFalse(page["complete"])
+
+    async def test_resolution_reads_keep_a_page_for_the_other_source(self):
+        # Review 1 M1: Core is read first and its fold entries could use the
+        # rest of the call's budget; addon:self has spent its share locating
+        # its start in a long journal. One request is kept back, so
+        # addon:self reads its first page and the merge advances.
+        await self.setup(now="2026-11-01T12:00:00.000")
+        self.sim.journal(CORE).add(ms("2026-11-01T05:00:00.000"), core_text("older"))
+        self.add(CORE, "2026-11-01T06:00:00.000", 60, 30_000, "core")
+        self.add(SELF, "2026-11-01T05:20:00.000", 600, 1000, "early")
+        self.add(SELF, "2026-11-01T05:30:00.000", 3600, 500, "self")
+        page = await self.read(sources=["core", "addon:self"], start="2026-11-01T05:30:00Z",
+                               end="2026-11-01T11:30:00Z", limit=50)
+        self.assertEqual(page["requests"], c.MAX_REQUESTS_PER_CALL)
+        self.assertGreater(self.source(page, "core")["timestamp_basis"]["resolved_entries"], 0)
+        self.assertEqual([e["message"].rsplit("] ", 1)[1] for e in page["entries"]],
+                         [f"self {i}" for i in range(50)])
+        self.assertTrue(page["has_more"])
+
     async def test_ordering_uncertainty_carries_into_the_next_page(self):
         # Core's fold row cannot be resolved (no realtime) and ends page 1;
         # addon:self's 07:10Z row is resolved exactly and opens page 2. It is

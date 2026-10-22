@@ -206,7 +206,9 @@ including the protected route and registration files. This supersedes the
      never claim an order around the span either. Any such row makes the
      read partial, with `ordering_uncertain:<source>`.
      Earliest-candidate ordering is never asserted, within a page or across
-     pages.
+     pages. The running maximum is also each source's resume position in
+     the cursor (`t`), so a later page never starts a source below a point
+     it has already merged past, and every page advances.
    - "Before the window", "after the tail" and the retention edge are
      decided by the latest candidate. "End reached" is decided by the
      earliest.
@@ -280,7 +282,11 @@ The time fields are additive. The schema id stays `incident-logs-v1`, but
   - Chicago, UTC, Asia/Kolkata and Asia/Tokyo;
   - the live reproduction;
   - DST fall-back and spring-forward, both resolved and beyond the budget;
-  - a multi-page fall-back with two sources;
+  - a multi-page fall-back with two sources, and a longer one through the
+    whole repeated hour that drains every entry in journal order with
+    every page advancing;
+  - resolution reads keeping one request for the other source's first
+    page;
   - ordering uncertainty carried to the next page;
   - window edges in local time and UTC;
   - Core and `addon:self` ordering;
@@ -313,5 +319,10 @@ The time fields are additive. The schema id stays `incident-logs-v1`, but
   - Home Assistant's zone bypassed (`H1*`), including the add-on `TZ` used
     when it differs and the reviewer's widened tolerance;
   - ambiguous-span ordering asserted (`M1*`), including earliest-candidate
-    ordering across ambiguous pages;
+    ordering across ambiguous pages. Within one merge, an earliest-candidate
+    key yields the same order as the running maximum, because a source's
+    entries are taken in journal order. Across pages, the cursor then resumes
+    a source below its merge position, and the read stops advancing: pages
+    return no entries but keep a cursor. The long fall-back test fails on
+    that;
   - the HAMCP-131 set, with the fragments this change moved retargeted.

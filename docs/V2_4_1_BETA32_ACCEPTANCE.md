@@ -97,7 +97,7 @@ Preserve the following:
 No test reaches a live system. All data is synthetic, and Core is a loopback
 peer.
 
-- `tests/test_hamcp220_incident_log_timestamps.py` (52 tests). It uses text
+- `tests/test_hamcp220_incident_log_timestamps.py` (54 tests). It uses text
   from the 2026.10.3 formatter, the 2026.09.1 formatter and the offset form,
   with systemd v257.9-shaped cursors. It covers:
   - the live reproduction (Chicago);
@@ -113,7 +113,9 @@ peer.
   - DST fall-back and spring-forward, resolved exactly within the budget,
     and kept in journal order and partial beyond it;
   - the reviewer's fall-back reproduction;
-  - a multi-page fall-back with two sources;
+  - a multi-page fall-back with two sources, and one through the whole
+    repeated hour that drains every entry with every page advancing;
+  - resolution reads keeping a request for the other source's first page;
   - ordering uncertainty carried to the next page;
   - an uncertain tail resolved;
   - a disagreeing resolution read failing closed;
