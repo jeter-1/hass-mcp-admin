@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.30** adds the read-only `get_configuration_definitions`
+Engineering **2.4.1-beta.31** adds the read-only `get_configuration_definitions`
 tool (HAMCP-132 slice 2). For YAML-defined template, SQL and helper entities
 (template, sql, filter, derivative, statistics, group, integration, min_max,
 history_stats, threshold, trend, utility_meter) it reports:
@@ -12,8 +12,24 @@ history_stats, threshold, trend, utility_meter) it reports:
 It never returns the SQL `db_url`, a credential or a `!secret` name. It
 discloses `!include` and packages without following them, and lists UI-created
 entries as not readable without a flow. The `ha_mcp_tools` component is not
-used. Static tools 63, advertised catalog 91 (92 with the optional YAML
+used. Static tools 65, advertised catalog 93 (94 with the optional YAML
 reader). Read the
+[2.4.1-beta.31 release notes](docs/V2_4_1_BETA31_RELEASE_NOTES.md) and
+[2.4.1-beta.31 acceptance contract](docs/V2_4_1_BETA31_ACCEPTANCE.md).
+
+It builds on beta.30 below.
+
+Engineering **2.4.1-beta.30** adds two read-only tools (HAMCP-131).
+`get_incident_logs` reads one incident window of at most 6 hours from the Core
+journal and Engineering's own add-on journal. It merges them in time order,
+with per-source coverage, gaps, retention edges, filter skips and a signed
+cursor. Supervisor, host and other add-on logs need Supervisor role `manager`.
+They are listed as unavailable with that exact reason and zero requests; no
+role is added. `get_history_slices` reads entity history continuously, through
+the sanitized delegated `ha_get_history` route. It uses fixed 6-hour slices
+over at most 7 days and a cursor that fails closed as stale when earlier
+history changes. Static tools 64, advertised catalog 92 (93 with the optional
+YAML reader). Read the
 [2.4.1-beta.30 release notes](docs/V2_4_1_BETA30_RELEASE_NOTES.md) and
 [2.4.1-beta.30 acceptance contract](docs/V2_4_1_BETA30_ACCEPTANCE.md).
 
@@ -398,10 +414,11 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**63 static tools plus 28 delegated reads, 91 total** (92 with the optional
-reviewed YAML reader admitted; the 61st to 63rd static tools are HAMCP-132's
+**65 static tools plus 28 delegated reads, 93 total** (94 with the optional
+reviewed YAML reader admitted; the five newest static tools are HAMCP-132's
 read-only `get_recorder_settings`, `get_unregistered_entities` and
-`get_configuration_definitions`). The Core inventory represents
+`get_configuration_definitions`, and HAMCP-131's read-only `get_incident_logs`
+and `get_history_slices`). The Core inventory represents
 **22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol

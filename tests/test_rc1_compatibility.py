@@ -180,6 +180,8 @@ class RC1PublicContractTests(unittest.TestCase):
                         "get_recorder_settings",
                         "get_unregistered_entities",
                         "get_configuration_definitions",
+                        "get_incident_logs",
+                        "get_history_slices",
                         "capture_automation_baseline",
                         "get_core_log_history",
                         "reverify_configuration_task",
@@ -435,7 +437,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 63)
+        self.assertEqual(len(classifications), 65)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

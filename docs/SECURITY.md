@@ -613,7 +613,7 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
-The `2.4.1-beta.30` configuration-definition slice (HAMCP-132 slice 2) adds
+The `2.4.1-beta.31` configuration-definition slice (HAMCP-132 slice 2) adds
 the read-only `get_configuration_definitions` tool. It adds no permission,
 add-on option, HTTP client, Supervisor call, route template, batch-allowlist
 shape, fallback or write path.
@@ -679,6 +679,43 @@ shape, fallback or write path.
 
 Arguments are validated before SDK coercion and rejected without echoing
 them. The audit records counts and source outcomes only. Stable v1.1.2 is
+unchanged.
+
+The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
+Neither adds a permission, add-on option, role, fallback or write path.
+
+- **`get_incident_logs`** issues Supervisor `GET /core/logs` and
+  `GET /addons/self/logs` only. Both are registered HAMCP-200 route templates;
+  `/core/logs` is newly registered. Role `homeassistant` admits `/core/.+`,
+  and the Supervisor `api_bypass` admits `/addons/self/<one segment>`
+  (Supervisor 2026.09.1, `api/middleware/security.py`).
+  `/supervisor/logs`, `/host/logs` and `/addons/<slug>/logs` need role
+  `manager`. They are reported unavailable with zero requests and are never
+  attempted. The `/.+/info` pattern quirk that would expose host journal
+  entries tagged `info` is deliberately not used. Caller slugs pass the
+  shared `path_segment` guard and a slug pattern before any request, session
+  or credential exists. Requests carry the Supervisor token only to the fixed
+  Supervisor host. Per-call request, byte and deadline ceilings bound the
+  download.
+- **`get_history_slices`** dispatches only the admitted `ha_get_history`
+  automatic-read route, through a new fixed gateway `history_reader`. It
+  accepts only reviewed versions 8.5.0 and 8.6.0, rechecks route currency
+  before each read, and builds the argument shape itself (strict validation;
+  zero dispatch on a mismatch). The parent caller's telemetry and authority
+  apply, and the audit event is `history_slice_read`. The native `get_history`
+  REST tool is not used, and there is no direct Home Assistant fallback.
+
+Journal text and recorder states are untrusted. Each service merges, filters
+and limits raw values, then assembles its complete envelope: entries or
+states, coverage, omissions, limitations and cursor. Its single `_finish`
+exit then runs the shared sanitizers once. For logs this is
+`sanitize_log_lines`, then the strict `sanitize_untrusted_data` with the
+access secret and Home Assistant token as known secrets and a shared reference
+registry. A redaction makes the result partial. `SANITIZER_SITES` and AST
+tests pin these as the only call sites. A planted-secret sweep checks every
+output field. Cursors are HMAC-signed with a per-process key and a 1-hour
+TTL. The query fingerprint is keyed, so a text filter is not revealed. See
+[HAMCP_131_INCIDENT_LOGS.md](HAMCP_131_INCIDENT_LOGS.md). Stable v1.1.2 is
 unchanged.
 
 The `2.4.1-beta.27` definition visibility slice (HAMCP-132) adds two read-only

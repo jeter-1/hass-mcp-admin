@@ -1,367 +1,111 @@
 # Engineering 2.4.1-beta.30 release notes
 
-Engineering 2.4.1-beta.30 adds one read-only tool,
-`get_configuration_definitions` (HAMCP-132 slice 2, items B and D). For
-YAML-defined template, SQL and helper entities it reports:
-- how each entity is defined in `configuration.yaml`, as an allowlisted
-  projection;
-- how the definition was matched to the entity, with the strength of that
-  match stated;
-- why an entity is unavailable, from Core's read-only signals.
+Engineering 2.4.1-beta.30 adds two read-only tools (HAMCP-131):
+- `get_incident_logs` reads one bounded incident window from the Home
+  Assistant Core journal and Engineering's own add-on journal. It merges them
+  in time order and reports per-source coverage. Sources it cannot read are
+  listed with the exact reason.
+- `get_history_slices` reads entity history continuously across pages,
+  through the sanitized delegated `ha_get_history` route. It uses fixed time
+  slices and a cursor that fails closed when earlier history changes.
 
-The tool cannot write, reload, create, call a service or open a flow.
+Neither tool can write, reload, restart or call a service. Neither adds a
+permission or changes add-on configuration.
 
-Links:
-- Design: [`HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md`](HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md)
-  (draft PR #291), section 3 B and D, section 4 slice 2, and the owner
-  decisions in section 8.
-- Component review (Part 0):
-  [`HAMCP_132_SLICE2_COMPONENT_REVIEW.md`](HAMCP_132_SLICE2_COMPONENT_REVIEW.md).
-- Josh's decision of 2026-10-21 (section 11 of the review): the
-  `ha_mcp_tools` custom component is not used, now or later.
-- Acceptance: [`V2_4_1_BETA30_ACCEPTANCE.md`](V2_4_1_BETA30_ACCEPTANCE.md).
+Sources report, authority table and design:
+[`HAMCP_131_INCIDENT_LOGS.md`](HAMCP_131_INCIDENT_LOGS.md).
+Acceptance: [`V2_4_1_BETA30_ACCEPTANCE.md`](V2_4_1_BETA30_ACCEPTANCE.md).
 
-beta.30 follows these releases and includes everything in them:
-- 2.4.1-beta.29 (HAMCP-213 PR 1, safety-critical acknowledgement);
-- 2.4.1-beta.28 (HAMCP-215, Core authority recovery);
-- 2.4.1-beta.27 (HAMCP-132 slice 1).
+beta.30 follows 2.4.1-beta.29 (HAMCP-213 PR 1) and includes it. It adds no
+dependency change; both hashed locks are beta.29's.
 
-There is no dependency change: both hashed locks are beta.29's.
+The catalog grows from 90 to **92** tools (93 with the optional YAML reader
+admitted): 64 static plus 28 delegated. Nothing else changes: no existing
+tool, input schema, description, signed registry entry, HOLD, support window,
+workflow, add-on permission or stable-v1 file.
 
-The catalog grows from 90 to **91** tools, or 92 with the optional YAML reader
-admitted: 63 static plus 28 delegated. No existing tool, input schema,
-description, signed registry entry, HOLD, support window, workflow, add-on
-permission, stored format or stable-v1 file changes.
+## `get_incident_logs`
 
-## `get_configuration_definitions`
+Inputs:
+- `sources`: 1-4 of `core`, `supervisor`, `host`, `addon:<slug>`;
+- `start`, and optionally `end`: half-open `[start, end)`, **at most
+  6 hours**;
+- optional `min_level`;
+- optional literal `text` filter, at most 128 characters;
+- `limit`: 1-200, default 100;
+- `cursor`.
 
-Input: `entity_ids` (0 to 50 strict entity IDs, no duplicates) and
-`integrations` (from a closed set of twelve, no duplicates). At least one must
-be non-empty. The twelve integrations are `template`, `sql`, `filter`,
-`derivative`, `statistics`, `group`, `integration`, `min_max`,
-`history_stats`, `threshold`, `trend` and `utility_meter`. Arguments are
-validated before the SDK can coerce them, a string is never split, and a
-rejection never echoes the input.
-
-### Sources
-
-Each source is listed in `sources` with its own status and closed reason.
-
-| Source | Read | What it gives |
+| Source | Supervisor route | Status |
 | --- | --- | --- |
-| `configuration_yaml:<path>` | admitted `ha_config_get_yaml` through the new `configuration_definitions` gateway purpose | definitions under `template`, `sql`, `group`, `utility_meter`, `sensor` and `binary_sensor`; only the paths the request needs |
-| `configuration_yaml:homeassistant.packages` | the same reader; `homeassistant` only to classify a missing packages key | whether packages could hold more definitions |
-| `states` | REST `GET /api/states` | whether a state exists and is `unavailable` or `unknown`; no value is copied |
-| `config/entity_registry/list` | Core WebSocket | platform, unique ID, config entry and `disabled_by` |
-| `entity/source` | Core WebSocket | the platform that created the entity |
-| `config` | REST `GET /api/config` | the loaded `components` only |
-| `config_entries/get:<domain>` | Core WebSocket, one closed domain each | UI entries' identity and state. Core never returns an entry's `data` or `options` here |
-| `manifest/get:ha_mcp_tools` | Core WebSocket (Core's command, not the component's) | whether the component is installed, and its version |
+| `core` | `/core/logs` | read |
+| `addon:self` | `/addons/self/logs` | read (Engineering's own journal) |
+| `supervisor`, `host`, `addon:<other>` | needs role `manager` | `unavailable`, `authority_not_granted`, 0 requests |
 
-### Definitions
+Engineering runs as `hassio_role: homeassistant`, and this release adds no
+role. The authority table, with citations from Supervisor 2026.09.1, is in
+the design notes.
 
-Each definition has an ID such as `sql[0]`, `sensor[1]` or
-`group.downstairs_lights`, and comes in one of four forms:
-- an integration key (`template:`, `sql:`, `group:`, `utility_meter:`);
-- a `sensor:` or `binary_sensor:` platform entry;
-- a template blueprint block, reported by path only;
-- a legacy platform entry.
+Output:
+- `entries`: timestamp, source, process, level and sanitized message.
+- `sources[]`, one row per source: status, reason, HTTP status, earliest and
+  latest retained entry, retention edge, scanned range, consumed, returned,
+  filter-skipped and outside-window counts, and gaps with reasons.
+- `omissions`, `truncated`, `has_more` and a signed `next_cursor`.
+- the disclosed bounds and pins.
 
-Fields are a positive per-integration allowlist taken from Core 2026.10.1's
-schemas (`schemas.py`). Unrecognized keys are counted, never copied.
+A vacuum or rotation between pages is detected and refused as stale.
+Nothing is skipped or repeated silently. Pages are strictly time-ordered
+across sources: when one source runs out of request budget, the merged page
+stops at the earliest point any source has not yet read, and that source is
+reported `partial` (`request_budget_exhausted`) and resumes on the next
+page.
 
-What is always withheld:
-- **`db_url`**, in every position: at the top level, nested, and inside
-  lists.
-- A `!secret` or `!env_var` reference, with its name.
-- Any nested user-defined key that looks like a credential or connection key.
-- A credential-bearing URI inside an allowlisted text field, such as a SQL
-  query, which becomes `{"withheld": "credential_uri"}`. The shared sanitizer
-  redacts userinfo only for `http(s)` URLs.
-- Credential text anywhere in the final report, not only in definitions:
-  config entry titles, entry and capability metadata, source reasons,
-  omissions and coverage. See "Completeness, bounds and sanitization".
+## `get_history_slices`
 
-Each definition lists what was withheld in `withheld`.
+Inputs:
+- `entity_id`;
+- `start`, and optionally `end`: **at most 7 days**;
+- `limit`: 1-100, default 50;
+- `cursor`.
 
-What is disclosed but never followed:
-- `!include` at any level, and packages. The report says each was not
-  followed, and is partial.
-- Labelled keys such as `template 2:`, which the YAML reader cannot address.
+The window is read in fixed 6-hour slices. Each slice is one absolute-bounded,
+ascending, minimal `ha_get_history` request, with a reviewed version of 8.5.0
+or 8.6.0. Each call makes at most 12 slice reads; a continuation also makes
+at most 40 verification reads of at most 100 states.
 
-A legacy `platform: sql`, `template` or `utility_meter` entry under `sensor:`
-creates no entity in this Core. It is flagged
-`unsupported_legacy_platform` and is never an expected entity. Other
-platforms are counted by name only.
+Each page reports:
+- `state_at_window_start`, the states, and per-slice coverage;
+- `coverage.complete_until`, which is exclusive whenever more states may
+  share its timestamp;
+- the provider version, with fallback `none`.
 
-### Matching
+The cursor binds the query, the fixed end, the provider contract and a
+cumulative digest of ALL history the read has returned on every earlier
+page. Each continuation re-reads all of it and is refused as stale in these
+cases:
+- any change to an already-returned state on any earlier page, including an
+  in-place edit or a balanced insert and delete;
+- a purge;
+- a late recorder write;
+- a changed slice-start state;
+- a different provider contract.
 
-Each requested entity's `definition` gives a method:
-- **`exact_config_entry`**: the registry row names a config entry of one of
-  the twelve integrations. The definition is UI-defined and
-  `definition_not_readable_without_flow` (owner decision (i)). The entry's
-  identity and state are listed under `ui_entries`. Its free-form `reason`
-  text is withheld; `reason_present` and a pattern-checked translation key
-  are given instead.
-- **`exact_unique_id`**: the registry's (domain, platform, unique ID) equals
-  the unique ID Core derives from one YAML definition. A unique ID that Home
-  Assistant's YAML 1.1 loader could read as another type (an unquoted `on`,
-  `off`, `yes`, `no` or `1:30`; slice 1's parser-dependence rule, applied
-  before matching) is never exact: the expected entity carries
-  `unique_id_parser_dependent` and each `unique_id_readings` Core could
-  register (`on` and `True`), and one candidate is `heuristic` with `medium`
-  confidence and the reason `unique_id_parser_dependent`. A name or key with
-  such a reading derives no entity ID (`name_parser_dependent`).
-- **`heuristic`**: no registry row, and Core's naming rules applied to a
-  static name, default name or key give this entity ID. Confidence is stated:
-  - `high`: one candidate, its platform confirmed by `entity/source`, every
-    YAML source complete and the registry read;
-  - `medium`: the platform is unconfirmed or a source is incomplete;
-  - `low`: the ID matched only after removing a collision suffix (`_2`).
+When the next continuation would need more than 40 verification reads, the
+page issues no cursor and reports `continuation_verification_limit`; it is
+partial, and a new read starts at `coverage.complete_until`.
 
-  The slugify port covers ASCII text without `&`. Any other text derives no
-  ID.
-- **`ambiguous`**: several definitions derive the same ID or share the same
-  unique ID. No candidate is chosen. The rules are identical in both
-  directions: each of two definitions sharing a unique ID is `ambiguous`
-  from the definition's side too, and a unique ID several registry rows
-  carry is `ambiguous` (`several_registry_entries_share_this_unique_id`).
-- **`unmatched`** or **`not_applicable`**, each with a reason.
+## Security
 
-A registered entity is never matched by name: a YAML definition without a
-unique ID cannot create a registry row. Each definition also lists its
-expected entities, with the same match vocabulary from the definition's side.
+- Each tool sanitizes in exactly one place: the strict shared sanitizer
+  runs at its single exit, with the known secrets. A redaction makes the
+  result partial.
+- Every journal request uses a HAMCP-200 typed route.
+- An add-on slug must be a validated single segment. A traversal attempt is
+  refused with zero requests.
+- History goes only through the admitted gateway route. It never uses the
+  native `get_history`, and there is no direct fallback.
 
-### Diagnosis
+## Rollback
 
-Each requested entity gets a `classification` with its `reasons`:
-
-| Classification | Typical reasons |
-| --- | --- |
-| `available` | none |
-| `disabled` | `registry_disabled:<by>`, `config_entry_disabled:<by>` |
-| `deployment_dependency` | `config_entry_state:<state>`, `integration_not_loaded:<d>`, `platform_not_loaded:<p>.<d>`, `legacy_platform_unsupported` |
-| `transient` | `config_entry_state:setup_retry` or an in-progress state |
-| `dependency_unavailable` | `source_entity_missing:<id>`, `source_entity_unavailable:<id>` (5 of each at most) |
-| `entity_level` | the one matched YAML definition's extracted dependencies are fine, but the entity is `unavailable` or `unknown` |
-| `not_found` | `no_state`, `definition_absent`, `labelled_keys_not_addressable` |
-| `undetermined` | `source_failed:<source>`, `definition_not_matched`, a YAML source gap, `dependencies_not_checked`, `<value>_invalid_response` |
-
-Each classification uses only the signals it names. If a source is missing,
-or there is no single matched definition, the answer is `undetermined`, not
-`entity_level`. In particular:
-- `definition_absent` is claimed only when every YAML definition source was
-  read whole. After a failed or partial YAML path, unread packages or an
-  include not followed, the answer is `undetermined` with that gap
-  (`source_failed:configuration_yaml:<path>`,
-  `source_partial:configuration_yaml:<path>`,
-  `definitions_in_packages_not_read`, `packages_not_determined`,
-  `include_not_followed:<path>`, `definition_values_include_not_followed`).
-- A UI-defined entity whose definition cannot be read is never
-  `entity_level`: it is `undetermined` with
-  `definition_not_readable_without_flow` and `dependencies_not_checked`.
-  The same holds for a `template` or `sql` definition, whose sources are not
-  extracted (`dependencies_not_checked`).
-
-`disabled_by` is a closed value; anything else is `unrecognized`. A state,
-`disabled_by` or entry state that is not text is `invalid_response` for its
-item only.
-
-The `capability` block reports the `ha_mcp_tools` component from Core's own
-reads only. Its `component_commands` is `not_used_owner_decision`. It
-classifies:
-- a missing manifest as `not_installed`;
-- a disabled, unloaded or failed entry as a deployment dependency;
-- a retrying or in-progress entry as `transient`;
-- a permission failure as `permission`;
-- a version before 1.1.0 as `upstream_feature_gap`.
-
-A loaded component stays `undetermined`, because its cause is not observable
-without the component's own commands.
-
-### Completeness, bounds and sanitization
-
-The report is `partial`, with each cause in `omissions`, when any of these
-holds:
-- a source is unavailable or refused;
-- an include or package is not followed;
-- a definition is not projected;
-- a definition or UI-entry limit is reached;
-- a response-size trim drops rows;
-- a source value is malformed: the item becomes `invalid_response`, the
-  source is `partial` with that reason, and the rest of the report is kept;
-- credential text is withheld (`credential_text_withheld`);
-- a redaction occurs.
-
-The tool fails with `sources_unavailable` only when every source is
-unavailable or refused. Without the YAML reader admitted, the YAML sources
-are `unavailable` (`yaml_reader_not_admitted`), no delegated call is made, and
-the Core-side answers are still reported.
-
-The bounds are:
-- 200 definitions and 50 UI entries;
-- 4,096 characters per text value;
-- a 50,000-character report inside the 60,000-character envelope.
-
-Over the budget, trailing definitions are dropped first, then UI entries, by
-their sanitized size. The listed count follows the trim.
-
-The complete envelope is assembled first: report, omissions, coverage and
-every identifier. At that single exit point every key and string is screened
-for credential text, then the strict shared sanitizer runs on it, with the
-Home Assistant token and the access secret as known secrets. Nothing is added
-afterwards. Credential text is:
-- a URI with userinfo;
-- a database or broker connection URI by scheme (`db_url`-shaped, a sqlite
-  path included), with or without a password;
-- a user name and password before a host, without a scheme;
-- a connection-string password field;
-- a known secret;
-- text the reader's canonicalization (percent-decoding, NFKC, casefold)
-  refuses.
-
-The checks read the canonical form through a bounded confusable fold: a
-fixed table of the look-alikes of `/` and `:` that NFKC leaves unchanged
-(the division slash and the ratio sign, for example) and of the Cyrillic and
-Greek letters that look like Latin ones. The table is not general confusable
-coverage.
-
-A string is replaced with the bounded marker `[withheld:credential_text]`, a
-dictionary entry with a credential-shaped key is dropped, and the report is
-partial with `credential_text_withheld`.
-
-**Config entry titles** are Core free text and are shown through an
-allowlist, not a denylist. The complete original title is checked before
-anything else; nothing is truncated or normalized first. It is shown
-verbatim only when it is printable ASCII with no control character, at most
-255 characters, has no `@` and no `://`, no password-like `key=value` or
-`key: value`, no known secret in any letter case and no credential text.
-Otherwise it is replaced whole: credential text with
-`[withheld:credential_text]`, anything else with
-`[withheld:unverifiable_text]`, and the report is partial with
-`unverifiable_text_withheld`. **By design, an ordinary title with a
-non-ASCII character (an accented letter, a CJK title, an emoji or an em
-dash), with `@`, or longer than 255 characters is withheld.** A plain ASCII
-title is shown unchanged.
-
-## Boundaries
-
-- **Reads only.** The reads are the eight above. An AST test pins the new
-  package's literals, client calls, reader paths, imports and dispatch.
-  - No `ha_mcp_tools/*` command, options flow, `.storage` file or Supervisor
-    endpoint is reachable.
-  - No new batch-allowlist shape is added.
-- **YAML reader.** A new gateway purpose, `configuration_definitions`, fixes
-  its own path set: `template`, `sql`, `group`, `utility_meter`, `sensor`,
-  `binary_sensor`, `homeassistant.packages` and `homeassistant`. Its audit
-  event is `configuration_definitions_yaml_read`.
-  - The `recorder_settings` purpose keeps its three paths, so neither
-    purpose can read the other's paths.
-  - An unknown purpose returns no reader.
-  - The reader's L1–L4 pipeline, Core gate and response seal are unchanged.
-  - Authority is rechecked before and after every read, with no fallback.
-- **Core gate.** `core.basic_rest_read`, `core.basic_websocket_read` and
-  `core.non_device_registry_read` (HAMCP-164).
-- **Audit.** Counts and source outcomes, never entity IDs or integration
-  names.
-
-## Corrections found during implementation
-
-The implementer's own testing found and fixed these before the PR. They are
-listed for the independent reviewer:
-1. A database URL with userinfo inside an allowlisted text field, such as a
-   SQL query, passed the projection. The final sanitizer does not cover
-   non-HTTP userinfo. It is now withheld as `credential_uri`.
-2. An unavailable entity with an ambiguous or unmatched definition was
-   classified `entity_level`. It is now `undetermined` with
-   `definition_not_matched`.
-3. `YAML_FAILURE_CODES` was unused and inconsistent. It is now the shared
-   reader codes plus `yaml_reader_not_admitted`.
-4. Three problems in the service:
-   - An unrecognized registry `disabled_by` was echoed.
-   - The response-budget trim re-sanitized once per dropped row. That was
-     quadratic, about 20 s of event loop for 210 definitions.
-   - `coverage.definitions_listed` was stale after a trim.
-5. The gateway's pre-SDK validation branch tested the tool name by set
-   membership before its type was known. A list or dict tool name then
-   raised `TypeError` instead of the HAMCP-189 generic refusal. PR CI found
-   it (`test_hamcp189_gateway_audit_reason`), and the equality test was
-   restored.
-
-## Corrections from the independent review
-
-The independent review of PR #294 at `dfd1f02` found these. Each
-reproduction is a permanent test, the credential one through the
-authenticated gateway.
-1. **H1.** A database URI in a config entry title reached the response: the
-   title was copied without the definition projection's credential
-   screening. Credential withholding now runs on every string of the final
-   envelope at the single exit point (above).
-2. **M1.** Two definitions sharing a unique ID were `ambiguous` from the
-   entity's side but `exact_unique_id` from each definition's side. The
-   reverse direction now applies the forward rules.
-3. **M2.** An unquoted `on` unique ID was an exact match although Home
-   Assistant's YAML 1.1 loader registers it as `True`. Slice 1's
-   parser-dependence rule now applies before matching and naming.
-4. **M3.** A failed YAML source still let diagnosis claim
-   `definition_absent`, and an unavailable UI-defined entity was
-   `entity_level` with no dependency check. Both are now `undetermined` with
-   the reason.
-5. **M4.** A malformed state value (`state: []`) aborted the report with a
-   `TypeError`. Malformed values now invalidate only their item.
-6. **L1.** The component review note now records the owner decision and the
-   capability block's actual fields.
-
-## Corrections from the delta review
-
-The independent delta review of the corrections at `cde9cd1` found these.
-Its regression suite is kept unchanged as `tests/test_pr294_delta_review.py`,
-and the two High reproductions run through the authenticated gateway.
-1. **H1.** A title was truncated to 255 characters before it was screened,
-   so a credential whose host fell past the bound was cut into text that no
-   longer read as one, and its password was shown. The complete original
-   title is now checked first and a title over the bound is withheld whole.
-2. **H2.** Look-alike characters NFKC leaves unchanged (the ratio sign for
-   `:`, the division slash for `/`, a Cyrillic `o` in `password`) hid a
-   credential from the screening. Titles now pass only the allowlist above,
-   which refuses every non-ASCII character. YAML-projected text keeps the
-   credential screening with the bounded confusable fold added.
-3. **M3.** A template `use_blueprint` block, which the reader does not
-   expand, was not a definition gap, so an entity it creates could be
-   called `not_found` with `definition_absent`. Such a block now makes the
-   report partial (`blueprint_definitions_not_projected`) and absence
-   `undetermined`.
-4. **M4.** A malformed registry `platform`, `unique_id` or
-   `config_entry_id` (a dict or list, for example) was silently treated as
-   absent. The row's new `registry.identity` is `invalid_response`, the
-   registry source is partial with `invalid_response`, the row takes part in
-   no match in either direction and its diagnosis is `undetermined`
-   (`registry_identity_invalid_response`). A `null` field stays a legitimate
-   absence (`identity` `valid`).
-5. **L.** The mutation runner's B-L7 rationale was wrong: dropping the known
-   secrets from the withholding walk alone is not an equivalent mutant (it
-   fails three tests and loses the case-varied protection). It is now its
-   own mutant, `DELTA-REVIEW-2`.
-
-## Compatibility and rollback
-
-- **Additive.** One new tool; no existing descriptor or schema changes.
-  `yaml_config_reader` keeps `recorder_settings` as its default purpose.
-- **Stored formats.** No stored format changes.
-- **Rollback.** Reinstall the beta.29 artifact. No state needs migration.
-  beta.29's own rollback notes for plan records still apply to anything
-  older.
-- **Known limitations:**
-  - Configuration comes from disk, as parsed by the YAML reader (YAML 1.2).
-    It can differ from what Core loaded until a restart.
-  - `!include` targets, package contents and labelled keys are not read.
-  - UI-defined definitions cannot be read without a flow; only their entry
-    identity and state are reported.
-  - A heuristic match is evidence, not proof, and is labelled with its
-    confidence. Non-ASCII names and names with `&` derive no ID.
-  - With the component not used, a loaded `ha_mcp_tools` component's
-    problems stay `undetermined`.
-  - A config entry title with a non-ASCII character, `@`, `://`, a
-    password-like `key=value` or over 255 characters is withheld as
-    `[withheld:unverifiable_text]` (by design; the report is partial).
-  - A template blueprint block is not expanded; it is a disclosed gap.
+Reinstall the 2.4.1-beta.29 artifact. No stored format changes. Cursors are
+process-keyed and do not survive a restart.

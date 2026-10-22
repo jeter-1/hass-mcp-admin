@@ -1,24 +1,20 @@
 # Engineering 2.4.1-beta.30 acceptance
 
-This contract covers HAMCP-132 slice 2: configuration definitions (item B) and
-unavailability and capability diagnosis (item D). It adds one read-only tool,
-`get_configuration_definitions`. It builds on these releases:
-- 2.4.1-beta.29 (HAMCP-213 PR 1);
-- 2.4.1-beta.28 (HAMCP-215);
-- 2.4.1-beta.27 (HAMCP-132 slice 1).
+This contract covers HAMCP-131: incident-window log reads and continuable
+history. It adds two read-only tools, `get_incident_logs` and
+`get_history_slices`. It follows 2.4.1-beta.29 (HAMCP-213 PR 1).
 
 See also:
 - Release notes:
   [`V2_4_1_BETA30_RELEASE_NOTES.md`](V2_4_1_BETA30_RELEASE_NOTES.md).
-- Design: [`HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md`](HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md)
-  (draft PR #291).
-- Component review and Josh's decision not to use `ha_mcp_tools`:
-  [`HAMCP_132_SLICE2_COMPONENT_REVIEW.md`](HAMCP_132_SLICE2_COMPONENT_REVIEW.md#11-owner-decision-josh-2026-10-21).
+- Sources report, authority table and design:
+  [`HAMCP_131_INCIDENT_LOGS.md`](HAMCP_131_INCIDENT_LOGS.md).
 
-**Release target.** `2.4.1-beta.30`. It is staged by one owner-authorized run
-of `scripts/promote_next_release.py --apply` on a base that already carries
-2.4.1-beta.29. The run consumes the declaration. If another release takes
-beta.30 first, this PR merges that base again and takes the next free beta.
+**Release target.** `2.4.1-beta.30` is staged by one owner-authorized run of
+`scripts/promote_next_release.py --apply` on a base that carries
+2.4.1-beta.29. The run consumes the declaration. HAMCP-132 slice 2 also
+targets beta.30. If another release takes beta.30 first, this PR merges that
+base with a merge commit and takes the next free beta.
 
 The contract separates four stages:
 1. source and offline acceptance;
@@ -31,9 +27,7 @@ It authorizes none of the later stages.
 ## 1. Source and offline acceptance
 
 Bind the following:
-- Josh's HAMCP-132 objective, owner decisions (i)–(vii) of 2026-10-20
-  (design section 8), and the 2026-10-21 decision not to use the
-  `ha_mcp_tools` component;
+- Josh's HAMCP-131 objective;
 - `2.4.1-beta.30` materialized in all three version authorities, with exact
   acceptance and release-note resolution from `scripts/codex-context.py` and
   no staged declaration left over;
@@ -43,77 +37,45 @@ Bind the following:
 
 The review needs a security section covering:
 - **New sources.**
-  - REST `GET /api/config` (`components` only).
-  - WebSocket `config_entries/get` with one closed domain.
-  - WebSocket `manifest/get` for `ha_mcp_tools`.
-  - The slice-1 reads `GET /api/states`, `config/entity_registry/list` and
-    `entity/source`.
+  - Supervisor `GET /core/logs` and `GET /addons/self/logs`, through the
+    HAMCP-200 typed routes, with `Accept: text/plain`, `verbose`, `no_colors`
+    and a gatewayd `Range: entries=...` header.
+  - The add-on keeps `hassio_role: homeassistant` and `hassio_api: true`. No
+    permission is added.
+  - Supervisor, host and other add-on logs are reported `unavailable`
+    (`authority_not_granted`, pinned ROLE_MANAGER pattern) with zero requests.
+- **Delegated history.** The new gateway `history_reader` selects only the
+  admitted `ha_get_history` automatic-read route at ha-mcp 8.5.0 or 8.6.0. It
+  builds every argument itself:
+  - one entity;
+  - absolute UTC bounds;
+  - `order: asc`, `minimal_response: true`,
+    `significant_changes_only: true`, `source: history`;
+  - a bounded `offset` and `limit`.
 
-  All run under the existing administrative token, with no new permission.
-  `config_entries/get` never returns an entry's `data` or `options`, so a
-  UI-defined SQL `db_url` cannot be returned.
-- **YAML reader purpose.** The new gateway purpose `configuration_definitions`
-  fixes eight paths and its own audit event. The `recorder_settings` purpose
-  and its three paths are unchanged. An unknown purpose gives no reader. The
-  L1–L4 pipeline, Core gate, response seal and authority rechecks are
-  unchanged, with no fallback.
-- **No component command.** No `ha_mcp_tools/*` command, options flow,
-  `.storage` file or Supervisor endpoint is reachable. There is no new
-  batch-allowlist shape, and no write, reload, service call, flow, fallback
-  or forwarding reachability.
-- **Withholding.** `db_url` is withheld in every position. So are `!secret`
-  and `!env_var` references with their names, credential-shaped nested keys,
-  and credential URIs inside allowlisted text, a gap the shared sanitizer
-  does not cover. The projection is a positive allowlist. Unrecognized keys
-  are counted only.
-- **One screened and sanitized exit point.** The complete envelope is
-  screened once for credential text, in every key and string (config entry
-  titles, metadata, reasons, omissions and coverage included), and then
-  sanitized once, with the known secrets. Nothing is appended afterwards.
-  Withheld text is replaced with `[withheld:credential_text]` and makes the
-  report partial (`credential_text_withheld`), as does a redaction. Budget
-  trimming re-screens and re-sanitizes the rebuilt envelope. The screening
-  reads a bounded confusable fold of the canonical text.
-- **Titles by allowlist.** A config entry title is checked whole, never
-  truncated first, and shown only when it is printable ASCII within 255
-  characters with no `@`, `://`, password-like `key=value` or `key: value`,
-  known secret or credential text. Otherwise it is
-  `[withheld:credential_text]` or `[withheld:unverifiable_text]` and the
-  report is partial (`unverifiable_text_withheld`). **An ordinary non-ASCII
-  title is withheld by design**; a plain ASCII title is shown unchanged.
-- **Truthfulness.**
-  - A heuristic match is never reported as exact, and its confidence names
-    the signals behind it.
-  - Ambiguity is never resolved, and the rules are identical from the
-    entity's and the definition's side.
-  - A unique ID that YAML 1.1 could read differently is never exact.
-  - A failed source makes the report partial. A malformed source value
-    invalidates only its item (`invalid_response`); it never aborts the
-    report.
-  - Diagnosis says `undetermined` rather than `entity_level` when a signal is
-    missing, no single definition matched, or the dependencies were not
-    checked. It never says `definition_absent` after a YAML source gap or
-    an unexpanded template blueprint (`blueprint_definitions_not_projected`).
-  - A malformed registry `platform`, `unique_id` or `config_entry_id` makes
-    the row's `registry.identity` `invalid_response` and the registry source
-    partial; the row is never matched and is `undetermined`. `null` stays a
-    legitimate absence.
-- **Arguments and audit.** Validation happens before the SDK, and rejections
-  are non-reflecting. The audit records counts only.
-- **Implementation corrections.** The five corrections listed in the release
-  notes: four self-found, and one found by PR CI.
-- **Independent review corrections.** H1, M1 to M4 and L1 from the review of
-  `dfd1f02`, listed in the release notes. Each reproduction is a permanent
-  test.
-- **Delta review corrections.** H1, H2, M3, M4 and L from the delta review of
-  `cde9cd1`, listed in the release notes. The reviewer's regression suite is
-  kept unchanged as `tests/test_pr294_delta_review.py`.
+  There is no direct Home Assistant fallback, and the native `get_history`
+  tool is not used.
+- **One sanitized exit point.** Each service assembles its complete envelope,
+  including entries or states, coverage, omissions, cursor and limitations.
+  It then runs the strict sanitizer once, in `_finish`, with the known
+  secrets. A redaction makes the result partial.
+  `SANITIZER_SITES` pins the only call sites.
+- **Slugs.** `addon:<slug>` must pass the HAMCP-200 `path_segment` guard plus a
+  slug pattern before anything else runs. A traversal attempt is refused with
+  zero requests.
+- **Cursors.** Cursors are HMAC-signed with a process key and expire after
+  1 hour. They bind the query fingerprint, the fixed end and, for history,
+  the provider contract digest. Continuity breaks fail closed as
+  `STALE_CURSOR`.
+- **Reachability.** There is zero new write, service call, reload, restart,
+  deletion, forwarding or fallback reachability. The AST read-only tests and
+  routing policies are `writes: none`, `fallback: none`.
 
 Preserve the following:
 - stable v1.1.2;
 - persisted formats;
-- every existing descriptor and input schema. The catalog is **91 tools,
-  92 with the optional YAML reader admitted**: 63 static plus 28 delegated;
+- every existing descriptor and input schema. The catalog is **92 tools,
+  93 with the optional YAML reader admitted**: 64 static plus 28 delegated.
 - probe fingerprints, Core capability profiles, owner-signed Core registry
   entries and the signed ha-mcp registry;
 - the HOLD and the support window;
@@ -121,177 +83,108 @@ Preserve the following:
 
 ### Offline proof
 
-No test reaches a live system. Every fixture is synthetic, and every
+No test reaches a live system. Every fixture is synthetic, and any
 credential-shaped string is assembled at test time.
 
-`tests/test_hamcp132_configuration_definitions.py` (111 tests) covers:
-- pinned shapes for each projected form: template blocks (including trigger
-  and blueprint blocks), the SQL integration key (list and single),
-  old-style groups, utility meters, `sensor:` and `binary_sensor:` platforms,
-  legacy platforms flagged and never expected, other platforms counted, and
-  unrecognized keys counted;
-- the owner's six YAML definitions, anonymized: two SQL sensors with a
-  database URL, a filter, two derivatives (one renamed and matched by unique
-  ID) and an old-style group. Each is matched and diagnosed end to end, by
-  entity and by integration;
-- `db_url` and credentials withheld in every position, references and
-  markers withheld, a database URL inside a SQL query withheld, the final
-  sanitizer still applied to kept text, a known secret redacted with the
-  report partial, config-entry reason text withheld, and provider exception
-  text never public;
-- a planted-secret sweep. A control run first proves the secret reaches every
-  identifier-bearing output field; the protected run then finds it in none;
-- match quality:
-  - `exact_config_entry` with the UI entry listed;
-  - `exact_unique_id`;
-  - `heuristic` at each confidence, with `high` requiring every signal;
-  - `ambiguous`, by name and by shared unique ID;
-  - platform filtering;
-  - a registered entity never matched by name;
-  - `unmatched`, `not_applicable` and `not_found`;
-  - unread config entries;
-  - legacy candidates;
-  - definition-side results;
-- packages (absent, present, unreadable, not determined), the `homeassistant`
-  node read, and `!include` disclosed at the path, entry and value levels. A
-  truncated reader value makes the report partial;
-- source failures mapped to closed reasons. Each failed source makes the
-  report partial. With the reader not admitted, no YAML is dispatched. When
-  every source fails, the error carries no text;
-- diagnosis for each classification and reason, the capability block for
-  each component state, and the authority recheck at every read stage;
-- the definition and UI-entry limits, the response budget (trim order,
-  listed counts, the overflow estimate) and the single sanitizer exit, using
-  a spy that proves the returned report is the sanitizer's output;
-- the read-only static check. It pins the package's exact command literals,
-  client attributes, reader calls, dispatch, imports and YAML arguments, and
-  a banned-word scan of the code without docstrings. The runtime dispatch is
-  also pinned exactly;
-- registration: the Core gate, capability metadata, read-only annotations,
-  the schema, non-reflecting refusal in the tool and in the gateway before
-  the SDK, the positive gateway output and audit, and a gateway sweep with
-  the access secret planted;
-- the `configuration_definitions` reader purpose, through the YAML admission
-  harness: its exact path set and audit event. The recorder purpose cannot
-  read its paths, and the reverse also holds;
-- the independent review's reproductions, kept as permanent tests:
-  - a database URI in a config entry title, through the authenticated
-    gateway (response and audit);
-  - PostgreSQL, MySQL, MSSQL, sqlite with a path, MongoDB and HTTP basic
-    auth, plus a user and password before a host without a scheme, a percent-encoded URI, a user-only
-    userinfo, a password field and a URI inside prose, each planted in a
-    title and in every metadata field, directly and through the gateway;
-  - the API error-detail `db_url` case;
-  - two definitions sharing a unique ID, and one definition whose unique ID
-    two registry rows carry, `ambiguous` from both sides;
-  - unquoted `on`, `off`, `yes`, `no` and `1:30` unique IDs, registered as
-    the raw text or as Core's reading, never exact, with quoted and integer
-    controls exact;
-  - a failed YAML source, each gap type, an unreadable UI definition and a
-    template definition, each `undetermined`, with absence and
-    `entity_level` controls;
-  - malformed states, registry and config-entry values and a projection
-    error, each confined to its item, with a valid control;
-- the delta review's suite, unchanged (`tests/test_pr294_delta_review.py`),
-  including its two High reproductions through the authenticated gateway: a
-  credential cut by title truncation, and credentials written with the ratio
-  sign, the division slash or a Cyrillic `o`; and the added tests:
-  - plain ASCII titles shown through the gateway, the report complete;
-  - benign non-ASCII, control-character and `DEL` titles withheld as
-    `[withheld:unverifiable_text]`, partial (disclosed and accepted);
-  - `@`, `://` and password-like `key=value` titles, an over-length title
-    withheld whole, a credential past the length bound found on the
-    original, and case-varied known secrets;
-  - confusable credentials in a YAML-projected definition withheld;
-  - a template blueprint block as a gap, with an absence control;
-  - malformed registry identities never matched in either direction, with
-    a `null` control.
-
-The existing suites that pin the tool count, sanitizer sites, Core gate and
-reader purpose are updated. The Evidence tier on the PR head is the complete
-final run.
-
-Mutations: **184 of 184 killed, none survived**
-(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 245
-tests across the three HAMCP-132 modules and the delta-review suite
-(`test_pr294_delta_review`): OK, 1 skipped. Every kill is a test failure or
-a test-level error; none is an import or syntax failure.
-
-The set is slice 1's 80, 55 for slice 2, 31 for the independent-review
-corrections and 18 for the delta-review corrections. The first slice 2 run left two survivors:
-- `B-L2` was equivalent. `_credential_shaped` also matches `db_url`, so
-  removing only the nested `WITHHELD_KEYS` test changes nothing. It was
-  redefined to remove both nested guards.
-- `B-M8` exposed a test gap: a registered entity whose ID a uid-less
-  definition also derives by name. That test was added.
-
-The slice-2 mutants cover:
-- `db_url` leaked, as a field, nested, or under a credential key;
-- the userinfo guard removed;
-- references or reader redactions projected;
-- the known secrets dropped;
-- a heuristic reported as exact;
-- ambiguity guessed;
-- high confidence on incomplete sources or after a suffix;
-- the platform filter removed;
-- a heuristic applied to a registered entity;
-- a UI entry claimed readable;
-- a failed source (Core or YAML) reported complete;
-- packages or includes not disclosed;
-- omissions appended after sanitization;
-- a redaction not making the report partial;
-- each diagnosis rule weakened;
-- the path set widened;
-- the Core gate or either pre-SDK validation removed;
-- an open integration or entries domain;
-- the audit copying identifiers;
-- the annotation not read-only;
-- each authority recheck removed;
-- each bound removed;
-- a stale listed count.
-
-The correction mutants cover:
-- the reviewer's own API error-detail `db_url` mutant (`REVIEW-2`);
-- the exit point's credential withholding removed, a config entry title
-  copied without credential screening, a credential key kept, each
-  credential rule removed, refused canonicalization passed, and a
-  withholding that leaves the report complete;
-- reverse-match ambiguity resolved, by definitions or by registry rows. The
-  first run left the registry-row mutant surviving; a test with the raw text
-  and Core's reading both registered was added;
-- a parser-dependent unique ID indexed or marked as exact, a dependent name
-  deriving an entity ID, Core's reading not registered, and the
-  parser-dependence disclosure dropped;
-- absence or `entity_level` claimed despite a YAML gap, an unreadable UI
-  definition or an unchecked template definition;
-- each malformed-value type guard removed, a projection error aborting the
-  report, a malformed value diagnosed as if valid, and a malformed item
-  that leaves the report complete.
-
-The delta-review mutants cover:
-- the reviewer's own omission-credential bypass (`DELTA-REVIEW-1`), and
-  the known secrets dropped from the exit-point withholding only
-  (`DELTA-REVIEW-2`; the earlier `B-L7` rationale called this equivalent,
-  which was wrong: it fails three tests and loses case-variant protection);
-- a title truncated before screening (`B2-T1`) and the allowlist bypassed
-  (`B2-T2`);
-- each allowlist leg removed: the length bound, printable ASCII, `@`, `://`
-  and password-like `key=value` (`B2-T3` to `B2-T7`);
-- the casefolded known-secret comparison removed (`B2-K1`);
-- the confusable fold removed (`B2-C1`);
-- an unverifiable title that leaves the report complete (`B2-U1`);
-- an unprojected blueprint not treated as a definition gap (`B2-G1`);
-- a malformed registry identity accepted, matched, reverse-matched without
-  disclosure or diagnosed as valid, and a `null` identity called malformed
-  (`B2-I1` to `B2-I5`).
+- `tests/test_hamcp131_incident_logs.py` (40 tests) covers:
+  - the motivating window: the thermostat 503 at about 12:01 on 2026-10-19,
+    plus the Presence Simulation exception;
+  - window edges (start inclusive, end exclusive), the retention edge, an
+    empty journal and an after-tail window;
+  - locating the start in a large journal within budget, and a start beyond
+    probe reach as a disclosed gap;
+  - pagination with identical timestamps, with no duplicates or skips;
+  - strict time order across pages when one source finishes before another
+    and when the request budget runs out while a source is still being
+    located (review M2), each deferral guard on its own, and the call
+    budget covering the costliest locate, so a deferred source is located
+    on the next page;
+  - the default request budget with level filtering, 1,900 Core entries
+    and sources `addon:self` then `core`: no page emits an entry earlier
+    than one already returned and each page stays within the request limit
+    (review M2, the reviewer's probe made asserting);
+  - the level and literal text filters with skip counts;
+  - a vacuum between pages (stale) and inside a call (gap);
+  - cursor integrity, query binding and expiry;
+  - per-source HTTP refusals (403, 404, 400), and a stopped add-on still
+    readable;
+  - only unauthorized sources selected: a per-source `unavailable` row each,
+    with `authority_not_granted` and the required role, and zero requests
+    (review M5);
+  - wrong-typed filter arguments (for example `min_level: []` or `{}`):
+    a bounded invalid-argument refusal with an audit record, through the
+    production gateway (review M4);
+  - slug traversal refused with zero requests;
+  - a planted-secret sweep across every output field;
+  - message truncation that keeps markers whole, and the response byte
+    ceiling;
+  - the single-exit AST test, the exit pass's known secrets and
+    redaction-makes-partial, the read-only static test, routing, the Core
+    gate and the catalog;
+  - a literal text filter cannot probe a redacted secret;
+  - policy drift.
+- `tests/test_hamcp131_history_slices.py` (46 tests) covers:
+  - the motivating window;
+  - window edges, a state exactly at a slice boundary, and the retention
+    edge;
+  - pagination with identical timestamps at limits 1 to 100, with
+    `coverage.complete_until` never claiming a timestamp inclusive while tied
+    states may remain, including a byte cut inside a tie (review M3), and
+    pre-slice states spanning two reads, neither repeated nor skipped;
+  - the cursor across slices with per-page coverage, and the empty-slice call
+    cap with resume;
+  - a defaulted end fixed by the cursor;
+  - purge, late write, a changed slice-start state and a purged start state,
+    each stale;
+  - a break after the first check: partial, no cursor;
+  - through the production gateway: an in-place change and a balanced
+    insert-and-delete inside the previous page, and a change in a finished
+    slice the previous page returned, each stale; unchanged history
+    continues (review M1);
+  - cumulative continuity (M1 residual, the reviewer's three
+    `test_hamcp131_history_residual_probes` tests unchanged): a change on
+    any earlier page, in the window-start state pages later, or a late state
+    in an already covered empty slice, each stale; unchanged history
+    re-verified in bounded chunks and complete; no cursor past the 40-read
+    verification bound (`continuation_verification_limit`); forged partial
+    or over-bound evidence `INVALID_CURSOR`; the largest cursor fits 4096
+    characters;
+  - a failed verification read: partial and resumable; more pre-slice states
+    than pinned: `representation_invalid`;
+  - a provider contract change: stale;
+  - cursor integrity, query binding and expiry;
+  - upstream failure: partial and resumable;
+  - unpinned shapes: `representation_invalid`;
+  - gateway partial disclosed;
+  - the byte ceiling with resume;
+  - planted secrets;
+  - the single-exit AST test, the exit pass's known secrets and
+    redaction-makes-partial;
+  - invalid arguments, route unavailable, unreviewed version and anonymous
+    caller, each sending nothing;
+  - the route retired mid-read;
+  - the static read-only test, routing, Core gate and catalog, and policy
+    drift;
+  - the admitted reader, using the 8.5.0 and 8.6.0 captures: the fixed
+    argument shape, argument refusal, parent authority refusal, route drift
+    and gateway sanitization.
+- Count and catalog pins in the existing suites are updated from 62 to 64
+  static tools.
+- Mutations: `docs/evidence/hamcp131-mutations/` (40 mutants across window
+  edges, cursor skip/duplicate, silent omission, sanitizer placement, slug
+  handling, the review's four classes: anchor-only staleness, a merged
+  page emitting an earlier entry, an inclusive boundary claimed complete and
+  `min_level` type errors escaping, and the M1 residual: evidence kept for
+  the previous page only and a cursor issued past the verification bound;
+  results recorded in `results.json`).
 
 ## 2. Release CI and publication
 
 Require exact-head CI before release acceptance. Pending or unavailable jobs
 are not passing evidence.
 
-Publication needs Josh's Ready authorization and the protected merge
-handoff. Verify the following with the shipped verifiers:
+Publication needs Josh's Ready authorization and the protected merge handoff.
+Verify the following with the shipped verifiers:
 - the merged source;
 - v2.4.1-beta.30;
 - the immutable version and commit images;
@@ -305,7 +198,7 @@ No stored format changes. Rollback is reinstalling the beta.29 artifact.
 ## 3. Installed Engineering
 
 All installed checks below are read-only. None of them writes, reloads,
-creates, opens a flow or calls a service.
+restarts or calls a service.
 
 1. **Installed-image binding.** Separately authorize installation of the
    published Engineering artifact. Bind the running add-on to:
@@ -313,43 +206,42 @@ creates, opens a flow or calls a service.
    - the v2.4.1-beta.30 tag;
    - the protected `main` merge commit that contains this PR.
 2. **Catalog.** Using fresh protocol enumeration, confirm:
-   - 91 tools, or 92 with the optional YAML reader admitted;
-   - `get_configuration_definitions` present, with read-only annotations;
+   - 92 tools, or 93 with the optional YAML reader admitted;
+   - `get_incident_logs` and `get_history_slices` present, with read-only
+     annotations;
    - every other descriptor unchanged from beta.29;
    - Core signed selection, storage and audit health, and zero fallback.
-3. **The owner's six YAML definitions (live read).** Josh names the six
-   YAML-defined entities from the HAMCP-132 objective: two SQL sensors, a
-   filter sensor, two derivative sensors and an old-style group. Call
-   `get_configuration_definitions` with `entity_ids` set to those six. For
-   each entity, record:
-   - `definition.method` and `confidence`. An entity with a YAML
-     `unique_id` should be `exact_unique_id`. One without should be
-     `heuristic` with a stated confidence, or `ambiguous`/`unmatched` with a
-     reason. A heuristic must never appear as exact;
-   - the matched `definitions[]` row: its form, projected fields and
-     `expected_entities`;
-   - `diagnosis.classification` and `reasons`. For any entity that is
-     unavailable, check that the reasons agree with what Josh knows about it;
-   - for both SQL definitions, that `withheld` lists `db_url` and `fields`
-     has no `db_url`.
+3. **Live log read across Core, Supervisor and one add-on.** Call
+   `get_incident_logs` with
+   `sources: ["core", "supervisor", "addon:self", "addon:<another installed slug>"]`
+   over a recent window of at most 6 hours that contains a known Core error.
+   Record:
+   - for `core` and `addon:self`: `status`, `requests`,
+     `earliest_available`, `latest_available`, `retention_edge_reached`,
+     `gaps`, and at least one entry with timestamp, level and sanitized
+     message;
+   - for `supervisor` and the other add-on: `status: unavailable`,
+     `reason: authority_not_granted`, `requests: 0`, `required_role:
+     manager` and the `required_route_pattern`;
+   - `omissions` and `completeness`;
+   - that the serialized response contains no token, credential or secret
+     value.
+4. **Continued log read.** If `has_more` is true, call again with the same
+   arguments and `next_cursor`. Confirm the first entry follows the last
+   entry of the previous page, with no duplicate.
+5. **Continued history read.** Call `get_history_slices` for one entity known
+   to change state, with a window longer than one 6-hour slice (for example
+   24 hours) and `limit` small enough to force a cursor. Follow `next_cursor`
+   until `has_more` is false. Record:
+   - `state_at_window_start`;
+   - per-page `coverage.complete_until` and the slice rows;
+   - `provider.upstream_version` and `fallback: none`;
+   - that states across pages are strictly in order with no duplicates.
 
-   Also record:
-   - every `sources[]` status and reason, `packages`, `omissions` and
-     `completeness`. With `homeassistant.packages` configured, the report
-     must be partial with `definitions_in_packages_not_read`;
-   - the `capability` block, with `component_commands:
-     not_used_owner_decision`;
-   - that the serialized response contains no database URL, credential,
-     secret name or state value.
-4. **By integration (live read).** Call `get_configuration_definitions` with
-   `integrations: ["sql", "filter", "derivative", "group"]`. Confirm:
-   - the six definitions appear, with `db_url` withheld;
-   - any UI-created entries of those integrations are listed under
-     `ui_entries` as `definition_not_readable_without_flow`, with no options
-     or data;
-   - the response is within its bound.
-5. **No change.** No configuration, registry entry, config entry or state is
-   modified by steps 3 and 4. The audit shows counts only.
+   Compare the states with the delegated `ha_get_history` output for the same
+   window.
+6. **No change.** Steps 3 to 5 modify no configuration, add-on, journal or
+   recorder state.
 
 No push, CI trigger, signing, publication, installation or live action is
 authorized by source completion.
