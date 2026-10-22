@@ -26,9 +26,11 @@ Builds on 2.4.1-beta.29.
   8.6.0) using a new fixed gateway `history_reader`. Windows are at most
   7 days, read as fixed 6-hour slices, with per-page coverage whose
   `complete_until` is exclusive while tied states may remain. The cursor
-  binds the query, the fixed end, the provider contract and a digest of the
-  history the previous page returned, which a continuation re-reads. Any
-  change to returned history, a purge, a late write, a changed slice-start
+  binds the query, the fixed end, the provider contract and a cumulative
+  digest of all history the read has returned, which every continuation
+  re-reads (at most 40 verification reads of 100 states; past that no cursor
+  is issued, `continuation_verification_limit`). Any change to returned
+  history on any earlier page, a purge, a late write, a changed slice-start
   state or a contract change is refused as `STALE_CURSOR`. The native `get_history` tool is not used.
 - Each tool sanitizes its whole response once, at a single exit, with the
   known secrets; a redaction makes the result partial. `get_incident_logs` is

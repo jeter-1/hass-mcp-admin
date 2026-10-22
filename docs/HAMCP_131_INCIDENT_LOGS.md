@@ -187,16 +187,34 @@ one absolute-bounded request `[S − 1 ms, E)`. The 1 ms overlap places a row
 exactly at a slice boundary inside one request. Requests are ascending, minimal
 and offset-paged. Continuity checks:
 
-- The cursor binds a keyed chained digest of every offset range the previous
-  page consumed: its range in the current slice (from the state before the
-  page's first offset), and each finished slice the page returned states
-  from, with that slice's total (review M1). A continued page re-reads the
-  current-slice range in its first request and each finished-slice range in
-  one verification call (at most 12, reported as `verification_calls`). Any
-  difference, including an in-place change or a balanced insert and delete
-  that keeps every offset and the last state, fails as stale. History
-  returned two or more pages back is checked only through offset, overlap
-  and slice-start continuity.
+- The cursor carries cumulative continuity evidence for ALL history the read
+  has returned since its first page (review M1, residual corrected in the
+  second batch): one row per finished slice (every slice before the cursor's,
+  including empty ones) with its total and a keyed chained digest of the
+  whole slice from offset 0, plus the chained digest of the current slice
+  from offset 0 to the cursor offset. Every continued page re-reads all of
+  it before reading on: each finished slice must still report the same total
+  and digest, and the current slice at least the cursor offset with the same
+  digest. Any difference anywhere in already-returned history, including an
+  in-place change or a balanced insert and delete on any earlier page, or a
+  late state in an already covered empty slice, fails as stale; it is never
+  reported complete.
+- Cost, per continued call: the re-read is chunked at 100 entries per
+  request (`VERIFY_CHUNK`), one request at least per finished slice, and is
+  bounded at 40 verification reads (`MAX_VERIFY_CALLS`, reported as
+  `bounds.max_verification_calls_per_page` and per page as
+  `verification_calls`). It comes on top of the at most 12 slice reads, so a
+  continued call makes at most 52 bounded upstream requests, each at most
+  100 states; ha-mcp fetches the slice window once per request (see the
+  upstream behavior above). A first page makes no verification read. Cost
+  grows with history already returned: 28 empty slices cost 28 reads,
+  4000 returned states in one slice cost 40.
+- A page whose next continuation would need more than 40 verification reads
+  issues no cursor: `has_more` is false, `complete` is false, the omission is
+  `continuation_verification_limit`, and `complete_until` is the bound of what
+  was returned, never the window end. A new read starts there. A cursor
+  claiming partial evidence or a cost above the bound is refused as
+  `INVALID_CURSOR`.
 - Reads after the first in the same page overlap by one state and compare
   its keyed digest of (timestamp, state).
 - More than 100 entries before a slice start (the start state plus rows in
@@ -213,7 +231,8 @@ Outcomes:
 
 | Event | Result |
 |---|---|
-| A verification range or the first check of a continued call differs | `STALE_CURSOR`, reason `history_continuity_broken` |
+| Any already-returned range or the first check of a continued call differs | `STALE_CURSOR`, reason `history_continuity_broken` |
+| The next continuation would exceed 40 verification reads | `partial`, omission `continuation_verification_limit`, no cursor |
 | A later check in the same call fails | `partial`, omission `continuity_broken`, no cursor |
 | Upstream failure, including a verification read | `partial` with a resumable cursor |
 | Response byte ceiling | the page shrinks, then resumes after the last kept state |
@@ -304,7 +323,8 @@ Output:
   `upstream_read_gateway`, fallback `none`);
 - `bounds` and `limitations`.
 
-Each call makes at most 12 slice reads plus at most 12 verification reads.
+Each call makes at most 12 slice reads plus, on a continuation, at most 40
+verification reads of at most 100 states (52 requests).
 
 ### Shared architecture
 

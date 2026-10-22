@@ -70,8 +70,8 @@ Inputs:
 
 The window is read in fixed 6-hour slices. Each slice is one absolute-bounded,
 ascending, minimal `ha_get_history` request, with a reviewed version of 8.5.0
-or 8.6.0. Each call makes at most 12 slice reads plus at most 12
-verification reads.
+or 8.6.0. Each call makes at most 12 slice reads; a continuation also makes
+at most 40 verification reads of at most 100 states.
 
 Each page reports:
 - `state_at_window_start`, the states, and per-slice coverage;
@@ -80,14 +80,19 @@ Each page reports:
 - the provider version, with fallback `none`.
 
 The cursor binds the query, the fixed end, the provider contract and a
-digest of the history the previous page returned. A continuation re-reads
-that history and is refused as stale in these cases:
-- any change to an already-returned state, including an in-place edit or a
-  balanced insert and delete;
+cumulative digest of ALL history the read has returned on every earlier
+page. Each continuation re-reads all of it and is refused as stale in these
+cases:
+- any change to an already-returned state on any earlier page, including an
+  in-place edit or a balanced insert and delete;
 - a purge;
 - a late recorder write;
 - a changed slice-start state;
 - a different provider contract.
+
+When the next continuation would need more than 40 verification reads, the
+page issues no cursor and reports `continuation_verification_limit`; it is
+partial, and a new read starts at `coverage.complete_until`.
 
 ## Security
 

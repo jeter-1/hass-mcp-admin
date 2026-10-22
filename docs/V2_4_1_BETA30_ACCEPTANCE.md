@@ -99,6 +99,10 @@ credential-shaped string is assembled at test time.
     located (review M2), each deferral guard on its own, and the call
     budget covering the costliest locate, so a deferred source is located
     on the next page;
+  - the default request budget with level filtering, 1,900 Core entries
+    and sources `addon:self` then `core`: no page emits an entry earlier
+    than one already returned and each page stays within the request limit
+    (review M2, the reviewer's probe made asserting);
   - the level and literal text filters with skip counts;
   - a vacuum between pages (stale) and inside a call (gap);
   - cursor integrity, query binding and expiry;
@@ -137,6 +141,14 @@ credential-shaped string is assembled at test time.
     insert-and-delete inside the previous page, and a change in a finished
     slice the previous page returned, each stale; unchanged history
     continues (review M1);
+  - cumulative continuity (M1 residual, the reviewer's three
+    `test_hamcp131_history_residual_probes` tests unchanged): a change on
+    any earlier page, in the window-start state pages later, or a late state
+    in an already covered empty slice, each stale; unchanged history
+    re-verified in bounded chunks and complete; no cursor past the 40-read
+    verification bound (`continuation_verification_limit`); forged partial
+    or over-bound evidence `INVALID_CURSOR`; the largest cursor fits 4096
+    characters;
   - a failed verification read: partial and resumable; more pre-slice states
     than pinned: `representation_invalid`;
   - a provider contract change: stale;
@@ -158,11 +170,13 @@ credential-shaped string is assembled at test time.
     and gateway sanitization.
 - Count and catalog pins in the existing suites are updated from 62 to 64
   static tools.
-- Mutations: `docs/evidence/hamcp131-mutations/` (38 mutants across window
+- Mutations: `docs/evidence/hamcp131-mutations/` (40 mutants across window
   edges, cursor skip/duplicate, silent omission, sanitizer placement, slug
-  handling and the review's four classes: anchor-only staleness, a merged
+  handling, the review's four classes: anchor-only staleness, a merged
   page emitting an earlier entry, an inclusive boundary claimed complete and
-  `min_level` type errors escaping; results recorded in `results.json`).
+  `min_level` type errors escaping, and the M1 residual: evidence kept for
+  the previous page only and a cursor issued past the verification bound;
+  results recorded in `results.json`).
 
 ## 2. Release CI and publication
 

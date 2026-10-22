@@ -32,6 +32,13 @@ The independent review's correction batch adds:
 - ``R3``: an inclusive coverage bound claimed while tied states may remain;
 - ``R4``: a non-string ``min_level`` escaping as a ``TypeError``.
 
+The second correction batch (the M1 residual) retargets ``R1a``/``R1b`` at
+the cumulative verification and adds:
+- ``R5``: continuity evidence kept for the previous page only (the
+  8c8535d behavior: the evidence is reset after each verification, and the
+  cursor validation accepts such a partial range);
+- ``R6``: a cursor issued whose verification exceeds the per-page bound.
+
 Usage:
     python docs/evidence/hamcp131-mutations/run_mutations.py \\
         --work ~/.cache/hamcp131/mut --output docs/evidence/hamcp131-mutations/results.json
@@ -58,6 +65,7 @@ TRN = f"{E}/incident_logs/transport.py"
 HIS = f"{E}/history_slices/service.py"
 HCON = f"{E}/history_slices/contracts.py"
 MODULES = ("test_hamcp131_incident_logs", "test_hamcp131_history_slices",
+           "test_hamcp131_history_residual_probes",
            "test_hamcp191_shared_sanitizer", "test_hamcp200_path_safety")
 WINDOW = "window-edge off-by-one"
 CURSOR = "cursor skip or duplicate"
@@ -69,6 +77,8 @@ STALE = "anchor-only continuation staleness"
 ORDER = "a merged page emitting an earlier entry"
 TIE = "an inclusive boundary claimed complete"
 TYPING = "min_level type errors escaping"
+CUMULATIVE = "continuity evidence kept for the previous page only"
+BOUND = "a cursor past the verification bound"
 PASSTHROUGH = 'type("R", (), {"value": envelope, "failed_closed": False, "redacted_field_count": 0})'
 EXIT_CALL = "            result = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets, registry=registry)\n"
 
@@ -166,10 +176,24 @@ MUTATIONS = [
       (CON, "    if source_key in READABLE_ROUTES:\n        return None",
        '    if source_key in READABLE_ROUTES or source_key.startswith("addon:"):\n        return None')),
     m("R1a-history-in-slice-range-anchor-only", STALE,
-      (HIS, "        verify = scan.verify_range\n", "        verify = False\n")),
+      (HIS, "        if position.o > 0:\n            ranges.append((position.k, position.f, position.o, None, position.h))\n",
+       "")),
     m("R1b-history-finished-slices-not-reverified", STALE,
-      (HIS, "        for index, offset_from, total, chained in position.g:\n",
-       "        for index, offset_from, total, chained in ():\n")),
+      (HIS, "        ranges = [(index, offset_from, total, total, chained) for index, offset_from, total, chained in position.g]\n",
+       "        ranges = []\n")),
+    m("R5-history-only-previous-page-reverified", CUMULATIVE,
+      (HIS, "                raise Discontinuity\n        return None\n",
+       "                raise Discontinuity\n        position.g = ()\n        if position.o > 0:\n"
+       "            position.f, position.h = position.o - 1, self._chain(None, position.a)\n        return None\n"),
+      (HIS, '            or position["f"] != 0\n',
+       '            or not 0 <= position["f"] <= max(0, position["o"] - 1)\n'),
+      (HIS, "        if type(ranges) is not list or len(ranges) != current:\n",
+       "        if type(ranges) is not list or len(ranges) > current:\n"),
+      (HIS, "or row[0] != index or row[1] != 0 or not 0 <= row[2] <= 1_000_000",
+       "or not 0 <= row[0] < current or not 0 <= row[1] <= row[2] <= 1_000_000")),
+    m("R6-history-cursor-past-the-verification-bound", BOUND,
+      (HIS, "            capped = has_more and verification_calls(next_position) > c.MAX_VERIFY_CALLS\n",
+       "            capped = False\n")),
     m("R2a-deferred-source-merge-bound-dropped", ORDER,
       (INC, '        bounds += [args["start_ms"] - 1 for scan in scans if scan.deferred]\n',
        "        bounds += []\n")),
