@@ -1,5 +1,22 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.31** ships governed entity enable/disable and voice
+assistant exposure **inactive** (HAMCP-069B). The new tool
+`create_entity_availability_exposure_plan` proposes one operation (`disable`,
+`enable`, `expose` or `unexpose`) over 1-8 exact registered entities, for
+Assist or Google Assistant (Alexa refused). Its two resource types need two
+new Core capability profiles that the signed registry (sequence 12) does not
+reference. Every call is therefore refused with `CoreCapabilityUnavailable` /
+`pending_signed_registry_admission`, with no plan stored and nothing
+dispatched. `list_capabilities` and health show the same status. The
+release activates nothing new; activation and the live canaries wait for a
+separate owner-signed registry sequence 13. Static tools 65, advertised
+catalog 93 (94 with the optional YAML reader). Read the
+[2.4.1-beta.31 release notes](docs/V2_4_1_BETA31_RELEASE_NOTES.md) and
+[2.4.1-beta.31 acceptance contract](docs/V2_4_1_BETA31_ACCEPTANCE.md).
+
+It builds on beta.30 below.
+
 Engineering **2.4.1-beta.30** adds two read-only tools (HAMCP-131).
 `get_incident_logs` reads one incident window of at most 6 hours from the Core
 journal and Engineering's own add-on journal. It merges them in time order,
@@ -254,8 +271,8 @@ beta.7's delegated platform reads (`ha_get_system_health`, `ha_get_app` and
 deep-health correction, beta.4's dormant governed
 entity-registry metadata administration (`create_entity_metadata_plan`) and
 beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
-The healthy catalog is **87 tools: 59 native and 28 admitted delegated
-reads**. The Core profiles, probe and signed fingerprints, storage
+At beta.18 the healthy catalog was **87 tools: 59 native and 28 admitted
+delegated reads** (the current count is under *Capabilities and compatibility*). The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
 See the [release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
 [acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md).
@@ -395,10 +412,12 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**64 static tools plus 28 delegated reads, 92 total** (93 with the optional
-reviewed YAML reader admitted; the 63rd and 64th static tools are HAMCP-131's
-read-only `get_incident_logs` and `get_history_slices`). The Core inventory represents
-**22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
+**65 static tools plus 28 delegated reads, 93 total** (94 with the optional
+reviewed YAML reader admitted; the 65th static tool is HAMCP-069B's
+`create_entity_availability_exposure_plan`, refused until a signed registry
+admits its profiles). The Core inventory represents
+**24 capability profiles** (three dormant, unselected by any signed entry: the
+earlier one plus HAMCP-069B's two). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol
 enumeration and descriptor comparison establish the catalog; a health count or
