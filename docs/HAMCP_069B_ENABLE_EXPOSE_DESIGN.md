@@ -1,8 +1,116 @@
 # HAMCP-069B governed entity enable/disable and voice-assistant exposure — design
 
-Status: **proposed. This document needs Josh's decisions before
-implementation starts** (§13). It does not authorize implementation,
+Status: **owner decisions recorded 2026-10-22 (§0). Implementation is
+stopped at the OD-2(a) gate (§0.2).** This document does not authorize
 deployment, live Home Assistant access, registry signing or a release.
+
+## 0. Owner decisions (Josh, 2026-10-22)
+
+### 0.1 Decisions
+
+These supersede the recommendations in §13 where they differ.
+
+- **OD-1:** one new sibling tool, two resource types (availability;
+  exposure).
+- **OD-2:** (a) first verify against the signed sequence-12 registry
+  contract whether `config/entity_registry/update` with `disabled_by` is
+  already admitted under the existing reviewed Core profile. If yes,
+  enable/disable ships active under sequence 12. If no, report exactly what is
+  missing and stop before inventing a profile. (b) Exposure gets its new Core
+  profile written and tested, inactive until the sequence-13 registry, which
+  is signed together with the Core 2026.11 admission. No registry is created,
+  signed or modified, and there is no unsigned local admission.
+- **OD-3:** Google Assistant (through Home Assistant Cloud; primary) and Assist
+  (`conversation`) only. **Alexa is out of scope.** For Google, the readback
+  proves only the stored setting; a cloud YAML filter can override it, and
+  this is disclosed.
+- **OD-4:** protected objects are locks, alarm panels, covers of device class
+  garage, gate or door, valves, sirens, and safety sensors (smoke, carbon
+  monoxide, gas, moisture, safety). Unresolved is protected.
+- **OD-5:** as proposed in §6.2, except as OD-9 states. Exposure changes are
+  standard. Exposing a protected object, disabling a protected object or an
+  entity a protected automation depends on, and enabling a protected entity
+  that is still exposed (5c) are elevated.
+- **OD-6:** enabling `integration`-disabled entities is allowed, with
+  disclosure. `device`, `config_entry` and `hass` are refused with exact
+  reasons.
+- **OD-7:** at most 25 entities per plan; an enable plan covers one config
+  entry (one reload); execution stops on the first failure.
+- **OD-8:** (a) refuse an undo when there was no prior exposure setting to
+  restore.
+- **OD-9 (supersedes §6.3):** protected cases are classified `elevated_admin`
+  under the **existing** elevated approval mechanism. There is no change to the
+  approval core and no HAMCP-213 per-object acknowledgement. The approval page
+  carries a plain-language consequence statement (for example, "This exposes
+  lock.front_door to Google Assistant: anyone who can speak to it may unlock
+  the door without a PIN"; "Disabling this breaks automation X").
+- **OD-10:** exposure of entities not in the registry is refused.
+- **OD-11:** Google `disable_2fa` and the "expose new entities" setting are
+  excluded.
+- **OD-12:** `hidden_by` stays in 069A-1.
+
+### 0.2 OD-2(a) verification result: not admitted
+
+Verified at `main` `816de8db02f224fb6610c6b6aaad43a5d20b2b38` against
+`upstream-trust/ha-core-release-registry.json`, envelope sequence 12 (entries
+2026.10.0 and 2026.10.1). The answer is **no**. Enable/disable cannot ship
+active under sequence 12.
+
+What sequence 12 admits:
+
+- 22 capabilities per entry. The only entity-registry write among them is
+  `core.entity_registry_metadata_operation`, profile
+  `core_entity_registry_metadata_operation_v1` version 1, adapter
+  `compiled-core-entity-registry-metadata-operation-v1`, contract fingerprint
+  `sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767`.
+- That fingerprint is recomputed from the compiled profile
+  (`ha_core_readmission/profiles.py:472-499`) and matches exactly. The
+  existing test `tests/test_hamcp069a_entity_metadata_readmission.py` pins the
+  same equality (20 tests passed locally).
+
+What that signed contract covers, and why `disabled_by` is outside it:
+
+- Its `response_contract.fields` is the closed list `aliases`, `area_id`,
+  `categories`, `hidden_by`, `icon`, `labels`, `name`
+  (`profiles.py:488-491`). `disabled_by` is not in it.
+- Its required check is `websocket_entity_registry_update_closed_fields`,
+  which is the same closed list.
+- The reviewed provider declares `disabled_by` in `never_sent`
+  (`governance/entity_metadata.py:118-127`), and its gateway refuses any key
+  outside `{type, entity_id, *MANAGED_FIELDS}` with `closed_payload_violation`
+  (`entity_metadata.py:582-596`).
+- The route binding admits the metadata route only
+  (`ha_core_readmission/routes.py:66-73`, :155-158).
+- The other admitted write profiles do not cover entity-registry writes:
+  `core.governed_configuration_operation` is limited to "existing typed
+  governed provider only", `core.typed_helper_operation` to typed helpers, and
+  `core.f3_mutation_verification` is verification only. Routing a
+  `disabled_by` write through any of them would be an unsigned widening of a
+  signed contract, which OD-2 forbids.
+
+What is missing for enable/disable to be active:
+
+1. A Core capability profile whose signed contract covers
+   `config/entity_registry/update` limited to `disabled_by ∈ {"user", null}`,
+   with exact readback. Either a new profile (the §4.2
+   `core.entity_registry_availability_operation`) or a changed 069A profile.
+   A changed 069A profile changes fingerprint `cc09630e…` and un-admits the
+   live `create_entity_metadata_plan` until it is re-signed (§4.1).
+2. A signed registry sequence that pins that profile's fingerprint for the
+   supported Core releases. Sequence 12 does not, and no later sequence exists.
+
+Per OD-2(a), implementation stopped here. No profile, schema, runtime, test,
+registry or version change was made. Decision needed from Josh (§0.3).
+
+### 0.3 Open decision after OD-2(a)
+
+- **OD-2c:** with enable/disable not admitted under sequence 12, choose one:
+  - (i) Write the enable/disable profile as well, inactive like exposure, and
+    sign both into sequence 13 with the Core 2026.11 admission. The release
+    then ships no active capability, and its acceptance has no live canary
+    until sequence 13.
+  - (ii) Defer the implementation until sequence 13 is planned.
+  - (iii) Another direction.
 
 - Register: HAMCP-069 (this increment is recorded as 069B; the row stays
   Active).
