@@ -833,7 +833,7 @@ expose and unexpose.
 - protected escalation, for each §6.1 rule including `unresolved`;
 - stale baseline and changed dependency evidence refused;
 - the reload/restart warning text for supports-unload true, false and none;
-- grouping, the single-entry rule for enable, and the 25 and 26 limits;
+- grouping, the single-entry rule for enable, and the 8 and 9 limits (§0.4);
 - a readback mismatch leading to `verification_failed`;
 - a tolerated new Alexa options key;
 - the cloud YAML-filter disclosure.
