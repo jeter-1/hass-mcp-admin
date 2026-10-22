@@ -95,6 +95,9 @@ class Scan:
     failure: str | None = None
     stopped: str | None = None
     gateway_partial: bool = False
+    # Timestamp of the first in-window state read but not emitted (the limit
+    # look-ahead); None when no such state was seen.
+    next_ts: int | None = None
 
 
 class Discontinuity(Exception):
@@ -256,6 +259,7 @@ class HistorySliceService:
                 if not position.checked:
                     self._check_slice_start(position, scan)
                 if len(scan.emitted) >= args["limit"]:
+                    scan.next_ts = ts_us
                     break
             position.o += 1
             position.a = self._entry_digest(ts_us, state)
@@ -336,7 +340,8 @@ class HistorySliceService:
                                    "state": _truncate_state(state)}
             else:
                 start_state = "reported_on_first_page_only"
-            complete_until = self._complete_until(scan, args, kept, has_more, next_position)
+            lookahead = scan.emitted[emit_cap][0] if cut else scan.next_ts
+            complete_until = self._complete_until(scan, args, kept, has_more, next_position, lookahead)
             envelope = {
                 "schema": c.SCHEMA,
                 "entity_id": args["entity_id"],
@@ -385,8 +390,15 @@ class HistorySliceService:
             return result.value
 
     @staticmethod
-    def _complete_until(scan: Scan, args: dict, kept, has_more: bool, next_position) -> dict | None:
-        """The bound through which every state in the window has been returned."""
+    def _complete_until(scan: Scan, args: dict, kept, has_more: bool, next_position,
+                        lookahead: int | None) -> dict | None:
+        """The bound through which every state in the window has been returned.
+
+        The last returned timestamp is claimed inclusively only when the next
+        unread state is known to be later; otherwise more states may share it
+        (the cursor offset is the tie-break), so the bound excludes it (review
+        M3).
+        """
 
         if not scan.rows and not kept:
             return None
@@ -396,7 +408,8 @@ class HistorySliceService:
             lower, _ = c.slice_bounds(args["start_us"], args["end_us"], next_position.k)
             return {"at": c.format_public(lower), "inclusive": False}
         if kept:
-            return {"at": c.format_us(kept[-1][0]), "inclusive": True}
+            last = kept[-1][0]
+            return {"at": c.format_us(last), "inclusive": lookahead is not None and lookahead > last}
         return None
 
     @staticmethod

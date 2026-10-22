@@ -66,6 +66,34 @@ def states(pages) -> list[tuple[int, str]]:
     return [(us(item["at"][:-6]), item["state"]) for page in pages for item in page["states"]]
 
 
+def bound_us(text: str) -> int:
+    return us(text[:-1] if text.endswith("Z") else text[:-6])
+
+
+def coverage_violations(pages, expected) -> list[str]:
+    """Every page's complete_until must be honest against the full read.
+
+    Through the bound (inclusive or exclusive), every expected state has been
+    returned on this or an earlier page, and no later page returns a state
+    the bound already claimed (review M3).
+    """
+
+    problems = []
+    for number, page in enumerate(pages):
+        bound = page["coverage"]["complete_until"]
+        if bound is None:
+            continue
+        limit = bound_us(bound["at"])
+        claimed = (lambda ts: ts <= limit) if bound["inclusive"] else (lambda ts: ts < limit)
+        so_far = states(pages[:number + 1])
+        later = states(pages[number + 1:])
+        if any(claimed(ts) for ts, _ in later):
+            problems.append(f"page {number}: a later page returns a state at or before {bound}")
+        if [row for row in expected if claimed(row[0])] != [row for row in so_far if claimed(row[0])]:
+            problems.append(f"page {number}: {bound} claims states not yet returned")
+    return problems
+
+
 class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.recorder = Recorder()
@@ -212,6 +240,27 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
                 for page in pages[:-1]:
                     self.assertIn("states_limit_reached", page["omissions"])
                     self.assertEqual(page["completeness"], "partial")
+                self.assertEqual(coverage_violations(pages, expected), [])
+
+    async def test_an_inclusive_bound_is_never_claimed_while_ties_remain(self):
+        # Review M3 reproduction: three states share 02:00:00; a page that
+        # ends inside the tie must not claim 02:00:00 complete.
+        self.recorder.add(S0 - 5, "start")
+        for i in range(3):
+            self.recorder.add(at("02:00:00"), f"same_{i}")
+        self.recorder.add(at("03:00:00"), "after")
+        first = await self.read(end=END, limit=2)
+        self.assertEqual(first["coverage"]["complete_until"],
+                         {"at": "2026-10-19T02:00:00.000000+00:00", "inclusive": False})
+        second = await self.read(end=END, limit=1, cursor=first["next_cursor"])
+        self.assertEqual([item["state"] for item in second["states"]], ["same_2"])
+        # The next unread state is later, so this tie is now complete.
+        self.assertEqual(second["coverage"]["complete_until"],
+                         {"at": "2026-10-19T02:00:00.000000+00:00", "inclusive": True})
+        pages = [first, second]
+        while pages[-1]["next_cursor"]:
+            pages.append(await self.read(end=END, limit=1, cursor=pages[-1]["next_cursor"]))
+        self.assertEqual(coverage_violations(pages, oracle(self.recorder, S0, S2)), [])
 
     async def test_the_cursor_carries_across_slices_and_reports_coverage_per_page(self):
         base = us("2026-10-17T00:00:00")
@@ -427,6 +476,16 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
             self.assertLessEqual(len(json.dumps(page, separators=(",", ":"))), c.RESPONSE_BUDGET)
             self.assertTrue(all(len(item["state"]) <= c.MAX_STATE_CHARS for item in page["states"]))
         self.assertEqual([state[:3] for _, state in states(pages)], [f"{i:03d}" for i in range(100)])
+        self.assertEqual(coverage_violations(pages, oracle(self.recorder, S0, S2)), [])
+
+    async def test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp(self):
+        self.recorder.add(S0 - 5, "s")
+        for i in range(100):
+            self.recorder.add(at("01:00:00"), f"{i:03d}" + "\u00e9" * 250)
+        pages = await self.read_all(limit=100)
+        self.assertIn("response_bytes_limit", pages[0]["omissions"])
+        self.assertEqual(pages[0]["coverage"]["complete_until"]["inclusive"], False)
+        self.assertEqual(coverage_violations(pages, oracle(self.recorder, S0, S2)), [])
 
     # -- secrets ------------------------------------------------------------------
 

@@ -279,7 +279,11 @@ Output:
 
 - `state_at_window_start`;
 - `states[]`, each with `at`, `state` (at most 255 characters) and `slice`;
-- `coverage`, with `continued`, `complete_until` and a per-slice row;
+- `coverage`, with `continued`, `complete_until` and a per-slice row.
+  `complete_until` claims its timestamp inclusively only when the next unread
+  state is known to be later. When more states may share that timestamp (a
+  page that ends inside a tie, a byte cut, or an unknown next state), the
+  bound is exclusive and the cursor offset is the tie-break (review M3);
 - `omissions`, `truncated`, `has_more`, `next_cursor`, `complete`;
 - `upstream_calls` and `provider` (upstream tool and version, route
   `upstream_read_gateway`, fallback `none`);
