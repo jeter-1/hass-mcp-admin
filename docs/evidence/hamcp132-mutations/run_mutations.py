@@ -87,6 +87,17 @@ removed, a configured value shaped like the marker not treated as withheld,
 the marker emitted for another integration's ``db_url``, the SQL ``db_url``
 listed as withheld again, and its value copied instead of the marker.
 
+The owner decision of 2026-10-22 (nothing is derived from an input that is
+withheld or that the exit point would withhold) adds ``B5-*``: the entity ID
+derived from the raw name even when it is withheld (the required mutant), a
+withheld name listed but its ID still derived or not listed, the unique_id
+guard removed or not listed, the template block or tariff unique_id input
+dropped, the projection or sanitizer leg of the input check removed, the
+known secrets dropped from it or from the collector, dependencies read out
+of a withheld value or the diagnosis guard removed, a withheld key kept in
+the definition ID, a withheld legacy name matched, and the internal keys
+rendered.
+
 Usage:
     python docs/evidence/hamcp132-mutations/run_mutations.py \
         --work ~/hamcp132-work/mut --output docs/evidence/hamcp132-mutations/results.json
@@ -156,6 +167,7 @@ B2_IDENTITY = "delta review M4: a malformed registry identity is invalid, never 
 B3_INVISIBLE = "corr2 review R2-H1: invisible, format or control text is withheld whole, never screened and shown"
 B3_COMPLETE = "corr2 review R2-M1: any withheld form anywhere in the final envelope makes the report partial"
 B4_POLICY = "owner decision 2026-10-22: only the SQL db_url policy redaction leaves a report complete"
+B5_DERIVED = "owner decision 2026-10-22: nothing is derived from a withheld input"
 
 
 def m(identifier, item, *replacements):
@@ -751,6 +763,46 @@ MUTATIONS = [
     m("B4-P13-sql-db-url-value-copied", B4_POLICY,
       (DPROJ, '                    fields[key] = c.db_url_policy_redaction()\n',
        '                    fields[key] = value\n')),
+    m("B5-N1-entity-id-derived-from-withheld-name", B5_DERIVED,
+      (DPROJ, '        elif self._input_withheld(*name_inputs):', '        elif False:')),
+    m("B5-N2-withheld-name-listed-but-id-derived", B5_DERIVED,
+      (DPROJ, '            object_id, limit = None, c.DERIVED_ENTITY_ID_WITHHELD\n', '')),
+    m("B5-N3-withheld-name-not-listed", B5_DERIVED,
+      (DPROJ, '            record["withheld"].append(f"{position}.derived_entity_id")\n', '')),
+    m("B5-U1-unique-id-guard-removed", B5_DERIVED,
+      (DPROJ, '        if self._input_withheld(*uid_inputs):', '        if False:')),
+    m("B5-U2-withheld-unique-id-not-listed", B5_DERIVED,
+      (DPROJ, '            record["withheld"].append(f"{position}.unique_id")\n', '')),
+    m("B5-U3-template-block-unique-id-input-dropped", B5_DERIVED,
+      (DPROJ, '            uid_inputs = (block_uid_input, entity.get("unique_id"))\n', '')),
+    m("B5-U4-tariff-unique-id-input-dropped", B5_DERIVED,
+      (DPROJ, 'uid_inputs=(raw_uid, tariff) if uid else (raw_uid,))', 'uid_inputs=(raw_uid,))')),
+    m("B5-X1-projection-leg-of-input-check-removed", B5_DERIVED,
+      (DPROJ, '            if scratch["withheld"] or scratch["include_not_followed"]:\n                return True\n',
+       '')),
+    m("B5-X2-sanitizer-leg-of-exit-check-removed", B5_DERIVED,
+      (DCRED, '    result = sanitize_untrusted_data(value, known_secrets=known_secrets, max_string=c.MAX_TEXT)\n'
+              '    return bool(', '    result = None\n    return False and bool(')),
+    m("B5-X3-known-secrets-dropped-from-input-check", B5_DERIVED,
+      (DPROJ, 'any(withheld_at_exit(text, self.known_secrets)', 'any(withheld_at_exit(text)')),
+    m("B5-X4-known-secrets-not-passed-to-collector", B5_DERIVED,
+      (DSVC, 'Definitions(envelopes, self.known_secrets)', 'Definitions(envelopes)')),
+    m("B5-D1-dependencies-read-from-withheld-value", B5_DERIVED,
+      (DPROJ, 'record["withheld"].append(f"{record[\'definition_id\']}.dependencies")\n                continue\n',
+       'record["withheld"].append(f"{record[\'definition_id\']}.dependencies")\n')),
+    m("B5-D2-dependencies-withheld-flag-not-set", B5_DERIVED,
+      (DPROJ, '                record["dependencies_withheld"] = True\n', '')),
+    m("B5-D3-diagnosis-dependency-guard-removed", B5_DERIVED,
+      (DDIAG, '    if definition is not None and definition.get("dependencies_withheld"):', '    if False:')),
+    m("B5-K1-withheld-key-kept-in-definition-id", B5_DERIVED,
+      (DPROJ, '        if self._input_withheld(key):\n            path = f"{prefix}[{position}]"',
+       '        if False:\n            path = f"{prefix}[{position}]"')),
+    m("B5-L1-withheld-legacy-name-matched", B5_DERIVED,
+      (DPROJ, '        if type(name) is not str or self._input_withheld(name):',
+       '        if type(name) is not str:')),
+    m("B5-S1-internal-keys-rendered", B5_DERIVED,
+      (DSVC, '_INTERNAL_KEYS = ("dependencies", "dependencies_withheld", "legacy_object_id")',
+       '_INTERNAL_KEYS = ("dependencies",)')),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

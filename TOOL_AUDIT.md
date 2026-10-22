@@ -64,6 +64,10 @@ SQL definition's own `db_url` is always replaced with
 inside that same scan (SQL `fields.db_url` only), does not make the report
 partial. A `db_url` anywhere else, a credential in any other SQL field, or a
 policy-shaped value from configuration is still withheld and partial.
+Nothing is derived from a withheld input (owner decision, Josh,
+2026-10-22): a withheld name, key or unique_id input yields no derived entity
+ID, generated unique ID, dependency, definition-ID key or legacy candidate,
+and is listed as withheld, so the report is partial.
 
 At a single exit point every key and string of the final envelope (titles,
 metadata, reasons, omissions included) is screened for credential text and

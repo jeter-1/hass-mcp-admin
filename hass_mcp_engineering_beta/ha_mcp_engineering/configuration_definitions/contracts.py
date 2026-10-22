@@ -82,6 +82,18 @@ POLICY_REDACTED_INTEGRATION = "sql"
 def db_url_policy_redaction() -> dict[str, str]:
     return {POLICY_REDACTION_KEY: DB_URL_POLICY_KIND}
 
+
+# Owner decision (Josh, 2026-10-22): nothing is derived from an input that is
+# withheld or that the exit point would withhold (``credentials.withheld_at_exit``).
+# An expected entity then has no derived entity ID (``derived_entity_id_withheld``),
+# or, when a unique_id input is withheld, no unique_id and no derived entity ID
+# (``unique_id_withheld``); dependencies read from a withheld value are not
+# extracted; a key that is withheld does not appear in the definition ID. Each
+# case lists a path in the definition's ``withheld``, so the report is partial.
+DERIVED_ENTITY_ID_WITHHELD = "derived_entity_id_withheld"
+UNIQUE_ID_WITHHELD = "unique_id_withheld"
+DEPENDENCIES_WITHHELD = "dependencies_withheld"
+
 LABELLED_KEY_DISCLOSURE = (
     "keys with a label (for example 'template 2:' or 'sensor kitchen:') cannot be addressed by the "
     "YAML reader and are not read"

@@ -51,6 +51,13 @@ Builds on 2.4.1-beta.30.
   `{"redacted_by_policy": "database_url"}` and, through an explicit
   allowlist inside the same final-envelope scan (SQL `fields.db_url` only),
   leaves the report complete. Every other withholding is still partial.
+- Owner decision (Josh, 2026-10-22): nothing is derived from a withheld
+  input. A withheld name, default-name input or key derives no entity ID
+  (`derived_entity_id_withheld`); a withheld unique_id input generates no
+  unique ID (`unique_id_withheld`); a withheld dependency value is not read
+  (`dependencies_withheld`, diagnosis `undetermined`); a withheld key is not
+  in the definition ID; a withheld legacy name is never a candidate. Each is
+  listed as withheld, so the report is partial.
 - Catalog: 65 static tools, 93 advertised (94 with the optional YAML reader).
   No existing descriptor, schema, stored format, dependency or workflow
   changes.

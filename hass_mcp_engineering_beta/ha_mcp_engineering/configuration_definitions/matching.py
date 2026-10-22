@@ -24,7 +24,10 @@ registry rows its unique_id names (M1): a unique_id two read definitions
 share is ambiguous in both directions.
 
 A legacy platform entry (``unsupported_legacy_platform``) creates no entity
-in this Core and is never matched; it is only a diagnosis signal.
+in this Core and is never matched; it is only a diagnosis signal. Its
+candidate object ID is computed by the projection and is absent when the
+name is withheld (owner decision, Josh, 2026-10-22), so a candidate never
+reveals withheld text.
 """
 
 from __future__ import annotations
@@ -33,7 +36,6 @@ import re
 from typing import Any
 
 from . import schemas as s
-from .naming import core_slugify
 
 _SUFFIX = re.compile(r"(.+)_([2-9]|[1-9][0-9]{1,3})\Z")
 MAX_CANDIDATES = 5
@@ -80,9 +82,9 @@ class Matcher:
         for definition in self.definitions:
             if definition["form"] != "legacy_platform" or definition["entity_domain"] != domain:
                 continue
-            name = definition["fields"].get("name")
-            if type(name) is str and not any(m in name for m in s.TEMPLATE_MARKERS) \
-                    and core_slugify(name.lower()) == object_id:
+            # Computed by the projection, and absent when the name is withheld
+            # (owner decision, Josh, 2026-10-22), so a match never reveals it.
+            if definition.get("legacy_object_id") == object_id:
                 found.append(definition["definition_id"])
         return found[:MAX_CANDIDATES]
 

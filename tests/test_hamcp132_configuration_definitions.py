@@ -34,6 +34,7 @@ from ha_mcp_engineering.capabilities import (  # noqa: E402
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.configuration_definitions import contracts as c  # noqa: E402
+from ha_mcp_engineering.configuration_definitions import credentials  # noqa: E402
 from ha_mcp_engineering.configuration_definitions import diagnosis  # noqa: E402
 from ha_mcp_engineering.configuration_definitions import schemas as s  # noqa: E402
 from ha_mcp_engineering.configuration_definitions import service as service_module  # noqa: E402
@@ -2720,13 +2721,19 @@ class InvisibleTextTests(Base):
         self.assertIn("template[0].sensor[0].attributes.<key>", row["withheld"])
         self.assert_partial(report, "withheld:definitions[0]")
 
-    async def test_exit_point_withholds_invisible_text_outside_the_projection(self):
+    async def test_invisible_group_key_is_withheld_before_the_exit_point(self):
+        # Owner decision (Josh, 2026-10-22): the key no longer reaches the
+        # definition ID or the derived entity ID, so the exit point never sees it.
         values = owner_yaml(group={"lights" + chr(0x200B): {"entities": ["light.kitchen"]}})
         report = await self.run_report(values, integrations=("group",))
         serialized = json.dumps(report, ensure_ascii=False)
         self.assertNotIn(chr(0x200B), serialized)
-        self.assert_partial(report, "unverifiable_text_withheld")
-        self.assertTrue(any(item.startswith("withheld:definitions[") for item in report["omissions"]))
+        self.assertNotIn("lights", serialized)
+        self.assert_partial(report, "withheld:definitions[0]")
+        row = report["definitions"][0]
+        self.assertEqual(row["definition_id"], "group[0]")
+        self.assertEqual(row["withheld"], ["group[0].<key>", "group[0].expected_entities[0].derived_entity_id"])
+        self.assertEqual(expected(row), [entity_row("group", None, None, None, c.DERIVED_ENTITY_ID_WITHHELD)])
 
     async def test_exit_point_withholds_invisible_strings_and_keys(self):
         env = setup()
@@ -3090,3 +3097,239 @@ class PolicyRedactionTests(Base):
                     "ui_entries": [{"title": dict(POLICY_DB_URL)}]}
         self.assertEqual(credentials.withheld_items(envelope, []), [
             "withheld:definitions[1]", "withheld:definitions[2]", "withheld:definitions[3]", "withheld:ui_entries[0]"])
+
+
+DERIVED_NEEDLE = syn.needle("derivedname")
+
+
+def withheld_inputs():
+    """Inputs the projection or the exit point withholds, assembled at test time."""
+
+    return {
+        "credential_uri": "Free " + db_url("mysql"),
+        "known_secret": "Token " + HA_TOKEN,
+        "bearer": syn.bearer(DERIVED_NEEDLE),
+        "jwt": "Key " + syn.jwt("derivedjwt"),
+        "invisible": "Free" + chr(0x200B) + " space",
+        "secret_reference": {"__ha_secret__": SECRET_NAME},
+    }
+
+
+class DerivedValueWithholdingTests(Base):
+    """Owner decision (Josh, 2026-10-22): nothing is derived from a withheld input.
+
+    A name, key, tariff, source, type or unique_id that the projection
+    withholds, or whose text the exit point would withhold, yields no derived
+    entity ID (``derived_entity_id_withheld``), no generated unique_id
+    (``unique_id_withheld``), no dependency entity IDs (``dependencies_withheld``),
+    no definition ID text and no legacy name match. Each case is listed in the
+    definition's ``withheld``, so the report is partial.
+    """
+
+    def assert_no_slug(self, report, text):
+        slug = core_slugify(text.lower()) if type(text) is str else None
+        serialized = json.dumps(report, ensure_ascii=False).lower()
+        for needle in (*LEAK_NEEDLES, HA_TOKEN, DERIVED_NEEDLE, SECRET_NAME):
+            self.assertNotIn(needle.lower(), serialized)
+        if slug:
+            self.assertNotIn(slug, serialized)
+
+    async def test_credential_url_in_a_sql_name_derives_no_entity_id(self):
+        sql = {**owner_sql()[0], "name": withheld_inputs()["credential_uri"]}
+        report = await self.run_report(owner_yaml(sql=[sql]), integrations=("sql",))
+        row = self.definitions(report)["sql[0]"]
+        self.assertEqual(row["fields"]["name"], {"withheld": "credential_uri"})
+        self.assertEqual(expected(row), [entity_row("sensor", "sql_db_free_space", None, None,
+                                                    c.DERIVED_ENTITY_ID_WITHHELD)])
+        self.assertEqual(row["withheld"], ["sql[0].name", "sql[0].expected_entities[0].derived_entity_id"])
+        self.assert_partial(report, "withheld:definitions[0]")
+        self.assert_no_slug(report, sql["name"])
+
+    async def test_credential_url_in_a_sql_name_through_the_authenticated_gateway(self):
+        sql = {**owner_sql()[0], "name": withheld_inputs()["credential_uri"]}
+        response, data, audit = await serve_through_gateway({"integrations": ["sql"]}, owner_yaml(sql=[sql]))
+        self.assertTrue(data["success"], data)
+        self.assertEqual(data["metadata"]["completeness"], "partial")
+        row = data["data"]["definitions"][0]
+        self.assertEqual(row["fields"]["name"], {"withheld": "credential_uri"})
+        self.assertIsNone(row["expected_entities"][0]["derived_entity_id"])
+        self.assertEqual(row["expected_entities"][0]["derivation_limit"], c.DERIVED_ENTITY_ID_WITHHELD)
+        self.assertIn("withheld:definitions[0]", data["data"]["omissions"])
+        slug = core_slugify(sql["name"].lower())
+        for text in (response.lower(), audit.lower()):
+            self.assertNotIn(slug, text)
+            for needle in LEAK_NEEDLES:
+                self.assertNotIn(needle.lower(), text)
+
+    async def test_every_withheld_name_form_derives_no_entity_id(self):
+        for kind, name in withheld_inputs().items():
+            with self.subTest(kind):
+                sql = {**owner_sql()[0], "name": name}
+                report = await self.run_report(owner_yaml(sql=[sql]), integrations=("sql",))
+                row = self.definitions(report)["sql[0]"]
+                self.assertIsNone(row["expected_entities"][0]["derived_entity_id"])
+                self.assertEqual(row["expected_entities"][0]["derivation_limit"], c.DERIVED_ENTITY_ID_WITHHELD)
+                self.assertIn("sql[0].expected_entities[0].derived_entity_id", row["withheld"])
+                self.assertFalse(report["complete"])
+                self.assert_no_slug(report, name)
+
+    async def test_text_the_exit_point_would_truncate_derives_no_entity_id(self):
+        sql = {**owner_sql()[0], "name": "x" * (c.MAX_TEXT + 1)}
+        report = await self.run_report(owner_yaml(sql=[sql]), integrations=("sql",))
+        row = self.definitions(report)["sql[0]"]
+        self.assertEqual(row["expected_entities"][0]["derivation_limit"], c.DERIVED_ENTITY_ID_WITHHELD)
+        self.assertFalse(report["complete"])
+
+    async def test_withheld_keys_leave_no_definition_id_or_entity_id(self):
+        bearer = withheld_inputs()["bearer"]
+        cases = {
+            "group": (owner_yaml(group={bearer: {"entities": ["light.kitchen"]}}), "group", "group[0]",
+                      [entity_row("group", None, None, None, c.DERIVED_ENTITY_ID_WITHHELD)]),
+            "utility_meter": (owner_yaml(utility_meter={bearer: {"source": "sensor.energy_total"}}),
+                              "utility_meter", "utility_meter[0]",
+                              [entity_row("sensor", None, None, None, c.DERIVED_ENTITY_ID_WITHHELD)]),
+            "trend": (owner_yaml(binary_sensor=[{"platform": "trend", "sensors": {
+                bearer: {"entity_id": "sensor.outdoor_temperature"}}}]), "trend", "binary_sensor[0].sensors[0]",
+                [entity_row("binary_sensor", None, None, None, c.DERIVED_ENTITY_ID_WITHHELD)]),
+        }
+        for name, (values, integration, definition_id, rows) in cases.items():
+            with self.subTest(name):
+                report = await self.run_report(values, integrations=(integration,))
+                row = self.definitions(report)[definition_id]
+                self.assertEqual(expected(row), rows)
+                self.assertEqual(row["withheld"][:2], [f"{definition_id}.<key>",
+                                                       f"{definition_id}.expected_entities[0].derived_entity_id"])
+                self.assertFalse(report["complete"])
+                self.assert_no_slug(report, bearer)
+
+    async def test_withheld_tariff_withholds_only_its_own_entity(self):
+        meter = {"energy": {"source": "sensor.energy_total", "unique_id": "meter_energy",
+                            "tariffs": ["peak", withheld_inputs()["bearer"]]}}
+        report = await self.run_report(owner_yaml(utility_meter=meter), integrations=("utility_meter",))
+        row = self.definitions(report)["utility_meter.energy"]
+        self.assertEqual(expected(row), [
+            entity_row("select", "meter_energy", "select.energy", "key"),
+            entity_row("sensor", "meter_energy_peak", "sensor.energy_peak", "key_and_tariff"),
+            entity_row("sensor", None, None, None, c.UNIQUE_ID_WITHHELD),
+        ])
+        self.assertIn("utility_meter.energy.expected_entities[2].unique_id", row["withheld"])
+        self.assertFalse(report["complete"])
+        self.assert_no_slug(report, withheld_inputs()["bearer"])
+
+    async def test_withheld_default_name_inputs_derive_no_entity_id(self):
+        bearer = withheld_inputs()["bearer"]
+        cases = {
+            "derivative_source": {"platform": "derivative", "source": bearer},
+            "integration_source": {"platform": "integration", "source": bearer},
+            "min_max_type": {"platform": "min_max", "type": bearer, "entity_ids": ["sensor.a", "sensor.b"]},
+            "group_type": {"platform": "group", "type": bearer, "entities": ["sensor.a"]},
+            "group_default_name_type": {"platform": "group", "name": "Sensor Group", "type": bearer,
+                                        "entities": ["sensor.a"]},
+            "namespace": {"platform": "derivative", "name": "Rate", "source": "sensor.a",
+                          "entity_namespace": bearer},
+        }
+        for name, entry in cases.items():
+            with self.subTest(name):
+                report = await self.run_report(owner_yaml(sensor=[entry]), integrations=(entry["platform"],))
+                row = self.definitions(report)["sensor[0]"]
+                self.assertEqual(expected(row), [entity_row("sensor", None, None, None,
+                                                            c.DERIVED_ENTITY_ID_WITHHELD)])
+                self.assertIn("sensor[0].expected_entities[0].derived_entity_id", row["withheld"])
+                self.assertFalse(report["complete"])
+                self.assert_no_slug(report, bearer)
+
+    async def test_withheld_unique_id_inputs_generate_no_unique_id(self):
+        bearer = withheld_inputs()["bearer"]
+        cases = {
+            "sql": (owner_yaml(sql=[{**owner_sql()[0], "unique_id": bearer}]), "sql", "sql[0]"),
+            "template_block": (owner_yaml(template=[{"unique_id": bearer, "sensor": [
+                {"name": "Feels", "unique_id": "feels", "state": "1"}]}]), "template", "template[0].sensor[0]"),
+            "template_entity": (owner_yaml(template=[{"unique_id": "block", "sensor": [
+                {"name": "Feels", "unique_id": bearer, "state": "1"}]}]), "template", "template[0].sensor[0]"),
+            "utility_meter": (owner_yaml(utility_meter={"energy": {"source": "sensor.energy_total",
+                                                                   "unique_id": bearer}}),
+                              "utility_meter", "utility_meter.energy"),
+            "unique_id_fallback": (owner_yaml(sensor=[{"platform": "filter", "entity_id": "sensor.a",
+                                                       "unique_id": bearer, "filters": []}]),
+                                   "filter", "sensor[0]"),
+            "trend": (owner_yaml(binary_sensor=[{"platform": "trend", "sensors": {
+                "rising": {"entity_id": "sensor.a", "unique_id": bearer}}}]), "trend",
+                "binary_sensor[0].sensors.rising"),
+        }
+        for name, (values, integration, definition_id) in cases.items():
+            with self.subTest(name):
+                report = await self.run_report(values, integrations=(integration,))
+                row = self.definitions(report)[definition_id]
+                entity = row["expected_entities"][0]
+                self.assertEqual((entity["unique_id"], entity["derived_entity_id"], entity["derivation_limit"]),
+                                 (None, None, c.UNIQUE_ID_WITHHELD))
+                self.assertNotIn("unique_id_readings", entity)
+                self.assertIn(f"{definition_id}.expected_entities[0].unique_id", row["withheld"])
+                self.assertEqual(entity["match"]["method"], "unmatched")
+                self.assertFalse(report["complete"])
+                self.assert_no_slug(report, bearer)
+
+    async def test_withheld_dependency_value_is_not_read_for_entity_ids(self):
+        sensors = owner_sensors()
+        source = "sensor.water_total, " + withheld_inputs()["bearer"]
+        sensors[2] = {**sensors[2], "source": source}
+        definitions, _collector = project(sensor=[sensors[2]])
+        self.assertEqual((definitions[0]["dependencies"], definitions[0]["dependencies_withheld"]), ([], True))
+        clean, _collector = project(sensor=[owner_sensors()[2]])
+        self.assertEqual((clean[0]["dependencies"], clean[0]["dependencies_withheld"]),
+                         (["sensor.water_total"], False))
+        core = owner_core()
+        for item in core["states"]:
+            if item["entity_id"] in ("sensor.water_rate", "sensor.water_total"):
+                item["state"] = "unavailable"
+        report = await self.run_report(owner_yaml(sensor=sensors), core, entity_ids=("sensor.water_rate",))
+        row = self.definitions(report)["sensor[2]"]
+        self.assertIn("sensor[2].dependencies", row["withheld"])
+        self.assertNotIn("dependencies_withheld", row)
+        self.assertNotIn("legacy_object_id", row)
+        diagnosis_ = self.entities(report)["sensor.water_rate"]["diagnosis"]
+        self.assertEqual(diagnosis_["classification"], "undetermined")
+        self.assertIn(c.DEPENDENCIES_WITHHELD, diagnosis_["reasons"])
+        self.assertFalse(any(reason.startswith("source_entity_") for reason in diagnosis_["reasons"]))
+        self.assertFalse(report["complete"])
+
+    async def test_clean_dependency_value_is_still_checked(self):
+        core = owner_core()
+        for item in core["states"]:
+            if item["entity_id"] in ("sensor.water_rate", "sensor.water_total"):
+                item["state"] = "unavailable"
+        report = await self.run_report(owner_yaml(), core, entity_ids=("sensor.water_rate",))
+        self.assertEqual(self.entities(report)["sensor.water_rate"]["diagnosis"], {
+            "classification": "dependency_unavailable",
+            "reasons": ["state_unavailable", "source_entity_unavailable:sensor.water_total"]})
+
+    async def test_withheld_legacy_name_is_never_a_candidate(self):
+        name = withheld_inputs()["bearer"]
+        entity_id = "sensor." + core_slugify(name.lower())
+        legacy = {"platform": "sql", "name": name, "db_url": db_url(), "query": "SELECT 1;", "column": "x"}
+        report = await self.run_report(owner_yaml(sensor=[legacy]), entity_ids=(entity_id,))
+        self.assertEqual(self.entities(report)[entity_id]["legacy_candidates"], [])
+        clean = {**legacy, "name": "Old SQL"}
+        report = await self.run_report(owner_yaml(sensor=[clean]), entity_ids=("sensor.old_sql",))
+        self.assertEqual(self.entities(report)["sensor.old_sql"]["legacy_candidates"], ["sensor[0]"])
+
+    async def test_clean_inputs_still_derive(self):
+        report = await self.run_report(owner_yaml(), integrations=("sql", "group", "derivative", "template"))
+        self.assert_complete(report)
+        rows = self.definitions(report)
+        self.assertEqual(rows["sql[0]"]["expected_entities"][0]["derived_entity_id"], "sensor.database_free_space")
+        self.assertEqual(rows["group.downstairs_lights"]["expected_entities"][0]["derived_entity_id"],
+                         "group.downstairs_lights")
+        self.assertEqual(rows["sensor[2]"]["expected_entities"][0]["derived_entity_id"], "sensor.sensor_water_total_derivative")
+        self.assertEqual(rows["template[0].sensor[0]"]["expected_entities"][0]["unique_id"], "feels_like")
+
+    def test_withheld_at_exit_decides_on_the_exit_point_checks(self):
+        self.assertFalse(credentials.withheld_at_exit("Database Free Space"))
+        self.assertFalse(credentials.withheld_at_exit("sensor.energy_total"))
+        for kind, text in withheld_inputs().items():
+            if type(text) is str and kind != "known_secret":
+                with self.subTest(kind):
+                    self.assertTrue(credentials.withheld_at_exit(text))
+        self.assertFalse(credentials.withheld_at_exit("Token " + HA_TOKEN))
+        self.assertTrue(credentials.withheld_at_exit("Token " + HA_TOKEN, (HA_TOKEN,)))
+        self.assertTrue(credentials.withheld_at_exit("x" * (c.MAX_TEXT + 1)))

@@ -29,7 +29,8 @@ from .projection import Definitions, paths_for
 from .schemas import CORE_PIN
 
 MAX_ENTRY_ENTITIES = 20
-_INTERNAL_KEYS = ("dependencies",)
+# Projection fields read by matching and diagnosis, never rendered.
+_INTERNAL_KEYS = ("dependencies", "dependencies_withheld", "legacy_object_id")
 
 
 def utc_now() -> datetime:
@@ -286,7 +287,7 @@ class ConfigurationDefinitionsService:
             yaml_gaps.append("definitions_in_packages_not_read" if package_state == "present"
                              else "packages_not_determined")
 
-        collector = Definitions(envelopes)
+        collector = Definitions(envelopes, self.known_secrets)
         definitions = collector.collect()
         del envelopes
         for path in collector.include_paths:

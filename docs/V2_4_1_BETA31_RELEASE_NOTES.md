@@ -134,6 +134,30 @@ same definition with any other withheld item is partial. The sanitizer's
 own `redacted_by_policy` omission (HAMCP-191), which records a redaction by
 the shared sanitizer, is unrelated and still makes the report partial.
 
+**Nothing is derived from a withheld input** (owner decision, Josh,
+2026-10-22). When an input to a derived field is withheld, or holds text the
+exit point would withhold (a credential, a known secret, invisible or
+unverifiable text, or text over the length bound), that field is not derived
+and the report is partial:
+- an expected entity's `derived_entity_id` is `null` with the limitation
+  `derived_entity_id_withheld` when its name, default name inputs
+  (`default_entity_id`, a source entity, a `type`, a namespace) or
+  configuration key is withheld;
+- a generated `unique_id` (and its readings) is `null` with
+  `unique_id_withheld` when any of its inputs is withheld (a SQL, template
+  block or entity, utility meter, tariff or trend `unique_id`);
+- a withheld dependency value is not read for entity IDs, and the
+  diagnosis says `undetermined` with `dependencies_withheld`;
+- a withheld configuration key never appears in a definition ID, which is
+  then positional (`group[0]`);
+- a withheld legacy platform name is never a legacy candidate.
+
+Each case lists a path in the definition's `withheld`
+(`sql[0].expected_entities[0].derived_entity_id`), so the final-envelope
+scan names the definition and the report is partial. A Core-observed
+`entity_id` reported for an exact registry match is Core's data, not a
+value this tool derives, and is screened at the exit point as before.
+
 What is disclosed but never followed:
 - `!include` at any level, and packages. The report says each was not
   followed, and is partial.
@@ -416,6 +440,12 @@ Owner decision after that review (Josh, 2026-10-22): the SQL `db_url`
 policy redaction above is not missing evidence and no longer makes a report
 partial. Every other withholding still does.
 
+Owner decision before the delta rereview (Josh, 2026-10-22): nothing is
+derived from a withheld input (above). A credential URL in a SQL name was
+withheld from the name but still slugged into its derived entity ID; the
+derived ID, generated unique IDs, dependencies, definition-ID keys and
+legacy candidates are now withheld with it, and the report is partial.
+
 ## Compatibility and rollback
 
 - **Additive.** One new tool; no existing descriptor or schema changes.
@@ -443,4 +473,8 @@ partial. Every other withholding still does.
   - Every withholding makes the report partial, except the fixed SQL
     `db_url` policy redaction (`{"redacted_by_policy": "database_url"}`),
     which is not missing evidence (owner decision, 2026-10-22).
+  - A definition with a withheld name, key or unique_id input reports no
+    derived entity ID or generated unique ID for it (owner decision,
+    2026-10-22; the report is partial), so it can match only by an exact
+    registry unique ID or not at all.
   - A template blueprint block is not expanded; it is a disclosed gap.

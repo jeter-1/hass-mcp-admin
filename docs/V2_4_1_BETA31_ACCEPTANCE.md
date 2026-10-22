@@ -107,6 +107,15 @@ The review needs a security section covering:
   policy-shaped value from configuration are still withheld and partial.
   The sanitizer's `redacted_by_policy` omission (HAMCP-191) is a different
   thing and still makes the report partial.
+- **Nothing is derived from a withheld input (owner decision, Josh,
+  2026-10-22).** A withheld name, default-name input or key derives no
+  entity ID (`derived_entity_id_withheld`); a withheld unique_id input
+  generates no unique ID (`unique_id_withheld`); a withheld dependency value
+  is not read (`dependencies_withheld`, diagnosis `undetermined`); a withheld
+  key is not in the definition ID; a withheld legacy name is never a
+  candidate. "Withheld" includes anything the exit point would withhold
+  (`credentials.withheld_at_exit`). Each case lists a path in the
+  definition's `withheld`, so the report is partial.
 - **Truthfulness.**
   - A heuristic match is never reported as exact, and its confidence names
     the signals behind it.
@@ -140,6 +149,8 @@ The review needs a security section covering:
 - **Owner decision on policy redaction.** The SQL `db_url` policy redaction
   leaves a report complete (above); both reviewer suites are unchanged and
   pass.
+- **Owner decision on derived values.** Nothing is derived from a withheld
+  input (above); both reviewer suites are unchanged and pass.
 
 Preserve the following:
 - stable v1.1.2;
@@ -269,7 +280,18 @@ credential-shaped string is assembled at test time.
     and partial; a policy-shaped value from configuration is not exempt; an
     exit-point marker outside the allowlist (another kind, extra key, another
     field, another integration, top level) is partial; and the allowlist is
-    exactly the SQL `db_url`.
+    exactly the SQL `db_url`;
+  - the derived values: a credential URL in a SQL name withholds the name
+    and derives no entity ID, partial, through the service and through the
+    authenticated gateway; every withheld form (credential URI, known
+    secret, bearer, JWT, invisible text, a `!secret` reference, text over
+    the length bound) in a name derives nothing; a withheld group, utility
+    meter or trend key leaves a positional definition ID and no derived ID;
+    a withheld tariff withholds only its own entity; each default-name
+    input and each unique_id input withheld; a withheld dependency read for
+    nothing and diagnosed `undetermined`, while a clean one is still
+    `dependency_unavailable`; a withheld legacy name never a candidate; and
+    clean inputs still derive.
 
 The existing suites that pin the tool count, sanitizer sites, Core gate and
 reader purpose are updated. The Evidence tier on the PR head is the complete

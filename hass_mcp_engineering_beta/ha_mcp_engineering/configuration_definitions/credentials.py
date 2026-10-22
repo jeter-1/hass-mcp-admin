@@ -58,6 +58,15 @@ entry of ``POLICY_REDACTIONS``. That allowlist has one entry: a SQL
 definition's own ``fields.db_url`` with kind ``database_url``. Every other
 withholding still makes the report partial.
 
+**Nothing is derived from withheld text** (owner decision, Josh,
+2026-10-22). ``withheld_at_exit`` says whether the exit point would withhold,
+redact or truncate a string (the checks above, then the strict sanitizer
+with the known secrets). The projection derives no entity ID, unique_id,
+dependency, definition ID or legacy name match from an input it withholds
+or that this check matches: a slug or a generated ID could otherwise carry
+the text past the exit point. The case is listed in the definition's
+``withheld``, so the report is partial.
+
 The checks read the reader's canonical form (percent-decoded, NFKC,
 casefold) with a bounded confusable fold on top (``fold_confusables``):
 the known look-alikes of ``/``, ``:`` and ``@`` that NFKC leaves unchanged
@@ -78,6 +87,7 @@ from typing import Any
 from urllib.parse import unquote_to_bytes
 
 from ..providers.upstream_yaml_reader import MAX_DECODE_ROUNDS, _userinfo, canonical
+from ..sanitization import sanitize_untrusted_data
 from . import contracts as c
 
 WITHHELD_MARKER = "[withheld:credential_text]"
@@ -229,6 +239,24 @@ def credential_text(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
         or _MARKER_FOLDED in text
         or any(secret and fold_confusables(secret.casefold()) in text for secret in known_secrets)
     )
+
+
+def withheld_at_exit(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
+    """Whether the exit point would withhold, redact or truncate ``value``.
+
+    The same checks ``ConfigurationDefinitionsService._finish`` applies to a
+    string: invisible text, credential text with the known secrets, then the
+    strict sanitizer (a token, a JWT, a known secret, a marker collision, or
+    text over ``MAX_TEXT``). A value derived from such text (a slug, a
+    generated ID, a name match) is never produced (owner decision, Josh,
+    2026-10-22): the transformation could carry the text past these checks.
+    """
+
+    if unverifiable_text(value) or credential_text(value, known_secrets):
+        return True
+    result = sanitize_untrusted_data(value, known_secrets=known_secrets, max_string=c.MAX_TEXT)
+    return bool(result.failed_closed or result.redacted_field_count or result.truncated_field_count
+                or result.value != value)
 
 
 def display_text(value: str, max_length: int, known_secrets: tuple[str, ...] = ()) -> str:

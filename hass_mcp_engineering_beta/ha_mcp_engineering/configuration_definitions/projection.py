@@ -31,6 +31,18 @@ position, before the shared sanitizer runs (``service.py``):
 
 An ``!include`` value is reported as not followed and is never read.
 
+Nothing is derived from a withheld input (owner decision, Josh, 2026-10-22).
+When any input of a derived value (a name, key, tariff, ``source``,
+``type`` or ``entity_namespace`` for the entity ID; a ``unique_id`` for a
+generated unique_id) is withheld here or would be withheld by the exit point
+(``credentials.withheld_at_exit``, with the known secrets), the expected
+entity has no derived entity ID (``derived_entity_id_withheld``), or no
+unique_id and no entity ID (``unique_id_withheld``); a dependency value is
+not read for entity IDs (the diagnosis reports ``dependencies_withheld``); a
+mapping key is replaced by its position in the definition ID; a legacy name
+gives no candidate match. Each case is a path in ``withheld``, so the report
+is partial.
+
 Identity text is read with slice 1's parser-dependence rule
 (``recorder_settings.projection.yaml11_readings``) before any matching or
 name derivation (M2): a reader string Home Assistant's YAML 1.1 loader could
@@ -51,7 +63,7 @@ from ..providers.upstream_yaml_reader import canonical, is_connection_key, is_cr
 from ..recorder_settings.projection import _is_include, _is_reference, _truncated, yaml11_readings
 from . import contracts as c
 from . import schemas as s
-from .credentials import UNVERIFIABLE_MARKER, credential_text, unverifiable_text
+from .credentials import UNVERIFIABLE_MARKER, credential_text, unverifiable_text, withheld_at_exit
 from .naming import core_slugify
 
 # The YAML paths each integration's definitions can appear under.
@@ -145,6 +157,22 @@ def _static(text: str | None) -> bool:
     return text is not None and not any(marker in text for marker in s.TEMPLATE_MARKERS)
 
 
+def _texts(value: Any):
+    """Every text of ``value`` Core could read: strings, keys, integers."""
+
+    if type(value) is str:
+        yield value
+    elif type(value) is int:
+        yield str(value)
+    elif type(value) is dict:
+        for key, child in value.items():
+            yield from _texts(key)
+            yield from _texts(child)
+    elif type(value) is list:
+        for child in value:
+            yield from _texts(child)
+
+
 def _object_id(text: str | None) -> tuple[str | None, str | None]:
     """(object ID, limit) for a name Core lowercases and slugifies."""
 
@@ -163,8 +191,9 @@ def _object_id(text: str | None) -> tuple[str | None, str | None]:
 class Definitions:
     """Collects projected definitions from the reader envelopes."""
 
-    def __init__(self, envelopes: dict[str, dict | None]):
+    def __init__(self, envelopes: dict[str, dict | None], known_secrets: tuple[str, ...] = ()):
         self.envelopes = envelopes
+        self.known_secrets = known_secrets
         self.definitions: list[dict] = []
         self.unprojected: dict[str, int] = {}
         self.include_paths: list[str] = []
@@ -208,6 +237,37 @@ class Definitions:
         record["withheld"].append(path)
         return {"withheld": "unsupported_value"}
 
+    def _input_withheld(self, *values: Any) -> bool:
+        """Whether any input of a derived value is withheld.
+
+        Owner decision (Josh, 2026-10-22): an input this projection withholds
+        (``_value``: a reference, an include, invisible text, a reader marker,
+        credential text), or one whose text the exit point would withhold
+        (``credentials.withheld_at_exit``: the known secrets and the strict
+        sanitizer included), yields no derived value. A slug or a generated
+        ID could carry the text past the exit point's checks.
+        """
+
+        for value in values:
+            if value is None:
+                continue
+            scratch: dict[str, list] = {"withheld": [], "include_not_followed": []}
+            self._value(value, "input", scratch)
+            if scratch["withheld"] or scratch["include_not_followed"]:
+                return True
+            if any(withheld_at_exit(text, self.known_secrets) for text in _texts(value)):
+                return True
+        return False
+
+    def _key_path(self, prefix: str, key: Any, position: int, record_withheld: list[str]) -> str:
+        """The definition path of a keyed entry: positional when the key is withheld."""
+
+        if self._input_withheld(key):
+            path = f"{prefix}[{position}]"
+            record_withheld.append(f"{path}.<key>")
+            return path
+        return f"{prefix}.{key}"
+
     def _fields(self, entry: dict, allowed: frozenset[str], path: str, record: dict) -> dict:
         fields = {}
         for key, value in entry.items():
@@ -242,6 +302,8 @@ class Definitions:
             "reader_partial": bool(envelope and _truncated(envelope)),
             "expected_entities": [],
             "dependencies": [],
+            "dependencies_withheld": False,
+            "legacy_object_id": None,
         }
 
     def _add(self, record: dict) -> None:
@@ -256,10 +318,22 @@ class Definitions:
             return True
         return False
 
-    @staticmethod
-    def _expected(record: dict, entity_domain: str, unique_id: str | None,
+    def _expected(self, record: dict, entity_domain: str, unique_id: str | None,
                   object_id: str | None, derivation: str | None, limit: str | None, *,
-                  uid_readings: list[str] | None = None, name_dependent: bool = False) -> None:
+                  uid_readings: list[str] | None = None, name_dependent: bool = False,
+                  name_inputs: tuple = (), uid_inputs: tuple = ()) -> None:
+        position = f"{record['definition_id']}.expected_entities[{len(record['expected_entities'])}]"
+        if self._input_withheld(*uid_inputs):
+            # Owner decision (2026-10-22): no unique_id, readings or entity ID
+            # from a withheld unique_id input, and no name match in its place.
+            unique_id, uid_readings = None, None
+            object_id, limit = None, c.UNIQUE_ID_WITHHELD
+            record["withheld"].append(f"{position}.unique_id")
+        elif self._input_withheld(*name_inputs):
+            # Owner decision (2026-10-22): no entity ID, and no limit that
+            # describes the withheld name, from a withheld name input.
+            object_id, limit = None, c.DERIVED_ENTITY_ID_WITHHELD
+            record["withheld"].append(f"{position}.derived_entity_id")
         if name_dependent and object_id is not None:
             # M2: a name or key YAML 1.1 could read as another type.
             object_id, limit = None, "name_parser_dependent"
@@ -281,10 +355,15 @@ class Definitions:
             record["expected_entities"][-1].update(unique_id_parser_dependent=True,
                                                    unique_id_readings=uid_readings[:MAX_UID_READINGS])
 
-    @staticmethod
-    def _dependencies(record: dict, entry: dict, integration: str) -> None:
+    def _dependencies(self, record: dict, entry: dict, integration: str) -> None:
         for key in s.DEPENDENCY_KEYS.get(integration, ()):
             value = entry.get(key)
+            if self._input_withheld(value):
+                # Owner decision (2026-10-22): no entity ID is read out of a
+                # withheld value; the diagnosis says so instead of checking.
+                record["dependencies_withheld"] = True
+                record["withheld"].append(f"{record['definition_id']}.dependencies")
+                continue
             items = value.split(",") if type(value) is str else value if type(value) is list else []
             for item in items:
                 item = item.strip().lower() if type(item) is str else None
@@ -321,7 +400,8 @@ class Definitions:
         name, uid = entry.get("name"), entry.get("unique_id")
         object_id, limit = _object_id(_text(name))
         self._expected(record, "sensor", _text(uid), object_id, "name", limit,
-                       uid_readings=_readings(uid), name_dependent=_dependent(name))
+                       uid_readings=_readings(uid), name_dependent=_dependent(name),
+                       name_inputs=(name,), uid_inputs=(uid,))
         return True
 
     # ------------------------------------------------------------------
@@ -384,33 +464,36 @@ class Definitions:
                         record["status_detail"] = "platform_keys_not_projected"
                     record["fields"] = self._fields(entity, allowed, entity_path, record)
                     self._template_expected(record, platform, entity, block_uid, block_readings,
-                                            trigger_based)
+                                            trigger_based, block.get("unique_id"))
                     self._add(record)
 
     def _template_expected(self, record: dict, platform: str, entity: dict, block_uid: str | None,
-                           block_readings: list[str], trigger_based: bool) -> None:
+                           block_readings: list[str], trigger_based: bool, block_uid_input: Any) -> None:
         entity_uid = _text(entity.get("unique_id"))
         unique_id = f"{block_uid}-{entity_uid}" if block_uid and entity_uid else entity_uid
         readings = _readings(entity.get("unique_id"))
+        uid_inputs = (entity.get("unique_id"),)
         if block_uid and entity_uid:
             readings = _combine("{}-{}".format, block_readings, readings)
+            uid_inputs = (block_uid_input, entity.get("unique_id"))
         default_entity_id = entity.get("default_entity_id")
         if type(default_entity_id) is str and default_entity_id.startswith(platform + "."):
             object_id = default_entity_id.split(".", 1)[1]
             self._expected(record, platform, unique_id, object_id, "default_entity_id", None,
-                           uid_readings=readings)
+                           uid_readings=readings, name_inputs=(default_entity_id,), uid_inputs=uid_inputs)
             return
         name = entity.get("name")
         if name is None:
             default = s.TEMPLATE_DEFAULT_NAMES.get(platform)
             object_id, limit = _object_id(default) if default else (None, "default_name_not_pinned")
-            self._expected(record, platform, unique_id, object_id, "default_name", limit, uid_readings=readings)
+            self._expected(record, platform, unique_id, object_id, "default_name", limit, uid_readings=readings,
+                           uid_inputs=uid_inputs)
             return
         object_id, limit = _object_id(_text(name))
         if object_id is None and limit == "name_is_template" and trigger_based:
             limit = "trigger_based_template_name"
         self._expected(record, platform, unique_id, object_id, "name", limit, uid_readings=readings,
-                       name_dependent=_dependent(name))
+                       name_dependent=_dependent(name), name_inputs=(name,), uid_inputs=uid_inputs)
 
     # ------------------------------------------------------------------
     # group (old style) and utility_meter: keyed mappings
@@ -423,9 +506,11 @@ class Definitions:
         if type(value) is not dict:
             self._count("group:not_a_mapping")
             return
-        for key, entry in value.items():
-            path = f"group.{key}"
+        for position, (key, entry) in enumerate(value.items()):
+            key_withheld: list[str] = []
+            path = self._key_path("group", key, position, key_withheld)
             record = self._record(path, "group", "group", "integration_key", "group")
+            record["withheld"].extend(key_withheld)
             if _is_include(entry):
                 record["include_not_followed"].append(path)
                 self._add(record)
@@ -440,7 +525,8 @@ class Definitions:
             self._dependencies(record, entry, "group")
             # entity ID from the key, never a unique_id (group/__init__.py).
             object_id, limit = _object_id(_text(key))
-            self._expected(record, "group", None, object_id, "key", limit, name_dependent=_dependent(key))
+            self._expected(record, "group", None, object_id, "key", limit, name_dependent=_dependent(key),
+                           name_inputs=(key,))
             self._add(record)
 
     def utility_meter(self) -> None:
@@ -452,9 +538,11 @@ class Definitions:
         if type(value) is not dict:
             self._count("utility_meter:not_a_mapping")
             return
-        for key, entry in value.items():
-            path = f"utility_meter.{key}"
+        for position, (key, entry) in enumerate(value.items()):
+            key_withheld: list[str] = []
+            path = self._key_path("utility_meter", key, position, key_withheld)
             record = self._record(path, "utility_meter", "utility_meter", "integration_key", "sensor")
+            record["withheld"].extend(key_withheld)
             if _is_include(entry):
                 record["include_not_followed"].append(path)
                 self._add(record)
@@ -469,8 +557,9 @@ class Definitions:
 
     def _meter_expected(self, record: dict, raw_key: Any, entry: dict) -> None:
         key = _text(raw_key)
-        uid = _text(entry.get("unique_id"))
-        uid_readings = _readings(entry.get("unique_id"))
+        raw_uid = entry.get("unique_id")
+        uid = _text(raw_uid)
+        uid_readings = _readings(raw_uid)
         tariffs = entry.get("tariffs") or []
         if type(tariffs) is not list or not all(type(item) is str for item in tariffs):
             self._expected(record, "sensor", None, None, None, "tariffs_not_projected")
@@ -481,17 +570,18 @@ class Definitions:
             self._expected(record, "sensor", f"{uid}_single_tariff" if uid else None,
                            object_id, "name" if "name" in entry else "key", limit,
                            uid_readings=[f"{item}_single_tariff" for item in uid_readings],
-                           name_dependent=_dependent(name))
+                           name_dependent=_dependent(name), name_inputs=(name,), uid_inputs=(raw_uid,))
             return
         object_id, limit = _object_id(key)
         self._expected(record, "select", uid, object_id, "key", limit, uid_readings=uid_readings,
-                       name_dependent=_dependent(raw_key))
+                       name_dependent=_dependent(raw_key), name_inputs=(raw_key,), uid_inputs=(raw_uid,))
         for tariff in tariffs:
             object_id, limit = _object_id(f"{key} {tariff}" if key is not None else None)
             self._expected(record, "sensor", f"{uid}_{tariff}" if uid else None, object_id,
                            "key_and_tariff", limit,
                            uid_readings=_combine("{}_{}".format, uid_readings, _readings(tariff)),
-                           name_dependent=_dependent(raw_key, tariff))
+                           name_dependent=_dependent(raw_key, tariff), name_inputs=(raw_key, tariff),
+                           uid_inputs=(raw_uid, tariff) if uid else (raw_uid,))
 
     # ------------------------------------------------------------------
     # sensor: and binary_sensor: platform lists
@@ -524,6 +614,7 @@ class Definitions:
                 record = self._record(path, platform, entity_domain, "legacy_platform", entity_domain)
                 record["fields"] = self._fields(
                     entry, s.LEGACY_PLATFORM_KEYS[platform] | s.PLATFORM_COMMON_KEYS, path, record)
+                record["legacy_object_id"] = self._legacy_object_id(entry.get("name"))
                 self._add(record)
             else:
                 # Outside the twelve integrations: counted by platform name
@@ -541,13 +632,14 @@ class Definitions:
         self._dependencies(record, entry, platform)
         raw_uid = None if platform == "threshold" else entry.get("unique_id")
         uid, uid_readings = _text(raw_uid), _readings(raw_uid)
-        name, derivation = self._platform_name(entity_domain, platform, entry)
+        name, derivation, name_inputs = self._platform_name(entity_domain, platform, entry)
         name_dependent = _dependent(entry.get("name"), entry.get("entity_namespace"), entry.get("source"),
                                     entry.get("type"))
         if name is None and uid is not None:
             # A nameless entity with a unique_id: ``<platform>_<unique_id>``
             # (entity_registry.py:1476, :637-638).
             name, derivation = f"{platform}_{uid}", "unique_id_fallback"
+            name_inputs = name_inputs + (raw_uid,)
             name_dependent = name_dependent or len(uid_readings) > 1
         elif name is None:
             # A nameless entity without a unique_id (entity_platform.py:1149-1166).
@@ -555,35 +647,53 @@ class Definitions:
         namespace = entry.get("entity_namespace")
         if namespace is not None:
             name = f"{namespace} {name}" if type(namespace) is str else None
+            name_inputs = name_inputs + (namespace,)
         object_id, limit = _object_id(name)
         self._expected(record, entity_domain, uid, object_id, derivation, limit, uid_readings=uid_readings,
-                       name_dependent=name_dependent)
+                       name_dependent=name_dependent, name_inputs=name_inputs, uid_inputs=(raw_uid,))
         self._add(record)
 
     @staticmethod
-    def _platform_name(entity_domain: str, platform: str, entry: dict) -> tuple[str | None, str | None]:
+    def _platform_name(entity_domain: str, platform: str,
+                       entry: dict) -> tuple[str | None, str | None, tuple]:
+        """(name, derivation, the raw inputs the name was built from)."""
+
         name = entry.get("name")
         if name is not None:
             text = _text(name)
             if platform == "group" and entity_domain == "sensor" and text == s.SENSOR_DEFAULT_NAMES["group"]:
                 # group/sensor.py:367-369 replaces the default name.
                 kind = entry.get("type")
-                return (f"Sensor group {kind}", "default_name") if type(kind) is str else (None, None)
-            return text, "name"
+                return ((f"Sensor group {kind}", "default_name", (name, kind)) if type(kind) is str
+                        else (None, None, (name, kind)))
+            return text, "name", (name,)
         if platform in {"derivative", "integration"}:
             source = entry.get("source")
             suffix = "derivative" if platform == "derivative" else "integral"
-            return (f"{source} {suffix}", "default_name") if type(source) is str else (None, None)
+            return ((f"{source} {suffix}", "default_name", (source,)) if type(source) is str
+                    else (None, None, (source,)))
         if platform == "min_max":
             kind = entry.get("type", "max")
-            return (f"{kind} sensor".capitalize(), "default_name") if type(kind) is str else (None, None)
+            return ((f"{kind} sensor".capitalize(), "default_name", (kind,)) if type(kind) is str
+                    else (None, None, (kind,)))
         if platform == "group" and entity_domain == "sensor":
             kind = entry.get("type")
-            return (f"Sensor group {kind}", "default_name") if type(kind) is str else (None, None)
+            return ((f"Sensor group {kind}", "default_name", (kind,)) if type(kind) is str
+                    else (None, None, (kind,)))
         defaults = s.SENSOR_DEFAULT_NAMES if entity_domain == "sensor" else s.BINARY_SENSOR_DEFAULT_NAMES
         if platform in defaults:
-            return defaults[platform], "default_name"
-        return None, None
+            return defaults[platform], "default_name", ()
+        return None, None, ()
+
+    def _legacy_object_id(self, name: Any) -> str | None:
+        """The object ID a legacy entry's static name would give, for
+        ``legacy_candidates``; none from a withheld name (owner decision,
+        2026-10-22), so a match can never reveal it."""
+
+        if type(name) is not str or self._input_withheld(name):
+            return None
+        object_id, _limit = _object_id(name)
+        return object_id
 
     def _trend(self, path: str, entry: dict) -> None:
         sensors = entry.get("sensors")
@@ -594,9 +704,11 @@ class Definitions:
                 record["include_not_followed"].append(f"{path}.sensors")
             self._add(record)
             return
-        for key, sensor in sensors.items():
-            sensor_path = f"{path}.sensors.{key}"
+        for position, (key, sensor) in enumerate(sensors.items()):
+            key_withheld: list[str] = []
+            sensor_path = self._key_path(f"{path}.sensors", key, position, key_withheld)
             record = self._record(sensor_path, "trend", "binary_sensor", "platform_entry", "binary_sensor")
+            record["withheld"].extend(key_withheld)
             if _is_include(sensor):
                 record["include_not_followed"].append(sensor_path)
                 self._add(record)
@@ -609,7 +721,8 @@ class Definitions:
             # The entity ID is forced from the slug key (trend/binary_sensor.py:127-129).
             object_id, limit = _object_id(_text(key))
             self._expected(record, "binary_sensor", _text(sensor.get("unique_id")), object_id, "key", limit,
-                           uid_readings=_readings(sensor.get("unique_id")), name_dependent=_dependent(key))
+                           uid_readings=_readings(sensor.get("unique_id")), name_dependent=_dependent(key),
+                           name_inputs=(key,), uid_inputs=(sensor.get("unique_id"),))
             self._add(record)
 
     # ------------------------------------------------------------------

@@ -157,6 +157,10 @@ def entity(entity_id: str, *, state: str | None, states_read: bool, registry_row
         return {"classification": "undetermined", "reasons": reasons}
 
     reasons.append(f"state_{state}")
+    if definition is not None and definition.get("dependencies_withheld"):
+        # Owner decision (Josh, 2026-10-22): no entity ID is read out of a
+        # withheld dependency value, so the dependencies were not checked.
+        return {"classification": "undetermined", "reasons": reasons + [c.DEPENDENCIES_WITHHELD]}
     if definition is not None and states is not None:
         if any(states.get(item) == INVALID for item in definition["dependencies"]):
             return {"classification": "undetermined", "reasons": reasons + [f"source_entity_{INVALID}"]}

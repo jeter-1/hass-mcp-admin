@@ -702,6 +702,16 @@ shape, fallback or write path.
   that came from configuration are all still withheld and partial. The
   sanitizer's own `redacted_by_policy` omission (HAMCP-191) is unrelated and
   still makes the report partial.
+- **Nothing is derived from a withheld input (owner decision, Josh,
+  2026-10-22).** Before deriving an entity ID, a unique ID, dependencies, a
+  definition-ID key or a legacy candidate, the projection checks every input
+  with its own withholding and with `credentials.withheld_at_exit` (the exit
+  point's credential, known-secret and sanitizer checks). A withheld input
+  yields no derived value (`derived_entity_id_withheld`,
+  `unique_id_withheld`, `dependencies_withheld`, a positional definition ID)
+  and a path in the definition's `withheld`, so the report is partial. A
+  slug of a credential is therefore never emitted, though the exit point
+  would not recognize it.
 
 Arguments are validated before SDK coercion and rejected without echoing
 them. The audit records counts and source outcomes only. Stable v1.1.2 is
