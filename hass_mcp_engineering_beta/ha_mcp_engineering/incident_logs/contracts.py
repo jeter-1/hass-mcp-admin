@@ -78,6 +78,8 @@ MANAGER_ROUTE_PATTERNS = MappingProxyType({
     "addon": r"^/addons/[^/]+/(?!security).+$",
 })
 AUTHORITY_NOT_GRANTED = "authority_not_granted"
+# The Supervisor role a statically unavailable source would need.
+REQUIRED_ROLE = "manager"
 AUTHORITY_DETAIL = (
     "requires Supervisor role manager; Engineering runs with hassio_role "
     "homeassistant and this read adds no permission"
@@ -195,7 +197,7 @@ def validate_arguments(arguments: Any, *, now_ms: int | None = None) -> dict[str
     if end_ms > now_ms + MAX_FUTURE_SKEW_SECONDS * 1000:
         raise ValueError("Invalid incident log arguments.")
     min_level = arguments.get("min_level")
-    if min_level is not None and min_level not in LEVEL_RANK:
+    if min_level is not None and (type(min_level) is not str or min_level not in LEVEL_RANK):
         raise ValueError("Invalid incident log arguments.")
     text = arguments.get("text")
     if text is not None and (

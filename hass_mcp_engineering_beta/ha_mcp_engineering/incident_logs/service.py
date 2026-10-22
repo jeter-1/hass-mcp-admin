@@ -159,11 +159,10 @@ class IncidentLogService:
         return states
 
     async def _read(self, args: dict) -> dict:
+        # Only statically unavailable sources still return a result: each is
+        # reported unavailable with its authority reason and required role,
+        # with zero requests, never collapsed into a generic refusal.
         readable = [key for key in args["sources"] if c.unavailable_reason(key) is None]
-        if not readable:
-            # Nothing the add-on's role may read: every source is reported,
-            # but a call that can return no log content is refused.
-            raise c.IncidentLogsError("sources_unavailable")
         states = self._resume(args, readable) if args["cursor"] is not None else None
         budget = Budget()
         scans: list[Scan] = []
@@ -486,7 +485,8 @@ class IncidentLogService:
                 if reason is not None:
                     source_rows.append({
                         "source": key, "status": "unavailable", "reason": reason[0],
-                        "detail": c.AUTHORITY_DETAIL, "required_route_pattern": reason[1],
+                        "detail": c.AUTHORITY_DETAIL, "required_role": c.REQUIRED_ROLE,
+                        "required_route_pattern": reason[1],
                         "route": None, "requests": 0,
                     })
             source_rows.sort(key=lambda row: args["sources"].index(row["source"]))

@@ -17,10 +17,12 @@ import sys
 import unittest
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta"))
 
 from incident_logs_journal_sim import SupervisorSim, ms, start  # noqa: E402
 
+from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
@@ -31,11 +33,16 @@ from ha_mcp_engineering.incident_logs import service as service_module  # noqa: 
 from ha_mcp_engineering.incident_logs.cursor import CursorCodec  # noqa: E402
 from ha_mcp_engineering.incident_logs.service import IncidentLogService  # noqa: E402
 from ha_mcp_engineering.incident_logs.transport import JournalTransport  # noqa: E402
+from ha_mcp_engineering.mcp_sdk_compatibility import McpSdkToolRegistry  # noqa: E402
+from ha_mcp_engineering.mcp_server import create_mcp_server  # noqa: E402
 from ha_mcp_engineering.providers.routing import (  # noqa: E402
     incident_logs_policy_allows_read, routing_for_tool,
 )
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.tools import incident_logs as tool_module  # noqa: E402
+from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
+
+from tests.same_thread_asgi_client import SameThreadAsgiTestClient  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -422,11 +429,24 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("source_unavailable:addon:self", page["omissions"])
                 self.assertNotIn("synthetic refusal", json.dumps(page))
 
-    async def test_all_statically_unavailable_refuses_with_zero_requests(self):
-        with self.assertRaises(c.IncidentLogsError) as caught:
-            await self.read(sources=["supervisor", "host", "addon:zwave_js"], start="2026-10-19T12:00:00Z")
-        self.assertEqual(caught.exception.reason, "sources_unavailable")
+    async def test_all_statically_unavailable_reports_each_source_with_zero_requests(self):
+        # Review M5: per-source unavailability naming the required role, never
+        # a generic sources_unavailable refusal.
+        page = await self.read(sources=["supervisor", "host", "addon:zwave_js"], start="2026-10-19T12:00:00Z",
+                               end="2026-10-19T12:10:00Z")
         self.assertEqual(self.sim.calls, [])
+        self.assertEqual((page["entries"], page["returned"], page["requests"]), ([], 0, 0))
+        self.assertEqual((page["has_more"], page["next_cursor"]), (False, None))
+        self.assertEqual((page["complete"], page["completeness"]), (False, "partial"))
+        self.assertEqual([row["source"] for row in page["sources"]], ["supervisor", "host", "addon:zwave_js"])
+        for row, pattern in zip(page["sources"], (r"^/supervisor/.+$", r"^/host/.+$",
+                                                  r"^/addons/[^/]+/(?!security).+$")):
+            self.assertEqual(row, {
+                "source": row["source"], "status": "unavailable", "reason": "authority_not_granted",
+                "detail": c.AUTHORITY_DETAIL, "required_role": "manager",
+                "required_route_pattern": pattern, "route": None, "requests": 0,
+            })
+            self.assertIn(f"source_unavailable:{row['source']}", page["omissions"])
 
     async def test_stopped_addon_logs_remain_readable_and_wrong_shape_fails(self):
         # A stopped add-on's journal persists; the endpoint still serves it.
@@ -699,6 +719,115 @@ class IncidentLogToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["error_code"], "provider_prohibited")
         self.assertEqual(self.sim.calls, [])
+
+
+class RefusingCore:
+    """A Core runtime that grants no lease and records every request."""
+
+    def __init__(self):
+        self.acquired = []
+
+    def acquire(self, *args, **kwargs):
+        self.acquired.append((args, kwargs))
+        return None
+
+
+class IncidentLogGatewayStackTests(unittest.TestCase):
+    """Review M4/M5 reproductions through the production MCP stack.
+
+    The production tool object is served by a real FastMCP server behind the
+    real authenticated gateway and audit logger; the journal transport fails
+    the test if any request is attempted.
+    """
+
+    WINDOW = {"start": "2026-10-20T10:00:00+00:00", "end": "2026-10-20T11:00:00+00:00"}
+
+    def call(self, arguments):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            configured = Settings(
+                ha_url="http://synthetic-ha.invalid", ha_token=HA_TOKEN, access_secret=ACCESS_SECRET,
+                port=8100, audit_path=str(Path(directory) / "audit.jsonl"),
+                governance_path=str(Path(directory) / "governance"),
+                rate_limit_per_minute=1000, rate_limit_burst=100, destructive_services=frozenset(),
+            )
+            server = create_mcp_server(configured)
+            tools = McpSdkToolRegistry(server)
+            tools.replace({**tools.snapshot(), "get_incident_logs": tool_module.registered_tool()})
+            inner = server.streamable_http_app()
+            core = RefusingCore()
+            gateway = AuthenticatedMcpGateway(inner, configured, AuditLogger(configured.audit_path, ACCESS_SECRET),
+                                              core_runtime=core)
+            transport = JournalTransport(token_source=lambda: SUPERVISOR_TOKEN, timeout_seconds=1.0,
+                                         base_url="http://127.0.0.1:9")
+            pages = []
+
+            async def page(*args, **kwargs):
+                pages.append((args, kwargs))
+                raise AssertionError("no journal request is allowed")
+
+            transport.page = page
+            runtime = service_module.IncidentLogsRuntime()
+            runtime.service = IncidentLogService(transport, known_secrets=(HA_TOKEN, ACCESS_SECRET))
+            client = SameThreadAsgiTestClient(gateway, lifespan_app=inner, base_url="http://127.0.0.1:8100")
+            with patch.object(tool_module, "INCIDENT_LOGS", runtime), \
+                    patch.object(tool_module, "SETTINGS", configured), client:
+                response = client.post("/" + ACCESS_SECRET + "/mcp",
+                                       headers={"accept": "application/json, text/event-stream"},
+                                       json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                             "params": {"name": "get_incident_logs", "arguments": arguments}})
+            audit_path = Path(configured.audit_path)
+            records = [json.loads(line) for line in audit_path.read_text().splitlines() if line.strip()] \
+                if audit_path.exists() else []
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(pages, [])
+        self.assertEqual(client.pending_task_count, 0)
+        body = json.loads(next(line[6:] for line in response.text.splitlines() if line.startswith("data: ")))
+        rendered = json.loads(body["result"]["content"][0]["text"])
+        tool_records = [record for record in records if record.get("event") == "tool_call"]
+        self.assertEqual(len(tool_records), 1, records)
+        return rendered, tool_records[0], response.text
+
+    def test_wrong_typed_filters_are_bounded_audited_refusals(self):
+        # Review M4: min_level [] / {} reached ``in LEVEL_RANK`` and escaped
+        # as TypeError from both the tool and the gateway's audit builder.
+        wrong = [("min_level", []), ("min_level", {}), ("min_level", 1), ("min_level", True),
+                 ("min_level", ["error"]), ("text", []), ("text", {}), ("limit", []), ("limit", "5"),
+                 ("cursor", {}), ("end", []), ("start", {}), ("sources", {}), ("sources", [[]]),
+                 ("sources", [{}]), ("sources", "core")]
+        for key, value in wrong:
+            with self.subTest(key=key, value=value):
+                arguments = {"sources": ["core"], **self.WINDOW, key: value}
+                rendered, record, raw = self.call(arguments)
+                self.assertFalse(rendered["success"])
+                self.assertEqual(rendered["error_code"], "invalid_request")
+                self.assertEqual(rendered["metadata"]["provider"], "none")
+                self.assertNotIn("TypeError", raw)
+                self.assertNotIn("unhashable", raw)
+                self.assertEqual((record["tool_name"], record["result_status"], record["error_code"]),
+                                 ("get_incident_logs", "failure", "invalid_request"))
+                self.assertEqual(record["parameters"]["sources"], None)
+                self.assertEqual(record["parameters"]["min_level"], None)
+
+    def test_only_unauthorized_sources_report_authority_not_granted_per_source(self):
+        # Review M5: per-source unavailability with the required role, not a
+        # generic sources_unavailable refusal; zero journal requests.
+        rendered, record, _ = self.call({"sources": ["supervisor", "host", "addon:zwave_js"], **self.WINDOW})
+        self.assertTrue(rendered["success"])
+        data = rendered["data"]
+        self.assertEqual((data["returned"], data["requests"], data["has_more"], data["completeness"]),
+                         (0, 0, False, "partial"))
+        self.assertEqual([(row["source"], row["status"], row["reason"], row["required_role"], row["requests"])
+                          for row in data["sources"]],
+                         [(key, "unavailable", "authority_not_granted", "manager", 0)
+                          for key in ("supervisor", "host", "addon:zwave_js")])
+        self.assertEqual(rendered["metadata"]["completeness"], "partial")
+        self.assertEqual(rendered["metadata"]["upstream_calls"], 0)
+        self.assertEqual((record["result_status"], record["error_code"]), ("partial", None))
+        self.assertEqual(record["analysis_summary"]["source_outcomes"],
+                         [{"source": key, "status": "unavailable", "reason": "authority_not_granted"}
+                          for key in ("supervisor", "host", "addon:zwave_js")])
+        self.assertEqual(record["analysis_summary"]["upstream_calls"], 0)
 
 
 if __name__ == "__main__":

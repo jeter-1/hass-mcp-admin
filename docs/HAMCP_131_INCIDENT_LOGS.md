@@ -123,9 +123,13 @@ as unavailable with exact data and **zero requests**:
 - `reason: authority_not_granted`;
 - `detail`: "requires Supervisor role manager; Engineering runs with
   hassio_role homeassistant and this read adds no permission";
+- `required_role: manager`;
 - `required_route_pattern`: the pinned pattern.
 
-It is never silently omitted. Because Core logs and Engineering's own add-on log
+It is never silently omitted. A call that selects only such sources is not
+refused generically: it returns a partial result with no entries, one
+`unavailable` row per source carrying the reason and required role above, and
+zero requests (HAMCP-131 review M5). Because Core logs and Engineering's own add-on log
 are readable, the STOP condition ("nothing beyond Core logs is readable") is not
 met.
 
