@@ -13,6 +13,8 @@ nothing new on a deployed server.
   refused with `CoreCapabilityUnavailable` and reason code
   `pending_signed_registry_admission`. No plan is stored and nothing is
   dispatched (`plan_created: false`, `provider_dispatch_occurred: false`).
+  The governance service enforces the same check itself, before any Home
+  Assistant read, so no entry point bypasses it.
 - `list_capabilities` and server health show both resource types as
   `pending_signed_registry_admission`.
 
@@ -80,7 +82,9 @@ Approval:
   plain-language consequence statement (OD-4, OD-5, OD-9). Protected means the
   existing protected-object floor, protected cover classes, unresolved cover
   classes, sirens, safety binary sensors and entities that feed
-  safety-critical automations.
+  safety-critical automations. A disable whose dependency or impact evidence
+  is incomplete for any reason is also protected. Its consequence statement
+  says that the impact could not be fully determined.
 - `unexpose` is always standard.
 - External administrator approval and `apply_change_plan` are required.
 

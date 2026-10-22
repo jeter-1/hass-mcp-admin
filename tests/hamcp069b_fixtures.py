@@ -22,8 +22,24 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.dependency.models import (  # noqa: E402
+    OBLIGATION_LEDGER_MODEL,
+    SourceCoverageItem,
+)
+from ha_mcp_engineering.dependency.script_sources import (  # noqa: E402
+    ScriptDiagnostics,
+)
+from ha_mcp_engineering.dependency.semantic_registry import (  # noqa: E402
+    supported_home_assistant_versions,
+)
 from ha_mcp_engineering.governance.entity_availability_exposure import (  # noqa: E402
     NEVER_SENT_COMMANDS,
+)
+from ha_mcp_engineering.f3_runtime.runtime import F3RuntimeIntegration  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    AVAILABILITY_PROFILE,
+    EXPOSURE_PROFILE,
+    f3_requirements,
 )
 from ha_mcp_engineering.governance.entity_metadata_disclosure import (  # noqa: E402
     runtime_consumer_evidence,
@@ -43,6 +59,7 @@ from tests.hamcp069a_entity_fixtures import (  # noqa: E402
     SyntheticRegistryRest,
     SyntheticRegistryWebSocket,
     UPDATE,
+    _provider_identity,
     registry_entry,
 )
 
@@ -88,18 +105,56 @@ def automation_profile(source_id: str, consequence: str) -> Any:
     )
 
 
+def coverage_item(source_type: str, completeness: str = "complete", **changes: Any) -> Any:
+    """A dependency coverage item whose ledger contract matches ``completeness``."""
+
+    return SourceCoverageItem(
+        **{
+            "source_type": source_type,
+            "provider": "synthetic",
+            "provider_capability": "read",
+            "completeness": completeness,
+            "obligation_ledger_completeness": completeness,
+            **changes,
+        }
+    )
+
+
+def script_diagnostics(
+    completeness: str = "partial", *, findings: tuple = (), **changes: Any
+) -> Any:
+    """Script evidence as a working reader reports it (structurally partial)."""
+
+    return ScriptDiagnostics(
+        tuple(findings),
+        (),
+        coverage_item("script", completeness, **changes),
+        "synthetic-script-fingerprint",
+    )
+
+
 def exposure_snapshot(
     *, findings: tuple = (), profiles: tuple = (), read_failures: tuple = ()
 ) -> Any:
-    """A synthetic dependency snapshot with the attributes the planner reads."""
+    """A synthetic dependency snapshot with complete disable impact evidence.
+
+    Each field the HAMCP-069B evidence-completeness predicate reads is set to
+    its complete value; tests degrade one field at a time.
+    """
 
     return SimpleNamespace(
         findings=tuple(findings),
         automation_action_profiles=tuple(profiles),
         automation_read_failures=tuple(read_failures),
-        coverage=(),
+        coverage=(coverage_item("automation"), coverage_item("blueprint")),
         obligations=(),
         obligation_overflow_count=0,
+        obligation_ledger_model=OBLIGATION_LEDGER_MODEL,
+        dynamic_reference_overflow_count=0,
+        home_assistant_version=supported_home_assistant_versions()[0],
+        home_assistant_version_status="observed",
+        semantic_evidence=None,
+        script_diagnostics=script_diagnostics(),
     )
 
 
@@ -210,6 +265,69 @@ class SyntheticExposureWebSocket(SyntheticRegistryWebSocket):
         return await super().command(message)
 
 
+PROFILES_069B = frozenset({AVAILABILITY_PROFILE, EXPOSURE_PROFILE})
+
+
+class AdmittingCore:
+    """Core admission double: admitted 069B profiles, exact-target leases.
+
+    ``route_status``, ``acquire`` (planning) and ``acquire_f3`` (apply) admit
+    only the profiles in ``admitted``; a 069B lease is issued only for an
+    exact target, and every issued authority is revalidated against the
+    current admitted set, so ``withdraw`` retires leases already held.  The
+    real ``CoreRuntime`` with a TEST-signed registry is exercised separately
+    (``test_hamcp069b_review1_corrections``).
+    """
+
+    def __init__(self, admitted: Any = PROFILES_069B) -> None:
+        self.admitted = set(admitted)
+        self.planning_leases: list[tuple[tuple[str, ...], Any]] = []
+        self.f3_leases: list[tuple[str, ...]] = []
+        self.revalidations = 0
+
+    def withdraw(self, *profiles: str) -> None:
+        self.admitted -= set(profiles or PROFILES_069B)
+
+    def _admits(self, requirements: Any) -> bool:
+        return set(requirements) & PROFILES_069B <= self.admitted
+
+    async def reconcile_once(self, reason: str) -> None:
+        return None
+
+    def route_status(self, capability_ids: tuple[str, ...], **_: Any) -> dict[str, Any]:
+        return {"available": bool(capability_ids) and self._admits(capability_ids)}
+
+    def acquire(
+        self, capability_ids: tuple[str, ...], *, target: Any = None, **_: Any
+    ) -> Any:
+        self.planning_leases.append((tuple(capability_ids), deepcopy(target)))
+        if not self._admits(capability_ids) or (
+            set(capability_ids) & PROFILES_069B and target is None
+        ):
+            return None
+        return SimpleNamespace(requirements=tuple(capability_ids))
+
+    def acquire_f3(self, prepared: Any, plan_created_at: Any = None) -> Any:
+        requirements = f3_requirements(prepared)
+        self.f3_leases.append(requirements)
+        if not self._admits(requirements):
+            return None
+        return SimpleNamespace(requirements=requirements)
+
+    def consume(self, authority: Any) -> Any:
+        return ("commit",)
+
+    def revalidate(self, authority: Any, commits: Any) -> bool:
+        self.revalidations += 1
+        return self._admits(authority.requirements)
+
+    def release(self, authority: Any) -> bool:
+        return True
+
+    def finish(self, commits: Any) -> bool:
+        return True
+
+
 class AvailabilityExposureServiceTestCase(EntityMetadataServiceTestCase):
     """Real service, real F3 runtime, real gateways, synthetic registry."""
 
@@ -244,9 +362,28 @@ class AvailabilityExposureServiceTestCase(EntityMetadataServiceTestCase):
             entity_availability_exposure_gateway=self.resource_gateway.availability_exposure,
             entity_availability_exposure_snapshot_reader=snapshot_reader,
         )
+        self.core = AdmittingCore()
         await self.restart_runtime()
         self.telemetry, self.context = begin_request("hamcp069b-request")
         self.telemetry.caller_id = "hamcp069b-mcp-caller"
+
+    async def restart_runtime(self) -> None:
+        """A fresh F3 runtime over the same storage and the same Core."""
+
+        self.runtime = F3RuntimeIntegration(
+            service=self.service,
+            storage_root=str(self.root / "plans"),
+            configuration_gateway=self.resource_gateway,
+            backup_gateway=None,
+            lifecycle_gateway=None,
+            provider_identity_reader=_provider_identity,
+            retention_days=90,
+            core_runtime=self.core,
+        )
+        self.service.f3_runtime = self.runtime
+        await self.runtime.recover_once("startup")
+        self.assertEqual(self.runtime.readiness_state()["faults"], [])
+        self.assertTrue(self.runtime.readiness_state()["execution_ready"])
 
     def add_entity(self, entity_id: str, **changes: Any) -> dict[str, Any]:
         self.ws.entries[entity_id] = exposure_entry(entity_id, **changes)
@@ -279,6 +416,8 @@ class AvailabilityExposureServiceTestCase(EntityMetadataServiceTestCase):
 
 
 __all__ = [
+    "AdmittingCore",
+    "PROFILES_069B",
     "AvailabilityExposureServiceTestCase",
     "CONFIG_ENTRY_GET",
     "EXPOSE",
@@ -288,7 +427,9 @@ __all__ = [
     "SyntheticExposureWebSocket",
     "UPDATE",
     "automation_profile",
+    "coverage_item",
     "exposure_entry",
     "exposure_snapshot",
     "finding",
+    "script_diagnostics",
 ]

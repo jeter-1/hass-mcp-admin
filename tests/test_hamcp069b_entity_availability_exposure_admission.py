@@ -475,13 +475,23 @@ class SignedTestRegistryAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app.calls, [])
 
 
+class _PlanningAdmittedRecordingCore(readmission._RecordingF3Core):
+    """Admits exact-target 069B planning; F3 apply admission follows ``admit``."""
+
+    def route_status(self, capability_ids, **_):
+        return {"available": True}
+
+    def acquire(self, capability_ids, *, target=None, **_):
+        return SimpleNamespace() if target is not None else None
+
+
 class RealPreparedTargetBindingTests(AvailabilityExposureServiceTestCase):
     """Each real prepared F3 child binds its own exact entity target."""
 
     admit = True
 
     async def restart_runtime(self):
-        self.core = readmission._RecordingF3Core(self.admit)
+        self.core = _PlanningAdmittedRecordingCore(self.admit)
         self.runtime = F3RuntimeIntegration(
             service=self.service,
             storage_root=str(self.root / "plans"),

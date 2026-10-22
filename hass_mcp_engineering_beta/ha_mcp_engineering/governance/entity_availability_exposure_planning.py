@@ -34,7 +34,12 @@ from .entity_metadata import (
 )
 from .entity_metadata_disclosure import EntityMetadataEvidenceUnavailable
 from .entity_metadata_planning import EntityMetadataRefusal as Refusal
-from .helper_dependency import _causal_automation_sources
+from ..dependency.models import OBLIGATION_LEDGER_MODEL
+from .helper_dependency import (
+    _causal_automation_sources,
+    _obligation_targets_helper,
+    home_assistant_version_admission,
+)
 from .models import ChangeRiskAssessment, RiskLevel
 from .normalize import stable_hash
 from .physical_effects import protected_object_reason
@@ -54,6 +59,9 @@ POLICY_TRIGGER = "entity_availability_exposure_policy"
 FIELD_NOT_SUPPORTED = "entity_availability_exposure_field_not_supported"
 INVALID_VALUE = "entity_availability_exposure_invalid_value"
 DISCLOSURE_MODEL = "entity_availability_exposure_disclosure_v1"
+# OD-4: every evidence gap is a protected dependency reason.
+INCOMPLETE_PREFIX = "dependency_evidence_incomplete:"
+INCOMPLETE_IMPACT_TEXT = "impact could not be fully determined"
 ASSISTANT_NAMES = {
     "conversation": "Assist",
     "cloud.google_assistant": "Google Assistant",
@@ -201,19 +209,96 @@ def object_protection(entry: dict[str, Any]) -> list[str]:
     return sorted(set(reasons))
 
 
+def _ledger_coverage(snapshot: Any, item: Any) -> tuple[str | None, int]:
+    """Return the authoritative (completeness, failed items) for one source."""
+
+    if item is None:
+        return None, 0
+    if (
+        getattr(snapshot, "obligation_ledger_model", None) == OBLIGATION_LEDGER_MODEL
+        and item.obligation_ledger_completeness is not None
+    ):
+        return item.obligation_ledger_completeness, item.obligation_ledger_failed_item_count
+    return item.completeness, item.failed_item_count
+
+
+def dependency_evidence_gaps(snapshot: Any | None, entity_id: str) -> list[str]:
+    """Return why the disable impact evidence is incomplete; ``[]`` = complete.
+
+    This is the single "evidence complete" predicate (OD-4: unresolved is
+    protected).  Every gap becomes a dependency reason, so classification,
+    the policy recompute and the preflight consumer fingerprint all follow
+    from this one decision.  Staleness cannot occur here: the reader always
+    awaits a fresh (and at preflight, fenced) build, and a failed build is
+    ``None``.  Structural script partiality and the permanently unindexed
+    sources (``UNAVAILABLE_COVERAGE``) are disclosed warnings, not gaps.
+    """
+
+    if snapshot is None:
+        return ["dependency_index_unavailable"]
+    gaps: set[str] = set()
+    admission = home_assistant_version_admission(snapshot)
+    if not admission["admitted"]:
+        gaps.add(str(admission["reason_code"]))
+    if getattr(snapshot, "obligation_ledger_model", None) != OBLIGATION_LEDGER_MODEL:
+        gaps.add("obligation_ledger_model_unsupported")
+    coverage = {item.source_type: item for item in getattr(snapshot, "coverage", ()) or ()}
+    for source_type in ("automation", "blueprint"):
+        completeness, failed = _ledger_coverage(snapshot, coverage.get(source_type))
+        if completeness != "complete" or failed:
+            gaps.add(f"{source_type}_inventory_incomplete")
+    if any(
+        "exceeded the bounded index payload" in warning
+        for item in coverage.values()
+        for warning in item.warnings
+    ):
+        # The consumer list is the finding projection, which this truncates.
+        gaps.add("dependency_index_payload_truncated")
+    if getattr(snapshot, "automation_read_failures", ()):
+        gaps.add("automation_read_failures")
+    if getattr(snapshot, "obligation_overflow_count", 0):
+        gaps.add("obligation_ledger_truncated")
+    if getattr(snapshot, "dynamic_reference_overflow_count", 0):
+        gaps.add("dynamic_references_truncated")
+    for item in getattr(snapshot, "obligations", ()) or ():
+        if item.source_type not in {"automation", "blueprint"}:
+            continue
+        outcome = _obligation_targets_helper(item, entity_id)
+        if outcome == "coverage_failure":
+            gaps.add("obligation_coverage_failure")
+        elif outcome == "bounded_semantic_opaque":
+            gaps.add("unresolved_dynamic_consumer")
+    scripts = getattr(snapshot, "script_diagnostics", None)
+    scripts = scripts.visible() if scripts is not None else None
+    if scripts is None or scripts.coverage.completeness == "unavailable":
+        gaps.add("script_evidence_unavailable")
+    else:
+        if scripts.coverage.failed_item_count:
+            gaps.add("script_read_failures")
+        if any("Inventory was bounded" in warning for warning in scripts.coverage.warnings):
+            gaps.add("script_inventory_bounded")
+    return sorted(gaps)
+
+
 def _consumer_evidence(snapshot: Any | None, entity_id: str) -> dict[str, Any]:
     """Return the disable impact evidence for one target (design §5, §6.1)."""
 
+    gaps = dependency_evidence_gaps(snapshot, entity_id)
+    reasons: set[str] = {f"{INCOMPLETE_PREFIX}{gap}" for gap in gaps}
     if snapshot is None:
         return {
             "status": "unavailable",
             "consumers": [],
             "consumer_count": 0,
             "coverage": [],
-            "dependency_reasons": ["dependency_evidence_unresolved"],
+            "evidence_complete": False,
+            "evidence_gaps": gaps,
+            "dependency_reasons": sorted(reasons),
         }
     consumers: dict[tuple[str, str, str], dict[str, Any]] = {}
-    for finding in getattr(snapshot, "findings", ()) or ():
+    scripts = getattr(snapshot, "script_diagnostics", None)
+    script_findings = scripts.visible().findings if scripts is not None else ()
+    for finding in (*(getattr(snapshot, "findings", ()) or ()), *script_findings):
         if finding.target_entity_id != entity_id:
             continue
         key = (finding.source_type, finding.source_id, finding.relation)
@@ -232,7 +317,6 @@ def _consumer_evidence(snapshot: Any | None, entity_id: str) -> dict[str, Any]:
         profile.source_id: profile
         for profile in getattr(snapshot, "automation_action_profiles", ()) or ()
     }
-    reasons: set[str] = set()
     for source_id in sorted(_causal_automation_sources(snapshot, entity_id)):
         profile = profiles.get(source_id)
         consequence = getattr(profile, "physical_consequence", None)
@@ -245,12 +329,13 @@ def _consumer_evidence(snapshot: Any | None, entity_id: str) -> dict[str, Any]:
             reasons.add(f"unresolved_automation_consequence:{source_id}")
         elif consequence == "safety_critical":
             reasons.add(f"feeds_protected_automation:{source_id}")
-    if getattr(snapshot, "automation_read_failures", ()):
-        reasons.add("dependency_evidence_incomplete:automation_read_failures")
     coverage = sorted(
         (
             {"source_type": item.source_type, "completeness": item.completeness}
-            for item in getattr(snapshot, "coverage", ()) or ()
+            for item in (
+                *(getattr(snapshot, "coverage", ()) or ()),
+                *((scripts.visible().coverage,) if scripts is not None else ()),
+            )
         ),
         key=lambda item: (item["source_type"], item["completeness"]),
     )
@@ -260,6 +345,8 @@ def _consumer_evidence(snapshot: Any | None, entity_id: str) -> dict[str, Any]:
         "consumers": ordered,
         "consumer_count": len(ordered),
         "coverage": coverage,
+        "evidence_complete": not gaps,
+        "evidence_gaps": gaps,
         "dependency_reasons": sorted(reasons),
     }
 
@@ -360,10 +447,11 @@ def _statements(
                 f"Disabling this breaks {source['source_type']} {_name(source)} "
                 f"({source['relation']})."
             )
-        if consumers["status"] != "read":
+        if not consumers["evidence_complete"]:
             statements.append(
-                "The dependency index is unavailable, so consumers are unknown; "
-                "this is treated as protected."
+                f"For {entity_id}, {INCOMPLETE_IMPACT_TEXT} ("
+                + ", ".join(consumers["evidence_gaps"])
+                + "); this is treated as protected."
             )
         elif not consumers["count"]:
             statements.append(
@@ -648,6 +736,8 @@ async def prepare(
         if consumers is not None:
             disclosure["consumers"] = {
                 "status": consumers["status"],
+                "evidence_complete": consumers["evidence_complete"],
+                "evidence_gaps": consumers["evidence_gaps"],
                 "items": consumers["consumers"][:MAX_DISCLOSED_CONSUMERS],
                 "count": consumers["consumer_count"],
                 "truncated": consumers["consumer_count"] > MAX_DISCLOSED_CONSUMERS,

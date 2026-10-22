@@ -19,9 +19,13 @@ Builds on 2.4.1-beta.30.
   (sequence 12) does not reference them, so every call is refused with
   `CoreCapabilityUnavailable` / `pending_signed_registry_admission` before a
   plan is stored. `list_capabilities` and health report the same status.
-  Nothing new is active until an owner-signed sequence 13.
+  The governance service checks admission first, before any Home Assistant
+  read or plan storage, on every entry point. Nothing new is active until an
+  owner-signed sequence 13.
 - Once admitted: protected entities need the existing elevated
-  acknowledgement; an enable plan covers one config entry; unregistered
+  acknowledgement. A disable whose dependency evidence is incomplete for any
+  reason is protected, with "impact could not be fully determined". An
+  enable plan covers one config entry; unregistered
   entities, devices, config entries, Core-internal disables and
   already-applied states are refused; rollback is an inverse plan. The
   gateway never sends `cloud/status`, `homeassistant/expose_entity/list`,

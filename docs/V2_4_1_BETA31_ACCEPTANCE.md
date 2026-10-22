@@ -49,7 +49,9 @@ The review needs a security section covering:
   Both are reachable only through an approved plan dispatched by the F3
   runtime, and only for a profile admitted by a signed registry. With the
   shipped sequence 12, the routing layer refuses before planning with
-  `CoreCapabilityUnavailable` / `pending_signed_registry_admission`.
+  `CoreCapabilityUnavailable` / `pending_signed_registry_admission`. The
+  governance service refuses again before any Home Assistant read or plan
+  storage, for every entry point.
 - **Closed vocabulary.**
   - The gateway sends only the two writes and four reads:
     `config/entity_registry/get`, `config/entity_registry/list`,

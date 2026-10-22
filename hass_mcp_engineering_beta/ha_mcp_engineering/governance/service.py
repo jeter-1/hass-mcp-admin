@@ -201,6 +201,7 @@ from .entity_metadata import (
 )
 from . import entity_metadata_planning
 from . import entity_availability_exposure_planning
+from . import entity_availability_exposure
 from .entity_metadata_disclosure import read_runtime_dependency_snapshot
 from .helper_dependency import (
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
@@ -5326,20 +5327,82 @@ class ChangeGovernanceService:
             request = entity_availability_exposure_planning.validate_request(
                 arguments
             )
-            if self.entity_availability_exposure_gateway is None:
-                raise entity_metadata_planning.EntityMetadataRefusal(
-                    "entity_availability_exposure_provider_unavailable",
-                    kind="unavailable",
-                )
-            prepared = await entity_availability_exposure_planning.prepare(
-                self.entity_availability_exposure_gateway,
-                self.entity_availability_exposure_snapshot_reader,
-                request,
-            )
         except entity_metadata_planning.EntityMetadataRefusal as exc:
             raise self._entity_metadata_refusal_error(exc, {}) from None
-        return await self._create_availability_exposure_plan(
-            prepared, caller_context=caller_context
+        # HAMCP-069B M1: admission is enforced here first, before any Home
+        # Assistant read and before persistence, in addition to the MCP
+        # gateway and F3 gates.  Unadmitted planning reads nothing and
+        # stores nothing.
+        lease = self._availability_exposure_planning_lease(request)
+        async with lease:
+            try:
+                if self.entity_availability_exposure_gateway is None:
+                    raise entity_metadata_planning.EntityMetadataRefusal(
+                        "entity_availability_exposure_provider_unavailable",
+                        kind="unavailable",
+                    )
+                prepared = await entity_availability_exposure_planning.prepare(
+                    self.entity_availability_exposure_gateway,
+                    self.entity_availability_exposure_snapshot_reader,
+                    request,
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self._entity_metadata_refusal_error(exc, {}) from None
+            lease.require_current()
+            return await self._create_availability_exposure_plan(
+                prepared,
+                caller_context=caller_context,
+                _before_persist=lease.require_current,
+            )
+
+    def _availability_exposure_core(self, resource_type: str) -> Any:
+        """Return Core only if it admits ``resource_type``'s profile, else refuse.
+
+        Fails closed when no F3 runtime or Core runtime is composed: the 069B
+        resource types are admitted only by an owner-signed registry.
+        """
+
+        from ..f3_runtime.runtime import ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS
+
+        profile = ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS[resource_type][-1]
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status((profile,)).get("available") is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": entity_availability_exposure.PENDING_ADMISSION_REASON,
+                    "reason_code": entity_availability_exposure.PENDING_ADMISSION_REASON,
+                    "resource_type": resource_type,
+                    "core_capability": profile,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _availability_exposure_planning_lease(self, request: Any) -> Any:
+        """Hold exact-target Core authority across one fresh 069B planning."""
+
+        from ..f3_runtime.runtime import (
+            ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS,
+            _rollback_planning_lease,
+        )
+
+        core = self._availability_exposure_core(request.resource_type)
+        return _rollback_planning_lease(
+            core,
+            ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS[request.resource_type],
+            target={
+                "target_type": request.resource_type,
+                "target_id": ",".join(sorted(request.entity_ids)),
+            },
         )
 
     async def _create_availability_exposure_plan(
@@ -5349,8 +5412,14 @@ class ChangeGovernanceService:
         caller_context: dict[str, Any] | None = None,
         title: str | None = None,
         description: str | None = None,
+        _before_persist: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         request = prepared.request
+        # Every 069B persistence path re-checks admission and must hold a
+        # current Core lease; neither ever depends on the caller alone.
+        self._availability_exposure_core(request.resource_type)
+        if _before_persist is None:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
         entity_ids = [item.entity_id for item in prepared.items]
         target = (
             f" for {request.assistant}" if request.assistant is not None else ""
@@ -5379,6 +5448,7 @@ class ChangeGovernanceService:
             expiration_minutes=request.expiration_minutes,
             caller_context=caller_context,
             _availability_exposure_context=prepared,
+            _before_persist=_before_persist,
         )
 
     @staticmethod

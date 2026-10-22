@@ -510,7 +510,12 @@ A sibling family leaves all of these untouched.
 - **Dormancy:** every supported Core fails closed with
   `CoreCapabilityUnavailable` until a separate owner-signed Core registry PR
   (sequence 13) pins both new fingerprints. Signing is out of scope here
-  (OD-2).
+  (OD-2). Besides the MCP tool gate and the F3 gates, the governance service
+  checks admission first, before any Home Assistant read or plan storage
+  (review 1, M1). It does this for every entry point: the planning service,
+  the internal plan builder and the F3 inverse. It fails closed when no Core
+  runtime is composed, and it holds an exact-target Core lease from the first
+  read to persistence.
 
 ### 4.3 Places the new types must be registered (fail-closed checklist)
 
@@ -656,6 +661,30 @@ A target is **protected** if any of the following applies:
 If the index is unavailable, stale or out of bounds, the classification is
 `unresolved`. Unresolved is treated as protected, the same fail-closed
 direction as physical-effect `unresolved`.
+
+One shared predicate decides "evidence complete" for every disable
+classification path: planning, the policy recompute, the preflight consumer
+fingerprint and the F3 inverse (review 1, H1). It is
+`dependency_evidence_gaps` in `entity_availability_exposure_planning.py`.
+Each gap becomes the reason
+`dependency_evidence_incomplete:<gap>`, and the consequence statement says
+"impact could not be fully determined". The gaps are:
+
+- the index unavailable;
+- the Home Assistant version unsupported or unavailable;
+- an unsupported obligation-ledger model;
+- automation or blueprint coverage that is not complete or has failed items;
+- the bounded index payload exceeded;
+- automation read failures;
+- an obligation-ledger or dynamic-reference overflow;
+- an automation obligation that is a coverage failure or a target-capable
+  opaque consumer;
+- script evidence unavailable, with read failures, or bounded.
+
+Staleness cannot arise, because each read awaits a fresh build (fenced at
+preflight). Two things are disclosed but are not gaps: the structural
+`partial` coverage of a working script reader, and the permanently
+`unavailable` scenes, groups, templates and dashboards (§5).
 
 ### 6.2 Proposed policy (OD-5)
 

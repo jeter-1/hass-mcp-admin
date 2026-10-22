@@ -624,8 +624,11 @@ add-on option, role, fallback or delegated provider.
   capability profile admitted by a signed registry. Neither new profile is
   referenced by the shipped sequence 12. The routing layer refuses every call
   with `CoreCapabilityUnavailable` / `pending_signed_registry_admission`
-  before planning, provider contact or storage. A tampered profile
-  fingerprint keeps the profile withheld.
+  before planning, provider contact or storage. The governance service
+  repeats that check before any Home Assistant read or storage, on every
+  entry point (planning service, internal plan builder, F3 inverse). It fails
+  closed without a Core runtime. A tampered profile fingerprint keeps the
+  profile withheld.
 - **Closed vocabulary.** The gateway allow-lists the two writes and four reads
   (`config/entity_registry/get`, `config/entity_registry/list`,
   `config_entries/get_single`, `homeassistant/expose_new_entities/get`) and
@@ -635,7 +638,8 @@ add-on option, role, fallback or delegated provider.
   commands are never sent; a static check pins every occurrence of
   `cloud/status`. Alexa is refused.
 - **Approval and verification.** Protected entities need the existing
-  `ELEVATED_ADMIN` acknowledgement; a tampered policy marker is
+  `ELEVATED_ADMIN` acknowledgement, and so does a disable whose dependency
+  evidence is incomplete for any reason; a tampered policy marker is
   `PROHIBITED`. Exact registry readback decides every child; the empty
   `expose_entity` result is never proof. The only tolerated difference is a
   non-target `cloud.alexa` options key going from absent to present, which is

@@ -4310,6 +4310,9 @@ class F3RuntimeIntegration:
         request = entity_availability_exposure_planning.Request(
             inverses.pop(), tuple(reversed_ids), assistants.pop(), 120
         )
+        # HAMCP-069B M1: the service-layer admission check precedes every
+        # planning read, even when this runtime was composed without Core.
+        self.service._availability_exposure_core(request.resource_type)
         try:
             if self.service.entity_availability_exposure_gateway is None:
                 raise entity_metadata_planning.EntityMetadataRefusal(
@@ -4336,6 +4339,7 @@ class F3RuntimeIntegration:
                 "rollback_source_plan_id": source_plan.plan_id,
                 "rollback_model": "f3-governed-rollback-plan-v1",
             },
+            _before_persist=lease.require_current,
         )
         rollback_plan = self.service._load(created["plan_id"])
         source_plan.rollback.available = True
