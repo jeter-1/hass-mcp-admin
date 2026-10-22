@@ -613,6 +613,38 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.31` slice (HAMCP-069B) adds governed entity enable/disable and
+voice assistant exposure, **unreachable at release**. It adds no permission,
+add-on option, role, fallback or delegated provider.
+
+- **New write paths.** `config/entity_registry/update` with exactly
+  `entity_id` and `disabled_by`, and `homeassistant/expose_entity` with one
+  assistant, one entity and `should_expose`. Both are reachable only through
+  an externally approved plan dispatched by the F3 runtime, for a Core
+  capability profile admitted by a signed registry. Neither new profile is
+  referenced by the shipped sequence 12. The routing layer refuses every call
+  with `CoreCapabilityUnavailable` / `pending_signed_registry_admission`
+  before planning, provider contact or storage. The governance service
+  repeats that check before any Home Assistant read or storage, on every
+  entry point (planning service, internal plan builder, F3 inverse). It fails
+  closed without a Core runtime. A tampered profile fingerprint keeps the
+  profile withheld.
+- **Closed vocabulary.** The gateway allow-lists the two writes and four reads
+  (`config/entity_registry/get`, `config/entity_registry/list`,
+  `config_entries/get_single`, `homeassistant/expose_new_entities/get`) and
+  raises on anything else before I/O. `cloud/status` (which returns the
+  Google secure-devices PIN), `homeassistant/expose_entity/list`,
+  `homeassistant/expose_new_entities/set` and both cloud entity-update
+  commands are never sent; a static check pins every occurrence of
+  `cloud/status`. Alexa is refused.
+- **Approval and verification.** Protected entities need the existing
+  `ELEVATED_ADMIN` acknowledgement, and so does a disable whose dependency
+  evidence is incomplete for any reason; a tampered policy marker is
+  `PROHIBITED`. Exact registry readback decides every child; the empty
+  `expose_entity` result is never proof. The only tolerated difference is a
+  non-target `cloud.alexa` options key going from absent to present, which is
+  reported.
+
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.
 

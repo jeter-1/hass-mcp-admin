@@ -34,7 +34,14 @@ def resource_lock_key(resource_type: str, target_id: str) -> str:
         prefix = "script"
     elif resource_type in {"input_boolean", "input_number"}:
         prefix = "helper"
-    elif resource_type == "entity_registry_metadata":
+    elif resource_type in {
+        "entity_registry_metadata",
+        "entity_registry_availability",
+        "entity_assistant_exposure",
+    }:
+        # HAMCP-069B: every registry-entry mutation for one entity shares the
+        # same exclusive identity, so metadata, availability, and exposure
+        # plans for one entity can never run concurrently.
         prefix = "entity_registry"
     else:
         raise ValueError("configuration resource type has no lock identity")
@@ -177,6 +184,10 @@ def operation_lock_requests(
         # needs no reload, but it keeps the uniform configuration lock graph
         # rather than a special-case path.
         "entity_registry_metadata": "reload:entity_registry_metadata",
+        "entity_registry_availability": (
+            "reload:entity_registry_availability"
+        ),
+        "entity_assistant_exposure": "reload:entity_assistant_exposure",
     }.get(operation.resource_type)
     if reload_key is None:
         raise ValueError("configuration resource type has no reload lock")

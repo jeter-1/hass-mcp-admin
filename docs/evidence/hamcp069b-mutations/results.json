@@ -1,0 +1,469 @@
+{
+  "source_commit": "3594aa9 (worktree copy)",
+  "modules": 3,
+  "baseline_tests": 106,
+  "mutants": 23,
+  "killed": 23,
+  "results": [
+    {
+      "name": "baseline",
+      "exit": 0,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "OK"
+      ],
+      "import_error": false,
+      "failing": [],
+      "killed": true
+    },
+    {
+      "name": "skip_readback",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=3)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_any_other_exposure_side_effect_is_a_mismatch",
+        "test_empty_expose_response_is_not_proof",
+        "test_readback_mismatch_is_terminal_and_never_redispatched"
+      ],
+      "killed": true
+    },
+    {
+      "name": "tolerate_any_new_exposure_key",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_any_other_exposure_side_effect_is_a_mismatch"
+      ],
+      "killed": true
+    },
+    {
+      "name": "drop_protected_floor",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=3)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_enable_exposed_protected_object",
+        "test_expose_protected_object",
+        "test_valve_exposure_requires_elevated"
+      ],
+      "killed": true
+    },
+    {
+      "name": "drop_safety_sensor_protection",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_disable_safety_sensor",
+        "test_protected_object_relabelled_standard_is_prohibited"
+      ],
+      "killed": true
+    },
+    {
+      "name": "drop_feeds_protected_automation",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_feeding_profile_still_escalates_with_complete_evidence",
+        "test_disable_feeding_a_safety_critical_automation"
+      ],
+      "killed": true
+    },
+    {
+      "name": "planner_never_elevated",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=20, errors=4)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_feeding_profile_still_escalates_with_complete_evidence",
+        "test_disable_classless_cover_is_protected",
+        "test_disable_feeding_a_safety_critical_automation",
+        "test_disable_safety_sensor",
+        "test_disable_with_out_of_bounds_dependency_evidence_requires_elevated",
+        "test_disable_with_unresolved_dependency_evidence_is_elevated",
+        "test_each_incompleteness_cause_is_elevated",
+        "test_enable_exposed_protected_object",
+        "test_evidence_becoming_complete_after_approval_is_refused",
+        "test_expose_protected_object",
+        "test_incomplete_evidence_disable_still_executes_once_when_approved",
+        "test_overflow_without_read_failures_is_elevated",
+        "test_standard_approval_alone_cannot_apply_an_elevated_plan",
+        "test_the_approval_for_an_incomplete_evidence_disable_is_elevated",
+        "test_the_rollback_disable_uses_the_same_predicate",
+        "test_valve_exposure_requires_elevated"
+      ],
+      "killed": true
+    },
+    {
+      "name": "ignore_stale_state",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=1, errors=48)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_admitted_inverse_still_plans",
+        "test_any_other_exposure_side_effect_is_a_mismatch",
+        "test_changed_config_entry_evidence_is_rejected",
+        "test_changed_dependency_evidence_is_rejected",
+        "test_disable_classless_cover_is_protected",
+        "test_disable_feeding_a_safety_critical_automation",
+        "test_disable_is_standard_and_verified_by_registry_readback",
+        "test_disable_safety_sensor",
+        "test_disable_with_unresolved_dependency_evidence_is_elevated",
+        "test_each_child_binds_its_entity_and_selected_profile",
+        "test_eight_entities_apply_in_order",
+        "test_empty_expose_response_is_not_proof",
+        "test_enable_binds_one_config_entry_and_discloses_the_reload",
+        "test_enable_exposed_protected_object",
+        "test_enable_rolls_back_as_a_disable_plan",
+        "test_error_result_is_settled_by_readback",
+        "test_every_flow_uses_only_the_closed_vocabulary",
+        "test_evidence_becoming_complete_after_approval_is_refused",
+        "test_evidence_becoming_incomplete_after_approval_is_refused",
+        "test_existing_plan_after_withdrawal_never_writes_across_restart",
+        "test_expose_and_unexpose_each_writable_assistant",
+        "test_expose_protected_object",
+        "test_exposure_with_a_stored_prior_is_restored",
+        "test_external_disabled_by_change_is_stale",
+        "test_failed_or_unapplied_forward_is_refused",
+        "test_incomplete_evidence_disable_still_executes_once_when_approved",
+        "test_integration_disabled_entity_can_be_enabled",
+        "test_inverse_refuses_when_admission_is_withdrawn",
+        "test_inverse_without_core_refuses_before_reads",
+        "test_later_edit_refuses_rollback",
+        "test_new_alexa_key_is_tolerated_and_reported",
+        "test_other_assistant_exposure_change_is_stale",
+        "test_partial_forward_reverses_only_verified_children",
+        "test_readback_mismatch_is_terminal_and_never_redispatched",
+        "test_signed_fixture_core_and_real_f3_execute_once",
+        "test_stop_on_first_failure",
+        "test_the_rollback_disable_uses_the_same_predicate",
+        "test_tolerated_alexa_key_does_not_block_rollback",
+        "test_unadmitted_f3_apply_and_recovery_never_write",
+        "test_unauthorized_dispatch_is_confirmed_not_applied",
+        "test_unrelated_registry_field_change_is_stale",
+        "test_unset_prior_preference_is_not_restorable",
+        "test_valve_exposure_requires_elevated"
+      ],
+      "killed": true
+    },
+    {
+      "name": "wrong_assistant_in_command",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_every_flow_uses_only_the_closed_vocabulary",
+        "test_expose_and_unexpose_each_writable_assistant"
+      ],
+      "killed": true
+    },
+    {
+      "name": "planner_allows_multiple_config_entries",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_enable_spanning_config_entries_is_refused"
+      ],
+      "killed": true
+    },
+    {
+      "name": "policy_allows_multiple_config_entries",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_plan_shape_rules"
+      ],
+      "killed": true
+    },
+    {
+      "name": "accept_unregistered_entity",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_unregistered_entity_is_refused"
+      ],
+      "killed": true
+    },
+    {
+      "name": "allow_alexa",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_alexa_is_refused_before_any_read"
+      ],
+      "killed": true
+    },
+    {
+      "name": "cap_8_to_9",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_eight_is_the_cap"
+      ],
+      "killed": true
+    },
+    {
+      "name": "skip_stale_check_at_preflight",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=3)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_external_disabled_by_change_is_stale",
+        "test_other_assistant_exposure_change_is_stale",
+        "test_unrelated_registry_field_change_is_stale"
+      ],
+      "killed": true
+    },
+    {
+      "name": "drop_send_allowlist",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=18)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_gateway_refuses_every_never_sent_command_before_io",
+        "test_gateway_refuses_never_sent_and_unknown_commands_before_io"
+      ],
+      "killed": true
+    },
+    {
+      "name": "review_valve_floor_excluded",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_valve_exposure_requires_elevated"
+      ],
+      "killed": true
+    },
+    {
+      "name": "r1_predicate_always_complete",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=35)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_consumer_evidence_carries_every_gap_as_a_protected_reason",
+        "test_disable_with_out_of_bounds_dependency_evidence_requires_elevated",
+        "test_each_cause_is_a_gap",
+        "test_each_incompleteness_cause_is_elevated",
+        "test_evidence_becoming_complete_after_approval_is_refused",
+        "test_evidence_becoming_incomplete_after_approval_is_refused",
+        "test_overflow_without_read_failures_is_elevated",
+        "test_the_approval_for_an_incomplete_evidence_disable_is_elevated",
+        "test_the_rollback_disable_uses_the_same_predicate"
+      ],
+      "killed": true
+    },
+    {
+      "name": "r1_predicate_ignores_overflow",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=7)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_consumer_evidence_carries_every_gap_as_a_protected_reason",
+        "test_disable_with_out_of_bounds_dependency_evidence_requires_elevated",
+        "test_each_cause_is_a_gap",
+        "test_each_incompleteness_cause_is_elevated",
+        "test_evidence_becoming_incomplete_after_approval_is_refused",
+        "test_overflow_without_read_failures_is_elevated",
+        "test_the_rollback_disable_uses_the_same_predicate"
+      ],
+      "killed": true
+    },
+    {
+      "name": "r1_predicate_ignores_opaque_consumer",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_each_cause_is_a_gap",
+        "test_each_incompleteness_cause_is_elevated"
+      ],
+      "killed": true
+    },
+    {
+      "name": "r1_predicate_ignores_script_evidence",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=2, errors=4)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_consumer_evidence_carries_every_gap_as_a_protected_reason",
+        "test_each_cause_is_a_gap",
+        "test_each_incompleteness_cause_is_elevated",
+        "test_evidence_becoming_complete_after_approval_is_refused"
+      ],
+      "killed": true
+    },
+    {
+      "name": "r1_service_gate_check_removed",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=14)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_core_that_cannot_report_status_fails_closed",
+        "test_each_profile_admits_only_its_own_resource_type",
+        "test_internal_builder_refuses_without_admission_or_lease",
+        "test_inverse_without_core_refuses_before_reads",
+        "test_missing_core_or_runtime_fails_closed",
+        "test_service_refuses_without_admission_before_reads_or_plan",
+        "test_unadmitted_core_refuses_every_operation_with_zero_reads",
+        "test_unadmitted_f3_apply_and_recovery_never_write"
+      ],
+      "killed": true
+    },
+    {
+      "name": "r1_service_gate_removed_entirely",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=17)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_admission_withdrawn_at_the_persist_boundary_stores_nothing",
+        "test_admission_withdrawn_during_planning_stores_nothing",
+        "test_admitted_planning_holds_an_exact_target_lease",
+        "test_core_that_cannot_report_status_fails_closed",
+        "test_each_profile_admits_only_its_own_resource_type",
+        "test_internal_builder_refuses_without_admission_or_lease",
+        "test_inverse_without_core_refuses_before_reads",
+        "test_missing_core_or_runtime_fails_closed",
+        "test_service_refuses_without_admission_before_reads_or_plan",
+        "test_unadmitted_core_refuses_every_operation_with_zero_reads",
+        "test_unadmitted_f3_apply_and_recovery_never_write"
+      ],
+      "killed": true
+    },
+    {
+      "name": "r1_persist_lease_not_forwarded",
+      "exit": 1,
+      "tests": [
+        "106"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_admission_withdrawn_at_the_persist_boundary_stores_nothing"
+      ],
+      "killed": true
+    }
+  ]
+}

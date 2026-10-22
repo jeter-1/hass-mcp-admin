@@ -21,6 +21,7 @@ from ..governance.entity_metadata import (
     update_command_argument_names as entity_metadata_argument_names,
     update_fields as entity_metadata_update_fields,
 )
+from ..governance import entity_availability_exposure as availability_exposure
 from ..governance.normalize import stable_hash
 from ..governance.resources import (
     configuration_write_config,
@@ -53,6 +54,12 @@ CAPABILITY_IDENTITIES = {
         ENTITY_METADATA_RESOURCE_TYPE,
         "update",
     ): ENTITY_METADATA_CAPABILITY_IDENTITY,
+    **{
+        (resource_type, "update"): identity
+        for resource_type, identity in (
+            availability_exposure.CAPABILITY_IDENTITIES.items()
+        )
+    },
 }
 
 
@@ -493,6 +500,168 @@ class EntityRegistryMetadataConfigurationStrategy(ConfigurationStrategy):
         return ()
 
 
+class _AvailabilityExposureStrategy(ConfigurationStrategy):
+    """One closed 069B write for one exact entity (HAMCP-069B).
+
+    The plan records the full final entry plus its bindings; the single
+    command sent is rebuilt from the plan's own recorded current state.
+    """
+
+    requires_configuration_check = False
+
+    def __init__(self, action: str) -> None:
+        if action != "update":
+            raise ValueError("entity availability and exposure are update-only")
+        super().__init__(action)
+
+    @property
+    def provider(self) -> str:  # type: ignore[override]
+        return availability_exposure.PROVIDERS[self.resource_type]
+
+    @property
+    def transport(self) -> str:
+        return "home_assistant_websocket"
+
+    def provider_operation(self, target_id: str) -> str:
+        del target_id
+        return availability_exposure.PROVIDER_OPERATIONS[self.resource_type]
+
+    def _command(
+        self,
+        target_id: str,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return availability_exposure.update_command(
+            self.resource_type, target_id, current_config, proposed_config
+        )
+
+    def provider_descriptor(
+        self,
+        target_id: str,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
+    ) -> ConfigurationProviderDescriptor:
+        command = self._command(target_id, proposed_config, current_config)
+        return ConfigurationProviderDescriptor(
+            provider=self.provider,
+            contract_model=self.provider_contract,
+            transport=self.transport,
+            operation=self.provider_operation(target_id),
+            argument_names=tuple(
+                sorted(command, key=lambda item: item.encode("utf-8"))
+            ),
+            arguments_hash=stable_hash(command),
+        )
+
+    def provider_payload(
+        self, target_id: str, proposed_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        raise NotImplementedError(
+            "availability/exposure payloads require the planned current state"
+        )
+
+    def argument_names(
+        self, proposed_config: dict[str, Any]
+    ) -> tuple[str, ...]:
+        raise NotImplementedError(
+            "availability/exposure argument names require the planned current state"
+        )
+
+    def dispatch_config(
+        self,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        target_id = proposed_config.get("entity_id")
+        return self._command(target_id, proposed_config, current_config)
+
+    def already_reached(
+        self,
+        observed: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> bool:
+        # V9: exactly the planned final entry is present, so nothing is sent.
+        if observed is None:
+            return False
+        try:
+            return availability_exposure.normalize_entry(
+                observed
+            ) == availability_exposure.normalize_entry(
+                availability_exposure.without_bindings(proposed_config)
+            )
+        except (TypeError, ValueError):
+            return False
+
+    async def preflight_evidence(
+        self,
+        gateway: Any,
+        target_id: str,
+        current_config: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> tuple[str, ...]:
+        check = getattr(
+            gateway, "availability_exposure_preflight_evidence", None
+        )
+        if check is None or current_config is None:
+            return ("dependency_evidence_unavailable",)
+        try:
+            return tuple(
+                await check(target_id, current_config, proposed_config)
+            )
+        except AuthorizationError:
+            return ("permission_failure",)
+        except Exception:
+            return ("dependency_evidence_unavailable",)
+
+    def read_error_code(self, exc: BaseException) -> str:
+        if isinstance(exc, AuthorizationError):
+            return "permission_failure"
+        return "resource_read_unavailable"
+
+    def observe_error_code(self, exc: BaseException) -> str:
+        if isinstance(exc, AuthorizationError):
+            return "readback_permission_failure"
+        return "readback_unavailable"
+
+    def dispatch_error_codes(self, exc: BaseException) -> tuple[str, ...]:
+        details = getattr(exc, "details", None)
+        if (
+            isinstance(details, dict)
+            and details.get("reason") == availability_exposure.UNAUTHORIZED_REASON
+        ):
+            return ("provider_permission_denied",)
+        return ()
+
+
+class EntityRegistryAvailabilityConfigurationStrategy(
+    _AvailabilityExposureStrategy
+):
+    """Closed ``config/entity_registry/update`` of ``disabled_by`` only."""
+
+    resource_type = availability_exposure.AVAILABILITY_RESOURCE_TYPE
+    provider_contract = availability_exposure.AVAILABILITY_PROVIDER_CONTRACT
+    validation_contract = "entity_registry_availability_validation_v1"
+
+    @property
+    def allowed_argument_names(self) -> tuple[str, ...]:
+        return ("disabled_by", "entity_id", "type")
+
+
+class EntityAssistantExposureConfigurationStrategy(
+    _AvailabilityExposureStrategy
+):
+    """Closed ``homeassistant/expose_entity`` for one assistant and entity."""
+
+    resource_type = availability_exposure.EXPOSURE_RESOURCE_TYPE
+    provider_contract = availability_exposure.EXPOSURE_PROVIDER_CONTRACT
+    validation_contract = "entity_assistant_exposure_validation_v1"
+
+    @property
+    def allowed_argument_names(self) -> tuple[str, ...]:
+        return ("assistants", "entity_ids", "should_expose", "type")
+
+
 _STRATEGIES = {
     "automation": AutomationConfigurationStrategy,
     "script": ScriptConfigurationStrategy,
@@ -500,6 +669,12 @@ _STRATEGIES = {
     "input_number": InputNumberConfigurationStrategy,
     ENTITY_METADATA_RESOURCE_TYPE: (
         EntityRegistryMetadataConfigurationStrategy
+    ),
+    availability_exposure.AVAILABILITY_RESOURCE_TYPE: (
+        EntityRegistryAvailabilityConfigurationStrategy
+    ),
+    availability_exposure.EXPOSURE_RESOURCE_TYPE: (
+        EntityAssistantExposureConfigurationStrategy
     ),
 }
 

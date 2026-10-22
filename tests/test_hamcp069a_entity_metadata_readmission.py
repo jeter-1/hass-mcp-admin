@@ -222,7 +222,8 @@ class DormantProfileTests(unittest.TestCase):
         self.assertIn(ENTITY_METADATA, ids(CORE_RUNTIME_CAPABILITY_PROFILES))
         self.assertNotIn(ENTITY_METADATA, ids(CORE_CAPABILITY_PROFILES))
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 22)
+        # 22 through 069A, plus the two dormant 069B profiles.
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 24)
         (profile,) = CORE_ENTITY_METADATA_PROFILES
         mapping = profile.to_mapping()
         self.assertEqual(
@@ -549,7 +550,14 @@ class StaticToolCompletenessTests(unittest.TestCase):
             if mutation.intersection(requirements)
         }
         # Without a target such a route could never acquire a lease.
-        self.assertEqual(targeted, {"create_entity_metadata_plan"})
+        self.assertEqual(
+            targeted,
+            {
+                "create_entity_metadata_plan",
+                # HAMCP-069B binds its own exact target (its tests cover it).
+                "create_entity_availability_exposure_plan",
+            },
+        )
         self.assertEqual(static_tool_target("create_entity_metadata_plan", ARGUMENTS), TARGET)
         for arguments in (None, [], {}, {"entity_id": ""}, {"entity_id": 3}):
             with self.subTest(arguments=arguments):
@@ -561,7 +569,10 @@ class StaticToolCompletenessTests(unittest.TestCase):
         # refusal, whatever entity_id it is given.
         shapes = [None, {}] + [entity_arguments(value) for _l, value, _a in ENTITY_ID_CASES]
         for name in ENGINEERING_STATIC_TOOL_NAMES:
-            if name != "create_entity_metadata_plan":
+            if name not in {
+                "create_entity_metadata_plan",
+                "create_entity_availability_exposure_plan",
+            }:
                 for arguments in shapes:
                     with self.subTest(tool=name, arguments=repr(arguments)[:40]):
                         self.assertIsNone(static_tool_target(name, arguments))
@@ -645,7 +656,10 @@ class OtherToolGatewayCallShapeTests(unittest.IsolatedAsyncioTestCase):
 
         reached = 0
         for name in sorted(ENGINEERING_STATIC_TOOL_NAMES):
-            if name == "create_entity_metadata_plan":
+            if name in {
+                "create_entity_metadata_plan",
+                "create_entity_availability_exposure_plan",
+            }:
                 continue
             for arguments in ({}, {"entity_id": "LIGHT.PORCH"}, {"entity_id": "light.porch"}):
                 requirements = static_tool_requirements(name, arguments)

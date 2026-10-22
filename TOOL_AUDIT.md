@@ -2,6 +2,27 @@
 
 Date: 2026-07-10
 
+## Entity enable/disable and voice exposure, inactive (2.4.1-beta.31, HAMCP-069B)
+
+`create_entity_availability_exposure_plan` is a native governed planning tool:
+`engineering_native` routing, operational administration, no delegated
+provider, no fallback. It only creates a plan; dispatch is the existing
+external approval plus `apply_change_plan`. One operation (`disable`,
+`enable`, `expose`, `unexpose`) over 1-8 exact registered entities; `assistant`
+is `conversation` or `cloud.google_assistant` (Alexa refused); no free-text
+field.
+
+Its resource types `entity_registry_availability` and
+`entity_assistant_exposure` require the runtime-only Core profiles
+`core.entity_registry_availability_operation` and
+`core.entity_assistant_exposure_operation`, which the signed registry
+(sequence 12) does not reference. Every call is refused with
+`CoreCapabilityUnavailable` / `pending_signed_registry_admission`, with no
+plan stored and no provider contact; capabilities and health show the same
+status. The catalog is 65 static + 28 delegated = 93 (94 with the optional
+YAML reader). See
+[HAMCP_069B_ENABLE_EXPOSE_DESIGN.md](docs/HAMCP_069B_ENABLE_EXPOSE_DESIGN.md).
+
 ## Read-only incident logs and continuable history (2.4.1-beta.30, HAMCP-131)
 
 `get_incident_logs` and `get_history_slices` are native read-only evidence:
