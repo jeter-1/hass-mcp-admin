@@ -233,6 +233,32 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         ids = [i for page in pages for i in message_ids(page)]
         self.assertEqual(ids, self.expected(["core"], ms("2026-10-19T11:00:00.000"), ms("2026-10-19T12:30:00.000")))
 
+    async def test_oldest_entry_exactly_at_start_is_returned_at_the_retention_edge(self):
+        # Entries in that millisecond may already be vacuumed, so the edge
+        # is disclosed; the retained head itself is in the window.
+        journal = self.sim.journal(CORE)
+        for _ in range(3):
+            journal.add(ms("2026-10-19T12:00:00.000"), core_line("at start", "INFO", ms("2026-10-19T12:00:00.000")))
+        fill(journal, "2026-10-19T12:00:01.000", 4, 1000, "core")
+        page = await self.read(sources=["core"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:30:00Z")
+        row = self.source(page, "core")
+        self.assertEqual((row["start_location"], row["retention_edge_reached"]), ("retention_edge", True))
+        self.assertEqual(message_ids(page),
+                         self.expected(["core"], ms("2026-10-19T12:00:00.000"), ms("2026-10-19T12:30:00.000")))
+        self.assertEqual(page["returned"], 7)
+
+    async def test_tail_entry_exactly_at_start_is_not_consumed(self):
+        # The tail probe's entry at the start is in the window, and so is an
+        # earlier entry in the same millisecond.
+        journal = self.sim.journal(CORE)
+        for text in ("11:59:59.000", "12:00:00.000", "12:00:00.000"):
+            ts = ms(f"2026-10-19T{text}")
+            journal.add(ts, core_line(text, "INFO", ts))
+        page = await self.read(sources=["core"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:30:00Z")
+        self.assertEqual([e["ts"][11:23] for e in page["entries"]], ["12:00:00.000", "12:00:00.000"])
+        self.assertEqual(self.source(page, "core")["start_location"], "exact")
+        self.assertTrue(page["complete"])
+
     async def test_large_journal_locates_exact_start_within_budget(self):
         fill(self.sim.journal(CORE), "2026-10-19T09:00:00.000", 6000, 1000, "core")
         page = await self.read(sources=["core"], start="2026-10-19T10:00:00.500Z",
@@ -292,6 +318,20 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
                                text="A.C")
         self.assertEqual(message_ids(page), ["core|value a.c here"])
         self.assertTrue(page["filters"]["text_filter_applied"])
+
+    async def test_text_filter_cannot_probe_a_redacted_secret(self):
+        # The filter reads the sanitized text, so a fragment of a secret
+        # never matches the entry that held it.
+        core = self.sim.journal(CORE)
+        base = ms("2026-10-19T12:00:00.000")
+        for offset, secret in enumerate((HA_TOKEN, ACCESS_SECRET, SUPERVISOR_TOKEN)):
+            core.add(base + offset, core_line(f"leaked {secret} here", "INFO", base + offset))
+        for secret in (HA_TOKEN, ACCESS_SECRET, SUPERVISOR_TOKEN):
+            with self.subTest(secret=secret[:12]):
+                page = await self.read(sources=["core"], start="2026-10-19T12:00:00Z",
+                                       end="2026-10-19T12:01:00Z", text=secret[-14:])
+                self.assertEqual(page["entries"], [])
+                self.assertEqual(self.source(page, "core")["skipped_by_filter"], 3)
 
     async def test_vacuum_between_pages_fails_closed_as_stale(self):
         fill(self.sim.journal(CORE), "2026-10-19T12:00:00.000", 30, 1000, "core")
@@ -496,19 +536,33 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         callers = []
         real_lines, real_data = service_module.sanitize_log_lines, service_module.sanitize_untrusted_data
 
+        strict = []
+
         def spy(real):
             def wrapper(*args, **kwargs):
                 callers.append(inspect.stack()[1].function)
-                return real(*args, **kwargs)
+                result = real(*args, **kwargs)
+                if real is real_data:
+                    strict.append((args[0], result))
+                return result
             return wrapper
 
         fill(self.sim.journal(CORE), "2026-10-19T12:00:00.000", 20, 1000, "core")
         with patch.object(service_module, "sanitize_log_lines", spy(real_lines)), \
                 patch.object(service_module, "sanitize_untrusted_data", spy(real_data)):
-            await self.read(sources=["core", "addon:self"], start="2026-10-19T12:00:00Z",
-                            end="2026-10-19T12:10:00Z", limit=5)
+            page = await self.read(sources=["core", "addon:self", "supervisor"], start="2026-10-19T12:00:00Z",
+                                   end="2026-10-19T12:10:00Z", limit=5)
         self.assertTrue(callers)
         self.assertEqual(set(callers), {"_finish"})
+        # The strict pass sees only complete envelopes (never a single entry
+        # before the merge), and its output is returned unchanged.
+        self.assertTrue(strict)
+        for argument, _ in strict:
+            self.assertEqual(set(argument) & {"entries", "sources", "next_cursor", "omissions"},
+                             {"entries", "sources", "next_cursor", "omissions"})
+        self.assertIs(page, strict[-1][1].value)
+        self.assertEqual(len(page["entries"]), 5)
+        self.assertIsNotNone(page["next_cursor"])
         tree = ast.parse((PACKAGE / "incident_logs" / "service.py").read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef):
@@ -520,6 +574,34 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
             imported = {alias.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
                         for alias in node.names}
             self.assertFalse({name for name in imported if "sanitiz" in name}, module)
+
+    async def test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial(self):
+        # The line sanitizer already removes exact known secrets, so these two
+        # exit properties are pinned directly rather than by planted text.
+        real = service_module.sanitize_untrusted_data
+        seen = []
+
+        def spy(*args, **kwargs):
+            seen.append(tuple(kwargs.get("known_secrets", ())))
+            return real(*args, **kwargs)
+
+        fill(self.sim.journal(CORE), "2026-10-19T11:59:59.000", 3, 1000, "core")
+        fill(self.sim.journal(CORE), "2026-10-19T12:10:01.000", 1, 1000, "core")
+        arguments = {"sources": ["core"], "start": "2026-10-19T12:00:00Z", "end": "2026-10-19T12:10:00Z"}
+        with patch.object(service_module, "sanitize_untrusted_data", spy):
+            page = await self.read(**arguments)
+        self.assertTrue(page["complete"])
+        self.assertTrue(seen)
+        for secrets in seen:
+            self.assertTrue({HA_TOKEN, ACCESS_SECRET, SUPERVISOR_TOKEN} <= set(secrets))
+
+        def redacting(*args, **kwargs):
+            return replace(real(*args, **kwargs), redacted_field_count=1)
+
+        with patch.object(service_module, "sanitize_untrusted_data", redacting):
+            page = await self.read(**arguments)
+        self.assertFalse(page["complete"])
+        self.assertIn("redacted_by_policy", page["omissions"])
 
     # -- static read-only and registration ----------------------------------
 

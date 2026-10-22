@@ -34,6 +34,10 @@ def ms(text: str) -> int:
     return int(moment.timestamp() * 1000)
 
 
+_SEQNUM_ID = "0123456789abcdef" * 2
+_BOOT_ID = "feedface" * 4
+
+
 @dataclass
 class Entry:
     seq: int
@@ -44,7 +48,8 @@ class Entry:
 
     @property
     def cursor(self) -> str:
-        return f"s=0123456789abcdef0123456789abcdef;i={self.seq:x};b=feedfacefeedfacefeedfacefeedface;t={self.ts_ms:x}"
+        # Synthetic journal-cursor shape; the IDs are assembled, not literal.
+        return f"s={_SEQNUM_ID};i={self.seq:x};b={_BOOT_ID};t={self.ts_ms:x}"
 
     def text(self) -> str:
         moment = datetime.fromtimestamp(self.ts_ms / 1000, timezone.utc)

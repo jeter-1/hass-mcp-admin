@@ -438,15 +438,28 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         callers = []
         real = service_module.sanitize_untrusted_data
 
+        strict = []
+
         def spy(*args, **kwargs):
             callers.append(inspect.stack()[1].function)
-            return real(*args, **kwargs)
+            result = real(*args, **kwargs)
+            strict.append((args[0], result))
+            return result
 
         self.seed()
         with patch.object(service_module, "sanitize_untrusted_data", spy):
-            await self.read_all(limit=2)
+            pages = await self.read_all(limit=2)
         self.assertTrue(callers)
         self.assertEqual(set(callers), {"_finish"})
+        # Only complete envelopes reach the strict pass (never a state before
+        # the merge), and each page is its output unchanged.
+        for argument, _ in strict:
+            self.assertEqual(set(argument) & {"states", "coverage", "next_cursor", "omissions"},
+                             {"states", "coverage", "next_cursor", "omissions"})
+        values = [result.value for _, result in strict]
+        self.assertGreater(len(pages), 1)
+        for page in pages:
+            self.assertTrue(any(page is value for value in values))
         tree = ast.parse((PACKAGE / "history_slices" / "service.py").read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef):
@@ -457,6 +470,30 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         imported = {alias.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
                     for alias in node.names}
         self.assertFalse({name for name in imported if "sanitiz" in name})
+
+    async def test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial(self):
+        real = service_module.sanitize_untrusted_data
+        seen = []
+
+        def spy(*args, **kwargs):
+            seen.append(tuple(kwargs.get("known_secrets", ())))
+            return real(*args, **kwargs)
+
+        self.seed()
+        with patch.object(service_module, "sanitize_untrusted_data", spy):
+            page = await self.read(end=END)
+        self.assertTrue(page["complete"])
+        self.assertTrue(seen)
+        for secrets in seen:
+            self.assertTrue({HA_TOKEN, ACCESS_SECRET} <= set(secrets))
+
+        def redacting(*args, **kwargs):
+            return replace(real(*args, **kwargs), redacted_field_count=1)
+
+        with patch.object(service_module, "sanitize_untrusted_data", redacting):
+            page = await self.read(end=END)
+        self.assertFalse(page["complete"])
+        self.assertIn("redacted_by_policy", page["omissions"])
 
     # -- refusals -----------------------------------------------------------------
 

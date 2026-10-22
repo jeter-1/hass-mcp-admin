@@ -86,7 +86,7 @@ Preserve the following:
 No test reaches a live system. Every fixture is synthetic, and any
 credential-shaped string is assembled at test time.
 
-- `tests/test_hamcp131_incident_logs.py` covers:
+- `tests/test_hamcp131_incident_logs.py` (33 tests) covers:
   - the motivating window: the thermostat 503 at about 12:01 on 2026-10-19,
     plus the Presence Simulation exception;
   - window edges (start inclusive, end exclusive), the retention edge, an
@@ -104,10 +104,12 @@ credential-shaped string is assembled at test time.
   - a planted-secret sweep across every output field;
   - message truncation that keeps markers whole, and the response byte
     ceiling;
-  - the single-exit AST test, the read-only static test, routing, the Core
+  - the single-exit AST test, the exit pass's known secrets and
+    redaction-makes-partial, the read-only static test, routing, the Core
     gate and the catalog;
+  - a literal text filter cannot probe a redacted secret;
   - policy drift.
-- `tests/test_hamcp131_history_slices.py` (35 tests) covers:
+- `tests/test_hamcp131_history_slices.py` (36 tests) covers:
   - the motivating window;
   - window edges, a state exactly at a slice boundary, and the retention
     edge;
@@ -125,7 +127,8 @@ credential-shaped string is assembled at test time.
   - gateway partial disclosed;
   - the byte ceiling with resume;
   - planted secrets;
-  - the single-exit AST test;
+  - the single-exit AST test, the exit pass's known secrets and
+    redaction-makes-partial;
   - invalid arguments, route unavailable, unreviewed version and anonymous
     caller, each sending nothing;
   - the route retired mid-read;
@@ -136,7 +139,9 @@ credential-shaped string is assembled at test time.
     and gateway sanitization.
 - Count and catalog pins in the existing suites are updated from 62 to 64
   static tools.
-- Mutations: `docs/evidence/hamcp131-mutations/`.
+- Mutations: `docs/evidence/hamcp131-mutations/` (31 mutants across window
+  edges, cursor skip/duplicate, silent omission, sanitizer placement and slug
+  handling; 31 killed, recorded in `results.json`).
 
 ## 2. Release CI and publication
 
