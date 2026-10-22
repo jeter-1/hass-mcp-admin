@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.4.1-beta.31 - Incident-log entry times (HAMCP-220)
+
+Builds on 2.4.1-beta.30.
+
+- Fix `get_incident_logs` reading the Supervisor log time as UTC. Supervisor
+  2026.10.3 renders it in Home Assistant's local time without an offset, so
+  recent windows were reported after the tail. Each page's first entry now
+  takes its exact UTC time from the `X-First-Cursor` realtime (`t=`), which
+  also checks whether the page's text is in Home Assistant's zone or UTC
+  (`timestamp_basis_mismatch` when neither). Other entries are read from
+  their text in that rendering with `zoneinfo` DST rules; an explicit
+  `+HH:MM` is read exactly.
+- A DST-ambiguous or nonexistent local time is `ts_basis: uncertain` with
+  `ts: null` and every candidate; one at a window edge makes the read
+  partial (`timestamp_uncertain_at_window_edge`). A missing or invalid zone
+  (`TZ`, set by Supervisor at add-on start) makes Core and `addon:self`
+  unavailable (`time_zone_unavailable`) with zero requests, never UTC.
+- Entries gain `ts_basis` and `time_zone`, sources `timestamp_basis`, the
+  response `time_basis`. Schema id unchanged; `ts` is nullable. No
+  descriptor, input schema, route, permission, add-on configuration,
+  dependency or stable-v1 file changes; catalog 92 (93).
+
 ## 2.4.1-beta.30 - Incident-window logs and continuable history (HAMCP-131)
 
 Builds on 2.4.1-beta.29.

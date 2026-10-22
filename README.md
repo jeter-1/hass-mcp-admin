@@ -1,5 +1,18 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.31** corrects `get_incident_logs` entry times
+(HAMCP-220). Supervisor 2026.10.3 writes log times in Home Assistant's local
+time without an offset, and beta.30 read them as UTC. Each page's first entry
+now takes its exact UTC journal time, which also checks how the text was
+rendered. Other entries are read in Home Assistant's zone, and DST-ambiguous
+or nonexistent times are reported as uncertain with every candidate. A
+missing zone fails closed and never assumes UTC. Every entry states its time
+basis. No tool, schema, permission or configuration changes; catalog 92 (93).
+Read the [2.4.1-beta.31 release notes](docs/V2_4_1_BETA31_RELEASE_NOTES.md)
+and [2.4.1-beta.31 acceptance contract](docs/V2_4_1_BETA31_ACCEPTANCE.md).
+
+It builds on beta.30 below.
+
 Engineering **2.4.1-beta.30** adds two read-only tools (HAMCP-131).
 `get_incident_logs` reads one incident window of at most 6 hours from the Core
 journal and Engineering's own add-on journal. It merges them in time order,
