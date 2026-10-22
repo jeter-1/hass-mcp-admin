@@ -410,9 +410,13 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         for token in ("addon:../core", "addon:..", "addon:.", "addon:a/b", "addon:%2e%2e", "addon:a%2fb",
                       "addon:", "addon:A", "addon:a b", "addon:a?x=1", "addon:a#b", "addon:\\x",
                       "addon:" + "a" * 65, "Core", "addons:x", "addon:self/../../core"):
-            with self.subTest(token=token):
-                with self.assertRaises(c.IncidentLogsError):
-                    await self.read(sources=[token], start="2026-10-19T12:00:00Z")
+            # A readable source beside the token: the refusal must come from
+            # the slug guard, not from "nothing readable".
+            for sources in ([token], ["core", token]):
+                with self.subTest(token=token, sources=sources):
+                    with self.assertRaises(c.IncidentLogsError) as caught:
+                        await self.read(sources=sources, start="2026-10-19T12:00:00Z")
+                    self.assertEqual(caught.exception.reason, "invalid_arguments")
         self.assertEqual(self.sim.calls, [])
 
     # -- secrets ------------------------------------------------------------

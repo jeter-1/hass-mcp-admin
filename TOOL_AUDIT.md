@@ -2,6 +2,35 @@
 
 Date: 2026-07-10
 
+## Read-only incident logs and continuable history (2.4.1-beta.30, HAMCP-131)
+
+`get_incident_logs` and `get_history_slices` are native read-only evidence:
+`engineering_native` routing, `risk=read`, writes `none`, no fallback.
+
+`get_incident_logs` reads only two fixed Supervisor routes through HAMCP-200
+typed routes: `GET /core/logs` and `GET /addons/self/logs`, with a gatewayd
+`Range: entries=...` header. The window is at most 6 hours. Per call it makes
+at most 24 requests (16 per source) and downloads at most 1 MiB.
+`supervisor`, `host` and other add-on sources need Supervisor role `manager`.
+They are reported `unavailable` with `authority_not_granted`, the pinned role
+pattern and zero requests. An add-on slug must be one validated path segment.
+The tool is classified Core-independent (Supervisor only), beside
+`get_core_log_history`.
+
+`get_history_slices` reads only through the admitted delegated
+`ha_get_history` route (ha-mcp 8.5.0 or 8.6.0), using a new fixed gateway
+`history_reader`. Engineering builds every argument: one entity, absolute UTC
+slice bounds, ascending, minimal, offset and limit. The window is at most
+7 days, and each call makes at most 12 upstream calls. It never uses the native
+`get_history` tool. It is mapped to `core.basic_rest_read` in the HAMCP-164
+Core gate.
+
+Each tool sanitizes its complete response once, at a single exit point, with
+the known secrets; a redaction makes the result partial. Cursors are
+HMAC-signed and process-keyed, and continuity breaks are refused as stale. The
+catalog is 64 static + 28 delegated = 92 (93 with the optional YAML reader).
+See [HAMCP_131_INCIDENT_LOGS.md](docs/HAMCP_131_INCIDENT_LOGS.md).
+
 ## Read-only recorder settings and unregistered entities (2.4.1-beta.27, HAMCP-132)
 
 `get_recorder_settings` and `get_unregistered_entities` are native read-only
