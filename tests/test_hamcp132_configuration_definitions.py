@@ -926,6 +926,18 @@ class MatchingTests(Base):
             "method": "unmatched", "confidence": None, "definition_ids": [],
             "reason": "no_definition_derives_this_entity_id"})
 
+    async def test_registered_entity_is_never_matched_by_name(self):
+        # sensor[1] has no unique_id and derives sensor.energy_rate by name, but
+        # a registered entity cannot come from a uid-less YAML definition.
+        core = owner_core()
+        core["config/entity_registry/list"].append(registry_row("sensor.energy_rate", "derivative", "elsewhere"))
+        report = await self.run_report(core_values=core, entity_ids=("sensor.energy_rate",))
+        self.assertEqual(self.match(report, "sensor.energy_rate"), {
+            "method": "unmatched", "confidence": None, "definition_ids": [],
+            "reason": "no_read_definition_has_this_unique_id"})
+        # Only matched definitions are listed for an entity_ids request.
+        self.assertEqual(report["definitions"], [])
+
     async def test_unmatched_not_applicable_and_not_found(self):
         core = owner_core()
         core["config/entity_registry/list"].append(registry_row("sensor.orphan_sql", "sql", "gone"))
@@ -1498,6 +1510,30 @@ class BudgetTests(Base):
         self.assertLessEqual(len(json.dumps(report, separators=(",", ":"))), c.RESPONSE_BUDGET)
         self.assertEqual(report["coverage"]["definitions_listed"], len(report["definitions"]))
         self.assert_partial(report, "definitions_not_listed_response_bytes")
+
+    async def test_returned_report_is_exactly_the_sanitizer_output(self):
+        """The single exit: what the caller gets is the last sanitizer output,
+        omissions included, with nothing added afterwards."""
+
+        outputs = []
+        real = service_module.sanitize_untrusted_data
+
+        def spy(value, **kwargs):
+            result = real(value, **kwargs)
+            outputs.append((value, result.value, kwargs))
+            return result
+        core = owner_core()
+        core["entity/source"] = HomeAssistantTimeoutError()
+        with patch.object(service_module, "sanitize_untrusted_data", spy):
+            report = await self.run_report(owner_yaml(sql=[{"name": "Long", "query": "SELECT " + "x" * 5000,
+                                                           "column": "x"}]), core, entity_ids=OWNER_ENTITIES,
+                                             integrations=("sql",))
+        envelope, value, kwargs = outputs[-1]
+        self.assertIs(report, value)
+        self.assertEqual(kwargs, {"known_secrets": (HA_TOKEN, ACCESS_SECRET), "max_string": c.MAX_TEXT})
+        self.assertIn("source_unavailable:entity/source", envelope["omissions"])
+        self.assertIn("redacted_by_policy", envelope["omissions"])
+        self.assertEqual(report["omissions"], envelope["omissions"])
 
     def test_overflow_estimate(self):
         rows = [{"n": "x" * 10}] * 5
