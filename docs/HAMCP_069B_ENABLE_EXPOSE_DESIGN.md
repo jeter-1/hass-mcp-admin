@@ -1,8 +1,9 @@
 # HAMCP-069B governed entity enable/disable and voice-assistant exposure — design
 
-Status: **owner decisions recorded 2026-10-22 (§0). Implementation is
-stopped at the OD-2(a) gate (§0.2).** This document does not authorize
-deployment, live Home Assistant access, registry signing or a release.
+Status: **owner decisions recorded 2026-10-22 (§0), including OD-2c (i)
+(§0.3). Part 2 implements both resource types inactive.** This document does
+not authorize deployment, live Home Assistant access, registry signing or a
+release.
 
 ## 0. Owner decisions (Josh, 2026-10-22)
 
@@ -35,7 +36,8 @@ These supersede the recommendations in §13 where they differ.
   disclosure. `device`, `config_entry` and `hass` are refused with exact
   reasons.
 - **OD-7:** at most 25 entities per plan; an enable plan covers one config
-  entry (one reload); execution stops on the first failure.
+  entry (one reload); execution stops on the first failure. Amended to 8 per
+  plan (§0.4).
 - **OD-8:** (a) refuse an undo when there was no prior exposure setting to
   restore.
 - **OD-9 (supersedes §6.3):** protected cases are classified `elevated_admin`
@@ -100,17 +102,59 @@ What is missing for enable/disable to be active:
    supported Core releases. Sequence 12 does not, and no later sequence exists.
 
 Per OD-2(a), implementation stopped here. No profile, schema, runtime, test,
-registry or version change was made. Decision needed from Josh (§0.3).
+registry or version change was made at that point. Josh then decided OD-2c (§0.3).
 
-### 0.3 Open decision after OD-2(a)
+### 0.3 OD-2c decision: (i), both resource types inactive
 
-- **OD-2c:** with enable/disable not admitted under sequence 12, choose one:
-  - (i) Write the enable/disable profile as well, inactive like exposure, and
-    sign both into sequence 13 with the Core 2026.11 admission. The release
-    then ships no active capability, and its acceptance has no live canary
-    until sequence 13.
-  - (ii) Defer the implementation until sequence 13 is planned.
-  - (iii) Another direction.
+Josh decided OD-2c = (i) on 2026-10-22:
+
+- Enable/disable and exposure are both implemented now. Each has its own new
+  Core profile (`core.entity_registry_availability_operation` and
+  `core.entity_assistant_exposure_operation`). The signed 069A profile is not
+  modified, so `create_entity_metadata_plan` stays live.
+- Both stay **inactive**. A request is refused with the reason
+  `pending_signed_registry_admission`, and `list_capabilities` and the health
+  snapshot report the same status.
+- They activate only with a future signed registry sequence (planned:
+  sequence 13, with the Core 2026.11 admission). No registry is created, signed
+  or modified, and there is no unsigned local admission.
+- The release therefore activates nothing new. The release notes and the
+  acceptance document say so, and both live canaries (enable/disable on one
+  harmless entity; expose/unexpose one harmless entity to Assist) are
+  documented as to-do after sequence 13.
+- Tests prove both resource types are refused while unadmitted, and that a
+  profile admitted by a test registry fixture behaves correctly end to end, so
+  activation later is only the signing.
+
+Effects on the body of this design:
+
+- Alexa (`cloud.alexa`) is out of scope (OD-3). Every mention of three
+  assistants below now reads two: `conversation` and `cloud.google_assistant`.
+  The baseline fingerprint (§4.4) still records the stored `cloud.alexa` value,
+  so an Alexa-side change is detected, but 069B never writes it.
+- §6.3 is superseded by OD-9. Protected cases are `elevated_admin` under the
+  existing elevated approval, with no safety-critical acknowledgement binding
+  and no change to approval machinery. The plan carries plain-language
+  consequence statements that the approval page shows.
+
+### 0.4 OD-7 amendment: at most 8 entities per plan
+
+Implementation found that the limit of 8 operations is enforced well beyond
+the generic configuration route:
+
+- the approval page (`approval_web.py` `MAX_REVIEW_OPERATIONS = 8`);
+- persisted review validation and approval/dispatch contract checks
+  (`service.py` `MAX_CONFIGURATION_OPERATIONS`);
+- F3 sequencing and locks (`f3_configuration/sequence.py`, `locks.py`);
+- persisted F3 repository validators (`f3_runtime/repository.py`);
+- configuration reverification (`MAX_OPERATIONS = 8`).
+
+A plan of 9-25 entities could be created but never approved, and raising the
+bound would change the approval core, which OD-9 excludes. Josh decided on
+2026-10-22 to cap the family at **8 entities per plan**, the existing shared
+bound. No approval, F3 or persistence bound changes. Raising the limit to 25 is
+a separately reviewed follow-up. Every "25" in §7.1 and elsewhere now reads 8;
+the single-config-entry rule for enable and stop-on-first-failure are unchanged.
 
 - Register: HAMCP-069 (this increment is recorded as 069B; the row stays
   Active).
@@ -438,8 +482,8 @@ A sibling family leaves all of these untouched.
   ```json
   {
     "operation": "disable | enable | expose | unexpose",
-    "entity_ids": ["<1..25 exact registry ids>"],
-    "assistant": "conversation | cloud.alexa | cloud.google_assistant",
+    "entity_ids": ["<1..8 exact registry ids>"],
+    "assistant": "conversation | cloud.google_assistant",
     "reason": "<bounded text>"
   }
   ```
@@ -658,7 +702,7 @@ types.
 - The approver, same-principal, Ingress-only and HAMCP-205 verifier rules stay
   exactly as they are.
 
-`MAX_ACKNOWLEDGED_OBJECTS = 32` (:1531) bounds this, and the 25-entity limit
+`MAX_ACKNOWLEDGED_OBJECTS = 32` (:1531) bounds this, and the 8-entity limit
 (§7.1) stays below it. This is a change to approval machinery, so it needs the
 review's security section.
 
@@ -672,7 +716,7 @@ way, a later enable does not silently restore voice actuation (OD-5c).
 
 ### 7.1 Bulk and grouping (OD-7)
 
-- A plan has one operation kind and 1-25 entities. For expose and unexpose,
+- A plan has one operation kind and 1-8 entities (§0.4; OD-7 said 25). For expose and unexpose,
   one assistant.
 - **Enable plans are limited to a single config entry.** The approval then
   covers exactly one reload blast radius (or one "restart required" set).
@@ -688,8 +732,8 @@ way, a later enable does not silently restore voice actuation (OD-5c).
   - remaining children report `LATER_OPERATIONS_UNDISPATCHED`.
 - The generic configuration route's limit of 8 operations
   (`MAX_CONFIGURATION_OPERATIONS`, `service.py:379`) and 069A's single-child
-  rule (`policy.py:1032-1044`) are **not** changed. The 25-entity limit and
-  its own guard belong only to the sibling family.
+  rule (`policy.py:1032-1044`) are **not** changed. The family's own guard
+  enforces the same limit of 8 (§0.4).
 
 ### 7.2 At-most-once and outcomes
 
