@@ -298,6 +298,17 @@ Each call makes at most 12 upstream calls.
   before it, on raw values. An AST test pins this, and
   `test_hamcp191_shared_sanitizer.SANITIZER_SITES` lists exactly these call
   sites.
+- **Time-ordered merge across pages (review M2).** A page emits nothing
+  later than the earliest unread point across all sources: an open source's
+  last read entry, or the window start for a deferred source. Finished and
+  failed sources obey the same bound; a finished source's held entries resume
+  from its cursor position, and a failed source's are disclosed in its
+  `unread_after_failure` gap. When the request budget ends before a source's
+  window start is located, the source is deferred (`status` `partial`,
+  `reason` `request_budget_exhausted`, `start_location` `deferred`, cursor
+  state `{"u": 1}`) instead of being failed or anchored past an unread span,
+  and the next page locates it. A later page therefore never returns an
+  entry earlier than one already returned.
 - **Typed routes.** Journal requests use HAMCP-200 `rest_path` with the
   registered templates `/core/logs` and `/addons/self/logs`. No caller value
   becomes a path segment. History uses only the gateway reader, which builds

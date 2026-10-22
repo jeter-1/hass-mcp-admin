@@ -39,6 +39,8 @@ LIMITATIONS = (
     "Levels are parsed from known log formats; an unparsed line inherits the previous entry's level "
     "(level_basis inherited) or has none.",
     "The text filter is a case-insensitive literal match over sanitized text only.",
+    "A source whose window start is not located within one call's request budget is deferred: that page "
+    "returns nothing at or after the window start and the next page locates it.",
     "An empty result never proves an event did not occur.",
 )
 
@@ -86,6 +88,13 @@ class Scan:
     start_location: str | None = None
     gaps: list[dict] = field(default_factory=list)
     capped_pages: int = 0
+    # The request budget ended before the window start was located: the
+    # source resumes unlocated on the next page and holds the merge there.
+    deferred: bool = False
+
+
+class Deferred(Exception):
+    pass
 
 
 class IncidentLogService:
@@ -145,7 +154,7 @@ class IncidentLogService:
         elif end_ms != args["end_ms"]:
             raise c.cursor_error(False, "query_mismatch")
         for state in states.values():
-            if state in ({"done": 1}, {"failed": 1}):
+            if state in ({"done": 1}, {"failed": 1}, {"u": 1}):
                 continue
             if (
                 type(state) is not dict or set(state) != {"c", "k", "d", "t", "lv", "r"}
@@ -170,6 +179,9 @@ class IncidentLogService:
             scan = Scan(key=key, position=position)
             scans.append(scan)
             state = states.get(key) if states else None
+            if state == {"u": 1}:
+                # Deferred on an earlier page: located afresh now.
+                state = None
             if state == {"done": 1} or state == {"failed": 1}:
                 scan.finished = "continued_done" if state == {"done": 1} else None
                 scan.failure = "failed_in_earlier_page" if state == {"failed": 1} else None
@@ -183,6 +195,8 @@ class IncidentLogService:
                 continue
             try:
                 await self._locate(scan, args, budget)
+            except Deferred:
+                scan.deferred, scan.start_location = True, "deferred"
             except PageFailure as failure:
                 scan.failure, scan.status_code = failure.reason, failure.status
         await self._fill(scans, args, budget)
@@ -217,6 +231,8 @@ class IncidentLogService:
 
     async def _locate(self, scan: Scan, args: dict, budget: Budget) -> None:
         start = args["start_ms"]
+        if not budget.available(scan.requests):
+            raise Deferred
         # gatewayd v257.9: seek_tail, then previous_skip(2) (the first step
         # lands on the last entry), so this is the last two entries.
         tail = await self._page(scan, budget, cursor=None, skip=-1, count=2)
@@ -228,7 +244,7 @@ class IncidentLogService:
             scan.finished = "window_after_tail"
             return
         if not budget.available(scan.requests):
-            raise PageFailure("request_budget_exhausted")
+            raise Deferred
         head = await self._probe(scan, budget, None, 0)
         if head is None:
             raise PageFailure("representation_invalid")
@@ -255,7 +271,9 @@ class IncidentLogService:
         lower, lower_distance, upper_distance = None, 0, 0
         for distance in c.PROBE_DISTANCES:
             if not budget.available(scan.requests + 1):
-                break
+                # The budget, not the probe reach, ended the search: defer
+                # rather than skip the unlocated span (review M2).
+                raise Deferred
             probe = await self._probe(scan, budget, tail.first_cursor, -distance)
             if probe is None:
                 # gatewayd clamps a long backward skip at the head, so no
@@ -268,8 +286,8 @@ class IncidentLogService:
                 break
             upper, upper_distance = probe, distance
         if lower is None:
-            # More entries than the probes reach (or the budget ended) lie
-            # between the window start and the farthest probe.
+            # More entries than the probes reach lie between the window start
+            # and the farthest probe.
             scan.start_location = "not_located"
             scan.gaps.append({"from": c.format_ms(start), "to": c.format_ms(upper.ts_ms),
                               "reason": "start_not_located"})
@@ -339,7 +357,9 @@ class IncidentLogService:
             else c.MAX_FILTER_SCAN_ENTRIES
         while True:
             open_scans = [scan for scan in scans if self._open(scan)]
-            if not open_scans:
+            if not open_scans or any(scan.deferred for scan in scans):
+                # A deferred source holds the merge at the window start, so
+                # nothing more is emittable on this page.
                 return
             cutoff = min(scan.max_ts for scan in open_scans)
             eligible = sum(1 for scan in scans for item in scan.items
@@ -357,8 +377,13 @@ class IncidentLogService:
     def _walk(self, scans: list[Scan], views: list[list[dict]], args: dict, emit_cap: int):
         """Merge consumable items; return emitted rows and per-source progress."""
 
-        open_scans = [scan for scan in scans if self._open(scan)]
-        cutoff = min((scan.max_ts for scan in open_scans), default=None)
+        # The earliest unread point across all sources: an open source may
+        # still hold entries after its last read one, a deferred source any
+        # entry in the window. No source, finished or failed included, emits
+        # past it, so a later page never returns an earlier entry (review M2).
+        bounds = [scan.max_ts for scan in scans if self._open(scan)]
+        bounds += [args["start_ms"] - 1 for scan in scans if scan.deferred]
+        cutoff = min(bounds, default=None)
         heap: list[tuple[int, int, int]] = []
         for scan in scans:
             if scan.items:
@@ -372,10 +397,8 @@ class IncidentLogService:
         while heap:
             ts, position, index = heap[0]
             scan = scans[position]
-            if cutoff is not None and self._open(scan) and ts > cutoff:
-                # Another open source may still hold an earlier entry.
-                heapq.heappop(heap)
-                continue
+            if cutoff is not None and ts > cutoff:
+                break
             item, view = scan.items[index], views[position][index]
             if item.in_window and level_allows(view["level"], args["min_level"]) and (
                 args["text"] is None or args["text"].casefold() in view["search"]
@@ -471,7 +494,9 @@ class IncidentLogService:
             reasons = list(omissions)
             for scan in scans:
                 count = consumed[scan.position]
-                if scan.failure is not None:
+                if scan.deferred:
+                    next_state[scan.key] = {"u": 1}
+                elif scan.failure is not None:
                     next_state[scan.key] = {"failed": 1}
                 elif scan.finished is not None and count == len(scan.items):
                     next_state[scan.key] = {"done": 1}
@@ -502,7 +527,7 @@ class IncidentLogService:
                     reasons.append(f"source_{row['status']}:{row['source']}")
                 for gap in row.get("gaps", ()):
                     reasons.append(f"{gap['reason']}:{row['source']}")
-            has_more = any("c" in state for state in next_state.values())
+            has_more = any("c" in state or "u" in state for state in next_state.values())
             if stopped:
                 reasons.append("entries_limit_reached")
             if truncated_messages:
@@ -558,7 +583,7 @@ class IncidentLogService:
         taken = scan.items[:count]
         if scan.failure is not None:
             status = "unavailable" if not scan.items and scan.anchor_entry is None else "failed"
-        elif scan.start_location in {"retention_edge", "not_located"} or scan.capped_pages:
+        elif scan.deferred or scan.start_location in {"retention_edge", "not_located"} or scan.capped_pages:
             status = "partial"
         else:
             status = "complete"
@@ -568,7 +593,7 @@ class IncidentLogService:
             gaps.append({"from": c.format_ms(last), "to": None, "reason": "unread_after_failure"})
         row = {
             "source": scan.key, "status": status,
-            "reason": scan.failure or scan.finished,
+            "reason": scan.failure or scan.finished or ("request_budget_exhausted" if scan.deferred else None),
             "route": c.READABLE_ROUTES[scan.key], "requests": scan.requests,
             "http_status": scan.status_code,
             "start_location": scan.start_location,

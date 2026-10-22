@@ -327,6 +327,59 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(page["returned"] <= 5 for page in pages))
         self.assertFalse(pages[-1]["has_more"])
 
+    def assert_strictly_time_ordered(self, pages, expected):
+        stamps = [entry["ts"] for page in pages for entry in page["entries"]]
+        self.assertEqual(stamps, sorted(stamps), "a later page emitted an earlier entry")
+        self.assertEqual([i for page in pages for i in message_ids(page)], expected)
+
+    async def test_a_finished_source_never_runs_ahead_of_an_open_one(self):
+        # Review M2 reproduction: the add-on journal finishes on its first
+        # page while the request budget stops Core at 12:00:07; the add-on
+        # entry at 12:00:10 must wait for Core's 12:00:08 and 12:00:09.
+        core, own = self.sim.journal(CORE), self.sim.journal(SELF)
+        base = ms("2026-10-19T12:00:00.000")
+        for second in [0, *range(2, 26)]:
+            core.add(base + second * 1000, core_line(f"core event {second}", "INFO", base + second * 1000))
+        for second in (1, 10):
+            own.add(base + second * 1000, core_line(f"self event {second}", "INFO", base + second * 1000))
+        with patch.object(c, "PAGE_ENTRIES", 6), patch.object(c, "MAX_REQUESTS_PER_CALL", 6):
+            pages = await self.read_all(sources=["core", "addon:self"], start="2026-10-19T12:00:00Z",
+                                        end="2026-10-19T12:00:30Z", limit=50)
+        self.assertGreater(len(pages), 1)
+        first = [entry["ts"][17:19] for entry in pages[0]["entries"]]
+        self.assertNotIn("10", first)
+        self.assertEqual(first, ["00", "01", "02", "03", "04", "05", "06", "07"])
+        self.assert_strictly_time_ordered(pages, self.expected(["core", "addon:self"], base, base + 30_000))
+
+    async def test_request_budget_exhausted_while_locating_holds_the_merged_page(self):
+        # Review M2: a source whose start cannot be located within this
+        # call's budget is deferred, and nothing later than the window start
+        # is emitted from any source until it is located.
+        core, own = self.sim.journal(CORE), self.sim.journal(SELF)
+        fill(core, "2026-10-19T09:00:00.000", 3000, 1000, "core")
+        fill(own, "2026-10-19T09:00:00.500", 3000, 1000, "self")
+        start_ms, end_ms = ms("2026-10-19T09:30:00.000"), ms("2026-10-19T09:30:20.000")
+        with patch.object(c, "MAX_REQUESTS_PER_CALL", 13):
+            first = await self.read(sources=["core", "addon:self"], start="2026-10-19T09:30:00Z",
+                                    end="2026-10-19T09:30:20Z", limit=10)
+            row = self.source(first, "addon:self")
+            self.assertEqual((row["status"], row["reason"], row["start_location"]),
+                             ("partial", "request_budget_exhausted", "deferred"))
+            self.assertEqual(row["gaps"], [])
+            self.assertEqual(first["returned"], 0)
+            self.assertTrue(first["has_more"])
+            self.assertIn("source_partial:addon:self", first["omissions"])
+            pages = [first]
+            while pages[-1]["next_cursor"]:
+                self.assertLess(len(pages), 20)
+                pages.append(await self.read(sources=["core", "addon:self"], start="2026-10-19T09:30:00Z",
+                                             end="2026-10-19T09:30:20Z", limit=10,
+                                             cursor=pages[-1]["next_cursor"]))
+        for page in pages:
+            self.assertTrue(all(row["start_location"] != "not_located" and row["status"] != "failed"
+                                for row in page["sources"] if row["source"] != "addon:self" or page is not first))
+        self.assert_strictly_time_ordered(pages, self.expected(["core", "addon:self"], start_ms, end_ms))
+
     async def test_pagination_with_filter_counts_skips(self):
         core = self.sim.journal(CORE)
         base = ms("2026-10-19T12:00:00.000")
