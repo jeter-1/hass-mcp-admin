@@ -92,7 +92,9 @@ Range forms (`journal-gatewayd.c` v257.9):
   Range form returns the whole journal.
 
 So `get_incident_logs` filters time itself. It finds the window start with a
-tail probe, a head probe that gives the earliest retained entry, galloping
+tail probe (`entries=:-1:2`, the last two entries: a cursorless negative skip
+runs `seek_tail` at L590, then `previous_skip(2)` at L179, whose first step
+lands on the last entry), a head probe that gives the earliest retained entry, galloping
 single-entry probes back from the tail (`entries=T:-K:1`) and a bounded
 bisection. It then pages forward with `entries=C:k:P+1`. Each page re-reads the
 last consumed entry, and that entry's keyed digest must match. The verbose UTC
@@ -160,12 +162,22 @@ has an identical AST in both versions. It sends one
 `history/history_during_period` WebSocket call for the whole requested window,
 then slices `[offset:offset+limit]` on the client side and reports
 `total_count`. Offsets are therefore stable only over fixed absolute bounds.
+`_convert_timestamp` (8.6.0 `tools_history.py` L54-69) renders the WebSocket
+epoch timestamps with `datetime.fromtimestamp(value, tz=UTC).isoformat()`, so
+times arrive in UTC with a `+00:00` offset.
 
 Home Assistant 2026.10.1 recorder semantics for one entity with
 `minimal_response`:
 
-- The window-start state is the last row with `last_updated < start`. It is
-  returned only when the database holds a row older than `start`.
+- The window-start state is the state of the last row with
+  `last_updated < start`. It is returned only when the database holds a row
+  older than `start`, and it is reported AT `start`, not at its own time: the
+  start-state query selects `literal(value=0)` as `last_updated_ts`
+  (`recorder/history/__init__.py` L115-117) and the state is built with
+  `last_updated_ts or start_time_ts` (`recorder/models/state.py` L56, L157).
+  `state_at_window_start.since` is therefore `null` for that state; a real
+  change inside the 1 ms overlap before the window start keeps its own time
+  (review L2).
 - Changes are rows with `start < last_updated < end`. A row exactly at `start`
   is in neither set.
 - Consecutive equal states are collapsed.
@@ -233,7 +245,8 @@ Output:
   - `entries_consumed`, `entries_returned`, `skipped_by_filter`,
     `outside_window`;
   - `gaps[]`, each with a reason;
-  - for unavailable sources: `required_route_pattern` and `detail`.
+  - for unavailable sources: `required_role`, `required_route_pattern` and
+    `detail`.
 - `omissions[]` with reasons, plus `truncated`, `has_more`, `next_cursor`,
   `complete` and `completeness`.
 - `requests`, `downloaded_bytes`, `bounds`, `pins` and `limitations`.

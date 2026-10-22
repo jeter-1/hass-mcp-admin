@@ -217,6 +217,8 @@ class IncidentLogService:
 
     async def _locate(self, scan: Scan, args: dict, budget: Budget) -> None:
         start = args["start_ms"]
+        # gatewayd v257.9: seek_tail, then previous_skip(2) (the first step
+        # lands on the last entry), so this is the last two entries.
         tail = await self._page(scan, budget, cursor=None, skip=-1, count=2)
         if not tail.entries:
             scan.finished = "empty_journal"
@@ -234,8 +236,13 @@ class IncidentLogService:
         if head.ts_ms >= start:
             # The window starts before the oldest retained entry.
             scan.start_location = "retention_edge"
-            scan.gaps.append({"from": c.format_ms(start), "to": c.format_ms(head.ts_ms),
-                              "reason": "before_retention_edge"})
+            if head.ts_ms > start:
+                # No zero-length gap when the oldest entry sits exactly at
+                # the window start (review L1); the retention edge is still
+                # reported, since earlier entries of that millisecond may
+                # have been vacuumed.
+                scan.gaps.append({"from": c.format_ms(start), "to": c.format_ms(head.ts_ms),
+                                  "reason": "before_retention_edge"})
             self._set_anchor(scan, head)
             return
         first = tail.entries[0]

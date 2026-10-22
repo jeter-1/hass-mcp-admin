@@ -14,6 +14,15 @@ backwards, clamped at the head; positive forwards, past the tail gives an
 empty body); without a cursor a negative skip counts back from the tail
 and a non-negative skip forward from the head. ``count`` entries are then
 returned forward.
+
+Pinned citations (systemd v257.9 ``src/journal-remote/journal-gatewayd.c``):
+the seek is ``sd_journal_seek_cursor`` with a cursor, ``seek_head`` for a
+cursorless non-negative skip and ``seek_tail`` for a cursorless negative
+skip (L582-590); the first read then moves ``previous_skip(-skip + 1)`` or
+``next_skip(skip + 1)`` (L178-183). The first step of either lands on the
+sought entry itself (the cursor's entry, or the last entry after
+``seek_tail``), so a cursorless ``skip = -k`` returns from the entry ``k``
+before the last: ``entries=:-1:2`` is the last two entries.
 """
 
 from __future__ import annotations
@@ -84,7 +93,9 @@ class Journal:
             elif skip > 0:
                 position += skip
         elif skip < 0:
-            position = max(0, len(entries) + skip)
+            # seek_tail, then previous_skip(-skip + 1): the first step lands
+            # on the last entry, so ``entries=:-1:2`` is the last two.
+            position = max(0, len(entries) - 1 + skip)
         else:
             position = skip
         return entries[position:position + count]

@@ -34,6 +34,8 @@ LIMITATIONS = (
     "changes; an excluded or purged entity reads as no states.",
     "state_at_window_start is null when the recorder holds no state older than the window start "
     "(retention edge, a new entity, or no access); that is not evidence the entity had no state.",
+    "state_at_window_start.since is null when the recorder reports only the prevailing state: it "
+    "reports that state at the requested start, not at the time the state began.",
     "A continuation is refused as stale when earlier history changed between pages (purge, a late "
     "recorder commit near the present, or a different provider contract); restart without the cursor.",
     "Empty output never proves a state change did not occur.",
@@ -322,10 +324,16 @@ class HistorySliceService:
             states_out = [{"at": c.format_us(ts_us), "state": _truncate_state(state), "slice": index}
                           for ts_us, state, index, _ in kept]
             if args["cursor"] is None:
-                start_state = None if scan.window_start_state is None else {
-                    "since": c.format_us(scan.window_start_state[0]),
-                    "state": _truncate_state(scan.window_start_state[1]),
-                }
+                start_state = None
+                if scan.window_start_state is not None:
+                    since_us, state = scan.window_start_state
+                    # The recorder reports its start state AT the requested
+                    # start (HA 2026.10.1 models/state.py L56, L157), so that
+                    # time is not when the state began; a real change inside
+                    # the 1 ms overlap keeps its own time (review L2).
+                    synthetic = since_us == args["start_us"] - c.OVERLAP_US
+                    start_state = {"since": None if synthetic else c.format_us(since_us),
+                                   "state": _truncate_state(state)}
             else:
                 start_state = "reported_on_first_page_only"
             complete_until = self._complete_until(scan, args, kept, has_more, next_position)

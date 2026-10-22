@@ -1,20 +1,27 @@
 """Synthetic recorder history behind the pinned ``ha_get_history`` shape (HAMCP-131).
 
 Request semantics follow Home Assistant 2026.10.1
-``recorder/history/__init__.py`` for one entity with ``minimal_response``:
+``homeassistant/components/recorder`` for one entity with ``minimal_response``:
 
-- the state prevailing before ``start`` is the last row with
-  ``last_updated < start`` and is returned with its own timestamp, only when
-  the recorder holds a row older than ``start`` (``_get_oldest_possible_ts``);
+- the state prevailing before ``start`` comes from the last row with
+  ``last_updated < start``, only when the recorder holds a row older than
+  ``start`` (``_get_oldest_possible_ts``). It is reported AT ``start``, not at
+  its own time: the start-state query selects ``literal(value=0)`` as
+  ``last_updated_ts`` (``history/__init__.py`` L115-117) and the state is
+  built with ``last_updated_ts or start_time_ts`` (``models/state.py`` L56,
+  L157; the first minimal-response state at ``history/__init__.py``
+  L918-934);
 - changes are rows with ``start < last_updated < end`` (a row exactly at
   ``start`` is in neither set; a row exactly at ``end`` is excluded);
-- consecutive equal states are collapsed.
+- consecutive equal states are collapsed (``history/__init__.py`` L940-962).
 
 ha-mcp 8.5.0/8.6.0 ``_fetch_history`` (identical AST) issues that one query
 for the whole window, slices ``[offset:offset + limit]`` client-side, reports
-``total_count``/``has_more``/``next_offset`` and renders timestamps in Home
-Assistant local time with an offset. The gateway wraps the upstream result in
-its success envelope. Synthetic data only.
+``total_count``/``has_more``/``next_offset`` and renders the WebSocket epoch
+timestamps with ``datetime.fromtimestamp(value, tz=UTC).isoformat()``
+(``_convert_timestamp``, 8.6.0 ``tools_history.py`` L54-69), i.e. UTC with a
+``+00:00`` offset. The gateway wraps the upstream result in its success
+envelope. Synthetic data only.
 """
 
 from __future__ import annotations
@@ -24,7 +31,6 @@ from datetime import datetime, timedelta, timezone
 
 
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-LOCAL = timezone(timedelta(hours=-5))
 
 
 def us(text: str) -> int:
@@ -35,7 +41,7 @@ def us(text: str) -> int:
 
 
 def render(ts_us: int) -> str:
-    return (EPOCH + timedelta(microseconds=ts_us)).astimezone(LOCAL).isoformat()
+    return (EPOCH + timedelta(microseconds=ts_us)).isoformat()
 
 
 @dataclass
@@ -61,7 +67,8 @@ class Recorder:
         if oldest is not None and oldest < start_us:
             before = [row for row in self.rows if row[0] < start_us]
             if before:
-                result.append(before[-1])
+                # Reported at the requested start, not at its own time.
+                result.append((start_us, before[-1][1]))
         result.extend(row for row in self.rows if start_us < row[0] < end_us)
         collapsed = []
         for row in result:

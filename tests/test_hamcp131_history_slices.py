@@ -109,8 +109,9 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         self.seed()
         page = await self.read(end=END)
         self.assertEqual(page["schema"], "history-slices-v1")
-        self.assertEqual(page["state_at_window_start"], {"since": "2026-10-18T23:00:00.000000+00:00",
-                                                         "state": "heat"})
+        # The recorder reports its start state at the requested start, so
+        # the time the state began is unknown (review L2).
+        self.assertEqual(page["state_at_window_start"], {"since": None, "state": "heat"})
         self.assertEqual(states([page]), [(at("01:00:00"), "idle"), (at("03:00:00"), "heat"),
                                           (at("05:59:59.999500"), "idle"), (at("06:00:00"), "heat"),
                                           (at("07:30:00"), "idle"), (at("11:59:59.999999"), "heat")])
@@ -140,8 +141,31 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         self.recorder.add(at("12:00:00") - 1, "last")
         self.recorder.add(at("12:00:00"), "at_end")
         page = await self.read(end=END)
-        self.assertEqual(page["state_at_window_start"]["state"], "before")
+        # A real change inside the 1 ms overlap keeps its own time.
+        self.assertEqual(page["state_at_window_start"], {"since": "2026-10-18T23:59:59.999999+00:00",
+                                                         "state": "before"})
         self.assertEqual(states([page]), [(at("00:00:00"), "at_start"), (at("12:00:00") - 1, "last")])
+
+    async def test_fixture_matches_pinned_start_state_and_utc_rendering(self):
+        # Review L2: HA 2026.10.1 reports the start state at the requested
+        # start (models/state.py L56, L157) and ha-mcp 8.6.0 renders the
+        # epoch timestamps in UTC (tools_history.py L54-69).
+        self.recorder.add(S0 - 2 * 3600 * 10**6, "heat")
+        result = self.recorder.upstream(ENTITY, "2026-10-18T23:59:59.999000+00:00",
+                                         "2026-10-19T06:00:00+00:00", 0, 10)
+        self.assertEqual(result["data"]["data"]["entities"][0]["states"],
+                         [{"state": "heat", "last_changed": "2026-10-18T23:59:59.999000+00:00",
+                           "last_updated": "2026-10-18T23:59:59.999000+00:00"}])
+        page = await self.read(end=END)
+        self.assertEqual(page["state_at_window_start"], {"since": None, "state": "heat"})
+        # A real change inside the overlap is reported at its own time.
+        self.recorder.add(S0 - 500, "cool")
+        page = await self.read(end=END)
+        self.assertEqual(page["state_at_window_start"], {"since": "2026-10-18T23:59:59.999500+00:00",
+                                                         "state": "cool"})
+        self.assertEqual(page["coverage"]["slices"][0]["entries_before_slice"], 2)
+        self.assertEqual(page["states"], [])
+        self.assertTrue(page["complete"])
 
     async def test_state_exactly_at_a_slice_boundary_is_returned_once(self):
         self.recorder.add(at("00:00:00") - 10, "a")

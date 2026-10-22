@@ -253,6 +253,28 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message_ids(page),
                          self.expected(["core"], ms("2026-10-19T12:00:00.000"), ms("2026-10-19T12:30:00.000")))
         self.assertEqual(page["returned"], 7)
+        # Review L1: no fictitious zero-length gap at the window start.
+        self.assertEqual(row["gaps"], [])
+        self.assertFalse([reason for reason in page["omissions"] if reason.startswith("before_retention_edge")])
+        self.assertIn("source_partial:core", page["omissions"])
+
+    async def test_tail_probe_returns_the_last_two_entries_as_pinned(self):
+        # Review L2: a cursorless ``entries=:-1:2`` is seek_tail then
+        # previous_skip(2) (journal-gatewayd.c L590, L179): the last two.
+        journal = self.sim.journal(CORE)
+        fill(journal, "2026-10-19T11:00:00.000", 5, 1000, "old")
+        self.assertEqual([entry.seq for entry in journal.select("", -1, 2)],
+                         [entry.seq for entry in journal.entries[-2:]])
+        self.assertEqual([entry.seq for entry in journal.select("", -3, 1)], [journal.entries[-4].seq])
+        recent = ms("2026-10-19T12:00:05.000")
+        journal.add(recent, core_line("only in window", "INFO", recent))
+        page = await self.read(sources=["core"], start="2026-10-19T12:00:00Z", end="2026-10-19T12:30:00Z")
+        # The second-to-last entry precedes the start, so the tail probe
+        # locates it exactly: tail, head and one forward page.
+        self.assertEqual(message_ids(page), ["core|only in window"])
+        row = self.source(page, "core")
+        self.assertEqual((row["start_location"], row["requests"], row["gaps"]), ("exact", 3, []))
+        self.assertEqual(self.sim.calls[0][2].get("Range"), "entries=:-1:2")
 
     async def test_tail_entry_exactly_at_start_is_not_consumed(self):
         # The tail probe's entry at the start is in the window, and so is an
