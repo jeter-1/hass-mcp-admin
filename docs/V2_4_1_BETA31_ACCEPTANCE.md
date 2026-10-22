@@ -250,14 +250,15 @@ The existing suites that pin the tool count, sanitizer sites, Core gate and
 reader purpose are updated. The Evidence tier on the PR head is the complete
 final run.
 
-Mutations: **184 of 184 killed, none survived**
-(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 245
-tests across the three HAMCP-132 modules and the delta-review suite
-(`test_pr294_delta_review`): OK, 1 skipped. Every kill is a test failure or
+Mutations: **205 of 205 killed, none survived**
+(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 269
+tests across the three HAMCP-132 modules and both reviewer suites
+(`test_pr294_delta_review` and `test_pr294_corr2_extra`): OK, 1 skipped. Every kill is a test failure or
 a test-level error; none is an import or syntax failure.
 
 The set is slice 1's 80, 55 for slice 2, 31 for the independent-review
-corrections and 18 for the delta-review corrections. The first slice 2 run left two survivors:
+corrections, 18 for the delta-review corrections and 21 for the second
+delta-review corrections. The first slice 2 run left two survivors:
 - `B-L2` was equivalent. `_credential_shaped` also matches `db_url`, so
   removing only the nested `WITHHELD_KEYS` test changes nothing. It was
   redefined to remove both nested guards.
@@ -323,6 +324,23 @@ The delta-review mutants cover:
 - a malformed registry identity accepted, matched, reverse-matched without
   disclosure or diagnosed as valid, and a `null` identity called malformed
   (`B2-I1` to `B2-I5`).
+
+The second delta-review mutants cover:
+- invisible text screened instead of withheld whole (`B3-H1`);
+- the bounded percent-decode leg removed (`B3-H2`);
+- each invisible class removed: the Default_Ignorable ranges, format
+  characters, control characters, the other categories and the ASCII
+  control check (`B3-H3` to `B3-H7`);
+- tab and newline treated as invisible, which withholds benign multi-line
+  templates (`B3-H8`);
+- each withholding leg removed: projected values, projected keys, exit-point
+  strings and exit-point keys (`B3-H9` to `B3-H12`);
+- a dropped invisible key that leaves the report complete (`B3-H13`);
+- the final-envelope withheld scan removed (`B3-M1`);
+- the scan ignoring the withheld object form, the marker strings or the
+  dropped keys (`B3-M2` to `B3-M4`);
+- the item list unbounded, omission text scanned as items, `complete`
+  ignoring the items and the items not listed (`B3-M5` to `B3-M8`).
 
 ## 2. Release CI and publication
 
