@@ -78,6 +78,9 @@ What is always withheld:
 - A credential-bearing URI inside an allowlisted text field, such as a SQL
   query, which becomes `{"withheld": "credential_uri"}`. The shared sanitizer
   redacts userinfo only for `http(s)` URLs.
+- Credential text anywhere in the final report, not only in definitions:
+  config entry titles, entry and capability metadata, source reasons,
+  omissions and coverage. See "Completeness, bounds and sanitization".
 
 Each definition lists what was withheld in `withheld`.
 
@@ -101,7 +104,14 @@ Each requested entity's `definition` gives a method:
   text is withheld; `reason_present` and a pattern-checked translation key
   are given instead.
 - **`exact_unique_id`**: the registry's (domain, platform, unique ID) equals
-  the unique ID Core derives from one YAML definition.
+  the unique ID Core derives from one YAML definition. A unique ID that Home
+  Assistant's YAML 1.1 loader could read as another type (an unquoted `on`,
+  `off`, `yes`, `no` or `1:30`; slice 1's parser-dependence rule, applied
+  before matching) is never exact: the expected entity carries
+  `unique_id_parser_dependent` and each `unique_id_readings` Core could
+  register (`on` and `True`), and one candidate is `heuristic` with `medium`
+  confidence and the reason `unique_id_parser_dependent`. A name or key with
+  such a reading derives no entity ID (`name_parser_dependent`).
 - **`heuristic`**: no registry row, and Core's naming rules applied to a
   static name, default name or key give this entity ID. Confidence is stated:
   - `high`: one candidate, its platform confirmed by `entity/source`, every
@@ -112,7 +122,10 @@ Each requested entity's `definition` gives a method:
   The slugify port covers ASCII text without `&`. Any other text derives no
   ID.
 - **`ambiguous`**: several definitions derive the same ID or share the same
-  unique ID. No candidate is chosen.
+  unique ID. No candidate is chosen. The rules are identical in both
+  directions: each of two definitions sharing a unique ID is `ambiguous`
+  from the definition's side too, and a unique ID several registry rows
+  carry is `ambiguous` (`several_registry_entries_share_this_unique_id`).
 - **`unmatched`** or **`not_applicable`**, each with a reason.
 
 A registered entity is never matched by name: a YAML definition without a
@@ -130,14 +143,29 @@ Each requested entity gets a `classification` with its `reasons`:
 | `deployment_dependency` | `config_entry_state:<state>`, `integration_not_loaded:<d>`, `platform_not_loaded:<p>.<d>`, `legacy_platform_unsupported` |
 | `transient` | `config_entry_state:setup_retry` or an in-progress state |
 | `dependency_unavailable` | `source_entity_missing:<id>`, `source_entity_unavailable:<id>` (5 of each at most) |
-| `entity_level` | the one matched definition's dependencies are fine, but the entity is `unavailable` or `unknown` |
-| `not_found` | `no_state`, `definition_absent` |
-| `undetermined` | `source_failed:<source>`, `definition_not_matched` |
+| `entity_level` | the one matched YAML definition's extracted dependencies are fine, but the entity is `unavailable` or `unknown` |
+| `not_found` | `no_state`, `definition_absent`, `labelled_keys_not_addressable` |
+| `undetermined` | `source_failed:<source>`, `definition_not_matched`, a YAML source gap, `dependencies_not_checked`, `<value>_invalid_response` |
 
 Each classification uses only the signals it names. If a source is missing,
 or there is no single matched definition, the answer is `undetermined`, not
-`entity_level`. `disabled_by` is a closed value; anything else is
-`unrecognized`.
+`entity_level`. In particular:
+- `definition_absent` is claimed only when every YAML definition source was
+  read whole. After a failed or partial YAML path, unread packages or an
+  include not followed, the answer is `undetermined` with that gap
+  (`source_failed:configuration_yaml:<path>`,
+  `source_partial:configuration_yaml:<path>`,
+  `definitions_in_packages_not_read`, `packages_not_determined`,
+  `include_not_followed:<path>`, `definition_values_include_not_followed`).
+- A UI-defined entity whose definition cannot be read is never
+  `entity_level`: it is `undetermined` with
+  `definition_not_readable_without_flow` and `dependencies_not_checked`.
+  The same holds for a `template` or `sql` definition, whose sources are not
+  extracted (`dependencies_not_checked`).
+
+`disabled_by` is a closed value; anything else is `unrecognized`. A state,
+`disabled_by` or entry state that is not text is `invalid_response` for its
+item only.
 
 The `capability` block reports the `ha_mcp_tools` component from Core's own
 reads only. Its `component_commands` is `not_used_owner_decision`. It
@@ -160,6 +188,9 @@ holds:
 - a definition is not projected;
 - a definition or UI-entry limit is reached;
 - a response-size trim drops rows;
+- a source value is malformed: the item becomes `invalid_response`, the
+  source is `partial` with that reason, and the rest of the report is kept;
+- credential text is withheld (`credential_text_withheld`);
 - a redaction occurs.
 
 The tool fails with `sources_unavailable` only when every source is
@@ -176,9 +207,22 @@ Over the budget, trailing definitions are dropped first, then UI entries, by
 their sanitized size. The listed count follows the trim.
 
 The complete envelope is assembled first: report, omissions, coverage and
-every identifier. The strict shared sanitizer then runs once on it, with the
+every identifier. At that single exit point every key and string is screened
+for credential text, then the strict shared sanitizer runs on it, with the
 Home Assistant token and the access secret as known secrets. Nothing is added
-afterwards.
+afterwards. Credential text is:
+- a URI with userinfo;
+- a database or broker connection URI by scheme (`db_url`-shaped, a sqlite
+  path included), with or without a password;
+- a user name and password before a host, without a scheme;
+- a connection-string password field;
+- a known secret;
+- text the reader's canonicalization (percent-decoding, NFKC, casefold)
+  refuses.
+
+A string is replaced with the bounded marker `[withheld:credential_text]`, a
+dictionary entry with a credential-shaped key is dropped, and the report is
+partial with `credential_text_withheld`.
 
 ## Boundaries
 
@@ -223,6 +267,30 @@ listed for the independent reviewer:
    raised `TypeError` instead of the HAMCP-189 generic refusal. PR CI found
    it (`test_hamcp189_gateway_audit_reason`), and the equality test was
    restored.
+
+## Corrections from the independent review
+
+The independent review of PR #294 at `dfd1f02` found these. Each
+reproduction is a permanent test, the credential one through the
+authenticated gateway.
+1. **H1.** A database URI in a config entry title reached the response: the
+   title was copied without the definition projection's credential
+   screening. Credential withholding now runs on every string of the final
+   envelope at the single exit point (above).
+2. **M1.** Two definitions sharing a unique ID were `ambiguous` from the
+   entity's side but `exact_unique_id` from each definition's side. The
+   reverse direction now applies the forward rules.
+3. **M2.** An unquoted `on` unique ID was an exact match although Home
+   Assistant's YAML 1.1 loader registers it as `True`. Slice 1's
+   parser-dependence rule now applies before matching and naming.
+4. **M3.** A failed YAML source still let diagnosis claim
+   `definition_absent`, and an unavailable UI-defined entity was
+   `entity_level` with no dependency check. Both are now `undetermined` with
+   the reason.
+5. **M4.** A malformed state value (`state: []`) aborted the report with a
+   `TypeError`. Malformed values now invalidate only their item.
+6. **L1.** The component review note now records the owner decision and the
+   capability block's actual fields.
 
 ## Compatibility and rollback
 

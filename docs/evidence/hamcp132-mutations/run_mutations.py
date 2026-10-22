@@ -44,6 +44,17 @@ domain outside the closed set, audit or annotations loosened), ``B-A*``
 (authority rechecks and caller checks) and ``B-B*`` (output bounds, the
 listed count, the size-based trim).
 
+The slice 2 independent-review correction adds the reviewer's own
+``REVIEW-2`` (an API error detail carrying a ``db_url``), ``B-X*`` (the exit
+point's credential withholding removed, a config entry title copied without
+screening, a credential key kept, each credential rule removed, refused
+canonicalization passed, a withholding that leaves the report complete),
+``B-R*`` (reverse-match ambiguity resolved), ``B-Y*`` (a parser-dependent
+unique ID or name treated as exact or derived), ``B-E*`` (absence or
+``entity_level`` claimed despite a YAML gap or an unchecked definition) and
+``B-V*`` (a malformed source value aborting the report or passing a type
+guard).
+
 Usage:
     python docs/evidence/hamcp132-mutations/run_mutations.py \
         --work ~/hamcp132-work/mut --output docs/evidence/hamcp132-mutations/results.json
@@ -73,8 +84,9 @@ ROUTES = f"{E}/ha_core_readmission/routes.py"
 ROUTING = f"{E}/routing.py"
 GATEWAY = f"{E}/providers/upstream_read_gateway.py"
 DEFS = f"{E}/configuration_definitions"
-DPROJ, DSVC, DMATCH, DDIAG, DCON = (f"{DEFS}/{name}.py" for name in
-                                    ("projection", "service", "matching", "diagnosis", "contracts"))
+DPROJ, DSVC, DMATCH, DDIAG, DCON, DCRED = (f"{DEFS}/{name}.py" for name in
+                                           ("projection", "service", "matching", "diagnosis", "contracts",
+                                            "credentials"))
 DTOOL = f"{E}/tools/configuration_definitions.py"
 MODULES = ("test_hamcp132_recorder_settings", "test_hamcp132_unregistered_entities",
            "test_hamcp132_configuration_definitions")
@@ -99,6 +111,12 @@ B_DIAG = "slice 2: diagnosis and capability rest only on their signals"
 B_STATIC = "slice 2: fixed reads only, Core gate, pre-SDK validation, read-only metadata"
 B_AUTH = "slice 2: authority and caller checks"
 B_BUDGET = "slice 2: bounded output"
+B_REVIEW = "slice 2 independent review (PR #294, head dfd1f02)"
+B_EXIT = "slice 2 review H1: credential text withheld from every string of the final envelope"
+B_REVERSE = "slice 2 review M1: identical ambiguity rules in both match directions"
+B_PARSER = "slice 2 review M2: parser-dependent identity is never exact"
+B_EVIDENCE = "slice 2 review M3: diagnosis stays within its evidence"
+B_VALUES = "slice 2 review M4: a malformed value invalidates its item, never the report"
 
 
 def m(identifier, item, *replacements):
@@ -346,9 +364,13 @@ MUTATIONS = [
       (DPROJ, '        if _is_reference(value):', '        if False:')),
     m("B-L6-reader-redaction-projected", B_LEAK,
       (DPROJ, '        if _reader_marker(value):', '        if False:')),
+    # Since H1 the known secrets are screened twice at the exit point (the
+    # withholding walk, then the sanitizer); dropping them from only one is
+    # an equivalent mutant, so B-L7 drops them from both.
     m("B-L7-known-secrets-dropped", B_LEAK,
       (DSVC, 'sanitize_untrusted_data(envelope, known_secrets=self.known_secrets,',
-       'sanitize_untrusted_data(envelope, known_secrets=(),')),
+       'sanitize_untrusted_data(envelope, known_secrets=(),'),
+      (DSVC, 'credentials.withhold(envelope, self.known_secrets)', 'credentials.withhold(envelope, ())')),
     m("B-M1-heuristic-reported-exact", B_MATCH,
       (DMATCH, 'return {"method": "heuristic", "confidence": confidence,',
        'return {"method": "heuristic", "confidence": "exact",')),
@@ -414,8 +436,8 @@ MUTATIONS = [
       (DDIAG, '    if registry_row is not None and registry_row.get("disabled_by") is not None:',
        '    if False:')),
     m("B-D4-upstream-disabled-by-echoed", B_DIAG,
-      (DSVC, '"disabled_by": disabled_by if disabled_by in diagnosis.DISABLED_BY else (',
-       '"disabled_by": disabled_by if True else (')),
+      (DSVC, '"disabled_by": disabled_by if disabled_by in diagnosis.DISABLED_BY\n',
+       '"disabled_by": disabled_by if True\n')),
     m("B-D5-transient-entry-called-deployment", B_DIAG,
       (DDIAG, '    if entry["state"] in TRANSIENT_ENTRY_STATES:\n', '    if False:\n')),
     m("B-D6-platform-not-loaded-skipped", B_DIAG,
@@ -481,6 +503,79 @@ MUTATIONS = [
       (DSVC, '                        if key == "definitions":\n', '                        if False:\n')),
     m("B-B5-trim-drops-everything", B_BUDGET,
       (DSVC, '    return max(dropped, 1)', '    return len(rows)')),
+    # --- Slice 2 correction batch: independent review of PR #294 ------------
+    m("REVIEW-2-api-error-detail-db-url", "independent review: API error detail cannot expose a database URI",
+      (DSVC, 'reason = "not_found" if exc.details.get("status") == 404 else "command_failed"',
+       'reason = str(exc.details["detail"]) if "detail" in exc.details else ("not_found" if '
+       'exc.details.get("status") == 404 else "command_failed")')),
+    m("B-X1-exit-withholding-removed", B_EXIT,
+      (DSVC, 'envelope, withheld = credentials.withhold(envelope, self.known_secrets)', 'withheld = 0')),
+    m("B-X2-title-copied-without-credential-screening", B_EXIT,
+      (DCRED, '                kept[key] = walk(child)', '                kept[key] = child if key == "title" else walk(child)')),
+    m("B-X3-credential-keys-kept", B_EXIT,
+      (DCRED, '                if type(key) is str and credential_text(key, known_secrets):', '                if False:')),
+    m("B-X4-connection-scheme-rule-removed", B_EXIT,
+      (DCRED, '        or _CONNECTION_SCHEME.search(text) is not None\n', '')),
+    m("B-X5-user-pass-host-rule-removed", B_EXIT,
+      (DCRED, '        or _USER_PASS_HOST.search(text) is not None\n', '')),
+    m("B-X6-password-field-rule-removed", B_EXIT,
+      (DCRED, '        or _PASSWORD_FIELD.search(text) is not None\n', '')),
+    m("B-X7-userinfo-rule-removed", B_EXIT,
+      (DCRED, '        _userinfo(text)\n        or ', '        ')),
+    m("B-X8-refused-canonicalization-passes", B_EXIT,
+      (DCRED, '        # Text the canonicalization refuses cannot be screened (fail closed).\n        return True',
+       '        return False')),
+    m("B-X9-withheld-report-left-complete", B_EXIT,
+      (DSVC, 'if withheld and credentials.OMISSION not in omissions:', 'if False:')),
+    m("B-R1-reverse-match-counts-registry-hits-only", B_REVERSE,
+      (DMATCH, '                    match = self.entity(hits[0])\n',
+       '                    match = {"method": "exact_unique_id", "confidence": "exact",\n'
+       '                             "definition_ids": [definition["definition_id"]]}\n')),
+    m("B-R2-several-registry-hits-guessed", B_REVERSE,
+      (DMATCH, '                if len(hits) > 1:\n', '                if False:\n')),
+    m("B-Y1-dependent-unique-id-indexed-exact", B_PARSER,
+      (DMATCH, '                    if expected.get("unique_id_parser_dependent"):', '                    if False:')),
+    m("B-Y2-dependent-unique-id-not-marked", B_PARSER,
+      (DPROJ, 'if unique_id is not None and uid_readings and len(uid_readings) > 1:', 'if False:')),
+    m("B-Y3-dependent-name-derives-entity-id", B_PARSER,
+      (DPROJ, 'if name_dependent and object_id is not None:', 'if False:')),
+    m("B-Y4-parser-dependence-not-checked", B_PARSER,
+      (DPROJ, 'return any(type(value) is str and yaml11_readings(value) is not None for value in values)',
+       'return False')),
+    m("B-Y5-yaml11-reading-not-registered", B_PARSER,
+      (DPROJ, '    for reading in alternative[1] if alternative else ():', '    for reading in ():')),
+    m("B-Y6-parser-dependence-not-disclosed", B_PARSER,
+      (DSVC, '"parser_dependent_identity": c.PARSER_DEPENDENCE_DISCLOSURE,', '')),
+    m("B-E1-absence-claimed-with-yaml-gap", B_EVIDENCE,
+      (DDIAG, '            if yaml_gaps:\n', '            if False:\n')),
+    m("B-E2-failed-yaml-path-not-a-gap", B_EVIDENCE,
+      (DSVC, '            if not complete:\n                yaml_gaps.append(', '            if False:\n                yaml_gaps.append(')),
+    m("B-E3-whole-path-include-not-a-gap", B_EVIDENCE,
+      (DSVC, '            yaml_gaps.append(f"include_not_followed:{path}")', '            pass')),
+    m("B-E4-packages-not-a-gap", B_EVIDENCE,
+      (DSVC, '            yaml_gaps.append("definitions_in_packages_not_read" if package_state == "present"\n'
+             '                             else "packages_not_determined")', '            pass')),
+    m("B-E5-unreadable-ui-definition-entity-level", B_EVIDENCE,
+      (DDIAG, '    if entry_id is not None:\n        # A UI definition', '    if False:\n        # A UI definition')),
+    m("B-E6-unextracted-dependencies-entity-level", B_EVIDENCE,
+      (DDIAG, 'if definition is not None and definition["integration"] not in s.DEPENDENCY_KEYS:', 'if False:')),
+    m("B-V1-state-type-guard-removed", B_VALUES,
+      (DSVC, '            if type(state) is not str:\n                states[entity_id] = diagnosis.INVALID',
+       '            if False:\n                states[entity_id] = diagnosis.INVALID')),
+    m("B-V2-registry-disabled-by-guard-removed", B_VALUES,
+      (DSVC, 'if disabled_by is not None and type(disabled_by) is not str:', 'if False:')),
+    m("B-V3-entry-state-guard-removed", B_VALUES,
+      (DDIAG, '"state": INVALID if type(state) is not str else state if state in ENTRY_STATES else "unrecognized",',
+       '"state": state if state in ENTRY_STATES else "unrecognized",')),
+    m("B-V4-projection-error-aborts", B_VALUES,
+      (DSVC, 'except (TypeError, ValueError, KeyError, AttributeError):', 'except ():')),
+    m("B-V5-malformed-item-left-complete", B_VALUES,
+      (DSVC, '        if reason is None and invalid:\n', '        if False:\n')),
+    m("B-V6-invalid-state-diagnosed", B_VALUES,
+      (DDIAG, '    if state == INVALID:\n', '    if False:\n')),
+    m("B-V7-invalid-component-entry-classified", B_VALUES,
+      (DDIAG, 'if any(item[0] == "undetermined" for item in classifications) and not any(',
+       'if False and not any(')),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

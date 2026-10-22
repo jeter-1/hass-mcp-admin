@@ -1,10 +1,10 @@
 # HAMCP-132 Slice 2, Part 0: `ha_mcp_tools` 2.2.1 Exact-Source Review
 
-Status: **review complete; owner decision pending (decision (iii)).** Until
-Josh records a decision, slice 2 does not call any `ha_mcp_tools/*`
-WebSocket command or service. UI-defined definitions are reported as
-`definition_not_readable_without_flow` (decision (i)), and capability
-diagnosis uses Core-only reads.
+Status: **review complete; owner decision recorded (section 11): the
+`ha_mcp_tools` component is not used, now or in a later slice.** Slice 2
+calls no `ha_mcp_tools/*` WebSocket command or service. UI-defined
+definitions are reported as `definition_not_readable_without_flow`
+(decision (i)), and capability diagnosis uses Core-only reads.
 
 This review complements the design note `docs/HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md`
 (PR #291), sections 3 B2(b), 3 D and 8 (iii).
@@ -278,13 +278,37 @@ internally.
 
 ## 9. Implemented behaviour in slice 2
 
-`get_configuration_definitions` follows (b) and the fail-closed rule:
+`get_configuration_definitions` follows (b) and the owner decision of
+section 11. Section 8's fail-closed version rule was a condition for using
+the component; with the component rejected it is moot, and no version
+unlocks anything.
 
-- **Capability block.** It reports `manifest_version`, `version_review`
-  (`reviewed_version_only_unverified_tree`, `component_version_unreviewed` or
-  `not_installed`), the config-entry state and the loaded status.
-- **No component commands.** It sends no `ha_mcp_tools/*` command and reports
-  `component_commands: not_used_owner_decision` (section 11).
+- **Capability block** (`capability`), with exactly these fields:
+  - `component`: `ha_mcp_tools`;
+  - `component_commands`: always `not_used_owner_decision`;
+  - `signals`: the bounded read signals (`manifest_not_found`,
+    `manifest:<failure>`, `manifest_version_unparsed`,
+    `config_entries:<failure>`, `config:unavailable`, and each entry's
+    `config_entry_state:<state>`, `config_entry_disabled:<by>` or
+    `config_entry_invalid_response`);
+  - `installed`: `true` or `false` from `manifest/get`, `null` when that read
+    failed;
+  - `version`: the manifest version string when it parses as
+    `major.minor[.patch]`, otherwise `null`;
+  - `loaded`: whether `ha_mcp_tools` is in Core's component list, `null`
+    when `GET /api/config` failed;
+  - `entries`: the projected `config_entries/get` rows (entry ID, title
+    screened at the exit point, state, `disabled_by`, whether a reason is
+    present, a pattern-checked translation key), `null` when the read failed;
+  - `classification` and `reason`: `permission`/`permission_failure`,
+    `deployment_dependency` (`not_installed`, `not_configured`,
+    `config_entry_disabled`, `config_entry_not_loaded`), `transient`
+    (`config_entry_not_yet_loaded`, `source_unavailable`),
+    `upstream_feature_gap` (`component_version_before_helper_listing`),
+    or `undetermined` (`config_entry_invalid_response`,
+    `component_loaded_cause_not_observable_without_component_commands`,
+    `signals_incomplete`).
+- **No component commands.** It sends no `ha_mcp_tools/*` command.
 - **UI-defined definitions** are always reported as
   `definition_not_readable_without_flow`.
 

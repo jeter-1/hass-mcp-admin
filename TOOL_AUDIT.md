@@ -39,8 +39,16 @@ What it never does:
   `definition_not_readable_without_flow`;
 - call any `ha_mcp_tools/*` command (owner decision, 2026-10-21).
 
-The response is sanitized once, with the known secrets, at a single exit
-point. It is mapped in the HAMCP-164 Core gate (`core.basic_rest_read`,
+A unique ID that Home Assistant's YAML 1.1 loader could read differently is
+never an exact match, and ambiguity rules are identical from both sides.
+Diagnosis never claims `definition_absent` after a YAML source gap or
+`entity_level` without a dependency check. A malformed source value
+invalidates only its item.
+
+At a single exit point every key and string of the final envelope (titles,
+metadata, reasons, omissions included) is screened for credential text and
+withheld as `[withheld:credential_text]`, making the report partial; the
+envelope is then sanitized once, with the known secrets. It is mapped in the HAMCP-164 Core gate (`core.basic_rest_read`,
 `core.basic_websocket_read`, `core.non_device_registry_read`). Arguments are
 validated before the SDK, and the audit carries counts only. There is no
 write, reload, flow or service-call path and no new batch-allowlist shape.

@@ -651,10 +651,16 @@ shape, fallback or write path.
 
   Unrecognized keys are counted, never copied. Config-entry `reason` text is
   withheld. State values are never copied.
-- **One sanitized exit point.** The complete envelope (report, omissions,
-  coverage and every identifier) is sanitized once with the access secret
-  and the Home Assistant token as known secrets. A redaction makes the
-  report partial. Budget trimming rebuilds the envelope and sanitizes it
+- **One screened and sanitized exit point.** The complete envelope (report,
+  omissions, coverage and every identifier) is first screened in every key
+  and string for credential text: a URI with userinfo, a database or broker
+  connection URI by scheme, a user and password before a host without a scheme, a password field, a known
+  secret, or text the reader's canonicalization refuses. Such a string is
+  replaced with `[withheld:credential_text]` and the report is partial
+  (`credential_text_withheld`). This covers Core text the projection never
+  sees, such as config entry titles (independent review H1). The envelope
+  is then sanitized once with the access secret and the Home Assistant
+  token as known secrets. A redaction makes the report partial. Budget trimming rebuilds the envelope and sanitizes it
   again. Tests plant a known secret in every identifier-bearing field, prove
   with a control run that it reaches each one, and check through the
   authenticated gateway that the protected response never contains it.

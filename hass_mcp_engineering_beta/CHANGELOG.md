@@ -27,6 +27,12 @@ Builds on 2.4.1-beta.29.
 - Disclose `!include`, packages and labelled keys without following them. Any
   unreadable source, trim or redaction makes the report partial. The complete
   envelope is sanitized once with the known secrets.
+- Corrections from the independent review: credential text is withheld from
+  every string of the final report, config entry titles included (H1);
+  ambiguity rules are identical from both sides (M1); a unique ID YAML 1.1
+  could read differently is never exact (M2); a YAML source gap or an
+  unchecked UI or template definition is `undetermined` (M3); a malformed
+  source value invalidates only its item (M4).
 - Catalog: 63 static tools, 91 advertised (92 with the optional YAML reader).
   No existing descriptor, schema, stored format, dependency or workflow
   changes.

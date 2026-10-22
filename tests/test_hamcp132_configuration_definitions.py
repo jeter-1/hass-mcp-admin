@@ -724,11 +724,12 @@ class CredentialTests(Base):
         self.assert_partial(report, "redacted_by_policy")
         self.assertNotIn(syn.needle("bearer"), json.dumps(report))
 
-    async def test_known_secret_in_a_definition_is_redacted_and_partial(self):
+    async def test_known_secret_in_a_definition_is_withheld_and_partial(self):
         values = owner_yaml(template=[{"sensor": [{"name": "Leak", "state": "{{ '" + HA_TOKEN + "' }}"}]}])
         report = await self.run_report(values, integrations=("template",))
-        self.assert_partial(report, "redacted_by_policy")
+        self.assert_partial(report, "credential_text_withheld")
         self.assertEqual(len(report["definitions"]), 1)
+        self.assertEqual(report["definitions"][0]["fields"]["state"], "[withheld:credential_text]")
 
     async def test_config_entry_reason_text_is_withheld(self):
         core = owner_core()
@@ -830,7 +831,7 @@ class PlantedSecretSweepTests(Base):
         self.assertNotIn(ENTITY_SECRET, json.dumps(report))
         self.assertEqual(len(report["entities"]), 4)
         self.assertEqual(len(report["definitions"]), 3 + 1)
-        self.assertIn("redacted_by_policy", report["omissions"])
+        self.assertIn("credential_text_withheld", report["omissions"])
         self.assertFalse(report["complete"])
         self.assertEqual(report["completeness"], "partial")
 
@@ -955,7 +956,8 @@ class MatchingTests(Base):
             "reason": "no_definition_derives_this_entity_id"})
         rows = self.entities(report)
         self.assertEqual(rows["sensor.nothing_here"]["diagnosis"],
-                         {"classification": "not_found", "reasons": ["no_state", "definition_absent"]})
+                         {"classification": "not_found",
+                          "reasons": ["no_state", "definition_absent", "labelled_keys_not_addressable"]})
         self.assertEqual(rows["sensor.nothing_here"]["state"], "absent")
         self.assertEqual(rows["sensor.orphan_sql"]["diagnosis"],
                          {"classification": "undetermined", "reasons": ["state_unavailable", "definition_not_matched"]})
@@ -1623,8 +1625,8 @@ class NoWritePathTests(unittest.IsolatedAsyncioTestCase):
             "..entity_ids", "..entity_reconciliation.contracts", "..entity_reconciliation.service", "..errors",
             "..observability", "..providers.upstream_yaml_reader", "..recorder_settings.contracts",
             "..recorder_settings.projection", "..request_context", "..sanitization", "..tool_framework",
-            ".compatibility", ".matching", ".naming", ".projection", ".schemas", "__future__", "asyncio",
-            "datetime", "json", "mcp.server.fastmcp.tools.base", "mcp.types", "pydantic", "re", "types",
+            ".compatibility", ".credentials", ".matching", ".naming", ".projection", ".schemas", "__future__", "asyncio",
+            "datetime", "itertools", "json", "mcp.server.fastmcp.tools.base", "mcp.types", "pydantic", "re", "types",
             "typing"})
         service = ast.parse(self.sources()["service.py"])
         yaml_paths = [ast.unparse(node.args[1]) for node in ast.walk(service)
@@ -1756,7 +1758,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(data["success"], data)
         self.assertNotIn(ENTITY_SECRET, json.dumps(data))
         self.assertNotIn(ENTITY_SECRET, audit)
-        self.assertIn("redacted_by_policy", data["data"]["omissions"])
+        self.assertIn("credential_text_withheld", data["data"]["omissions"])
         self.assertEqual(data["metadata"]["completeness"], "partial")
 
 
@@ -1867,3 +1869,456 @@ class DefinitionReaderPurposeTests(yaml_admission.Harness):
     @staticmethod
     def entities_of(report):
         return {row["entity_id"]: row for row in report["entities"]}
+
+
+# Independent review of PR #294 (head dfd1f02): H1 and M1-M4. The reviewer's
+# seven reproductions are kept verbatim in intent; H1 runs through the
+# authenticated gateway as well as the service.
+def credential_texts():
+    """Credential-shaped texts, assembled at test time; each carries a needle."""
+
+    tail = DB_HOST + ".invalid"
+    return {
+        "postgresql": db_url(),
+        "postgresql_driver": syn.url("postgresql+psycopg2", DB_USER, DB_PASSWORD, tail + ":5432/ha"),
+        "mysql": db_url("mysql"),
+        "mssql": syn.url("mssql+pyodbc", DB_USER, DB_PASSWORD, tail + "/ha?driver=synthetic"),
+        "sqlite_path": "sqlite" + syn.SCHEME_SEPARATOR + "//config/" + DB_PASSWORD + ".db",
+        "mongodb": syn.url("mongodb", DB_USER, DB_PASSWORD, tail + ":27017/admin"),
+        "http_basic_auth": syn.url("http", DB_USER, DB_PASSWORD, tail + ":8123/api"),
+        "user_only_userinfo": syn.url("https", DB_PASSWORD, None, tail),
+        "user_pass_host": DB_USER + ":" + DB_PASSWORD + "@" + tail,
+        "password_field": "Server=" + tail + ";" + syn.pwd(DB_PASSWORD),
+        "embedded_in_prose": "Copied from " + db_url() + " last week",
+        "percent_encoded": syn.enc(db_url(), 1),
+    }
+
+
+LEAK_NEEDLES = (DB_USER, DB_PASSWORD, DB_HOST)
+
+
+def plant_everywhere(text):
+    """``text`` in every Core and reader field that can reach the report."""
+
+    values = owner_yaml(kwargs={"sql": {"completeness": "partial", "limitations": [text]}})
+    core = owner_core()
+    core["config_entries/get"]["template"][0].update(title=text, reason=text, error_reason_translation_key=text)
+    core["config_entries/get"][c.COMPONENT_DOMAIN] = [
+        {"entry_id": COMPONENT_ENTRY, "domain": c.COMPONENT_DOMAIN, "title": text, "state": "loaded",
+         "disabled_by": None, "reason": text, "error_reason_translation_key": text}]
+    core["manifest/get"] = {"domain": c.COMPONENT_DOMAIN, "version": text, "name": text}
+    core["config"]["components"] = [*COMPONENTS, text]
+    core["entity/source"]["sensor.ui_template"] = {"domain": text}
+    core["config/entity_registry/list"].append(registry_row("sensor.planted", text, text))
+    core["states"].append({"entity_id": "sensor.planted", "state": "unavailable",
+                           "attributes": {"friendly_name": text}})
+    return values, core
+
+
+class CredentialExitPointTests(Base):
+    """H1: credential text is withheld from EVERY string of the final report."""
+
+    def assert_no_leak(self, text):
+        for needle in LEAK_NEEDLES:
+            self.assertNotIn(needle, text)
+
+    async def test_reviewer_postgresql_title_cannot_reach_the_public_gateway(self):
+        core = owner_core()
+        core["config_entries/get"]["template"][0]["title"] = db_url()
+        response, data, audit = await serve_through_gateway({"integrations": ["template"]}, owner_yaml(), core)
+        self.assertTrue(data["success"])
+        self.assert_no_leak(response)
+        self.assert_no_leak(audit)
+        report = data["data"]
+        self.assertEqual(report["ui_entries"][0]["title"], "[withheld:credential_text]")
+        self.assertIn("credential_text_withheld", report["omissions"])
+        self.assertEqual(report["completeness"], "partial")
+
+    async def test_each_credential_shape_in_a_title_is_withheld(self):
+        for name, text in credential_texts().items():
+            with self.subTest(name):
+                core = owner_core()
+                core["config_entries/get"]["template"][0]["title"] = text
+                report = await self.run_report(core_values=core, integrations=("template",))
+                self.assert_no_leak(json.dumps(report))
+                self.assertEqual(report["ui_entries"][0]["title"], "[withheld:credential_text]")
+                self.assert_partial(report, "credential_text_withheld")
+
+    async def test_each_credential_shape_in_every_metadata_field(self):
+        for name, text in credential_texts().items():
+            with self.subTest(name):
+                values, core = plant_everywhere(text)
+                report = await self.run_report(values, core, entity_ids=("sensor.ui_template", "sensor.planted"),
+                                               integrations=("template", "sql"))
+                self.assert_no_leak(json.dumps(report))
+                self.assert_partial(report, "credential_text_withheld")
+                self.assertEqual(report["capability"]["entries"][0]["title"], "[withheld:credential_text]")
+                # The rest of the report is preserved.
+                self.assertEqual(len(report["entities"]), 2)
+                self.assertTrue(report["definitions"])
+
+    async def test_metadata_sweep_through_the_gateway(self):
+        for name, text in credential_texts().items():
+            with self.subTest(name):
+                values, core = plant_everywhere(text)
+                response, data, audit = await serve_through_gateway(
+                    {"entity_ids": ["sensor.ui_template", "sensor.planted"], "integrations": ["template", "sql"]},
+                    values, core)
+                self.assertTrue(data["success"])
+                self.assert_no_leak(response)
+                self.assert_no_leak(audit)
+                self.assertIn("credential_text_withheld", data["data"]["omissions"])
+
+    async def test_reader_provenance_is_screened(self):
+        self.env = setup()
+        self.addCleanup(end_request, self.env.token)
+        self.env.reader.provenance = "reader at " + db_url()
+        report = await self.env.service.report((), ("sql",))
+        self.assert_no_leak(json.dumps(report))
+        self.assertEqual(report["coverage"]["yaml_reader"], "[withheld:credential_text]")
+        self.assert_partial(report, "credential_text_withheld")
+
+    async def test_reviewer_api_error_detail_with_a_database_uri_is_never_echoed(self):
+        core = owner_core()
+        core["config"] = HomeAssistantApiError(details={"status": 500, "detail": db_url()})
+        report = await self.run_report(core_values=core, integrations=("template",))
+        self.assert_no_leak(json.dumps(report))
+        self.assertFalse(report["complete"])
+        self.assertEqual(source(report, "config")["reason"], "command_failed")
+
+    async def test_ordinary_titles_are_preserved_and_complete(self):
+        for title in ("Living room helper", "Alerts @ home", "Ratio 3:2", "notify me@home", "Port 8123 / API",
+                      "Yes", "on"):
+            with self.subTest(title):
+                core = owner_core()
+                core["config_entries/get"]["template"][0]["title"] = title
+                report = await self.run_report(core_values=core, integrations=("template",))
+                self.assertEqual(report["ui_entries"][0]["title"], title)
+                self.assertNotIn("credential_text_withheld", report["omissions"])
+                self.assertTrue(report["complete"])
+
+    def test_predicate_and_walk(self):
+        from ha_mcp_engineering.configuration_definitions import credentials
+
+        for name, text in credential_texts().items():
+            with self.subTest(name):
+                self.assertTrue(credentials.credential_text(text))
+        self.assertTrue(credentials.credential_text("prefix " + ACCESS_SECRET, (ACCESS_SECRET,)))
+        self.assertTrue(credentials.credential_text("[Withheld:Credential_Text]"))
+        # Text the reader's canonicalization refuses cannot be screened.
+        self.assertTrue(credentials.credential_text(syn.enc(db_url(), 5)))
+        self.assertTrue(credentials.credential_text("%41 at 50% off"))
+        for text in ("Living room helper", "sensor.database_size", "Alerts @ home", "12:30", "a@b", ""):
+            with self.subTest(text):
+                self.assertFalse(credentials.credential_text(text))
+        walked, count = credentials.withhold(
+            {"keep": "plain", db_url(): "key dropped", "nested": [db_url(), ("plain", db_url())], "n": 3})
+        self.assertEqual(walked, {"keep": "plain", "nested": ["[withheld:credential_text]",
+                                  ["plain", "[withheld:credential_text]"]], "n": 3})
+        self.assertEqual(count, 3)
+
+
+class ReverseMatchAmbiguityTests(Base):
+    """M1: identical ambiguity rules entity -> definition and definition -> entity."""
+
+    DUPLICATES = [{"name": "A", "unique_id": "feels_like", "state": "1"},
+                  {"name": "B", "unique_id": "feels_like", "state": "2"}]
+
+    async def test_reviewer_shared_unique_id_is_ambiguous_in_both_directions(self):
+        for integrations in ((), ("template",)):
+            with self.subTest(integrations=integrations):
+                report = await self.run_report(owner_yaml(template=[{"sensor": self.DUPLICATES}]),
+                                               entity_ids=("sensor.outdoor_feels_like",), integrations=integrations)
+                entity = self.entities(report)["sensor.outdoor_feels_like"]["definition"]
+                self.assertEqual((entity["method"], entity["reason"]),
+                                 ("ambiguous", "several_definitions_share_this_unique_id"))
+                templates = [d for d in report["definitions"] if d["integration"] == "template"]
+                self.assertEqual(len(templates), 2)
+                for definition in templates:
+                    match = definition["expected_entities"][0]["match"]
+                    self.assertEqual((match["method"], match["confidence"], match["reason"]),
+                                     ("ambiguous", None, "several_definitions_share_this_unique_id"))
+                    self.assertNotEqual(match["method"], "exact_unique_id")
+
+    async def test_unique_definition_stays_exact_in_both_directions(self):
+        report = await self.run_report(owner_yaml(), entity_ids=("sensor.outdoor_feels_like",),
+                                       integrations=("template",))
+        self.assertEqual(self.entities(report)["sensor.outdoor_feels_like"]["definition"]["method"],
+                         "exact_unique_id")
+        match = self.definitions(report)["template[0].sensor[0]"]["expected_entities"][0]["match"]
+        self.assertEqual((match["entity_id"], match["method"], match["confidence"]),
+                         ("sensor.outdoor_feels_like", "exact_unique_id", "exact"))
+
+    async def test_matcher_counts_definitions_not_registry_hits(self):
+        from ha_mcp_engineering.configuration_definitions.matching import Matcher
+
+        definitions, _ = project(template=[{"sensor": self.DUPLICATES}, {"sensor": [
+            {"name": "C", "unique_id": "other", "state": "3"}]}])
+        registry = {"sensor.a": registry_row("sensor.a", "template", "feels_like"),
+                    "sensor.c": registry_row("sensor.c", "template", "other")}
+        matcher = Matcher(definitions, registry=registry, platforms={}, states={"sensor.a": "1", "sensor.c": "1"},
+                          yaml_complete=True, ui_domains={})
+        methods = {d["definition_id"]: matcher.definition(d)[0]["method"] for d in definitions}
+        self.assertEqual(methods, {"template[0].sensor[0]": "ambiguous", "template[0].sensor[1]": "ambiguous",
+                                   "template[1].sensor[0]": "exact_unique_id"})
+        self.assertEqual(matcher.entity("sensor.a")["method"], "ambiguous")
+
+    async def test_several_registry_rows_for_one_definition_are_ambiguous(self):
+        # One definition whose unique ID two registry rows carry (here the raw
+        # text and Core's YAML 1.1 reading): no row is chosen from either side.
+        from ha_mcp_engineering.configuration_definitions.matching import Matcher
+
+        definitions, _ = project(template=[{"sensor": [{"name": "A", "unique_id": "on", "state": "1"}]}])
+        registry = {"sensor.a": registry_row("sensor.a", "template", "on"),
+                    "sensor.b": registry_row("sensor.b", "template", "True")}
+        matcher = Matcher(definitions, registry=registry, platforms={}, states={"sensor.a": "1", "sensor.b": "1"},
+                          yaml_complete=True, ui_domains={})
+        result = matcher.definition(definitions[0])[0]
+        self.assertEqual((result["entity_id"], result["method"], result["confidence"], result["reason"]),
+                         (None, "ambiguous", None, "several_registry_entries_share_this_unique_id"))
+        # Control: with one of the rows the forward rule decides.
+        del registry["sensor.b"]
+        matcher = Matcher(definitions, registry=registry, platforms={}, states={"sensor.a": "1"},
+                          yaml_complete=True, ui_domains={})
+        result = matcher.definition(definitions[0])[0]
+        self.assertEqual((result["entity_id"], result["method"]), ("sensor.a", "heuristic"))
+
+
+class ParserDependentIdentityTests(Base):
+    """M2: slice 1's parser-dependence rules apply before identity matching."""
+
+    async def report_for(self, unique_id, registered, **definition):
+        core = owner_core()
+        core["config/entity_registry/list"].append(registry_row("sensor.dependent", "template", registered))
+        core["states"].append(state("sensor.dependent"))
+        values = owner_yaml(template=[{"sensor": [{"name": "Dependent", "unique_id": unique_id, "state": "1",
+                                                   **definition}]}])
+        return await self.run_report(values, core, entity_ids=("sensor.dependent",), integrations=("template",))
+
+    async def test_reviewer_unquoted_on_is_never_an_exact_match(self):
+        from ha_mcp_engineering.recorder_settings.projection import yaml11_readings
+
+        self.assertEqual(yaml11_readings("on"), ("unquoted", [True]))
+        for text, core_reading in (("on", "True"), ("off", "False"), ("yes", "True"), ("no", "False"),
+                                   ("1:30", "90")):
+            for registered in (text, core_reading):
+                with self.subTest(text=text, registered=registered):
+                    report = await self.report_for(text, registered)
+                    match = self.entities(report)["sensor.dependent"]["definition"]
+                    self.assertEqual((match["method"], match["confidence"], match["reason"]),
+                                     ("heuristic", "medium", "unique_id_parser_dependent"))
+                    expected_entity = self.definitions(report)["template[0].sensor[0]"]["expected_entities"][0]
+                    self.assertTrue(expected_entity["unique_id_parser_dependent"])
+                    self.assertEqual(expected_entity["unique_id_readings"], [text, core_reading])
+                    self.assertEqual(expected_entity["match"]["method"], "heuristic")
+
+    async def test_values_yaml_11_reads_the_same_stay_exact(self):
+        # A reader string slice 1's resolver proves was quoted, and an integer.
+        for value, registered in (("y", "y"), ("n", "n"), ("True", "True"), ("1_000", "1_000"), ("010", "010"),
+                                  ("plain", "plain"), (10, "10")):
+            with self.subTest(value=value):
+                report = await self.report_for(value, registered)
+                self.assertEqual(self.entities(report)["sensor.dependent"]["definition"]["method"],
+                                 "exact_unique_id")
+                expected_entity = self.definitions(report)["template[0].sensor[0]"]["expected_entities"][0]
+                self.assertNotIn("unique_id_parser_dependent", expected_entity)
+
+    async def test_two_dependent_candidates_are_ambiguous(self):
+        core = owner_core()
+        core["config/entity_registry/list"].append(registry_row("sensor.dependent", "template", "True"))
+        core["states"].append(state("sensor.dependent"))
+        values = owner_yaml(template=[{"sensor": [{"name": "A", "unique_id": "on", "state": "1"},
+                                                  {"name": "B", "unique_id": "yes", "state": "1"}]}])
+        report = await self.run_report(values, core, entity_ids=("sensor.dependent",), integrations=("template",))
+        self.assertEqual(self.entities(report)["sensor.dependent"]["definition"]["method"], "ambiguous")
+
+    def test_block_and_entity_unique_ids_combine(self):
+        definitions, _ = project(template=[{"unique_id": "yes", "sensor": [
+            {"name": "Combined", "unique_id": "a", "state": "1"}]}])
+        expected_entity = definitions[0]["expected_entities"][0]
+        self.assertEqual((expected_entity["unique_id"], expected_entity["unique_id_readings"]),
+                         ("yes-a", ["yes-a", "True-a"]))
+        self.assertTrue(expected_entity["unique_id_parser_dependent"])
+
+    def test_dependent_names_and_keys_derive_no_entity_id(self):
+        definitions, _ = project(sql=[{"name": "off", "query": "SELECT 1;", "column": "c"}],
+                                 group={"on": {"entities": ["light.kitchen"]}},
+                                 template=[{"sensor": [{"name": "yes", "state": "1"}]}])
+        for definition in definitions:
+            with self.subTest(definition["definition_id"]):
+                row = definition["expected_entities"][0]
+                self.assertEqual((row["derived_entity_id"], row["derivation_limit"]),
+                                 (None, "name_parser_dependent"))
+        control, _ = project(sql=[{"name": "y", "query": "SELECT 1;", "column": "c"}])
+        self.assertEqual(control[0]["expected_entities"][0]["derived_entity_id"], "sensor.y")
+
+    async def test_coverage_discloses_the_rule(self):
+        report = await self.run_report(integrations=("template",))
+        self.assertEqual(report["coverage"]["parser_dependent_identity"], c.PARSER_DEPENDENCE_DISCLOSURE)
+        self.assertEqual(report["coverage"]["yaml_numeric_spelling"], c.YAML_NUMERIC_SPELLING_LIMITATION)
+
+
+class DiagnosisEvidenceTests(Base):
+    """M3: diagnosis claims only what its read sources support."""
+
+    async def ghost(self, values):
+        report = await self.run_report(values, entity_ids=("sensor.ghost",))
+        return self.entities(report)["sensor.ghost"]["diagnosis"]
+
+    async def test_reviewer_failed_yaml_does_not_prove_definition_absent(self):
+        values = owner_yaml()
+        values["template"] = RuntimeError("synthetic unavailable")
+        diagnosis_ = await self.ghost(values)
+        self.assertEqual(diagnosis_["classification"], "undetermined")
+        self.assertIn("source_failed:configuration_yaml:template", diagnosis_["reasons"])
+        self.assertNotIn("definition_absent", diagnosis_["reasons"])
+
+    async def test_every_unread_yaml_source_blocks_absence(self):
+        partial = {"completeness": "partial", "limitations": ["value_truncated:3 nodes omitted"]}
+        cases = {
+            "failed": (owner_yaml(sql=HomeAssistantTimeoutError()), "source_failed:configuration_yaml:sql"),
+            "partial": (owner_yaml(kwargs={"sensor": partial}), "source_partial:configuration_yaml:sensor"),
+            "packages": (owner_yaml(packages={"energy": "!include packages/energy.yaml"}),
+                         "definitions_in_packages_not_read"),
+            "packages_unknown": (owner_yaml(packages="!include_dir_named packages"), "packages_not_determined"),
+            "whole_path_include": (owner_yaml(group="!include groups.yaml"), "include_not_followed:group"),
+            "value_include": (owner_yaml(sql=["!include sql_one.yaml", *owner_sql()]),
+                              "definition_values_include_not_followed"),
+        }
+        for name, (values, reason) in cases.items():
+            with self.subTest(name):
+                if name == "failed":
+                    values["sql"] = HomeAssistantTimeoutError()
+                diagnosis_ = await self.ghost(values)
+                self.assertEqual(diagnosis_["classification"], "undetermined")
+                self.assertIn(reason, diagnosis_["reasons"])
+                self.assertNotIn("definition_absent", diagnosis_["reasons"])
+
+    async def test_absence_with_every_source_read(self):
+        diagnosis_ = await self.ghost(owner_yaml())
+        self.assertEqual(diagnosis_, {"classification": "not_found",
+                                      "reasons": ["no_state", "definition_absent", "labelled_keys_not_addressable"]})
+
+    async def test_reviewer_unreadable_ui_definition_is_never_entity_level(self):
+        core = owner_core()
+        core["states"].append(state("sensor.ui_template", "unavailable"))
+        report = await self.run_report(core_values=core, entity_ids=("sensor.ui_template",))
+        self.assertEqual(self.entities(report)["sensor.ui_template"]["diagnosis"],
+                         {"classification": "undetermined",
+                          "reasons": ["config_entry_state:loaded", "state_unavailable",
+                                      "definition_not_readable_without_flow", "dependencies_not_checked"]})
+
+    async def test_unextracted_template_dependencies_are_never_entity_level(self):
+        core = owner_core()
+        core["states"] = [item for item in core["states"] if item["entity_id"] != "sensor.outdoor_feels_like"]
+        core["states"].append(state("sensor.outdoor_feels_like", "unavailable"))
+        report = await self.run_report(core_values=core, entity_ids=("sensor.outdoor_feels_like",))
+        self.assertEqual(self.entities(report)["sensor.outdoor_feels_like"]["diagnosis"],
+                         {"classification": "undetermined", "reasons": ["state_unavailable", "dependencies_not_checked"]})
+
+    async def test_checked_dependencies_still_give_entity_level(self):
+        core = owner_core()
+        core["states"] = [item for item in core["states"] if item["entity_id"] != "sensor.water_rate"]
+        core["states"].append(state("sensor.water_rate", "unavailable"))
+        report = await self.run_report(core_values=core, entity_ids=("sensor.water_rate",))
+        self.assertEqual(self.entities(report)["sensor.water_rate"]["diagnosis"],
+                         {"classification": "entity_level", "reasons": ["state_unavailable"]})
+
+
+class MalformedSourceValueTests(Base):
+    """M4: a malformed value invalidates its item only, never the report."""
+
+    async def test_reviewer_list_state_keeps_the_other_sources(self):
+        core = owner_core()
+        core["states"] = [{"entity_id": "sensor.example", "state": []}]
+        report = await self.run_report(core_values=core, integrations=("template",))
+        self.assertFalse(report["complete"])
+        self.assertEqual(source(report, "states")["reason"], "invalid_response")
+        self.assertEqual(source(report, "states")["status"], "partial")
+        self.assertEqual(source(report, "config/entity_registry/list")["status"], "complete")
+        self.assertTrue(report["definitions"])
+
+    async def test_malformed_state_values(self):
+        for bad in ([], {}, None, 1, True):
+            with self.subTest(bad=bad):
+                core = owner_core()
+                core["states"].append({"entity_id": "sensor.malformed", "state": bad})
+                report = await self.run_report(core_values=core,
+                                               entity_ids=("sensor.malformed", "sensor.database_size"))
+                rows = self.entities(report)
+                self.assertEqual(rows["sensor.malformed"]["diagnosis"],
+                                 {"classification": "undetermined", "reasons": ["state_invalid_response"]})
+                self.assertEqual(rows["sensor.database_size"]["diagnosis"]["classification"], "available")
+                self.assertEqual(source(report, "states")["reason"], "invalid_response")
+                self.assertFalse(report["complete"])
+
+    async def test_malformed_dependency_state(self):
+        core = owner_core()
+        core["states"] = [item for item in core["states"]
+                          if item["entity_id"] not in ("sensor.water_rate", "sensor.water_total")]
+        core["states"] += [state("sensor.water_rate", "unavailable"), {"entity_id": "sensor.water_total",
+                                                                      "state": {"nested": 1}}]
+        report = await self.run_report(core_values=core, entity_ids=("sensor.water_rate",))
+        self.assertEqual(self.entities(report)["sensor.water_rate"]["diagnosis"],
+                         {"classification": "undetermined",
+                          "reasons": ["state_unavailable", "source_entity_invalid_response"]})
+
+    async def test_malformed_registry_disabled_by(self):
+        core = owner_core()
+        core["config/entity_registry/list"][0]["disabled_by"] = ["user"]
+        report = await self.run_report(core_values=core,
+                                       entity_ids=("sensor.database_free_space", "sensor.database_size"))
+        rows = self.entities(report)
+        self.assertEqual(rows["sensor.database_free_space"]["diagnosis"],
+                         {"classification": "undetermined", "reasons": ["registry_disabled_by_invalid_response"]})
+        self.assertEqual(rows["sensor.database_size"]["definition"]["method"], "exact_unique_id")
+        self.assertEqual(source(report, "config/entity_registry/list")["reason"], "invalid_response")
+        self.assertFalse(report["complete"])
+
+    async def test_malformed_config_entry_values(self):
+        for field, bad in (("state", []), ("state", None), ("disabled_by", {"by": "user"}), ("disabled_by", 3)):
+            with self.subTest(field=field, bad=bad):
+                core = owner_core()
+                core["config_entries/get"]["template"][0][field] = bad
+                core["states"].append(state("sensor.ui_template", "unavailable"))
+                report = await self.run_report(core_values=core, entity_ids=("sensor.ui_template",),
+                                               integrations=("template",))
+                self.assertEqual(report["ui_entries"][0][field], "invalid_response")
+                self.assertEqual(self.entities(report)["sensor.ui_template"]["diagnosis"],
+                                 {"classification": "undetermined", "reasons": ["config_entry_invalid_response"]})
+                self.assertEqual(source(report, "config_entries/get:template")["reason"], "invalid_response")
+                self.assertFalse(report["complete"])
+
+    async def test_malformed_component_entry(self):
+        core = owner_core()
+        core["manifest/get"] = {"domain": c.COMPONENT_DOMAIN, "version": "1.2.0"}
+        core["config_entries/get"][c.COMPONENT_DOMAIN] = [
+            {"entry_id": COMPONENT_ENTRY, "domain": c.COMPONENT_DOMAIN, "title": "Tools", "state": ["loaded"],
+             "disabled_by": None}]
+        report = await self.run_report(core_values=core, integrations=("template",))
+        self.assertEqual((report["capability"]["classification"], report["capability"]["reason"]),
+                         ("undetermined", "config_entry_invalid_response"))
+        self.assertFalse(report["complete"])
+
+    async def test_a_projection_error_is_that_source_only(self):
+        self.env = setup()
+        self.addCleanup(end_request, self.env.token)
+        service = self.env.service
+        sources = []
+
+        async def read():
+            return [{"entity_id": "sensor.x", "state": "1"}]
+
+        for error in (TypeError, ValueError, KeyError, AttributeError):
+            with self.subTest(error=error.__name__):
+                def project_(raw, error=error):
+                    raise error("synthetic")
+
+                value, reason = await service._projected(sources, "states", read, project_, service.authority())
+                self.assertEqual((value, reason), (None, "invalid_response"))
+                self.assertEqual((sources[-1]["status"], sources[-1]["reason"]), ("unavailable", "invalid_response"))
+
+    async def test_valid_values_stay_complete(self):
+        report = await self.run_report(entity_ids=OWNER_ENTITIES, integrations=("template",))
+        for name in ("states", "config/entity_registry/list", "config_entries/get:template"):
+            self.assertEqual(source(report, name)["status"], "complete")

@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from . import contracts as c
+from . import schemas as s
 
 ENTRY_STATES = frozenset({
     "loaded", "setup_error", "migration_error", "setup_retry", "not_loaded", "failed_unload",
@@ -24,6 +25,8 @@ ENTRY_STATES = frozenset({
 })
 TRANSIENT_ENTRY_STATES = frozenset({"setup_retry", "setup_in_progress", "unload_in_progress"})
 DISABLED_BY = frozenset({"user", "integration", "config_entry", "device", "hass"})
+# A malformed source value (not text) kept for its item only (M4).
+INVALID = "invalid_response"
 TRANSLATION_KEY = re.compile(r"[a-z0-9_]{1,64}\Z")
 ENTRY_ID = re.compile(r"[0-9A-Za-z_-]{1,64}\Z")
 VERSION = re.compile(r"([0-9]{1,4})\.([0-9]{1,4})(?:\.([0-9]{1,4}))?\Z")
@@ -56,9 +59,10 @@ def entry_rows(value: Any, domain: str) -> list[dict] | None:
             "entry_id": entry_id,
             "domain": domain,
             "title": title[:c.MAX_TITLE] if type(title) is str else None,
-            "state": state if state in ENTRY_STATES else "unrecognized",
-            "disabled_by": disabled_by if disabled_by in DISABLED_BY else (
-                None if disabled_by is None else "unrecognized"),
+            # Values that are not text are malformed, never a set lookup (M4).
+            "state": INVALID if type(state) is not str else state if state in ENTRY_STATES else "unrecognized",
+            "disabled_by": None if disabled_by is None else INVALID if type(disabled_by) is not str
+            else disabled_by if disabled_by in DISABLED_BY else "unrecognized",
             "reason_present": item.get("reason") not in (None, ""),
             "error_reason_translation_key": key if type(key) is str and TRANSLATION_KEY.fullmatch(key)
             else None,
@@ -67,6 +71,8 @@ def entry_rows(value: Any, domain: str) -> list[dict] | None:
 
 
 def _entry_reasons(entry: dict) -> tuple[str, list[str]]:
+    if INVALID in (entry["state"], entry["disabled_by"]):
+        return "undetermined", [f"config_entry_{INVALID}"]
     if entry["disabled_by"] is not None:
         return "disabled", [f"config_entry_disabled:{entry['disabled_by']}"]
     reasons = [f"config_entry_state:{entry['state']}"]
@@ -80,12 +86,23 @@ def _entry_reasons(entry: dict) -> tuple[str, list[str]]:
 def entity(entity_id: str, *, state: str | None, states_read: bool, registry_row: dict | None,
            registry_read: bool, match: dict, entries: dict[str, dict], definition: dict | None,
            components: set[str] | None, platform: str | None, legacy: list[str],
-           states: dict[str, str] | None) -> dict:
-    """The classification and reasons for one requested entity."""
+           states: dict[str, str] | None, yaml_gaps: list[str]) -> dict:
+    """The classification and reasons for one requested entity.
+
+    ``yaml_gaps`` names each YAML definition source that was not read whole
+    (a failed or partial path, unread packages, an include not followed).
+    With any gap a definition can exist unread, so absence is never claimed
+    (M3); the claim made with no gap still states that labelled keys cannot
+    be addressed (``contracts.LABELLED_KEY_DISCLOSURE``).
+    """
 
     reasons: list[str] = []
     if not states_read:
         return {"classification": "undetermined", "reasons": ["source_failed:states"]}
+    if registry_row is not None and registry_row.get("disabled_by") == INVALID:
+        return {"classification": "undetermined", "reasons": [f"registry_disabled_by_{INVALID}"]}
+    if state == INVALID:
+        return {"classification": "undetermined", "reasons": [f"state_{INVALID}"]}
     if registry_row is not None and registry_row.get("disabled_by") is not None:
         by = registry_row["disabled_by"]
         return {"classification": "disabled",
@@ -110,7 +127,11 @@ def entity(entity_id: str, *, state: str | None, states_read: bool, registry_row
             return {"classification": "deployment_dependency",
                     "reasons": reasons + ["legacy_platform_unsupported"]}
         if registry_row is None and registry_read and definition is None and entry_id is None:
-            return {"classification": "not_found", "reasons": reasons + ["definition_absent"]}
+            if yaml_gaps:
+                return {"classification": "undetermined",
+                        "reasons": reasons + yaml_gaps[:MAX_SOURCE_SIGNALS]}
+            return {"classification": "not_found",
+                    "reasons": reasons + ["definition_absent", "labelled_keys_not_addressable"]}
         integration = definition["integration"] if definition else (
             registry_row["platform"] if registry_row else None)
         if integration and components is not None and entry_id is None:
@@ -131,6 +152,8 @@ def entity(entity_id: str, *, state: str | None, states_read: bool, registry_row
 
     reasons.append(f"state_{state}")
     if definition is not None and states is not None:
+        if any(states.get(item) == INVALID for item in definition["dependencies"]):
+            return {"classification": "undetermined", "reasons": reasons + [f"source_entity_{INVALID}"]}
         missing = [item for item in definition["dependencies"] if item not in states]
         unavailable = [item for item in definition["dependencies"]
                        if states.get(item) in {"unavailable", "unknown"}]
@@ -143,6 +166,14 @@ def entity(entity_id: str, *, state: str | None, states_read: bool, registry_row
     # an entity of a supported platform is not called entity-level.
     if definition is None and entry_id is None and match.get("method") != "not_applicable":
         return {"classification": "undetermined", "reasons": reasons + ["definition_not_matched"]}
+    if entry_id is not None:
+        # A UI definition is not readable without a flow, so its dependencies
+        # were not checked (M3).
+        return {"classification": "undetermined",
+                "reasons": reasons + ["definition_not_readable_without_flow", "dependencies_not_checked"]}
+    if definition is not None and definition["integration"] not in s.DEPENDENCY_KEYS:
+        # A template or SQL definition's sources are not extracted.
+        return {"classification": "undetermined", "reasons": reasons + ["dependencies_not_checked"]}
     return {"classification": "entity_level", "reasons": reasons}
 
 
@@ -201,6 +232,9 @@ def capability(manifest: Any, manifest_failure: str | None, entries: list[dict] 
         classifications = [_entry_reasons(entry) for entry in entries]
         for classification, reasons in classifications:
             signals.extend(reasons)
+        if any(item[0] == "undetermined" for item in classifications) and not any(
+                item[0] == "" for item in classifications):
+            return done("undetermined", f"config_entry_{INVALID}")
         if any(item[0] == "disabled" for item in classifications) and not any(
                 item[0] == "" for item in classifications):
             return done("deployment_dependency", "config_entry_disabled")

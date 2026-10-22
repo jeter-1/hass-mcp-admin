@@ -30,6 +30,7 @@ from typing import Any
 from ..entity_ids import STRICT_ENTITY_ID
 from ..errors import ErrorCode, GovernanceError
 from ..recorder_settings.contracts import YAML_FAILURE_CODES as _RECORDER_YAML_FAILURE_CODES
+from ..recorder_settings.contracts import YAML_NUMERIC_SPELLING_LIMITATION
 
 REGISTRY_COMMAND = MappingProxyType({"type": "config/entity_registry/list"})
 SOURCE_COMMAND = MappingProxyType({"type": "entity/source"})
@@ -73,6 +74,11 @@ LABELLED_KEY_DISCLOSURE = (
     "YAML reader and are not read"
 )
 INCLUDE_DISCLOSURE = "!include targets and package contents are disclosed but never followed or read"
+PARSER_DEPENDENCE_DISCLOSURE = (
+    "a unique_id, name or key the YAML 1.2 reader returned as a string that Home Assistant's YAML 1.1 "
+    "loader could read as another type (an unquoted on, off, yes, no or 1:30) is "
+    "parser_dependent: its unique_id is never an exact match and its name or key derives no entity ID"
+)
 PARSE_DISCLOSURE = (
     "configuration.yaml as parsed by the YAML reader (YAML 1.2) on disk, not the configuration Core loaded"
 )

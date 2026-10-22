@@ -7,7 +7,10 @@ Order, strongest first:
    read-only source of its options, so it is
    ``definition_not_readable_without_flow`` (owner decision (i)).
 2. ``exact_unique_id``: the registry row's (domain, platform, unique_id)
-   equals the unique_id Core derives from a YAML definition.
+   equals the unique_id Core derives from a YAML definition. A unique_id
+   YAML 1.1 could read differently (``unique_id_parser_dependent``, M2) is
+   never exact: one candidate is ``heuristic`` with ``medium`` confidence
+   and the reason ``unique_id_parser_dependent``.
 3. ``heuristic``: no registry row, and Core's naming rules applied to a
    definition's static name, default name or key give this entity ID. The
    confidence is stated: ``high`` for one candidate whose platform
@@ -15,6 +18,10 @@ Order, strongest first:
    when the platform is unconfirmed or a source is incomplete; ``low`` when
    the ID matched only after removing a collision suffix (``_2``, ``_3``).
    More than one candidate is ``ambiguous`` and none is chosen.
+
+The reverse direction (definition to entity) applies the same rules to the
+registry rows its unique_id names (M1): a unique_id two read definitions
+share is ambiguous in both directions.
 
 A legacy platform entry (``unsupported_legacy_platform``) creates no entity
 in this Core and is never matched; it is only a diagnosis signal.
@@ -44,6 +51,7 @@ class Matcher:
         # config entry ID -> domain, for entries of the twelve integrations.
         self.ui_domains = ui_domains
         self.by_uid: dict[tuple[str, str, str], list[str]] = {}
+        self.by_dependent_uid: dict[tuple[str, str, str], list[str]] = {}
         self.by_derived: dict[str, list[str]] = {}
         self.legacy: dict[str, list[str]] = {}
         for definition in definitions:
@@ -52,6 +60,11 @@ class Matcher:
             platform = s.REGISTRY_PLATFORM.get(definition["integration"])
             for expected in definition["expected_entities"]:
                 if expected["unique_id"] is not None and platform:
+                    if expected.get("unique_id_parser_dependent"):
+                        for reading in expected["unique_id_readings"]:
+                            key = (expected["entity_domain"], platform, reading)
+                            self.by_dependent_uid.setdefault(key, []).append(definition["definition_id"])
+                        continue
                     key = (expected["entity_domain"], platform, expected["unique_id"])
                     self.by_uid.setdefault(key, []).append(definition["definition_id"])
                 elif expected["derived_entity_id"]:
@@ -115,7 +128,13 @@ class Matcher:
                         "config_entry_id": entry, "reason": "config_entry_not_observed"}
             key = (entity_id.split(".", 1)[0], row["platform"], row["unique_id"])
             found = self.by_uid.get(key, []) if type(row["unique_id"]) is str else []
-            if len(found) == 1:
+            dependent = self.by_dependent_uid.get(key, []) if type(row["unique_id"]) is str else []
+            if dependent:
+                found = found + [item for item in dependent if item not in found]
+                if len(found) == 1:
+                    return {"method": "heuristic", "confidence": "medium", "definition_ids": found,
+                            "reason": "unique_id_parser_dependent"}
+            elif len(found) == 1:
                 return {"method": "exact_unique_id", "confidence": "exact", "definition_ids": found,
                         "reason": None}
             if found:
@@ -149,12 +168,25 @@ class Matcher:
         for expected in definition["expected_entities"]:
             result: dict[str, Any] = {"entity_id": None, "method": "unmatched", "reason": None}
             if expected["unique_id"] is not None and platform and self.registry is not None:
+                readings = expected.get("unique_id_readings") or [expected["unique_id"]]
                 hits = [entity_id for entity_id, row in self.registry.items()
                         if entity_id.split(".", 1)[0] == expected["entity_domain"]
-                        and row["platform"] == platform and row["unique_id"] == expected["unique_id"]
+                        and row["platform"] == platform and row["unique_id"] in readings
                         and row.get("config_entry_id") is None]
-                if len(hits) == 1:
-                    result.update(entity_id=hits[0], method="exact_unique_id", confidence="exact")
+                if len(hits) > 1:
+                    result.update(method="ambiguous", confidence=None,
+                                  reason="several_registry_entries_share_this_unique_id")
+                elif hits:
+                    # The forward rules decide (M1): a unique_id two read
+                    # definitions share is ambiguous in both directions.
+                    match = self.entity(hits[0])
+                    if definition["definition_id"] in match.get("definition_ids", []):
+                        result.update(entity_id=hits[0], method=match["method"],
+                                      confidence=match["confidence"])
+                        if match.get("reason"):
+                            result["reason"] = match["reason"]
+                    else:
+                        result["reason"] = match.get("reason") or "no_registry_entry_with_this_unique_id"
                 else:
                     result["reason"] = "no_registry_entry_with_this_unique_id"
             elif expected["derived_entity_id"]:

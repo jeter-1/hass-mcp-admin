@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import json
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, NamedTuple
 
 from ..clients.paths import rest_path
 from ..entity_ids import STRICT_ENTITY_ID
@@ -22,7 +22,7 @@ from ..recorder_settings.projection import gateway_envelope, packages_status
 from ..request_context import current_caller_id, current_telemetry
 from ..sanitization import sanitize_untrusted_data
 from . import contracts as c
-from . import diagnosis
+from . import credentials, diagnosis
 from .matching import Matcher
 from .naming import SLUGIFY_PIN
 from .projection import Definitions, paths_for
@@ -40,24 +40,40 @@ def iso(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _states(value: Any) -> dict[str, str] | None:
-    """entity ID -> ``available`` | ``unavailable`` | ``unknown``; no value is kept."""
+class _Checked(NamedTuple):
+    """A projection whose malformed items were kept as ``invalid_response`` (M4)."""
+
+    value: Any
+    invalid: int
+
+
+def _states(value: Any) -> _Checked | None:
+    """entity ID -> ``available`` | ``unavailable`` | ``unknown``; no value is kept.
+
+    A state that is not text is ``invalid_response`` for that entity only.
+    """
 
     if type(value) is not list:
         return None
     states = {}
+    invalid = 0
     for row in value:
         entity_id = row.get("entity_id") if type(row) is dict else None
         if type(entity_id) is str and STRICT_ENTITY_ID.fullmatch(entity_id):
             state = row.get("state")
-            states[entity_id] = state if state in {"unavailable", "unknown"} else "available"
-    return states
+            if type(state) is not str:
+                states[entity_id] = diagnosis.INVALID
+                invalid += 1
+            else:
+                states[entity_id] = state if state in {"unavailable", "unknown"} else "available"
+    return _Checked(states, invalid)
 
 
-def _registry(value: Any) -> dict[str, dict] | None:
+def _registry(value: Any) -> _Checked | None:
     if type(value) is not list:
         return None
     rows = {}
+    invalid = 0
     for row in value:
         entity_id = row.get("entity_id") if type(row) is dict else None
         if type(entity_id) is not str or not STRICT_ENTITY_ID.fullmatch(entity_id):
@@ -66,15 +82,26 @@ def _registry(value: Any) -> dict[str, dict] | None:
         unique_id = row.get("unique_id")
         entry = row.get("config_entry_id")
         disabled_by = row.get("disabled_by")
+        if disabled_by is not None and type(disabled_by) is not str:
+            # Malformed: kept as ``invalid_response``, never a set lookup.
+            disabled_by = diagnosis.INVALID
+            invalid += 1
         rows[entity_id] = {
             "platform": platform if type(platform) is str and DOMAIN.fullmatch(platform) else None,
             "unique_id": unique_id if type(unique_id) is str else None,
             "config_entry_id": entry if type(entry) is str and diagnosis.ENTRY_ID.fullmatch(entry) else None,
             # A closed value: Core's reason, or ``unrecognized`` when set to anything else.
-            "disabled_by": disabled_by if disabled_by in diagnosis.DISABLED_BY else (
-                None if disabled_by is None else "unrecognized"),
+            "disabled_by": disabled_by if disabled_by in diagnosis.DISABLED_BY
+            or disabled_by == diagnosis.INVALID else (None if disabled_by is None else "unrecognized"),
         }
-    return rows
+    return _Checked(rows, invalid)
+
+
+def _entries(value: Any, domain: str) -> _Checked | None:
+    rows = diagnosis.entry_rows(value, domain)
+    if rows is None:
+        return None
+    return _Checked(rows, sum(diagnosis.INVALID in (row["state"], row["disabled_by"]) for row in rows))
 
 
 def _components(value: Any) -> set[str] | None:
@@ -156,12 +183,25 @@ class ConfigurationDefinitionsService:
     async def _projected(self, sources: list[dict], source: str, read, project, authority,
                          *, absent_ok: bool = False):
         raw, reason = await self._read(read, authority)
-        value = project(raw) if reason is None else None
+        value = None
+        if reason is None:
+            try:
+                value = project(raw)
+            except (TypeError, ValueError, KeyError, AttributeError):
+                # M4: malformed source data is this source's invalid_response,
+                # never an abort of the whole report.
+                value = None
+        invalid = 0
+        if isinstance(value, _Checked):
+            value, invalid = value
         if reason is None and value is None:
             reason = "invalid_response"
         del raw
         status = "complete" if reason is None or (absent_ok and reason == "not_found") else (
             "refused" if reason == "permission_failure" else "unavailable")
+        if reason is None and invalid:
+            # The malformed items are kept as invalid_response; the rest is used.
+            status, reason = "partial", "invalid_response"
         self._source(sources, source, status, reason)
         return value, reason
 
@@ -190,6 +230,9 @@ class ConfigurationDefinitionsService:
         yaml_reads = 0
         envelopes: dict[str, dict | None] = {}
         yaml_complete = True
+        # Each YAML definition source not read whole (M3): absence is never
+        # claimed while one can hold an unread definition.
+        yaml_gaps: list[str] = []
         for path in paths_for(entity_ids, integrations):
             envelope, failure = await self._yaml(reader, path, authority)
             yaml_reads += reader is not None
@@ -199,6 +242,9 @@ class ConfigurationDefinitionsService:
             self._source(sources, f"configuration_yaml:{path}",
                          "unavailable" if envelope is None else "complete" if complete else "partial",
                          failure or (None if complete else "include_or_truncation"))
+            if not complete:
+                yaml_gaps.append(f"source_{'failed' if envelope is None else 'partial'}:"
+                                 f"configuration_yaml:{path}")
         packages, packages_failure = await self._yaml(reader, "homeassistant.packages", authority)
         yaml_reads += reader is not None
         core, core_failure, homeassistant_read = None, None, False
@@ -218,20 +264,26 @@ class ConfigurationDefinitionsService:
             yaml_complete = False
             omit("definitions_in_packages_not_read" if package_state == "present"
                  else "packages_not_determined")
+            yaml_gaps.append("definitions_in_packages_not_read" if package_state == "present"
+                             else "packages_not_determined")
 
         collector = Definitions(envelopes)
         definitions = collector.collect()
         del envelopes
         for path in collector.include_paths:
             omit(f"include_not_followed:{path}")
+            yaml_complete = False
+            yaml_gaps.append(f"include_not_followed:{path}")
         if any(d["include_not_followed"] for d in definitions):
             yaml_complete = False
             omit("definition_values_include_not_followed")
+            yaml_gaps.append("definition_values_include_not_followed")
 
         # 2. Core inventories.
-        states, states_failure = await self._projected(
+        states, _ = await self._projected(
             sources, "states", lambda: self.rest_client.request("GET", rest_path("/states")), _states,
             authority)
+        states_read = states is not None
         registry, _ = await self._projected(
             sources, "config/entity_registry/list", lambda: self.client.command(dict(c.REGISTRY_COMMAND)),
             _registry, authority)
@@ -256,7 +308,7 @@ class ConfigurationDefinitionsService:
             entries[domain], entry_failures[domain] = await self._projected(
                 sources, f"config_entries/get:{domain}",
                 lambda domain=domain: self.client.command(c.entries_payload(domain)),
-                lambda value, domain=domain: diagnosis.entry_rows(value, domain), authority)
+                lambda value, domain=domain: _entries(value, domain), authority)
         manifest, manifest_failure = await self._projected(
             sources, f"manifest/get:{c.COMPONENT_DOMAIN}",
             lambda: self.client.command(dict(c.MANIFEST_COMMAND)),
@@ -298,7 +350,7 @@ class ConfigurationDefinitionsService:
                     registry_read=registry is not None, match=match, entries=entry_index,
                     definition=definition, components=components,
                     platform=platforms.get(entity_id) if platforms is not None else None,
-                    legacy=legacy, states=states),
+                    legacy=legacy, states=states, yaml_gaps=yaml_gaps),
             })
             wanted.extend(match["definition_ids"] + legacy)
 
@@ -347,7 +399,7 @@ class ConfigurationDefinitionsService:
             omit("definitions_not_projected")
         if all(source["status"] in {"unavailable", "refused"} for source in sources):
             raise c.ConfigurationDefinitionsError("sources_unavailable")
-        if states_failure and entity_ids:
+        if not states_read and entity_ids:
             omit("entity_states_unknown")
 
         report: dict[str, Any] = {
@@ -367,6 +419,8 @@ class ConfigurationDefinitionsService:
                 "ui_definitions": "definition_not_readable_without_flow: Core returns no entry data or options "
                                   "without opening a flow",
                 "heuristic_naming": SLUGIFY_PIN,
+                "parser_dependent_identity": c.PARSER_DEPENDENCE_DISCLOSURE,
+                "yaml_numeric_spelling": c.YAML_NUMERIC_SPELLING_LIMITATION,
                 "state_values_copied": False,
                 # ``homeassistant`` is read only to tell an absent packages key
                 # from an unreadable node; nothing from it is returned.
@@ -398,10 +452,13 @@ class ConfigurationDefinitionsService:
         """The single exit point: the complete envelope, sanitized once.
 
         Every field the caller can see, the omissions included, is assembled
-        first and the strict sanitizer runs over the whole envelope with the
-        known secrets. Nothing is added afterwards; a change (a redaction
-        omission, definitions or entries dropped for the byte budget) rebuilds
-        the envelope and sanitizes it again.
+        first. Credential text is withheld from every key and string of the
+        whole envelope (``credentials.withhold``: titles, entry metadata,
+        reasons, omissions and definitions alike), then the strict sanitizer
+        runs over it with the known secrets. Nothing is added afterwards; a
+        change (a withholding or redaction omission, definitions or entries
+        dropped for the byte budget) rebuilds the envelope and screens and
+        sanitizes it again.
         """
 
         while True:
@@ -409,11 +466,16 @@ class ConfigurationDefinitionsService:
             envelope["complete"] = not omissions and all(
                 source["status"] == "complete" for source in report["sources"])
             envelope["completeness"] = "complete" if envelope["complete"] else "partial"
+            envelope, withheld = credentials.withhold(envelope, self.known_secrets)
             sanitized = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets,
                                                 max_string=c.MAX_TEXT)
             if sanitized.failed_closed:
                 raise c.ConfigurationDefinitionsError("sources_unavailable")
             changed = False
+            if withheld and credentials.OMISSION not in omissions:
+                # H1: withheld credential text makes the report partial.
+                omit(credentials.OMISSION)
+                changed = True
             if (sanitized.redacted_field_count or sanitized.truncated_field_count) \
                     and "redacted_by_policy" not in omissions:
                 # HAMCP-191: a redaction anywhere makes the report partial.

@@ -66,20 +66,32 @@ The review needs a security section covering:
   and credential URIs inside allowlisted text, a gap the shared sanitizer
   does not cover. The projection is a positive allowlist. Unrecognized keys
   are counted only.
-- **One sanitized exit point.** The complete envelope is sanitized once, with
-  the known secrets, and nothing is appended afterwards. A redaction makes the
-  report partial. Budget trimming re-sanitizes the rebuilt envelope.
+- **One screened and sanitized exit point.** The complete envelope is
+  screened once for credential text, in every key and string (config entry
+  titles, metadata, reasons, omissions and coverage included), and then
+  sanitized once, with the known secrets. Nothing is appended afterwards.
+  Withheld text is replaced with `[withheld:credential_text]` and makes the
+  report partial (`credential_text_withheld`), as does a redaction. Budget
+  trimming re-screens and re-sanitizes the rebuilt envelope.
 - **Truthfulness.**
   - A heuristic match is never reported as exact, and its confidence names
     the signals behind it.
-  - Ambiguity is never resolved.
-  - A failed source makes the report partial.
+  - Ambiguity is never resolved, and the rules are identical from the
+    entity's and the definition's side.
+  - A unique ID that YAML 1.1 could read differently is never exact.
+  - A failed source makes the report partial. A malformed source value
+    invalidates only its item (`invalid_response`); it never aborts the
+    report.
   - Diagnosis says `undetermined` rather than `entity_level` when a signal is
-    missing or no single definition matched.
+    missing, no single definition matched, or the dependencies were not
+    checked. It never says `definition_absent` after a YAML source gap.
 - **Arguments and audit.** Validation happens before the SDK, and rejections
   are non-reflecting. The audit records counts only.
 - **Implementation corrections.** The five corrections listed in the release
   notes: four self-found, and one found by PR CI.
+- **Independent review corrections.** H1, M1 to M4 and L1 from the review of
+  `dfd1f02`, listed in the release notes. Each reproduction is a permanent
+  test.
 
 Preserve the following:
 - stable v1.1.2;
@@ -96,7 +108,7 @@ Preserve the following:
 No test reaches a live system. Every fixture is synthetic, and every
 credential-shaped string is assembled at test time.
 
-`tests/test_hamcp132_configuration_definitions.py` (79 tests) covers:
+`tests/test_hamcp132_configuration_definitions.py` (111 tests) covers:
 - pinned shapes for each projected form: template blocks (including trigger
   and blueprint blocks), the SQL integration key (list and single),
   old-style groups, utility meters, `sensor:` and `binary_sensor:` platforms,
@@ -145,19 +157,37 @@ credential-shaped string is assembled at test time.
   the access secret planted;
 - the `configuration_definitions` reader purpose, through the YAML admission
   harness: its exact path set and audit event. The recorder purpose cannot
-  read its paths, and the reverse also holds.
+  read its paths, and the reverse also holds;
+- the independent review's reproductions, kept as permanent tests:
+  - a database URI in a config entry title, through the authenticated
+    gateway (response and audit);
+  - PostgreSQL, MySQL, MSSQL, sqlite with a path, MongoDB and HTTP basic
+    auth, plus a user and password before a host without a scheme, a percent-encoded URI, a user-only
+    userinfo, a password field and a URI inside prose, each planted in a
+    title and in every metadata field, directly and through the gateway;
+  - the API error-detail `db_url` case;
+  - two definitions sharing a unique ID, and one definition whose unique ID
+    two registry rows carry, `ambiguous` from both sides;
+  - unquoted `on`, `off`, `yes`, `no` and `1:30` unique IDs, registered as
+    the raw text or as Core's reading, never exact, with quoted and integer
+    controls exact;
+  - a failed YAML source, each gap type, an unreadable UI definition and a
+    template definition, each `undetermined`, with absence and
+    `entity_level` controls;
+  - malformed states, registry and config-entry values and a projection
+    error, each confined to its item, with a valid control.
 
 The existing suites that pin the tool count, sanitizer sites, Core gate and
 reader purpose are updated. The Evidence tier on the PR head is the complete
 final run.
 
-Mutations: **135 of 135 killed, none survived**
-(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 188
+Mutations: **166 of 166 killed, none survived**
+(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 220
 tests across the three HAMCP-132 modules: OK, 1 skipped. Every kill is a
 test failure or a test-level error; none is an import or syntax failure.
 
-The set is slice 1's 80 plus 55 for slice 2. The first run left two
-survivors:
+The set is slice 1's 80, 55 for slice 2, and 31 for the independent-review
+corrections. The first slice 2 run left two survivors:
 - `B-L2` was equivalent. `_credential_shaped` also matches `db_url`, so
   removing only the nested `WITHHELD_KEYS` test changes nothing. It was
   redefined to remove both nested guards.
@@ -188,6 +218,24 @@ The slice-2 mutants cover:
 - each authority recheck removed;
 - each bound removed;
 - a stale listed count.
+
+The correction mutants cover:
+- the reviewer's own API error-detail `db_url` mutant (`REVIEW-2`);
+- the exit point's credential withholding removed, a config entry title
+  copied without credential screening, a credential key kept, each
+  credential rule removed, refused canonicalization passed, and a
+  withholding that leaves the report complete;
+- reverse-match ambiguity resolved, by definitions or by registry rows. The
+  first run left the registry-row mutant surviving; a test with the raw text
+  and Core's reading both registered was added;
+- a parser-dependent unique ID indexed or marked as exact, a dependent name
+  deriving an entity ID, Core's reading not registered, and the
+  parser-dependence disclosure dropped;
+- absence or `entity_level` claimed despite a YAML gap, an unreadable UI
+  definition or an unchecked template definition;
+- each malformed-value type guard removed, a projection error aborting the
+  report, a malformed value diagnosed as if valid, and a malformed item
+  that leaves the report complete.
 
 ## 2. Release CI and publication
 

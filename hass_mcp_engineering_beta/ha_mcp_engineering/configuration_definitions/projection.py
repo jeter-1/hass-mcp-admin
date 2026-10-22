@@ -7,28 +7,41 @@ position, before the shared sanitizer runs (``service.py``):
 - ``db_url`` (``contracts.WITHHELD_KEYS``), whatever its value;
 - a ``!secret`` or ``!env_var`` reference (its name included);
 - any string carrying a YAML reader redaction or truncation marker;
-- any string carrying a URI with userinfo (``<scheme>://user:password@...``)
-  in any position, the reader's own C'1 predicate: the reader already redacts
-  it, and this check keeps a database URL inside an allowlisted text field
-  (a SQL ``query``, a template) withheld without depending on the reader;
+- any string the exit point's credential predicate matches
+  (``credentials.credential_text``: a URI with userinfo, a database
+  connection URI by scheme, a user and password before a host, a
+  connection-string password)
+  in any position: the reader already redacts a URI with userinfo, and this
+  check keeps a database URL inside an allowlisted text field (a SQL
+  ``query``, a template) withheld without depending on the reader;
 - any nested key the YAML reader's credential or connection predicates match.
   Those predicates are not applied to the allowlisted keys themselves: they
   match substrings ("uri" in "during"), and the allowlisted keys are Core's
   own schema keys.
 
 An ``!include`` value is reported as not followed and is never read.
+
+Identity text is read with slice 1's parser-dependence rule
+(``recorder_settings.projection.yaml11_readings``) before any matching or
+name derivation (M2): a reader string Home Assistant's YAML 1.1 loader could
+read as another type (an unquoted ``on``, ``yes`` or ``1:30``) gives
+a ``unique_id`` marked ``unique_id_parser_dependent`` with each reading Core
+could register (``unique_id_readings``), which is never an exact match, and
+a name or key that gives no derived entity ID (``name_parser_dependent``).
 """
 
 from __future__ import annotations
 
+from itertools import product
 from typing import Any
 
 from ..entity_ids import STRICT_ENTITY_ID
 from ..entity_reconciliation.contracts import DOMAIN
-from ..providers.upstream_yaml_reader import _userinfo, canonical, is_connection_key, is_credential_key
-from ..recorder_settings.projection import _is_include, _is_reference, _truncated
+from ..providers.upstream_yaml_reader import canonical, is_connection_key, is_credential_key
+from ..recorder_settings.projection import _is_include, _is_reference, _truncated, yaml11_readings
 from . import contracts as c
 from . import schemas as s
+from .credentials import credential_text
 from .naming import core_slugify
 
 # The YAML paths each integration's definitions can appear under.
@@ -61,14 +74,9 @@ def _reader_marker(value: Any) -> bool:
 
 
 def _userinfo_text(value: Any) -> bool:
-    if type(value) is not str:
-        return False
-    try:
-        canonical_text, _rounds = canonical(value)
-    except Exception:
-        # Text the reader's canonicalization refuses is never copied.
-        return True
-    return _userinfo(canonical_text)
+    # The exit point's predicate (H1), so a YAML value is withheld here
+    # structurally by the same rules; refused text is never copied.
+    return type(value) is str and credential_text(value)
 
 
 def _credential_shaped(key: str) -> bool:
@@ -88,6 +96,39 @@ def _text(value: Any) -> str | None:
     if type(value) is int:
         return str(value)
     return None
+
+
+MAX_UID_READINGS = 4
+
+
+def _dependent(*values: Any) -> bool:
+    """Whether YAML 1.1 can read any of these reader strings differently."""
+
+    return any(type(value) is str and yaml11_readings(value) is not None for value in values)
+
+
+def _readings(value: Any) -> list[str]:
+    """Core's ``cv.string`` texts of a reader scalar: the reader's own text,
+    then each different YAML 1.1 reading (``True`` for an unquoted ``on``)."""
+
+    text = _text(value)
+    if text is None:
+        return []
+    texts = [text]
+    alternative = yaml11_readings(value) if type(value) is str else None
+    for reading in alternative[1] if alternative else ():
+        if str(reading) not in texts:
+            texts.append(str(reading))
+    return texts
+
+
+def _combine(join: Any, *readings: list[str]) -> list[str]:
+    combined: list[str] = []
+    for parts in product(*readings):
+        text = join(*parts)
+        if text not in combined:
+            combined.append(text)
+    return combined[:MAX_UID_READINGS]
 
 
 def _static(text: str | None) -> bool:
@@ -198,7 +239,11 @@ class Definitions:
 
     @staticmethod
     def _expected(record: dict, entity_domain: str, unique_id: str | None,
-                  object_id: str | None, derivation: str | None, limit: str | None) -> None:
+                  object_id: str | None, derivation: str | None, limit: str | None, *,
+                  uid_readings: list[str] | None = None, name_dependent: bool = False) -> None:
+        if name_dependent and object_id is not None:
+            # M2: a name or key YAML 1.1 could read as another type.
+            object_id, limit = None, "name_parser_dependent"
         derived = None
         if object_id is not None:
             candidate = f"{entity_domain}.{object_id}"
@@ -213,6 +258,9 @@ class Definitions:
             "derivation": derivation if derived else None,
             "derivation_limit": None if derived else (limit or "not_derivable"),
         })
+        if unique_id is not None and uid_readings and len(uid_readings) > 1:
+            record["expected_entities"][-1].update(unique_id_parser_dependent=True,
+                                                   unique_id_readings=uid_readings[:MAX_UID_READINGS])
 
     @staticmethod
     def _dependencies(record: dict, entry: dict, integration: str) -> None:
@@ -251,8 +299,10 @@ class Definitions:
         # The name is rendered once with no variables (Core
         # ``trigger_template_entity.py:350-353``); only a static name is
         # slugified here.
-        object_id, limit = _object_id(_text(entry.get("name")))
-        self._expected(record, "sensor", _text(entry.get("unique_id")), object_id, "name", limit)
+        name, uid = entry.get("name"), entry.get("unique_id")
+        object_id, limit = _object_id(_text(name))
+        self._expected(record, "sensor", _text(uid), object_id, "name", limit,
+                       uid_readings=_readings(uid), name_dependent=_dependent(name))
         return True
 
     # ------------------------------------------------------------------
@@ -286,6 +336,7 @@ class Definitions:
                  if not (type(key) is str and key in s.TEMPLATE_PLATFORMS)},
                 s.TEMPLATE_BLOCK_KEYS, path, block_meta)
             block_uid = _text(block.get("unique_id"))
+            block_readings = _readings(block.get("unique_id"))
             trigger_based = any(key in block for key in ("triggers", "trigger"))
             for platform in s.TEMPLATE_PLATFORMS:
                 entities = block.get(platform)
@@ -313,28 +364,34 @@ class Definitions:
                         allowed = s.TEMPLATE_COMMON_KEYS
                         record["status_detail"] = "platform_keys_not_projected"
                     record["fields"] = self._fields(entity, allowed, entity_path, record)
-                    self._template_expected(record, platform, entity, block_uid, trigger_based)
+                    self._template_expected(record, platform, entity, block_uid, block_readings,
+                                            trigger_based)
                     self._add(record)
 
     def _template_expected(self, record: dict, platform: str, entity: dict, block_uid: str | None,
-                           trigger_based: bool) -> None:
+                           block_readings: list[str], trigger_based: bool) -> None:
         entity_uid = _text(entity.get("unique_id"))
         unique_id = f"{block_uid}-{entity_uid}" if block_uid and entity_uid else entity_uid
+        readings = _readings(entity.get("unique_id"))
+        if block_uid and entity_uid:
+            readings = _combine("{}-{}".format, block_readings, readings)
         default_entity_id = entity.get("default_entity_id")
         if type(default_entity_id) is str and default_entity_id.startswith(platform + "."):
             object_id = default_entity_id.split(".", 1)[1]
-            self._expected(record, platform, unique_id, object_id, "default_entity_id", None)
+            self._expected(record, platform, unique_id, object_id, "default_entity_id", None,
+                           uid_readings=readings)
             return
         name = entity.get("name")
         if name is None:
             default = s.TEMPLATE_DEFAULT_NAMES.get(platform)
             object_id, limit = _object_id(default) if default else (None, "default_name_not_pinned")
-            self._expected(record, platform, unique_id, object_id, "default_name", limit)
+            self._expected(record, platform, unique_id, object_id, "default_name", limit, uid_readings=readings)
             return
         object_id, limit = _object_id(_text(name))
         if object_id is None and limit == "name_is_template" and trigger_based:
             limit = "trigger_based_template_name"
-        self._expected(record, platform, unique_id, object_id, "name", limit)
+        self._expected(record, platform, unique_id, object_id, "name", limit, uid_readings=readings,
+                       name_dependent=_dependent(name))
 
     # ------------------------------------------------------------------
     # group (old style) and utility_meter: keyed mappings
@@ -364,7 +421,7 @@ class Definitions:
             self._dependencies(record, entry, "group")
             # entity ID from the key, never a unique_id (group/__init__.py).
             object_id, limit = _object_id(_text(key))
-            self._expected(record, "group", None, object_id, "key", limit)
+            self._expected(record, "group", None, object_id, "key", limit, name_dependent=_dependent(key))
             self._add(record)
 
     def utility_meter(self) -> None:
@@ -388,27 +445,34 @@ class Definitions:
                 continue
             record["fields"] = self._fields(entry, s.UTILITY_METER_KEYS, path, record)
             self._dependencies(record, entry, "utility_meter")
-            self._meter_expected(record, _text(key), entry)
+            self._meter_expected(record, key, entry)
             self._add(record)
 
-    def _meter_expected(self, record: dict, key: str | None, entry: dict) -> None:
+    def _meter_expected(self, record: dict, raw_key: Any, entry: dict) -> None:
+        key = _text(raw_key)
         uid = _text(entry.get("unique_id"))
+        uid_readings = _readings(entry.get("unique_id"))
         tariffs = entry.get("tariffs") or []
         if type(tariffs) is not list or not all(type(item) is str for item in tariffs):
             self._expected(record, "sensor", None, None, None, "tariffs_not_projected")
             return
         if not tariffs:
-            name = entry.get("name", key)
+            name = entry.get("name", raw_key)
             object_id, limit = _object_id(_text(name))
             self._expected(record, "sensor", f"{uid}_single_tariff" if uid else None,
-                           object_id, "name" if "name" in entry else "key", limit)
+                           object_id, "name" if "name" in entry else "key", limit,
+                           uid_readings=[f"{item}_single_tariff" for item in uid_readings],
+                           name_dependent=_dependent(name))
             return
         object_id, limit = _object_id(key)
-        self._expected(record, "select", uid, object_id, "key", limit)
+        self._expected(record, "select", uid, object_id, "key", limit, uid_readings=uid_readings,
+                       name_dependent=_dependent(raw_key))
         for tariff in tariffs:
             object_id, limit = _object_id(f"{key} {tariff}" if key is not None else None)
             self._expected(record, "sensor", f"{uid}_{tariff}" if uid else None, object_id,
-                           "key_and_tariff", limit)
+                           "key_and_tariff", limit,
+                           uid_readings=_combine("{}_{}".format, uid_readings, _readings(tariff)),
+                           name_dependent=_dependent(raw_key, tariff))
 
     # ------------------------------------------------------------------
     # sensor: and binary_sensor: platform lists
@@ -456,12 +520,16 @@ class Definitions:
         record = self._record(path, platform, entity_domain, "platform_entry", entity_domain)
         record["fields"] = self._fields(entry, allowed | s.PLATFORM_COMMON_KEYS, path, record)
         self._dependencies(record, entry, platform)
-        uid = None if platform == "threshold" else _text(entry.get("unique_id"))
+        raw_uid = None if platform == "threshold" else entry.get("unique_id")
+        uid, uid_readings = _text(raw_uid), _readings(raw_uid)
         name, derivation = self._platform_name(entity_domain, platform, entry)
+        name_dependent = _dependent(entry.get("name"), entry.get("entity_namespace"), entry.get("source"),
+                                    entry.get("type"))
         if name is None and uid is not None:
             # A nameless entity with a unique_id: ``<platform>_<unique_id>``
             # (entity_registry.py:1476, :637-638).
             name, derivation = f"{platform}_{uid}", "unique_id_fallback"
+            name_dependent = name_dependent or len(uid_readings) > 1
         elif name is None:
             # A nameless entity without a unique_id (entity_platform.py:1149-1166).
             name, derivation = s.DEVICE_DEFAULT_NAME, "device_default_name"
@@ -469,7 +537,8 @@ class Definitions:
         if namespace is not None:
             name = f"{namespace} {name}" if type(namespace) is str else None
         object_id, limit = _object_id(name)
-        self._expected(record, entity_domain, uid, object_id, derivation, limit)
+        self._expected(record, entity_domain, uid, object_id, derivation, limit, uid_readings=uid_readings,
+                       name_dependent=name_dependent)
         self._add(record)
 
     @staticmethod
@@ -520,7 +589,8 @@ class Definitions:
             self._dependencies(record, sensor, "trend")
             # The entity ID is forced from the slug key (trend/binary_sensor.py:127-129).
             object_id, limit = _object_id(_text(key))
-            self._expected(record, "binary_sensor", _text(sensor.get("unique_id")), object_id, "key", limit)
+            self._expected(record, "binary_sensor", _text(sensor.get("unique_id")), object_id, "key", limit,
+                           uid_readings=_readings(sensor.get("unique_id")), name_dependent=_dependent(key))
             self._add(record)
 
     # ------------------------------------------------------------------
