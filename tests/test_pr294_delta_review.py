@@ -158,4 +158,3 @@ class DeltaChecks(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(r['entities'][1]['diagnosis']['classification'],'available')
 
 if __name__=='__main__':unittest.main()
-
