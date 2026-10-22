@@ -8,9 +8,11 @@ BASE = Path(__file__).resolve().parent
 TMP = '/home/josh/hamcp069b-work/tmp-evidence'
 EX = 'tests.test_hamcp069b_entity_availability_exposure_execution'
 AD = 'tests.test_hamcp069b_entity_availability_exposure_admission'
-BOTH = [EX, AD]
+R1 = 'tests.test_hamcp069b_review1_corrections'
+BOTH = [EX, AD, R1]  # HAMCP-069B review 1: every mutant runs all three modules.
 G = 'governance/entity_availability_exposure.py'
 P = 'governance/entity_availability_exposure_planning.py'
+S = 'governance/service.py'
 M = [
  ('baseline', [], BOTH),
  ('skip_readback',
@@ -53,6 +55,36 @@ M = [
     '            if self.strategy.fingerprint(current) != (')], BOTH),
  ('drop_send_allowlist',
   [(G, '        if command.get("type") not in ALLOWED_COMMANDS:', '        if False:')], BOTH),
+ # Reviewer (review 1): drop the valve protected floor.
+ ('review_valve_floor_excluded',
+  [('governance/physical_effects.py',
+    '    if domain in SENSITIVE_ENTITY_DOMAINS:\n        return f"sensitive_domain_{domain}"',
+    '    if domain in SENSITIVE_ENTITY_DOMAINS and domain != "valve":\n        return f"sensitive_domain_{domain}"')], BOTH),
+ # H1: incomplete evidence treated as complete.
+ ('r1_predicate_always_complete',
+  [(P, '    if snapshot is None:\n        return ["dependency_index_unavailable"]\n    gaps: set[str] = set()',
+       '    return []\n    gaps: set[str] = set()')], BOTH),
+ ('r1_predicate_ignores_overflow',
+  [(P, '    if getattr(snapshot, "obligation_overflow_count", 0):\n        gaps.add("obligation_ledger_truncated")',
+       '    if False:\n        gaps.add("obligation_ledger_truncated")')], BOTH),
+ ('r1_predicate_ignores_opaque_consumer',
+  [(P, '        elif outcome == "bounded_semantic_opaque":\n            gaps.add("unresolved_dynamic_consumer")', '')], BOTH),
+ ('r1_predicate_ignores_script_evidence',
+  [(P, '    if scripts is None or scripts.coverage.completeness == "unavailable":',
+       '    if False:')], BOTH),
+ # M1: the service-layer gate removed.
+ ('r1_service_gate_check_removed',
+  [(S, '        if not available:\n            raise GovernanceError(\n                ErrorCode.PROVIDER_UNAVAILABLE,',
+       '        if False:\n            raise GovernanceError(\n                ErrorCode.PROVIDER_UNAVAILABLE,')], BOTH),
+ ('r1_service_gate_removed_entirely',
+  [(S, '        lease = self._availability_exposure_planning_lease(request)',
+       '        from ..f3_runtime.runtime import _rollback_planning_lease\n        lease = _rollback_planning_lease(None, ())'),
+   (S, '        self._availability_exposure_core(request.resource_type)\n        if _before_persist is None:\n            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)',
+       '        pass'),
+   ('f3_runtime/runtime.py', '        self.service._availability_exposure_core(request.resource_type)', '        pass')], BOTH),
+ ('r1_persist_lease_not_forwarded',
+  [(S, '            _availability_exposure_context=prepared,\n            _before_persist=_before_persist,\n',
+       '            _availability_exposure_context=prepared,\n')], BOTH),
 ]
 only = set(sys.argv[1:])
 if only:

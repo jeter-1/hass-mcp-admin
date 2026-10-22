@@ -119,9 +119,10 @@ No test reaches a live system. Every fixture is synthetic.
   - the closed tool schema.
 - Count and catalog pins in the existing suites are updated from 64 to 65
   static tools.
-- Mutations: `docs/evidence/hamcp069b-mutations/`. All 15 mutants are
-  killed, and the 71-test baseline passes. `results.json` records each
-  mutant and the tests that killed it. The mutants:
+- Mutations: `docs/evidence/hamcp069b-mutations/`. All 23 mutants are
+  killed, and the 106-test baseline (the execution, admission and review-1
+  correction modules) passes. `results.json` records each mutant and the
+  tests that killed it. The mutants:
   - skip readback;
   - tolerate any new exposure key;
   - drop the protected floor, safety-sensor protection or
@@ -134,7 +135,12 @@ No test reaches a live system. Every fixture is synthetic.
   - accept an unregistered entity;
   - allow Alexa;
   - a cap of 9;
-  - drop the `_send` allow-list.
+  - drop the `_send` allow-list;
+  - exclude valves from the physical-effect floor (review 1 probe);
+  - the evidence predicate always reports complete, or ignores overflow,
+    opaque consumers or script evidence (review 1 H1);
+  - the service-layer admission check removed, the whole service-layer gate
+    removed, or the persist-time lease check not forwarded (review 1 M1).
 
 ## 2. Release CI and publication
 
