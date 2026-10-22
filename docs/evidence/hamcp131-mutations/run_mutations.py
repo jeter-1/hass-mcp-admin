@@ -19,6 +19,19 @@ The task's five required classes each have mutations:
 
 ``A1`` probes the static authority table.
 
+The independent review's correction batch adds:
+- ``R1*``: history continuation staleness checked by the last-row anchor only
+  (the in-slice range digest or the finished-slice re-verification removed);
+- ``R2*``: a merged incident page that can emit an entry earlier than one
+  already returned (the deferred-source hold or the finished-source cutoff
+  removed). A source is deferred only once the shared call budget is spent,
+  so through the gateway no source can read more on that page; the two hold
+  guards (``_walk`` bounding the merge at the window start, ``R2a``, and
+  ``_fill`` reading nothing more, ``R2c``) are defense in depth, each killed
+  by a direct test;
+- ``R3``: an inclusive coverage bound claimed while tied states may remain;
+- ``R4``: a non-string ``min_level`` escaping as a ``TypeError``.
+
 Usage:
     python docs/evidence/hamcp131-mutations/run_mutations.py \\
         --work ~/.cache/hamcp131/mut --output docs/evidence/hamcp131-mutations/results.json
@@ -52,6 +65,10 @@ OMITTED = "an unavailable source silently omitted"
 EXIT = "sanitizing before merge instead of at the single exit"
 SLUG = "a slug passed as a raw path"
 AUTHORITY = "static authority table"
+STALE = "anchor-only continuation staleness"
+ORDER = "a merged page emitting an earlier entry"
+TIE = "an inclusive boundary claimed complete"
+TYPING = "min_level type errors escaping"
 PASSTHROUGH = 'type("R", (), {"value": envelope, "failed_closed": False, "redacted_field_count": 0})'
 EXIT_CALL = "            result = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets, registry=registry)\n"
 
@@ -75,7 +92,7 @@ MUTATIONS = [
       (HIS, "            if ts_us < start_us:\n                if position.checked:",
        "            if ts_us <= start_us:\n                if position.checked:")),
     m("W7-history-overlap-millisecond-lost", WINDOW,
-      (HIS, "c.format_us(start_us - c.OVERLAP_US)", "c.format_us(start_us)")),
+      (HIS, "c.format_us(lower - c.OVERLAP_US)", "c.format_us(lower)")),
     m("W8-history-slice-end-inclusive", WINDOW,
       (HCON, "return lower, min(end_us, lower + SLICE_SECONDS * 1_000_000)",
        "return lower, min(end_us, lower + SLICE_SECONDS * 1_000_000) + 1")),
@@ -148,6 +165,25 @@ MUTATIONS = [
     m("A1-other-addon-treated-readable", AUTHORITY,
       (CON, "    if source_key in READABLE_ROUTES:\n        return None",
        '    if source_key in READABLE_ROUTES or source_key.startswith("addon:"):\n        return None')),
+    m("R1a-history-in-slice-range-anchor-only", STALE,
+      (HIS, "        verify = scan.verify_range\n", "        verify = False\n")),
+    m("R1b-history-finished-slices-not-reverified", STALE,
+      (HIS, "        for index, offset_from, total, chained in position.g:\n",
+       "        for index, offset_from, total, chained in ():\n")),
+    m("R2a-deferred-source-merge-bound-dropped", ORDER,
+      (INC, '        bounds += [args["start_ms"] - 1 for scan in scans if scan.deferred]\n',
+       "        bounds += []\n")),
+    m("R2c-deferred-source-fill-guard-dropped", ORDER,
+      (INC, "            if not open_scans or any(scan.deferred for scan in scans):\n",
+       "            if not open_scans:\n")),
+    m("R2b-cutoff-only-holds-open-sources", ORDER,
+      (INC, "            if cutoff is not None and ts > cutoff:\n                break\n",
+       "            if cutoff is not None and self._open(scan) and ts > cutoff:\n"
+       "                heapq.heappop(heap)\n                continue\n")),
+    m("R3-inclusive-bound-always-claimed", TIE,
+      (HIS, '"inclusive": lookahead is not None and lookahead > last}', '"inclusive": True}')),
+    m("R4-min-level-type-check-removed", TYPING,
+      (CON, "(type(min_level) is not str or min_level not in LEVEL_RANK)", "min_level not in LEVEL_RANK")),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

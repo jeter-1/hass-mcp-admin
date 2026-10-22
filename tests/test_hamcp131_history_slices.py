@@ -323,6 +323,20 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(states([first, *rest]), oracle(self.recorder, S0, S2))
         self.assertEqual(rest[0]["verification_calls"], 1)
 
+    async def test_pre_slice_states_spanning_reads_are_neither_repeated_nor_skipped(self):
+        # Several states in the overlap millisecond fill the first read of a
+        # slice, so the next read in the same call continues on its one-state
+        # anchor rather than the previous page's range.
+        self.seed()
+        for offset in (900, 700, 500, 300, 100):
+            self.recorder.add(S1 - offset, f"pre {offset}")
+        expected = oracle(self.recorder, S0, S2)
+        pages = await self.read_all(limit=1)
+        self.assertEqual(states(pages), expected)
+        self.assertEqual(coverage_violations(pages, expected), [])
+        self.assertTrue(all(set(page["omissions"]) <= {"states_limit_reached"} for page in pages))
+        self.assertTrue(pages[-1]["complete"])
+
     async def test_more_entries_before_a_slice_than_pinned_is_representation_invalid(self):
         self.recorder.add(S0 - 5000, "a")
         self.recorder.add(S0 - 500, "b")

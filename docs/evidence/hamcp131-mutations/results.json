@@ -8,12 +8,12 @@
    "test_hamcp200_path_safety"
   ],
   "returncode": 0,
-  "tests": 180,
-  "seconds": 33.7,
+  "tests": 197,
+  "seconds": 32.6,
   "summary": "OK"
  },
- "mutation_count": 31,
- "killed": 31,
+ "mutation_count": 38,
+ "killed": 38,
  "survived": [],
  "python": "3.12.14",
  "results": [
@@ -34,7 +34,7 @@
    "first_failures": [
     "FAIL test_motivating_incident_window_across_sources_with_coverage (test_hamcp131_incident_logs.IncidentLogTests.test_motivating_incident_window_across_sources_with_coverage)"
    ],
-   "seconds": 3.1
+   "seconds": 3.4
   },
   {
    "id": "W2-incident-start-exclusive",
@@ -51,7 +51,7 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_http_refusals_are_reported_per_source (test_hamcp131_incident_logs.IncidentLogTests.test_http_refusals_are_reported_per_source)"
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
    ],
    "seconds": 2.7
   },
@@ -70,9 +70,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_oldest_entry_exactly_at_start_is_returned_at_the_retention_edge (test_hamcp131_incident_logs.IncidentLogTests.test_oldest_entry_exactly_at_start_is_returned_at_the_retention_edge)"
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
    ],
-   "seconds": 3.3
+   "seconds": 8.7
   },
   {
    "id": "W4-locate-tail-at-start-treated-after-tail",
@@ -91,7 +91,7 @@
    "first_failures": [
     "ERROR test_long_message_truncation_keeps_markers_whole (test_hamcp131_incident_logs.IncidentLogTests.test_long_message_truncation_keeps_markers_whole)"
    ],
-   "seconds": 3.1
+   "seconds": 3.4
   },
   {
    "id": "W5-locate-tail-page-start-edge",
@@ -110,7 +110,7 @@
    "first_failures": [
     "FAIL test_tail_entry_exactly_at_start_is_not_consumed (test_hamcp131_incident_logs.IncidentLogTests.test_tail_entry_exactly_at_start_is_not_consumed)"
    ],
-   "seconds": 4.6
+   "seconds": 4.8
   },
   {
    "id": "W6-history-state-at-slice-start-pre-slice",
@@ -129,7 +129,7 @@
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_history_slices.HistorySliceTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 8.0
+   "seconds": 10.9
   },
   {
    "id": "W7-history-overlap-millisecond-lost",
@@ -137,8 +137,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
-     "c.format_us(start_us - c.OVERLAP_US)",
-     "c.format_us(start_us)"
+     "c.format_us(lower - c.OVERLAP_US)",
+     "c.format_us(lower)"
     ]
    ],
    "log_path": "mutation-logs/W7-history-overlap-millisecond-lost.log",
@@ -146,9 +146,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_failure_before_any_state_is_failed_with_a_cursor (test_hamcp131_history_slices.HistorySliceTests.test_failure_before_any_state_is_failed_with_a_cursor)"
+    "FAIL test_admitted_reader_sends_only_the_fixed_argument_shape (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_admitted_reader_sends_only_the_fixed_argument_shape)"
    ],
-   "seconds": 8.1
+   "seconds": 5.9
   },
   {
    "id": "W8-history-slice-end-inclusive",
@@ -167,7 +167,7 @@
    "first_failures": [
     "FAIL test_changed_slice_start_state_is_stale_at_a_slice_transition (test_hamcp131_history_slices.HistorySliceTests.test_changed_slice_start_state_is_stale_at_a_slice_transition)"
    ],
-   "seconds": 7.8
+   "seconds": 10.9
   },
   {
    "id": "C1-consumed-anchor-returned-again",
@@ -184,9 +184,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_defaulted_end_is_fixed_by_the_cursor (test_hamcp131_incident_logs.IncidentLogTests.test_defaulted_end_is_fixed_by_the_cursor)"
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
    ],
-   "seconds": 2.7
+   "seconds": 2.8
   },
   {
    "id": "C2-resume-repeats-last-returned-entry",
@@ -203,9 +203,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_defaulted_end_is_fixed_by_the_cursor (test_hamcp131_incident_logs.IncidentLogTests.test_defaulted_end_is_fixed_by_the_cursor)"
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
    ],
-   "seconds": 2.7
+   "seconds": 2.9
   },
   {
    "id": "C3-resume-skips-next-entry",
@@ -222,9 +222,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_defaulted_end_is_fixed_by_the_cursor (test_hamcp131_incident_logs.IncidentLogTests.test_defaulted_end_is_fixed_by_the_cursor)"
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
    ],
-   "seconds": 2.6
+   "seconds": 2.8
   },
   {
    "id": "C4-resume-cursor-points-past-entry",
@@ -241,9 +241,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "ERROR test_defaulted_end_is_fixed_by_the_cursor (test_hamcp131_incident_logs.IncidentLogTests.test_defaulted_end_is_fixed_by_the_cursor)"
+    "ERROR test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
    ],
-   "seconds": 2.6
+   "seconds": 2.7
   },
   {
    "id": "C5-history-overlap-state-repeated",
@@ -260,9 +260,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "ERROR test_defaulted_end_is_fixed_by_the_cursor (test_hamcp131_history_slices.HistorySliceTests.test_defaulted_end_is_fixed_by_the_cursor)"
+    "FAIL test_pre_slice_states_spanning_reads_are_neither_repeated_nor_skipped (test_hamcp131_history_slices.HistorySliceTests.test_pre_slice_states_spanning_reads_are_neither_repeated_nor_skipped)"
    ],
-   "seconds": 7.9
+   "seconds": 11.5
   },
   {
    "id": "C6-history-offset-skips-a-state",
@@ -281,7 +281,7 @@
    "first_failures": [
     "FAIL test_admitted_reader_sends_only_the_fixed_argument_shape (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_admitted_reader_sends_only_the_fixed_argument_shape)"
    ],
-   "seconds": 7.0
+   "seconds": 6.7
   },
   {
    "id": "C7-history-cut-page-resumes-after-dropped-states",
@@ -298,9 +298,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_response_byte_ceiling_shrinks_the_page_and_resumes (test_hamcp131_history_slices.HistorySliceTests.test_response_byte_ceiling_shrinks_the_page_and_resumes)"
+    "FAIL test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp (test_hamcp131_history_slices.HistorySliceTests.test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp)"
    ],
-   "seconds": 8.4
+   "seconds": 10.7
   },
   {
    "id": "C8-history-slice-start-check-skipped",
@@ -319,7 +319,7 @@
    "first_failures": [
     "FAIL test_break_after_the_first_check_is_partial_without_a_cursor (test_hamcp131_history_slices.HistorySliceTests.test_break_after_the_first_check_is_partial_without_a_cursor)"
    ],
-   "seconds": 7.7
+   "seconds": 11.5
   },
   {
    "id": "U1-unavailable-source-rows-dropped",
@@ -336,9 +336,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "ERROR test_motivating_incident_window_across_sources_with_coverage (test_hamcp131_incident_logs.IncidentLogTests.test_motivating_incident_window_across_sources_with_coverage)"
+    "FAIL test_only_unauthorized_sources_report_authority_not_granted_per_source (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_only_unauthorized_sources_report_authority_not_granted_per_source)"
    ],
-   "seconds": 3.1
+   "seconds": 2.6
   },
   {
    "id": "U2-unavailable-source-omission-dropped",
@@ -355,9 +355,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_http_refusals_are_reported_per_source (test_hamcp131_incident_logs.IncidentLogTests.test_http_refusals_are_reported_per_source)"
+    "FAIL test_only_unauthorized_sources_report_authority_not_granted_per_source (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_only_unauthorized_sources_report_authority_not_granted_per_source)"
    ],
-   "seconds": 2.8
+   "seconds": 2.6
   },
   {
    "id": "U3-failed-source-row-dropped",
@@ -376,7 +376,7 @@
    "first_failures": [
     "ERROR test_http_refusals_are_reported_per_source (test_hamcp131_incident_logs.IncidentLogTests.test_http_refusals_are_reported_per_source)"
    ],
-   "seconds": 2.8
+   "seconds": 3.4
   },
   {
    "id": "U4-source-gap-omission-dropped",
@@ -395,7 +395,7 @@
    "first_failures": [
     "FAIL test_retention_edge_and_empty_and_after_tail (test_hamcp131_incident_logs.IncidentLogTests.test_retention_edge_and_empty_and_after_tail)"
    ],
-   "seconds": 4.3
+   "seconds": 4.7
   },
   {
    "id": "U5-history-failure-omission-dropped",
@@ -414,7 +414,7 @@
    "first_failures": [
     "FAIL test_break_after_the_first_check_is_partial_without_a_cursor (test_hamcp131_history_slices.HistorySliceTests.test_break_after_the_first_check_is_partial_without_a_cursor)"
    ],
-   "seconds": 8.1
+   "seconds": 11.1
   },
   {
    "id": "Z1-incident-entries-sanitized-before-merge",
@@ -438,7 +438,7 @@
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 2.7
+   "seconds": 2.9
   },
   {
    "id": "Z2-history-states-sanitized-before-merge",
@@ -462,7 +462,7 @@
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_history_slices.HistorySliceTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 7.6
+   "seconds": 10.3
   },
   {
    "id": "Z3-incident-exit-known-secrets-dropped",
@@ -481,7 +481,7 @@
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 2.6
+   "seconds": 2.8
   },
   {
    "id": "Z4-history-exit-known-secrets-dropped",
@@ -500,7 +500,7 @@
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_history_slices.HistorySliceTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 7.8
+   "seconds": 10.8
   },
   {
    "id": "Z5-incident-redaction-leaves-result-complete",
@@ -519,7 +519,7 @@
    "first_failures": [
     "FAIL test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial (test_hamcp131_incident_logs.IncidentLogTests.test_exit_pass_carries_known_secrets_and_its_redaction_makes_partial)"
    ],
-   "seconds": 2.7
+   "seconds": 2.9
   },
   {
    "id": "Z6-incident-line-sanitizer-known-secrets-dropped",
@@ -538,7 +538,7 @@
    "first_failures": [
     "FAIL test_planted_secrets_never_reach_any_output_field (test_hamcp131_incident_logs.IncidentLogTests.test_planted_secrets_never_reach_any_output_field)"
    ],
-   "seconds": 3.7
+   "seconds": 4.1
   },
   {
    "id": "S1-slug-guard-removed",
@@ -562,7 +562,7 @@
    "first_failures": [
     "FAIL test_slug_traversal_is_refused_with_zero_requests (test_hamcp131_incident_logs.IncidentLogTests.test_slug_traversal_is_refused_with_zero_requests)"
    ],
-   "seconds": 4.6
+   "seconds": 4.8
   },
   {
    "id": "S2-slug-interpolated-into-template",
@@ -581,7 +581,7 @@
    "first_failures": [
     "ERROR test_read_only_static_surface (test_hamcp131_incident_logs.IncidentLogTests.test_read_only_static_surface)"
    ],
-   "seconds": 4.0
+   "seconds": 3.9
   },
   {
    "id": "S3-slug-as-plain-string-path",
@@ -598,9 +598,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "ERROR test_http_refusals_are_reported_per_source (test_hamcp131_incident_logs.IncidentLogTests.test_http_refusals_are_reported_per_source)"
+    "ERROR test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
    ],
-   "seconds": 2.7
+   "seconds": 2.8
   },
   {
    "id": "A1-other-addon-treated-readable",
@@ -617,9 +617,142 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "ERROR test_all_statically_unavailable_refuses_with_zero_requests (test_hamcp131_incident_logs.IncidentLogTests.test_all_statically_unavailable_refuses_with_zero_requests)"
+    "FAIL test_only_unauthorized_sources_report_authority_not_granted_per_source (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_only_unauthorized_sources_report_authority_not_granted_per_source)"
    ],
-   "seconds": 2.5
+   "seconds": 2.4
+  },
+  {
+   "id": "R1a-history-in-slice-range-anchor-only",
+   "class": "anchor-only continuation staleness",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "        verify = scan.verify_range\n",
+     "        verify = False\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R1a-history-in-slice-range-anchor-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_balanced_insert_and_delete_inside_the_previous_page_is_stale (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_balanced_insert_and_delete_inside_the_previous_page_is_stale)"
+   ],
+   "seconds": 7.0
+  },
+  {
+   "id": "R1b-history-finished-slices-not-reverified",
+   "class": "anchor-only continuation staleness",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "        for index, offset_from, total, chained in position.g:\n",
+     "        for index, offset_from, total, chained in ():\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R1b-history-finished-slices-not-reverified.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_admitted_reader_sends_only_the_fixed_argument_shape (test_hamcp131_history_slices.HistoryReaderGatewayTests.test_admitted_reader_sends_only_the_fixed_argument_shape)"
+   ],
+   "seconds": 5.8
+  },
+  {
+   "id": "R2a-deferred-source-merge-bound-dropped",
+   "class": "a merged page emitting an earlier entry",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "        bounds += [args[\"start_ms\"] - 1 for scan in scans if scan.deferred]\n",
+     "        bounds += []\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R2a-deferred-source-merge-bound-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_deferral_guard_holds_the_merge_on_its_own (test_hamcp131_incident_logs.IncidentLogTests.test_each_deferral_guard_holds_the_merge_on_its_own)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "R2c-deferred-source-fill-guard-dropped",
+   "class": "a merged page emitting an earlier entry",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            if not open_scans or any(scan.deferred for scan in scans):\n",
+     "            if not open_scans:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R2c-deferred-source-fill-guard-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_deferral_guard_holds_the_merge_on_its_own (test_hamcp131_incident_logs.IncidentLogTests.test_each_deferral_guard_holds_the_merge_on_its_own)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "R2b-cutoff-only-holds-open-sources",
+   "class": "a merged page emitting an earlier entry",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            if cutoff is not None and ts > cutoff:\n                break\n",
+     "            if cutoff is not None and self._open(scan) and ts > cutoff:\n                heapq.heappop(heap)\n                continue\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R2b-cutoff-only-holds-open-sources.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_finished_source_never_runs_ahead_of_an_open_one (test_hamcp131_incident_logs.IncidentLogTests.test_a_finished_source_never_runs_ahead_of_an_open_one)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "R3-inclusive-bound-always-claimed",
+   "class": "an inclusive boundary claimed complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+     "\"inclusive\": lookahead is not None and lookahead > last}",
+     "\"inclusive\": True}"
+    ]
+   ],
+   "log_path": "mutation-logs/R3-inclusive-bound-always-claimed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp (test_hamcp131_history_slices.HistorySliceTests.test_a_byte_cut_inside_a_tie_does_not_claim_the_tied_timestamp)"
+   ],
+   "seconds": 11.4
+  },
+  {
+   "id": "R4-min-level-type-check-removed",
+   "class": "min_level type errors escaping",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/contracts.py",
+     "(type(min_level) is not str or min_level not in LEVEL_RANK)",
+     "min_level not in LEVEL_RANK"
+    ]
+   ],
+   "log_path": "mutation-logs/R4-min-level-type-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_wrong_typed_filters_are_bounded_audited_refusals (test_hamcp131_incident_logs.IncidentLogGatewayStackTests.test_wrong_typed_filters_are_bounded_audited_refusals)"
+   ],
+   "seconds": 2.3
   }
  ]
 }

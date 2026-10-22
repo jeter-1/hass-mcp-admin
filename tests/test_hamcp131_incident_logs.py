@@ -31,6 +31,7 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
 from ha_mcp_engineering.incident_logs import contracts as c  # noqa: E402
 from ha_mcp_engineering.incident_logs import service as service_module  # noqa: E402
 from ha_mcp_engineering.incident_logs.cursor import CursorCodec  # noqa: E402
+from ha_mcp_engineering.incident_logs.journal import RawEntry  # noqa: E402
 from ha_mcp_engineering.incident_logs.service import IncidentLogService  # noqa: E402
 from ha_mcp_engineering.incident_logs.transport import JournalTransport  # noqa: E402
 from ha_mcp_engineering.mcp_sdk_compatibility import McpSdkToolRegistry  # noqa: E402
@@ -379,6 +380,38 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(all(row["start_location"] != "not_located" and row["status"] != "failed"
                                 for row in page["sources"] if row["source"] != "addon:self" or page is not first))
         self.assert_strictly_time_ordered(pages, self.expected(["core", "addon:self"], start_ms, end_ms))
+
+    def test_a_deferred_source_is_located_on_the_next_call(self):
+        # Review M2 liveness: a deferred source resumes as a fresh locate,
+        # and continued sources make no request before the merge is filled,
+        # so the first deferred source in order always has the full call
+        # budget, which must cover the costliest locate (tail, head, every
+        # probe and every bisection step). Otherwise a source could be
+        # deferred on every page.
+        locate = 2 + len(c.PROBE_DISTANCES) + c.BISECTION_STEPS
+        self.assertLessEqual(locate, c.MAX_REQUESTS_PER_SOURCE)
+        self.assertLessEqual(locate, c.MAX_REQUESTS_PER_CALL)
+
+    async def test_each_deferral_guard_holds_the_merge_on_its_own(self):
+        # Through the gateway a source is deferred only once the shared call
+        # budget is spent, so no source can read more on that page; the two
+        # guards are defense in depth and each is checked here directly.
+        args = c.validate_arguments({"sources": ["core", "addon:self"], "start": "2026-10-19T09:30:00Z",
+                                     "end": "2026-10-19T09:30:20Z"}, now_ms=NOW)
+        start_ms = args["start_ms"]
+        entry = RawEntry(start_ms + 5000, ("core event",), b"core event")
+        finished = service_module.Scan(key="core", position=0, finished="end_of_journal", max_ts=start_ms + 5000,
+                                       items=[service_module.Item("c", 0, "d", entry, True)])
+        deferred = service_module.Scan(key="addon:self", position=1, deferred=True, start_location="deferred")
+        views = [[{"level": "info", "search": "core event"}], []]
+        emitted, consumed, *_ = self.service._walk([finished, deferred], views, args, 10)
+        self.assertEqual((emitted, consumed), ([], [0, 0]))
+        # The fill guard: an open source with budget left reads nothing more.
+        before, *_ = fill(self.sim.journal(CORE), "2026-10-19T09:29:59.999", 3, 1000, "core")
+        located = service_module.Scan(key="core", position=0, max_ts=start_ms - 1,
+                                      anchor=service_module.Anchor(before.cursor, 0, "d", start_ms - 1, True))
+        await self.service._fill([located, deferred], args, service_module.Budget())
+        self.assertEqual((located.requests, located.items, self.sim.calls), (0, [], []))
 
     async def test_pagination_with_filter_counts_skips(self):
         core = self.sim.journal(CORE)
