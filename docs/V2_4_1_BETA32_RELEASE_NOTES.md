@@ -156,9 +156,14 @@ and the report is partial:
 
 Each case lists a path in the definition's `withheld`
 (`sql[0].expected_entities[0].derived_entity_id`), so the final-envelope
-scan names the definition and the report is partial. A Core-observed
-`entity_id` reported for an exact registry match is Core's data, not a
-value this tool derives, and is screened at the exit point as before.
+scan names the definition and the report is partial.
+
+The Core-observed `entity_id` of an exact registry match is **not** withheld
+(owner decision, Josh, 2026-10-22). It is Core's own data, visible through
+every state read, not a value this tool derives. An entity that Home
+Assistant itself named from a credential-bearing string therefore shows that
+entity ID; the exit point screens it as before, but it would not recognize a
+slug. Rename the entity in Home Assistant.
 
 What is disclosed but never followed:
 - `!include` at any level, and packages. The report says each was not
@@ -479,4 +484,8 @@ legacy candidates are now withheld with it, and the report is partial.
     derived entity ID or generated unique ID for it (owner decision,
     2026-10-22; the report is partial), so it can match only by an exact
     registry unique ID or not at all.
+  - An entity that Home Assistant itself named from a credential-bearing
+    string shows that entity ID when it matches by an exact registry unique
+    ID: the Core-observed ID is Core's data and is not withheld (owner
+    decision, 2026-10-22). Rename the entity in Home Assistant.
   - A template blueprint block is not expanded; it is a disclosed gap.

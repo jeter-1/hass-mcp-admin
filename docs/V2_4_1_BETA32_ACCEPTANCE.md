@@ -119,6 +119,12 @@ The review needs a security section covering:
   candidate. "Withheld" includes anything the exit point would withhold
   (`credentials.withheld_at_exit`). Each case lists a path in the
   definition's `withheld`, so the report is partial.
+- **The Core-observed entity ID is not withheld (owner decision, Josh,
+  2026-10-22).** An exact registry match reports Core's own `entity_id`,
+  visible through every state read. An entity that Home Assistant itself
+  named from a credential-bearing string shows that entity ID (a disclosed
+  limitation; rename the entity in Home Assistant), while the tool's own
+  derivation stays withheld.
 - **Truthfulness.**
   - A heuristic match is never reported as exact, and its confidence names
     the signals behind it.
@@ -154,6 +160,9 @@ The review needs a security section covering:
   pass.
 - **Owner decision on derived values.** Nothing is derived from a withheld
   input (above); both reviewer suites are unchanged and pass.
+- **Owner decision on the Core-observed entity ID.** It is shown, not
+  withheld (above), and pinned by
+  `test_core_observed_entity_id_is_shown_when_the_name_is_withheld`.
 
 Preserve the following:
 - stable v1.1.2;

@@ -3269,6 +3269,31 @@ class DerivedValueWithholdingTests(Base):
                 self.assertFalse(report["complete"])
                 self.assert_no_slug(report, bearer)
 
+    async def test_core_observed_entity_id_is_shown_when_the_name_is_withheld(self):
+        # Owner decision (Josh, 2026-10-22): the registry's entity ID is Core's
+        # own data, visible through every state read, so it is not withheld.
+        # An entity that Core named from a credential-bearing string shows that
+        # ID (a disclosed limitation); only the tool's own derivation is withheld.
+        sql = {**owner_sql()[0], "name": withheld_inputs()["credential_uri"]}
+        core_named = "sensor." + core_slugify(sql["name"].lower())
+        core = owner_core()
+        core["states"].append(state(core_named))
+        core["config/entity_registry/list"][0] = registry_row(core_named, "sql", "sql_db_free_space")
+        self.env = setup(owner_yaml(sql=[sql]), core)
+        self.addCleanup(end_request, self.env.token)
+        report = await self.env.service.report((), ("sql",))
+        row = self.definitions(report)["sql[0]"]
+        entity = row["expected_entities"][0]
+        self.assertEqual(row["fields"]["name"], {"withheld": "credential_uri"})
+        self.assertEqual((entity["derived_entity_id"], entity["derivation_limit"]),
+                         (None, c.DERIVED_ENTITY_ID_WITHHELD))
+        self.assertEqual(entity["match"], {"entity_id": core_named, "method": "exact_unique_id",
+                                           "reason": None, "confidence": "exact"})
+        self.assertEqual(row["withheld"], ["sql[0].name", "sql[0].expected_entities[0].derived_entity_id"])
+        self.assert_partial(report, "withheld:definitions[0]")
+        # The raw credential-bearing name itself never appears.
+        self.assertNotIn(sql["name"], json.dumps(report))
+
     async def test_withheld_dependency_value_is_not_read_for_entity_ids(self):
         sensors = owner_sensors()
         source = "sensor.water_total, " + withheld_inputs()["bearer"]

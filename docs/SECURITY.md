@@ -710,8 +710,14 @@ shape, fallback or write path.
   yields no derived value (`derived_entity_id_withheld`,
   `unique_id_withheld`, `dependencies_withheld`, a positional definition ID)
   and a path in the definition's `withheld`, so the report is partial. A
-  slug of a credential is therefore never emitted, though the exit point
+  slug of a credential is therefore never derived, though the exit point
   would not recognize it.
+- **The Core-observed entity ID is not withheld (owner decision, Josh,
+  2026-10-22).** An exact registry match reports Core's own `entity_id`,
+  which every state read already exposes. An entity that Home Assistant
+  itself named from a credential-bearing string shows that entity ID; the
+  exit point would not recognize the slug. This is a disclosed limitation:
+  rename the entity in Home Assistant.
 
 Arguments are validated before SDK coercion and rejected without echoing
 them. The audit records counts and source outcomes only. Stable v1.1.2 is

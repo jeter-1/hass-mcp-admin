@@ -58,6 +58,10 @@ Builds on 2.4.1-beta.31.
   (`dependencies_withheld`, diagnosis `undetermined`); a withheld key is not
   in the definition ID; a withheld legacy name is never a candidate. Each is
   listed as withheld, so the report is partial.
+- Owner decision (Josh, 2026-10-22): the Core-observed entity ID of an exact
+  registry match is Core's data and is not withheld. An entity that Home
+  Assistant itself named from a credential-bearing string shows that entity
+  ID (disclosed limitation; rename the entity in Home Assistant).
 - Catalog: 66 static tools, 94 advertised (95 with the optional YAML reader).
   No existing descriptor, schema, stored format, dependency or workflow
   changes.
