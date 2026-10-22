@@ -72,7 +72,15 @@ The review needs a security section covering:
   sanitized once, with the known secrets. Nothing is appended afterwards.
   Withheld text is replaced with `[withheld:credential_text]` and makes the
   report partial (`credential_text_withheld`), as does a redaction. Budget
-  trimming re-screens and re-sanitizes the rebuilt envelope.
+  trimming re-screens and re-sanitizes the rebuilt envelope. The screening
+  reads a bounded confusable fold of the canonical text.
+- **Titles by allowlist.** A config entry title is checked whole, never
+  truncated first, and shown only when it is printable ASCII within 255
+  characters with no `@`, `://`, password-like `key=value` or `key: value`,
+  known secret or credential text. Otherwise it is
+  `[withheld:credential_text]` or `[withheld:unverifiable_text]` and the
+  report is partial (`unverifiable_text_withheld`). **An ordinary non-ASCII
+  title is withheld by design**; a plain ASCII title is shown unchanged.
 - **Truthfulness.**
   - A heuristic match is never reported as exact, and its confidence names
     the signals behind it.
@@ -84,7 +92,12 @@ The review needs a security section covering:
     report.
   - Diagnosis says `undetermined` rather than `entity_level` when a signal is
     missing, no single definition matched, or the dependencies were not
-    checked. It never says `definition_absent` after a YAML source gap.
+    checked. It never says `definition_absent` after a YAML source gap or
+    an unexpanded template blueprint (`blueprint_definitions_not_projected`).
+  - A malformed registry `platform`, `unique_id` or `config_entry_id` makes
+    the row's `registry.identity` `invalid_response` and the registry source
+    partial; the row is never matched and is `undetermined`. `null` stays a
+    legitimate absence.
 - **Arguments and audit.** Validation happens before the SDK, and rejections
   are non-reflecting. The audit records counts only.
 - **Implementation corrections.** The five corrections listed in the release
@@ -92,6 +105,9 @@ The review needs a security section covering:
 - **Independent review corrections.** H1, M1 to M4 and L1 from the review of
   `dfd1f02`, listed in the release notes. Each reproduction is a permanent
   test.
+- **Delta review corrections.** H1, H2, M3, M4 and L from the delta review of
+  `cde9cd1`, listed in the release notes. The reviewer's regression suite is
+  kept unchanged as `tests/test_pr294_delta_review.py`.
 
 Preserve the following:
 - stable v1.1.2;
@@ -175,19 +191,34 @@ credential-shaped string is assembled at test time.
     template definition, each `undetermined`, with absence and
     `entity_level` controls;
   - malformed states, registry and config-entry values and a projection
-    error, each confined to its item, with a valid control.
+    error, each confined to its item, with a valid control;
+- the delta review's suite, unchanged (`tests/test_pr294_delta_review.py`),
+  including its two High reproductions through the authenticated gateway: a
+  credential cut by title truncation, and credentials written with the ratio
+  sign, the division slash or a Cyrillic `o`; and the added tests:
+  - plain ASCII titles shown through the gateway, the report complete;
+  - benign non-ASCII, control-character and `DEL` titles withheld as
+    `[withheld:unverifiable_text]`, partial (disclosed and accepted);
+  - `@`, `://` and password-like `key=value` titles, an over-length title
+    withheld whole, a credential past the length bound found on the
+    original, and case-varied known secrets;
+  - confusable credentials in a YAML-projected definition withheld;
+  - a template blueprint block as a gap, with an absence control;
+  - malformed registry identities never matched in either direction, with
+    a `null` control.
 
 The existing suites that pin the tool count, sanitizer sites, Core gate and
 reader purpose are updated. The Evidence tier on the PR head is the complete
 final run.
 
-Mutations: **166 of 166 killed, none survived**
-(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 220
-tests across the three HAMCP-132 modules: OK, 1 skipped. Every kill is a
-test failure or a test-level error; none is an import or syntax failure.
+Mutations: **184 of 184 killed, none survived**
+(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 245
+tests across the three HAMCP-132 modules and the delta-review suite
+(`test_pr294_delta_review`): OK, 1 skipped. Every kill is a test failure or
+a test-level error; none is an import or syntax failure.
 
-The set is slice 1's 80, 55 for slice 2, and 31 for the independent-review
-corrections. The first slice 2 run left two survivors:
+The set is slice 1's 80, 55 for slice 2, 31 for the independent-review
+corrections and 18 for the delta-review corrections. The first slice 2 run left two survivors:
 - `B-L2` was equivalent. `_credential_shaped` also matches `db_url`, so
   removing only the nested `WITHHELD_KEYS` test changes nothing. It was
   redefined to remove both nested guards.
@@ -236,6 +267,23 @@ The correction mutants cover:
 - each malformed-value type guard removed, a projection error aborting the
   report, a malformed value diagnosed as if valid, and a malformed item
   that leaves the report complete.
+
+The delta-review mutants cover:
+- the reviewer's own omission-credential bypass (`DELTA-REVIEW-1`), and
+  the known secrets dropped from the exit-point withholding only
+  (`DELTA-REVIEW-2`; the earlier `B-L7` rationale called this equivalent,
+  which was wrong: it fails three tests and loses case-variant protection);
+- a title truncated before screening (`B2-T1`) and the allowlist bypassed
+  (`B2-T2`);
+- each allowlist leg removed: the length bound, printable ASCII, `@`, `://`
+  and password-like `key=value` (`B2-T3` to `B2-T7`);
+- the casefolded known-secret comparison removed (`B2-K1`);
+- the confusable fold removed (`B2-C1`);
+- an unverifiable title that leaves the report complete (`B2-U1`);
+- an unprojected blueprint not treated as a definition gap (`B2-G1`);
+- a malformed registry identity accepted, matched, reverse-matched without
+  disclosure or diagnosed as valid, and a `null` identity called malformed
+  (`B2-I1` to `B2-I5`).
 
 ## 2. Release CI and publication
 

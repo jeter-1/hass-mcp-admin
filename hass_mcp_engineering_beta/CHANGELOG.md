@@ -33,6 +33,13 @@ Builds on 2.4.1-beta.29.
   could read differently is never exact (M2); a YAML source gap or an
   unchecked UI or template definition is `undetermined` (M3); a malformed
   source value invalidates only its item (M4).
+- Corrections from the delta review: a config entry title is checked whole
+  before any truncation and shown only through a printable-ASCII allowlist,
+  so an ordinary non-ASCII title is withheld as `[withheld:unverifiable_text]`
+  by design (H1, H2); YAML-projected text is screened through a bounded
+  confusable fold (H2); an unexpanded template blueprint is a definition gap
+  (M3); a malformed registry identity is `invalid_response` and never
+  matched, while `null` stays a legitimate absence (M4).
 - Catalog: 63 static tools, 91 advertised (92 with the optional YAML reader).
   No existing descriptor, schema, stored format, dependency or workflow
   changes.

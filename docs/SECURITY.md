@@ -658,12 +658,24 @@ shape, fallback or write path.
   secret, or text the reader's canonicalization refuses. Such a string is
   replaced with `[withheld:credential_text]` and the report is partial
   (`credential_text_withheld`). This covers Core text the projection never
-  sees, such as config entry titles (independent review H1). The envelope
+  sees, such as config entry titles (independent review H1). The checks
+  read the canonical text through a bounded confusable fold (a fixed table
+  of look-alikes of `/`, `:` and Latin letters, not general confusable
+  coverage; delta review H2). The envelope
   is then sanitized once with the access secret and the Home Assistant
   token as known secrets. A redaction makes the report partial. Budget trimming rebuilds the envelope and sanitizes it
   again. Tests plant a known secret in every identifier-bearing field, prove
   with a control run that it reaches each one, and check through the
   authenticated gateway that the protected response never contains it.
+- **Free text by allowlist (delta review H1, H2).** A config entry title,
+  the only Core free text the report echoes, is checked whole before any
+  truncation and shown verbatim only when it is printable ASCII without a
+  control character, within 255 characters, and has no `@`, no `://`, no
+  password-like `key=value` or `key: value`, no known secret in any letter
+  case and no credential text. Anything else is replaced whole with
+  `[withheld:credential_text]` or `[withheld:unverifiable_text]` and the
+  report is partial (`unverifiable_text_withheld`). An ordinary non-ASCII
+  title is withheld by design.
 
 Arguments are validated before SDK coercion and rejected without echoing
 them. The audit records counts and source outcomes only. Stable v1.1.2 is

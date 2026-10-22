@@ -220,9 +220,29 @@ afterwards. Credential text is:
 - text the reader's canonicalization (percent-decoding, NFKC, casefold)
   refuses.
 
+The checks read the canonical form through a bounded confusable fold: a
+fixed table of the look-alikes of `/` and `:` that NFKC leaves unchanged
+(the division slash and the ratio sign, for example) and of the Cyrillic and
+Greek letters that look like Latin ones. The table is not general confusable
+coverage.
+
 A string is replaced with the bounded marker `[withheld:credential_text]`, a
 dictionary entry with a credential-shaped key is dropped, and the report is
 partial with `credential_text_withheld`.
+
+**Config entry titles** are Core free text and are shown through an
+allowlist, not a denylist. The complete original title is checked before
+anything else; nothing is truncated or normalized first. It is shown
+verbatim only when it is printable ASCII with no control character, at most
+255 characters, has no `@` and no `://`, no password-like `key=value` or
+`key: value`, no known secret in any letter case and no credential text.
+Otherwise it is replaced whole: credential text with
+`[withheld:credential_text]`, anything else with
+`[withheld:unverifiable_text]`, and the report is partial with
+`unverifiable_text_withheld`. **By design, an ordinary title with a
+non-ASCII character (an accented letter, a CJK title, an emoji or an em
+dash), with `@`, or longer than 255 characters is withheld.** A plain ASCII
+title is shown unchanged.
 
 ## Boundaries
 
@@ -292,6 +312,37 @@ authenticated gateway.
 6. **L1.** The component review note now records the owner decision and the
    capability block's actual fields.
 
+## Corrections from the delta review
+
+The independent delta review of the corrections at `cde9cd1` found these.
+Its regression suite is kept unchanged as `tests/test_pr294_delta_review.py`,
+and the two High reproductions run through the authenticated gateway.
+1. **H1.** A title was truncated to 255 characters before it was screened,
+   so a credential whose host fell past the bound was cut into text that no
+   longer read as one, and its password was shown. The complete original
+   title is now checked first and a title over the bound is withheld whole.
+2. **H2.** Look-alike characters NFKC leaves unchanged (the ratio sign for
+   `:`, the division slash for `/`, a Cyrillic `o` in `password`) hid a
+   credential from the screening. Titles now pass only the allowlist above,
+   which refuses every non-ASCII character. YAML-projected text keeps the
+   credential screening with the bounded confusable fold added.
+3. **M3.** A template `use_blueprint` block, which the reader does not
+   expand, was not a definition gap, so an entity it creates could be
+   called `not_found` with `definition_absent`. Such a block now makes the
+   report partial (`blueprint_definitions_not_projected`) and absence
+   `undetermined`.
+4. **M4.** A malformed registry `platform`, `unique_id` or
+   `config_entry_id` (a dict or list, for example) was silently treated as
+   absent. The row's new `registry.identity` is `invalid_response`, the
+   registry source is partial with `invalid_response`, the row takes part in
+   no match in either direction and its diagnosis is `undetermined`
+   (`registry_identity_invalid_response`). A `null` field stays a legitimate
+   absence (`identity` `valid`).
+5. **L.** The mutation runner's B-L7 rationale was wrong: dropping the known
+   secrets from the withholding walk alone is not an equivalent mutant (it
+   fails three tests and loses the case-varied protection). It is now its
+   own mutant, `DELTA-REVIEW-2`.
+
 ## Compatibility and rollback
 
 - **Additive.** One new tool; no existing descriptor or schema changes.
@@ -310,3 +361,7 @@ authenticated gateway.
     confidence. Non-ASCII names and names with `&` derive no ID.
   - With the component not used, a loaded `ha_mcp_tools` component's
     problems stay `undetermined`.
+  - A config entry title with a non-ASCII character, `@`, `://`, a
+    password-like `key=value` or over 255 characters is withheld as
+    `[withheld:unverifiable_text]` (by design; the report is partial).
+  - A template blueprint block is not expanded; it is a disclosed gap.

@@ -42,12 +42,21 @@ What it never does:
 A unique ID that Home Assistant's YAML 1.1 loader could read differently is
 never an exact match, and ambiguity rules are identical from both sides.
 Diagnosis never claims `definition_absent` after a YAML source gap or
-`entity_level` without a dependency check. A malformed source value
-invalidates only its item.
+`entity_level` without a dependency check, nor after an unexpanded template
+blueprint. A malformed source value, a malformed registry identity included,
+invalidates only its item and is never matched.
+
+Config entry titles are shown through an allowlist: the whole original title,
+never a truncated one, is shown only when it is printable ASCII within 255
+characters with no `@`, `://`, password-like `key=value`, known secret or
+credential text. Anything else is `[withheld:credential_text]` or
+`[withheld:unverifiable_text]` and the report is partial; an ordinary
+non-ASCII title is withheld by design.
 
 At a single exit point every key and string of the final envelope (titles,
 metadata, reasons, omissions included) is screened for credential text and
-withheld as `[withheld:credential_text]`, making the report partial; the
+withheld as `[withheld:credential_text]`, making the report partial (the
+checks read a bounded confusable fold of the canonical text); the
 envelope is then sanitized once, with the known secrets. It is mapped in the HAMCP-164 Core gate (`core.basic_rest_read`,
 `core.basic_websocket_read`, `core.non_device_registry_read`). Arguments are
 validated before the SDK, and the audit carries counts only. There is no
