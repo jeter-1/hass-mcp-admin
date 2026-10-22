@@ -148,6 +148,13 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "retention_coverage": "reported_per_source",
     },
     {
+        "tool": "get_history_slices", "category": "evidence",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native",
+        "provider": "engineering", "data_providers": ["upstream_read_gateway"],
+        "fallback": "none", "policy": "history_slices_read_v1", "direct_write_allowed": False,
+    },
+    {
         "tool": "control_power", "category": "ordinary_runtime_action",
         "status": "beta_native", "risk": "physical_action", "additive": True,
         "operation_class": "typed_power", "routing": "engineering_native",
@@ -548,6 +555,15 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "security_justification": "Fixed Supervisor GET /core/logs and /addons/self/logs only, admitted for role homeassistant; Supervisor, host and other add-on logs need role manager and are reported unavailable with zero requests; strict sanitizer at one exit.",
         "trust_mode": "reviewed_native_read",
         "trust_profile": "incident_window_journal_read_v1",
+    },
+    {
+        "tool": "get_history_slices", "capability": "history_slices",
+        "required_semantics": "One entity's state history over a bounded window in fixed time slices with per-page coverage, a signed cursor that re-checks the last state read and each slice-start state, and stale refusal when earlier history changed.",
+        "standard_ha_mcp_coverage": "reviewed_argument_constrained", "direct_ha_coverage": "not_used",
+        "selected_provider": "engineering", "fallback_policy": "none",
+        "completeness": "partial_with_reasons_when_limited_redacted_or_upstream_failed",
+        "security_justification": "Only the admitted ha_get_history route with Engineering-built absolute bounds, ascending minimal order and bounded offset paging; gateway sanitization plus the strict sanitizer at one exit; versions 8.5.0/8.6.0 only; no direct Home Assistant fallback.",
+        "trust_mode": "reviewed_native_read", "trust_profile": "history-slices-read-v1",
     },
     {
         "tool": "control_power", "capability": "typed_power_execution",

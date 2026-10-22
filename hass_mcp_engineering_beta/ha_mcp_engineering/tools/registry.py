@@ -152,10 +152,12 @@ for capability in CAPABILITIES:
 
 from .core_logs import registered_tool as core_log_tool
 from .incident_logs import registered_tool as incident_logs_tool
+from .history_slices import registered_tool as history_slices_tool
 from .governance import registered_entity_metadata_tool, registered_reverification_tool
 
 _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_core_log_history": core_log_tool(),
                     "get_incident_logs": incident_logs_tool(),
+                    "get_history_slices": history_slices_tool(),
                     "reverify_configuration_task": registered_reverification_tool(),
                     "create_entity_metadata_plan": registered_entity_metadata_tool()})
 

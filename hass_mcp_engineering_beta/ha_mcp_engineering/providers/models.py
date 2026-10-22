@@ -23,6 +23,7 @@ class ProviderCapability(str, Enum):
     ERROR_LOG_READ = "error_log_read"
     CORE_LOG_HISTORY = "core_log_history"
     INCIDENT_LOGS = "incident_logs"
+    HISTORY_SLICES = "history_slices"
     INTEGRATION_INSPECTION = "integration_inspection"
     BACKUP_INVENTORY = "backup_inventory"
     RECORDER_SETTINGS = "recorder_settings"
