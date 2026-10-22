@@ -246,7 +246,8 @@ MUTATIONS = [
                '        "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",\n    ),',
        '    "get_unregistered_entities": (\n        "core.basic_rest_read", "core.basic_websocket_read",\n    ),')),
     m("S7-pre-sdk-validation-removed", ROW8,
-      (ROUTING, 'if tool_name in {"get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions"}:',
+      (ROUTING, 'if tool_name == "get_recorder_settings" or tool_name == "get_unregistered_entities" '
+                'or tool_name == "get_configuration_definitions":',
        'if False:')),
     m("S8-audit-records-entity-ids", ROW8,
       (ROUTING, '"profile": "recorder-settings-read-v1",\n'

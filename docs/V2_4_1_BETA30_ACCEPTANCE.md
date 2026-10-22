@@ -78,8 +78,8 @@ The review needs a security section covering:
     missing or no single definition matched.
 - **Arguments and audit.** Validation happens before the SDK, and rejections
   are non-reflecting. The audit records counts only.
-- **Implementation corrections.** The four self-found corrections listed in
-  the release notes.
+- **Implementation corrections.** The five corrections listed in the release
+  notes: four self-found, and one found by PR CI.
 
 Preserve the following:
 - stable v1.1.2;

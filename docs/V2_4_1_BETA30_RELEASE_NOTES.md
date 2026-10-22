@@ -218,6 +218,11 @@ listed for the independent reviewer:
    - The response-budget trim re-sanitized once per dropped row. That was
      quadratic, about 20 s of event loop for 210 definitions.
    - `coverage.definitions_listed` was stale after a trim.
+5. The gateway's pre-SDK validation branch tested the tool name by set
+   membership before its type was known. A list or dict tool name then
+   raised `TypeError` instead of the HAMCP-189 generic refusal. PR CI found
+   it (`test_hamcp189_gateway_audit_reason`), and the equality test was
+   restored.
 
 ## Compatibility and rollback
 

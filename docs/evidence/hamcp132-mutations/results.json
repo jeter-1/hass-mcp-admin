@@ -8,7 +8,7 @@
   ],
   "returncode": 0,
   "tests": 188,
-  "seconds": 12.2,
+  "seconds": 14.2,
   "summary": "OK (skipped=1)"
  },
  "mutation_count": 135,
@@ -33,7 +33,7 @@
    "first_failures": [
     "FAIL test_complete_file_reports_configured_and_core_defaults (test_hamcp132_recorder_settings.SettingsTests.test_complete_file_reports_configured_and_core_defaults)"
    ],
-   "seconds": 2.5
+   "seconds": 3.0
   },
   {
    "id": "D2-default-applied-with-packages-present",
@@ -52,7 +52,7 @@
    "first_failures": [
     "FAIL test_packages_present_makes_unwritten_keys_unknown_not_defaults (test_hamcp132_recorder_settings.SettingsTests.test_packages_present_makes_unwritten_keys_unknown_not_defaults)"
    ],
-   "seconds": 2.5
+   "seconds": 2.9
   },
   {
    "id": "D3-default-applied-with-include",
@@ -71,7 +71,7 @@
    "first_failures": [
     "FAIL test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key (test_hamcp132_recorder_settings.SettingsTests.test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key)"
    ],
-   "seconds": 2.5
+   "seconds": 2.9
   },
   {
    "id": "D4-default-applied-yaml-unavailable",
@@ -90,7 +90,7 @@
    "first_failures": [
     "FAIL test_reader_not_admitted_is_partial_with_runtime_still_reported (test_hamcp132_recorder_settings.SettingsTests.test_reader_not_admitted_is_partial_with_runtime_still_reported)"
    ],
-   "seconds": 2.6
+   "seconds": 3.1
   },
   {
    "id": "D5-default-applied-when-truncated",
@@ -109,7 +109,7 @@
    "first_failures": [
     "FAIL test_truncated_recorder_value_is_unknown (test_hamcp132_recorder_settings.SettingsTests.test_truncated_recorder_value_is_unknown)"
    ],
-   "seconds": 2.6
+   "seconds": 3.1
   },
   {
    "id": "D5b-filter-computed-when-truncated",
@@ -128,7 +128,7 @@
    "first_failures": [
     "ERROR test_truncated_recorder_value_is_unknown (test_hamcp132_recorder_settings.SettingsTests.test_truncated_recorder_value_is_unknown)"
    ],
-   "seconds": 2.6
+   "seconds": 3.1
   },
   {
    "id": "D6-filter-computed-with-packages-present",
@@ -147,7 +147,7 @@
    "first_failures": [
     "FAIL test_packages_present_makes_unwritten_keys_unknown_not_defaults (test_hamcp132_recorder_settings.SettingsTests.test_packages_present_makes_unwritten_keys_unknown_not_defaults)"
    ],
-   "seconds": 2.6
+   "seconds": 2.9
   },
   {
    "id": "D7-db-default-location-with-packages",
@@ -166,7 +166,7 @@
    "first_failures": [
     "FAIL test_packages_present_makes_unwritten_keys_unknown_not_defaults (test_hamcp132_recorder_settings.SettingsTests.test_packages_present_makes_unwritten_keys_unknown_not_defaults)"
    ],
-   "seconds": 2.6
+   "seconds": 3.0
   },
   {
    "id": "D8-packages-unreadable-reported-complete",
@@ -185,7 +185,7 @@
    "first_failures": [
     "FAIL test_provider_exception_text_never_in_public_failure (test_hamcp132_recorder_settings.CredentialTests.test_provider_exception_text_never_in_public_failure)"
    ],
-   "seconds": 2.1
+   "seconds": 2.5
   },
   {
    "id": "L1-db-url-value-returned",
@@ -204,7 +204,7 @@
    "first_failures": [
     "FAIL test_db_url_is_withheld_for_every_written_form (test_hamcp132_recorder_settings.CredentialTests.test_db_url_is_withheld_for_every_written_form)"
    ],
-   "seconds": 2.0
+   "seconds": 2.5
   },
   {
    "id": "L2-secret-reference-returned",
@@ -223,7 +223,7 @@
    "first_failures": [
     "FAIL test_scalar_references_and_markers_are_withheld (test_hamcp132_recorder_settings.CredentialTests.test_scalar_references_and_markers_are_withheld)"
    ],
-   "seconds": 2.1
+   "seconds": 2.5
   },
   {
    "id": "L3-recorder-known-secrets-dropped",
@@ -242,7 +242,7 @@
    "first_failures": [
     "FAIL test_known_secret_in_filter_text_is_redacted_and_partial (test_hamcp132_recorder_settings.CredentialTests.test_known_secret_in_filter_text_is_redacted_and_partial)"
    ],
-   "seconds": 2.1
+   "seconds": 2.5
   },
   {
    "id": "L4-unrecognized-keys-reported",
@@ -261,7 +261,7 @@
    "first_failures": [
     "FAIL test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key (test_hamcp132_recorder_settings.SettingsTests.test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key)"
    ],
-   "seconds": 2.5
+   "seconds": 3.0
   },
   {
    "id": "P1-failed-yaml-source-complete",
@@ -280,7 +280,7 @@
    "first_failures": [
     "FAIL test_provider_exception_text_never_in_public_failure (test_hamcp132_recorder_settings.CredentialTests.test_provider_exception_text_never_in_public_failure)"
    ],
-   "seconds": 2.1
+   "seconds": 2.4
   },
   {
    "id": "P2-failed-recorder-info-complete",
@@ -299,7 +299,7 @@
    "first_failures": [
     "FAIL test_prior_telemetry_error_restored_on_partial (test_hamcp132_recorder_settings.AuthorityTests.test_prior_telemetry_error_restored_on_partial)"
    ],
-   "seconds": 2.0
+   "seconds": 2.5
   },
   {
    "id": "P3-partial-entity-options-complete",
@@ -318,7 +318,7 @@
    "first_failures": [
     "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.1
+   "seconds": 2.6
   },
   {
    "id": "P4-report-always-complete",
@@ -337,7 +337,7 @@
    "first_failures": [
     "FAIL test_prior_telemetry_error_restored_on_partial (test_hamcp132_recorder_settings.AuthorityTests.test_prior_telemetry_error_restored_on_partial)"
    ],
-   "seconds": 2.0
+   "seconds": 2.5
   },
   {
    "id": "P5-source-omission-dropped",
@@ -356,7 +356,7 @@
    "first_failures": [
     "FAIL test_runtime_failure_shapes (test_hamcp132_recorder_settings.RuntimeTests.test_runtime_failure_shapes)"
    ],
-   "seconds": 2.5
+   "seconds": 2.9
   },
   {
    "id": "P6-audit-success-on-partial",
@@ -375,7 +375,7 @@
    "first_failures": [
     "FAIL test_unknown_command_means_recorder_not_set_up_never_not_recording (test_hamcp132_recorder_settings.RuntimeTests.test_unknown_command_means_recorder_not_set_up_never_not_recording)"
    ],
-   "seconds": 2.5
+   "seconds": 2.9
   },
   {
    "id": "P7-batch-error-text-reflected",
@@ -394,7 +394,7 @@
    "first_failures": [
     "FAIL test_batch_exceptions_map_to_closed_reasons (test_hamcp132_recorder_settings.RuntimeTests.test_batch_exceptions_map_to_closed_reasons)"
    ],
-   "seconds": 2.5
+   "seconds": 2.9
   },
   {
    "id": "P8-entity-reply-shape-loosened",
@@ -413,7 +413,7 @@
    "first_failures": [
     "ERROR test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.2
+   "seconds": 2.4
   },
   {
    "id": "P9-response-budget-trim-silent",
@@ -432,7 +432,7 @@
    "first_failures": [
     "FAIL test_large_filter_lists_become_counts_within_the_budget (test_hamcp132_recorder_settings.FilterTests.test_large_filter_lists_become_counts_within_the_budget)"
    ],
-   "seconds": 2.4
+   "seconds": 2.7
   },
   {
    "id": "F1-cases-4a-4b-swapped",
@@ -456,7 +456,7 @@
    "first_failures": [
     "FAIL test_port_matches_core_truth_table_for_every_case (test_hamcp132_recorder_settings.FilterTruthTableTests.test_port_matches_core_truth_table_for_every_case)"
    ],
-   "seconds": 2.3
+   "seconds": 2.7
   },
   {
    "id": "F2-exclude-domains-honoured-in-4a",
@@ -475,7 +475,7 @@
    "first_failures": [
     "FAIL test_port_matches_core_truth_table_for_every_case (test_hamcp132_recorder_settings.FilterTruthTableTests.test_port_matches_core_truth_table_for_every_case)"
    ],
-   "seconds": 2.2
+   "seconds": 2.6
   },
   {
    "id": "F3-4b-include-entities-override-lost",
@@ -494,7 +494,7 @@
    "first_failures": [
     "FAIL test_port_matches_core_truth_table_for_every_case (test_hamcp132_recorder_settings.FilterTruthTableTests.test_port_matches_core_truth_table_for_every_case)"
    ],
-   "seconds": 2.3
+   "seconds": 2.6
   },
   {
    "id": "F4-exclude-domains-ignored-flag-lost",
@@ -513,7 +513,7 @@
    "first_failures": [
     "FAIL test_case_4a_reports_ignored_exclude_domains_and_state_changed (test_hamcp132_recorder_settings.FilterTests.test_case_4a_reports_ignored_exclude_domains_and_state_changed)"
    ],
-   "seconds": 2.1
+   "seconds": 2.6
   },
   {
    "id": "V1-drift-resolved-as-agree",
@@ -532,7 +532,7 @@
    "first_failures": [
     "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.2
+   "seconds": 2.6
   },
   {
    "id": "V2-drift-omission-dropped",
@@ -551,7 +551,7 @@
    "first_failures": [
     "FAIL test_filter_drift_is_reported_never_resolved (test_hamcp132_recorder_settings.FilterTests.test_filter_drift_is_reported_never_resolved)"
    ],
-   "seconds": 2.1
+   "seconds": 2.6
   },
   {
    "id": "V3-core-answer-replaced-by-computed",
@@ -570,7 +570,7 @@
    "first_failures": [
     "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.1
+   "seconds": 2.5
   },
   {
    "id": "U1-unknown-command-not-recording",
@@ -589,7 +589,7 @@
    "first_failures": [
     "FAIL test_unknown_command_means_recorder_not_set_up_never_not_recording (test_hamcp132_recorder_settings.RuntimeTests.test_unknown_command_means_recorder_not_set_up_never_not_recording)"
    ],
-   "seconds": 2.5
+   "seconds": 3.0
   },
   {
    "id": "U2-entity-unknown-command-not-recorded",
@@ -608,7 +608,7 @@
    "first_failures": [
     "ERROR test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.2
+   "seconds": 2.6
   },
   {
    "id": "R1-directly-written-entity-dropped",
@@ -627,7 +627,7 @@
    "first_failures": [
     "FAIL test_byte_budget_trims_rows_and_reports_partial (test_hamcp132_unregistered_entities.FailureTests.test_byte_budget_trims_rows_and_reports_partial)"
    ],
-   "seconds": 6.1
+   "seconds": 7.3
   },
   {
    "id": "R2-definition-location-asserted",
@@ -646,7 +646,7 @@
    "first_failures": [
     "FAIL test_healthy_reconciliation_and_call_order (test_hamcp132_unregistered_entities.ReconciliationTests.test_healthy_reconciliation_and_call_order)"
    ],
-   "seconds": 6.5
+   "seconds": 7.9
   },
   {
    "id": "R3-partial-search-reported-complete",
@@ -665,7 +665,7 @@
    "first_failures": [
     "FAIL test_per_entity_search_failures (test_hamcp132_unregistered_entities.SearchTests.test_per_entity_search_failures)"
    ],
-   "seconds": 6.6
+   "seconds": 7.8
   },
   {
    "id": "R4-search-unavailable-silent",
@@ -684,7 +684,7 @@
    "first_failures": [
     "FAIL test_whole_search_batch_failure (test_hamcp132_unregistered_entities.SearchTests.test_whole_search_batch_failure)"
    ],
-   "seconds": 6.7
+   "seconds": 7.7
   },
   {
    "id": "R5-ambiguous-entry-guessed",
@@ -703,7 +703,7 @@
    "first_failures": [
     "FAIL test_healthy_reconciliation_and_call_order (test_hamcp132_unregistered_entities.ReconciliationTests.test_healthy_reconciliation_and_call_order)"
    ],
-   "seconds": 6.9
+   "seconds": 7.7
   },
   {
    "id": "R6-limit-truncation-silent",
@@ -722,7 +722,7 @@
    "first_failures": [
     "FAIL test_domain_scope_and_limit_truncation (test_hamcp132_unregistered_entities.ReconciliationTests.test_domain_scope_and_limit_truncation)"
    ],
-   "seconds": 6.7
+   "seconds": 7.6
   },
   {
    "id": "R7-one-inventory-enough",
@@ -741,7 +741,7 @@
    "first_failures": [
     "ERROR test_states_or_registry_unavailable_is_an_error (test_hamcp132_unregistered_entities.FailureTests.test_states_or_registry_unavailable_is_an_error)"
    ],
-   "seconds": 7.0
+   "seconds": 7.8
   },
   {
    "id": "R8-malformed-registry-silent",
@@ -760,7 +760,7 @@
    "first_failures": [
     "FAIL test_malformed_rows_are_counted_not_reconciled (test_hamcp132_unregistered_entities.ReconciliationTests.test_malformed_rows_are_counted_not_reconciled)"
    ],
-   "seconds": 6.8
+   "seconds": 7.7
   },
   {
    "id": "R9-invalid-platform-value-reported",
@@ -779,7 +779,7 @@
    "first_failures": [
     "FAIL test_invalid_platform_value_is_not_reported (test_hamcp132_unregistered_entities.PlatformTests.test_invalid_platform_value_is_not_reported)"
    ],
-   "seconds": 6.8
+   "seconds": 7.6
   },
   {
    "id": "R10-domains-string-split",
@@ -798,7 +798,7 @@
    "first_failures": [
     "FAIL test_invalid_arguments_dispatch_nothing (test_hamcp132_unregistered_entities.AuthorityTests.test_invalid_arguments_dispatch_nothing)"
    ],
-   "seconds": 6.4
+   "seconds": 7.3
   },
   {
    "id": "R11-reconciliation-known-secrets-dropped",
@@ -817,7 +817,7 @@
    "first_failures": [
     "FAIL test_known_secret_in_reported_text_is_redacted (test_hamcp132_unregistered_entities.FailureTests.test_known_secret_in_reported_text_is_redacted)"
    ],
-   "seconds": 6.7
+   "seconds": 7.4
   },
   {
    "id": "R12-byte-budget-trim-silent",
@@ -836,7 +836,7 @@
    "first_failures": [
     "FAIL test_byte_budget_trims_rows_and_reports_partial (test_hamcp132_unregistered_entities.FailureTests.test_byte_budget_trims_rows_and_reports_partial)"
    ],
-   "seconds": 6.5
+   "seconds": 7.5
   },
   {
    "id": "S1-purge-reachable-in-batch",
@@ -860,7 +860,7 @@
    "first_failures": [
     "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
    ],
-   "seconds": 2.5
+   "seconds": 2.7
   },
   {
    "id": "S2-entity-options-identity-loosened",
@@ -879,7 +879,7 @@
    "first_failures": [
     "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
    ],
-   "seconds": 2.5
+   "seconds": 2.8
   },
   {
    "id": "S3-search-entity-identity-loosened",
@@ -898,7 +898,7 @@
    "first_failures": [
     "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
    ],
-   "seconds": 2.5
+   "seconds": 2.8
   },
   {
    "id": "S4-recorder-info-extra-keys",
@@ -917,7 +917,7 @@
    "first_failures": [
     "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
    ],
-   "seconds": 2.4
+   "seconds": 2.8
   },
   {
    "id": "S5-recorder-core-gate-narrowed",
@@ -936,7 +936,7 @@
    "first_failures": [
     "FAIL test_core_gate_mapping (test_hamcp132_recorder_settings.RegistrationTests.test_core_gate_mapping)"
    ],
-   "seconds": 2.5
+   "seconds": 2.8
   },
   {
    "id": "S6-reconciliation-core-gate-narrowed",
@@ -955,7 +955,7 @@
    "first_failures": [
     "FAIL test_core_gate_mapping (test_hamcp132_unregistered_entities.RegistrationTests.test_core_gate_mapping)"
    ],
-   "seconds": 6.6
+   "seconds": 7.8
   },
   {
    "id": "S7-pre-sdk-validation-removed",
@@ -963,7 +963,7 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/routing.py",
-     "if tool_name in {\"get_recorder_settings\", \"get_unregistered_entities\", \"get_configuration_definitions\"}:",
+     "if tool_name == \"get_recorder_settings\" or tool_name == \"get_unregistered_entities\" or tool_name == \"get_configuration_definitions\":",
      "if False:"
     ]
    ],
@@ -974,7 +974,7 @@
    "first_failures": [
     "FAIL test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material (test_hamcp132_recorder_settings.RegistrationTests.test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material)"
    ],
-   "seconds": 2.4
+   "seconds": 2.9
   },
   {
    "id": "S8-audit-records-entity-ids",
@@ -993,7 +993,7 @@
    "first_failures": [
     "FAIL test_gateway_positive_output_and_audit (test_hamcp132_recorder_settings.RegistrationTests.test_gateway_positive_output_and_audit)"
    ],
-   "seconds": 2.4
+   "seconds": 2.8
   },
   {
    "id": "A1-recorder-no-recheck-after-batch",
@@ -1012,7 +1012,7 @@
    "first_failures": [
     "FAIL test_authority_change_during_any_read_fails_closed (test_hamcp132_recorder_settings.AuthorityTests.test_authority_change_during_any_read_fails_closed)"
    ],
-   "seconds": 2.2
+   "seconds": 2.3
   },
   {
    "id": "A2-recorder-no-recheck-after-yaml",
@@ -1031,7 +1031,7 @@
    "first_failures": [
     "FAIL test_yaml_result_read_under_changed_authority_is_not_projected (test_hamcp132_recorder_settings.AuthorityTests.test_yaml_result_read_under_changed_authority_is_not_projected)"
    ],
-   "seconds": 2.2
+   "seconds": 2.4
   },
   {
    "id": "A3-recorder-anonymous-accepted",
@@ -1050,7 +1050,7 @@
    "first_failures": [
     "FAIL test_anonymous_caller_refused_before_dispatch (test_hamcp132_recorder_settings.AuthorityTests.test_anonymous_caller_refused_before_dispatch)"
    ],
-   "seconds": 2.2
+   "seconds": 2.4
   },
   {
    "id": "A4-recorder-missing-authorizer-accepted",
@@ -1069,7 +1069,7 @@
    "first_failures": [
     "FAIL test_missing_dispatch_authorizer_or_request_refused (test_hamcp132_recorder_settings.AuthorityTests.test_missing_dispatch_authorizer_or_request_refused)"
    ],
-   "seconds": 2.1
+   "seconds": 2.4
   },
   {
    "id": "A5-reconciliation-no-recheck-after-read",
@@ -1088,7 +1088,7 @@
    "first_failures": [
     "FAIL test_authority_change_during_any_read_fails_closed (test_hamcp132_unregistered_entities.AuthorityTests.test_authority_change_during_any_read_fails_closed)"
    ],
-   "seconds": 6.4
+   "seconds": 7.2
   },
   {
    "id": "A6-reconciliation-anonymous-accepted",
@@ -1107,7 +1107,7 @@
    "first_failures": [
     "FAIL test_unavailable_route_anonymous_or_no_authorizer_dispatch_nothing (test_hamcp132_unregistered_entities.AuthorityTests.test_unavailable_route_anonymous_or_no_authorizer_dispatch_nothing)"
    ],
-   "seconds": 6.3
+   "seconds": 7.1
   },
   {
    "id": "A7-recorder-tuple-or-string-split",
@@ -1126,7 +1126,7 @@
    "first_failures": [
     "FAIL test_invalid_entity_ids_refused_before_dispatch (test_hamcp132_recorder_settings.EntityTests.test_invalid_entity_ids_refused_before_dispatch)"
    ],
-   "seconds": 2.2
+   "seconds": 2.5
   },
   {
    "id": "Y1-yaml-path-allowlist-removed",
@@ -1145,7 +1145,7 @@
    "first_failures": [
     "FAIL test_admitted_reader_dispatches_only_contract_paths (test_hamcp132_recorder_settings.YamlConfigReaderTests.test_admitted_reader_dispatches_only_contract_paths)"
    ],
-   "seconds": 3.5
+   "seconds": 4.0
   },
   {
    "id": "Y2-yaml-fallback-envelope-accepted",
@@ -1164,7 +1164,7 @@
    "first_failures": [
     "FAIL test_yaml_unavailable_variants_name_the_exact_reason (test_hamcp132_recorder_settings.SettingsTests.test_yaml_unavailable_variants_name_the_exact_reason)"
    ],
-   "seconds": 2.8
+   "seconds": 3.1
   },
   {
    "id": "Y3-yaml-other-path-accepted",
@@ -1183,7 +1183,7 @@
    "first_failures": [
     "FAIL test_yaml_unavailable_variants_name_the_exact_reason (test_hamcp132_recorder_settings.SettingsTests.test_yaml_unavailable_variants_name_the_exact_reason)"
    ],
-   "seconds": 2.7
+   "seconds": 3.1
   },
   {
    "id": "Y4-yaml-error-code-reflected",
@@ -1202,7 +1202,7 @@
    "first_failures": [
     "FAIL test_yaml_unavailable_variants_name_the_exact_reason (test_hamcp132_recorder_settings.SettingsTests.test_yaml_unavailable_variants_name_the_exact_reason)"
    ],
-   "seconds": 2.6
+   "seconds": 3.2
   },
   {
    "id": "H1-recorder-omissions-appended-after-sanitization",
@@ -1226,7 +1226,7 @@
    "first_failures": [
     "FAIL test_planted_secret_never_appears_in_any_response_field (test_hamcp132_recorder_settings.FinalEnvelopeSanitizationTests.test_planted_secret_never_appears_in_any_response_field)"
    ],
-   "seconds": 2.4
+   "seconds": 2.7
   },
   {
    "id": "H2-reconciliation-omissions-appended-after-sanitization",
@@ -1250,7 +1250,7 @@
    "first_failures": [
     "FAIL test_planted_secret_never_appears_in_any_response_field (test_hamcp132_unregistered_entities.FinalEnvelopeSanitizationTests.test_planted_secret_never_appears_in_any_response_field)"
    ],
-   "seconds": 6.6
+   "seconds": 7.5
   },
   {
    "id": "H3-recorder-redaction-not-partial",
@@ -1269,7 +1269,7 @@
    "first_failures": [
     "FAIL test_known_secret_in_filter_text_is_redacted_and_partial (test_hamcp132_recorder_settings.CredentialTests.test_known_secret_in_filter_text_is_redacted_and_partial)"
    ],
-   "seconds": 2.1
+   "seconds": 2.5
   },
   {
    "id": "H4-reconciliation-redaction-not-partial",
@@ -1288,7 +1288,7 @@
    "first_failures": [
     "FAIL test_known_secret_in_reported_text_is_redacted (test_hamcp132_unregistered_entities.FailureTests.test_known_secret_in_reported_text_is_redacted)"
    ],
-   "seconds": 6.4
+   "seconds": 7.6
   },
   {
    "id": "M1-parser-dependent-reported-fails-core-schema",
@@ -1307,7 +1307,7 @@
    "first_failures": [
     "FAIL test_paired_spellings_never_yield_an_unestablished_claim (test_hamcp132_recorder_settings.YamlSpellingTests.test_paired_spellings_never_yield_an_unestablished_claim)"
    ],
-   "seconds": 6.0
+   "seconds": 7.0
   },
   {
    "id": "M2-parser-dependent-reported-definite",
@@ -1326,7 +1326,7 @@
    "first_failures": [
     "ERROR test_genuinely_invalid_values_still_fail_core_schema (test_hamcp132_recorder_settings.YamlSpellingTests.test_genuinely_invalid_values_still_fail_core_schema)"
    ],
-   "seconds": 6.1
+   "seconds": 6.8
   },
   {
    "id": "M3-parser-dependent-filter-list-fails-core-schema",
@@ -1345,7 +1345,7 @@
    "first_failures": [
     "FAIL test_filter_lists_with_differing_readings_are_not_computed (test_hamcp132_recorder_settings.YamlSpellingTests.test_filter_lists_with_differing_readings_are_not_computed)"
    ],
-   "seconds": 6.1
+   "seconds": 6.9
   },
   {
    "id": "M4-yaml11-boolean-family-ignored",
@@ -1364,7 +1364,7 @@
    "first_failures": [
     "FAIL test_filter_lists_with_differing_readings_are_not_computed (test_hamcp132_recorder_settings.YamlSpellingTests.test_filter_lists_with_differing_readings_are_not_computed)"
    ],
-   "seconds": 6.2
+   "seconds": 7.1
   },
   {
    "id": "M5-yaml11-sexagesimal-ignored",
@@ -1383,7 +1383,7 @@
    "first_failures": [
     "FAIL test_paired_spellings_never_yield_an_unestablished_claim (test_hamcp132_recorder_settings.YamlSpellingTests.test_paired_spellings_never_yield_an_unestablished_claim)"
    ],
-   "seconds": 6.1
+   "seconds": 6.9
   },
   {
    "id": "M6-plain-integer-reported-spelling-dependent",
@@ -1402,7 +1402,7 @@
    "first_failures": [
     "FAIL test_no_redaction_keeps_the_envelope_complete (test_hamcp132_recorder_settings.FinalEnvelopeSanitizationTests.test_no_redaction_keeps_the_envelope_complete)"
    ],
-   "seconds": 2.4
+   "seconds": 2.7
   },
   {
    "id": "M7-exponent-float-ignored",
@@ -1421,7 +1421,7 @@
    "first_failures": [
     "ERROR test_genuinely_invalid_values_still_fail_core_schema (test_hamcp132_recorder_settings.YamlSpellingTests.test_genuinely_invalid_values_still_fail_core_schema)"
    ],
-   "seconds": 6.3
+   "seconds": 6.8
   },
   {
    "id": "M8-parser-dependent-omission-dropped",
@@ -1440,7 +1440,7 @@
    "first_failures": [
     "FAIL test_reviewer_reproductions_are_parser_dependent (test_hamcp132_recorder_settings.YamlSpellingTests.test_reviewer_reproductions_are_parser_dependent)"
    ],
-   "seconds": 6.6
+   "seconds": 7.4
   },
   {
    "id": "M9-quoted-string-treated-as-unquoted",
@@ -1459,7 +1459,7 @@
    "first_failures": [
     "FAIL test_quoted_strings_are_definite_strings (test_hamcp132_recorder_settings.YamlSpellingTests.test_quoted_strings_are_definite_strings)"
    ],
-   "seconds": 6.7
+   "seconds": 7.4
   },
   {
    "id": "M10-spec-booleans-y-n-read-as-yaml11-booleans",
@@ -1478,7 +1478,7 @@
    "first_failures": [
     "FAIL test_paired_spellings_never_yield_an_unestablished_claim (test_hamcp132_recorder_settings.YamlSpellingTests.test_paired_spellings_never_yield_an_unestablished_claim)"
    ],
-   "seconds": 6.4
+   "seconds": 7.1
   },
   {
    "id": "M11-numeric-spelling-disclosure-dropped",
@@ -1497,7 +1497,7 @@
    "first_failures": [
     "ERROR test_common_integers_are_definite (test_hamcp132_recorder_settings.YamlSpellingTests.test_common_integers_are_definite)"
    ],
-   "seconds": 6.0
+   "seconds": 6.9
   },
   {
    "id": "M12-yaml12-boolean-quoting-lost",
@@ -1516,7 +1516,7 @@
    "first_failures": [
     "FAIL test_quoted_strings_are_definite_strings (test_hamcp132_recorder_settings.YamlSpellingTests.test_quoted_strings_are_definite_strings)"
    ],
-   "seconds": 6.5
+   "seconds": 7.0
   },
   {
    "id": "M13-yaml12-float-quoting-lost",
@@ -1535,7 +1535,7 @@
    "first_failures": [
     "FAIL test_quoted_strings_are_definite_strings (test_hamcp132_recorder_settings.YamlSpellingTests.test_quoted_strings_are_definite_strings)"
    ],
-   "seconds": 6.5
+   "seconds": 6.6
   },
   {
    "id": "REVIEW-1-reverse-entity-options-association",
@@ -1554,7 +1554,7 @@
    "first_failures": [
     "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.3
+   "seconds": 2.1
   },
   {
    "id": "B-L1-db-url-projected-as-field",
@@ -1573,7 +1573,7 @@
    "first_failures": [
     "FAIL test_definition_limit_and_response_budget (test_hamcp132_configuration_definitions.BudgetTests.test_definition_limit_and_response_budget)"
    ],
-   "seconds": 7.4
+   "seconds": 7.1
   },
   {
    "id": "B-L2-nested-db-url-kept",
@@ -1592,7 +1592,7 @@
    "first_failures": [
     "FAIL test_db_url_and_credentials_withheld_in_every_position (test_hamcp132_configuration_definitions.CredentialTests.test_db_url_and_credentials_withheld_in_every_position)"
    ],
-   "seconds": 7.7
+   "seconds": 7.3
   },
   {
    "id": "B-L3-nested-credential-key-kept",
@@ -1611,7 +1611,7 @@
    "first_failures": [
     "FAIL test_db_url_and_credentials_withheld_in_every_position (test_hamcp132_configuration_definitions.CredentialTests.test_db_url_and_credentials_withheld_in_every_position)"
    ],
-   "seconds": 7.8
+   "seconds": 8.5
   },
   {
    "id": "B-L4-userinfo-uri-guard-removed",
@@ -1630,7 +1630,7 @@
    "first_failures": [
     "FAIL test_database_url_inside_allowlisted_text_is_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_database_url_inside_allowlisted_text_is_withheld)"
    ],
-   "seconds": 7.4
+   "seconds": 8.5
   },
   {
    "id": "B-L5-secret-reference-projected",
@@ -1649,7 +1649,7 @@
    "first_failures": [
     "FAIL test_references_markers_and_unsupported_values_are_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_references_markers_and_unsupported_values_are_withheld)"
    ],
-   "seconds": 7.6
+   "seconds": 8.6
   },
   {
    "id": "B-L6-reader-redaction-projected",
@@ -1668,7 +1668,7 @@
    "first_failures": [
     "FAIL test_references_markers_and_unsupported_values_are_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_references_markers_and_unsupported_values_are_withheld)"
    ],
-   "seconds": 7.6
+   "seconds": 9.1
   },
   {
    "id": "B-L7-known-secrets-dropped",
@@ -1687,7 +1687,7 @@
    "first_failures": [
     "FAIL test_returned_report_is_exactly_the_sanitizer_output (test_hamcp132_configuration_definitions.BudgetTests.test_returned_report_is_exactly_the_sanitizer_output)"
    ],
-   "seconds": 7.6
+   "seconds": 8.4
   },
   {
    "id": "B-M1-heuristic-reported-exact",
@@ -1706,7 +1706,7 @@
    "first_failures": [
     "FAIL test_heuristic_confidence_levels (test_hamcp132_configuration_definitions.MatchingTests.test_heuristic_confidence_levels)"
    ],
-   "seconds": 11.5
+   "seconds": 13.2
   },
   {
    "id": "B-M2-heuristic-reported-exact-unique-id",
@@ -1725,7 +1725,7 @@
    "first_failures": [
     "FAIL test_heuristic_confidence_levels (test_hamcp132_configuration_definitions.MatchingTests.test_heuristic_confidence_levels)"
    ],
-   "seconds": 11.9
+   "seconds": 13.1
   },
   {
    "id": "B-M3-ambiguous-name-guessed",
@@ -1744,7 +1744,7 @@
    "first_failures": [
     "FAIL test_ambiguous_is_never_resolved (test_hamcp132_configuration_definitions.MatchingTests.test_ambiguous_is_never_resolved)"
    ],
-   "seconds": 11.2
+   "seconds": 13.1
   },
   {
    "id": "B-M4-shared-unique-id-guessed",
@@ -1763,7 +1763,7 @@
    "first_failures": [
     "FAIL test_ambiguous_is_never_resolved (test_hamcp132_configuration_definitions.MatchingTests.test_ambiguous_is_never_resolved)"
    ],
-   "seconds": 10.9
+   "seconds": 12.9
   },
   {
    "id": "B-M5-high-confidence-on-incomplete-sources",
@@ -1782,7 +1782,7 @@
    "first_failures": [
     "FAIL test_heuristic_confidence_levels (test_hamcp132_configuration_definitions.MatchingTests.test_heuristic_confidence_levels)"
    ],
-   "seconds": 11.3
+   "seconds": 13.2
   },
   {
    "id": "B-M6-collision-suffix-not-low",
@@ -1801,7 +1801,7 @@
    "first_failures": [
     "FAIL test_heuristic_confidence_levels (test_hamcp132_configuration_definitions.MatchingTests.test_heuristic_confidence_levels)"
    ],
-   "seconds": 11.1
+   "seconds": 13.2
   },
   {
    "id": "B-M7-platform-filter-removed",
@@ -1820,7 +1820,7 @@
    "first_failures": [
     "FAIL test_platform_filters_cross_integration_candidates (test_hamcp132_configuration_definitions.MatchingTests.test_platform_filters_cross_integration_candidates)"
    ],
-   "seconds": 11.5
+   "seconds": 13.0
   },
   {
    "id": "B-M8-heuristic-applied-to-registered-entity",
@@ -1839,7 +1839,7 @@
    "first_failures": [
     "FAIL test_registered_entity_is_never_matched_by_name (test_hamcp132_configuration_definitions.MatchingTests.test_registered_entity_is_never_matched_by_name)"
    ],
-   "seconds": 11.1
+   "seconds": 12.8
   },
   {
    "id": "B-M9-ui-entry-claimed-readable",
@@ -1858,7 +1858,7 @@
    "first_failures": [
     "FAIL test_exact_config_entry_lists_the_ui_entry (test_hamcp132_configuration_definitions.MatchingTests.test_exact_config_entry_lists_the_ui_entry)"
    ],
-   "seconds": 11.0
+   "seconds": 13.3
   },
   {
    "id": "B-P1-failed-source-reported-complete",
@@ -1877,7 +1877,7 @@
    "first_failures": [
     "FAIL test_telemetry_on_partial (test_hamcp132_configuration_definitions.AuthorityTests.test_telemetry_on_partial)"
    ],
-   "seconds": 7.0
+   "seconds": 7.9
   },
   {
    "id": "B-P2-source-failure-not-disclosed",
@@ -1901,7 +1901,7 @@
    "first_failures": [
     "FAIL test_telemetry_on_partial (test_hamcp132_configuration_definitions.AuthorityTests.test_telemetry_on_partial)"
    ],
-   "seconds": 6.7
+   "seconds": 7.9
   },
   {
    "id": "B-P3-failed-yaml-source-reported-complete",
@@ -1920,7 +1920,7 @@
    "first_failures": [
     "FAIL test_provider_exception_text_never_in_public_failure (test_hamcp132_configuration_definitions.CredentialTests.test_provider_exception_text_never_in_public_failure)"
    ],
-   "seconds": 7.3
+   "seconds": 8.4
   },
   {
    "id": "B-P4-packages-not-disclosed",
@@ -1939,7 +1939,7 @@
    "first_failures": [
     "FAIL test_homeassistant_node_decides_a_not_found_packages_key (test_hamcp132_configuration_definitions.PackagesAndIncludeTests.test_homeassistant_node_decides_a_not_found_packages_key)"
    ],
-   "seconds": 11.4
+   "seconds": 13.6
   },
   {
    "id": "B-P5-whole-path-include-not-disclosed",
@@ -1958,7 +1958,7 @@
    "first_failures": [
     "FAIL test_includes_are_disclosed_at_each_level (test_hamcp132_configuration_definitions.PackagesAndIncludeTests.test_includes_are_disclosed_at_each_level)"
    ],
-   "seconds": 11.4
+   "seconds": 13.6
   },
   {
    "id": "B-P6-value-include-not-disclosed",
@@ -1977,7 +1977,7 @@
    "first_failures": [
     "FAIL test_includes_are_disclosed_at_each_level (test_hamcp132_configuration_definitions.PackagesAndIncludeTests.test_includes_are_disclosed_at_each_level)"
    ],
-   "seconds": 11.6
+   "seconds": 13.8
   },
   {
    "id": "B-P7-unprojected-definitions-not-disclosed",
@@ -1996,7 +1996,7 @@
    "first_failures": [
     "FAIL test_control_reaches_every_identifier_bearing_field (test_hamcp132_configuration_definitions.PlantedSecretSweepTests.test_control_reaches_every_identifier_bearing_field)"
    ],
-   "seconds": 11.5
+   "seconds": 13.6
   },
   {
    "id": "B-P8-total-failure-returned-as-report",
@@ -2015,7 +2015,7 @@
    "first_failures": [
     "FAIL test_provider_exception_text_never_in_public_failure (test_hamcp132_configuration_definitions.CredentialTests.test_provider_exception_text_never_in_public_failure)"
    ],
-   "seconds": 7.8
+   "seconds": 8.5
   },
   {
    "id": "B-H1-omissions-appended-after-sanitization",
@@ -2039,7 +2039,7 @@
    "first_failures": [
     "FAIL test_returned_report_is_exactly_the_sanitizer_output (test_hamcp132_configuration_definitions.BudgetTests.test_returned_report_is_exactly_the_sanitizer_output)"
    ],
-   "seconds": 7.7
+   "seconds": 8.3
   },
   {
    "id": "B-H2-redaction-not-partial",
@@ -2058,7 +2058,7 @@
    "first_failures": [
     "FAIL test_long_text_is_bounded (test_hamcp132_configuration_definitions.BudgetTests.test_long_text_is_bounded)"
    ],
-   "seconds": 7.3
+   "seconds": 8.2
   },
   {
    "id": "B-H3-text-bound-dropped",
@@ -2077,7 +2077,7 @@
    "first_failures": [
     "FAIL test_long_text_is_bounded (test_hamcp132_configuration_definitions.BudgetTests.test_long_text_is_bounded)"
    ],
-   "seconds": 7.2
+   "seconds": 8.2
   },
   {
    "id": "B-D1-unmatched-definition-reported-entity-level",
@@ -2096,7 +2096,7 @@
    "first_failures": [
     "FAIL test_ambiguous_is_never_resolved (test_hamcp132_configuration_definitions.MatchingTests.test_ambiguous_is_never_resolved)"
    ],
-   "seconds": 11.0
+   "seconds": 12.7
   },
   {
    "id": "B-D2-dependencies-not-checked",
@@ -2115,7 +2115,7 @@
    "first_failures": [
     "FAIL test_dependencies (test_hamcp132_configuration_definitions.DiagnosisTests.test_dependencies)"
    ],
-   "seconds": 11.4
+   "seconds": 13.1
   },
   {
    "id": "B-D3-registry-disabled-ignored",
@@ -2134,7 +2134,7 @@
    "first_failures": [
     "FAIL test_registry_disabled (test_hamcp132_configuration_definitions.DiagnosisTests.test_registry_disabled)"
    ],
-   "seconds": 11.5
+   "seconds": 13.1
   },
   {
    "id": "B-D4-upstream-disabled-by-echoed",
@@ -2153,7 +2153,7 @@
    "first_failures": [
     "FAIL test_registry_disabled (test_hamcp132_configuration_definitions.DiagnosisTests.test_registry_disabled)"
    ],
-   "seconds": 11.1
+   "seconds": 13.3
   },
   {
    "id": "B-D5-transient-entry-called-deployment",
@@ -2172,7 +2172,7 @@
    "first_failures": [
     "FAIL test_classifications (test_hamcp132_configuration_definitions.CapabilityTests.test_classifications)"
    ],
-   "seconds": 7.1
+   "seconds": 8.4
   },
   {
    "id": "B-D6-platform-not-loaded-skipped",
@@ -2191,7 +2191,7 @@
    "first_failures": [
     "FAIL test_integration_and_platform_not_loaded (test_hamcp132_configuration_definitions.DiagnosisTests.test_integration_and_platform_not_loaded)"
    ],
-   "seconds": 10.9
+   "seconds": 12.7
   },
   {
    "id": "B-D7-states-failure-ignored",
@@ -2210,7 +2210,7 @@
    "first_failures": [
     "FAIL test_states_failure_with_entities_is_disclosed (test_hamcp132_configuration_definitions.SourceFailureTests.test_states_failure_with_entities_is_disclosed)"
    ],
-   "seconds": 12.0
+   "seconds": 14.2
   },
   {
    "id": "B-D8-unparsed-version-called-feature-gap",
@@ -2229,7 +2229,7 @@
    "first_failures": [
     "FAIL test_classifications (test_hamcp132_configuration_definitions.CapabilityTests.test_classifications)"
    ],
-   "seconds": 7.4
+   "seconds": 8.6
   },
   {
    "id": "B-D9-capability-transient-called-deployment",
@@ -2248,7 +2248,7 @@
    "first_failures": [
     "FAIL test_classifications (test_hamcp132_configuration_definitions.CapabilityTests.test_classifications)"
    ],
-   "seconds": 7.6
+   "seconds": 8.5
   },
   {
    "id": "B-D10-state-value-copied",
@@ -2267,7 +2267,7 @@
    "first_failures": [
     "FAIL test_state_values_are_never_copied (test_hamcp132_configuration_definitions.DiagnosisTests.test_state_values_are_never_copied)"
    ],
-   "seconds": 11.4
+   "seconds": 12.7
   },
   {
    "id": "B-S1-yaml-path-set-widened",
@@ -2286,7 +2286,7 @@
    "first_failures": [
     "FAIL test_purpose_dispatches_only_its_paths (test_hamcp132_configuration_definitions.DefinitionReaderPurposeTests.test_purpose_dispatches_only_its_paths)"
    ],
-   "seconds": 8.8
+   "seconds": 10.2
   },
   {
    "id": "B-S2-core-gate-removed",
@@ -2305,7 +2305,7 @@
    "first_failures": [
     "ERROR test_core_gate_mapping (test_hamcp132_configuration_definitions.RegistrationTests.test_core_gate_mapping)"
    ],
-   "seconds": 11.5
+   "seconds": 13.9
   },
   {
    "id": "B-S3-tool-pre-sdk-validation-removed",
@@ -2324,7 +2324,7 @@
    "first_failures": [
     "ERROR test_served_tool_rejects_raw_arguments_without_echo (test_hamcp132_configuration_definitions.RegistrationTests.test_served_tool_rejects_raw_arguments_without_echo)"
    ],
-   "seconds": 11.1
+   "seconds": 13.7
   },
   {
    "id": "B-S4-gateway-pre-sdk-validation-removed",
@@ -2343,7 +2343,7 @@
    "first_failures": [
     "FAIL test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material (test_hamcp132_configuration_definitions.RegistrationTests.test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material)"
    ],
-   "seconds": 11.4
+   "seconds": 13.5
   },
   {
    "id": "B-S5-entries-domain-unchecked",
@@ -2362,7 +2362,7 @@
    "first_failures": [
     "FAIL test_fixed_command_contract (test_hamcp132_configuration_definitions.NoWritePathTests.test_fixed_command_contract)"
    ],
-   "seconds": 10.8
+   "seconds": 13.1
   },
   {
    "id": "B-S6-integration-set-open",
@@ -2381,7 +2381,7 @@
    "first_failures": [
     "ERROR test_invalid_service_arguments_refused_before_dispatch (test_hamcp132_configuration_definitions.AuthorityTests.test_invalid_service_arguments_refused_before_dispatch)"
    ],
-   "seconds": 6.3
+   "seconds": 8.0
   },
   {
    "id": "B-S7-audit-copies-integrations",
@@ -2400,7 +2400,7 @@
    "first_failures": [
     "FAIL test_gateway_positive_output_and_audit (test_hamcp132_configuration_definitions.RegistrationTests.test_gateway_positive_output_and_audit)"
    ],
-   "seconds": 11.2
+   "seconds": 13.9
   },
   {
    "id": "B-S9-audit-copies-entity-ids",
@@ -2419,7 +2419,7 @@
    "first_failures": [
     "FAIL test_gateway_positive_output_and_audit (test_hamcp132_configuration_definitions.RegistrationTests.test_gateway_positive_output_and_audit)"
    ],
-   "seconds": 11.3
+   "seconds": 13.4
   },
   {
    "id": "B-S8-annotation-not-read-only",
@@ -2438,7 +2438,7 @@
    "first_failures": [
     "FAIL test_tool_annotations_and_schema (test_hamcp132_configuration_definitions.RegistrationTests.test_tool_annotations_and_schema)"
    ],
-   "seconds": 11.5
+   "seconds": 13.4
   },
   {
    "id": "B-A1-yaml-no-recheck-after-read",
@@ -2457,7 +2457,7 @@
    "first_failures": [
     "FAIL test_yaml_result_read_under_changed_authority_is_not_projected (test_hamcp132_configuration_definitions.AuthorityTests.test_yaml_result_read_under_changed_authority_is_not_projected)"
    ],
-   "seconds": 6.6
+   "seconds": 7.7
   },
   {
    "id": "B-A2-core-read-no-recheck-after-read",
@@ -2476,7 +2476,7 @@
    "first_failures": [
     "FAIL test_authority_change_during_any_read_fails_closed (test_hamcp132_configuration_definitions.AuthorityTests.test_authority_change_during_any_read_fails_closed)"
    ],
-   "seconds": 6.4
+   "seconds": 7.6
   },
   {
    "id": "B-A3-anonymous-accepted",
@@ -2495,7 +2495,7 @@
    "first_failures": [
     "FAIL test_anonymous_caller_and_missing_authorizer_refused_before_dispatch (test_hamcp132_configuration_definitions.AuthorityTests.test_anonymous_caller_and_missing_authorizer_refused_before_dispatch)"
    ],
-   "seconds": 6.4
+   "seconds": 7.8
   },
   {
    "id": "B-A4-missing-authorizer-accepted",
@@ -2514,7 +2514,7 @@
    "first_failures": [
     "FAIL test_anonymous_caller_and_missing_authorizer_refused_before_dispatch (test_hamcp132_configuration_definitions.AuthorityTests.test_anonymous_caller_and_missing_authorizer_refused_before_dispatch)"
    ],
-   "seconds": 6.5
+   "seconds": 7.6
   },
   {
    "id": "B-B1-definition-limit-removed",
@@ -2533,7 +2533,7 @@
    "first_failures": [
     "FAIL test_definition_limit_and_response_budget (test_hamcp132_configuration_definitions.BudgetTests.test_definition_limit_and_response_budget)"
    ],
-   "seconds": 6.8
+   "seconds": 8.2
   },
   {
    "id": "B-B2-ui-entry-limit-removed",
@@ -2552,7 +2552,7 @@
    "first_failures": [
     "FAIL test_ui_entry_limit (test_hamcp132_configuration_definitions.BudgetTests.test_ui_entry_limit)"
    ],
-   "seconds": 7.0
+   "seconds": 8.5
   },
   {
    "id": "B-B3-response-budget-removed",
@@ -2571,7 +2571,7 @@
    "first_failures": [
     "FAIL test_budget_trims_ui_entries_after_definitions (test_hamcp132_configuration_definitions.BudgetTests.test_budget_trims_ui_entries_after_definitions)"
    ],
-   "seconds": 6.6
+   "seconds": 7.9
   },
   {
    "id": "B-B4-listed-count-stale",
@@ -2590,7 +2590,7 @@
    "first_failures": [
     "FAIL test_budget_trims_ui_entries_after_definitions (test_hamcp132_configuration_definitions.BudgetTests.test_budget_trims_ui_entries_after_definitions)"
    ],
-   "seconds": 6.7
+   "seconds": 8.0
   },
   {
    "id": "B-B5-trim-drops-everything",
@@ -2609,7 +2609,7 @@
    "first_failures": [
     "FAIL test_definition_limit_and_response_budget (test_hamcp132_configuration_definitions.BudgetTests.test_definition_limit_and_response_budget)"
    ],
-   "seconds": 6.8
+   "seconds": 8.3
   }
  ]
 }
