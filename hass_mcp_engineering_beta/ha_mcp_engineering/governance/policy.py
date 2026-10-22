@@ -29,6 +29,16 @@ from .physical_effects import (
 )
 from .entity_metadata import ENTITY_METADATA_RESOURCE_TYPE
 from .entity_metadata_planning import POLICY_TRIGGER as ENTITY_METADATA_POLICY_TRIGGER
+from .entity_availability_exposure import (
+    BINDINGS_KEY as AVAILABILITY_EXPOSURE_BINDINGS_KEY,
+    RESOURCE_TYPES as AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
+    exposure_value,
+    proposed_errors as availability_exposure_proposed_errors,
+)
+from .entity_availability_exposure_planning import (
+    MAX_ENTITIES as AVAILABILITY_EXPOSURE_MAX_ENTITIES,
+    POLICY_TRIGGER as AVAILABILITY_EXPOSURE_POLICY_TRIGGER,
+)
 
 
 POLICY_VERSION = "f2-v3"
@@ -589,6 +599,166 @@ def _entity_metadata_operation_policy(
     return incomplete
 
 
+AVAILABILITY_EXPOSURE_INCOMPLETE = (
+    "entity_availability_exposure_execution_contract_incomplete"
+)
+
+
+def _availability_exposure_expected_basis(
+    operation: ConfigurationOperation,
+) -> tuple[str, ...]:
+    """Recompute the OD-5 basis from the bound evidence, not the marker."""
+
+    bindings = operation.proposed_config[AVAILABILITY_EXPOSURE_BINDINGS_KEY]
+    kind = bindings["operation"]
+    protection = bindings["protection"]
+    basis: list[str] = []
+    if kind == "expose" and protection["object_reasons"]:
+        basis.append("expose_protected_object")
+    elif kind == "disable":
+        if protection["object_reasons"]:
+            basis.append("disable_protected_object")
+        if protection["dependency_reasons"]:
+            basis.append("disable_protected_dependency")
+    elif (
+        kind == "enable"
+        and protection["object_reasons"]
+        and any(
+            exposure_value(operation.current_config, assistant)["should_expose"]
+            is True
+            for assistant in (
+                "cloud.alexa", "cloud.google_assistant", "conversation",
+            )
+        )
+    ):
+        basis.append("enable_exposed_protected_object")
+    return tuple(basis)
+
+
+def _availability_exposure_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one entity enable/disable or exposure update (HAMCP-069B, OD-5).
+
+    The marker must agree exactly with the basis recomputed from the bound
+    protection evidence; any disagreement or gap is prohibited as incomplete.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (AVAILABILITY_EXPOSURE_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") == AVAILABILITY_EXPOSURE_POLICY_TRIGGER
+    ]
+    if (
+        operation.action != "update"
+        or operation.helper_type is not None
+        or not isinstance(operation.target_id, str)
+        or not operation.target_id
+        or not isinstance(operation.current_config, dict)
+        or not isinstance(operation.proposed_config, dict)
+        or availability_exposure_proposed_errors(
+            operation.resource_type, operation.target_id, operation.proposed_config
+        )
+        or not isinstance(operation.current_state_fingerprint, str)
+        or len(operation.current_state_fingerprint) != 64
+        or not isinstance(operation.proposed_config_hash, str)
+        or len(operation.proposed_config_hash) != 64
+        or operation.risk.apply_allowed is not True
+        or len(markers_found) != 1
+    ):
+        return incomplete
+    marker = markers_found[0]
+    basis = marker.get("basis")
+    if not isinstance(basis, str):
+        return incomplete
+    basis_codes = tuple(item for item in basis.split(",") if item)
+    if basis_codes != _availability_exposure_expected_basis(operation):
+        return incomplete
+    policy = marker.get("policy")
+    consequence = marker.get("physical_consequence")
+    if (
+        not basis_codes
+        and policy == "standard"
+        and consequence == PhysicalConsequence.NONE.value
+        and operation.risk.level is RiskLevel.LOW
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.STANDARD_ADMIN,
+            RiskDelta.LOW,
+            PhysicalConsequence.NONE,
+            (
+                "entity_availability_exposure_standard_policy",
+                "supported_configuration_change",
+            ),
+        )
+    if (
+        basis_codes
+        and policy == "elevated"
+        and consequence == PhysicalConsequence.SAFETY_CRITICAL.value
+        and operation.risk.level is RiskLevel.HIGH
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            RiskDelta.HIGH,
+            PhysicalConsequence.SAFETY_CRITICAL,
+            tuple(
+                sorted(
+                    {
+                        *basis_codes,
+                        "entity_availability_exposure_elevated_policy",
+                        "supported_configuration_change",
+                    }
+                )
+            ),
+        )
+    return incomplete
+
+
+def _availability_exposure_plan_complete(operations) -> bool:
+    """One 069B type, one operation and assistant, at most 8 children.
+
+    An enable plan also binds exactly one config entry (OD-7).
+    """
+
+    types = {op.resource_type for op in operations}
+    if len(types) != 1 or not types <= set(AVAILABILITY_EXPOSURE_RESOURCE_TYPES):
+        return False
+    if not 1 <= len(operations) <= AVAILABILITY_EXPOSURE_MAX_ENTITIES:
+        return False
+    bindings = []
+    for op in operations:
+        proposed = op.proposed_config
+        value = (
+            proposed.get(AVAILABILITY_EXPOSURE_BINDINGS_KEY)
+            if isinstance(proposed, dict)
+            else None
+        )
+        if not isinstance(value, dict):
+            return False
+        bindings.append(value)
+    if len({op.target_id for op in operations}) != len(operations):
+        return False
+    if len({(item.get("operation"), item.get("assistant")) for item in bindings}) != 1:
+        return False
+    if bindings[0].get("operation") == "enable":
+        entries = {
+            op.current_config.get("config_entry_id")
+            if isinstance(op.current_config, dict)
+            else ()
+            for op in operations
+        }
+        if len(entries) != 1:
+            return False
+    return True
+
+
 SAFETY_CRITICAL_REVIEW_BOUNDS_EXCEEDED = "safety_critical_review_bounds_exceeded"
 SPLIT_THE_CHANGE = "too_many_protected_objects_to_review_split_the_change"
 
@@ -633,6 +803,8 @@ def configuration_operation_policy(
     """
     if operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE:
         return _entity_metadata_operation_policy(operation)
+    if operation.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
+        return _availability_exposure_operation_policy(operation)
     triggers = _risk_triggers(operation)
     safety_critical_services = _risk_services(operation)
     risk_delta = _risk_delta(operation.risk.level)
@@ -1040,6 +1212,19 @@ def _single_plan_policy(
                     RiskDelta.CRITICAL,
                     PhysicalConsequence.UNKNOWN,
                     ("entity_metadata_execution_contract_incomplete",),
+                ),
+            )
+        if any(
+            op.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES
+            for op in plan.operations
+        ) and not _availability_exposure_plan_complete(plan.operations):
+            # One 069B resource type per plan, never mixed, at most 8 children.
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.PROHIBITED,
+                    RiskDelta.CRITICAL,
+                    PhysicalConsequence.UNKNOWN,
+                    (AVAILABILITY_EXPOSURE_INCOMPLETE,),
                 ),
             )
         if any(inverse_eligibility.markers(op) for op in plan.operations) and inverse_eligibility.bound(plan) is None:

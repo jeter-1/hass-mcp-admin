@@ -1,66 +1,113 @@
 # Engineering 2.4.1-beta.31 release notes
 
-Engineering 2.4.1-beta.31 corrects `get_incident_logs` entry times
-(HAMCP-220, break-fix). It follows 2.4.1-beta.30 (HAMCP-131) and includes it.
+Engineering 2.4.1-beta.31 ships the governed entity enable/disable and voice
+assistant exposure family (HAMCP-069B) **inactive**. This release activates
+nothing new on a deployed server.
 
-Supervisor 2026.10.3 renders the log line time in Home Assistant's local
-time, with no offset. beta.30 read that time as UTC, so in a zone west of UTC
-a recent window was reported as after the journal tail and returned nothing.
+- New tool `create_entity_availability_exposure_plan` proposes one operation
+  (`disable`, `enable`, `expose` or `unexpose`) over 1-8 exact registered
+  entities.
+- Its two resource types, `entity_registry_availability` and
+  `entity_assistant_exposure`, need two new Core capability profiles. The
+  signed registry (sequence 12) does not reference them, so every call is
+  refused with `CoreCapabilityUnavailable` and reason code
+  `pending_signed_registry_admission`. No plan is stored and nothing is
+  dispatched (`plan_created: false`, `provider_dispatch_occurred: false`).
+  The governance service enforces the same check itself, before any Home
+  Assistant read, so no entry point bypasses it.
+- `list_capabilities` and server health show both resource types as
+  `pending_signed_registry_admission`.
 
-Findings and design:
-[`HAMCP_220_INCIDENT_LOG_TIMESTAMPS.md`](HAMCP_220_INCIDENT_LOG_TIMESTAMPS.md).
+Activation needs a separate, reviewed, signed registry sequence 13 that
+references the two profiles (owner decision OD-2c (i)). The live canaries in
+the acceptance document wait for that sequence.
+
+Design and owner decisions:
+[`HAMCP_069B_ENABLE_EXPOSE_DESIGN.md`](HAMCP_069B_ENABLE_EXPOSE_DESIGN.md).
 Acceptance: [`V2_4_1_BETA31_ACCEPTANCE.md`](V2_4_1_BETA31_ACCEPTANCE.md).
 
-## `get_incident_logs` time basis
+beta.31 follows 2.4.1-beta.30 (HAMCP-131) and includes it. It adds no
+dependency change; both hashed locks are beta.30's.
 
-- **Journal realtime first.** Each page's first entry takes its exact UTC
-  `__REALTIME_TIMESTAMP` from the `X-First-Cursor` `t=` field. That entry
-  also checks how the page's text was rendered, in Home Assistant's zone or
-  in UTC (Supervisor 2026.09.1). If neither matches, the page fails closed
-  as `timestamp_basis_mismatch`.
-- **Text in Home Assistant's zone.** The other entries are read from their
-  text in the rendering that matched, with DST rules from `zoneinfo`.
-  Supervisor's offset form, `+HH:MM`, is read exactly.
-- **Uncertain, not guessed.**
-  - A local time that occurs twice (DST fall-back, for example 2026-11-01
-    01:30 in America/Chicago) or never (spring-forward) gets `ts: null` and
-    `ts_basis: uncertain`, with `timestamp_uncertain` listing every
-    candidate.
-  - If such an entry may fall on either side of a window edge, it is
-    returned with `window_membership_uncertain` and the read is partial.
-- **Zone failure.** The zone is the add-on's `TZ`, which Supervisor sets
-  from Home Assistant's configuration at add-on start. If it is missing or
-  invalid, the Core and `addon:self` sources become `unavailable`
-  (`time_zone_unavailable`) with zero requests. UTC is never assumed.
-- **Stated basis.**
-  - Every entry has `ts_basis` and `time_zone`.
-  - Every source has `timestamp_basis`.
-  - The response has `time_basis`.
-  - A page without a realtime is read in the zone and makes the read
-    partial (`timestamp_basis_unverified`).
+The catalog grows from 92 to **93** tools (94 with the optional YAML reader
+admitted): 65 static plus 28 delegated. Nothing else changes: no existing tool,
+input schema, description, signed registry entry or fingerprint (the 069A
+entity-metadata profile is byte-identical), HOLD, support window, workflow,
+add-on permission or stable-v1 file.
 
-## Compatibility
+## What the family does once admitted
 
-- Existing fields keep their names, and new fields are additive. The output
-  schema id stays `incident-logs-v1`.
-- `ts` may now be `null` (uncertain entries only).
-- Cursor format, budgets, authority reporting and the sanitizer exit are
-  unchanged.
-- `get_history_slices` is unchanged.
+Inputs:
+- `operation`: `disable`, `enable`, `expose` or `unexpose`;
+- `entity_ids`: 1-8 exact registered entity ids (OD-7 as amended: the shared
+  8-operation bound);
+- `assistant`: required for `expose` and `unexpose`, refused otherwise. It is
+  `conversation` (Assist) or `cloud.google_assistant`. Alexa is refused
+  (OD-3);
+- `expiration_minutes`: 5-1440, default 120.
 
-No tool, input schema, description, permission, route, add-on configuration,
-workflow, signed registry entry, HOLD, support window, dependency or stable-v1
-file changes. The catalog stays at **92** tools (93 with the optional YAML
-reader).
+There is no free-text field.
 
-## Known limitation
+Each entity is one child operation with exactly one closed Home Assistant
+write:
 
-A Home Assistant time-zone change takes effect for this add-on at its next
-restart. Until then, a mismatching page fails closed as
-`timestamp_basis_mismatch`.
+| Resource type | Write | Readback |
+| --- | --- | --- |
+| `entity_registry_availability` | `config/entity_registry/update` with exactly `entity_id` and `disabled_by` (`"user"` or `null`) | `config/entity_registry/get`, `disabled_by` |
+| `entity_assistant_exposure` | `homeassistant/expose_entity` with one assistant, one entity and `should_expose` | `config/entity_registry/get`, `options[assistant].should_expose` |
+
+The exposure write returns an empty result, so only the readback decides.
+
+Reads are limited to these commands:
+- `config/entity_registry/get`;
+- `config/entity_registry/list`;
+- `config_entries/get_single`;
+- `homeassistant/expose_new_entities/get`.
+
+The gateway never sends:
+- `cloud/status`;
+- `homeassistant/expose_entity/list`;
+- `homeassistant/expose_new_entities/set`;
+- either cloud entity-update command.
+
+Refused before any plan is stored:
+- unregistered (state-only) entities;
+- devices and config entries;
+- Core-internal disables;
+- already-applied states;
+- an `enable` plan that spans more than one config entry.
+
+Approval:
+- Protected entities need the existing elevated acknowledgement, with a
+  plain-language consequence statement (OD-4, OD-5, OD-9). Protected means the
+  existing protected-object floor, protected cover classes, unresolved cover
+  classes, sirens, safety binary sensors and entities that feed
+  safety-critical automations. A disable whose dependency or impact evidence
+  is incomplete for any reason is also protected. Its consequence statement
+  says that the impact could not be fully determined.
+- `unexpose` is always standard.
+- External administrator approval and `apply_change_plan` are required.
+
+Execution:
+- Children run in order, non-atomically, and stop on the first failure. A
+  partial plan ends `manual_review_required`.
+- A changed registry entry is refused as stale before the write.
+- A readback that differs from the approved entry fails verification.
+- One side effect is tolerated: Core's Alexa handler may add a non-target
+  `cloud.alexa` options key that was absent. It is reported with observation
+  code `tolerated_new_exposure_key_cloud_alexa`.
+- Rollback is an inverse plan (OD-8).
+
+## Security
+
+- The new write paths cannot be reached on a deployed server until a signed
+  sequence 13 admits their profiles. A tampered profile fingerprint keeps the
+  profile withheld.
+- The gateway accepts only its closed command vocabulary. A static check
+  proves `cloud/status` is never constructed.
+- The tool has no delegated provider and no direct fallback.
 
 ## Rollback
 
-Reinstall the 2.4.1-beta.30 artifact; it restores the UTC misreading
-described above. No stored format changes. Cursors are process-keyed and do
-not survive a restart.
+Reinstall the 2.4.1-beta.30 artifact. No stored format changes: while the
+family is unadmitted it stores no plan or child record of its types.

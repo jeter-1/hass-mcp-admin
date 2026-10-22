@@ -27,6 +27,7 @@ from ha_mcp_engineering.ha_core_readmission.probe_profiles import (
     LEGACY_PROBE_PROFILE, compiled_probe_profile, known_probe_profile,
 )
 from ha_mcp_engineering.ha_core_readmission.profiles import (
+    CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES,
     CORE_RUNTIME_CAPABILITY_PROFILES, compiled_exact_authority,
 )
 from ha_mcp_engineering.ha_core_readmission.models import CORE_IDENTITY
@@ -102,7 +103,7 @@ class OctoberDeviceShapeTests(unittest.TestCase):
         self.assertFalse(assess_device_registry(self.records).complete)
         self.assertFalse(assess_device_registry(self.records, schema=SEPTEMBER.device_registry_schema).complete)
         ids = {e['capability_id'] for e in capability_evidence_for_probes(**probe_inputs(SEPTEMBER))}
-        self.assertEqual(len(ids), 19)
+        self.assertEqual(len(ids), 21)  # +2 HAMCP-069B transport evidence (not admission)
         self.assertTrue(DEVICE_CAPABILITIES.isdisjoint(ids))
 
     def test_october_profile_restores_all_required_probe_evidence(self):
@@ -222,7 +223,10 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
                           probe_profile_sha256=OCTOBER.contract_fingerprint,
                           capabilities=[{k:p.to_mapping()[k] for k in (
                               'capability_id','profile_id','profile_version','adapter_id','contract_fingerprint')}
-                              for p in CORE_RUNTIME_CAPABILITY_PROFILES])
+                              for p in CORE_RUNTIME_CAPABILITY_PROFILES
+                              # HAMCP-069B: the signed sequence-12 reference
+                              # set does not name the dormant 069B profiles.
+                              if p not in CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES])
         self.now = NOW
         self.raw = None
         async def fetch(*_args):

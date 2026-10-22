@@ -1,26 +1,39 @@
 # Changelog
 
-## 2.4.1-beta.31 - Incident-log entry times (HAMCP-220)
+## 2.4.1-beta.31 - Entity enable/disable and voice exposure, inactive (HAMCP-069B)
 
 Builds on 2.4.1-beta.30.
 
-- Fix `get_incident_logs` reading the Supervisor log time as UTC. Supervisor
-  2026.10.3 renders it in Home Assistant's local time without an offset, so
-  recent windows were reported after the tail. Each page's first entry now
-  takes its exact UTC time from the `X-First-Cursor` realtime (`t=`), which
-  also checks whether the page's text is in Home Assistant's zone or UTC
-  (`timestamp_basis_mismatch` when neither). Other entries are read from
-  their text in that rendering with `zoneinfo` DST rules; an explicit
-  `+HH:MM` is read exactly.
-- A DST-ambiguous or nonexistent local time is `ts_basis: uncertain` with
-  `ts: null` and every candidate; one at a window edge makes the read
-  partial (`timestamp_uncertain_at_window_edge`). A missing or invalid zone
-  (`TZ`, set by Supervisor at add-on start) makes Core and `addon:self`
-  unavailable (`time_zone_unavailable`) with zero requests, never UTC.
-- Entries gain `ts_basis` and `time_zone`, sources `timestamp_basis`, the
-  response `time_basis`. Schema id unchanged; `ts` is nullable. No
-  descriptor, input schema, route, permission, add-on configuration,
-  dependency or stable-v1 file changes; catalog 92 (93).
+- Add `create_entity_availability_exposure_plan`. It proposes one operation
+  (`disable`, `enable`, `expose`, `unexpose`) over 1-8 exact registered
+  entities. `expose`/`unexpose` need `assistant` (`conversation` or
+  `cloud.google_assistant`); Alexa is refused. There is no free-text field.
+- Two resource types, `entity_registry_availability`
+  (`config/entity_registry/update` with exactly `entity_id` and
+  `disabled_by`) and `entity_assistant_exposure`
+  (`homeassistant/expose_entity`, one assistant and one entity), each
+  verified by exact `config/entity_registry/get` readback. A non-target
+  `cloud.alexa` key going from absent to present is the one tolerated
+  difference, reported as `tolerated_new_exposure_key_cloud_alexa`.
+- Two new runtime-only Core capability profiles. The signed registry
+  (sequence 12) does not reference them, so every call is refused with
+  `CoreCapabilityUnavailable` / `pending_signed_registry_admission` before a
+  plan is stored. `list_capabilities` and health report the same status.
+  The governance service checks admission first, before any Home Assistant
+  read or plan storage, on every entry point. Nothing new is active until an
+  owner-signed sequence 13.
+- Once admitted: protected entities need the existing elevated
+  acknowledgement. A disable whose dependency evidence is incomplete for any
+  reason is protected, with "impact could not be fully determined". An
+  enable plan covers one config entry; unregistered
+  entities, devices, config entries, Core-internal disables and
+  already-applied states are refused; rollback is an inverse plan. The
+  gateway never sends `cloud/status`, `homeassistant/expose_entity/list`,
+  `homeassistant/expose_new_entities/set` or either cloud entity-update
+  command.
+- Catalog: 65 static tools plus 28 delegated reads, 93 total (94 with the
+  optional YAML reader). No existing descriptor, schema, permission,
+  workflow, signed registry entry or fingerprint, or stable-v1 file changes.
 
 ## 2.4.1-beta.30 - Incident-window logs and continuable history (HAMCP-131)
 

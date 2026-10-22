@@ -386,6 +386,10 @@ NON_IDENTIFIER_INPUTS: dict[str, frozenset[str]] = {
     "create_entity_metadata_plan": frozenset(
         {"name", "icon", "aliases", "hidden", "expiration_minutes"}
     ),
+    # HAMCP-069B: operation and assistant are closed enums.
+    "create_entity_availability_exposure_plan": frozenset(
+        {"operation", "assistant", "expiration_minutes"}
+    ),
     "create_addon_restart_plan": frozenset({"expiration_minutes"}),
     "create_home_assistant_restart_plan": frozenset({"expiration_minutes"}),
     "create_change_plan": frozenset(
@@ -424,6 +428,9 @@ ORDINARY_ARGUMENTS: dict[str, dict] = {
     "create_entity_metadata_plan": {
         "entity_id": "light.porch", "name": "Porch", "area_id": "porch",
         "add_labels": ["night"], "remove_labels": ["outdoor"], "categories": {"automation": "c1"},
+    },
+    "create_entity_availability_exposure_plan": {
+        "operation": "expose", "entity_ids": ["light.porch"], "assistant": "conversation",
     },
     "create_addon_restart_plan": {"addon_slug": "core_mosquitto"},
     "create_home_assistant_restart_plan": {},
@@ -508,6 +515,10 @@ class IdentifierBoundaryEnumerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(governance_tools.ENTITY_METADATA_INPUT_SCHEMA["properties"]),
             set(inspect.signature(tools["create_entity_metadata_plan"]).parameters),
+        )
+        self.assertEqual(
+            set(governance_tools.ENTITY_AVAILABILITY_EXPOSURE_INPUT_SCHEMA["properties"]),
+            set(inspect.signature(tools["create_entity_availability_exposure_plan"]).parameters),
         )
 
     def service(self, secret):

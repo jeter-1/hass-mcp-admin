@@ -45,6 +45,11 @@ from .entity_metadata import (
     update_command as entity_metadata_update_command,
     validate_entity_id,
 )
+from . import entity_availability_exposure as availability_exposure
+from .entity_availability_exposure import (
+    RESOURCE_TYPES as AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
+    EntityAvailabilityExposureGateway,
+)
 
 
 RESOURCE_NORMALIZATION_VERSION = 2
@@ -55,6 +60,7 @@ SUPPORTED_RESOURCE_TYPES = frozenset(
         "input_boolean",
         "input_number",
         ENTITY_METADATA_RESOURCE_TYPE,
+        *AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
     }
 )
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
@@ -177,6 +183,12 @@ def validate_resource(
         # entry contract is owned by ``entity_metadata``.
         errors = entity_metadata_proposed_errors(resource_id, proposed_config)
         warnings = []
+    elif resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
+        # The complete registry entry plus its closed 069B plan bindings.
+        errors = availability_exposure.proposed_errors(
+            resource_type, resource_id, proposed_config
+        )
+        warnings = []
     else:
         errors = _validate_resource_id(resource_type, resource_id)
         warnings: list[str] = []
@@ -261,6 +273,8 @@ def normalize_resource_config(
         return normalize_automation(config)
     if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
         return normalize_entity_metadata_entry(config)
+    if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
+        return availability_exposure.normalize_entry(config)
     normalized = {
         key: value
         for key, value in config.items()
@@ -356,6 +370,27 @@ def compare_resource_verification(
             )
             approved_categories = ()
             observed_categories = ()
+            if (
+                resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES
+                and normalized_observed is not None
+                and normalized_approved is not None
+            ):
+                # Only a non-target Alexa key that went from absent to present
+                # is tolerated, and it is always reported.
+                bindings = (
+                    approved.get(availability_exposure.BINDINGS_KEY)
+                    if isinstance(approved, dict)
+                    else None
+                )
+                normalized_observed, tolerated = availability_exposure.mask_tolerated(
+                    normalized_approved,
+                    normalized_observed,
+                    bindings.get("assistant") if isinstance(bindings, dict) else None,
+                )
+                observed_categories = tuple(
+                    f"tolerated_new_exposure_key:{assistant}"
+                    for assistant in tolerated
+                )
     except (
         AutomationVerificationNormalizationError,
         TypeError,
@@ -429,6 +464,9 @@ def compare_resource_verification(
             *ENTITY_METADATA_MANAGED_FIELDS,
             "registry_guard",
             "registry_id",
+            "disabled_by",
+            "exposure",
+            "options_guard",
         }
         mismatch_categories = tuple(
             sorted(
@@ -539,7 +577,9 @@ def resource_identity_matches(
         return False
     if _validate_resource_id(resource_type, resource_id):
         return False
-    if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
+    if resource_type == ENTITY_METADATA_RESOURCE_TYPE or (
+        resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES
+    ):
         # The registry ``id`` is a UUID; identity is the exact entity_id.
         return config.get("entity_id") == resource_id
     returned_id = config.get("id")
@@ -567,6 +607,12 @@ class ConfigurationResourceGateway:
         # index.  Absent means the evidence cannot be rechecked, which fails
         # closed at preflight.
         self.entity_metadata_consumer_evidence: Any = None
+        # HAMCP-069B: closed-vocabulary gateway; the runtime sets the fenced
+        # dependency snapshot reader used to recheck disable evidence.
+        self.availability_exposure = EntityAvailabilityExposureGateway(
+            websocket_client
+        )
+        self.availability_exposure_snapshot_reader: Any = None
 
     async def get(
         self, resource_type: str, resource_id: str
@@ -576,6 +622,8 @@ class ConfigurationResourceGateway:
         self._require_valid_id(resource_type, resource_id)
         if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
             return await self.entity_metadata.read_entry(resource_id)
+        if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
+            return await self.availability_exposure.read_entry(resource_id)
         if resource_type in _CONFIG_ENDPOINTS:
             value = await self.rest_client.request(
                 "GET",
@@ -649,6 +697,8 @@ class ConfigurationResourceGateway:
 
         if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
             raise ValueError("entity registry metadata is update-only")
+        if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
+            raise ValueError("entity availability and exposure are update-only")
         self._require_valid(resource_type, resource_id, approved_config)
         create_identity_errors = validate_resource_create_identity(
             resource_type, resource_id, approved_config
@@ -785,6 +835,12 @@ class ConfigurationResourceGateway:
                     **approved_config,
                 },
             )
+        if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
+            # ``approved_config`` is the one closed command built by the
+            # strategy; the provider re-checks its shape before sending.
+            return await self.availability_exposure.update(
+                resource_type, resource_id, approved_config
+            )
         self._require_valid(resource_type, resource_id, approved_config)
         if resource_type in _CONFIG_ENDPOINTS:
             return await self._write_rest_configuration(
@@ -868,6 +924,60 @@ class ConfigurationResourceGateway:
         except Exception:
             return ("dependency_evidence_unavailable",)
         if fingerprint != bindings.get("consumer_evidence_fingerprint"):
+            return ("dependency_evidence_changed",)
+        return ()
+
+    async def availability_exposure_preflight_evidence(
+        self,
+        resource_id: str,
+        current: dict[str, Any],
+        proposed: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Recheck a 069B child's bound config-entry and consumer evidence.
+
+        Returns bounded rejection codes; an empty tuple means the bound
+        evidence still holds.  Nothing is written.
+        """
+
+        from .entity_availability_exposure_planning import (
+            config_entry_evidence,
+            consumer_fingerprint,
+            read_consumer_evidence,
+            Refusal,
+        )
+
+        validate_entity_id(resource_id)
+        bindings = proposed.get(availability_exposure.BINDINGS_KEY)
+        if not isinstance(bindings, dict):
+            return ("plan_bindings_invalid",)
+        operation = bindings.get("operation")
+        if operation == "enable":
+            try:
+                evidence = await config_entry_evidence(
+                    self.availability_exposure, current
+                )
+            except (AuthorizationError, Refusal):
+                return ("permission_failure",)
+            except Exception:
+                return ("config_entry_evidence_unavailable",)
+            if evidence != bindings.get("config_entry"):
+                return ("config_entry_evidence_changed",)
+        consumers = None
+        if operation == "disable":
+            reader = self.availability_exposure_snapshot_reader
+            if reader is None:
+                return ("dependency_evidence_unavailable",)
+            try:
+                consumers = await read_consumer_evidence(
+                    reader, resource_id, fenced=True
+                )
+            except AuthorizationError:
+                return ("permission_failure",)
+            except Exception:
+                return ("dependency_evidence_unavailable",)
+        if consumer_fingerprint(operation, consumers) != bindings.get(
+            "consumer_evidence_fingerprint"
+        ):
             return ("dependency_evidence_changed",)
         return ()
 
@@ -993,6 +1103,12 @@ def _validate_resource_id(
             validate_entity_id(resource_id)
         except ValueError:
             return ["entity_registry_metadata resource_id must be an entity_id"]
+        return []
+    if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
+        try:
+            validate_entity_id(resource_id)
+        except ValueError:
+            return [f"{resource_type} resource_id must be an entity_id"]
         return []
     if resource_type == "automation":
         valid, errors, _ = validate_automation(

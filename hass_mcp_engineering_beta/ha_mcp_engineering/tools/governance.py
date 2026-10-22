@@ -74,6 +74,7 @@ IDENTIFIER_INPUTS: dict[str, tuple[str, ...]] = {
         "remove_labels",
         "categories",
     ),
+    "create_entity_availability_exposure_plan": ("entity_ids",),
     "create_addon_restart_plan": ("addon_slug",),
     "create_home_assistant_restart_plan": (),
     "create_change_plan": ("operation", "automation_id"),
@@ -919,11 +920,129 @@ def registered_entity_metadata_tool():
     return tool
 
 
+#: The closed published input schema (HAMCP-069B).  One operation over 1-8
+#: exact entities; ``assistant`` is required for expose/unexpose and refused
+#: otherwise by the planner.  Alexa is not offered (OD-3).
+ENTITY_AVAILABILITY_EXPOSURE_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "title": "create_entity_availability_exposure_planArguments",
+    "additionalProperties": False,
+    "required": ["operation", "entity_ids"],
+    "properties": {
+        "operation": {
+            "type": "string",
+            "enum": ["disable", "enable", "expose", "unexpose"],
+        },
+        "entity_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": True,
+            "items": {
+                "type": "string",
+                "maxLength": MAX_ENTITY_ID_LENGTH,
+                "pattern": ENTITY_ID_PATTERN.pattern,
+            },
+        },
+        "assistant": {
+            "type": "string",
+            "enum": ["conversation", "cloud.google_assistant"],
+        },
+        "expiration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "default": 120,
+        },
+    },
+}
+
+
+async def _entity_availability_exposure_plan(arguments: Any) -> str:
+    return await run_structured(
+        "create_entity_availability_exposure_plan",
+        "Created one governed entity availability or exposure proposal "
+        "without dispatching it.",
+        _screened(
+            "create_entity_availability_exposure_plan",
+            arguments,
+            lambda: GOVERNANCE.require().create_entity_availability_exposure_plan(
+                arguments
+            ),
+        ),
+        metadata={
+            "resource_types": [
+                "entity_registry_availability",
+                "entity_assistant_exposure",
+            ],
+            "provider": "direct_home_assistant_entity_registry",
+            "fallback": "none",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_entity_availability_exposure_plan(
+    operation: str,
+    entity_ids: list[str],
+    assistant: str | None = None,
+    expiration_minutes: int = 120,
+) -> str:
+    """Propose governed entity enable/disable or assistant exposure, no dispatch.
+
+    operation is disable, enable, expose or unexpose over 1-8 exact
+    registered entity_ids. expose/unexpose require assistant (conversation
+    for Assist, or cloud.google_assistant); Alexa is refused. An enable plan
+    covers one config entry. Devices, config entries, Core-internal disables
+    and already-applied states are refused before any plan is stored.
+    Protected entities need the elevated acknowledgement. External
+    administrator approval and apply_change_plan are required; children run
+    in order, non-atomically, stopping on the first failure. Until a signed
+    registry admits these capabilities the tool refuses with
+    pending_signed_registry_admission.
+    """
+    return await _entity_availability_exposure_plan(
+        {
+            "operation": operation,
+            "entity_ids": entity_ids,
+            **({"assistant": assistant} if assistant is not None else {}),
+            "expiration_minutes": expiration_minutes,
+        }
+    )
+
+
+class EntityAvailabilityExposurePlanTool(Tool):
+    """Pass the exact raw argument object to the closed planner validation."""
+
+    async def run(self, arguments, context=None, convert_result=False):
+        rendered = await _entity_availability_exposure_plan(arguments)
+        return (
+            self.fn_metadata.convert_result(rendered)
+            if convert_result
+            else rendered
+        )
+
+
+def registered_entity_availability_exposure_tool():
+    tool = EntityAvailabilityExposurePlanTool.from_function(
+        create_entity_availability_exposure_plan,
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    tool.parameters = ENTITY_AVAILABILITY_EXPOSURE_INPUT_SCHEMA
+    return tool
+
+
 GOVERNANCE_TOOLS = (
     create_backup_plan,
     create_reload_plan,
     create_helper_state_plan,
     create_entity_metadata_plan,
+    create_entity_availability_exposure_plan,
     create_addon_restart_plan,
     create_home_assistant_restart_plan,
     create_change_plan,
