@@ -555,20 +555,22 @@ async def prepare(
     snapshot_reader: Callable[..., Awaitable[Any]],
     request: Request,
     *,
-    rollback_currents: dict[str, dict[str, Any]] | None = None,
+    rollback_fingerprints: dict[str, str] | None = None,
 ) -> Preparation:
     """Read, refuse, bind and classify every child.  Nothing is dispatched.
 
-    ``rollback_currents`` (F3 rollback only) maps each entity to the forward
-    plan's verified final entry; the live entry must still match it exactly.
+    ``rollback_fingerprints`` (F3 rollback only) maps each entity to the
+    forward child's verified readback fingerprint; the live entry must still
+    match it exactly (including any reported tolerated Alexa key).
     """
 
     entries: list[dict[str, Any]] = []
     for entity_id in request.entity_ids:
         current = await _read_entry(gateway, entity_id)
-        if rollback_currents is not None and entry_fingerprint(
-            current
-        ) != entry_fingerprint(without_bindings(rollback_currents[entity_id])):
+        if (
+            rollback_fingerprints is not None
+            and entry_fingerprint(current) != rollback_fingerprints[entity_id]
+        ):
             raise Refusal("entry_changed_since_apply", kind="rollback", entity_id=entity_id)
         _refuse_state(request.operation, current, request.assistant)
         entries.append(current)

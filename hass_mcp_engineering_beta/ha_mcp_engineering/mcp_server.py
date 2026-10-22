@@ -10,7 +10,7 @@ INSTRUCTIONS = """Operating procedure for this Home Assistant admin server:
 2. Read blueprint source before reasoning about blueprint behavior.
 3. Test Jinja templates against live state before configuration writes.
 4. Automation, script, input_boolean, and input_number configuration writes
-   and entity registry metadata updates require an immutable change plan, exact-hash external approval, ordered
+   and entity registry metadata, enable/disable, and assistant exposure updates require an immutable change plan, exact-hash external approval, ordered
    governed apply, and exact read-back verification.
 5. Multi-operation plans are non-atomic, stop on the first failure, and never
    roll back automatically. Inspect every per-step result and remaining risk.
