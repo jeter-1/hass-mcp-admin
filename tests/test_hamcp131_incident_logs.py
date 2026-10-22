@@ -381,6 +381,32 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
                                 for row in page["sources"] if row["source"] != "addon:self" or page is not first))
         self.assert_strictly_time_ordered(pages, self.expected(["core", "addon:self"], start_ms, end_ms))
 
+    async def test_default_budget_filtered_merge_never_emits_an_earlier_entry(self):
+        # Review M2 regression (the reviewer's merge_budget_probe, asserting):
+        # the real default request limits and page size, a text filter,
+        # 1,900 Core entries, and the add-on listed first. The add-on match
+        # at 12:09 must not be emitted before Core's match at 12:00:01.700.
+        base = ms("2026-10-19T12:00:00.000")
+        self.sim.journal(SELF).add(base, "unmatched")
+        self.sim.journal(SELF).add(base + 540000, "needle later")
+        for n in range(1900):
+            self.sim.journal(CORE).add(base + n, "needle earlier" if n == 1700 else "unmatched")
+        args = dict(sources=["addon:self", "core"], start="2026-10-19T12:00:00Z",
+                    end="2026-10-19T12:10:00Z", text="needle")
+        pages = [await self.read(**args)]
+        while pages[-1]["next_cursor"]:
+            self.assertLess(len(pages), 5)
+            pages.append(await self.read(**args, cursor=pages[-1]["next_cursor"]))
+        self.assertEqual([[entry["ts"] for entry in page["entries"]] for page in pages],
+                         [[], ["2026-10-19T12:00:01.700Z", "2026-10-19T12:09:00.000Z"]])
+        self.assertEqual([page["requests"] for page in pages], [19, 6])
+        self.assertTrue(all(page["requests"] <= c.MAX_REQUESTS_PER_CALL for page in pages))
+        self.assertTrue(pages[0]["has_more"])
+        self.assertFalse(pages[0]["complete"])
+        self.assertTrue(pages[-1]["complete"])
+        stamps = [entry["ts"] for page in pages for entry in page["entries"]]
+        self.assertEqual(stamps, sorted(stamps))
+
     def test_a_deferred_source_is_located_on_the_next_call(self):
         # Review M2 liveness: a deferred source resumes as a fresh locate,
         # and continued sources make no request before the merge is filled,
