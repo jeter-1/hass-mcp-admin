@@ -323,7 +323,13 @@ Each call makes at most 12 slice reads plus at most 12 verification reads.
   `reason` `request_budget_exhausted`, `start_location` `deferred`, cursor
   state `{"u": 1}`) instead of being failed or anchored past an unread span,
   and the next page locates it. A later page therefore never returns an
-  entry earlier than one already returned.
+  entry earlier than one already returned. A deferral happens only once the
+  shared call budget is spent, so no source reads more on that page; the
+  merge bound and the fill stop are defense in depth. Continued sources make
+  no request before the merge is filled, so the first deferred source has the
+  whole call budget on the next page, which covers the costliest locate
+  (tail, head, every probe and every bisection step, 16 requests): a deferred
+  source is always located on the next page.
 - **Typed routes.** Journal requests use HAMCP-200 `rest_path` with the
   registered templates `/core/logs` and `/addons/self/logs`. No caller value
   becomes a path segment. History uses only the gateway reader, which builds

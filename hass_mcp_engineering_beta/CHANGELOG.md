@@ -9,20 +9,27 @@ Builds on 2.4.1-beta.29.
   (`/addons/self/logs`), through HAMCP-200 typed routes with a gatewayd
   `Range` header, and merges the entries in time order. The level filter and
   a literal text filter (at most 128 characters) report skip counts. A limit
-  of 1-200 applies, with a signed cursor.
+  of 1-200 applies, with a signed cursor. Pages are strictly time-ordered
+  across sources; a source that runs out of request budget holds the merged
+  page at its earliest unread point and is reported `partial`
+  (`request_budget_exhausted`). Wrong-typed arguments are refused as invalid
+  arguments.
 - Each source reports its coverage: earliest and latest retained entry,
   retention edge, scanned range, gaps with reasons, and filter and window
   skips. `supervisor`, `host` and other add-on sources need Supervisor role
-  `manager`. They are listed `unavailable` with `authority_not_granted` and
-  zero requests; no role or permission is added. An add-on slug must be one
+  `manager`. They are listed `unavailable` with `authority_not_granted`, the
+  required role and zero requests, also when they are the only sources
+  selected; no role or permission is added. An add-on slug must be one
   validated segment, so a traversal is refused with zero requests.
 - Add read-only `get_history_slices`. It reads entity history continuously
   through the admitted delegated `ha_get_history` route (ha-mcp 8.5.0 or
   8.6.0) using a new fixed gateway `history_reader`. Windows are at most
-  7 days, read as fixed 6-hour slices, with per-page coverage. The cursor
-  binds the query, the fixed end and the provider contract. A purge, a late
-  write, a changed slice-start state or a contract change is refused as
-  `STALE_CURSOR`. The native `get_history` tool is not used.
+  7 days, read as fixed 6-hour slices, with per-page coverage whose
+  `complete_until` is exclusive while tied states may remain. The cursor
+  binds the query, the fixed end, the provider contract and a digest of the
+  history the previous page returned, which a continuation re-reads. Any
+  change to returned history, a purge, a late write, a changed slice-start
+  state or a contract change is refused as `STALE_CURSOR`. The native `get_history` tool is not used.
 - Each tool sanitizes its whole response once, at a single exit, with the
   known secrets; a redaction makes the result partial. `get_incident_logs` is
   Core-independent (Supervisor only); `get_history_slices` maps to

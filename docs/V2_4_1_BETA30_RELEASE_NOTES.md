@@ -54,7 +54,11 @@ Output:
 - the disclosed bounds and pins.
 
 A vacuum or rotation between pages is detected and refused as stale.
-Nothing is skipped or repeated silently.
+Nothing is skipped or repeated silently. Pages are strictly time-ordered
+across sources: when one source runs out of request budget, the merged page
+stops at the earliest point any source has not yet read, and that source is
+reported `partial` (`request_budget_exhausted`) and resumes on the next
+page.
 
 ## `get_history_slices`
 
@@ -66,15 +70,20 @@ Inputs:
 
 The window is read in fixed 6-hour slices. Each slice is one absolute-bounded,
 ascending, minimal `ha_get_history` request, with a reviewed version of 8.5.0
-or 8.6.0. Each call makes at most 12 upstream calls.
+or 8.6.0. Each call makes at most 12 slice reads plus at most 12
+verification reads.
 
 Each page reports:
 - `state_at_window_start`, the states, and per-slice coverage;
-- `coverage.complete_until`;
+- `coverage.complete_until`, which is exclusive whenever more states may
+  share its timestamp;
 - the provider version, with fallback `none`.
 
-The cursor binds the query, the fixed end and the provider contract. It is
-refused as stale in these cases:
+The cursor binds the query, the fixed end, the provider contract and a
+digest of the history the previous page returned. A continuation re-reads
+that history and is refused as stale in these cases:
+- any change to an already-returned state, including an in-place edit or a
+  balanced insert and delete;
 - a purge;
 - a late recorder write;
 - a changed slice-start state;

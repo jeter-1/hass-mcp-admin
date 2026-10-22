@@ -86,7 +86,7 @@ Preserve the following:
 No test reaches a live system. Every fixture is synthetic, and any
 credential-shaped string is assembled at test time.
 
-- `tests/test_hamcp131_incident_logs.py` (33 tests) covers:
+- `tests/test_hamcp131_incident_logs.py` (40 tests) covers:
   - the motivating window: the thermostat 503 at about 12:01 on 2026-10-19,
     plus the Presence Simulation exception;
   - window edges (start inclusive, end exclusive), the retention edge, an
@@ -94,12 +94,22 @@ credential-shaped string is assembled at test time.
   - locating the start in a large journal within budget, and a start beyond
     probe reach as a disclosed gap;
   - pagination with identical timestamps, with no duplicates or skips;
+  - strict time order across pages when one source finishes before another
+    and when the request budget runs out while a source is still being
+    located (review M2), each deferral guard on its own, and the call
+    budget covering the costliest locate, so a deferred source is located
+    on the next page;
   - the level and literal text filters with skip counts;
   - a vacuum between pages (stale) and inside a call (gap);
   - cursor integrity, query binding and expiry;
   - per-source HTTP refusals (403, 404, 400), and a stopped add-on still
     readable;
-  - all sources statically unavailable, refused with zero requests;
+  - only unauthorized sources selected: a per-source `unavailable` row each,
+    with `authority_not_granted` and the required role, and zero requests
+    (review M5);
+  - wrong-typed filter arguments (for example `min_level: []` or `{}`):
+    a bounded invalid-argument refusal with an audit record, through the
+    production gateway (review M4);
   - slug traversal refused with zero requests;
   - a planted-secret sweep across every output field;
   - message truncation that keeps markers whole, and the response byte
@@ -109,17 +119,26 @@ credential-shaped string is assembled at test time.
     gate and the catalog;
   - a literal text filter cannot probe a redacted secret;
   - policy drift.
-- `tests/test_hamcp131_history_slices.py` (36 tests) covers:
+- `tests/test_hamcp131_history_slices.py` (46 tests) covers:
   - the motivating window;
   - window edges, a state exactly at a slice boundary, and the retention
     edge;
-  - pagination with identical timestamps at limits 1 to 100;
+  - pagination with identical timestamps at limits 1 to 100, with
+    `coverage.complete_until` never claiming a timestamp inclusive while tied
+    states may remain, including a byte cut inside a tie (review M3), and
+    pre-slice states spanning two reads, neither repeated nor skipped;
   - the cursor across slices with per-page coverage, and the empty-slice call
     cap with resume;
   - a defaulted end fixed by the cursor;
   - purge, late write, a changed slice-start state and a purged start state,
     each stale;
   - a break after the first check: partial, no cursor;
+  - through the production gateway: an in-place change and a balanced
+    insert-and-delete inside the previous page, and a change in a finished
+    slice the previous page returned, each stale; unchanged history
+    continues (review M1);
+  - a failed verification read: partial and resumable; more pre-slice states
+    than pinned: `representation_invalid`;
   - a provider contract change: stale;
   - cursor integrity, query binding and expiry;
   - upstream failure: partial and resumable;
@@ -139,9 +158,11 @@ credential-shaped string is assembled at test time.
     and gateway sanitization.
 - Count and catalog pins in the existing suites are updated from 62 to 64
   static tools.
-- Mutations: `docs/evidence/hamcp131-mutations/` (31 mutants across window
-  edges, cursor skip/duplicate, silent omission, sanitizer placement and slug
-  handling; 31 killed, recorded in `results.json`).
+- Mutations: `docs/evidence/hamcp131-mutations/` (38 mutants across window
+  edges, cursor skip/duplicate, silent omission, sanitizer placement, slug
+  handling and the review's four classes: anchor-only staleness, a merged
+  page emitting an earlier entry, an inclusive boundary claimed complete and
+  `min_level` type errors escaping; results recorded in `results.json`).
 
 ## 2. Release CI and publication
 
@@ -186,8 +207,8 @@ restarts or calls a service.
      `gaps`, and at least one entry with timestamp, level and sanitized
      message;
    - for `supervisor` and the other add-on: `status: unavailable`,
-     `reason: authority_not_granted`, `requests: 0` and the
-     `required_route_pattern`;
+     `reason: authority_not_granted`, `requests: 0`, `required_role:
+     manager` and the `required_route_pattern`;
    - `omissions` and `completeness`;
    - that the serialized response contains no token, credential or secret
      value.
