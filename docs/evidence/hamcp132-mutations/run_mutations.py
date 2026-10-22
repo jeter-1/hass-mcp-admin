@@ -67,6 +67,17 @@ unprojected blueprint not a definition gap) and ``B2-I*`` (a malformed
 registry identity accepted, matched, confused with a legitimate absence or
 hidden from the reverse match).
 
+The second delta review's correction batch 3 adds
+``tests/test_pr294_corr2_extra.py`` (that reviewer's suite, unchanged),
+``B3-H*`` (invisible, format or control text screened rather than withheld:
+the predicate disabled, the percent-decode leg, the Default_Ignorable
+ranges, each category set or the ASCII control check removed, tab and
+newline treated as invisible, the projection or exit-point string or key
+leg removed, a dropped invisible key leaving the report complete) and
+``B3-M*`` (the final-envelope withheld scan removed, a withheld form
+ignored, dropped keys ignored, the item list unbounded, omission text
+scanned as items, completeness or the omission list ignoring the scan).
+
 Usage:
     python docs/evidence/hamcp132-mutations/run_mutations.py \
         --work ~/hamcp132-work/mut --output docs/evidence/hamcp132-mutations/results.json
@@ -101,7 +112,7 @@ DPROJ, DSVC, DMATCH, DDIAG, DCON, DCRED = (f"{DEFS}/{name}.py" for name in
                                             "credentials"))
 DTOOL = f"{E}/tools/configuration_definitions.py"
 MODULES = ("test_hamcp132_recorder_settings", "test_hamcp132_unregistered_entities",
-           "test_hamcp132_configuration_definitions", "test_pr294_delta_review")
+           "test_hamcp132_configuration_definitions", "test_pr294_delta_review", "test_pr294_corr2_extra")
 ROW1 = "design 7: core_default only when the source is complete"
 ROW2 = "design 7: db_url withheld"
 ROW3 = "design 7: a failing source is partial with an exact reason"
@@ -133,6 +144,8 @@ B2_TEXT = "delta review H1/H2: Core free text shown only through the allowlist, 
 B2_FOLD = "delta review H2: YAML-projected text read through the bounded confusable fold"
 B2_BLUEPRINT = "delta review M3: an unprojected blueprint is a definition gap"
 B2_IDENTITY = "delta review M4: a malformed registry identity is invalid, never matched, never absent"
+B3_INVISIBLE = "corr2 review R2-H1: invisible, format or control text is withheld whole, never screened and shown"
+B3_COMPLETE = "corr2 review R2-M1: any withheld form anywhere in the final envelope makes the report partial"
 
 
 def m(identifier, item, *replacements):
@@ -389,7 +402,7 @@ MUTATIONS = [
     m("B-L7-known-secrets-dropped", B_LEAK,
       (DSVC, 'sanitize_untrusted_data(envelope, known_secrets=self.known_secrets,',
        'sanitize_untrusted_data(envelope, known_secrets=(),'),
-      (DSVC, 'credentials.withhold(envelope, self.known_secrets)', 'credentials.withhold(envelope, ())')),
+      (DSVC, 'credentials.withhold(envelope, self.known_secrets, dropped)', 'credentials.withhold(envelope, (), dropped)')),
     m("B-M1-heuristic-reported-exact", B_MATCH,
       (DMATCH, 'return {"method": "heuristic", "confidence": confidence,',
        'return {"method": "heuristic", "confidence": "exact",')),
@@ -440,8 +453,8 @@ MUTATIONS = [
       (DSVC, '        if all(source["status"] in {"unavailable", "refused"} for source in sources):\n',
        '        if False:\n')),
     m("B-H1-omissions-appended-after-sanitization", B_FINAL,
-      (DSVC, 'envelope = {**report, "omissions": list(omissions)}', 'envelope = dict(report)'),
-      (DSVC, 'return sanitized.value', 'return {**sanitized.value, "omissions": list(omissions)}')),
+      (DSVC, 'envelope = {**report, "omissions": listed}', 'envelope = dict(report)'),
+      (DSVC, 'return sanitized.value', 'return {**sanitized.value, "omissions": listed}')),
     m("B-H2-redaction-not-partial", B_FINAL,
       (DSVC, 'and "redacted_by_policy" not in omissions:', 'and False:')),
     m("B-H3-text-bound-dropped", B_FINAL,
@@ -528,9 +541,10 @@ MUTATIONS = [
        'reason = str(exc.details["detail"]) if "detail" in exc.details else ("not_found" if '
        'exc.details.get("status") == 404 else "command_failed")')),
     m("B-X1-exit-withholding-removed", B_EXIT,
-      (DSVC, 'envelope, withheld = credentials.withhold(envelope, self.known_secrets)', 'withheld = 0')),
+      (DSVC, 'envelope, withheld = credentials.withhold(envelope, self.known_secrets, dropped)', 'withheld = 0')),
     m("B-X2-title-copied-without-credential-screening", B_EXIT,
-      (DCRED, '                kept[key] = walk(child)', '                kept[key] = child if key == "title" else walk(child)')),
+      (DCRED, '                kept[key] = walk(child, path + (key,))',
+       '                kept[key] = child if key == "title" else walk(child, path + (key,))')),
     m("B-X3-credential-keys-kept", B_EXIT,
       (DCRED, '                if type(key) is str and credential_text(key, known_secrets):', '                if False:')),
     m("B-X4-connection-scheme-rule-removed", B_EXIT,
@@ -597,10 +611,10 @@ MUTATIONS = [
        'if False and not any(')),
     # --- Slice 2 correction batch 2: delta review of PR #294 (head cde9cd1) --
     m("DELTA-REVIEW-1-omission-credential-bypass", B_EXIT,
-      (DCRED, '                kept[key] = walk(child)',
-       '                kept[key] = child if key == "omissions" else walk(child)')),
+      (DCRED, '                kept[key] = walk(child, path + (key,))',
+       '                kept[key] = child if key == "omissions" else walk(child, path + (key,))')),
     m("DELTA-REVIEW-2-known-secrets-dropped-from-withholding-only", B_LEAK,
-      (DSVC, 'credentials.withhold(envelope, self.known_secrets)', 'credentials.withhold(envelope, ())')),
+      (DSVC, 'credentials.withhold(envelope, self.known_secrets, dropped)', 'credentials.withhold(envelope, (), dropped)')),
     m("B2-T1-title-truncated-before-screening", B2_TEXT,
       (DDIAG, 'credentials.display_text(title, c.MAX_TITLE, known_secrets)',
        'credentials.display_text(title[:c.MAX_TITLE], c.MAX_TITLE, known_secrets)')),
@@ -623,7 +637,8 @@ MUTATIONS = [
     m("B2-C1-confusable-fold-removed", B2_FOLD,
       (DCRED, '    text = fold_confusables(text)\n', '')),
     m("B2-U1-unverifiable-text-left-complete", B2_TEXT,
-      (DSVC, '            if credentials.contains(envelope, credentials.UNVERIFIABLE_MARKER) \\\n'
+      (DSVC, '            if (credentials.contains(envelope, credentials.UNVERIFIABLE_MARKER)\n'
+             '                    or any(marker == credentials.UNVERIFIABLE_MARKER for _path, marker in dropped)) \\\n'
              '                    and credentials.UNVERIFIABLE_OMISSION not in omissions:',
        '            if False:')),
     m("B2-G1-blueprint-not-a-gap", B2_BLUEPRINT,
@@ -641,6 +656,52 @@ MUTATIONS = [
     m("B2-I5-invalid-identity-diagnosed", B2_IDENTITY,
       (DDIAG, '    if registry_row is not None and registry_row.get("identity") == INVALID:\n',
        '    if False:\n')),
+    # --- Slice 2 correction batch 3: corr2 review of PR #294 (head 5f6acb0) --
+    m("B3-H1-invisible-text-screened-not-withheld", B3_INVISIBLE,
+      (DCRED, '    text = value\n    for _round in range(MAX_DECODE_ROUNDS):\n',
+       '    return False\n    text = value\n    for _round in range(MAX_DECODE_ROUNDS):\n')),
+    m("B3-H2-percent-decode-leg-removed", B3_INVISIBLE,
+      (DCRED, '        if not _ESCAPE.search(text):\n', '        if True:\n')),
+    m("B3-H3-default-ignorable-ranges-removed", B3_INVISIBLE,
+      (DCRED, '    return any(low <= point <= high for low, high in _DEFAULT_IGNORABLE)', '    return False')),
+    m("B3-H4-format-category-removed", B3_INVISIBLE,
+      (DCRED, 'frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})', 'frozenset({"Cc", "Cs", "Co", "Cn", "Zl", "Zp"})')),
+    m("B3-H5-control-category-removed", B3_INVISIBLE,
+      (DCRED, 'frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})', 'frozenset({"Cf", "Cs", "Co", "Cn", "Zl", "Zp"})')),
+    m("B3-H6-other-categories-removed", B3_INVISIBLE,
+      (DCRED, 'frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})', 'frozenset({"Cc", "Cf"})')),
+    m("B3-H7-ascii-control-check-removed", B3_INVISIBLE,
+      (DCRED, '        return _ASCII_CONTROL.search(text) is not None', '        return False')),
+    m("B3-H8-tab-and-newline-treated-as-invisible", B3_INVISIBLE,
+      (DCRED, '_ALLOWED_CONTROLS = frozenset("\\t\\n\\r")', '_ALLOWED_CONTROLS = frozenset()')),
+    m("B3-H9-projection-value-leg-removed", B3_INVISIBLE,
+      (DPROJ, '        if type(value) is str and unverifiable_text(value):\n', '        if False:\n')),
+    m("B3-H10-projection-key-leg-removed", B3_INVISIBLE,
+      (DPROJ, '                if type(key) is str and unverifiable_text(key):\n', '                if False:\n')),
+    m("B3-H11-exit-string-leg-removed", B3_INVISIBLE,
+      (DCRED, '            if unverifiable_text(item):\n', '            if False:\n')),
+    m("B3-H12-exit-key-leg-removed", B3_INVISIBLE,
+      (DCRED, '                if type(key) is str and unverifiable_text(key):\n', '                if False:\n')),
+    m("B3-H13-dropped-invisible-key-left-complete", B3_INVISIBLE,
+      (DSVC, '\n                    or any(marker == credentials.UNVERIFIABLE_MARKER for _path, marker in dropped))',
+       ')')),
+    m("B3-M1-final-envelope-withheld-scan-removed", B3_COMPLETE,
+      (DSVC, '            if items != withheld_items:\n', '            if False:\n')),
+    m("B3-M2-withheld-dict-form-ignored", B3_COMPLETE,
+      (DCRED, '        return item.get("withheld") not in (None, "", [], ())', '        return False')),
+    m("B3-M3-withheld-marker-string-ignored", B3_COMPLETE,
+      (DCRED, '        return item in (WITHHELD_MARKER, UNVERIFIABLE_MARKER)', '        return False')),
+    m("B3-M4-dropped-keys-ignored", B3_COMPLETE,
+      (DCRED, '    for path, _marker in dropped:\n        if path[0] not in skip:\n            note(path)\n', '')),
+    m("B3-M5-withheld-items-unbounded", B3_COMPLETE,
+      (DCRED, 'names[:MAX_WITHHELD_ITEMS]', 'names')),
+    m("B3-M6-omission-text-scanned-as-items", B3_COMPLETE,
+      (DCRED, '        if key not in skip:\n            scan(child, (key,))', '        scan(child, (key,))')),
+    m("B3-M7-complete-ignores-withheld-items", B3_COMPLETE,
+      (DSVC, 'envelope["complete"] = not listed and all(', 'envelope["complete"] = not omissions and all(')),
+    m("B3-M8-withheld-items-not-listed", B3_COMPLETE,
+      (DSVC, 'listed = list(omissions) + [item for item in withheld_items if item not in omissions]',
+       'listed = list(omissions)')),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

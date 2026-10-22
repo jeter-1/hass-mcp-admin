@@ -676,6 +676,19 @@ shape, fallback or write path.
   `[withheld:credential_text]` or `[withheld:unverifiable_text]` and the
   report is partial (`unverifiable_text_withheld`). An ordinary non-ASCII
   title is withheld by design.
+- **Invisible text withheld whole (second delta review R2-H1).** A
+  YAML-projected string or key containing an invisible, format or control
+  character (Cc except tab, line feed and carriage return; Cf, Cs, Co, Cn,
+  Zl, Zp; every Default_Ignorable_Code_Point), in the original text or after
+  a bounded percent-decode, is replaced whole with
+  `[withheld:unverifiable_text]` (a key: dropped) before any credential
+  screening, in the projection and again at the exit point. It is never
+  screened and shown: a zero-width character inside `password=` previously
+  hid the credential word.
+- **Any withholding is partial (second delta review R2-M1).** One scan of
+  the final envelope at the exit point finds every withheld form and names
+  each affected item in a bounded omission list (at most 20, then a count);
+  any such item makes the report partial.
 
 Arguments are validated before SDK coercion and rejected without echoing
 them. The audit records counts and source outcomes only. Stable v1.1.2 is

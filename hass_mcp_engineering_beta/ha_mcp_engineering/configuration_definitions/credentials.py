@@ -29,6 +29,28 @@ runs, and each string that reads as credential text is replaced with
 - text the reader's canonicalization refuses (it cannot be screened);
 - text containing the marker itself, so the marker is never ambiguous.
 
+**Invisible text is never screened** (correction batch 3, R2-H1). A string or
+key that contains an invisible, format or control character
+(``unverifiable_text``) cannot be screened reliably: a zero-width character
+inside ``password=`` hides the credential word from every pattern. Such a
+value is withheld whole as ``UNVERIFIABLE_MARKER`` (a key: its entry is
+dropped), never screened and shown. The characters are the Unicode categories
+Cc (except tab, line feed and carriage return), Cf, Cs, Co, Cn, Zl and Zp,
+plus every Default_Ignorable_Code_Point (zero-width characters, bidi
+controls, variation selectors, tag characters, the Hangul fillers). The check
+reads the original text and each round of a bounded percent-decode
+(``MAX_DECODE_ROUNDS``). It runs before credential screening, in the YAML
+projection and again over every key and string at the exit point. An emoji
+written with a variation selector or a zero-width joiner is therefore
+withheld too, by design.
+
+**Any withholding makes the report partial** (correction batch 3, R2-M1).
+At the exit point, one scan of the final envelope (``withheld_items``) finds
+every withheld form (a ``WITHHELD_MARKER`` or ``UNVERIFIABLE_MARKER``
+string, a ``{"withheld": <kind>}`` value, a non-empty ``withheld`` path list,
+a dropped key) and names each affected item (``withheld:definitions[3]``) in
+a bounded omission list; any such omission makes the report partial.
+
 The checks read the reader's canonical form (percent-decoded, NFKC,
 casefold) with a bounded confusable fold on top (``fold_confusables``):
 the known look-alikes of ``/``, ``:`` and ``@`` that NFKC leaves unchanged
@@ -44,14 +66,33 @@ omission, so the report is partial.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
+from urllib.parse import unquote_to_bytes
 
-from ..providers.upstream_yaml_reader import _userinfo, canonical
+from ..providers.upstream_yaml_reader import MAX_DECODE_ROUNDS, _userinfo, canonical
 
 WITHHELD_MARKER = "[withheld:credential_text]"
 OMISSION = "credential_text_withheld"
 UNVERIFIABLE_MARKER = "[withheld:unverifiable_text]"
 UNVERIFIABLE_OMISSION = "unverifiable_text_withheld"
+WITHHELD_ITEM_PREFIX = "withheld:"
+MAX_WITHHELD_ITEMS = 20
+WITHHELD_ITEMS_NOT_LISTED = "withheld_items_not_listed"
+
+# Invisible, format and control characters (R2-H1): these Unicode categories
+# (tab, line feed and carriage return excepted) and every
+# Default_Ignorable_Code_Point range of Unicode's DerivedCoreProperties.
+_INVISIBLE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
+_ALLOWED_CONTROLS = frozenset("\t\n\r")
+_DEFAULT_IGNORABLE = (
+    (0x00AD, 0x00AD), (0x034F, 0x034F), (0x061C, 0x061C), (0x115F, 0x1160), (0x17B4, 0x17B5),
+    (0x180B, 0x180F), (0x200B, 0x200F), (0x202A, 0x202E), (0x2060, 0x206F), (0x3164, 0x3164),
+    (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8), (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
+)
+_ASCII_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
 
 # Look-alikes NFKC and casefold leave unchanged, mapped to the character they
 # imitate (Unicode confusables). Read after casefold, so only lowercase
@@ -121,6 +162,42 @@ def fold_confusables(text: str) -> str:
     return text.translate(_CONFUSABLES)
 
 
+def _invisible_character(character: str) -> bool:
+    if character in _ALLOWED_CONTROLS:
+        return False
+    if unicodedata.category(character) in _INVISIBLE_CATEGORIES:
+        return True
+    point = ord(character)
+    return any(low <= point <= high for low, high in _DEFAULT_IGNORABLE)
+
+
+def _invisible(text: str) -> bool:
+    if text.isascii():
+        return _ASCII_CONTROL.search(text) is not None
+    return any(_invisible_character(character) for character in text)
+
+
+def unverifiable_text(value: str) -> bool:
+    """Whether ``value`` carries an invisible character, so it cannot be screened.
+
+    The original text is read, then each round of a bounded percent-decode
+    (``%E2%80%8B`` is a zero-width space). Text whose decode fails is left to
+    ``credential_text``, which refuses it (fail closed).
+    """
+
+    text = value
+    for _round in range(MAX_DECODE_ROUNDS):
+        if _invisible(text):
+            return True
+        if not _ESCAPE.search(text):
+            return False
+        try:
+            text = unquote_to_bytes(text).decode("utf-8", "strict")
+        except (UnicodeError, ValueError):
+            return False
+    return _invisible(text)
+
+
 def credential_text(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
     """Whether ``value`` must not reach the caller."""
 
@@ -171,14 +248,25 @@ def contains(value: Any, marker: str) -> bool:
     return False
 
 
-def withhold(value: Any, known_secrets: tuple[str, ...] = ()) -> tuple[Any, int]:
-    """(copy of ``value`` with credential text withheld, number withheld)."""
+def withhold(value: Any, known_secrets: tuple[str, ...] = (),
+             dropped: list[tuple[tuple, str]] | None = None) -> tuple[Any, int]:
+    """(copy of ``value`` with credential and invisible text withheld, number
+    of credential texts withheld).
+
+    Invisible text (``unverifiable_text``) is checked first and becomes
+    ``UNVERIFIABLE_MARKER``; credential text becomes ``WITHHELD_MARKER``. A
+    key of either kind drops its entry, and (the entry's path, the marker it
+    would have had) is appended to ``dropped``: no marker is left behind, so
+    ``withheld_items`` and the exit point read it from there.
+    """
 
     count = 0
 
-    def walk(item: Any) -> Any:
+    def walk(item: Any, path: tuple) -> Any:
         nonlocal count
         if type(item) is str:
+            if unverifiable_text(item):
+                return UNVERIFIABLE_MARKER
             if credential_text(item, known_secrets):
                 count += 1
                 return WITHHELD_MARKER
@@ -186,13 +274,76 @@ def withhold(value: Any, known_secrets: tuple[str, ...] = ()) -> tuple[Any, int]
         if type(item) is dict:
             kept = {}
             for key, child in item.items():
+                if type(key) is str and unverifiable_text(key):
+                    if dropped is not None:
+                        dropped.append((path + ("<key>",), UNVERIFIABLE_MARKER))
+                    continue
                 if type(key) is str and credential_text(key, known_secrets):
                     count += 1
+                    if dropped is not None:
+                        dropped.append((path + ("<key>",), WITHHELD_MARKER))
                     continue
-                kept[key] = walk(child)
+                kept[key] = walk(child, path + (key,))
             return kept
         if type(item) in (list, tuple):
-            return [walk(child) for child in item]
+            return [walk(child, path + (index,)) for index, child in enumerate(item)]
         return item
 
-    return walk(value), count
+    return walk(value, ()), count
+
+
+def _withheld_form(item: Any) -> bool:
+    if type(item) is str:
+        return item in (WITHHELD_MARKER, UNVERIFIABLE_MARKER)
+    if type(item) is dict:
+        return item.get("withheld") not in (None, "", [], ())
+    return False
+
+
+def _item_name(path: tuple) -> str:
+    if not path:
+        return "envelope"
+    if len(path) > 1 and type(path[1]) is int:
+        return f"{path[0]}[{path[1]}]"
+    return str(path[0])
+
+
+def withheld_items(envelope: dict, dropped: list[tuple[tuple, str]] = (),
+                   skip: tuple[str, ...] = ("omissions",)) -> list[str]:
+    """The bounded omissions naming each item of ``envelope`` with anything withheld.
+
+    One scan of the final envelope finds every withheld form: a
+    ``WITHHELD_MARKER`` or ``UNVERIFIABLE_MARKER`` string, a
+    ``{"withheld": <kind>}`` value, a non-empty ``withheld`` path list and
+    each entry ``withhold`` dropped. An item is a row of a top-level list
+    (``definitions[3]``) or a top-level key. At most ``MAX_WITHHELD_ITEMS``
+    are named; the rest are counted (``withheld_items_not_listed:<n>``).
+    """
+
+    names: list[str] = []
+
+    def note(path: tuple) -> None:
+        name = _item_name(path)
+        if name not in names:
+            names.append(name)
+
+    def scan(item: Any, path: tuple) -> None:
+        if _withheld_form(item):
+            note(path)
+        if type(item) is dict:
+            for key, child in item.items():
+                scan(child, path + (key,))
+        elif type(item) in (list, tuple):
+            for index, child in enumerate(item):
+                scan(child, path + (index,))
+
+    for key, child in envelope.items():
+        if key not in skip:
+            scan(child, (key,))
+    for path, _marker in dropped:
+        if path[0] not in skip:
+            note(path)
+    listed = [WITHHELD_ITEM_PREFIX + name for name in names[:MAX_WITHHELD_ITEMS]]
+    if len(names) > MAX_WITHHELD_ITEMS:
+        listed.append(f"{WITHHELD_ITEMS_NOT_LISTED}:{len(names) - MAX_WITHHELD_ITEMS}")
+    return listed

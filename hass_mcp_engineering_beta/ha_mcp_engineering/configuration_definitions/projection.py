@@ -6,6 +6,11 @@ position, before the shared sanitizer runs (``service.py``):
 
 - ``db_url`` (``contracts.WITHHELD_KEYS``), whatever its value;
 - a ``!secret`` or ``!env_var`` reference (its name included);
+- any string or nested key carrying an invisible, format or control
+  character, in its original text or after a bounded percent-decode
+  (``credentials.unverifiable_text``, R2-H1): the whole value becomes
+  ``[withheld:unverifiable_text]``, checked before any credential screening,
+  so it is never screened and shown;
 - any string carrying a YAML reader redaction or truncation marker;
 - any string the exit point's credential predicate matches
   (``credentials.credential_text``: a URI with userinfo, a database
@@ -41,7 +46,7 @@ from ..providers.upstream_yaml_reader import canonical, is_connection_key, is_cr
 from ..recorder_settings.projection import _is_include, _is_reference, _truncated, yaml11_readings
 from . import contracts as c
 from . import schemas as s
-from .credentials import credential_text
+from .credentials import UNVERIFIABLE_MARKER, credential_text, unverifiable_text
 from .naming import core_slugify
 
 # The YAML paths each integration's definitions can appear under.
@@ -170,6 +175,9 @@ class Definitions:
             kind = "env_var_ref" if "env_var_ref" in value else "secret_ref"
             record["withheld"].append(path)
             return {"withheld": kind}
+        if type(value) is str and unverifiable_text(value):
+            record["withheld"].append(path)
+            return UNVERIFIABLE_MARKER
         if _reader_marker(value):
             record["withheld"].append(path)
             return {"withheld": "reader_redaction"}
@@ -179,6 +187,9 @@ class Definitions:
         if type(value) is dict:
             projected = {}
             for key, child in value.items():
+                if type(key) is str and unverifiable_text(key):
+                    record["withheld"].append(f"{path}.<key>")
+                    continue
                 child_path = f"{path}.{key}"
                 if type(key) is not str or key in c.WITHHELD_KEYS or _credential_shaped(key):
                     record["withheld"].append(child_path if type(key) is str else f"{path}.<key>")

@@ -627,8 +627,9 @@ class OwnerShapeTests(Base):
         water = definitions["sensor[2]"]["expected_entities"][0]
         self.assertEqual((water["derived_entity_id"], water["match"]["entity_id"], water["match"]["method"]),
                          ("sensor.sensor_water_total_derivative", "sensor.water_rate", "exact_unique_id"))
-        self.assertTrue(report["complete"])
-        self.assertEqual(report["omissions"], [])
+        # R2-M1: the always-withheld db_url makes each SQL definition a withheld item.
+        self.assertEqual(report["omissions"], ["withheld:definitions[0]", "withheld:definitions[1]"])
+        self.assert_partial(report)
         self.assertEqual(report["packages"], "absent")
         self.assertEqual(report["schema"], c.SCHEMA)
         self.assertEqual(report["core_pin"], s.CORE_PIN)
@@ -716,7 +717,9 @@ class CredentialTests(Base):
         self.assertEqual(rows["template[0].sensor[0]"]["fields"]["state"], {"withheld": "credential_uri"})
         self.assertEqual(rows["template[0].sensor[0]"]["fields"]["attributes"],
                          {"note": [{"withheld": "credential_uri"}]})
-        self.assertTrue(report["complete"])
+        # R2-M1: anything withheld makes the report partial, one omission per item.
+        self.assertEqual(report["omissions"], ["withheld:definitions[0]", "withheld:definitions[1]"])
+        self.assert_partial(report)
 
     async def test_text_the_projection_keeps_still_passes_the_final_sanitizer(self):
         values = owner_yaml(template=[{"sensor": [{"name": "Header", "state": "Bearer " + syn.needle("bearer")}]}])
@@ -824,7 +827,7 @@ class PlantedSecretSweepTests(Base):
             self.assertIn(ENTITY_SECRET, json.dumps(control[field]), field)
         self.assertIn(f"sensor:platform:{ENTITY_SECRET}", control["coverage"]["definitions_not_projected"])
         self.assertTrue(any(ENTITY_SECRET in item for d in control["definitions"] for item in d["withheld"]))
-        self.assertEqual(control["omissions"], ["definitions_not_projected"])
+        self.assertEqual(control["omissions"], ["definitions_not_projected", "withheld:definitions[0]"])
 
     async def test_protected_run_removes_it_from_every_field(self):
         report = await self.sweep((HA_TOKEN, ACCESS_SECRET, ENTITY_SECRET))
@@ -1033,7 +1036,8 @@ class PackagesAndIncludeTests(Base):
                     self.assertEqual(self.entities(report)[OWNER_ENTITIES[0]]["definition"]["method"],
                                      "exact_unique_id")
                 else:
-                    self.assertTrue(report["complete"])
+                    # Only the listed SQL definition's withheld db_url (R2-M1).
+                    self.assertEqual(report["omissions"], ["withheld:definitions[0]"])
                 self.assertNotIn("energy.yaml", json.dumps(report))
 
     async def test_homeassistant_node_decides_a_not_found_packages_key(self):
@@ -1131,7 +1135,8 @@ class SourceFailureTests(Base):
         # Manifest 404 is a complete "not installed" answer, not a failure.
         report = await self.run_report(entity_ids=("sensor.database_size",))
         self.assertEqual(source(report, "manifest/get:ha_mcp_tools")["status"], "complete")
-        self.assertTrue(report["complete"])
+        self.assertTrue(all(row["status"] == "complete" for row in report["sources"]))
+        self.assertEqual(report["omissions"], ["withheld:definitions[0]"])
 
     async def test_yaml_failures(self):
         for name, result, reason in (
@@ -1630,7 +1635,7 @@ class NoWritePathTests(unittest.IsolatedAsyncioTestCase):
             "..recorder_settings.projection", "..request_context", "..sanitization", "..tool_framework",
             ".compatibility", ".credentials", ".matching", ".naming", ".projection", ".schemas", "__future__", "asyncio",
             "datetime", "itertools", "json", "mcp.server.fastmcp.tools.base", "mcp.types", "pydantic", "re", "types",
-            "typing"})
+            "typing", "unicodedata", "urllib.parse"})
         service = ast.parse(self.sources()["service.py"])
         yaml_paths = [ast.unparse(node.args[1]) for node in ast.walk(service)
                       if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
@@ -1739,7 +1744,9 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["data"]["schema"], c.SCHEMA)
         self.assertEqual(data["metadata"]["data_providers"], ["direct_ha_api", "upstream_read_gateway"])
         self.assertEqual(data["metadata"]["upstream_calls"], 8)
-        self.assertEqual(data["metadata"]["completeness"], "complete")
+        # R2-M1: the two SQL definitions' withheld db_url values.
+        self.assertEqual(data["metadata"]["completeness"], "partial")
+        self.assertEqual(data["data"]["omissions"], ["withheld:definitions[0]", "withheld:definitions[1]"])
         self.assertFalse(data["metadata"]["fallback_occurred"])
         self.assertNotIn("upstream_calls", data["data"])
         for value in NEEDLES:
@@ -2567,3 +2574,299 @@ class RegistryIdentityTests(Base):
             self.assertEqual(rows[entity_id]["registry"]["identity"], "valid")
             self.assertNotEqual(rows[entity_id]["definition"].get("reason"), "registry_identity_invalid_response")
         self.assertEqual(source(report, "config/entity_registry/list")["status"], "complete")
+
+
+# Correction batch 3 (R2-H1): one representative per invisible-character
+# class, named by code point so no such character is in this file.
+INVISIBLE_POINTS = {
+    "zero_width_space": 0x200B, "zero_width_non_joiner": 0x200C, "zero_width_joiner": 0x200D,
+    "word_joiner": 0x2060, "byte_order_mark": 0xFEFF, "soft_hyphen": 0x00AD,
+    "cc_bell": 0x07, "cc_escape": 0x1B, "cc_delete": 0x7F, "cc_next_line": 0x85,
+    "cf_arabic_number_sign": 0x0600, "cf_interlinear_anchor": 0xFFF9, "cf_mongolian_vowel_separator": 0x180E,
+    "bidi_lrm": 0x200E, "bidi_rlm": 0x200F, "bidi_alm": 0x061C, "bidi_rlo": 0x202E, "bidi_lri": 0x2066,
+    "bidi_pdi": 0x2069,
+    "variation_selector_1": 0xFE00, "variation_selector_16": 0xFE0F, "variation_selector_17": 0xE0100,
+    "mongolian_fvs": 0x180B,
+    "tag_language": 0xE0001, "tag_latin_a": 0xE0041, "tag_cancel": 0xE007F,
+    "hangul_filler": 0x3164, "halfwidth_hangul_filler": 0xFFA0, "choseong_filler": 0x115F,
+    "combining_grapheme_joiner": 0x034F,
+    "co_private_use": 0xE000, "cn_unassigned": 0x0378, "zl_line_separator": 0x2028,
+    "zp_paragraph_separator": 0x2029, "cs_surrogate": 0xD800,
+}
+UNVERIFIABLE = "[withheld:unverifiable_text]"
+INVISIBLE_PASSWORD = syn.needle("invisiblepassword")
+
+
+def percent_encoded(character):
+    from urllib.parse import quote
+
+    return quote(character, safe="")
+
+
+def query_password(marker):
+    """A URI whose ``password=`` field is split by ``marker``, built at runtime."""
+
+    return "https://synthetic.invalid/?pass" + marker + "word=" + INVISIBLE_PASSWORD
+
+
+class InvisibleTextTests(Base):
+    """Correction batch 3 (R2-H1): invisible YAML text is withheld whole, never screened."""
+
+    REVIEWER_POINTS = (0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF, 0xAD)
+
+    async def state_report(self, text):
+        values = owner_yaml(template=[{"sensor": [{"name": "Probe", "state": "{{ '" + text + "' }}"}]}])
+        report = await self.run_report(values, integrations=("template",))
+        return report, report["definitions"][0]
+
+    async def test_reviewer_twelve_leak_cases_are_withheld_unverifiable(self):
+        for point in self.REVIEWER_POINTS:
+            for encoded in (False, True):
+                with self.subTest(codepoint=hex(point), encoded=encoded):
+                    marker = percent_encoded(chr(point)) if encoded else chr(point)
+                    report, row = await self.state_report(query_password(marker))
+                    self.assertNotIn(INVISIBLE_PASSWORD, json.dumps(report))
+                    self.assertEqual(row["fields"]["state"], UNVERIFIABLE)
+                    self.assertIn("template[0].sensor[0].state", row["withheld"])
+                    self.assert_partial(report, "unverifiable_text_withheld", "withheld:definitions[0]")
+                    self.assertNotIn("credential_text_withheld", report["omissions"])
+
+    async def test_reviewer_cases_through_the_real_reader_and_gateway(self):
+        from ha_mcp_engineering.providers import upstream_yaml_reader as reader
+
+        for point in self.REVIEWER_POINTS:
+            for encoded in (False, True):
+                with self.subTest(codepoint=hex(point), encoded=encoded):
+                    marker = percent_encoded(chr(point)) if encoded else chr(point)
+                    parsed = [{"sensor": [{"name": "Probe", "state": "{{ '" + query_password(marker) + "' }}"}]}]
+                    payload = {"success": True, "yaml_path": "template", "count": 1, "files_searched": 1,
+                               "files_unreadable": 0, "matches": [{"file": "configuration.yaml",
+                                                                   "yaml_path": "template", "parsed": parsed}]}
+                    result = reader.project_success({"content": [{"type": "text", "text": json.dumps(payload)}]},
+                                                    "template", known_secrets=(HA_TOKEN, ACCESS_SECRET))
+                    values = owner_yaml()
+                    values["template"]["data"] = result.envelope
+                    response, data, audit = await serve_through_gateway({"integrations": ["template"]}, values)
+                    self.assertNotIn(INVISIBLE_PASSWORD, response + audit)
+                    # The reader may already redact it; either way it is withheld whole.
+                    self.assertIn(data["data"]["definitions"][0]["fields"]["state"],
+                                  (UNVERIFIABLE, {"withheld": "reader_redaction"}))
+                    self.assertEqual(data["metadata"]["completeness"], "partial")
+
+    def test_each_invisible_category_is_unverifiable_literal_and_encoded(self):
+        from ha_mcp_engineering.configuration_definitions import credentials
+
+        for name, point in INVISIBLE_POINTS.items():
+            with self.subTest(name):
+                self.assertTrue(credentials.unverifiable_text("Kitchen" + chr(point) + "lights"))
+                if name != "cs_surrogate":  # a lone surrogate has no UTF-8 encoding
+                    once = percent_encoded(chr(point))
+                    self.assertTrue(credentials.unverifiable_text("Kitchen" + once + "lights"))
+                    self.assertTrue(credentials.unverifiable_text("Kitchen" + percent_encoded(once) + "lights"))
+
+    async def test_each_invisible_category_withholds_the_whole_definition_value(self):
+        for name, point in INVISIBLE_POINTS.items():
+            with self.subTest(name):
+                # Not credential text at all: still withheld, never shown.
+                report, row = await self.state_report("Kitchen" + chr(point) + "lights")
+                self.assertEqual(row["fields"]["state"], UNVERIFIABLE)
+                self.assertNotIn("Kitchen", json.dumps(report["definitions"]))
+                self.assert_partial(report, "unverifiable_text_withheld", "withheld:definitions[0]")
+
+    async def test_encoded_beyond_the_decode_bound_is_withheld(self):
+        from ha_mcp_engineering.configuration_definitions import credentials
+
+        deep = query_password(chr(0x200B))
+        for _round in range(6):
+            deep = percent_encoded(deep)
+        self.assertTrue(credentials.credential_text(deep) or credentials.unverifiable_text(deep))
+        report, row = await self.state_report(deep)
+        self.assertNotIn(INVISIBLE_PASSWORD, json.dumps(report))
+        self.assertIn(row["fields"]["state"], (UNVERIFIABLE, {"withheld": "credential_uri"},
+                                               "[withheld:credential_text]"))
+        self.assert_partial(report, "withheld:definitions[0]")
+
+    async def test_invisible_nested_key_is_dropped(self):
+        key = "pass" + chr(0x200B) + "word"
+        values = owner_yaml(template=[{"sensor": [{"name": "Probe", "state": "on",
+                                                   "attributes": {key: INVISIBLE_PASSWORD, "kept": "yes"}}]}])
+        report = await self.run_report(values, integrations=("template",))
+        row = report["definitions"][0]
+        self.assertNotIn(INVISIBLE_PASSWORD, json.dumps(report))
+        self.assertEqual(row["fields"]["attributes"], {"kept": "yes"})
+        self.assertIn("template[0].sensor[0].attributes.<key>", row["withheld"])
+        self.assert_partial(report, "withheld:definitions[0]")
+
+    async def test_exit_point_withholds_invisible_text_outside_the_projection(self):
+        values = owner_yaml(group={"lights" + chr(0x200B): {"entities": ["light.kitchen"]}})
+        report = await self.run_report(values, integrations=("group",))
+        serialized = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn(chr(0x200B), serialized)
+        self.assert_partial(report, "unverifiable_text_withheld")
+        self.assertTrue(any(item.startswith("withheld:definitions[") for item in report["omissions"]))
+
+    async def test_exit_point_withholds_invisible_strings_and_keys(self):
+        env = setup()
+        self.addCleanup(end_request, env.token)
+        base = await env.service.report((), ("template",))
+        self.assertTrue(base["complete"])
+        report = dict(base, probe=query_password(chr(0x2060)),
+                      probe_keys={"pass" + chr(0xFEFF) + "word": INVISIBLE_PASSWORD, "kept": "yes"})
+        omissions = list(report.pop("omissions"))
+        result = env.service._finish(report, omissions, omissions.append)
+        self.assertNotIn(INVISIBLE_PASSWORD, json.dumps(result))
+        self.assertEqual(result["probe"], UNVERIFIABLE)
+        self.assertEqual(result["probe_keys"], {"kept": "yes"})
+        self.assertIn("unverifiable_text_withheld", result["omissions"])
+        self.assertIn("withheld:probe", result["omissions"])
+        self.assertIn("withheld:probe_keys", result["omissions"])
+        self.assertNotIn("credential_text_withheld", result["omissions"])
+        self.assertFalse(result["complete"])
+
+    async def test_exit_point_invisible_key_alone_is_unverifiable(self):
+        env = setup()
+        self.addCleanup(end_request, env.token)
+        base = await env.service.report((), ("template",))
+        report = dict(base, probe_keys={"kept" + chr(0x2066): "x", "kept": "yes"})
+        omissions = list(report.pop("omissions"))
+        result = env.service._finish(report, omissions, omissions.append)
+        self.assertEqual(result["probe_keys"], {"kept": "yes"})
+        self.assertEqual(result["omissions"], ["unverifiable_text_withheld", "withheld:probe_keys"])
+        self.assertFalse(result["complete"])
+
+    async def test_benign_definitions_are_still_shown(self):
+        texts = {
+            "multi_line_template": "{% if is_state('sun.sun', 'above_horizon') %}\n\t{{ 1 }}\r\n{% endif %}",
+            "degrees_celsius": non_ascii(0xB0) + "C",
+            "micrograms_per_cubic_metre": non_ascii(0xB5) + "g/m" + non_ascii(0xB3),
+            "umlaut_name": "K" + non_ascii(0xFC) + "che",
+            "en_dash": "Hall " + non_ascii(0x2013) + " lights",
+            "no_break_space": "20" + non_ascii(0xA0) + "W",
+            "emoji_without_selector": "Lamp " + non_ascii(0x1F4A1),
+            "percent_text": "100% {{ 50 }}%",
+            "encoded_letter": "%41",
+            "unit_and_lines": non_ascii(0xB0) + "C\n\t{{ 1 }}\r\n",
+            "plain_template": "{{ states('sensor.outdoor_temperature') | float(0) * 1.8 + 32 }}",
+        }
+        for name, text in texts.items():
+            with self.subTest(name):
+                values = owner_yaml(template=[{"sensor": [{"name": "Shown", "state": text,
+                                                           "unit_of_measurement": non_ascii(0xB0) + "C"}]}])
+                report = await self.run_report(values, integrations=("template",))
+                fields = report["definitions"][0]["fields"]
+                self.assertEqual((fields["state"], fields["unit_of_measurement"]), (text, non_ascii(0xB0) + "C"))
+                self.assertEqual(report["omissions"], [])
+                self.assertTrue(report["complete"])
+
+    def test_predicate_leaves_ordinary_text_alone(self):
+        from ha_mcp_engineering.configuration_definitions import credentials
+
+        for text in ("", "plain", "a\tb\nc\rd", non_ascii(0xB0) + "C", "100%", "%41%42", "50% off",
+                     non_ascii(0x6E29, 0x5EA6), "Lamp " + non_ascii(0x1F4A1)):
+            with self.subTest(text=text):
+                self.assertFalse(credentials.unverifiable_text(text))
+        # A decode the reader refuses is left to credential_text, which fails closed.
+        self.assertFalse(credentials.unverifiable_text("%FF"))
+        self.assertTrue(credentials.credential_text("%FF"))
+
+
+class WithheldCompletenessTests(Base):
+    """Correction batch 3 (R2-M1): anything withheld, in any form, makes the report partial."""
+
+    async def test_reviewer_projection_confusable_cases_are_partial(self):
+        for word in ("p" + non_ascii(0x03B1) + "ssword", "p" + non_ascii(0x0430) + "ssw" + non_ascii(0x03BF) + "rd"):
+            with self.subTest(word=word):
+                text = "https://synthetic.invalid/?" + word + "=" + INVISIBLE_PASSWORD
+                values = owner_yaml(template=[{"sensor": [{"name": "Probe", "state": "{{ '" + text + "' }}"}]}])
+                report = await self.run_report(values, integrations=("template",))
+                self.assertNotIn(INVISIBLE_PASSWORD, json.dumps(report))
+                self.assertEqual(report["definitions"][0]["fields"]["state"], {"withheld": "credential_uri"})
+                self.assertEqual(report["omissions"], ["withheld:definitions[0]"])
+                self.assert_partial(report)
+
+    async def test_every_withholding_path_is_partial(self):
+        template = lambda **fields: owner_yaml(template=[{"sensor": [{"name": "Probe", "state": "on", **fields}]}])
+        cases = {
+            "secret_ref": template(attributes={"a": {"secret_ref": SECRET_NAME}}),
+            "env_var_ref": template(attributes={"a": {"env_var_ref": ENV_NAME}}),
+            "reader_redaction": template(attributes={"a": "[REDACTED:token]"}),
+            "reader_truncation": template(attributes={"a": "[TRUNCATED:9]"}),
+            "credential_uri": template(attributes={"a": db_url()}),
+            "nested_credential_key": template(attributes={"password": NESTED_PASSWORD}),
+            "nested_connection_key": template(attributes={"database_connection": "x"}),
+            "nested_db_url_key": template(attributes={"db_url": db_url()}),
+            "non_text_key": template(attributes={7: "x"}),
+            "unsupported_value": template(attributes={"a": object()}),
+            "invisible_value": template(attributes={"a": "x" + chr(0x200B)}),
+            "invisible_key": template(attributes={"a" + chr(0x200D): "x"}),
+            "known_secret_at_exit": template(attributes={"a": "{{ '" + HA_TOKEN + "' }}"}),
+            "fixed_db_url_field": owner_yaml(sql=[owner_sql()[0]]),
+        }
+        for name, values in cases.items():
+            with self.subTest(name):
+                integration = "sql" if name == "fixed_db_url_field" else "template"
+                report = await self.run_report(values, integrations=(integration,))
+                self.assert_partial(report, "withheld:definitions[0]")
+
+    async def test_withheld_titles_name_their_entry(self):
+        for title, summary in ((db_url(), "credential_text_withheld"),
+                               ("K" + non_ascii(0xFC) + "che", "unverifiable_text_withheld")):
+            with self.subTest(summary):
+                core = owner_core()
+                core["config_entries/get"]["template"][0]["title"] = title
+                report = await self.run_report(core_values=core, integrations=("template",))
+                self.assert_partial(report, summary, "withheld:ui_entries[0]")
+
+    async def test_dropped_credential_key_names_its_item(self):
+        env = setup()
+        self.addCleanup(end_request, env.token)
+        base = await env.service.report((), ("template",))
+        report = dict(base, probe_keys={db_url(): "dropped", "kept": "yes"})
+        omissions = list(report.pop("omissions"))
+        result = env.service._finish(report, omissions, omissions.append)
+        self.assertEqual(result["probe_keys"], {"kept": "yes"})
+        self.assertEqual(result["omissions"], ["credential_text_withheld", "withheld:probe_keys"])
+        self.assertFalse(result["complete"])
+
+    async def test_omission_text_is_never_itself_an_item(self):
+        env = setup()
+        self.addCleanup(end_request, env.token)
+        base = await env.service.report((), ("template",))
+        report = dict(base)
+        omissions = list(report.pop("omissions")) + ["source_note:" + db_url()]
+        result = env.service._finish(report, omissions, omissions.append)
+        self.assertNotIn(DB_PASSWORD, json.dumps(result))
+        self.assertIn("credential_text_withheld", result["omissions"])
+        self.assertFalse(any(item.startswith("withheld:omissions") for item in result["omissions"]))
+
+    async def test_withheld_items_are_bounded(self):
+        from ha_mcp_engineering.configuration_definitions import credentials
+
+        count = credentials.MAX_WITHHELD_ITEMS + 5
+        sensors = [{"name": f"Probe {index}", "state": {"secret_ref": SECRET_NAME}} for index in range(count)]
+        report = await self.run_report(owner_yaml(template=[{"sensor": sensors}]), integrations=("template",))
+        items = [item for item in report["omissions"] if item.startswith("withheld:")]
+        self.assertEqual(items, [f"withheld:definitions[{index}]" for index in range(credentials.MAX_WITHHELD_ITEMS)])
+        self.assertIn("withheld_items_not_listed:5", report["omissions"])
+        self.assert_partial(report)
+
+    async def test_nothing_withheld_stays_complete(self):
+        report = await self.run_report(integrations=("template", "group", "derivative"))
+        self.assertEqual(report["omissions"], [])
+        self.assertTrue(report["complete"])
+
+    def test_scan_reads_every_withheld_form(self):
+        from ha_mcp_engineering.configuration_definitions import credentials
+
+        envelope = {
+            "definitions": [{"withheld": [], "fields": {"a": "kept"}},
+                            {"withheld": ["x.a"], "fields": {}},
+                            {"withheld": [], "fields": {"a": {"withheld": "secret_ref"}}},
+                            {"withheld": [], "fields": {"a": [credentials.WITHHELD_MARKER]}}],
+            "ui_entries": [{"title": credentials.UNVERIFIABLE_MARKER}],
+            "capability": {"status": "kept"},
+            "omissions": [credentials.WITHHELD_MARKER],
+        }
+        self.assertEqual(credentials.withheld_items(envelope, [(("coverage", "<key>"), credentials.WITHHELD_MARKER)]), [
+            "withheld:definitions[1]", "withheld:definitions[2]", "withheld:definitions[3]",
+            "withheld:ui_entries[0]", "withheld:coverage"])

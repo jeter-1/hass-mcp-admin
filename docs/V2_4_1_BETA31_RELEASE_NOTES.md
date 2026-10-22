@@ -85,6 +85,33 @@ What is always withheld:
 
 Each definition lists what was withheld in `withheld`.
 
+**Invisible text is withheld whole.** A YAML-projected string or key that
+contains an invisible, format or control character cannot be screened
+reliably: a zero-width character inside `password=` hides the credential
+word from every pattern. Such a value is replaced whole with
+`[withheld:unverifiable_text]` (a key: its entry is dropped) and is never
+screened and shown. The characters are the Unicode categories Cc (tab, line
+feed and carriage return excepted), Cf, Cs, Co, Cn, Zl and Zp, and every
+Default_Ignorable_Code_Point: zero-width characters, bidi controls,
+variation selectors, tag characters and the Hangul fillers. They are looked
+for in the original text and after each round of a bounded percent-decode
+(`%E2%80%8B` is a zero-width space), before any credential screening, in the
+projection and again over every key and string at the exit point. Text
+without them keeps the existing path: bounded percent-decode, NFKC, the
+confusable fold, then credential screening. Ordinary templates, units such
+as `°C` and accented names are shown unchanged. **By design, an emoji
+written with a variation selector or a zero-width joiner is withheld too.**
+
+**Anything withheld makes the report partial.** One scan of the final
+envelope at the single exit point finds every withheld form: a
+`[withheld:credential_text]` or `[withheld:unverifiable_text]` string, a
+`{"withheld": <kind>}` value, a non-empty `withheld` list on a definition,
+and each dropped key. Each affected item is named in `omissions`
+(`withheld:definitions[3]`, `withheld:ui_entries[0]`), at most 20, then
+`withheld_items_not_listed:<n>`, and the report is partial. **Because
+`db_url` is always withheld, a report with a SQL definition is always
+partial** (owner decision pending; see the PR).
+
 What is disclosed but never followed:
 - `!include` at any level, and packages. The report says each was not
   followed, and is partial.
@@ -192,6 +219,10 @@ holds:
 - a source value is malformed: the item becomes `invalid_response`, the
   source is `partial` with that reason, and the rest of the report is kept;
 - credential text is withheld (`credential_text_withheld`);
+- anything is withheld, in any form, anywhere in the report: each affected
+  item is named (`withheld:definitions[0]`), at most 20, then
+  `withheld_items_not_listed:<n>`;
+- invisible text is withheld (`unverifiable_text_withheld`);
 - a redaction occurs.
 
 The tool fails with `sources_unavailable` only when every source is
@@ -344,6 +375,21 @@ and the two High reproductions run through the authenticated gateway.
    fails three tests and loses the case-varied protection). It is now its
    own mutant, `DELTA-REVIEW-2`.
 
+## Corrections from the second delta review
+
+The independent review of the corrections at `5f6acb0` found these. Its
+regression suite is kept unchanged as `tests/test_pr294_corr2_extra.py`.
+1. **R2-H1 (High).** A zero-width space, zero-width non-joiner, zero-width
+   joiner, word joiner, byte order mark or soft hyphen inside `password=`,
+   written literally or percent-encoded, hid the credential word from the
+   screening of YAML-projected text, so the password was shown (12 leak
+   cases). Invisible, format and control text is now withheld whole as
+   `[withheld:unverifiable_text]`, never screened and shown (above).
+2. **R2-M1 (Medium).** A value the projection withheld as
+   `{"withheld": "credential_uri"}` left the report `complete: true`. One
+   scan of the final envelope now makes any withheld form, anywhere, a
+   partial report with a named omission per affected item.
+
 ## Compatibility and rollback
 
 - **Additive.** One new tool; no existing descriptor or schema changes.
@@ -365,4 +411,9 @@ and the two High reproductions run through the authenticated gateway.
   - A config entry title with a non-ASCII character, `@`, `://`, a
     password-like `key=value` or over 255 characters is withheld as
     `[withheld:unverifiable_text]` (by design; the report is partial).
+  - A YAML-projected value with an invisible, format or control character
+    (an emoji with a variation selector included) is withheld whole as
+    `[withheld:unverifiable_text]` (by design; the report is partial).
+  - Every withholding makes the report partial, so a report with a SQL
+    definition (its `db_url` always withheld) is always partial.
   - A template blueprint block is not expanded; it is a disclosed gap.

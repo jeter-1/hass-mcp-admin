@@ -53,6 +53,13 @@ credential text. Anything else is `[withheld:credential_text]` or
 `[withheld:unverifiable_text]` and the report is partial; an ordinary
 non-ASCII title is withheld by design.
 
+A YAML-projected string or key with an invisible, format or control
+character, literal or percent-encoded, is withheld whole as
+`[withheld:unverifiable_text]`, never screened and shown. Any withheld form
+anywhere in the final envelope makes the report partial, with a bounded
+`withheld:<item>` omission per affected item; a report with a SQL definition
+is therefore always partial.
+
 At a single exit point every key and string of the final envelope (titles,
 metadata, reasons, omissions included) is screened for credential text and
 withheld as `[withheld:credential_text]`, making the report partial (the

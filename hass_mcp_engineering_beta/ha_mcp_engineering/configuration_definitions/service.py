@@ -482,30 +482,42 @@ class ConfigurationDefinitionsService:
         first. Core free text was already shown only through the allowlist
         (``credentials.display_text``). Credential text is withheld from every
         key and string of the whole envelope (``credentials.withhold``:
-        titles, entry metadata, reasons, omissions and definitions alike),
-        then the strict sanitizer
-        runs over it with the known secrets. Nothing is added afterwards; a
+        titles, entry metadata, reasons, omissions and definitions alike;
+        invisible text is withheld whole first), then the strict sanitizer
+        runs over it with the known secrets. One scan of that envelope
+        (``credentials.withheld_items``, R2-M1) names every item with
+        anything withheld in any form; any such item makes the report
+        partial. Nothing is added afterwards; a
         change (a withholding or redaction omission, definitions or entries
         dropped for the byte budget) rebuilds the envelope and screens and
         sanitizes it again.
         """
 
+        withheld_items: list[str] = []
         while True:
-            envelope = {**report, "omissions": list(omissions)}
-            envelope["complete"] = not omissions and all(
+            listed = list(omissions) + [item for item in withheld_items if item not in omissions]
+            envelope = {**report, "omissions": listed}
+            envelope["complete"] = not listed and all(
                 source["status"] == "complete" for source in report["sources"])
             envelope["completeness"] = "complete" if envelope["complete"] else "partial"
-            envelope, withheld = credentials.withhold(envelope, self.known_secrets)
+            dropped: list[tuple[tuple, str]] = []
+            envelope, withheld = credentials.withhold(envelope, self.known_secrets, dropped)
+            items = credentials.withheld_items(envelope, dropped)
             sanitized = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets,
                                                 max_string=c.MAX_TEXT)
             if sanitized.failed_closed:
                 raise c.ConfigurationDefinitionsError("sources_unavailable")
             changed = False
+            if items != withheld_items:
+                # R2-M1: anything withheld, in any form, makes the report partial.
+                withheld_items = items
+                changed = True
             if withheld and credentials.OMISSION not in omissions:
                 # H1: withheld credential text makes the report partial.
                 omit(credentials.OMISSION)
                 changed = True
-            if credentials.contains(envelope, credentials.UNVERIFIABLE_MARKER) \
+            if (credentials.contains(envelope, credentials.UNVERIFIABLE_MARKER)
+                    or any(marker == credentials.UNVERIFIABLE_MARKER for _path, marker in dropped)) \
                     and credentials.UNVERIFIABLE_OMISSION not in omissions:
                 # Free text the allowlist did not clear makes the report partial.
                 omit(credentials.UNVERIFIABLE_OMISSION)

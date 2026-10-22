@@ -84,6 +84,17 @@ The review needs a security section covering:
   `[withheld:credential_text]` or `[withheld:unverifiable_text]` and the
   report is partial (`unverifiable_text_withheld`). **An ordinary non-ASCII
   title is withheld by design**; a plain ASCII title is shown unchanged.
+- **Invisible text withheld whole.** A YAML-projected string or key with an
+  invisible, format or control character (Cc except tab, line feed and
+  carriage return; Cf, Cs, Co, Cn, Zl, Zp; every
+  Default_Ignorable_Code_Point), in the original text or after a bounded
+  percent-decode, is `[withheld:unverifiable_text]` (a key: dropped), never
+  screened and shown. The exit point applies the same check to every key and
+  string. Templates, units such as `°C` and accented names are shown.
+- **Anything withheld is partial.** One scan of the final envelope names
+  each item with any withheld form (`withheld:definitions[3]`), at most 20
+  then `withheld_items_not_listed:<n>`, and makes the report partial. A
+  report with a SQL definition is therefore always partial (`db_url`).
 - **Truthfulness.**
   - A heuristic match is never reported as exact, and its confidence names
     the signals behind it.
@@ -111,6 +122,9 @@ The review needs a security section covering:
 - **Delta review corrections.** H1, H2, M3, M4 and L from the delta review of
   `cde9cd1`, listed in the release notes. The reviewer's regression suite is
   kept unchanged as `tests/test_pr294_delta_review.py`.
+- **Second delta review corrections.** R2-H1 and R2-M1 from the review of
+  `5f6acb0`, listed in the release notes. The reviewer's suite is kept
+  unchanged as `tests/test_pr294_corr2_extra.py`.
 
 Preserve the following:
 - stable v1.1.2;
@@ -127,7 +141,7 @@ Preserve the following:
 No test reaches a live system. Every fixture is synthetic, and every
 credential-shaped string is assembled at test time.
 
-`tests/test_hamcp132_configuration_definitions.py` (111 tests) covers:
+`tests/test_hamcp132_configuration_definitions.py` (144 tests) covers:
 - pinned shapes for each projected form: template blocks (including trigger
   and blueprint blocks), the SQL integration key (list and single),
   old-style groups, utility meters, `sensor:` and `binary_sensor:` platforms,
@@ -208,7 +222,29 @@ credential-shaped string is assembled at test time.
   - confusable credentials in a YAML-projected definition withheld;
   - a template blueprint block as a gap, with an absence control;
   - malformed registry identities never matched in either direction, with
-    a `null` control.
+    a `null` control;
+- the second delta review's suite, unchanged
+  (`tests/test_pr294_corr2_extra.py`), and the added tests:
+  - the reviewer's 12 leak cases (six invisible characters, literal and
+    percent-encoded, inside `password=`), through the projection and
+    through the real reader and the authenticated gateway, each withheld
+    whole and partial;
+  - one representative of each invisible class (Cc, Cf, Cs, Co, Cn, Zl, Zp,
+    zero-width, bidi controls, variation selectors, tag characters, Hangul
+    fillers, the soft hyphen, the combining grapheme joiner), literal,
+    percent-encoded and double-encoded, each withheld even when it is not
+    credential text;
+  - encoding beyond the decode bound withheld, an invisible nested key
+    dropped, and invisible strings and keys at the exit point;
+  - benign definitions shown and complete: a multi-line template with tabs
+    and newlines, `°C`, `µg/m³`, an accented name, an en dash, a no-break
+    space, an emoji without a selector and plain percent text;
+  - the reviewer's two completeness cases, and every withholding path (each
+    reference, reader marker, credential URI, credential and connection
+    key, `db_url`, non-text key, unsupported value, invisible value and key,
+    known secret, withheld titles, a dropped key at the exit point) partial
+    with its named item; the item list bounded; omission text never itself
+    an item; nothing withheld stays complete.
 
 The existing suites that pin the tool count, sanitizer sites, Core gate and
 reader purpose are updated. The Evidence tier on the PR head is the complete
@@ -334,7 +370,8 @@ creates, opens a flow or calls a service.
    - `diagnosis.classification` and `reasons`. For any entity that is
      unavailable, check that the reasons agree with what Josh knows about it;
    - for both SQL definitions, that `withheld` lists `db_url` and `fields`
-     has no `db_url`.
+     has no `db_url`, and that `omissions` names each one
+     (`withheld:definitions[<n>]`) with the report partial.
 
    Also record:
    - every `sources[]` status and reason, `packages`, `omissions` and
@@ -346,7 +383,9 @@ creates, opens a flow or calls a service.
      secret name or state value.
 4. **By integration (live read).** Call `get_configuration_definitions` with
    `integrations: ["sql", "filter", "derivative", "group"]`. Confirm:
-   - the six definitions appear, with `db_url` withheld;
+   - the six definitions appear, with `db_url` withheld and the report
+     partial with a `withheld:definitions[<n>]` omission for each SQL
+     definition;
    - any UI-created entries of those integrations are listed under
      `ui_entries` as `definition_not_readable_without_flow`, with no options
      or data;
