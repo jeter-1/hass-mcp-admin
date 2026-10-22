@@ -497,9 +497,58 @@ CORE_ENTITY_METADATA_PROFILES = (
                      "session_fingerprint", "generation"),
     ),
 )
+# HAMCP-069B: two further runtime-only mutation contracts.  Like 069A they are
+# never part of CORE_CAPABILITY_PROFILES and stay dormant until an owner-signed
+# registry reference (planned sequence 13) selects each one exactly.
+CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES = (
+    _contract(
+        "core.entity_registry_availability_operation",
+        CoreCapabilityClass.ENTITY_REGISTRY_AVAILABILITY_OPERATION,
+        "compiled-core-entity-registry-availability-operation-v1",
+        (
+            "websocket_entity_registry_get",
+            "websocket_entity_registry_update_disabled_by_user_or_null",
+            "websocket_config_entries_get_single",
+            "entity_registry_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "bounded_exact_existing_entity_registry_entries",
+            "fields": ["disabled_by"],
+            "values": ["user", None],
+            "dispatch": "at_most_once_entity_registry_update_per_entity",
+            "readback": "authoritative_exact_entity_registry_entry",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+    _contract(
+        "core.entity_assistant_exposure_operation",
+        CoreCapabilityClass.ENTITY_ASSISTANT_EXPOSURE_OPERATION,
+        "compiled-core-entity-assistant-exposure-operation-v1",
+        (
+            "websocket_entity_registry_get",
+            "websocket_expose_entity_single_assistant_single_entity",
+            "entity_registry_options_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "bounded_exact_existing_entity_registry_entries",
+            "fields": ["options.<assistant>.should_expose"],
+            "assistants": ["cloud.google_assistant", "conversation"],
+            "dispatch": "at_most_once_expose_entity_per_entity",
+            "readback": "authoritative_exact_entity_registry_options",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
     + CORE_AUTOMATION_BASELINE_PROFILES + CORE_ENTITY_METADATA_PROFILES
+    + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
 )
 
 
@@ -560,6 +609,7 @@ __all__ = [
     "CORE_CAPABILITY_PROFILES",
     "CORE_TYPED_OPERATION_PROFILES",
     "CORE_ENTITY_METADATA_PROFILES",
+    "CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

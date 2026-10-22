@@ -844,6 +844,13 @@ class ConfigurationOperationAdapter:
             "mismatch_fields": list(bounded_mismatches(mismatches)),
         }
         codes: tuple[str, ...] = ("exact_readback_completed",)
+        # HAMCP-069B: a tolerated new exposure key is always reported, in the
+        # closed code alphabet (``tolerated_new_exposure_key_cloud_alexa``).
+        codes += tuple(
+            category.replace(":", "_").replace(".", "_")
+            for category in comparison.canonicalization_categories
+            if category.startswith("tolerated_new_exposure_key:")
+        )
         if error_result_sent:
             codes += (ERROR_RESULT_AFTER_SEND,)
             if self.strategy.fingerprint(observed) == (

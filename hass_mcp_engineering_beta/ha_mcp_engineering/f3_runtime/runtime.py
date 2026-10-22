@@ -116,6 +116,13 @@ from ..governance.entity_metadata import (
     entry_fingerprint as entity_metadata_entry_fingerprint,
 )
 from ..governance import entity_metadata_planning
+from ..governance import entity_availability_exposure_planning
+from ..governance.entity_availability_exposure import (
+    BINDINGS_KEY as AVAILABILITY_EXPOSURE_BINDINGS_KEY,
+    CAPABILITY_IDENTITIES as AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES,
+    RESOURCE_TYPES as AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
+    entry_errors as availability_exposure_entry_errors,
+)
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
 from ..governance.task_storage import ExecutionTaskStorageError
@@ -688,6 +695,17 @@ ROLLBACK_ENTITY_METADATA_REQUIREMENTS = (
     "core.dependency_helper_planning",
     "core.entity_registry_metadata_operation",
 )
+# HAMCP-069B: the planner pair for the forward plan's own resource type.
+ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS = {
+    "entity_registry_availability": (
+        "core.dependency_helper_planning",
+        "core.entity_registry_availability_operation",
+    ),
+    "entity_assistant_exposure": (
+        "core.dependency_helper_planning",
+        "core.entity_assistant_exposure_operation",
+    ),
+}
 
 
 def _rollback_core_refusal(*, acquired: bool) -> GovernanceError:
@@ -1044,6 +1062,13 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
+    async def availability_exposure_preflight_evidence(
+        self, target_id, current, proposed
+    ):
+        return await self.delegate.availability_exposure_preflight_evidence(
+            target_id, current, proposed
+        )
+
     async def write(self, action, resource_type, target_id, proposed_config):
         self.auditor("provider_invocation_started")
         try:
@@ -1299,7 +1324,11 @@ class F3RuntimeIntegration:
             for resource in ("automation", "script", "input_boolean", "input_number")
             for action in ("create", "update")
         }
-        # HAMCP-069A-1: entity registry metadata is update-only.
+        # HAMCP-069A-1 / 069B: entity registry writes are update-only.
+        for resource, identity in AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES.items():
+            configuration_adapters[identity] = ConfigurationOperationAdapter(
+                resource, "update", config_gateway, now=service.now
+            )
         configuration_adapters[
             ENTITY_METADATA_CAPABILITY_IDENTITY
         ] = ConfigurationOperationAdapter(
@@ -2895,7 +2924,8 @@ class F3RuntimeIntegration:
         """
 
         return bool(declarations) and all(
-            declaration["capability_id"] == ENTITY_METADATA_CAPABILITY_IDENTITY
+            declaration["capability_id"]
+            in dispatch_projection.ALREADY_PRESENT_CAPABILITY_IDENTITIES
             and record is not None
             and record.dispatch_intent is None
             and record.dispatch_count == 0
@@ -3860,17 +3890,38 @@ class F3RuntimeIntegration:
             operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE
             for operation in source_plan.operations
         )
+        availability_exposure = next(
+            (
+                operation.resource_type
+                for operation in source_plan.operations
+                if operation.resource_type
+                in AVAILABILITY_EXPOSURE_RESOURCE_TYPES
+            ),
+            None,
+        ) if source_plan.contract_version == 2 else None
         # HAMCP-189 R1: every return above is local.  Fresh planning reads
         # current state, so it runs inside its own Core lease.
         async with _rollback_planning_lease(
             self.core_runtime,
             (
-                ROLLBACK_ENTITY_METADATA_REQUIREMENTS
+                ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS[availability_exposure]
+                if availability_exposure is not None
+                else ROLLBACK_ENTITY_METADATA_REQUIREMENTS
                 if entity_metadata
                 else ROLLBACK_PLANNING_REQUIREMENTS
             ),
             target=(
                 {
+                    "target_type": availability_exposure,
+                    "target_id": ",".join(
+                        sorted(
+                            operation.target_id
+                            for operation in source_plan.operations
+                        )
+                    ),
+                }
+                if availability_exposure is not None
+                else {
                     "target_type": "entity_registry_metadata",
                     "target_id": source_plan.operations[0].target_id,
                 }
@@ -3878,6 +3929,10 @@ class F3RuntimeIntegration:
                 else None
             ),
         ) as lease:
+            if availability_exposure is not None:
+                return await self._create_availability_exposure_rollback(
+                    source_plan, task, lease
+                )
             if entity_metadata:
                 return await self._create_entity_metadata_rollback(
                     source_plan, task, lease
@@ -4154,6 +4209,158 @@ class F3RuntimeIntegration:
             "rollback_disclosure": entity_metadata_planning.ROLLBACK_DISCLOSURE.format(
                 plan_id=source_plan.plan_id
             ),
+            "provider_dispatch_occurred": False,
+        }
+
+    async def _create_availability_exposure_rollback(
+        self, source_plan: Any, task: Any, lease: Any
+    ) -> dict[str, Any]:
+        """Plan the reverse of a verified 069B plan's children (OD-8).
+
+        Only children that dispatched once and were exactly verified are
+        reversed; the others are listed as excluded.  Every reversed entity's
+        live entry must still match its verified readback, a prior exposure
+        preference that was unset is not restorable, and nothing is
+        dispatched here.
+        """
+
+        def refuse(reason: str, **extra: Any) -> GovernanceError:
+            return GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": reason,
+                    "provider_dispatch_occurred": False,
+                    **extra,
+                },
+            )
+
+        if task is None or task.state not in {
+            ExecutionTaskState.SUCCEEDED_VERIFIED,
+            ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
+            ExecutionTaskState.FAILED_POST_DISPATCH,
+        }:
+            raise refuse("forward_not_verified")
+        records = {
+            item["operation_id"]: self.children.get(item["child_id"])
+            for item in self.children.declarations_for_task(task.task_id)
+        }
+        resource_types = {
+            operation.resource_type for operation in source_plan.operations
+        }
+        if len(resource_types) != 1 or not resource_types <= set(
+            AVAILABILITY_EXPOSURE_RESOURCE_TYPES
+        ):
+            raise refuse("forward_not_verified")
+        reversed_ids: list[str] = []
+        excluded: list[str] = []
+        fingerprints: dict[str, str] = {}
+        inverses: set[str] = set()
+        assistants: set[str | None] = set()
+        for operation in source_plan.operations:
+            record = records.get(operation.operation_id)
+            if (
+                record is None
+                or not record.terminal
+                or record.normalized_outcome != "succeeded_verified"
+                or record.dispatch_intent is None
+                or record.dispatch_count != 1
+            ):
+                excluded.append(operation.operation_id)
+                continue
+            prior = operation.current_config
+            final = operation.proposed_config
+            bindings = (
+                final.get(AVAILABILITY_EXPOSURE_BINDINGS_KEY)
+                if isinstance(final, dict)
+                else None
+            )
+            resulting = record.evidence.get("resulting_state_fingerprint")
+            if (
+                not isinstance(prior, dict)
+                or not isinstance(bindings, dict)
+                or availability_exposure_entry_errors(operation.target_id, prior)
+                or not isinstance(resulting, str)
+            ):
+                raise refuse("prior_state_missing")
+            assistant = bindings.get("assistant")
+            try:
+                inverse = entity_availability_exposure_planning.inverse_operation(
+                    bindings.get("operation"), prior, assistant
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise refuse(exc.reason_code, entity_id=operation.target_id) from None
+            inverses.add(inverse)
+            assistants.add(assistant)
+            reversed_ids.append(operation.target_id)
+            fingerprints[operation.target_id] = resulting
+        if not reversed_ids:
+            raise refuse(
+                "forward_not_dispatched"
+                if task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME
+                or not any(
+                    record is not None and record.dispatch_count
+                    for record in records.values()
+                )
+                else "forward_not_verified"
+            )
+        if len(inverses) != 1 or len(assistants) != 1:
+            # One plan approves one operation; mixed priors are not merged.
+            raise refuse("rollback_inverse_not_uniform")
+        request = entity_availability_exposure_planning.Request(
+            inverses.pop(), tuple(reversed_ids), assistants.pop(), 120
+        )
+        # HAMCP-069B M1: the service-layer admission check precedes every
+        # planning read, even when this runtime was composed without Core.
+        self.service._availability_exposure_core(request.resource_type)
+        try:
+            if self.service.entity_availability_exposure_gateway is None:
+                raise entity_metadata_planning.EntityMetadataRefusal(
+                    "entity_availability_exposure_provider_unavailable",
+                    kind="unavailable",
+                )
+            prepared = await entity_availability_exposure_planning.prepare(
+                self.service.entity_availability_exposure_gateway,
+                self.service.entity_availability_exposure_snapshot_reader,
+                request,
+                rollback_fingerprints=fingerprints,
+            )
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self.service._entity_metadata_refusal_error(exc, {}) from None
+        lease.require_current()
+        disclosure = entity_availability_exposure_planning.ROLLBACK_DISCLOSURE.format(
+            plan_id=source_plan.plan_id
+        )
+        created = await self.service._create_availability_exposure_plan(
+            prepared,
+            title=f"Rollback governed change {source_plan.plan_id}",
+            description=disclosure,
+            caller_context={
+                "rollback_source_plan_id": source_plan.plan_id,
+                "rollback_model": "f3-governed-rollback-plan-v1",
+            },
+            _before_persist=lease.require_current,
+        )
+        rollback_plan = self.service._load(created["plan_id"])
+        source_plan.rollback.available = True
+        source_plan.rollback.status = "governed_plan_created"
+        source_plan.rollback.requested_at = self.service._timestamp()
+        source_plan.rollback.request_id = rollback_plan.plan_id
+        self.service._record(source_plan, "rollback_plan_created", "success")
+        return {
+            "status": (
+                "rollback_partial_plan_created"
+                if excluded
+                else "rollback_plan_created"
+            ),
+            "source_plan_id": source_plan.plan_id,
+            "rollback_plan_id": rollback_plan.plan_id,
+            "approval_required": True,
+            "plan_hash": self.service.plan_hash(rollback_plan),
+            "rollback_operation": request.operation,
+            "entities_to_restore": list(request.entity_ids),
+            "operations_excluded": excluded,
+            "rollback_disclosure": disclosure,
             "provider_dispatch_occurred": False,
         }
 

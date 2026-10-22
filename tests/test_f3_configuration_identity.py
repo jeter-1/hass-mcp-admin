@@ -39,12 +39,21 @@ from ha_mcp_engineering.governance.normalize import stable_hash
 # HAMCP-069A-1: the direct entity registry metadata update is a closed
 # configuration child with its own provider and synthetic coverage in
 # tests/test_hamcp069a_entity_metadata_*.py; the gateway-backed checks below
-# apply to the eight reviewed configuration identities only.
+# apply to the eight reviewed configuration identities only. HAMCP-069B adds
+# two more such children (entity enable/disable and assistant exposure),
+# covered by tests/test_hamcp069b_entity_availability_exposure_*.py.
 ENTITY_METADATA_KEY = ("entity_registry_metadata", "update")
+ENTITY_AVAILABILITY_EXPOSURE_KEYS = {
+    ("entity_registry_availability", "update"),
+    ("entity_assistant_exposure", "update"),
+}
+DIRECT_ENTITY_REGISTRY_KEYS = {ENTITY_METADATA_KEY} | (
+    ENTITY_AVAILABILITY_EXPOSURE_KEYS
+)
 GATEWAY_IDENTITIES = {
     key: value
     for key, value in CAPABILITY_IDENTITIES.items()
-    if key != ENTITY_METADATA_KEY
+    if key not in DIRECT_ENTITY_REGISTRY_KEYS
 }
 
 from tests.f3_configuration_fixtures import (
@@ -71,7 +80,12 @@ class CapabilityIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(GATEWAY_IDENTITIES.values()), expected)
         self.assertEqual(
             set(CAPABILITY_IDENTITIES.values()),
-            expected | {"update_entity_registry_metadata_configuration"},
+            expected
+            | {
+                "update_entity_registry_metadata_configuration",
+                "update_entity_registry_availability_configuration",
+                "update_entity_assistant_exposure_configuration",
+            },
         )
         for (resource_type, action), identity in GATEWAY_IDENTITIES.items():
             with self.subTest(resource_type=resource_type, action=action):

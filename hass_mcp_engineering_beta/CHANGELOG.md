@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.4.1-beta.31 - Configuration definitions (HAMCP-132 slice 2)
+## 2.4.1-beta.32 - Configuration definitions (HAMCP-132 slice 2)
 
-Builds on 2.4.1-beta.30.
+Builds on 2.4.1-beta.31.
 
 - Add the read-only `get_configuration_definitions` tool for up to 50
   `entity_ids` and/or whole `integrations` from template, sql, filter,
@@ -58,9 +58,44 @@ Builds on 2.4.1-beta.30.
   (`dependencies_withheld`, diagnosis `undetermined`); a withheld key is not
   in the definition ID; a withheld legacy name is never a candidate. Each is
   listed as withheld, so the report is partial.
-- Catalog: 65 static tools, 93 advertised (94 with the optional YAML reader).
+- Catalog: 66 static tools, 94 advertised (95 with the optional YAML reader).
   No existing descriptor, schema, stored format, dependency or workflow
   changes.
+
+## 2.4.1-beta.31 - Entity enable/disable and voice exposure, inactive (HAMCP-069B)
+
+Builds on 2.4.1-beta.30.
+
+- Add `create_entity_availability_exposure_plan`. It proposes one operation
+  (`disable`, `enable`, `expose`, `unexpose`) over 1-8 exact registered
+  entities. `expose`/`unexpose` need `assistant` (`conversation` or
+  `cloud.google_assistant`); Alexa is refused. There is no free-text field.
+- Two resource types, `entity_registry_availability`
+  (`config/entity_registry/update` with exactly `entity_id` and
+  `disabled_by`) and `entity_assistant_exposure`
+  (`homeassistant/expose_entity`, one assistant and one entity), each
+  verified by exact `config/entity_registry/get` readback. A non-target
+  `cloud.alexa` key going from absent to present is the one tolerated
+  difference, reported as `tolerated_new_exposure_key_cloud_alexa`.
+- Two new runtime-only Core capability profiles. The signed registry
+  (sequence 12) does not reference them, so every call is refused with
+  `CoreCapabilityUnavailable` / `pending_signed_registry_admission` before a
+  plan is stored. `list_capabilities` and health report the same status.
+  The governance service checks admission first, before any Home Assistant
+  read or plan storage, on every entry point. Nothing new is active until an
+  owner-signed sequence 13.
+- Once admitted: protected entities need the existing elevated
+  acknowledgement. A disable whose dependency evidence is incomplete for any
+  reason is protected, with "impact could not be fully determined". An
+  enable plan covers one config entry; unregistered
+  entities, devices, config entries, Core-internal disables and
+  already-applied states are refused; rollback is an inverse plan. The
+  gateway never sends `cloud/status`, `homeassistant/expose_entity/list`,
+  `homeassistant/expose_new_entities/set` or either cloud entity-update
+  command.
+- Catalog: 65 static tools plus 28 delegated reads, 93 total (94 with the
+  optional YAML reader). No existing descriptor, schema, permission,
+  workflow, signed registry entry or fingerprint, or stable-v1 file changes.
 
 ## 2.4.1-beta.30 - Incident-window logs and continuable history (HAMCP-131)
 

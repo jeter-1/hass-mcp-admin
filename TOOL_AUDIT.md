@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-## Read-only configuration definitions (2.4.1-beta.31, HAMCP-132 slice 2)
+## Read-only configuration definitions (2.4.1-beta.32, HAMCP-132 slice 2)
 
 `get_configuration_definitions` is native read-only evidence:
 `engineering_native` routing, `risk=read`, policy
@@ -77,8 +77,29 @@ envelope is then sanitized once, with the known secrets. It is mapped in the HAM
 `core.basic_websocket_read`, `core.non_device_registry_read`). Arguments are
 validated before the SDK, and the audit carries counts only. There is no
 write, reload, flow or service-call path and no new batch-allowlist shape.
-The catalog is 65 static + 28 delegated = 93 (94 with the optional YAML
+The catalog is 66 static + 28 delegated = 94 (95 with the optional YAML
 reader).
+
+## Entity enable/disable and voice exposure, inactive (2.4.1-beta.31, HAMCP-069B)
+
+`create_entity_availability_exposure_plan` is a native governed planning tool:
+`engineering_native` routing, operational administration, no delegated
+provider, no fallback. It only creates a plan; dispatch is the existing
+external approval plus `apply_change_plan`. One operation (`disable`,
+`enable`, `expose`, `unexpose`) over 1-8 exact registered entities; `assistant`
+is `conversation` or `cloud.google_assistant` (Alexa refused); no free-text
+field.
+
+Its resource types `entity_registry_availability` and
+`entity_assistant_exposure` require the runtime-only Core profiles
+`core.entity_registry_availability_operation` and
+`core.entity_assistant_exposure_operation`, which the signed registry
+(sequence 12) does not reference. Every call is refused with
+`CoreCapabilityUnavailable` / `pending_signed_registry_admission`, with no
+plan stored and no provider contact; capabilities and health show the same
+status. The catalog is 65 static + 28 delegated = 93 (94 with the optional
+YAML reader). See
+[HAMCP_069B_ENABLE_EXPOSE_DESIGN.md](docs/HAMCP_069B_ENABLE_EXPOSE_DESIGN.md).
 
 ## Read-only incident logs and continuable history (2.4.1-beta.30, HAMCP-131)
 

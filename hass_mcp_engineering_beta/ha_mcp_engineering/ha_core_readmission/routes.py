@@ -73,6 +73,34 @@ _F3_ENTITY_METADATA_OPERATIONS = frozenset(
     }
 )
 
+# HAMCP-069B: one F3 identity per resource type; each binds only its own
+# dormant runtime profile.
+AVAILABILITY_PROFILE = "core.entity_registry_availability_operation"
+EXPOSURE_PROFILE = "core.entity_assistant_exposure_operation"
+_F3_ENTITY_AVAILABILITY_EXPOSURE_OPERATIONS = MappingProxyType(
+    {
+        (
+            "update_entity_registry_availability_configuration",
+            "update_entity_registry_availability_configuration",
+        ): AVAILABILITY_PROFILE,
+        (
+            "update_entity_assistant_exposure_configuration",
+            "update_entity_assistant_exposure_configuration",
+        ): EXPOSURE_PROFILE,
+    }
+)
+# operation -> (resource type, Core profile) for the 069B planner tool.
+AVAILABILITY_EXPOSURE_OPERATIONS = MappingProxyType(
+    {
+        "disable": ("entity_registry_availability", AVAILABILITY_PROFILE),
+        "enable": ("entity_registry_availability", AVAILABILITY_PROFILE),
+        "expose": ("entity_assistant_exposure", EXPOSURE_PROFILE),
+        "unexpose": ("entity_assistant_exposure", EXPOSURE_PROFILE),
+    }
+)
+AVAILABILITY_EXPOSURE_TOOL = "create_entity_availability_exposure_plan"
+AVAILABILITY_EXPOSURE_MAX_ENTITIES = 8
+
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
     "ha_config_get_calendar_events": ("core.basic_websocket_read",),
@@ -160,6 +188,12 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "create_entity_metadata_plan": (
         "core.dependency_helper_planning",
         "core.entity_registry_metadata_operation",
+    ),
+    # Narrowed per call to the one profile the operation selects.
+    AVAILABILITY_EXPOSURE_TOOL: (
+        "core.dependency_helper_planning",
+        AVAILABILITY_PROFILE,
+        EXPOSURE_PROFILE,
     ),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
@@ -430,6 +464,22 @@ def static_tool_requirements(
     ):
         requirements = (*requirements, "core.automation_trace_read")
 
+    elif tool_name == AVAILABILITY_EXPOSURE_TOOL:
+        operation = (
+            arguments.get("operation") if isinstance(arguments, dict) else None
+        )
+        selected = (
+            AVAILABILITY_EXPOSURE_OPERATIONS.get(operation)
+            if isinstance(operation, str)
+            else None
+        )
+        if selected is not None:
+            # An unknown operation keeps both profiles; its target is refused.
+            unselected = {AVAILABILITY_PROFILE, EXPOSURE_PROFILE} - {selected[1]}
+            requirements = tuple(
+                value for value in requirements if value not in unselected
+            )
+
     return tuple(sorted(set(requirements)))
 
 
@@ -462,6 +512,8 @@ def static_tool_core_route(
 
 
 STATIC_TARGET_INVALID_ENTITY_ID = "entity_metadata_invalid_entity_id"
+STATIC_TARGET_INVALID_OPERATION = "entity_availability_exposure_invalid_operation"
+STATIC_TARGET_INVALID_ENTITY_IDS = "entity_availability_exposure_invalid_entity_ids"
 
 
 class StaticToolTargetRefused(ValueError):
@@ -486,6 +538,8 @@ def static_tool_target(
     it never reaches Core acquisition or the MCP application.
     """
 
+    if tool_name == AVAILABILITY_EXPOSURE_TOOL:
+        return availability_exposure_target(arguments)
     if tool_name != "create_entity_metadata_plan":
         return None
     entity_id = arguments.get("entity_id") if isinstance(arguments, dict) else None
@@ -496,6 +550,41 @@ def static_tool_target(
             STATIC_TARGET_INVALID_ENTITY_ID, "entity_id"
         ) from None
     return {"target_type": "entity_registry_metadata", "target_id": entity_id}
+
+
+def availability_exposure_target(arguments: Any) -> dict[str, str]:
+    """Bind the 069B planner lease to its exact, bounded entity set.
+
+    The target identity is the operation's resource type and the sorted,
+    comma-joined entity ids (a comma can never occur in an entity id).  Any
+    shape the planner itself would refuse is refused here first.
+    """
+
+    values = arguments if isinstance(arguments, dict) else {}
+    operation = values.get("operation")
+    selected = (
+        AVAILABILITY_EXPOSURE_OPERATIONS.get(operation)
+        if isinstance(operation, str)
+        else None
+    )
+    if selected is None:
+        raise StaticToolTargetRefused(STATIC_TARGET_INVALID_OPERATION, "operation")
+    entity_ids = values.get("entity_ids")
+    if (
+        not isinstance(entity_ids, list)
+        or not 1 <= len(entity_ids) <= AVAILABILITY_EXPOSURE_MAX_ENTITIES
+    ):
+        raise StaticToolTargetRefused(STATIC_TARGET_INVALID_ENTITY_IDS, "entity_ids")
+    for entity_id in entity_ids:
+        try:
+            validate_entity_id(entity_id)
+        except ValueError:
+            raise StaticToolTargetRefused(
+                STATIC_TARGET_INVALID_ENTITY_IDS, "entity_ids"
+            ) from None
+    if len(set(entity_ids)) != len(entity_ids):
+        raise StaticToolTargetRefused(STATIC_TARGET_INVALID_ENTITY_IDS, "entity_ids")
+    return {"target_type": selected[0], "target_id": ",".join(sorted(entity_ids))}
 
 
 def f3_requirements(prepared: Any) -> tuple[str, ...]:
@@ -523,6 +612,8 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         values.add("core.typed_helper_operation")
     elif identity in _F3_GOVERNED_CONFIGURATION_OPERATIONS:
         values.add("core.governed_configuration_operation")
+    elif identity in _F3_ENTITY_AVAILABILITY_EXPOSURE_OPERATIONS:
+        values.add(_F3_ENTITY_AVAILABILITY_EXPOSURE_OPERATIONS[identity])
     elif identity in _F3_ENTITY_METADATA_OPERATIONS:
         # Never the signed governed_configuration_operation contract: that
         # evidence did not cover the entity registry write adapter.
@@ -552,7 +643,12 @@ __all__ = [
     "delegated_requirements",
     "delegated_provider_compatibility",
     "f3_requirements",
+    "AVAILABILITY_EXPOSURE_OPERATIONS",
+    "AVAILABILITY_EXPOSURE_TOOL",
     "STATIC_TARGET_INVALID_ENTITY_ID",
+    "STATIC_TARGET_INVALID_ENTITY_IDS",
+    "STATIC_TARGET_INVALID_OPERATION",
+    "availability_exposure_target",
     "StaticCoreRoute",
     "StaticToolTargetRefused",
     "static_tool_core_route",
