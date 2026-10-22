@@ -297,15 +297,16 @@ The existing suites that pin the tool count, sanitizer sites, Core gate and
 reader purpose are updated. The Evidence tier on the PR head is the complete
 final run.
 
-Mutations: **218 of 218 killed, none survived**
-(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 276
+Mutations: **235 of 235 killed, none survived**
+(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 289
 tests across the three HAMCP-132 modules and both reviewer suites
 (`test_pr294_delta_review` and `test_pr294_corr2_extra`): OK, 1 skipped. Every kill is a test failure or
 a test-level error; none is an import or syntax failure.
 
 The set is slice 1's 80, 55 for slice 2, 31 for the independent-review
 corrections, 18 for the delta-review corrections, 21 for the second
-delta-review corrections and 13 for the owner policy decision. The first slice 2 run left two
+delta-review corrections, 13 for the owner policy decision and 17 for the
+owner derived-value decision. The first slice 2 run left two
 survivors:
 - `B-L2` was equivalent. `_credential_shaped` also matches `db_url`, so
   removing only the nested `WITHHELD_KEYS` test changes nothing. It was
@@ -401,6 +402,20 @@ The owner policy-decision mutants cover:
 - the marker emitted for every integration, the SQL `db_url` listed as
   withheld again, and the `db_url` value copied into the marker
   (`B4-P11` to `B4-P13`).
+
+The owner derived-value mutants cover:
+- the entity ID derived from a withheld name (`B5-N1`), derived though the
+  name is listed (`B5-N2`), and a withheld name not listed (`B5-N3`);
+- the unique_id guard removed, a withheld unique_id not listed, and the
+  template block or tariff unique_id input dropped (`B5-U1` to `B5-U4`);
+- each leg of the input check removed: the projection's own withholding, the
+  exit point's sanitizer, the known secrets in the check and the known
+  secrets passed to the projection (`B5-X1` to `B5-X4`);
+- dependencies read from a withheld value, the flag not set, and the
+  diagnosis guard removed (`B5-D1` to `B5-D3`);
+- a withheld key kept in the definition ID (`B5-K1`), a withheld legacy
+  name matched (`B5-L1`), and the internal projection fields rendered
+  (`B5-S1`).
 
 ## 2. Release CI and publication
 
