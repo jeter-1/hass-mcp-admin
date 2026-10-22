@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.4.1-beta.30 - Incident-window logs and continuable history (HAMCP-131)
+
+Builds on 2.4.1-beta.29.
+
+- Add read-only `get_incident_logs`. It reads one window of at most 6 hours
+  from the Core journal (`/core/logs`) and Engineering's own add-on journal
+  (`/addons/self/logs`), through HAMCP-200 typed routes with a gatewayd
+  `Range` header, and merges the entries in time order. The level filter and
+  a literal text filter (at most 128 characters) report skip counts. A limit
+  of 1-200 applies, with a signed cursor. Pages are strictly time-ordered
+  across sources; a source that runs out of request budget holds the merged
+  page at its earliest unread point and is reported `partial`
+  (`request_budget_exhausted`). Wrong-typed arguments are refused as invalid
+  arguments.
+- Each source reports its coverage: earliest and latest retained entry,
+  retention edge, scanned range, gaps with reasons, and filter and window
+  skips. `supervisor`, `host` and other add-on sources need Supervisor role
+  `manager`. They are listed `unavailable` with `authority_not_granted`, the
+  required role and zero requests, also when they are the only sources
+  selected; no role or permission is added. An add-on slug must be one
+  validated segment, so a traversal is refused with zero requests.
+- Add read-only `get_history_slices`. It reads entity history continuously
+  through the admitted delegated `ha_get_history` route (ha-mcp 8.5.0 or
+  8.6.0) using a new fixed gateway `history_reader`. Windows are at most
+  7 days, read as fixed 6-hour slices, with per-page coverage whose
+  `complete_until` is exclusive while tied states may remain. The cursor
+  binds the query, the fixed end, the provider contract and a cumulative
+  digest of all history the read has returned, which every continuation
+  re-reads (at most 40 verification reads of 100 states; past that no cursor
+  is issued, `continuation_verification_limit`). Any change to returned
+  history on any earlier page, a purge, a late write, a changed slice-start
+  state or a contract change is refused as `STALE_CURSOR`. The native `get_history` tool is not used.
+- Each tool sanitizes its whole response once, at a single exit, with the
+  known secrets; a redaction makes the result partial. `get_incident_logs` is
+  Core-independent (Supervisor only); `get_history_slices` maps to
+  `core.basic_rest_read`.
+- Catalog: 64 static tools plus 28 delegated reads, 92 total (93 with the
+  optional YAML reader). No existing descriptor, schema, permission,
+  workflow, signed registry entry or stable-v1 file changes.
+
 ## 2.4.1-beta.29 - Safety-critical acknowledgement (HAMCP-213 PR 1)
 
 Builds on 2.4.1-beta.28.

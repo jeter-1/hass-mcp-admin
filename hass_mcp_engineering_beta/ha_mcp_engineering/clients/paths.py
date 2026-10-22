@@ -50,10 +50,12 @@ SEGMENT_KINDS = frozenset({"identifier", "entity_id", "timestamp"})
 # source text here, so a computed string can never become a route.
 ROUTE_TEMPLATES = frozenset({
     "/addons/self/info",
+    "/addons/self/logs",
     "/config",
     "/config/automation/config/{}",
     "/config/core/check_config",
     "/config/script/config/{}",
+    "/core/logs",
     "/history/period/{}",
     "/logbook/{}",
     "/services",

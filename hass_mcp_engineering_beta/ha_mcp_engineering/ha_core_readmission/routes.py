@@ -135,6 +135,8 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_automation_trace": ("core.automation_trace_read",),
     "check_config": ("core.configuration_validation",),
     "get_history": ("core.basic_rest_read",),
+    # HAMCP-131: the delegated ha_get_history route reads recorder history.
+    "get_history_slices": ("core.basic_rest_read",),
     "get_logbook": ("core.basic_rest_read",),
     "get_error_log": ("core.basic_websocket_read",),
     "list_automations": ("core.automation_configuration_read",),
@@ -221,6 +223,12 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
             "Reads the Core journal through the fixed Supervisor API provider "
             "and must remain available while Core is down; it consumes no "
             "Core API authority.",
+        ),
+        "get_incident_logs": CoreIndependence(
+            CORE_INDEPENDENT_SUPERVISOR_ONLY,
+            "Reads the Core and own add-on journals through fixed Supervisor "
+            "API routes and must remain available while Core is down; it "
+            "consumes no Core API authority.",
         ),
         "get_blueprint": CoreIndependence(
             CORE_INDEPENDENT_MOUNTED_SOURCE,

@@ -2955,7 +2955,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         registry = load_reviewed_upstream_release_registry()
         policy = registry.by_version["8.4.3"].policy
         counts = policy.classification_counts
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 62)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 64)
         self.assertEqual(counts["automatic_read"], 28)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
@@ -2966,7 +2966,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             },
             {"ha_get_operation_status"},
         )
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 90)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 92)
         # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
         # never a stock policy entry (30 -> 31).
         self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
@@ -3031,7 +3031,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(counts["reviewed_upstream_version"], "8.6.0")
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
         self.assertEqual(counts["expected_delegated_reads"], 28)
-        self.assertEqual(counts["expected_connector_total"], 90)
+        self.assertEqual(counts["expected_connector_total"], 92)
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
         evidence = [
@@ -3105,7 +3105,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         health = gateway.health_snapshot()
         self.assertEqual(health["core_withheld_read_count"], 5)
         self.assertEqual(health["dynamically_exposed_count"], 20)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 82)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 84)
         self.assertEqual(
             {item["tool"] for item in health["core_withheld_tools"]},
             set(DEVICE_DEPENDENT_DELEGATED_TOOLS),
