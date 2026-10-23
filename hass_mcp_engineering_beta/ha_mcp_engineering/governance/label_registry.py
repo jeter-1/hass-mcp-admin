@@ -15,8 +15,10 @@ sequence pins ``core.label_registry_operation`` (seq-13 batch).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping
 
 from ..errors import AuthorizationError, HomeAssistantApiError
 from .entity_metadata import (
@@ -360,6 +362,18 @@ def predicted_label_id_or_none(name: Any) -> str | None:
         return None
 
 
+@dataclass(frozen=True)
+class NamespaceSnapshot:
+    """One registry list read: its namespace fingerprint and exact entries.
+
+    HAMCP-165 review1 M3: the final pre-dispatch check judges the target and
+    the namespace from this one read, so drift it observed is never ignored.
+    """
+
+    fingerprint: str
+    entries: Mapping[str, dict[str, Any]]
+
+
 class LabelRegistryGateway:
     """Permit only the reviewed list read and the two closed writes."""
 
@@ -394,10 +408,13 @@ class LabelRegistryGateway:
             raise ValueError("label_registry_entry resource_id must be a label_id")
         return (await self.entries()).get(label_id)
 
-    async def namespace(self) -> str:
+    async def namespace(self) -> NamespaceSnapshot:
         entries = await self.entries()
-        return namespace_fingerprint(
-            {label_id: entry["name"] for label_id, entry in entries.items()}
+        return NamespaceSnapshot(
+            fingerprint=namespace_fingerprint(
+                {label_id: entry["name"] for label_id, entry in entries.items()}
+            ),
+            entries=MappingProxyType(entries),
         )
 
     async def write(

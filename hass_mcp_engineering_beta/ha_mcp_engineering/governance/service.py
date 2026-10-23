@@ -5587,6 +5587,44 @@ class ChangeGovernanceService:
             _before_persist=_before_persist,
         )
 
+    def _require_dormant_profile_admission(
+        self,
+        operations: Any,
+        *,
+        label_context: Any | None,
+        availability_exposure_context: Any | None,
+    ) -> bool:
+        """HAMCP-165 review1 M1: admission first in the lowest builder.
+
+        A label or 069B resource type, named by a prepared context or by any
+        raw operation (including the generic configuration route), is refused
+        ``pending_signed_registry_admission`` before validation, before any
+        Home Assistant read and before anything is stored.  Returns whether
+        the request involves a dormant profile at all.
+        """
+
+        resource_types = {
+            item.get("resource_type")
+            for item in (operations if isinstance(operations, list) else [])
+            if isinstance(item, dict) and isinstance(item.get("resource_type"), str)
+        }
+        label = (
+            label_context is not None
+            or label_registry.LABEL_RESOURCE_TYPE in resource_types
+        )
+        availability_exposure = resource_types & set(
+            entity_availability_exposure.RESOURCE_TYPES
+        )
+        if availability_exposure_context is not None:
+            availability_exposure.add(
+                availability_exposure_context.request.resource_type
+            )
+        if label:
+            self._label_core()
+        for resource_type in sorted(availability_exposure):
+            self._availability_exposure_core(resource_type)
+        return label or bool(availability_exposure)
+
     @staticmethod
     def _entity_metadata_refusal_error(
         exc: Exception, arguments: Any
@@ -5638,6 +5676,14 @@ class ChangeGovernanceService:
         children, in order, and never by a rollback.
         """
 
+        dormant_profiles = self._require_dormant_profile_admission(
+            operations,
+            label_context=_label_context,
+            availability_exposure_context=_availability_exposure_context,
+        )
+        if dormant_profiles and _before_persist is None:
+            # Every dormant-profile persistence holds a current Core lease.
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
         if (
             sum(
                 context is not None
@@ -6285,6 +6331,13 @@ class ChangeGovernanceService:
             )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        if dormant_profiles:
+            # The final persistence boundary re-checks admission itself.
+            self._require_dormant_profile_admission(
+                operations,
+                label_context=_label_context,
+                availability_exposure_context=_availability_exposure_context,
+            )
         if _before_persist is not None:
             _before_persist()  # HAMCP-189 R1: F3 rollback lease, after last read
         if _rollback_context is not None:

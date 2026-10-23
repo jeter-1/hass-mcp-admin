@@ -19,8 +19,16 @@ signing, or a release.
   no signed profile is modified. While the profile is absent from the signed
   registry, every entry point refuses with `pending_signed_registry_admission`.
   Admission is checked FIRST at the service layer, before validation reads:
-  zero provider reads, nothing stored. There is no unsigned local admission
-  and no registry is created or signed.
+  zero provider reads, nothing stored. The lowest builder
+  (`_create_configuration_plan`, including generic `create_configuration_plan`
+  routing) checks it again first and at the persist boundary (review1 M1).
+  F3 re-checks it at dispatch on every path (first apply, a retained approved
+  plan, resume and recovery): without a Core runtime the child refuses
+  `core_authority_unavailable`, and with a Core that does not admit the
+  profile it refuses `pending_signed_registry_admission`, with zero Home
+  Assistant commands (review1 H1; the same gate covers 069B's two resource
+  types). There is no unsigned local admission and no registry is created or
+  signed.
 - **069B fix (separate commit):** 069B's two unsigned profiles now name
   `websocket_entity_registry_list` and `websocket_expose_new_entities_get`,
   the reads their gateway sends (HAMCP-222 OD-5).
@@ -142,6 +150,11 @@ verified.
   - the target entry changed (`stale_target_state`);
   - a create target already exists (`target_already_exists`);
   - the namespace fingerprint changed (`label_namespace_changed`).
+- The final registry read (the namespace check) judges the exact target too
+  (review1 M3). If the target's normalized entry differs from its bound
+  baseline (any of `name`, `color`, `icon`, `description`, or the target was
+  deleted), or a create target now exists, the child refuses
+  `stale_target_state` and the drifted entry is kept, never overwritten.
 - Entity children keep the 069A preflight unchanged. Their reference
   bindings for in-plan labels use the label's FINAL id and name, which is what
   the registry holds once the earlier label children have succeeded.

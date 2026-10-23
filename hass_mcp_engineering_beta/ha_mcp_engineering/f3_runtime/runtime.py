@@ -12,6 +12,7 @@ import json
 import threading
 import time
 import uuid
+from types import MappingProxyType
 from typing import Any, Awaitable, Callable
 
 from ..errors import ErrorCode, GovernanceError
@@ -126,6 +127,7 @@ from ..governance.entity_availability_exposure import (
 from ..governance import label_registry_planning
 from ..governance.label_registry import (
     CAPABILITY_IDENTITIES as LABEL_CAPABILITY_IDENTITIES,
+    CORE_CAPABILITY as LABEL_CORE_CAPABILITY,
     LABEL_RESOURCE_TYPE,
 )
 from ..governance.resources import resource_fingerprint
@@ -711,6 +713,121 @@ ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS = {
         "core.entity_assistant_exposure_operation",
     ),
 }
+
+
+# HAMCP-165 review1 H1: resource types admitted only by an unsigned (dormant)
+# Core profile.  A plan containing one never reads or writes through F3
+# without current Core authority that admits every such profile; a runtime
+# composed without Core is refused, not treated as the legacy no-Core mode.
+UNSIGNED_PROFILE_CORE_AUTHORITY_UNAVAILABLE = "core_authority_unavailable"
+UNSIGNED_PROFILE_PENDING_ADMISSION = "pending_signed_registry_admission"
+UNSIGNED_PROFILE_REQUIREMENTS = MappingProxyType(
+    {
+        LABEL_RESOURCE_TYPE: LABEL_CORE_CAPABILITY,
+        **{
+            resource_type: requirements[-1]
+            for resource_type, requirements in (
+                ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS.items()
+            )
+        },
+    }
+)
+
+
+def _unsigned_profiles(plan: Any) -> tuple[str, ...]:
+    """Return the dormant Core profiles any child of ``plan`` depends on."""
+
+    return tuple(
+        sorted(
+            {
+                UNSIGNED_PROFILE_REQUIREMENTS[operation.resource_type]
+                for operation in plan.operations
+                if operation.resource_type in UNSIGNED_PROFILE_REQUIREMENTS
+            }
+        )
+    )
+
+
+def _unsigned_profile_refusal(
+    core_runtime: Any, profiles: tuple[str, ...]
+) -> str | None:
+    """Return the refusal code unless Core currently admits ``profiles``."""
+
+    if not profiles:
+        return None
+    if core_runtime is None:
+        return UNSIGNED_PROFILE_CORE_AUTHORITY_UNAVAILABLE
+    try:
+        admitted = core_runtime.route_status(profiles).get("available") is True
+    except Exception:
+        admitted = False
+    return None if admitted else UNSIGNED_PROFILE_PENDING_ADMISSION
+
+
+class _UnsignedProfileAdmissionAdapter:
+    """No provider read or write unless the plan's dormant profiles are admitted.
+
+    Checked at preflight (before the first read), again inside the
+    irreversible boundary before approval consumption, and before every
+    recovery or readback observation.  A refused observation is held for
+    manual review without a read.
+    """
+
+    def __init__(self, adapter: Any, refusal: Callable[[], str | None]):
+        self._adapter = adapter
+        self._refusal = refusal
+        self.capabilities = adapter.capabilities
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._adapter, name)
+
+    def _require(self) -> None:
+        code = self._refusal()
+        if code is not None:
+            raise DispatchAuthorityRefused(code)
+
+    @staticmethod
+    def _held_observation(code: str) -> ObservationResult:
+        return ObservationResult(
+            outcome=NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED,
+            attempt_count=1,
+            observation_complete=False,
+            provider_reachable=None,
+            target_reachable=None,
+            readback_state_fingerprint=None,
+            intended_result_observed=None,
+            evidence_hash=stable_hash({"category": code}),
+            diagnostic_codes=(code,),
+        )
+
+    async def preflight(self, prepared: Any, *, acquired_locks: Any):
+        self._require()
+        return await self._adapter.preflight(
+            prepared, acquired_locks=acquired_locks
+        )
+
+    async def dispatch(
+        self, prepared: Any, preflight: Any, *, before_dispatch: Any
+    ):
+        async def admitted_before_dispatch() -> None:
+            self._require()
+            await before_dispatch()
+
+        return await self._adapter.dispatch(
+            prepared, preflight, before_dispatch=admitted_before_dispatch
+        )
+
+    async def recover(self, prepared: Any, *, context: Any):
+        code = self._refusal()
+        if code is not None:
+            return self._held_observation(code)
+        return await self._adapter.recover(prepared, context=context)
+
+    async def observe(self, prepared: Any, dispatch: Any):
+        code = self._refusal()
+        if code is not None:
+            return self._held_observation(code)
+        return await self._adapter.observe(prepared, dispatch)
 
 
 def _rollback_core_refusal(*, acquired: bool) -> GovernanceError:
@@ -2678,6 +2795,17 @@ class F3RuntimeIntegration:
                 return "retry_bundle_read_unavailable"
         return None
 
+    def _unsigned_profile_admission(self, plan: Any, adapter: Any) -> Any:
+        """HAMCP-165 review1 H1: gate every child of a dormant-profile plan."""
+
+        profiles = _unsigned_profiles(plan)
+        if not profiles:
+            return adapter
+        return _UnsignedProfileAdmissionAdapter(
+            adapter,
+            lambda: _unsigned_profile_refusal(self.core_runtime, profiles),
+        )
+
     async def _execute_child(
         self,
         plan: Any,
@@ -2774,6 +2902,7 @@ class F3RuntimeIntegration:
         adapter = _LegacyConflictAdapter(
             adapter, self._has_active_legacy_conflict
         )
+        adapter = self._unsigned_profile_admission(plan, adapter)
         dispatch_guard = (
             _CoreDispatchAuthorityGuard(self.core_runtime, plan.created_at)
             if self.core_runtime is not None and not readback_only
@@ -4636,7 +4765,9 @@ class F3RuntimeIntegration:
         )
         operation = prepared[declaration["operation_ordinal"]]
         adapter = self.registry.adapter(declaration["capability_id"])
-        adapter = _ReadbackOnlyRecoveryAdapter(adapter)
+        adapter = _ReadbackOnlyRecoveryAdapter(
+            self._unsigned_profile_admission(plan, adapter)
+        )
         token = _ACTIVE_F3_CHILD.set(declaration["child_id"])
         try:
             observation = await adapter.observe(operation, None)

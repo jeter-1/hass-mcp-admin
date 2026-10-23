@@ -1019,8 +1019,12 @@ class ConfigurationResourceGateway:
 
         The fingerprint covers every ``(label_id, normalized name)`` pair, so
         any label created, renamed or deleted since planning (by Home
-        Assistant or anyone else) refuses before the write.  Nothing is
-        written; an empty tuple means the binding still holds.
+        Assistant or anyone else) refuses before the write.  The target is
+        judged from the same final read (HAMCP-165 review1 M3): an update
+        target whose exact state differs from its bound baseline, or a
+        create target that now exists, refuses ``stale_target_state`` and is
+        never overwritten.  Nothing is written; an empty tuple means the
+        binding still holds.
         """
 
         bindings = (
@@ -1033,12 +1037,18 @@ class ConfigurationResourceGateway:
         if (current is None) != (bindings["operation"] == "create"):
             return ("plan_bindings_invalid",)
         try:
-            observed = await self.label_registry.namespace()
+            snapshot = await self.label_registry.namespace()
+            observed = snapshot.entries.get(resource_id)
+            target_changed = resource_fingerprint(
+                label_registry.LABEL_RESOURCE_TYPE, observed
+            ) != resource_fingerprint(label_registry.LABEL_RESOURCE_TYPE, current)
         except AuthorizationError:
             return ("permission_failure",)
         except Exception:
             return ("label_namespace_unavailable",)
-        if observed != bindings["namespace_fingerprint"]:
+        if target_changed:
+            return ("stale_target_state",)
+        if snapshot.fingerprint != bindings["namespace_fingerprint"]:
             return (label_registry.NAMESPACE_CHANGED,)
         return ()
 

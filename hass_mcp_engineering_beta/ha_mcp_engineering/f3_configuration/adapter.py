@@ -372,6 +372,7 @@ class ConfigurationOperationAdapter:
                     "dependency_evidence_changed",
                     "stale_reference_definition",
                     "label_namespace_changed",
+                    "stale_target_state",
                 } & set(evidence_codes):
                     self._increment("stale_rejections")
                 return self._preflight_rejected(operation, evidence_codes)
