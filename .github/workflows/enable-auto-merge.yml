@@ -137,7 +137,9 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 "$VALIDATE_MAX_ATTEMPTS"); do
-            current_pr_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+            # Bounded retry on 429/5xx/network only (HAMCP-221).
+            current_pr_json="$(python3 -I -S scripts/github_retry.py api-get \
+              --route "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
             if ! jq -e \
               --arg base_sha "$AUTHORIZED_BASE_SHA" \
               --arg head_sha "$AUTHORIZED_HEAD_SHA" \
@@ -177,9 +179,9 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if ! gh api --paginate \
-            "repos/${REPOSITORY}/issues/${PR_NUMBER}/timeline?per_page=100" \
-            | jq -s 'add' > /tmp/ready-authorization-timeline.json; then
+          if ! python3 -I -S scripts/github_retry.py api-get --pages 50 \
+            --route "repos/${REPOSITORY}/issues/${PR_NUMBER}/timeline?per_page=100" \
+            > /tmp/ready-authorization-timeline.json; then
             echo "::error::Could not read pull-request Ready lifecycle evidence."
             exit 1
           fi
@@ -192,7 +194,8 @@ jobs:
             exit 1
           fi
 
-          pr_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          pr_json="$(python3 -I -S scripts/github_retry.py api-get \
+            --route "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
           if ! jq -e \
             --arg repository "$REPOSITORY" \
             --arg base_sha "$AUTHORIZED_BASE_SHA" \
