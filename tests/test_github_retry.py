@@ -405,7 +405,9 @@ class DownloadTests(unittest.TestCase):
             def read1(self, size):
                 starts.append(clock.now)
                 clock.now += 20.0  # each receive waits 20 s, under the idle cap
-                return b"x"
+                # A finite stream, so a missing deadline check completes the
+                # download and fails below instead of writing without end.
+                return b"x" if len(starts) <= 100 else b""
 
         opener = FakeOpener(Trickle())
         with self.assertRaises(retry.RetryableRead) as caught:
