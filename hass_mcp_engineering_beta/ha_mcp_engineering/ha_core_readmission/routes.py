@@ -101,6 +101,19 @@ AVAILABILITY_EXPOSURE_OPERATIONS = MappingProxyType(
 AVAILABILITY_EXPOSURE_TOOL = "create_entity_availability_exposure_plan"
 AVAILABILITY_EXPOSURE_MAX_ENTITIES = 8
 
+# HAMCP-155: deletion binds only its own dormant runtime profile.  The signed
+# governed_configuration_operation contract never authorizes a DELETE, and the
+# create/update identities never map here.
+CONFIGURATION_DELETE_PROFILE = "core.configuration_delete_operation"
+CONFIGURATION_DELETE_TOOL = "create_configuration_delete_plan"
+CONFIGURATION_DELETE_TARGET_TYPE = "configuration_deletion"
+_F3_CONFIGURATION_DELETE_OPERATIONS = frozenset(
+    {
+        ("delete_automation_configuration", "delete_automation_configuration"),
+        ("delete_script_configuration", "delete_script_configuration"),
+    }
+)
+
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
     "ha_config_get_calendar_events": ("core.basic_websocket_read",),
@@ -191,6 +204,10 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
         "core.dependency_helper_planning",
         AVAILABILITY_PROFILE,
         EXPOSURE_PROFILE,
+    ),
+    CONFIGURATION_DELETE_TOOL: (
+        "core.dependency_helper_planning",
+        CONFIGURATION_DELETE_PROFILE,
     ),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
@@ -539,6 +556,8 @@ def static_tool_target(
 
     if tool_name == AVAILABILITY_EXPOSURE_TOOL:
         return availability_exposure_target(arguments)
+    if tool_name == CONFIGURATION_DELETE_TOOL:
+        return configuration_delete_target(arguments)
     if tool_name != "create_entity_metadata_plan":
         return None
     entity_id = arguments.get("entity_id") if isinstance(arguments, dict) else None
@@ -586,6 +605,35 @@ def availability_exposure_target(arguments: Any) -> dict[str, str]:
     return {"target_type": selected[0], "target_id": ",".join(sorted(entity_ids))}
 
 
+def configuration_delete_target(arguments: Any) -> dict[str, str]:
+    """Bind the 155 planner lease to its exact, bounded deletion set.
+
+    The target identity is the sorted, comma-joined ``resource_type:target_id``
+    pairs (neither a comma nor a colon can occur in a validated id).  The
+    planner's own closed validator runs first, so every shape it would refuse
+    is refused here with its reason.
+    """
+
+    # Imported at call time: governance composes this package at load.
+    from ..governance.configuration_delete_planning import (
+        ConfigurationDeleteRefusal,
+        validate_request,
+    )
+
+    try:
+        request = validate_request(arguments)
+    except ConfigurationDeleteRefusal as refusal:
+        field = refusal.details.get("field")
+        raise StaticToolTargetRefused(
+            refusal.reason_code,
+            field if isinstance(field, str) else "deletions",
+        ) from None
+    return {
+        "target_type": CONFIGURATION_DELETE_TARGET_TYPE,
+        "target_id": request.lease_target_id,
+    }
+
+
 def f3_requirements(prepared: Any) -> tuple[str, ...]:
     """Map an existing typed F3 operation to its complete Core authority set."""
 
@@ -613,6 +661,10 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         values.add("core.governed_configuration_operation")
     elif identity in _F3_ENTITY_AVAILABILITY_EXPOSURE_OPERATIONS:
         values.add(_F3_ENTITY_AVAILABILITY_EXPOSURE_OPERATIONS[identity])
+    elif identity in _F3_CONFIGURATION_DELETE_OPERATIONS:
+        # Never governed_configuration_operation: that signed evidence did not
+        # cover DELETE.
+        values.add(CONFIGURATION_DELETE_PROFILE)
     elif identity in _F3_ENTITY_METADATA_OPERATIONS:
         # Never the signed governed_configuration_operation contract: that
         # evidence did not cover the entity registry write adapter.
@@ -648,6 +700,10 @@ __all__ = [
     "STATIC_TARGET_INVALID_ENTITY_IDS",
     "STATIC_TARGET_INVALID_OPERATION",
     "availability_exposure_target",
+    "CONFIGURATION_DELETE_PROFILE",
+    "CONFIGURATION_DELETE_TARGET_TYPE",
+    "CONFIGURATION_DELETE_TOOL",
+    "configuration_delete_target",
     "StaticCoreRoute",
     "StaticToolTargetRefused",
     "static_tool_core_route",

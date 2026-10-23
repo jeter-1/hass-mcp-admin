@@ -545,10 +545,40 @@ CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES = (
                      "session_fingerprint", "generation"),
     ),
 )
+# HAMCP-155: a runtime-only deletion contract for automation and script
+# configuration.  Like 069A/069B it is never part of CORE_CAPABILITY_PROFILES,
+# so no signed probe fingerprint changes, and it stays dormant until an
+# owner-signed registry reference (planned sequence 13) selects it exactly.
+# The generic governed_configuration_operation contract never covers DELETE.
+CORE_CONFIGURATION_DELETE_PROFILES = (
+    _contract(
+        "core.configuration_delete_operation",
+        CoreCapabilityClass.CONFIGURATION_DELETE_OPERATION,
+        "compiled-core-configuration-delete-operation-v1",
+        (
+            "rest_config_automation_script_get",
+            "rest_config_automation_script_delete_no_body",
+            "websocket_entity_registry_get",
+            "rest_entity_state_get",
+            "config_registry_state_absence_readback",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "one_exact_existing_automation_or_script_configuration",
+            "resource_types": ["automation", "script"],
+            "dispatch": "at_most_once_config_delete_no_body",
+            "absent_target": "400_resource_not_found_no_write",
+            "readback": "config_404_registry_entry_absent_state_absent",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
     + CORE_AUTOMATION_BASELINE_PROFILES + CORE_ENTITY_METADATA_PROFILES
-    + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
+    + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES + CORE_CONFIGURATION_DELETE_PROFILES
 )
 
 
@@ -610,6 +640,7 @@ __all__ = [
     "CORE_TYPED_OPERATION_PROFILES",
     "CORE_ENTITY_METADATA_PROFILES",
     "CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES",
+    "CORE_CONFIGURATION_DELETE_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",
