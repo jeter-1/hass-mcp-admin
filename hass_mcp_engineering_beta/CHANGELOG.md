@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.4.1-beta.32 - Configuration definitions (HAMCP-132 slice 2)
+## 2.4.1-beta.33 - Configuration definitions (HAMCP-132 slice 2)
 
-Builds on 2.4.1-beta.31.
+Builds on 2.4.1-beta.32.
 
 - Add the read-only `get_configuration_definitions` tool for up to 50
   `entity_ids` and/or whole `integrations` from template, sql, filter,
@@ -71,6 +71,49 @@ Builds on 2.4.1-beta.31.
 - Catalog: 66 static tools, 94 advertised (95 with the optional YAML reader).
   No existing descriptor, schema, stored format, dependency or workflow
   changes.
+
+## 2.4.1-beta.32 - Incident-log entry times (HAMCP-220)
+
+Builds on 2.4.1-beta.31.
+
+- Fix `get_incident_logs` reading the Supervisor log time as UTC.
+  - Supervisor 2026.10.3 renders that time in Home Assistant's local time
+    without an offset, so recent windows were reported after the tail.
+  - Home Assistant's configured `time_zone` is now read from Core
+    `GET /api/config` (the HAMCP-200 `/config` route) before a call's
+    journal reads, and once more after them. Each read runs under the
+    tool's own `core.basic_rest_read` lease.
+    `get_incident_logs` is `CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY`.
+  - A zone that changed between the two reads, or a second read that
+    fails, withholds every source that read the journal
+    (`zone_changed_during_read`, `zone_unverifiable_after_read`; partial,
+    no times, the cursor kept).
+  - If the zone cannot be read, Core and `addon:self` are unavailable
+    (`time_zone_unavailable`), with zero journal requests. The add-on `TZ`
+    and UTC are never substituted.
+- Fail closed on any zone disagreement.
+  - An add-on `TZ` whose offsets differ from Home Assistant's anywhere in
+    the window makes every source partial with `zone_mismatch`.
+  - So does a page's first entry whose `X-First-Cursor` realtime (`t=`)
+    disagrees with its text.
+  - Other entries are read from their text in the confirmed rendering, with
+    `zoneinfo` DST rules. An explicit `+HH:MM` is read exactly.
+- DST-ambiguous and nonexistent local times.
+  - They are resolved exactly by single-entry realtime reads within the
+    request budget.
+  - Otherwise they are `ts_basis: uncertain`, with `ts: null` and every
+    candidate.
+  - Around an unresolved time, each source keeps its journal order and the
+    rows up to its latest candidate are `ordering_uncertain`, on later pages
+    too (carried in the signed cursor). The read is partial.
+- Output.
+  - Entries gain `ts_basis`, `time_zone` and `ordering_uncertain`.
+  - Sources gain `timestamp_basis` and `zone_mismatch`.
+  - The response gains `time_basis`, with the Home Assistant and add-on zone
+    statuses.
+  - The schema id is unchanged, and `ts` is nullable.
+- No descriptor, input schema, Supervisor route, permission, add-on
+  configuration, dependency or stable-v1 file changes; catalog 93 (94).
 
 ## 2.4.1-beta.31 - Entity enable/disable and voice exposure, inactive (HAMCP-069B)
 

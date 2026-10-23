@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.32** adds the read-only `get_configuration_definitions`
+Engineering **2.4.1-beta.33** adds the read-only `get_configuration_definitions`
 tool (HAMCP-132 slice 2). For YAML-defined template, SQL and helper entities
 (template, sql, filter, derivative, statistics, group, integration, min_max,
 history_stats, threshold, trend, utility_meter) it reports:
@@ -14,6 +14,24 @@ discloses `!include` and packages without following them, and lists UI-created
 entries as not readable without a flow. The `ha_mcp_tools` component is not
 used. Static tools 66, advertised catalog 94 (95 with the optional YAML
 reader). Read the
+[2.4.1-beta.33 release notes](docs/V2_4_1_BETA33_RELEASE_NOTES.md) and
+[2.4.1-beta.33 acceptance contract](docs/V2_4_1_BETA33_ACCEPTANCE.md).
+
+It builds on beta.32 below.
+
+Engineering **2.4.1-beta.32** corrects `get_incident_logs` entry times
+(HAMCP-220). Supervisor 2026.10.3 writes log times in Home Assistant's local
+time without an offset, and earlier betas read them as UTC. Each call now
+reads Home Assistant's configured zone from Core's `/api/config`, under the
+tool's own read lease, before and again after its journal reads; a zone that
+changed or cannot be read again withholds what was read. Each page's first
+entry takes its exact UTC journal time, which confirms the zone. An unreadable zone reads no journal, so while
+Core is down the tool returns no entries; it never assumes the add-on's `TZ`
+or UTC. Any zone disagreement makes the read partial with `zone_mismatch`.
+DST-ambiguous or nonexistent times are resolved exactly within the request
+budget, or reported as uncertain with every candidate. Their surroundings
+are marked `ordering_uncertain`, and the read is partial. No tool, schema,
+permission or configuration changes; catalog 93 (94). Read the
 [2.4.1-beta.32 release notes](docs/V2_4_1_BETA32_RELEASE_NOTES.md) and
 [2.4.1-beta.32 acceptance contract](docs/V2_4_1_BETA32_ACCEPTANCE.md).
 

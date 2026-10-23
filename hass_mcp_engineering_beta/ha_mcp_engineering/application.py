@@ -219,7 +219,9 @@ def create_application(
     )
     AUTOMATION_BASELINE_CAPTURE.configure(settings, CORE_READMISSION)
     # HAMCP-131: no I/O here; the add-on credential is read per request.
-    INCIDENT_LOGS.configure(settings)
+    # HAMCP-220: Home Assistant's time zone is read per call from Core
+    # /api/config under the tool's own core.basic_rest_read lease.
+    INCIDENT_LOGS.configure(settings, HomeAssistantRestClient(settings), CORE_READMISSION)
     # HAMCP-131: the history route is captured per request; before admission
     # the factory returns None and the tool reports the route unavailable.
     HISTORY_SLICES.configure(

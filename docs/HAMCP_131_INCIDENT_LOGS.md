@@ -60,8 +60,11 @@ All of these use the same handler, `APIHost.advanced_logs_handler`
 - `Accept` must be absent or exactly `text/plain`, `text/x-log` or `*/*`. Any
   other value returns 400 (L317-327).
 - `verbose` takes effect when present; its value is ignored. It selects the
-  verbose formatter: a UTC `YYYY-MM-DD HH:MM:SS.mmm`, then the hostname, then
-  `identifier[pid]: message` (`utils/systemd_journal.py` L56-75).
+  verbose formatter: a `YYYY-MM-DD HH:MM:SS.mmm`, then the hostname, then
+  `identifier[pid]: message` (`utils/systemd_journal.py` L56-75). At
+  2026.09.1 the time is UTC; from 2026.10.3 it is Home Assistant's local
+  time with no offset (HAMCP-220, see
+  [`HAMCP_220_INCIDENT_LOG_TIMESTAMPS.md`](HAMCP_220_INCIDENT_LOG_TIMESTAMPS.md)).
 - `no_colors` strips ANSI escapes when present.
 - `lines` overrides any Range header (L335-349). Engineering never sends it.
 - A `Range` header is forwarded to gatewayd unchanged (L352-353). Without one,
@@ -97,10 +100,14 @@ runs `seek_tail` at L590, then `previous_skip(2)` at L179, whose first step
 lands on the last entry), a head probe that gives the earliest retained entry, galloping
 single-entry probes back from the tail (`entries=T:-K:1`) and a bounded
 bisection. It then pages forward with `entries=C:k:P+1`. Each page re-reads the
-last consumed entry, and that entry's keyed digest must match. The verbose UTC
-millisecond timestamp is the time basis. Core's own line prefix, which is in
-local time (`homeassistant/bootstrap.py` L586-588), is used only to parse the
-level.
+last consumed entry, and that entry's keyed digest must match. The time basis
+(HAMCP-220) is the journal realtime: each page's first entry has its exact UTC
+`__REALTIME_TIMESTAMP` from the `X-First-Cursor` `t=` field, which also
+calibrates how the page's millisecond text was rendered (Home Assistant's
+zone or UTC). The other entries are read from that text, and a DST-ambiguous
+or nonexistent local time is reported uncertain with every candidate. Core's
+own line prefix, which is in local time (`homeassistant/bootstrap.py`
+L586-588), is used only to parse the level.
 
 ### Authority table
 
@@ -269,7 +276,14 @@ Output:
 
 - `entries[]`: `ts`, `source`, `process`, `level`, `level_basis` (`parsed`,
   `inherited` or none) and the sanitized `message`, truncated at 2000
-  characters without splitting a redaction marker.
+  characters without splitting a redaction marker. HAMCP-220 adds
+  `ts_basis` (`journal_realtime_utc`, `text_local_tz`,
+  `text_explicit_offset` or `uncertain`) and `time_zone`; an uncertain entry
+  has `ts: null` and `timestamp_uncertain` (`reason`, `candidates`), plus
+  `window_membership_uncertain` when not every candidate is in the window.
+  HAMCP-220 review 1 adds `ordering_uncertain` on an entry whose order
+  against an unresolved local time, in its own source or across sources, is
+  not established.
 - `sources[]`, one row per requested source:
   - `status` (`complete`, `partial`, `failed`, `unavailable`) and `reason`;
   - `route`, `requests`, `http_status`;
@@ -278,11 +292,19 @@ Output:
   - `entries_consumed`, `entries_returned`, `skipped_by_filter`,
     `outside_window`;
   - `gaps[]`, each with a reason;
+  - `timestamp_basis` (`verified_pages`, `unverified_pages`,
+    `text_rendering`, `resolved_entries`, `unresolved_entries`),
+    `timestamp_uncertain_at_window_edge`, `ordering_uncertain` (a count),
+    and `timestamp_uncertain_bounds` when a retention edge time is
+    uncertain;
+  - `zone_mismatch` when the source failed closed on a time-zone
+    disagreement (see `docs/HAMCP_220_INCIDENT_LOG_TIMESTAMPS.md`);
   - for unavailable sources: `required_role`, `required_route_pattern` and
     `detail`.
 - `omissions[]` with reasons, plus `truncated`, `has_more`, `next_cursor`,
   `complete` and `completeness`.
-- `requests`, `downloaded_bytes`, `bounds`, `pins` and `limitations`.
+- `requests`, `downloaded_bytes`, `bounds`, `pins`, `time_basis` and
+  `limitations`.
 
 Call bounds:
 

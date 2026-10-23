@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-## Read-only configuration definitions (2.4.1-beta.32, HAMCP-132 slice 2)
+## Read-only configuration definitions (2.4.1-beta.33, HAMCP-132 slice 2)
 
 `get_configuration_definitions` is native read-only evidence:
 `engineering_native` routing, `risk=read`, policy
