@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 import sys
 import tempfile
@@ -161,6 +162,25 @@ def _dynamic(template: str, source_id: str = "bounded_dynamic"):
         },
     )
     return findings, dynamic
+
+
+def _cpu_timed(function, *args, **kwargs):
+    """``(function(*args, **kwargs), loop-thread CPU seconds)`` with GC held off (HAMCP-208).
+
+    Thread CPU time is not inflated by other processes preempting this one
+    on a loaded host, and collection of earlier suite garbage is kept out of
+    the timed window; the bound still measures this call's own work.
+    """
+    gc.collect()
+    enabled = gc.isenabled()
+    gc.disable()
+    try:
+        started = time.thread_time()
+        result = function(*args, **kwargs)
+        return result, time.thread_time() - started
+    finally:
+        if enabled:
+            gc.enable()
 
 
 class BoundedDynamicResolutionTests(unittest.TestCase):
@@ -354,11 +374,15 @@ class BoundedDynamicResolutionTests(unittest.TestCase):
         elapsed_by_size = {}
         for opener_count in (8_000, 32_000):
             template = "{{ " + "(" * opener_count + operator + " }}"
-            started = time.perf_counter()
-            findings, dynamic = _dynamic(
-                template, source_id=f"malformed_{opener_count}"
-            )
-            elapsed_by_size[opener_count] = time.perf_counter() - started
+            # Best of three CPU samples: a linearity ratio, not one wall
+            # sample a loaded host can stretch (HAMCP-208).
+            samples = []
+            for _ in range(3):
+                (findings, dynamic), elapsed = _cpu_timed(
+                    _dynamic, template, source_id=f"malformed_{opener_count}"
+                )
+                samples.append(elapsed)
+            elapsed_by_size[opener_count] = min(samples)
             self.assertEqual(findings, [])
             self.assertEqual(len(dynamic), 1)
             self.assertFalse(dynamic[0].candidate_resolution_complete)
@@ -373,12 +397,11 @@ class BoundedDynamicResolutionTests(unittest.TestCase):
                     pattern * ((max_prefix // len(pattern)) + 1)
                 )[:max_prefix]
                 maximum = "{{ " + malformed_prefix + operator + " }}"
-                started = time.perf_counter()
-                findings, dynamic = _dynamic(
+                (findings, dynamic), maximum_elapsed = _cpu_timed(
+                    _dynamic,
                     maximum,
                     source_id=f"malformed_maximum_{pattern_index}",
                 )
-                maximum_elapsed = time.perf_counter() - started
 
                 self.assertEqual(findings, [])
                 self.assertEqual(len(dynamic), 1)

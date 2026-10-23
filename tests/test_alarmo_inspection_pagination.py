@@ -557,9 +557,10 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         # Full discovery retains thousands of unrelated test objects. A major
         # collection walks that process-wide heap, making this focused timing
         # check depend on unrelated tests. Run the unchanged fixture in a fresh
-        # interpreter with natural GC and both existing timing bounds intact.
-        # -I avoids inherited Python startup/path settings; no GC manipulation,
-        # retry, threshold adjustment or timing subtraction is performed.
+        # interpreter. The child bounds the heartbeat's loop gap and the
+        # loop-thread CPU between yields, with collection held off only for
+        # the timed window. -I avoids inherited Python startup/path settings;
+        # no retry, threshold adjustment or timing subtraction is performed.
         result = subprocess.run(
             [sys.executable, "-I", "-B", "-c",
              "import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); "
@@ -642,8 +643,8 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                 cpu_gaps.append(now_cpu - last_cpu)
                 last = now
                 last_cpu = now_cpu
-        # Diagnostic-only: attribute natural GC without changing its policy,
-        # subtracting its time, or relaxing either existing heartbeat bound.
+        # Diagnostic-only: report any collection that still occurs inside the
+        # timed window (one would be explicit, since automatic GC is held off).
         import gc
         gc_events, gc_started = [], {}
         gc_state = {"enabled": gc.isenabled(), "thresholds": gc.get_threshold()}
@@ -660,27 +661,39 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                                       "thread_cpu_seconds": time.thread_time() - cpu,
                                       "collected": info["collected"],
                                       "uncollectable": info["uncollectable"]})
-        ticker = asyncio.create_task(heartbeat())
-        await asyncio.sleep(0)
-        gc.callbacks.append(observe_gc)
+        # Collect fixture garbage, then hold collection off only for the timed
+        # window so the bounds measure the projection and fitting themselves.
+        # The CPU bound is the loop-thread CPU spent between yields; the old
+        # synchronous projection violates it, and a busy host cannot inflate
+        # it. CPU time cannot see a blocking wait (sleep, lock, I/O) on the
+        # loop thread, so the heartbeat's wall gap is bounded as well, below
+        # a 400 ms stall and with margin for a fully loaded host.
+        gc.collect()
+        gc.disable()
         try:
-            report = await service.inspect(alarm_entity_id=TARGET, limit=50)
-            await asyncio.sleep(.02)
+            ticker = asyncio.create_task(heartbeat())
+            await asyncio.sleep(0)
+            gc.callbacks.append(observe_gc)
+            started_cpu = time.thread_time()
+            try:
+                report = await service.inspect(alarm_entity_id=TARGET, limit=50)
+                await asyncio.sleep(.02)
+            finally:
+                window_cpu = time.thread_time() - started_cpu
+                gc.callbacks.remove(observe_gc)
+                ticker.cancel()
+                await asyncio.gather(ticker, return_exceptions=True)
         finally:
-            gc.callbacks.remove(observe_gc)
-            ticker.cancel()
-            await asyncio.gather(ticker, return_exceptions=True)
+            gc.enable()
         maximum_gap = max(gaps)
-        # Retain raw wall time as well as loop-thread CPU time: eight xdist
-        # workers can oversubscribe a two-CPU runner. Neither process scheduling
-        # nor GC is hidden or disabled. The old synchronous projection violates
-        # both bounds; the CPU bound also prevents a busy host masking a stall.
         print(json.dumps({"fixture": "maximum_alarmo_inventory", "maximum_loop_gap_seconds": maximum_gap,
                           "maximum_thread_cpu_gap_seconds": max(cpu_gaps),
+                          "window_thread_cpu_seconds": window_cpu,
                           "wall_bound_seconds": .3, "thread_cpu_bound_seconds": .1,
                           "sensors": c.MAX_SENSORS, "groups": c.MAX_GROUPS,
                           "gc_state": gc_state, "major_gc_events": gc_events}), flush=True)
-        self.assertLess(maximum_gap, .3, "Projection and fitting must keep the event loop responsive under contention.")
+        self.assertTrue(cpu_gaps)
+        self.assertLess(maximum_gap, .3, f"Projection and fitting left the event loop without a turn for {maximum_gap:.3f}s.")
         self.assertLess(max(cpu_gaps), .1, "Projection and fitting must yield within the loop-thread CPU budget.")
         self.assertEqual(report["membership"]["configured_members_retained"], 512)
         self.assertEqual(report["assessment"], "partial")

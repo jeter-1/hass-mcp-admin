@@ -1,0 +1,80 @@
+# M2 mutation evidence 2026-10-23T05:06:07-05:00; source tree /home/josh/repos/hass-mcp-admin-HAMCP-208-219 (HEAD a81b83779117dd7a0515d1eca7a174e7d2b7de9e + uncommitted M2 edits)
+# script: ~/.cache/hamcp208-219/m2/mutate.sh (full working-tree copies, minus .git/.artifacts/__pycache__, under ~/.cache/hamcp208-219/m2/mut/, removed after each run)
+#   #!/bin/bash
+#   # mutate.sh SRC  -- for each of the three tests, copy tests/ + hass_mcp_engineering_beta/ into a scratch
+#   # tree, delete only that test's loop-gap assertion, and run the permanent probe test for that mode there.
+#   SRC=$1; S=$HOME/.cache/hamcp208-219/m2/mut
+#   run() { # name file pattern test
+#     local name=$1 file=$2 pat=$3 test=$4 d=$S/$1
+#     rm -rf "$d"; mkdir -p "$d"
+#     (cd "$SRC" && tar --exclude=./.git --exclude=./.artifacts --exclude=__pycache__ -cf - .) | (cd "$d" && tar -xf -)
+#     echo "=== mutation $name: delete line matching [$pat] in tests/$file"
+#     grep -nF "$pat" "$d/tests/$file"
+#     grep -vF "$pat" "$d/tests/$file" > "$d/tests/$file.new" && mv "$d/tests/$file.new" "$d/tests/$file"
+#     echo "--- diff (original vs mutated)"; diff "$SRC/tests/$file" "$d/tests/$file"
+#     echo "--- probe directly: python timing_block_probe.py $name"
+#     (cd "$d" && ~/.cache/hamcp208-219/runenv.sh env PYTHONPATH=.:tests:hass_mcp_engineering_beta python tests/review_probes/hamcp208_219_review1/timing_block_probe.py "$name" 2>/dev/null | grep INJECTED; echo "probe exit=${PIPESTATUS[0]}")
+#     echo "--- permanent test: $test"
+#     (cd "$d" && ~/.cache/hamcp208-219/runenv.sh env PYTHONPATH=tests:hass_mcp_engineering_beta python -m unittest "$test" 2>&1 | grep -E "^(FAIL|ERROR|OK|Ran |AssertionError|INJECTED)|MUTATION_SURVIVED|stall survived" ; echo "unittest exit=${PIPESTATUS[0]}")
+#     rm -rf "$d"
+#   }
+#   run alarmo test_alarmo_inspection_pagination.py 'self.assertLess(maximum_gap, .3,' \
+#     test_hamcp208_review1_timing_block_probes.TimingBlockProbeTests.test_alarmo_projection_stall_is_rejected
+#   run baseline test_automation_baseline_capture.py 'self.assertLess(max(gaps), .3,' \
+#     test_hamcp208_review1_timing_block_probes.TimingBlockProbeTests.test_baseline_capture_stall_is_rejected
+#   run continuation test_rc2dev4_release_hardening.py 'self.assertLess(max(gaps), .1,' \
+#     test_hamcp208_review1_timing_block_probes.TimingBlockProbeTests.test_cursor_continuation_stall_is_rejected
+=== mutation alarmo: delete line matching [self.assertLess(maximum_gap, .3,] in tests/test_alarmo_inspection_pagination.py
+696:        self.assertLess(maximum_gap, .3, f"Projection and fitting left the event loop without a turn for {maximum_gap:.3f}s.")
+--- diff (original vs mutated)
+696d695
+<         self.assertLess(maximum_gap, .3, f"Projection and fitting left the event loop without a turn for {maximum_gap:.3f}s.")
+--- probe directly: python timing_block_probe.py alarmo
+INJECTED_LOOP_BLOCK_SECONDS [0.40011631103698164] MUTATION_SURVIVED True
+probe exit=0
+--- permanent test: test_hamcp208_review1_timing_block_probes.TimingBlockProbeTests.test_alarmo_projection_stall_is_rejected
+FAIL: test_alarmo_projection_stall_is_rejected (test_hamcp208_review1_timing_block_probes.TimingBlockProbeTests.test_alarmo_projection_stall_is_rejected)
+    self.assertEqual(verdict[0][1], "False", "The 400 ms loop stall survived:\n" + output(result))
+AssertionError: 'True' != 'False'
+ : The 400 ms loop stall survived:
+INJECTED_LOOP_BLOCK_SECONDS [0.40009321505203843] MUTATION_SURVIVED True
+OK
+Ran 1 test in 1.717s
+FAILED (failures=1)
+unittest exit=1
+=== mutation baseline: delete line matching [self.assertLess(max(gaps), .3,] in tests/test_automation_baseline_capture.py
+526:        self.assertLess(max(gaps), .3, f'Capture and export left the event loop without a turn for {max(gaps):.3f}s.')
+--- diff (original vs mutated)
+526d525
+<         self.assertLess(max(gaps), .3, f'Capture and export left the event loop without a turn for {max(gaps):.3f}s.')
+--- probe directly: python timing_block_probe.py baseline
+INJECTED_LOOP_BLOCK_SECONDS [0.4001630439888686] MUTATION_SURVIVED True
+probe exit=0
+--- permanent test: test_hamcp208_review1_timing_block_probes.TimingBlockProbeTests.test_baseline_capture_stall_is_rejected
+FAIL: test_baseline_capture_stall_is_rejected (test_hamcp208_review1_timing_block_probes.TimingBlockProbeTests.test_baseline_capture_stall_is_rejected)
+    self.assertEqual(verdict[0][1], "False", "The 400 ms loop stall survived:\n" + output(result))
+AssertionError: 'True' != 'False'
+ : The 400 ms loop stall survived:
+INJECTED_LOOP_BLOCK_SECONDS [0.40009171899873763] MUTATION_SURVIVED True
+OK
+Ran 1 test in 1.551s
+FAILED (failures=1)
+unittest exit=1
+=== mutation continuation: delete line matching [self.assertLess(max(gaps), .1,] in tests/test_rc2dev4_release_hardening.py
+315:        self.assertLess(max(gaps), .1, f"Continuation left the event loop without a turn for {max(gaps):.3f}s.")
+--- diff (original vs mutated)
+315d314
+<         self.assertLess(max(gaps), .1, f"Continuation left the event loop without a turn for {max(gaps):.3f}s.")
+--- probe directly: python timing_block_probe.py continuation
+INJECTED_LOOP_BLOCK_SECONDS [0.4000851680175401] MUTATION_SURVIVED True
+probe exit=0
+--- permanent test: test_hamcp208_review1_timing_block_probes.TimingBlockProbeTests.test_cursor_continuation_stall_is_rejected
+FAIL: test_cursor_continuation_stall_is_rejected (test_hamcp208_review1_timing_block_probes.TimingBlockProbeTests.test_cursor_continuation_stall_is_rejected)
+    self.assertEqual(verdict[0][1], "False", "The 400 ms loop stall survived:\n" + output(result))
+AssertionError: 'True' != 'False'
+ : The 400 ms loop stall survived:
+INJECTED_LOOP_BLOCK_SECONDS [0.40011419099755585] MUTATION_SURVIVED True
+OK
+Ran 1 test in 2.277s
+FAILED (failures=1)
+unittest exit=1
