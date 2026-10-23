@@ -1,6 +1,6 @@
 {
  "baseline": {
-  "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/baseline.log",
+  "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/baseline.log",
   "modules": [
    "test_hamcp132_recorder_settings",
    "test_hamcp132_unregistered_entities",
@@ -9,12 +9,12 @@
    "test_pr294_corr2_extra"
   ],
   "returncode": 0,
-  "tests": 290,
-  "seconds": 21.6,
+  "tests": 302,
+  "seconds": 28.4,
   "summary": "OK (skipped=1)"
  },
- "mutation_count": 236,
- "killed": 236,
+ "mutation_count": 244,
+ "killed": 244,
  "survived": [],
  "python": "3.12.14",
  "results": [
@@ -28,14 +28,14 @@
      "{\"value\": default, \"origin\": \"configured\", \"pin\": f.CORE_PIN}"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/D1-default-reported-configured.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/D1-default-reported-configured.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_complete_file_reports_configured_and_core_defaults (test_hamcp132_recorder_settings.SettingsTests.test_complete_file_reports_configured_and_core_defaults)"
    ],
-   "seconds": 2.6
+   "seconds": 2.7
   },
   {
    "id": "D2-default-applied-with-packages-present",
@@ -47,14 +47,14 @@
      "        if packages != \"unreadable\":\n            return None"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/D2-default-applied-with-packages-present.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/D2-default-applied-with-packages-present.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_packages_present_makes_unwritten_keys_unknown_not_defaults (test_hamcp132_recorder_settings.SettingsTests.test_packages_present_makes_unwritten_keys_unknown_not_defaults)"
    ],
-   "seconds": 2.7
+   "seconds": 2.8
   },
   {
    "id": "D3-default-applied-with-include",
@@ -66,14 +66,14 @@
      "        if False:\n            return \"include_not_followed\""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/D3-default-applied-with-include.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/D3-default-applied-with-include.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key (test_hamcp132_recorder_settings.SettingsTests.test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key)"
    ],
-   "seconds": 2.5
+   "seconds": 2.7
   },
   {
    "id": "D4-default-applied-yaml-unavailable",
@@ -85,14 +85,14 @@
      "            if reason in (None, \"yaml_unavailable\"):\n                result[key] = {\"value\": default,"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/D4-default-applied-yaml-unavailable.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/D4-default-applied-yaml-unavailable.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_reader_not_admitted_is_partial_with_runtime_still_reported (test_hamcp132_recorder_settings.SettingsTests.test_reader_not_admitted_is_partial_with_runtime_still_reported)"
    ],
-   "seconds": 2.7
+   "seconds": 2.9
   },
   {
    "id": "D5-default-applied-when-truncated",
@@ -104,14 +104,14 @@
      "        if False:\n            return \"yaml_truncated\""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/D5-default-applied-when-truncated.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/D5-default-applied-when-truncated.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_truncated_recorder_value_is_unknown (test_hamcp132_recorder_settings.SettingsTests.test_truncated_recorder_value_is_unknown)"
    ],
-   "seconds": 2.6
+   "seconds": 2.9
   },
   {
    "id": "D5b-filter-computed-when-truncated",
@@ -123,14 +123,14 @@
      "        if False:\n            self.omit(\"filter_unknown:yaml_truncated\")"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/D5b-filter-computed-when-truncated.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/D5b-filter-computed-when-truncated.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_truncated_recorder_value_is_unknown (test_hamcp132_recorder_settings.SettingsTests.test_truncated_recorder_value_is_unknown)"
    ],
-   "seconds": 2.7
+   "seconds": 2.8
   },
   {
    "id": "D6-filter-computed-with-packages-present",
@@ -142,14 +142,14 @@
      "        if packages == \"unreadable\":\n            # Packages merge"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/D6-filter-computed-with-packages-present.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/D6-filter-computed-with-packages-present.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_packages_present_makes_unwritten_keys_unknown_not_defaults (test_hamcp132_recorder_settings.SettingsTests.test_packages_present_makes_unwritten_keys_unknown_not_defaults)"
    ],
-   "seconds": 2.6
+   "seconds": 2.7
   },
   {
    "id": "D7-db-default-location-with-packages",
@@ -161,14 +161,14 @@
      "db.update({\"origin\": \"core_default_location\"} if reason in (None, \"packages_present\")"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/D7-db-default-location-with-packages.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/D7-db-default-location-with-packages.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_packages_present_makes_unwritten_keys_unknown_not_defaults (test_hamcp132_recorder_settings.SettingsTests.test_packages_present_makes_unwritten_keys_unknown_not_defaults)"
    ],
-   "seconds": 2.6
+   "seconds": 2.9
   },
   {
    "id": "D8-packages-unreadable-reported-complete",
@@ -180,14 +180,14 @@
      "\"complete\","
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/D8-packages-unreadable-reported-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/D8-packages-unreadable-reported-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_provider_exception_text_never_in_public_failure (test_hamcp132_recorder_settings.CredentialTests.test_provider_exception_text_never_in_public_failure)"
    ],
-   "seconds": 2.2
+   "seconds": 3.0
   },
   {
    "id": "L1-db-url-value-returned",
@@ -199,14 +199,14 @@
      "            db.update(origin=\"configured\", value=written[c.DB_URL_KEY])"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/L1-db-url-value-returned.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/L1-db-url-value-returned.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_db_url_is_withheld_for_every_written_form (test_hamcp132_recorder_settings.CredentialTests.test_db_url_is_withheld_for_every_written_form)"
    ],
-   "seconds": 2.2
+   "seconds": 3.0
   },
   {
    "id": "L2-secret-reference-returned",
@@ -218,14 +218,14 @@
      "return {\"value\": value, \"origin\": \"configured\", \"value_withheld\": True,"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/L2-secret-reference-returned.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/L2-secret-reference-returned.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_scalar_references_and_markers_are_withheld (test_hamcp132_recorder_settings.CredentialTests.test_scalar_references_and_markers_are_withheld)"
    ],
-   "seconds": 2.2
+   "seconds": 3.1
   },
   {
    "id": "L3-recorder-known-secrets-dropped",
@@ -237,14 +237,14 @@
      "sanitize_untrusted_data(envelope, known_secrets=(),"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/L3-recorder-known-secrets-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/L3-recorder-known-secrets-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_known_secret_in_filter_text_is_redacted_and_partial (test_hamcp132_recorder_settings.CredentialTests.test_known_secret_in_filter_text_is_redacted_and_partial)"
    ],
-   "seconds": 2.2
+   "seconds": 3.0
   },
   {
    "id": "L4-unrecognized-keys-reported",
@@ -256,14 +256,14 @@
      "            result[\"unrecognized_key_count\"] = unrecognized\n            result[\"unrecognized\"] = {k: v for k, v in written.items() if k not in c.RECOGNIZED_KEYS}"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/L4-unrecognized-keys-reported.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/L4-unrecognized-keys-reported.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key (test_hamcp132_recorder_settings.SettingsTests.test_include_at_recorder_or_unnamed_key_hides_every_unwritten_key)"
    ],
-   "seconds": 2.5
+   "seconds": 3.6
   },
   {
    "id": "P1-failed-yaml-source-complete",
@@ -275,14 +275,14 @@
      "\"complete\" if recorder is None else"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/P1-failed-yaml-source-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/P1-failed-yaml-source-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_provider_exception_text_never_in_public_failure (test_hamcp132_recorder_settings.CredentialTests.test_provider_exception_text_never_in_public_failure)"
    ],
-   "seconds": 2.2
+   "seconds": 3.0
   },
   {
    "id": "P2-failed-recorder-info-complete",
@@ -294,14 +294,14 @@
      "\"complete\" if True else ("
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/P2-failed-recorder-info-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/P2-failed-recorder-info-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_prior_telemetry_error_restored_on_partial (test_hamcp132_recorder_settings.AuthorityTests.test_prior_telemetry_error_restored_on_partial)"
    ],
-   "seconds": 2.2
+   "seconds": 2.9
   },
   {
    "id": "P3-partial-entity-options-complete",
@@ -313,14 +313,14 @@
      "\"complete\","
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/P3-partial-entity-options-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/P3-partial-entity-options-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.2
+   "seconds": 2.9
   },
   {
    "id": "P4-report-always-complete",
@@ -332,14 +332,14 @@
      "envelope[\"complete\"] = True or all("
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/P4-report-always-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/P4-report-always-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_prior_telemetry_error_restored_on_partial (test_hamcp132_recorder_settings.AuthorityTests.test_prior_telemetry_error_restored_on_partial)"
    ],
-   "seconds": 2.1
+   "seconds": 2.8
   },
   {
    "id": "P5-source-omission-dropped",
@@ -351,14 +351,14 @@
      "                pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/P5-source-omission-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/P5-source-omission-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_runtime_failure_shapes (test_hamcp132_recorder_settings.RuntimeTests.test_runtime_failure_shapes)"
    ],
-   "seconds": 2.6
+   "seconds": 3.4
   },
   {
    "id": "P6-audit-success-on-partial",
@@ -370,14 +370,14 @@
      "telemetry.result_status = \"success\""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/P6-audit-success-on-partial.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/P6-audit-success-on-partial.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_unknown_command_means_recorder_not_set_up_never_not_recording (test_hamcp132_recorder_settings.RuntimeTests.test_unknown_command_means_recorder_not_set_up_never_not_recording)"
    ],
-   "seconds": 2.5
+   "seconds": 3.4
   },
   {
    "id": "P7-batch-error-text-reflected",
@@ -389,14 +389,14 @@
      "except HomeAssistantApiError as exc:\n            reason = str(exc) or \"command_failed\""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/P7-batch-error-text-reflected.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/P7-batch-error-text-reflected.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_batch_exceptions_map_to_closed_reasons (test_hamcp132_recorder_settings.RuntimeTests.test_batch_exceptions_map_to_closed_reasons)"
    ],
-   "seconds": 2.5
+   "seconds": 3.5
   },
   {
    "id": "P8-entity-reply-shape-loosened",
@@ -408,14 +408,14 @@
      "\"recording_disabled_by\" in value"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/P8-entity-reply-shape-loosened.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/P8-entity-reply-shape-loosened.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.2
+   "seconds": 3.2
   },
   {
    "id": "P9-response-budget-trim-silent",
@@ -427,14 +427,14 @@
      "                return sanitize_untrusted_data({**envelope, \"filters\": filters}, known_secrets=self.known_secrets, max_string=c.MAX_FILTER_TEXT).value"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/P9-response-budget-trim-silent.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/P9-response-budget-trim-silent.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_large_filter_lists_become_counts_within_the_budget (test_hamcp132_recorder_settings.FilterTests.test_large_filter_lists_become_counts_within_the_budget)"
    ],
-   "seconds": 2.4
+   "seconds": 3.3
   },
   {
    "id": "F1-cases-4a-4b-swapped",
@@ -451,14 +451,14 @@
      "    if case == INCLUDE_DOMAIN_OR_GLOB:\n        def entity_filter_4b"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/F1-cases-4a-4b-swapped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/F1-cases-4a-4b-swapped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_port_matches_core_truth_table_for_every_case (test_hamcp132_recorder_settings.FilterTruthTableTests.test_port_matches_core_truth_table_for_every_case)"
    ],
-   "seconds": 2.4
+   "seconds": 3.2
   },
   {
    "id": "F2-exclude-domains-honoured-in-4a",
@@ -470,14 +470,14 @@
      "                entity_id not in exclude_e\n                and split_entity_id(entity_id)[0] not in exclude_d\n                and ("
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/F2-exclude-domains-honoured-in-4a.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/F2-exclude-domains-honoured-in-4a.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_port_matches_core_truth_table_for_every_case (test_hamcp132_recorder_settings.FilterTruthTableTests.test_port_matches_core_truth_table_for_every_case)"
    ],
-   "seconds": 2.4
+   "seconds": 3.1
   },
   {
    "id": "F3-4b-include-entities-override-lost",
@@ -489,14 +489,14 @@
      "                return False\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/F3-4b-include-entities-override-lost.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/F3-4b-include-entities-override-lost.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_port_matches_core_truth_table_for_every_case (test_hamcp132_recorder_settings.FilterTruthTableTests.test_port_matches_core_truth_table_for_every_case)"
    ],
-   "seconds": 2.5
+   "seconds": 3.0
   },
   {
    "id": "F4-exclude-domains-ignored-flag-lost",
@@ -508,14 +508,14 @@
      "\"exclude_domains_ignored\": (False"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/F4-exclude-domains-ignored-flag-lost.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/F4-exclude-domains-ignored-flag-lost.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_case_4a_reports_ignored_exclude_domains_and_state_changed (test_hamcp132_recorder_settings.FilterTests.test_case_4a_reports_ignored_exclude_domains_and_state_changed)"
    ],
-   "seconds": 2.3
+   "seconds": 2.9
   },
   {
    "id": "V1-drift-resolved-as-agree",
@@ -527,14 +527,14 @@
      "row[\"agreement\"] = \"agree\""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/V1-drift-resolved-as-agree.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/V1-drift-resolved-as-agree.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.2
+   "seconds": 2.9
   },
   {
    "id": "V2-drift-omission-dropped",
@@ -546,14 +546,14 @@
      "                pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/V2-drift-omission-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/V2-drift-omission-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_filter_drift_is_reported_never_resolved (test_hamcp132_recorder_settings.FilterTests.test_filter_drift_is_reported_never_resolved)"
    ],
-   "seconds": 2.2
+   "seconds": 2.8
   },
   {
    "id": "V3-core-answer-replaced-by-computed",
@@ -565,14 +565,14 @@
      "{\"entity_id\": entity_id, \"core_recorded\": computed if computed is not None else core,"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/V3-core-answer-replaced-by-computed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/V3-core-answer-replaced-by-computed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.3
+   "seconds": 2.7
   },
   {
    "id": "U1-unknown-command-not-recording",
@@ -584,14 +584,14 @@
      "            return ({\"status\": \"available\", \"recording\": False} if value == \"unknown_command\"\n                    else {\"status\": \"unavailable\", \"reason\": \"command_failed\"})"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/U1-unknown-command-not-recording.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/U1-unknown-command-not-recording.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_unknown_command_means_recorder_not_set_up_never_not_recording (test_hamcp132_recorder_settings.RuntimeTests.test_unknown_command_means_recorder_not_set_up_never_not_recording)"
    ],
-   "seconds": 2.7
+   "seconds": 3.1
   },
   {
    "id": "U2-entity-unknown-command-not-recorded",
@@ -603,14 +603,14 @@
      "                    core, reason = (False, None) if value == \"unknown_command\" else (None, \"command_failed\")"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/U2-entity-unknown-command-not-recorded.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/U2-entity-unknown-command-not-recorded.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.3
+   "seconds": 2.7
   },
   {
    "id": "R1-directly-written-entity-dropped",
@@ -622,14 +622,14 @@
      "continue"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R1-directly-written-entity-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R1-directly-written-entity-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_byte_budget_trims_rows_and_reports_partial (test_hamcp132_unregistered_entities.FailureTests.test_byte_budget_trims_rows_and_reports_partial)"
    ],
-   "seconds": 6.6
+   "seconds": 7.6
   },
   {
    "id": "R2-definition-location-asserted",
@@ -641,14 +641,14 @@
      "\"definition_location\": \"configuration.yaml\","
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R2-definition-location-asserted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R2-definition-location-asserted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_healthy_reconciliation_and_call_order (test_hamcp132_unregistered_entities.ReconciliationTests.test_healthy_reconciliation_and_call_order)"
    ],
-   "seconds": 7.1
+   "seconds": 8.2
   },
   {
    "id": "R3-partial-search-reported-complete",
@@ -660,14 +660,14 @@
      "sources[-1].update(status=\"complete\" if failed < len(searched) else \"unavailable\","
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R3-partial-search-reported-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R3-partial-search-reported-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_per_entity_search_failures (test_hamcp132_unregistered_entities.SearchTests.test_per_entity_search_failures)"
    ],
-   "seconds": 7.3
+   "seconds": 9.0
   },
   {
    "id": "R4-search-unavailable-silent",
@@ -679,14 +679,14 @@
      "                pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R4-search-unavailable-silent.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R4-search-unavailable-silent.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_whole_search_batch_failure (test_hamcp132_unregistered_entities.SearchTests.test_whole_search_batch_failure)"
    ],
-   "seconds": 7.1
+   "seconds": 8.8
   },
   {
    "id": "R5-ambiguous-entry-guessed",
@@ -698,14 +698,14 @@
      "        return entries[0], \"resolved\""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R5-ambiguous-entry-guessed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R5-ambiguous-entry-guessed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_healthy_reconciliation_and_call_order (test_hamcp132_unregistered_entities.ReconciliationTests.test_healthy_reconciliation_and_call_order)"
    ],
-   "seconds": 7.0
+   "seconds": 8.9
   },
   {
    "id": "R6-limit-truncation-silent",
@@ -717,14 +717,14 @@
      "            pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R6-limit-truncation-silent.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R6-limit-truncation-silent.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_domain_scope_and_limit_truncation (test_hamcp132_unregistered_entities.ReconciliationTests.test_domain_scope_and_limit_truncation)"
    ],
-   "seconds": 7.4
+   "seconds": 9.0
   },
   {
    "id": "R7-one-inventory-enough",
@@ -736,14 +736,14 @@
      "if states is None and registry is None:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R7-one-inventory-enough.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R7-one-inventory-enough.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_states_or_registry_unavailable_is_an_error (test_hamcp132_unregistered_entities.FailureTests.test_states_or_registry_unavailable_is_an_error)"
    ],
-   "seconds": 7.2
+   "seconds": 8.4
   },
   {
    "id": "R8-malformed-registry-silent",
@@ -755,14 +755,14 @@
      "            pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R8-malformed-registry-silent.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R8-malformed-registry-silent.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_malformed_rows_are_counted_not_reconciled (test_hamcp132_unregistered_entities.ReconciliationTests.test_malformed_rows_are_counted_not_reconciled)"
    ],
-   "seconds": 7.2
+   "seconds": 8.0
   },
   {
    "id": "R9-invalid-platform-value-reported",
@@ -774,14 +774,14 @@
      "platform if type(platform) is str else None"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R9-invalid-platform-value-reported.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R9-invalid-platform-value-reported.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_invalid_platform_value_is_not_reported (test_hamcp132_unregistered_entities.PlatformTests.test_invalid_platform_value_is_not_reported)"
    ],
-   "seconds": 6.7
+   "seconds": 7.7
   },
   {
    "id": "R10-domains-string-split",
@@ -793,14 +793,14 @@
      "\"domains\": list(domains)}"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R10-domains-string-split.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R10-domains-string-split.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_invalid_arguments_dispatch_nothing (test_hamcp132_unregistered_entities.AuthorityTests.test_invalid_arguments_dispatch_nothing)"
    ],
-   "seconds": 6.6
+   "seconds": 7.3
   },
   {
    "id": "R11-reconciliation-known-secrets-dropped",
@@ -812,14 +812,14 @@
      "sanitize_untrusted_data(envelope, known_secrets=(), max_string=255)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R11-reconciliation-known-secrets-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R11-reconciliation-known-secrets-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_known_secret_in_reported_text_is_redacted (test_hamcp132_unregistered_entities.FailureTests.test_known_secret_in_reported_text_is_redacted)"
    ],
-   "seconds": 6.8
+   "seconds": 7.3
   },
   {
    "id": "R12-byte-budget-trim-silent",
@@ -831,14 +831,14 @@
      "                pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/R12-byte-budget-trim-silent.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/R12-byte-budget-trim-silent.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_byte_budget_trims_rows_and_reports_partial (test_hamcp132_unregistered_entities.FailureTests.test_byte_budget_trims_rows_and_reports_partial)"
    ],
-   "seconds": 6.4
+   "seconds": 7.1
   },
   {
    "id": "S1-purge-reachable-in-batch",
@@ -855,14 +855,14 @@
      "if command_type in {\"recorder/info\", \"recorder/purge\"}:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/S1-purge-reachable-in-batch.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/S1-purge-reachable-in-batch.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
    ],
-   "seconds": 2.5
+   "seconds": 2.7
   },
   {
    "id": "S2-entity-options-identity-loosened",
@@ -874,14 +874,14 @@
      "    \"recorder/entity_options/get\": re.compile(r\".+\"),\n}"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/S2-entity-options-identity-loosened.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/S2-entity-options-identity-loosened.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
    ],
-   "seconds": 2.4
+   "seconds": 2.8
   },
   {
    "id": "S3-search-entity-identity-loosened",
@@ -893,14 +893,14 @@
      "    \"entity\": re.compile(r\".+\"),\n}"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/S3-search-entity-identity-loosened.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/S3-search-entity-identity-loosened.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
    ],
-   "seconds": 2.4
+   "seconds": 2.9
   },
   {
    "id": "S4-recorder-info-extra-keys",
@@ -912,14 +912,14 @@
      "    if command_type == \"recorder/info\":\n        return True\n    if command_type == \"recorder/entity_options/get\" and \"entity_id\" in payload:\n        return True\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/S4-recorder-info-extra-keys.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/S4-recorder-info-extra-keys.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exact_batch_allowlist (test_hamcp132_recorder_settings.NoWritePathTests.test_exact_batch_allowlist)"
    ],
-   "seconds": 2.4
+   "seconds": 2.8
   },
   {
    "id": "S5-recorder-core-gate-narrowed",
@@ -931,14 +931,14 @@
      "\"get_recorder_settings\": (\"core.basic_websocket_read\",),"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/S5-recorder-core-gate-narrowed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/S5-recorder-core-gate-narrowed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_core_gate_mapping (test_hamcp132_recorder_settings.RegistrationTests.test_core_gate_mapping)"
    ],
-   "seconds": 2.4
+   "seconds": 2.9
   },
   {
    "id": "S6-reconciliation-core-gate-narrowed",
@@ -950,14 +950,14 @@
      "    \"get_unregistered_entities\": (\n        \"core.basic_rest_read\", \"core.basic_websocket_read\",\n    ),"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/S6-reconciliation-core-gate-narrowed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/S6-reconciliation-core-gate-narrowed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_core_gate_mapping (test_hamcp132_unregistered_entities.RegistrationTests.test_core_gate_mapping)"
    ],
-   "seconds": 6.4
+   "seconds": 8.2
   },
   {
    "id": "S7-pre-sdk-validation-removed",
@@ -969,14 +969,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/S7-pre-sdk-validation-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/S7-pre-sdk-validation-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material (test_hamcp132_recorder_settings.RegistrationTests.test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material)"
    ],
-   "seconds": 2.5
+   "seconds": 3.1
   },
   {
    "id": "S8-audit-records-entity-ids",
@@ -988,14 +988,14 @@
      "\"profile\": \"recorder-settings-read-v1\",\n                        \"entity_count\": len(entity_ids) if type(entity_ids) is list and len(entity_ids) <= 50 else None, \"entity_ids\": entity_ids,"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/S8-audit-records-entity-ids.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/S8-audit-records-entity-ids.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_gateway_positive_output_and_audit (test_hamcp132_recorder_settings.RegistrationTests.test_gateway_positive_output_and_audit)"
    ],
-   "seconds": 2.5
+   "seconds": 3.0
   },
   {
    "id": "A1-recorder-no-recheck-after-batch",
@@ -1007,14 +1007,14 @@
      "        return outcomes, reason"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/A1-recorder-no-recheck-after-batch.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/A1-recorder-no-recheck-after-batch.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_authority_change_during_any_read_fails_closed (test_hamcp132_recorder_settings.AuthorityTests.test_authority_change_during_any_read_fails_closed)"
    ],
-   "seconds": 2.2
+   "seconds": 2.5
   },
   {
    "id": "A2-recorder-no-recheck-after-yaml",
@@ -1026,14 +1026,14 @@
      "        return gateway_envelope(result, path)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/A2-recorder-no-recheck-after-yaml.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/A2-recorder-no-recheck-after-yaml.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_yaml_result_read_under_changed_authority_is_not_projected (test_hamcp132_recorder_settings.AuthorityTests.test_yaml_result_read_under_changed_authority_is_not_projected)"
    ],
-   "seconds": 2.2
+   "seconds": 2.5
   },
   {
    "id": "A3-recorder-anonymous-accepted",
@@ -1045,14 +1045,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/A3-recorder-anonymous-accepted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/A3-recorder-anonymous-accepted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_anonymous_caller_refused_before_dispatch (test_hamcp132_recorder_settings.AuthorityTests.test_anonymous_caller_refused_before_dispatch)"
    ],
-   "seconds": 2.1
+   "seconds": 2.5
   },
   {
    "id": "A4-recorder-missing-authorizer-accepted",
@@ -1064,14 +1064,14 @@
      "or telemetry is None\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/A4-recorder-missing-authorizer-accepted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/A4-recorder-missing-authorizer-accepted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_missing_dispatch_authorizer_or_request_refused (test_hamcp132_recorder_settings.AuthorityTests.test_missing_dispatch_authorizer_or_request_refused)"
    ],
-   "seconds": 2.1
+   "seconds": 2.4
   },
   {
    "id": "A5-reconciliation-no-recheck-after-read",
@@ -1083,14 +1083,14 @@
      "        return raw"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/A5-reconciliation-no-recheck-after-read.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/A5-reconciliation-no-recheck-after-read.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_authority_change_during_any_read_fails_closed (test_hamcp132_unregistered_entities.AuthorityTests.test_authority_change_during_any_read_fails_closed)"
    ],
-   "seconds": 6.3
+   "seconds": 6.9
   },
   {
    "id": "A6-reconciliation-anonymous-accepted",
@@ -1102,14 +1102,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/A6-reconciliation-anonymous-accepted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/A6-reconciliation-anonymous-accepted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_unavailable_route_anonymous_or_no_authorizer_dispatch_nothing (test_hamcp132_unregistered_entities.AuthorityTests.test_unavailable_route_anonymous_or_no_authorizer_dispatch_nothing)"
    ],
-   "seconds": 6.4
+   "seconds": 6.6
   },
   {
    "id": "A7-recorder-tuple-or-string-split",
@@ -1121,14 +1121,14 @@
      "{\"entity_ids\": list(entity_ids)}"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/A7-recorder-tuple-or-string-split.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/A7-recorder-tuple-or-string-split.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_invalid_entity_ids_refused_before_dispatch (test_hamcp132_recorder_settings.EntityTests.test_invalid_entity_ids_refused_before_dispatch)"
    ],
-   "seconds": 2.1
+   "seconds": 2.3
   },
   {
    "id": "Y1-yaml-path-allowlist-removed",
@@ -1140,14 +1140,14 @@
      "if yaml_path is None:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/Y1-yaml-path-allowlist-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/Y1-yaml-path-allowlist-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_admitted_reader_dispatches_only_contract_paths (test_hamcp132_recorder_settings.YamlConfigReaderTests.test_admitted_reader_dispatches_only_contract_paths)"
    ],
-   "seconds": 3.4
+   "seconds": 3.6
   },
   {
    "id": "Y2-yaml-fallback-envelope-accepted",
@@ -1159,14 +1159,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/Y2-yaml-fallback-envelope-accepted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/Y2-yaml-fallback-envelope-accepted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_yaml_unavailable_variants_name_the_exact_reason (test_hamcp132_recorder_settings.SettingsTests.test_yaml_unavailable_variants_name_the_exact_reason)"
    ],
-   "seconds": 2.6
+   "seconds": 3.0
   },
   {
    "id": "Y3-yaml-other-path-accepted",
@@ -1178,14 +1178,14 @@
      "or type(data) is not dict"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/Y3-yaml-other-path-accepted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/Y3-yaml-other-path-accepted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_yaml_unavailable_variants_name_the_exact_reason (test_hamcp132_recorder_settings.SettingsTests.test_yaml_unavailable_variants_name_the_exact_reason)"
    ],
-   "seconds": 2.7
+   "seconds": 2.9
   },
   {
    "id": "Y4-yaml-error-code-reflected",
@@ -1197,14 +1197,14 @@
      "return None, code if code else \"yaml_read_failed\""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/Y4-yaml-error-code-reflected.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/Y4-yaml-error-code-reflected.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_yaml_unavailable_variants_name_the_exact_reason (test_hamcp132_recorder_settings.SettingsTests.test_yaml_unavailable_variants_name_the_exact_reason)"
    ],
-   "seconds": 2.6
+   "seconds": 3.0
   },
   {
    "id": "H1-recorder-omissions-appended-after-sanitization",
@@ -1221,14 +1221,14 @@
      "return {**sanitized.value, \"omissions\": list(projector.omissions)}"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/H1-recorder-omissions-appended-after-sanitization.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/H1-recorder-omissions-appended-after-sanitization.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_planted_secret_never_appears_in_any_response_field (test_hamcp132_recorder_settings.FinalEnvelopeSanitizationTests.test_planted_secret_never_appears_in_any_response_field)"
    ],
-   "seconds": 2.4
+   "seconds": 2.8
   },
   {
    "id": "H2-reconciliation-omissions-appended-after-sanitization",
@@ -1245,14 +1245,14 @@
      "return {**sanitized.value, \"omissions\": list(omissions)}"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/H2-reconciliation-omissions-appended-after-sanitization.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/H2-reconciliation-omissions-appended-after-sanitization.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_planted_secret_never_appears_in_any_response_field (test_hamcp132_unregistered_entities.FinalEnvelopeSanitizationTests.test_planted_secret_never_appears_in_any_response_field)"
    ],
-   "seconds": 6.8
+   "seconds": 7.1
   },
   {
    "id": "H3-recorder-redaction-not-partial",
@@ -1264,14 +1264,14 @@
      "and False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/H3-recorder-redaction-not-partial.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/H3-recorder-redaction-not-partial.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_known_secret_in_filter_text_is_redacted_and_partial (test_hamcp132_recorder_settings.CredentialTests.test_known_secret_in_filter_text_is_redacted_and_partial)"
    ],
-   "seconds": 2.1
+   "seconds": 2.2
   },
   {
    "id": "H4-reconciliation-redaction-not-partial",
@@ -1283,14 +1283,14 @@
      "and False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/H4-reconciliation-redaction-not-partial.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/H4-reconciliation-redaction-not-partial.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_known_secret_in_reported_text_is_redacted (test_hamcp132_unregistered_entities.FailureTests.test_known_secret_in_reported_text_is_redacted)"
    ],
-   "seconds": 6.4
+   "seconds": 6.8
   },
   {
    "id": "M1-parser-dependent-reported-fails-core-schema",
@@ -1302,14 +1302,14 @@
      "if outcomes[0][0] and any(outcome != outcomes[0] for outcome in outcomes[1:]):\n                # The reader"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M1-parser-dependent-reported-fails-core-schema.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M1-parser-dependent-reported-fails-core-schema.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_paired_spellings_never_yield_an_unestablished_claim (test_hamcp132_recorder_settings.YamlSpellingTests.test_paired_spellings_never_yield_an_unestablished_claim)"
    ],
-   "seconds": 5.8
+   "seconds": 6.2
   },
   {
    "id": "M2-parser-dependent-reported-definite",
@@ -1321,14 +1321,14 @@
      "if False:\n                # The reader"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M2-parser-dependent-reported-definite.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M2-parser-dependent-reported-definite.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_genuinely_invalid_values_still_fail_core_schema (test_hamcp132_recorder_settings.YamlSpellingTests.test_genuinely_invalid_values_still_fail_core_schema)"
    ],
-   "seconds": 5.8
+   "seconds": 6.2
   },
   {
    "id": "M3-parser-dependent-filter-list-fails-core-schema",
@@ -1340,14 +1340,14 @@
      "return \"fails_core_schema\" if dependent else None"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M3-parser-dependent-filter-list-fails-core-schema.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M3-parser-dependent-filter-list-fails-core-schema.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_filter_lists_with_differing_readings_are_not_computed (test_hamcp132_recorder_settings.YamlSpellingTests.test_filter_lists_with_differing_readings_are_not_computed)"
    ],
-   "seconds": 5.7
+   "seconds": 6.1
   },
   {
    "id": "M4-yaml11-boolean-family-ignored",
@@ -1359,14 +1359,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M4-yaml11-boolean-family-ignored.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M4-yaml11-boolean-family-ignored.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_filter_lists_with_differing_readings_are_not_computed (test_hamcp132_recorder_settings.YamlSpellingTests.test_filter_lists_with_differing_readings_are_not_computed)"
    ],
-   "seconds": 5.8
+   "seconds": 6.2
   },
   {
    "id": "M5-yaml11-sexagesimal-ignored",
@@ -1378,14 +1378,14 @@
      ")\\Z\"\"\", re.X)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M5-yaml11-sexagesimal-ignored.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M5-yaml11-sexagesimal-ignored.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_paired_spellings_never_yield_an_unestablished_claim (test_hamcp132_recorder_settings.YamlSpellingTests.test_paired_spellings_never_yield_an_unestablished_claim)"
    ],
-   "seconds": 5.9
+   "seconds": 6.4
   },
   {
    "id": "M6-plain-integer-reported-spelling-dependent",
@@ -1397,14 +1397,14 @@
      "    if type(value) in (int, float) and math.isfinite(value):"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M6-plain-integer-reported-spelling-dependent.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M6-plain-integer-reported-spelling-dependent.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_no_redaction_keeps_the_envelope_complete (test_hamcp132_recorder_settings.FinalEnvelopeSanitizationTests.test_no_redaction_keeps_the_envelope_complete)"
    ],
-   "seconds": 2.4
+   "seconds": 2.5
   },
   {
    "id": "M7-exponent-float-ignored",
@@ -1416,14 +1416,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M7-exponent-float-ignored.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M7-exponent-float-ignored.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_genuinely_invalid_values_still_fail_core_schema (test_hamcp132_recorder_settings.YamlSpellingTests.test_genuinely_invalid_values_still_fail_core_schema)"
    ],
-   "seconds": 5.7
+   "seconds": 6.0
   },
   {
    "id": "M8-parser-dependent-omission-dropped",
@@ -1435,14 +1435,14 @@
      "                pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M8-parser-dependent-omission-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M8-parser-dependent-omission-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_reviewer_reproductions_are_parser_dependent (test_hamcp132_recorder_settings.YamlSpellingTests.test_reviewer_reproductions_are_parser_dependent)"
    ],
-   "seconds": 6.0
+   "seconds": 6.6
   },
   {
    "id": "M9-quoted-string-treated-as-unquoted",
@@ -1454,14 +1454,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M9-quoted-string-treated-as-unquoted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M9-quoted-string-treated-as-unquoted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_quoted_strings_are_definite_strings (test_hamcp132_recorder_settings.YamlSpellingTests.test_quoted_strings_are_definite_strings)"
    ],
-   "seconds": 6.2
+   "seconds": 6.4
   },
   {
    "id": "M10-spec-booleans-y-n-read-as-yaml11-booleans",
@@ -1473,14 +1473,14 @@
      "|on|On|ON|off|Off|OFF|y|Y|n|N)\\Z\")"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M10-spec-booleans-y-n-read-as-yaml11-booleans.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M10-spec-booleans-y-n-read-as-yaml11-booleans.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_paired_spellings_never_yield_an_unestablished_claim (test_hamcp132_recorder_settings.YamlSpellingTests.test_paired_spellings_never_yield_an_unestablished_claim)"
    ],
-   "seconds": 5.9
+   "seconds": 6.3
   },
   {
    "id": "M11-numeric-spelling-disclosure-dropped",
@@ -1492,14 +1492,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M11-numeric-spelling-disclosure-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M11-numeric-spelling-disclosure-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_common_integers_are_definite (test_hamcp132_recorder_settings.YamlSpellingTests.test_common_integers_are_definite)"
    ],
-   "seconds": 5.6
+   "seconds": 6.1
   },
   {
    "id": "M12-yaml12-boolean-quoting-lost",
@@ -1511,14 +1511,14 @@
      "(?:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M12-yaml12-boolean-quoting-lost.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M12-yaml12-boolean-quoting-lost.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_quoted_strings_are_definite_strings (test_hamcp132_recorder_settings.YamlSpellingTests.test_quoted_strings_are_definite_strings)"
    ],
-   "seconds": 6.0
+   "seconds": 6.3
   },
   {
    "id": "M13-yaml12-float-quoting-lost",
@@ -1530,14 +1530,14 @@
      "\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/M13-yaml12-float-quoting-lost.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/M13-yaml12-float-quoting-lost.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_quoted_strings_are_definite_strings (test_hamcp132_recorder_settings.YamlSpellingTests.test_quoted_strings_are_definite_strings)"
    ],
-   "seconds": 6.2
+   "seconds": 6.5
   },
   {
    "id": "REVIEW-1-reverse-entity-options-association",
@@ -1549,14 +1549,14 @@
      "ok, value = outcomes[-index - 1]"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/REVIEW-1-reverse-entity-options-association.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/REVIEW-1-reverse-entity-options-association.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_per_entity_answers_and_failures (test_hamcp132_recorder_settings.EntityTests.test_per_entity_answers_and_failures)"
    ],
-   "seconds": 2.2
+   "seconds": 2.3
   },
   {
    "id": "B-L1-db-url-projected-as-field",
@@ -1568,14 +1568,14 @@
      "            if type(key) is str and (key in allowed or key in c.WITHHELD_KEYS):"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-L1-db-url-projected-as-field.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-L1-db-url-projected-as-field.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_definition_limit_and_response_budget (test_hamcp132_configuration_definitions.BudgetTests.test_definition_limit_and_response_budget)"
    ],
-   "seconds": 7.5
+   "seconds": 8.9
   },
   {
    "id": "B-L2-nested-db-url-kept",
@@ -1587,14 +1587,14 @@
      "if type(key) is not str:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-L2-nested-db-url-kept.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-L2-nested-db-url-kept.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_db_url_and_credentials_withheld_in_every_position (test_hamcp132_configuration_definitions.CredentialTests.test_db_url_and_credentials_withheld_in_every_position)"
    ],
-   "seconds": 8.9
+   "seconds": 10.7
   },
   {
    "id": "B-L3-nested-credential-key-kept",
@@ -1606,14 +1606,14 @@
      "if type(key) is not str or key in c.WITHHELD_KEYS:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-L3-nested-credential-key-kept.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-L3-nested-credential-key-kept.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_db_url_and_credentials_withheld_in_every_position (test_hamcp132_configuration_definitions.CredentialTests.test_db_url_and_credentials_withheld_in_every_position)"
    ],
-   "seconds": 9.0
+   "seconds": 10.7
   },
   {
    "id": "B-L4-userinfo-uri-guard-removed",
@@ -1625,14 +1625,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-L4-userinfo-uri-guard-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-L4-userinfo-uri-guard-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_database_url_inside_allowlisted_text_is_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_database_url_inside_allowlisted_text_is_withheld)"
    ],
-   "seconds": 9.0
+   "seconds": 10.0
   },
   {
    "id": "B-L5-secret-reference-projected",
@@ -1644,14 +1644,14 @@
      "        if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-L5-secret-reference-projected.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-L5-secret-reference-projected.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_references_markers_and_unsupported_values_are_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_references_markers_and_unsupported_values_are_withheld)"
    ],
-   "seconds": 8.9
+   "seconds": 10.8
   },
   {
    "id": "B-L6-reader-redaction-projected",
@@ -1663,14 +1663,14 @@
      "        if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-L6-reader-redaction-projected.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-L6-reader-redaction-projected.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_references_markers_and_unsupported_values_are_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_references_markers_and_unsupported_values_are_withheld)"
    ],
-   "seconds": 9.0
+   "seconds": 11.1
   },
   {
    "id": "B-L7-known-secrets-dropped",
@@ -1687,14 +1687,14 @@
      "credentials.withhold(envelope, (), dropped)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-L7-known-secrets-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-L7-known-secrets-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_returned_report_is_exactly_the_sanitizer_output (test_hamcp132_configuration_definitions.BudgetTests.test_returned_report_is_exactly_the_sanitizer_output)"
    ],
-   "seconds": 7.4
+   "seconds": 8.9
   },
   {
    "id": "B-M1-heuristic-reported-exact",
@@ -1706,14 +1706,14 @@
      "return {\"method\": \"heuristic\", \"confidence\": \"exact\","
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-M1-heuristic-reported-exact.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-M1-heuristic-reported-exact.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_heuristic_confidence_levels (test_hamcp132_configuration_definitions.MatchingTests.test_heuristic_confidence_levels)"
    ],
-   "seconds": 15.5
+   "seconds": 18.1
   },
   {
    "id": "B-M2-heuristic-reported-exact-unique-id",
@@ -1725,14 +1725,14 @@
      "return {\"method\": \"exact_unique_id\", \"confidence\": confidence,"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-M2-heuristic-reported-exact-unique-id.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-M2-heuristic-reported-exact-unique-id.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_heuristic_confidence_levels (test_hamcp132_configuration_definitions.MatchingTests.test_heuristic_confidence_levels)"
    ],
-   "seconds": 16.1
+   "seconds": 18.2
   },
   {
    "id": "B-M3-ambiguous-name-guessed",
@@ -1744,14 +1744,14 @@
      "        if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-M3-ambiguous-name-guessed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-M3-ambiguous-name-guessed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_ambiguous_is_never_resolved (test_hamcp132_configuration_definitions.MatchingTests.test_ambiguous_is_never_resolved)"
    ],
-   "seconds": 15.9
+   "seconds": 18.7
   },
   {
    "id": "B-M4-shared-unique-id-guessed",
@@ -1763,14 +1763,14 @@
      "return {\"method\": \"exact_unique_id\", \"confidence\": \"exact\", \"definition_ids\": found[:1],"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-M4-shared-unique-id-guessed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-M4-shared-unique-id-guessed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_ambiguous_is_never_resolved (test_hamcp132_configuration_definitions.MatchingTests.test_ambiguous_is_never_resolved)"
    ],
-   "seconds": 15.5
+   "seconds": 18.2
   },
   {
    "id": "B-M5-high-confidence-on-incomplete-sources",
@@ -1782,14 +1782,14 @@
      "elif platform is not None:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-M5-high-confidence-on-incomplete-sources.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-M5-high-confidence-on-incomplete-sources.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_heuristic_confidence_levels (test_hamcp132_configuration_definitions.MatchingTests.test_heuristic_confidence_levels)"
    ],
-   "seconds": 15.7
+   "seconds": 18.6
   },
   {
    "id": "B-M6-collision-suffix-not-low",
@@ -1801,14 +1801,14 @@
      "        if False:\n            confidence = \"low\"\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-M6-collision-suffix-not-low.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-M6-collision-suffix-not-low.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_heuristic_confidence_levels (test_hamcp132_configuration_definitions.MatchingTests.test_heuristic_confidence_levels)"
    ],
-   "seconds": 15.7
+   "seconds": 18.1
   },
   {
    "id": "B-M7-platform-filter-removed",
@@ -1820,14 +1820,14 @@
      "        if False:\n            candidates = ["
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-M7-platform-filter-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-M7-platform-filter-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_platform_filters_cross_integration_candidates (test_hamcp132_configuration_definitions.MatchingTests.test_platform_filters_cross_integration_candidates)"
    ],
-   "seconds": 15.7
+   "seconds": 18.7
   },
   {
    "id": "B-M8-heuristic-applied-to-registered-entity",
@@ -1839,14 +1839,14 @@
      "            return self._heuristic(entity_id, self.by_derived.get(entity_id, []), False) or {\n                \"method\": \"unmatched\", \"confidence\": None, \"definition_ids\": [],\n                \"reason\": \"no_read_definition_has_this_unique_id\"}"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-M8-heuristic-applied-to-registered-entity.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-M8-heuristic-applied-to-registered-entity.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_registered_entity_is_never_matched_by_name (test_hamcp132_configuration_definitions.MatchingTests.test_registered_entity_is_never_matched_by_name)"
    ],
-   "seconds": 16.3
+   "seconds": 18.3
   },
   {
    "id": "B-M9-ui-entry-claimed-readable",
@@ -1858,14 +1858,14 @@
      "\"readability\": \"read\","
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-M9-ui-entry-claimed-readable.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-M9-ui-entry-claimed-readable.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exact_config_entry_lists_the_ui_entry (test_hamcp132_configuration_definitions.MatchingTests.test_exact_config_entry_lists_the_ui_entry)"
    ],
-   "seconds": 15.5
+   "seconds": 18.4
   },
   {
    "id": "B-P1-failed-source-reported-complete",
@@ -1877,14 +1877,14 @@
      "status = \"complete\" if True else ("
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-P1-failed-source-reported-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-P1-failed-source-reported-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_telemetry_on_partial (test_hamcp132_configuration_definitions.AuthorityTests.test_telemetry_on_partial)"
    ],
-   "seconds": 6.5
+   "seconds": 6.7
   },
   {
    "id": "B-P2-source-failure-not-disclosed",
@@ -1901,14 +1901,14 @@
      "True for source in report[\"sources\"])"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-P2-source-failure-not-disclosed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-P2-source-failure-not-disclosed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_telemetry_on_partial (test_hamcp132_configuration_definitions.AuthorityTests.test_telemetry_on_partial)"
    ],
-   "seconds": 6.5
+   "seconds": 6.9
   },
   {
    "id": "B-P3-failed-yaml-source-reported-complete",
@@ -1920,14 +1920,14 @@
      "\"complete\","
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-P3-failed-yaml-source-reported-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-P3-failed-yaml-source-reported-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_provider_exception_text_never_in_public_failure (test_hamcp132_configuration_definitions.CredentialTests.test_provider_exception_text_never_in_public_failure)"
    ],
-   "seconds": 9.1
+   "seconds": 10.6
   },
   {
    "id": "B-P4-packages-not-disclosed",
@@ -1939,14 +1939,14 @@
      "            pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-P4-packages-not-disclosed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-P4-packages-not-disclosed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_homeassistant_node_decides_a_not_found_packages_key (test_hamcp132_configuration_definitions.PackagesAndIncludeTests.test_homeassistant_node_decides_a_not_found_packages_key)"
    ],
-   "seconds": 16.2
+   "seconds": 19.4
   },
   {
    "id": "B-P5-whole-path-include-not-disclosed",
@@ -1958,14 +1958,14 @@
      "            pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-P5-whole-path-include-not-disclosed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-P5-whole-path-include-not-disclosed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_includes_are_disclosed_at_each_level (test_hamcp132_configuration_definitions.PackagesAndIncludeTests.test_includes_are_disclosed_at_each_level)"
    ],
-   "seconds": 16.2
+   "seconds": 19.8
   },
   {
    "id": "B-P6-value-include-not-disclosed",
@@ -1977,14 +1977,14 @@
      "            pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-P6-value-include-not-disclosed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-P6-value-include-not-disclosed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_includes_are_disclosed_at_each_level (test_hamcp132_configuration_definitions.PackagesAndIncludeTests.test_includes_are_disclosed_at_each_level)"
    ],
-   "seconds": 16.3
+   "seconds": 18.8
   },
   {
    "id": "B-P7-unprojected-definitions-not-disclosed",
@@ -1996,14 +1996,14 @@
      "            pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-P7-unprojected-definitions-not-disclosed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-P7-unprojected-definitions-not-disclosed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_control_reaches_every_identifier_bearing_field (test_hamcp132_configuration_definitions.PlantedSecretSweepTests.test_control_reaches_every_identifier_bearing_field)"
    ],
-   "seconds": 17.4
+   "seconds": 19.4
   },
   {
    "id": "B-P8-total-failure-returned-as-report",
@@ -2015,14 +2015,14 @@
      "        if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-P8-total-failure-returned-as-report.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-P8-total-failure-returned-as-report.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_provider_exception_text_never_in_public_failure (test_hamcp132_configuration_definitions.CredentialTests.test_provider_exception_text_never_in_public_failure)"
    ],
-   "seconds": 9.0
+   "seconds": 10.9
   },
   {
    "id": "B-H1-omissions-appended-after-sanitization",
@@ -2039,14 +2039,14 @@
      "return {**sanitized.value, \"omissions\": listed}"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-H1-omissions-appended-after-sanitization.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-H1-omissions-appended-after-sanitization.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_returned_report_is_exactly_the_sanitizer_output (test_hamcp132_configuration_definitions.BudgetTests.test_returned_report_is_exactly_the_sanitizer_output)"
    ],
-   "seconds": 8.0
+   "seconds": 9.3
   },
   {
    "id": "B-H2-redaction-not-partial",
@@ -2058,14 +2058,14 @@
      "and False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-H2-redaction-not-partial.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-H2-redaction-not-partial.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_long_text_is_bounded (test_hamcp132_configuration_definitions.BudgetTests.test_long_text_is_bounded)"
    ],
-   "seconds": 7.3
+   "seconds": 8.6
   },
   {
    "id": "B-H3-text-bound-dropped",
@@ -2077,14 +2077,14 @@
      "max_string=None)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-H3-text-bound-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-H3-text-bound-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_long_text_is_bounded (test_hamcp132_configuration_definitions.BudgetTests.test_long_text_is_bounded)"
    ],
-   "seconds": 7.4
+   "seconds": 8.7
   },
   {
    "id": "B-D1-unmatched-definition-reported-entity-level",
@@ -2096,14 +2096,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-D1-unmatched-definition-reported-entity-level.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-D1-unmatched-definition-reported-entity-level.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_ambiguous_is_never_resolved (test_hamcp132_configuration_definitions.MatchingTests.test_ambiguous_is_never_resolved)"
    ],
-   "seconds": 16.0
+   "seconds": 18.2
   },
   {
    "id": "B-D2-dependencies-not-checked",
@@ -2115,14 +2115,14 @@
      "        if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-D2-dependencies-not-checked.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-D2-dependencies-not-checked.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_clean_dependency_value_is_still_checked (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_clean_dependency_value_is_still_checked)"
    ],
-   "seconds": 12.6
+   "seconds": 14.5
   },
   {
    "id": "B-D3-registry-disabled-ignored",
@@ -2134,14 +2134,14 @@
      "    if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-D3-registry-disabled-ignored.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-D3-registry-disabled-ignored.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_registry_disabled (test_hamcp132_configuration_definitions.DiagnosisTests.test_registry_disabled)"
    ],
-   "seconds": 13.3
+   "seconds": 16.0
   },
   {
    "id": "B-D4-upstream-disabled-by-echoed",
@@ -2153,14 +2153,14 @@
      "\"disabled_by\": disabled_by if True\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-D4-upstream-disabled-by-echoed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-D4-upstream-disabled-by-echoed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_registry_disabled (test_hamcp132_configuration_definitions.DiagnosisTests.test_registry_disabled)"
    ],
-   "seconds": 13.4
+   "seconds": 15.8
   },
   {
    "id": "B-D5-transient-entry-called-deployment",
@@ -2172,14 +2172,14 @@
      "    if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-D5-transient-entry-called-deployment.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-D5-transient-entry-called-deployment.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_classifications (test_hamcp132_configuration_definitions.CapabilityTests.test_classifications)"
    ],
-   "seconds": 7.8
+   "seconds": 9.1
   },
   {
    "id": "B-D6-platform-not-loaded-skipped",
@@ -2191,14 +2191,14 @@
      "            if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-D6-platform-not-loaded-skipped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-D6-platform-not-loaded-skipped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_integration_and_platform_not_loaded (test_hamcp132_configuration_definitions.DiagnosisTests.test_integration_and_platform_not_loaded)"
    ],
-   "seconds": 13.5
+   "seconds": 15.8
   },
   {
    "id": "B-D7-states-failure-ignored",
@@ -2210,14 +2210,14 @@
      "    if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-D7-states-failure-ignored.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-D7-states-failure-ignored.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_states_failure_with_entities_is_disclosed (test_hamcp132_configuration_definitions.SourceFailureTests.test_states_failure_with_entities_is_disclosed)"
    ],
-   "seconds": 17.7
+   "seconds": 20.7
   },
   {
    "id": "B-D8-unparsed-version-called-feature-gap",
@@ -2229,14 +2229,14 @@
      "if version is None or version < HELPERS_LIST_VERSION:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-D8-unparsed-version-called-feature-gap.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-D8-unparsed-version-called-feature-gap.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_classifications (test_hamcp132_configuration_definitions.CapabilityTests.test_classifications)"
    ],
-   "seconds": 7.6
+   "seconds": 9.1
   },
   {
    "id": "B-D9-capability-transient-called-deployment",
@@ -2248,14 +2248,14 @@
      "            if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-D9-capability-transient-called-deployment.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-D9-capability-transient-called-deployment.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_classifications (test_hamcp132_configuration_definitions.CapabilityTests.test_classifications)"
    ],
-   "seconds": 8.0
+   "seconds": 8.9
   },
   {
    "id": "B-D10-state-value-copied",
@@ -2267,14 +2267,14 @@
      "states[entity_id] = state if type(state) is str else \"available\""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-D10-state-value-copied.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-D10-state-value-copied.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_state_values_are_never_copied (test_hamcp132_configuration_definitions.DiagnosisTests.test_state_values_are_never_copied)"
    ],
-   "seconds": 13.9
+   "seconds": 15.7
   },
   {
    "id": "B-S1-yaml-path-set-widened",
@@ -2286,14 +2286,14 @@
      "    \"homeassistant.packages\", \"homeassistant\", \"recorder\",\n})\n\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-S1-yaml-path-set-widened.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-S1-yaml-path-set-widened.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_purpose_dispatches_only_its_paths (test_hamcp132_configuration_definitions.DefinitionReaderPurposeTests.test_purpose_dispatches_only_its_paths)"
    ],
-   "seconds": 10.5
+   "seconds": 12.0
   },
   {
    "id": "B-S2-core-gate-removed",
@@ -2305,14 +2305,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-S2-core-gate-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-S2-core-gate-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_metadata_sweep_through_the_gateway (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_metadata_sweep_through_the_gateway)"
    ],
-   "seconds": 8.3
+   "seconds": 10.1
   },
   {
    "id": "B-S3-tool-pre-sdk-validation-removed",
@@ -2324,14 +2324,14 @@
      "            pass\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-S3-tool-pre-sdk-validation-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-S3-tool-pre-sdk-validation-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_served_tool_rejects_raw_arguments_without_echo (test_hamcp132_configuration_definitions.RegistrationTests.test_served_tool_rejects_raw_arguments_without_echo)"
    ],
-   "seconds": 17.2
+   "seconds": 20.0
   },
   {
    "id": "B-S4-gateway-pre-sdk-validation-removed",
@@ -2343,14 +2343,14 @@
      "                    validate_hamcp132(raw_parameters) if tool_name != \"get_configuration_definitions\" else None"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-S4-gateway-pre-sdk-validation-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-S4-gateway-pre-sdk-validation-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material (test_hamcp132_configuration_definitions.RegistrationTests.test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material)"
    ],
-   "seconds": 17.8
+   "seconds": 20.3
   },
   {
    "id": "B-S5-entries-domain-unchecked",
@@ -2362,14 +2362,14 @@
      "    if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-S5-entries-domain-unchecked.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-S5-entries-domain-unchecked.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_fixed_command_contract (test_hamcp132_configuration_definitions.NoWritePathTests.test_fixed_command_contract)"
    ],
-   "seconds": 15.6
+   "seconds": 18.9
   },
   {
    "id": "B-S6-integration-set-open",
@@ -2381,14 +2381,14 @@
      "all(type(item) is str for item in integrations)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-S6-integration-set-open.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-S6-integration-set-open.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_invalid_service_arguments_refused_before_dispatch (test_hamcp132_configuration_definitions.AuthorityTests.test_invalid_service_arguments_refused_before_dispatch)"
    ],
-   "seconds": 6.5
+   "seconds": 6.9
   },
   {
    "id": "B-S7-audit-copies-integrations",
@@ -2400,14 +2400,14 @@
      "\"integration_count\": integrations,"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-S7-audit-copies-integrations.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-S7-audit-copies-integrations.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_gateway_positive_output_and_audit (test_hamcp132_configuration_definitions.RegistrationTests.test_gateway_positive_output_and_audit)"
    ],
-   "seconds": 17.0
+   "seconds": 20.0
   },
   {
    "id": "B-S9-audit-copies-entity-ids",
@@ -2419,14 +2419,14 @@
      "\"profile\": \"configuration-definitions-read-v1\",\n                        \"entity_count\": len(entity_ids) if type(entity_ids) is list and len(entity_ids) <= 50 else None, \"entity_ids\": entity_ids,"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-S9-audit-copies-entity-ids.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-S9-audit-copies-entity-ids.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_gateway_positive_output_and_audit (test_hamcp132_configuration_definitions.RegistrationTests.test_gateway_positive_output_and_audit)"
    ],
-   "seconds": 17.3
+   "seconds": 20.1
   },
   {
    "id": "B-S8-annotation-not-read-only",
@@ -2438,14 +2438,14 @@
      "ToolAnnotations(readOnlyHint=False,"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-S8-annotation-not-read-only.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-S8-annotation-not-read-only.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_tool_annotations_and_schema (test_hamcp132_configuration_definitions.RegistrationTests.test_tool_annotations_and_schema)"
    ],
-   "seconds": 17.3
+   "seconds": 19.7
   },
   {
    "id": "B-A1-yaml-no-recheck-after-read",
@@ -2457,14 +2457,14 @@
      "            result = None\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-A1-yaml-no-recheck-after-read.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-A1-yaml-no-recheck-after-read.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_yaml_result_read_under_changed_authority_is_not_projected (test_hamcp132_configuration_definitions.AuthorityTests.test_yaml_result_read_under_changed_authority_is_not_projected)"
    ],
-   "seconds": 6.7
+   "seconds": 6.8
   },
   {
    "id": "B-A2-core-read-no-recheck-after-read",
@@ -2476,14 +2476,14 @@
      "        return raw, reason"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-A2-core-read-no-recheck-after-read.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-A2-core-read-no-recheck-after-read.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_authority_change_during_any_read_fails_closed (test_hamcp132_configuration_definitions.AuthorityTests.test_authority_change_during_any_read_fails_closed)"
    ],
-   "seconds": 6.6
+   "seconds": 6.8
   },
   {
    "id": "B-A3-anonymous-accepted",
@@ -2495,14 +2495,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-A3-anonymous-accepted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-A3-anonymous-accepted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_anonymous_caller_and_missing_authorizer_refused_before_dispatch (test_hamcp132_configuration_definitions.AuthorityTests.test_anonymous_caller_and_missing_authorizer_refused_before_dispatch)"
    ],
-   "seconds": 6.4
+   "seconds": 6.9
   },
   {
    "id": "B-A4-missing-authorizer-accepted",
@@ -2514,14 +2514,14 @@
      "                or telemetry is None\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-A4-missing-authorizer-accepted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-A4-missing-authorizer-accepted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_anonymous_caller_and_missing_authorizer_refused_before_dispatch (test_hamcp132_configuration_definitions.AuthorityTests.test_anonymous_caller_and_missing_authorizer_refused_before_dispatch)"
    ],
-   "seconds": 6.6
+   "seconds": 6.8
   },
   {
    "id": "B-B1-definition-limit-removed",
@@ -2533,14 +2533,14 @@
      "        if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-B1-definition-limit-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-B1-definition-limit-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_definition_limit_and_response_budget (test_hamcp132_configuration_definitions.BudgetTests.test_definition_limit_and_response_budget)"
    ],
-   "seconds": 7.4
+   "seconds": 8.3
   },
   {
    "id": "B-B2-ui-entry-limit-removed",
@@ -2552,14 +2552,14 @@
      "        if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-B2-ui-entry-limit-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-B2-ui-entry-limit-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_ui_entry_limit (test_hamcp132_configuration_definitions.BudgetTests.test_ui_entry_limit)"
    ],
-   "seconds": 7.6
+   "seconds": 9.1
   },
   {
    "id": "B-B3-response-budget-removed",
@@ -2571,14 +2571,14 @@
      "            if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-B3-response-budget-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-B3-response-budget-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_budget_trims_ui_entries_after_definitions (test_hamcp132_configuration_definitions.BudgetTests.test_budget_trims_ui_entries_after_definitions)"
    ],
-   "seconds": 6.9
+   "seconds": 8.0
   },
   {
    "id": "B-B4-listed-count-stale",
@@ -2590,14 +2590,14 @@
      "                        if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-B4-listed-count-stale.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-B4-listed-count-stale.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_budget_trims_ui_entries_after_definitions (test_hamcp132_configuration_definitions.BudgetTests.test_budget_trims_ui_entries_after_definitions)"
    ],
-   "seconds": 7.0
+   "seconds": 8.0
   },
   {
    "id": "B-B5-trim-drops-everything",
@@ -2609,14 +2609,14 @@
      "    return len(rows)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-B5-trim-drops-everything.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-B5-trim-drops-everything.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_definition_limit_and_response_budget (test_hamcp132_configuration_definitions.BudgetTests.test_definition_limit_and_response_budget)"
    ],
-   "seconds": 7.3
+   "seconds": 8.2
   },
   {
    "id": "REVIEW-2-api-error-detail-db-url",
@@ -2628,14 +2628,14 @@
      "reason = str(exc.details[\"detail\"]) if \"detail\" in exc.details else (\"not_found\" if exc.details.get(\"status\") == 404 else \"command_failed\")"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/REVIEW-2-api-error-detail-db-url.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/REVIEW-2-api-error-detail-db-url.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_reviewer_api_error_detail_with_a_database_uri_is_never_echoed (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_reviewer_api_error_detail_with_a_database_uri_is_never_echoed)"
    ],
-   "seconds": 9.0
+   "seconds": 10.6
   },
   {
    "id": "B-X1-exit-withholding-removed",
@@ -2647,14 +2647,14 @@
      "withheld = 0"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-X1-exit-withholding-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-X1-exit-withholding-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_credential_shape_in_a_title_is_withheld (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_each_credential_shape_in_a_title_is_withheld)"
    ],
-   "seconds": 7.3
+   "seconds": 8.1
   },
   {
    "id": "B-X2-title-copied-without-credential-screening",
@@ -2666,14 +2666,14 @@
      "                kept[key] = child if key == \"title\" else walk(child, path + (key,))"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-X2-title-copied-without-credential-screening.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-X2-title-copied-without-credential-screening.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_credential_shape_in_a_title_is_withheld (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_each_credential_shape_in_a_title_is_withheld)"
    ],
-   "seconds": 7.6
+   "seconds": 9.4
   },
   {
    "id": "B-X3-credential-keys-kept",
@@ -2685,14 +2685,14 @@
      "                if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-X3-credential-keys-kept.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-X3-credential-keys-kept.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_predicate_and_walk (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_predicate_and_walk)"
    ],
-   "seconds": 8.7
+   "seconds": 10.5
   },
   {
    "id": "B-X4-connection-scheme-rule-removed",
@@ -2704,14 +2704,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-X4-connection-scheme-rule-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-X4-connection-scheme-rule-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_credential_shape_in_a_title_is_withheld (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_each_credential_shape_in_a_title_is_withheld)"
    ],
-   "seconds": 7.7
+   "seconds": 9.1
   },
   {
    "id": "B-X5-user-pass-host-rule-removed",
@@ -2723,14 +2723,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-X5-user-pass-host-rule-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-X5-user-pass-host-rule-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_credential_shape_in_a_title_is_withheld (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_each_credential_shape_in_a_title_is_withheld)"
    ],
-   "seconds": 7.4
+   "seconds": 8.1
   },
   {
    "id": "B-X6-password-field-rule-removed",
@@ -2738,18 +2738,18 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
-     "        or _PASSWORD_FIELD.search(text) is not None\n",
+     "        or password_field.search(text) is not None\n",
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-X6-password-field-rule-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-X6-password-field-rule-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_confusable_credential_in_a_definition_is_withheld (test_hamcp132_configuration_definitions.ConfusableDefinitionTests.test_confusable_credential_in_a_definition_is_withheld)"
    ],
-   "seconds": 7.7
+   "seconds": 9.2
   },
   {
    "id": "B-X7-userinfo-rule-removed",
@@ -2761,14 +2761,14 @@
      "        "
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-X7-userinfo-rule-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-X7-userinfo-rule-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_credential_shape_in_a_title_is_withheld (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_each_credential_shape_in_a_title_is_withheld)"
    ],
-   "seconds": 7.8
+   "seconds": 9.4
   },
   {
    "id": "B-X8-refused-canonicalization-passes",
@@ -2780,14 +2780,14 @@
      "        return False"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-X8-refused-canonicalization-passes.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-X8-refused-canonicalization-passes.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_predicate_and_walk (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_predicate_and_walk)"
    ],
-   "seconds": 8.8
+   "seconds": 10.3
   },
   {
    "id": "B-X9-withheld-report-left-complete",
@@ -2799,14 +2799,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-X9-withheld-report-left-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-X9-withheld-report-left-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_credential_shape_in_a_title_is_withheld (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_each_credential_shape_in_a_title_is_withheld)"
    ],
-   "seconds": 7.8
+   "seconds": 9.1
   },
   {
    "id": "B-R1-reverse-match-counts-registry-hits-only",
@@ -2818,14 +2818,14 @@
      "                    match = {\"method\": \"exact_unique_id\", \"confidence\": \"exact\",\n                             \"definition_ids\": [definition[\"definition_id\"]]}\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-R1-reverse-match-counts-registry-hits-only.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-R1-reverse-match-counts-registry-hits-only.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_reviewer_unquoted_on_is_never_an_exact_match (test_hamcp132_configuration_definitions.ParserDependentIdentityTests.test_reviewer_unquoted_on_is_never_an_exact_match)"
    ],
-   "seconds": 16.4
+   "seconds": 19.1
   },
   {
    "id": "B-R2-several-registry-hits-guessed",
@@ -2837,14 +2837,14 @@
      "                if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-R2-several-registry-hits-guessed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-R2-several-registry-hits-guessed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_several_registry_rows_for_one_definition_are_ambiguous (test_hamcp132_configuration_definitions.ReverseMatchAmbiguityTests.test_several_registry_rows_for_one_definition_are_ambiguous)"
    ],
-   "seconds": 17.1
+   "seconds": 20.2
   },
   {
    "id": "B-Y1-dependent-unique-id-indexed-exact",
@@ -2856,14 +2856,14 @@
      "                    if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-Y1-dependent-unique-id-indexed-exact.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-Y1-dependent-unique-id-indexed-exact.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_reviewer_unquoted_on_is_never_an_exact_match (test_hamcp132_configuration_definitions.ParserDependentIdentityTests.test_reviewer_unquoted_on_is_never_an_exact_match)"
    ],
-   "seconds": 16.2
+   "seconds": 19.4
   },
   {
    "id": "B-Y2-dependent-unique-id-not-marked",
@@ -2875,14 +2875,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-Y2-dependent-unique-id-not-marked.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-Y2-dependent-unique-id-not-marked.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_block_and_entity_unique_ids_combine (test_hamcp132_configuration_definitions.ParserDependentIdentityTests.test_block_and_entity_unique_ids_combine)"
    ],
-   "seconds": 16.2
+   "seconds": 19.3
   },
   {
    "id": "B-Y3-dependent-name-derives-entity-id",
@@ -2894,14 +2894,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-Y3-dependent-name-derives-entity-id.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-Y3-dependent-name-derives-entity-id.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_dependent_names_and_keys_derive_no_entity_id (test_hamcp132_configuration_definitions.ParserDependentIdentityTests.test_dependent_names_and_keys_derive_no_entity_id)"
    ],
-   "seconds": 16.2
+   "seconds": 19.1
   },
   {
    "id": "B-Y4-parser-dependence-not-checked",
@@ -2913,14 +2913,14 @@
      "return False"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-Y4-parser-dependence-not-checked.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-Y4-parser-dependence-not-checked.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_dependent_names_and_keys_derive_no_entity_id (test_hamcp132_configuration_definitions.ParserDependentIdentityTests.test_dependent_names_and_keys_derive_no_entity_id)"
    ],
-   "seconds": 16.2
+   "seconds": 19.7
   },
   {
    "id": "B-Y5-yaml11-reading-not-registered",
@@ -2932,14 +2932,14 @@
      "    for reading in ():"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-Y5-yaml11-reading-not-registered.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-Y5-yaml11-reading-not-registered.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_block_and_entity_unique_ids_combine (test_hamcp132_configuration_definitions.ParserDependentIdentityTests.test_block_and_entity_unique_ids_combine)"
    ],
-   "seconds": 16.3
+   "seconds": 19.2
   },
   {
    "id": "B-Y6-parser-dependence-not-disclosed",
@@ -2951,14 +2951,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-Y6-parser-dependence-not-disclosed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-Y6-parser-dependence-not-disclosed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_coverage_discloses_the_rule (test_hamcp132_configuration_definitions.ParserDependentIdentityTests.test_coverage_discloses_the_rule)"
    ],
-   "seconds": 16.0
+   "seconds": 18.7
   },
   {
    "id": "B-E1-absence-claimed-with-yaml-gap",
@@ -2970,14 +2970,14 @@
      "            if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-E1-absence-claimed-with-yaml-gap.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-E1-absence-claimed-with-yaml-gap.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_blueprint_block_makes_absence_undetermined (test_hamcp132_configuration_definitions.BlueprintGapTests.test_blueprint_block_makes_absence_undetermined)"
    ],
-   "seconds": 6.6
+   "seconds": 7.0
   },
   {
    "id": "B-E2-failed-yaml-path-not-a-gap",
@@ -2989,14 +2989,14 @@
      "            if False:\n                yaml_gaps.append("
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-E2-failed-yaml-path-not-a-gap.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-E2-failed-yaml-path-not-a-gap.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_every_unread_yaml_source_blocks_absence (test_hamcp132_configuration_definitions.DiagnosisEvidenceTests.test_every_unread_yaml_source_blocks_absence)"
    ],
-   "seconds": 13.2
+   "seconds": 15.5
   },
   {
    "id": "B-E3-whole-path-include-not-a-gap",
@@ -3008,14 +3008,14 @@
      "            pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-E3-whole-path-include-not-a-gap.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-E3-whole-path-include-not-a-gap.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_every_unread_yaml_source_blocks_absence (test_hamcp132_configuration_definitions.DiagnosisEvidenceTests.test_every_unread_yaml_source_blocks_absence)"
    ],
-   "seconds": 13.1
+   "seconds": 15.5
   },
   {
    "id": "B-E4-packages-not-a-gap",
@@ -3027,14 +3027,14 @@
      "            pass"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-E4-packages-not-a-gap.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-E4-packages-not-a-gap.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_every_unread_yaml_source_blocks_absence (test_hamcp132_configuration_definitions.DiagnosisEvidenceTests.test_every_unread_yaml_source_blocks_absence)"
    ],
-   "seconds": 13.6
+   "seconds": 15.6
   },
   {
    "id": "B-E5-unreadable-ui-definition-entity-level",
@@ -3046,14 +3046,14 @@
      "    if False:\n        # A UI definition"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-E5-unreadable-ui-definition-entity-level.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-E5-unreadable-ui-definition-entity-level.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_reviewer_unreadable_ui_definition_is_never_entity_level (test_hamcp132_configuration_definitions.DiagnosisEvidenceTests.test_reviewer_unreadable_ui_definition_is_never_entity_level)"
    ],
-   "seconds": 13.3
+   "seconds": 15.5
   },
   {
    "id": "B-E6-unextracted-dependencies-entity-level",
@@ -3065,14 +3065,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-E6-unextracted-dependencies-entity-level.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-E6-unextracted-dependencies-entity-level.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_unextracted_template_dependencies_are_never_entity_level (test_hamcp132_configuration_definitions.DiagnosisEvidenceTests.test_unextracted_template_dependencies_are_never_entity_level)"
    ],
-   "seconds": 13.3
+   "seconds": 15.7
   },
   {
    "id": "B-V1-state-type-guard-removed",
@@ -3084,14 +3084,14 @@
      "            if False:\n                states[entity_id] = diagnosis.INVALID"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-V1-state-type-guard-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-V1-state-type-guard-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_malformed_dependency_state (test_hamcp132_configuration_definitions.MalformedSourceValueTests.test_malformed_dependency_state)"
    ],
-   "seconds": 15.6
+   "seconds": 18.4
   },
   {
    "id": "B-V2-registry-disabled-by-guard-removed",
@@ -3103,14 +3103,14 @@
      "if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-V2-registry-disabled-by-guard-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-V2-registry-disabled-by-guard-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_malformed_registry_disabled_by (test_hamcp132_configuration_definitions.MalformedSourceValueTests.test_malformed_registry_disabled_by)"
    ],
-   "seconds": 15.5
+   "seconds": 18.0
   },
   {
    "id": "B-V3-entry-state-guard-removed",
@@ -3122,14 +3122,14 @@
      "\"state\": state if state in ENTRY_STATES else \"unrecognized\","
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-V3-entry-state-guard-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-V3-entry-state-guard-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_malformed_component_entry (test_hamcp132_configuration_definitions.MalformedSourceValueTests.test_malformed_component_entry)"
    ],
-   "seconds": 16.0
+   "seconds": 18.1
   },
   {
    "id": "B-V4-projection-error-aborts",
@@ -3141,14 +3141,14 @@
      "except ():"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-V4-projection-error-aborts.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-V4-projection-error-aborts.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_a_projection_error_is_that_source_only (test_hamcp132_configuration_definitions.MalformedSourceValueTests.test_a_projection_error_is_that_source_only)"
    ],
-   "seconds": 15.4
+   "seconds": 17.9
   },
   {
    "id": "B-V5-malformed-item-left-complete",
@@ -3160,14 +3160,14 @@
      "        if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-V5-malformed-item-left-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-V5-malformed-item-left-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_malformed_component_entry (test_hamcp132_configuration_definitions.MalformedSourceValueTests.test_malformed_component_entry)"
    ],
-   "seconds": 15.3
+   "seconds": 18.2
   },
   {
    "id": "B-V6-invalid-state-diagnosed",
@@ -3179,14 +3179,14 @@
      "    if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-V6-invalid-state-diagnosed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-V6-invalid-state-diagnosed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_malformed_state_values (test_hamcp132_configuration_definitions.MalformedSourceValueTests.test_malformed_state_values)"
    ],
-   "seconds": 15.4
+   "seconds": 18.0
   },
   {
    "id": "B-V7-invalid-component-entry-classified",
@@ -3198,14 +3198,14 @@
      "if False and not any("
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B-V7-invalid-component-entry-classified.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B-V7-invalid-component-entry-classified.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_malformed_component_entry (test_hamcp132_configuration_definitions.MalformedSourceValueTests.test_malformed_component_entry)"
    ],
-   "seconds": 15.2
+   "seconds": 18.1
   },
   {
    "id": "DELTA-REVIEW-1-omission-credential-bypass",
@@ -3217,14 +3217,14 @@
      "                kept[key] = child if key == \"omissions\" else walk(child, path + (key,))"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/DELTA-REVIEW-1-omission-credential-bypass.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/DELTA-REVIEW-1-omission-credential-bypass.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_omission_text_is_never_itself_an_item (test_hamcp132_configuration_definitions.WithheldCompletenessTests.test_omission_text_is_never_itself_an_item)"
    ],
-   "seconds": 18.2
+   "seconds": 24.2
   },
   {
    "id": "DELTA-REVIEW-2-known-secrets-dropped-from-withholding-only",
@@ -3236,14 +3236,14 @@
      "credentials.withhold(envelope, (), dropped)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/DELTA-REVIEW-2-known-secrets-dropped-from-withholding-only.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/DELTA-REVIEW-2-known-secrets-dropped-from-withholding-only.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_known_secret_in_a_definition_is_withheld_and_partial (test_hamcp132_configuration_definitions.CredentialTests.test_known_secret_in_a_definition_is_withheld_and_partial)"
    ],
-   "seconds": 9.0
+   "seconds": 10.2
   },
   {
    "id": "B2-T1-title-truncated-before-screening",
@@ -3255,14 +3255,14 @@
      "credentials.display_text(title[:c.MAX_TITLE], c.MAX_TITLE, known_secrets)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-T1-title-truncated-before-screening.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-T1-title-truncated-before-screening.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_entry_rows_keep_identity_and_state_only (test_hamcp132_configuration_definitions.CapabilityTests.test_entry_rows_keep_identity_and_state_only)"
    ],
-   "seconds": 7.9
+   "seconds": 9.1
   },
   {
    "id": "B2-T2-title-allowlist-bypassed",
@@ -3274,14 +3274,14 @@
      "(credentials.WITHHELD_MARKER if credentials.credential_text(title, known_secrets) else title)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-T2-title-allowlist-bypassed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-T2-title-allowlist-bypassed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_entry_rows_keep_identity_and_state_only (test_hamcp132_configuration_definitions.CapabilityTests.test_entry_rows_keep_identity_and_state_only)"
    ],
-   "seconds": 7.6
+   "seconds": 8.8
   },
   {
    "id": "B2-T3-allowlist-length-leg-removed",
@@ -3293,14 +3293,14 @@
      "    if (not _PRINTABLE_ASCII"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-T3-allowlist-length-leg-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-T3-allowlist-length-leg-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_entry_rows_keep_identity_and_state_only (test_hamcp132_configuration_definitions.CapabilityTests.test_entry_rows_keep_identity_and_state_only)"
    ],
-   "seconds": 7.7
+   "seconds": 8.8
   },
   {
    "id": "B2-T4-allowlist-printable-ascii-leg-removed",
@@ -3312,14 +3312,14 @@
      "\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-T4-allowlist-printable-ascii-leg-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-T4-allowlist-printable-ascii-leg-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_benign_non_ascii_titles_are_withheld_by_design (test_hamcp132_configuration_definitions.FreeTextAllowlistTests.test_benign_non_ascii_titles_are_withheld_by_design)"
    ],
-   "seconds": 13.6
+   "seconds": 16.9
   },
   {
    "id": "B2-T5-allowlist-at-sign-leg-removed",
@@ -3331,14 +3331,14 @@
      "            or \"://\" in value"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-T5-allowlist-at-sign-leg-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-T5-allowlist-at-sign-leg-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_allowlist_refusals_are_withheld_whole (test_hamcp132_configuration_definitions.FreeTextAllowlistTests.test_allowlist_refusals_are_withheld_whole)"
    ],
-   "seconds": 13.4
+   "seconds": 18.7
   },
   {
    "id": "B2-T6-allowlist-scheme-separator-leg-removed",
@@ -3350,14 +3350,14 @@
      " or _KEY_VALUE"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-T6-allowlist-scheme-separator-leg-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-T6-allowlist-scheme-separator-leg-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_allowlist_refusals_are_withheld_whole (test_hamcp132_configuration_definitions.FreeTextAllowlistTests.test_allowlist_refusals_are_withheld_whole)"
    ],
-   "seconds": 13.2
+   "seconds": 18.5
   },
   {
    "id": "B2-T7-allowlist-key-value-leg-removed",
@@ -3369,14 +3369,14 @@
      "):"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-T7-allowlist-key-value-leg-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-T7-allowlist-key-value-leg-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_allowlist_refusals_are_withheld_whole (test_hamcp132_configuration_definitions.FreeTextAllowlistTests.test_allowlist_refusals_are_withheld_whole)"
    ],
-   "seconds": 13.4
+   "seconds": 18.7
   },
   {
    "id": "B2-K1-case-varied-known-secret-missed",
@@ -3384,18 +3384,18 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
-     "        or any(secret and fold_confusables(secret.casefold()) in text for secret in known_secrets)\n",
-     ""
+     "    secrets = tuple(fold_confusables(secret.casefold()) for secret in known_secrets if secret)\n",
+     "    secrets = ()\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-K1-case-varied-known-secret-missed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-K1-case-varied-known-secret-missed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_known_secret_case_variants (test_hamcp132_configuration_definitions.FreeTextAllowlistTests.test_known_secret_case_variants)"
    ],
-   "seconds": 13.7
+   "seconds": 19.3
   },
   {
    "id": "B2-C1-confusable-fold-removed",
@@ -3407,14 +3407,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-C1-confusable-fold-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-C1-confusable-fold-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_confusable_credential_in_a_definition_is_withheld (test_hamcp132_configuration_definitions.ConfusableDefinitionTests.test_confusable_credential_in_a_definition_is_withheld)"
    ],
-   "seconds": 7.6
+   "seconds": 10.7
   },
   {
    "id": "B2-U1-unverifiable-text-left-complete",
@@ -3426,14 +3426,14 @@
      "            if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-U1-unverifiable-text-left-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-U1-unverifiable-text-left-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_config_entry_reason_text_is_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_config_entry_reason_text_is_withheld)"
    ],
-   "seconds": 8.9
+   "seconds": 12.5
   },
   {
    "id": "B2-G1-blueprint-not-a-gap",
@@ -3445,14 +3445,14 @@
      "        if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-G1-blueprint-not-a-gap.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-G1-blueprint-not-a-gap.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_blueprint_block_makes_absence_undetermined (test_hamcp132_configuration_definitions.BlueprintGapTests.test_blueprint_block_makes_absence_undetermined)"
    ],
-   "seconds": 6.6
+   "seconds": 7.8
   },
   {
    "id": "B2-I1-malformed-identity-accepted",
@@ -3464,14 +3464,14 @@
      "        if False:\n            identity = dict.fromkeys(identity)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-I1-malformed-identity-accepted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-I1-malformed-identity-accepted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_malformed_identity_is_invalid_and_never_matched (test_hamcp132_configuration_definitions.RegistryIdentityTests.test_malformed_identity_is_invalid_and_never_matched)"
    ],
-   "seconds": 17.0
+   "seconds": 24.0
   },
   {
    "id": "B2-I2-malformed-identity-matched",
@@ -3483,14 +3483,14 @@
      "        if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-I2-malformed-identity-matched.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-I2-malformed-identity-matched.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_malformed_identity_is_invalid_and_never_matched (test_hamcp132_configuration_definitions.RegistryIdentityTests.test_malformed_identity_is_invalid_and_never_matched)"
    ],
-   "seconds": 17.1
+   "seconds": 24.3
   },
   {
    "id": "B2-I3-null-identity-called-malformed",
@@ -3502,14 +3502,14 @@
      "malformed = any(not valid(identity[field])"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-I3-null-identity-called-malformed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-I3-null-identity-called-malformed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_ordinary_titles_are_preserved_and_complete (test_hamcp132_configuration_definitions.CredentialExitPointTests.test_ordinary_titles_are_preserved_and_complete)"
    ],
-   "seconds": 8.9
+   "seconds": 12.4
   },
   {
    "id": "B2-I4-reverse-match-hides-malformed-identity",
@@ -3521,14 +3521,14 @@
      "                elif False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-I4-reverse-match-hides-malformed-identity.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-I4-reverse-match-hides-malformed-identity.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_reverse_match_names_the_malformed_identity (test_hamcp132_configuration_definitions.RegistryIdentityTests.test_reverse_match_names_the_malformed_identity)"
    ],
-   "seconds": 17.5
+   "seconds": 24.1
   },
   {
    "id": "B2-I5-invalid-identity-diagnosed",
@@ -3540,14 +3540,14 @@
      "    if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B2-I5-invalid-identity-diagnosed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B2-I5-invalid-identity-diagnosed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_malformed_identity_is_invalid_and_never_matched (test_hamcp132_configuration_definitions.RegistryIdentityTests.test_malformed_identity_is_invalid_and_never_matched)"
    ],
-   "seconds": 17.0
+   "seconds": 24.1
   },
   {
    "id": "B3-H1-invisible-text-screened-not-withheld",
@@ -3559,14 +3559,14 @@
      "    return False\n    text = value\n    for _round in range(MAX_DECODE_ROUNDS):\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H1-invisible-text-screened-not-withheld.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H1-invisible-text-screened-not-withheld.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_every_withheld_name_form_derives_no_entity_id (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_every_withheld_name_form_derives_no_entity_id)"
    ],
-   "seconds": 12.5
+   "seconds": 16.8
   },
   {
    "id": "B3-H2-percent-decode-leg-removed",
@@ -3578,14 +3578,14 @@
      "        if True:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H2-percent-decode-leg-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H2-percent-decode-leg-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_invisible_category_is_unverifiable_literal_and_encoded (test_hamcp132_configuration_definitions.InvisibleTextTests.test_each_invisible_category_is_unverifiable_literal_and_encoded)"
    ],
-   "seconds": 14.0
+   "seconds": 19.2
   },
   {
    "id": "B3-H3-default-ignorable-ranges-removed",
@@ -3597,14 +3597,14 @@
      "    return False"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H3-default-ignorable-ranges-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H3-default-ignorable-ranges-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_invisible_category_is_unverifiable_literal_and_encoded (test_hamcp132_configuration_definitions.InvisibleTextTests.test_each_invisible_category_is_unverifiable_literal_and_encoded)"
    ],
-   "seconds": 14.6
+   "seconds": 19.4
   },
   {
    "id": "B3-H4-format-category-removed",
@@ -3616,14 +3616,14 @@
      "frozenset({\"Cc\", \"Cs\", \"Co\", \"Cn\", \"Zl\", \"Zp\"})"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H4-format-category-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H4-format-category-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_invisible_category_is_unverifiable_literal_and_encoded (test_hamcp132_configuration_definitions.InvisibleTextTests.test_each_invisible_category_is_unverifiable_literal_and_encoded)"
    ],
-   "seconds": 14.1
+   "seconds": 19.4
   },
   {
    "id": "B3-H5-control-category-removed",
@@ -3635,14 +3635,14 @@
      "frozenset({\"Cf\", \"Cs\", \"Co\", \"Cn\", \"Zl\", \"Zp\"})"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H5-control-category-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H5-control-category-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_invisible_category_is_unverifiable_literal_and_encoded (test_hamcp132_configuration_definitions.InvisibleTextTests.test_each_invisible_category_is_unverifiable_literal_and_encoded)"
    ],
-   "seconds": 14.1
+   "seconds": 19.1
   },
   {
    "id": "B3-H6-other-categories-removed",
@@ -3654,14 +3654,14 @@
      "frozenset({\"Cc\", \"Cf\"})"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H6-other-categories-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H6-other-categories-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_invisible_category_is_unverifiable_literal_and_encoded (test_hamcp132_configuration_definitions.InvisibleTextTests.test_each_invisible_category_is_unverifiable_literal_and_encoded)"
    ],
-   "seconds": 14.3
+   "seconds": 19.5
   },
   {
    "id": "B3-H7-ascii-control-check-removed",
@@ -3673,14 +3673,14 @@
      "        return False"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H7-ascii-control-check-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H7-ascii-control-check-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_each_invisible_category_is_unverifiable_literal_and_encoded (test_hamcp132_configuration_definitions.InvisibleTextTests.test_each_invisible_category_is_unverifiable_literal_and_encoded)"
    ],
-   "seconds": 14.6
+   "seconds": 19.7
   },
   {
    "id": "B3-H8-tab-and-newline-treated-as-invisible",
@@ -3692,14 +3692,14 @@
      "_ALLOWED_CONTROLS = frozenset()"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H8-tab-and-newline-treated-as-invisible.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H8-tab-and-newline-treated-as-invisible.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_benign_definitions_are_still_shown (test_hamcp132_configuration_definitions.InvisibleTextTests.test_benign_definitions_are_still_shown)"
    ],
-   "seconds": 14.1
+   "seconds": 19.3
   },
   {
    "id": "B3-H9-projection-value-leg-removed",
@@ -3711,14 +3711,14 @@
      "        if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H9-projection-value-leg-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H9-projection-value-leg-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_reviewer_twelve_leak_cases_are_withheld_unverifiable (test_hamcp132_configuration_definitions.InvisibleTextTests.test_reviewer_twelve_leak_cases_are_withheld_unverifiable)"
    ],
-   "seconds": 15.4
+   "seconds": 21.1
   },
   {
    "id": "B3-H10-projection-key-leg-removed",
@@ -3730,14 +3730,14 @@
      "                if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H10-projection-key-leg-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H10-projection-key-leg-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_invisible_nested_key_is_dropped (test_hamcp132_configuration_definitions.InvisibleTextTests.test_invisible_nested_key_is_dropped)"
    ],
-   "seconds": 14.8
+   "seconds": 19.8
   },
   {
    "id": "B3-H11-exit-string-leg-removed",
@@ -3749,14 +3749,14 @@
      "            if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H11-exit-string-leg-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H11-exit-string-leg-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_point_withholds_invisible_strings_and_keys (test_hamcp132_configuration_definitions.InvisibleTextTests.test_exit_point_withholds_invisible_strings_and_keys)"
    ],
-   "seconds": 14.8
+   "seconds": 20.1
   },
   {
    "id": "B3-H12-exit-key-leg-removed",
@@ -3768,14 +3768,14 @@
      "                if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H12-exit-key-leg-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H12-exit-key-leg-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_point_invisible_key_alone_is_unverifiable (test_hamcp132_configuration_definitions.InvisibleTextTests.test_exit_point_invisible_key_alone_is_unverifiable)"
    ],
-   "seconds": 14.6
+   "seconds": 19.7
   },
   {
    "id": "B3-H13-dropped-invisible-key-left-complete",
@@ -3787,14 +3787,14 @@
      ")"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-H13-dropped-invisible-key-left-complete.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-H13-dropped-invisible-key-left-complete.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_point_invisible_key_alone_is_unverifiable (test_hamcp132_configuration_definitions.InvisibleTextTests.test_exit_point_invisible_key_alone_is_unverifiable)"
    ],
-   "seconds": 14.8
+   "seconds": 20.8
   },
   {
    "id": "B3-M1-final-envelope-withheld-scan-removed",
@@ -3806,14 +3806,14 @@
      "            if False:\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-M1-final-envelope-withheld-scan-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-M1-final-envelope-withheld-scan-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_database_url_inside_allowlisted_text_is_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_database_url_inside_allowlisted_text_is_withheld)"
    ],
-   "seconds": 9.0
+   "seconds": 12.7
   },
   {
    "id": "B3-M2-withheld-dict-form-ignored",
@@ -3825,14 +3825,14 @@
      "        return (False"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-M2-withheld-dict-form-ignored.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-M2-withheld-dict-form-ignored.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_database_url_inside_allowlisted_text_is_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_database_url_inside_allowlisted_text_is_withheld)"
    ],
-   "seconds": 8.9
+   "seconds": 12.3
   },
   {
    "id": "B3-M3-withheld-marker-string-ignored",
@@ -3844,14 +3844,14 @@
      "        return False"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-M3-withheld-marker-string-ignored.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-M3-withheld-marker-string-ignored.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_point_withholds_invisible_strings_and_keys (test_hamcp132_configuration_definitions.InvisibleTextTests.test_exit_point_withholds_invisible_strings_and_keys)"
    ],
-   "seconds": 14.7
+   "seconds": 20.9
   },
   {
    "id": "B3-M4-dropped-keys-ignored",
@@ -3863,14 +3863,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-M4-dropped-keys-ignored.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-M4-dropped-keys-ignored.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_exit_point_invisible_key_alone_is_unverifiable (test_hamcp132_configuration_definitions.InvisibleTextTests.test_exit_point_invisible_key_alone_is_unverifiable)"
    ],
-   "seconds": 15.3
+   "seconds": 20.3
   },
   {
    "id": "B3-M5-withheld-items-unbounded",
@@ -3882,14 +3882,14 @@
      "names"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-M5-withheld-items-unbounded.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-M5-withheld-items-unbounded.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_withheld_items_are_bounded (test_hamcp132_configuration_definitions.WithheldCompletenessTests.test_withheld_items_are_bounded)"
    ],
-   "seconds": 18.4
+   "seconds": 28.2
   },
   {
    "id": "B3-M6-omission-text-scanned-as-items",
@@ -3901,14 +3901,14 @@
      "        scan(child, (key,))"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-M6-omission-text-scanned-as-items.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-M6-omission-text-scanned-as-items.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_omission_text_is_never_itself_an_item (test_hamcp132_configuration_definitions.WithheldCompletenessTests.test_omission_text_is_never_itself_an_item)"
    ],
-   "seconds": 18.0
+   "seconds": 28.5
   },
   {
    "id": "B3-M7-complete-ignores-withheld-items",
@@ -3920,14 +3920,14 @@
      "envelope[\"complete\"] = not omissions and all("
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-M7-complete-ignores-withheld-items.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-M7-complete-ignores-withheld-items.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_database_url_inside_allowlisted_text_is_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_database_url_inside_allowlisted_text_is_withheld)"
    ],
-   "seconds": 9.1
+   "seconds": 12.3
   },
   {
    "id": "B3-M8-withheld-items-not-listed",
@@ -3939,14 +3939,14 @@
      "listed = list(omissions)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B3-M8-withheld-items-not-listed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B3-M8-withheld-items-not-listed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_database_url_inside_allowlisted_text_is_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_database_url_inside_allowlisted_text_is_withheld)"
    ],
-   "seconds": 9.0
+   "seconds": 12.5
   },
   {
    "id": "B4-P1-policy-allowlist-broadened-to-all-withheld-markers",
@@ -3958,14 +3958,14 @@
      "    not exempt, so it counts as withheld.\n    \"\"\"\n\n    return True\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P1-policy-allowlist-broadened-to-all-withheld-markers.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P1-policy-allowlist-broadened-to-all-withheld-markers.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_database_url_inside_allowlisted_text_is_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_database_url_inside_allowlisted_text_is_withheld)"
    ],
-   "seconds": 9.2
+   "seconds": 12.3
   },
   {
    "id": "B4-P2-allowlist-kind-check-removed",
@@ -3977,14 +3977,14 @@
      "(integration, path[3], c.DB_URL_POLICY_KIND) in POLICY_REDACTIONS"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P2-allowlist-kind-check-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P2-allowlist-kind-check-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_allowlist_is_exactly_the_sql_db_url (test_hamcp132_configuration_definitions.PolicyRedactionTests.test_allowlist_is_exactly_the_sql_db_url)"
    ],
-   "seconds": 16.5
+   "seconds": 23.1
   },
   {
    "id": "B4-P3-allowlist-integration-check-removed",
@@ -3996,14 +3996,14 @@
      "(c.POLICY_REDACTED_INTEGRATION, path[3], item[c.POLICY_REDACTION_KEY]) in POLICY_REDACTIONS"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P3-allowlist-integration-check-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P3-allowlist-integration-check-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_allowlist_is_exactly_the_sql_db_url (test_hamcp132_configuration_definitions.PolicyRedactionTests.test_allowlist_is_exactly_the_sql_db_url)"
    ],
-   "seconds": 16.4
+   "seconds": 23.2
   },
   {
    "id": "B4-P4-allowlist-field-check-removed",
@@ -4015,14 +4015,14 @@
      "(integration, \"db_url\", item[c.POLICY_REDACTION_KEY]) in POLICY_REDACTIONS"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P4-allowlist-field-check-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P4-allowlist-field-check-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_a_policy_marker_from_configuration_is_not_exempt (test_hamcp132_configuration_definitions.PolicyRedactionTests.test_a_policy_marker_from_configuration_is_not_exempt)"
    ],
-   "seconds": 16.5
+   "seconds": 22.8
   },
   {
    "id": "B4-P5-allowlist-path-depth-check-removed",
@@ -4034,14 +4034,14 @@
      "    if (len(path) < 4 or path[0]"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P5-allowlist-path-depth-check-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P5-allowlist-path-depth-check-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_allowlist_is_exactly_the_sql_db_url (test_hamcp132_configuration_definitions.PolicyRedactionTests.test_allowlist_is_exactly_the_sql_db_url)"
    ],
-   "seconds": 16.7
+   "seconds": 23.1
   },
   {
    "id": "B4-P6-allowlist-definitions-list-check-removed",
@@ -4053,14 +4053,14 @@
      "or type(path[1])"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P6-allowlist-definitions-list-check-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P6-allowlist-definitions-list-check-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_allowlist_is_exactly_the_sql_db_url (test_hamcp132_configuration_definitions.PolicyRedactionTests.test_allowlist_is_exactly_the_sql_db_url)"
    ],
-   "seconds": 16.4
+   "seconds": 22.5
   },
   {
    "id": "B4-P7-allowlist-fields-segment-check-removed",
@@ -4072,14 +4072,14 @@
      "            or type(path[3]) is not str):"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P7-allowlist-fields-segment-check-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P7-allowlist-fields-segment-check-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_allowlist_is_exactly_the_sql_db_url (test_hamcp132_configuration_definitions.PolicyRedactionTests.test_allowlist_is_exactly_the_sql_db_url)"
    ],
-   "seconds": 16.3
+   "seconds": 23.1
   },
   {
    "id": "B4-P8-allowlist-single-key-check-removed",
@@ -4091,14 +4091,14 @@
      "if type(item) is not dict or type("
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P8-allowlist-single-key-check-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P8-allowlist-single-key-check-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_allowlist_is_exactly_the_sql_db_url (test_hamcp132_configuration_definitions.PolicyRedactionTests.test_allowlist_is_exactly_the_sql_db_url)"
    ],
-   "seconds": 16.4
+   "seconds": 22.7
   },
   {
    "id": "B4-P9-allowlist-boolean-index-accepted",
@@ -4110,14 +4110,14 @@
      " or type(path[1]) not in (int, bool)\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P9-allowlist-boolean-index-accepted.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P9-allowlist-boolean-index-accepted.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_allowlist_is_exactly_the_sql_db_url (test_hamcp132_configuration_definitions.PolicyRedactionTests.test_allowlist_is_exactly_the_sql_db_url)"
    ],
-   "seconds": 16.6
+   "seconds": 23.6
   },
   {
    "id": "B4-P10-configured-policy-marker-not-withheld",
@@ -4129,14 +4129,14 @@
      ")"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P10-configured-policy-marker-not-withheld.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P10-configured-policy-marker-not-withheld.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_a_policy_marker_from_configuration_is_not_exempt (test_hamcp132_configuration_definitions.PolicyRedactionTests.test_a_policy_marker_from_configuration_is_not_exempt)"
    ],
-   "seconds": 16.5
+   "seconds": 23.2
   },
   {
    "id": "B4-P11-policy-marker-for-every-integration",
@@ -4148,14 +4148,14 @@
      "if key == \"db_url\":"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P11-policy-marker-for-every-integration.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P11-policy-marker-for-every-integration.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_db_url_and_credentials_withheld_in_every_position (test_hamcp132_configuration_definitions.CredentialTests.test_db_url_and_credentials_withheld_in_every_position)"
    ],
-   "seconds": 9.0
+   "seconds": 12.6
   },
   {
    "id": "B4-P12-sql-db-url-listed-as-withheld",
@@ -4167,14 +4167,14 @@
      "                    record[\"withheld\"].append(f\"{path}.{key}\")\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P12-sql-db-url-listed-as-withheld.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P12-sql-db-url-listed-as-withheld.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_database_url_inside_allowlisted_text_is_withheld (test_hamcp132_configuration_definitions.CredentialTests.test_database_url_inside_allowlisted_text_is_withheld)"
    ],
-   "seconds": 9.4
+   "seconds": 13.2
   },
   {
    "id": "B4-P13-sql-db-url-value-copied",
@@ -4186,14 +4186,14 @@
      "                    fields[key] = value\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B4-P13-sql-db-url-value-copied.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B4-P13-sql-db-url-value-copied.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_definition_limit_and_response_budget (test_hamcp132_configuration_definitions.BudgetTests.test_definition_limit_and_response_budget)"
    ],
-   "seconds": 7.8
+   "seconds": 10.5
   },
   {
    "id": "B5-N1-entity-id-derived-from-withheld-name",
@@ -4205,14 +4205,14 @@
      "        elif False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-N1-entity-id-derived-from-withheld-name.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-N1-entity-id-derived-from-withheld-name.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_core_observed_entity_id_is_shown_when_the_name_is_withheld (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_core_observed_entity_id_is_shown_when_the_name_is_withheld)"
    ],
-   "seconds": 12.7
+   "seconds": 17.5
   },
   {
    "id": "B5-N2-withheld-name-listed-but-id-derived",
@@ -4224,14 +4224,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-N2-withheld-name-listed-but-id-derived.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-N2-withheld-name-listed-but-id-derived.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_core_observed_entity_id_is_shown_when_the_name_is_withheld (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_core_observed_entity_id_is_shown_when_the_name_is_withheld)"
    ],
-   "seconds": 12.5
+   "seconds": 17.5
   },
   {
    "id": "B5-N3-withheld-name-not-listed",
@@ -4243,14 +4243,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-N3-withheld-name-not-listed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-N3-withheld-name-not-listed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_core_observed_entity_id_is_shown_when_the_name_is_withheld (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_core_observed_entity_id_is_shown_when_the_name_is_withheld)"
    ],
-   "seconds": 12.4
+   "seconds": 16.8
   },
   {
    "id": "B5-U1-unique-id-guard-removed",
@@ -4262,14 +4262,14 @@
      "        if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-U1-unique-id-guard-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-U1-unique-id-guard-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_withheld_tariff_withholds_only_its_own_entity (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_withheld_tariff_withholds_only_its_own_entity)"
    ],
-   "seconds": 13.0
+   "seconds": 16.9
   },
   {
    "id": "B5-U2-withheld-unique-id-not-listed",
@@ -4281,14 +4281,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-U2-withheld-unique-id-not-listed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-U2-withheld-unique-id-not-listed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_withheld_tariff_withholds_only_its_own_entity (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_withheld_tariff_withholds_only_its_own_entity)"
    ],
-   "seconds": 13.1
+   "seconds": 16.8
   },
   {
    "id": "B5-U3-template-block-unique-id-input-dropped",
@@ -4300,14 +4300,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-U3-template-block-unique-id-input-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-U3-template-block-unique-id-input-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_withheld_unique_id_inputs_generate_no_unique_id (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_withheld_unique_id_inputs_generate_no_unique_id)"
    ],
-   "seconds": 13.0
+   "seconds": 16.9
   },
   {
    "id": "B5-U4-tariff-unique-id-input-dropped",
@@ -4319,14 +4319,14 @@
      "uid_inputs=(raw_uid,))"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-U4-tariff-unique-id-input-dropped.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-U4-tariff-unique-id-input-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_withheld_tariff_withholds_only_its_own_entity (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_withheld_tariff_withholds_only_its_own_entity)"
    ],
-   "seconds": 13.1
+   "seconds": 17.1
   },
   {
    "id": "B5-X1-projection-leg-of-input-check-removed",
@@ -4338,14 +4338,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-X1-projection-leg-of-input-check-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-X1-projection-leg-of-input-check-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_every_withheld_name_form_derives_no_entity_id (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_every_withheld_name_form_derives_no_entity_id)"
    ],
-   "seconds": 12.9
+   "seconds": 16.0
   },
   {
    "id": "B5-X2-sanitizer-leg-of-exit-check-removed",
@@ -4357,14 +4357,14 @@
      "    result = None\n    return False and bool("
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-X2-sanitizer-leg-of-exit-check-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-X2-sanitizer-leg-of-exit-check-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_every_withheld_name_form_derives_no_entity_id (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_every_withheld_name_form_derives_no_entity_id)"
    ],
-   "seconds": 12.4
+   "seconds": 15.3
   },
   {
    "id": "B5-X3-known-secrets-dropped-from-input-check",
@@ -4376,14 +4376,14 @@
      "any(withheld_at_exit(text)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-X3-known-secrets-dropped-from-input-check.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-X3-known-secrets-dropped-from-input-check.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_every_withheld_name_form_derives_no_entity_id (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_every_withheld_name_form_derives_no_entity_id)"
    ],
-   "seconds": 12.3
+   "seconds": 14.6
   },
   {
    "id": "B5-X4-known-secrets-not-passed-to-collector",
@@ -4395,14 +4395,14 @@
      "Definitions(envelopes)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-X4-known-secrets-not-passed-to-collector.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-X4-known-secrets-not-passed-to-collector.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_every_withheld_name_form_derives_no_entity_id (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_every_withheld_name_form_derives_no_entity_id)"
    ],
-   "seconds": 12.6
+   "seconds": 15.4
   },
   {
    "id": "B5-D1-dependencies-read-from-withheld-value",
@@ -4414,14 +4414,14 @@
      "record[\"withheld\"].append(f\"{record['definition_id']}.dependencies\")\n"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-D1-dependencies-read-from-withheld-value.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-D1-dependencies-read-from-withheld-value.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_withheld_dependency_value_is_not_read_for_entity_ids (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_withheld_dependency_value_is_not_read_for_entity_ids)"
    ],
-   "seconds": 12.8
+   "seconds": 15.5
   },
   {
    "id": "B5-D2-dependencies-withheld-flag-not-set",
@@ -4433,14 +4433,14 @@
      ""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-D2-dependencies-withheld-flag-not-set.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-D2-dependencies-withheld-flag-not-set.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_withheld_dependency_value_is_not_read_for_entity_ids (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_withheld_dependency_value_is_not_read_for_entity_ids)"
    ],
-   "seconds": 13.1
+   "seconds": 15.6
   },
   {
    "id": "B5-D3-diagnosis-dependency-guard-removed",
@@ -4452,14 +4452,14 @@
      "    if False:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-D3-diagnosis-dependency-guard-removed.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-D3-diagnosis-dependency-guard-removed.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_withheld_dependency_value_is_not_read_for_entity_ids (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_withheld_dependency_value_is_not_read_for_entity_ids)"
    ],
-   "seconds": 13.3
+   "seconds": 15.7
   },
   {
    "id": "B5-K1-withheld-key-kept-in-definition-id",
@@ -4471,14 +4471,14 @@
      "        if False:\n            path = f\"{prefix}[{position}]\""
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-K1-withheld-key-kept-in-definition-id.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-K1-withheld-key-kept-in-definition-id.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "ERROR test_withheld_keys_leave_no_definition_id_or_entity_id (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_withheld_keys_leave_no_definition_id_or_entity_id)"
    ],
-   "seconds": 13.0
+   "seconds": 15.7
   },
   {
    "id": "B5-L1-withheld-legacy-name-matched",
@@ -4490,14 +4490,14 @@
      "        if type(name) is not str:"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-L1-withheld-legacy-name-matched.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-L1-withheld-legacy-name-matched.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_withheld_legacy_name_is_never_a_candidate (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_withheld_legacy_name_is_never_a_candidate)"
    ],
-   "seconds": 13.1
+   "seconds": 15.6
   },
   {
    "id": "B5-S1-internal-keys-rendered",
@@ -4509,14 +4509,14 @@
      "_INTERNAL_KEYS = (\"dependencies\",)"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B5-S1-internal-keys-rendered.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B5-S1-internal-keys-rendered.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_withheld_dependency_value_is_not_read_for_entity_ids (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_withheld_dependency_value_is_not_read_for_entity_ids)"
    ],
-   "seconds": 13.0
+   "seconds": 15.5
   },
   {
    "id": "B6-O1-core-observed-entity-id-withheld",
@@ -4528,14 +4528,166 @@
      "result.update(entity_id=None if expected.get(\"derivation_limit\") == \"derived_entity_id_withheld\" else hits[0], method=match[\"method\"],"
     ]
    ],
-   "log_path": "/home/josh/hamcp132-work/mut32/mutation-logs/B6-O1-core-observed-entity-id-withheld.log",
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B6-O1-core-observed-entity-id-withheld.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
     "FAIL test_core_observed_entity_id_is_shown_when_the_name_is_withheld (test_hamcp132_configuration_definitions.DerivedValueWithholdingTests.test_core_observed_entity_id_is_shown_when_the_name_is_withheld)"
    ],
-   "seconds": 12.8
+   "seconds": 14.9
+  },
+  {
+   "id": "B7-W1-squashed-form-screening-removed",
+   "design_item": "final32 review: whitespace inside a credential is screened in the squashed form",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    return (_credential_form(text, secrets, _PASSWORD_FIELD)\n            or _credential_form(squash(text), tuple(squash(secret) for secret in secrets),\n                                _SQUASHED_PASSWORD_FIELD))\n",
+     "    return _credential_form(text, secrets, _PASSWORD_FIELD)\n"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B7-W1-squashed-form-screening-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_colon_then_an_at_sign_across_whitespace_is_withheld_by_design (test_hamcp132_configuration_definitions.SquashedFormTests.test_a_colon_then_an_at_sign_across_whitespace_is_withheld_by_design)"
+   ],
+   "seconds": 18.6
+  },
+  {
+   "id": "B7-W2-squash-removes-spaces-only",
+   "design_item": "final32 review: whitespace inside a credential is screened in the squashed form",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    return \"\".join(character for character in text if not character.isspace())",
+     "    return text.replace(\" \", \"\")"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B7-W2-squash-removes-spaces-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_colon_then_an_at_sign_across_whitespace_is_withheld_by_design (test_hamcp132_configuration_definitions.SquashedFormTests.test_a_colon_then_an_at_sign_across_whitespace_is_withheld_by_design)"
+   ],
+   "seconds": 21.1
+  },
+  {
+   "id": "B7-W3-squash-removes-ascii-whitespace-only",
+   "design_item": "final32 review: whitespace inside a credential is screened in the squashed form",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    return \"\".join(character for character in text if not character.isspace())",
+     "    return \"\".join(character for character in text if character not in \" \\t\\n\\r\\f\\v\")"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B7-W3-squash-removes-ascii-whitespace-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_spaces_and_unicode_whitespace_inside_a_credential_are_withheld (test_hamcp132_configuration_definitions.SquashedFormTests.test_spaces_and_unicode_whitespace_inside_a_credential_are_withheld)"
+   ],
+   "seconds": 24.2
+  },
+  {
+   "id": "B7-W4-squash-keeps-line-controls",
+   "design_item": "final32 review: whitespace inside a credential is screened in the squashed form",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    return \"\".join(character for character in text if not character.isspace())",
+     "    return \"\".join(character for character in text if character in \"\\t\\n\\r\" or not character.isspace())"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B7-W4-squash-keeps-line-controls.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_colon_then_an_at_sign_across_whitespace_is_withheld_by_design (test_hamcp132_configuration_definitions.SquashedFormTests.test_a_colon_then_an_at_sign_across_whitespace_is_withheld_by_design)"
+   ],
+   "seconds": 22.3
+  },
+  {
+   "id": "B7-W5-squashed-form-read-before-decoding",
+   "design_item": "final32 review: whitespace inside a credential is screened in the squashed form",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "            or _credential_form(squash(text), tuple(",
+     "            or _credential_form(squash(value.casefold()), tuple("
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B7-W5-squashed-form-read-before-decoding.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_known_secret_split_by_whitespace_is_withheld (test_hamcp132_configuration_definitions.SquashedFormTests.test_a_known_secret_split_by_whitespace_is_withheld)"
+   ],
+   "seconds": 22.1
+  },
+  {
+   "id": "B7-W6-squashed-known-secrets-dropped",
+   "design_item": "final32 review: whitespace inside a credential is screened in the squashed form",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "tuple(squash(secret) for secret in secrets),",
+     "(),"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B7-W6-squashed-known-secrets-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_known_secret_split_by_whitespace_is_withheld (test_hamcp132_configuration_definitions.SquashedFormTests.test_a_known_secret_split_by_whitespace_is_withheld)"
+   ],
+   "seconds": 20.5
+  },
+  {
+   "id": "B7-W7-squashed-password-field-needs-a-word-boundary",
+   "design_item": "final32 review: whitespace inside a credential is screened in the squashed form",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "                                _SQUASHED_PASSWORD_FIELD))",
+     "                                _PASSWORD_FIELD))"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B7-W7-squashed-password-field-needs-a-word-boundary.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_core_free_text_with_a_space_split_credential_is_withheld (test_hamcp132_configuration_definitions.SquashedFormTests.test_core_free_text_with_a_space_split_credential_is_withheld)"
+   ],
+   "seconds": 21.8
+  },
+  {
+   "id": "B7-W8-whitespace-text-withheld-outright",
+   "design_item": "final32 review: whitespace inside a credential is screened in the squashed form",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    return \"\".join(character for character in text if not character.isspace())",
+     "    return text if not any(character.isspace() for character in text) else _MARKER_FOLDED"
+    ]
+   ],
+   "log_path": "/home/josh/hamcp132-work/mut-corr6/mutation-logs/B7-W8-whitespace-text-withheld-outright.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_budget_trims_ui_entries_after_definitions (test_hamcp132_configuration_definitions.BudgetTests.test_budget_trims_ui_entries_after_definitions)"
+   ],
+   "seconds": 7.2
   }
  ]
 }
