@@ -180,6 +180,23 @@ must still fail strict verification and still be retryable with the same
 diagnostic. The baseline-export and dashboard (Core 2026.9.4) lanes use the same
 rule and helper.
 
+The dashboard lane keeps each window as files beside its case receipt
+(`<case>-observation.json` and `<case>-wire.json`, plus
+`<case>-discarded-observation.json` and `<case>-discarded-wire.json` for a
+discarded window). Each receipt records the SHA-256 of every one of its windows,
+taken from the window in memory. Before `acceptance.json` is written,
+`verify_retained_windows` reloads them (HAMCP-219 review 2):
+
+- every case of the fixed sequence has a receipt;
+- every window is present and matches its digest;
+- no window file lacks a receipt;
+- every window has its own observer interval;
+- each kept window verifies strictly with the live check (`verify_case_window`);
+  and
+- each discarded window goes through the shared `verify_discarded`.
+
+Missing, altered or inconsistent evidence fails the run.
+
 An event for an unnamed store carries a `store_class` from a fixed vocabulary
 that the observer and the client share:
 
