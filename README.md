@@ -4,8 +4,9 @@ Engineering **2.4.1-beta.32** corrects `get_incident_logs` entry times
 (HAMCP-220). Supervisor 2026.10.3 writes log times in Home Assistant's local
 time without an offset, and earlier betas read them as UTC. Each call now
 reads Home Assistant's configured zone from Core's `/api/config`, under the
-tool's own read lease. Each page's first entry takes its exact UTC journal
-time, which confirms the zone. An unreadable zone reads no journal, so while
+tool's own read lease, before and again after its journal reads; a zone that
+changed or cannot be read again withholds what was read. Each page's first
+entry takes its exact UTC journal time, which confirms the zone. An unreadable zone reads no journal, so while
 Core is down the tool returns no entries; it never assumes the add-on's `TZ`
 or UTC. Any zone disagreement makes the read partial with `zone_mismatch`.
 DST-ambiguous or nonexistent times are resolved exactly within the request

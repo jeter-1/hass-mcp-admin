@@ -297,12 +297,14 @@ class TimeBasisServiceCases(TimeBasisServiceTests):
         self.assertEqual(stamps[0], "2026-10-22T11:30:00.000Z")
         self.assertEqual(first["time_basis"], {
             "preferred": "journal_realtime_utc", "time_zone": CHICAGO,
-            "time_zone_source": c.TIME_ZONE_SOURCE, "time_zone_status": "loaded", "time_zone_reads": 1,
+            "time_zone_source": c.TIME_ZONE_SOURCE, "time_zone_status": "loaded", "time_zone_reads": 2,
+            "time_zone_after_read": CHICAGO, "time_zone_after_read_status": "agrees",
             "addon_time_zone": CHICAGO, "addon_time_zone_source": c.ADDON_TIME_ZONE_SOURCE,
             "addon_time_zone_status": "agrees", "uncertain_entries": 0, "ordering_uncertain_entries": 0,
         })
-        # Home Assistant's zone is read from Core once per call.
-        self.assertEqual(self.zone_reads, len(pages))
+        # Home Assistant's zone is read from Core before and after each call's
+        # journal reads (review 2 H1).
+        self.assertEqual(self.zone_reads, 2 * len(pages))
         bases = {entry["ts_basis"] for page in pages for entry in page["entries"]}
         # Each page's first entry is its already-read anchor (exact from the
         # cursor realtime, which calibrated the page); returned rows are text.
@@ -862,6 +864,180 @@ class TimeBasisServiceCases(TimeBasisServiceTests):
                          ("timestamp_basis_mismatch", 0, False))
         self.assertEqual(row["zone_mismatch"]["reason"], "entry_realtime_disagrees")
 
+    # Review 2 H1: Home Assistant's zone changes while the journal is read.
+
+    def change_zone_before(self, request: int, zone: str | None, *, render: bool = True) -> None:
+        """Core's /api/config (and, with ``render``, Supervisor's rendering) moves to
+        ``zone`` before journal ``request`` is answered: after this call's first read."""
+
+        reads = self.zone_reads
+
+        def change(sim):
+            self.ha_zone[0] = zone
+            if render:
+                sim.zone = zone
+            self.changed_after_reads = self.zone_reads - reads
+        self.sim.mutate_before[request] = change
+
+    def assert_withheld(self, page: dict, keys: list[str], reason: str) -> None:
+        self.assertEqual((page["returned"], page["entries"], page["complete"], page["completeness"]),
+                         (0, [], False, "partial"))
+        self.assertTrue(page["has_more"])
+        self.assertEqual(page["time_basis"]["time_zone_reads"], 2)
+        self.assertEqual(page["time_basis"]["time_zone_after_read_status"], reason)
+        for key in keys:
+            row = self.source(page, key)
+            self.assertGreater(row["requests"], 0)
+            self.assertEqual((row["status"], row["reason"], row["zone_unbound"]), ("partial", reason, reason))
+            self.assertIn(f"{reason}:{key}", page["omissions"])
+            # No time read in either zone is published.
+            for name in ("earliest_available", "latest_available", "scanned_from", "scanned_to"):
+                self.assertIsNone(row[name], name)
+            self.assertEqual((row["gaps"], row["entries_consumed"], row["finished"]), ([], 0, False))
+
+    async def test_zone_change_between_pages_withholds_every_source_read(self):
+        # Chicago and Panama have the same offset in October, so the first-entry
+        # check of every page still agrees; only the second /api/config read
+        # can see the change.
+        await self.setup(now="2026-10-22T13:00:00.000")
+        for path in (CORE, SELF):
+            self.sim.journal(path).add(ms("2026-10-22T11:00:00.000"), core_text("older"))
+        self.add(CORE, "2026-10-22T12:00:00.000", 20, 1000, "core")
+        self.add(SELF, "2026-10-22T12:00:00.500", 20, 1000, "self")
+        arguments = {"sources": ["core", "addon:self"], "start": "2026-10-22T12:00:00Z",
+                     "end": "2026-10-22T12:01:00Z"}
+        self.change_zone_before(2, "America/Panama")
+        page = await self.read(**arguments)
+        self.assertEqual(self.changed_after_reads, 1)
+        self.assertGreater(len(self.sim.calls), 2)
+        self.assert_withheld(page, ["core", "addon:self"], "zone_changed_during_read")
+        self.assertEqual((page["time_basis"]["time_zone"], page["time_basis"]["time_zone_after_read"]),
+                         (CHICAGO, "America/Panama"))
+        self.assertEqual(self.service.codec.decode(page["next_cursor"])["s"], {"core": {"u": 1}, "addon:self": {"u": 1}})
+        # The next page reads in the new zone and returns every entry once.
+        rest = [await self.read(**arguments, cursor=page["next_cursor"])]
+        while rest[-1]["next_cursor"]:
+            rest.append(await self.read(**arguments, cursor=rest[-1]["next_cursor"]))
+        stamps = [e["ts"] for p in rest for e in p["entries"]]
+        self.assertEqual(stamps, sorted(stamps))
+        self.assertEqual(sorted(self.labels(rest)),
+                         sorted([f"core|core {i}" for i in range(20)] + [f"addon:self|self {i}" for i in range(20)]))
+        self.assertEqual(rest[0]["time_basis"]["time_zone"], "America/Panama")
+        self.assertEqual(rest[0]["time_basis"]["addon_time_zone_status"], "same_offsets_in_window")
+        self.assertTrue(rest[-1]["complete"], rest[-1]["omissions"])
+
+    async def test_zone_change_during_a_continuation_resumes_its_cursor(self):
+        await self.setup(now="2026-10-22T13:00:00.000")
+        self.sim.journal(CORE).add(ms("2026-10-22T11:00:00.000"), core_text("older"))
+        self.add(CORE, "2026-10-22T12:00:00.000", 30, 1000, "core")
+        arguments = {"sources": ["core"], "start": "2026-10-22T12:00:00Z", "end": "2026-10-22T12:01:00Z",
+                     "limit": 10}
+        first = await self.read(**arguments)
+        self.assertEqual(first["returned"], 10)
+        self.change_zone_before(len(self.sim.calls) + 1, "America/Panama")
+        second = await self.read(**arguments, cursor=first["next_cursor"])
+        self.assertEqual(self.changed_after_reads, 1)
+        self.assert_withheld(second, ["core"], "zone_changed_during_read")
+        # Resumes exactly where the withheld page started.
+        decode = self.service.codec.decode
+        self.assertEqual(decode(second["next_cursor"])["s"], decode(first["next_cursor"])["s"])
+        rest = [second]
+        while rest[-1]["next_cursor"]:
+            rest.append(await self.read(**arguments, cursor=rest[-1]["next_cursor"]))
+        self.assertEqual([e["ts"] for p in [first, *rest] for e in p["entries"]],
+                         [f"2026-10-22T12:00:{i:02d}.000Z" for i in range(30)])
+        self.assertTrue(rest[-1]["complete"], rest[-1]["omissions"])
+
+    async def test_zone_change_across_dst_never_completes_an_empty_window(self):
+        # The review 2 shape with the zone source alone: the 05:50Z anchor reads
+        # the same in Chicago and Panama, 08:10Z does not.
+        await self.setup(now="2026-11-01T10:00:00.000")
+        for at, label in [("05:00:00.000", "older"), ("05:50:00.000", "anchor"), ("08:10:00.000", "inside")]:
+            self.sim.journal(CORE).add(ms("2026-11-01T" + at), core_text(label))
+        arguments = {"sources": ["core"], "start": "2026-11-01T08:00:00Z", "end": "2026-11-01T08:30:00Z"}
+        self.change_zone_before(1, "America/Panama")
+        page = await self.read(**arguments)
+        self.assert_withheld(page, ["core"], "zone_changed_during_read")
+        # Panama now differs from the add-on's Chicago across the window: the
+        # next page is refused closed, never a wrong empty window.
+        refused = await self.read(**arguments, cursor=page["next_cursor"])
+        self.assertEqual((refused["returned"], refused["complete"], self.source(refused, "core")["reason"]),
+                         (0, False, "timestamp_basis_mismatch"))
+        # Once the add-on (restarted) agrees, the entry is read exactly.
+        self.zone[0] = "America/Panama"
+        fresh = await self.read(**arguments)
+        self.assertEqual([e["ts"] for e in fresh["entries"]], ["2026-11-01T08:10:00.000Z"])
+        self.assertTrue(fresh["complete"], fresh["omissions"])
+
+    async def test_zone_unreadable_after_the_journal_read_withholds_it(self):
+        await self.setup(now="2026-10-22T13:00:00.000")
+        self.sim.journal(CORE).add(ms("2026-10-22T11:00:00.000"), core_text("older"))
+        self.add(CORE, "2026-10-22T12:00:00.000", 10, 1000, "core")
+        arguments = {"sources": ["core"], "start": "2026-10-22T12:00:00Z", "end": "2026-10-22T12:01:00Z"}
+        for unreadable in (None, "Mars/Olympus_Mons", "raise"):
+            with self.subTest(unreadable=unreadable):
+                self.zone_reads, self.ha_zone[0] = 0, CHICAGO
+                calls = len(self.sim.calls)
+                if unreadable == "raise":
+                    base = self.service.zone_source
+
+                    async def second_read_raises():
+                        if self.zone_reads:
+                            self.zone_reads += 1
+                            raise TimeoutError("synthetic /api/config timeout")
+                        return await base()
+                    self.service.zone_source = second_read_raises
+                else:
+                    self.change_zone_before(calls + 1, unreadable, render=False)
+                page = await self.read(**arguments)
+                if unreadable == "raise":
+                    self.service.zone_source = base
+                self.assertEqual(self.zone_reads, 2)
+                self.assert_withheld(page, ["core"], "zone_unverifiable_after_read")
+                self.assertEqual((page["time_basis"]["time_zone"], page["time_basis"]["time_zone_after_read"]),
+                                 (CHICAGO, None))
+                self.assertNotIn("time_zone_unavailable", page["omissions"])
+                self.assertEqual(self.service.codec.decode(page["next_cursor"])["s"], {"core": {"u": 1}})
+                # Readable again: the next page returns the window.
+                self.ha_zone[0] = CHICAGO
+                after = await self.read(**arguments, cursor=page["next_cursor"])
+                self.assertEqual([e["ts"] for e in after["entries"]],
+                                 [f"2026-10-22T12:00:0{i}.000Z" for i in range(10)])
+                self.assertTrue(after["complete"], after["omissions"])
+
+    async def test_zone_is_read_once_when_no_journal_is_read(self):
+        # Refused before any journal request: nothing to bind, no second read.
+        await self.setup(supervisor_zone="Europe/Berlin")
+        self.add(CORE, "2026-10-22T12:00:00.000", 3, 1000, "core")
+        page = await self.read(sources=["core"], start="2026-10-22T12:00:00Z", end="2026-10-22T12:00:10Z")
+        self.assertEqual((self.sim.calls, self.zone_reads), ([], 1))
+        self.assertEqual((page["time_basis"]["time_zone_reads"], page["time_basis"]["time_zone_after_read"],
+                          page["time_basis"]["time_zone_after_read_status"]), (1, None, "not_read"))
+        self.assertNotIn("zone_unbound", self.source(page, "core"))
+        self.assertEqual((page["bounds"]["max_time_zone_reads"], page["bounds"]["time_zone_read_deadline_seconds"]),
+                         (2, c.ZONE_READ_DEADLINE_SECONDS))
+
+    async def test_failed_source_read_before_a_zone_change_is_withheld(self):
+        # A source that failed after returning items under the old zone is
+        # withheld too: its rows' times are not established either.
+        await self.setup(now="2026-10-22T13:00:00.000")
+        self.sim.journal(CORE).add(ms("2026-10-22T11:00:00.000"), core_text("older"))
+        self.add(CORE, "2026-10-22T12:00:00.000", 150, 100, "core")
+        arguments = {"sources": ["core"], "start": "2026-10-22T12:00:00Z", "end": "2026-10-22T12:01:00Z",
+                     "limit": 200}
+        baseline = await self.read(**arguments)
+        locate = len(self.sim.calls) - 2   # Two forward pages follow the locate requests.
+        self.assertEqual(baseline["returned"], 150)
+        calls = len(self.sim.calls)
+
+        def fail_second_forward_page(sim):
+            self.ha_zone[0] = sim.zone = "America/Panama"
+            sim.status[CORE] = 500
+        self.sim.mutate_before[calls + locate + 2] = fail_second_forward_page
+        page = await self.read(**arguments)
+        self.assert_withheld(page, ["core"], "zone_changed_during_read")
+        self.assertIsNone(self.source(page, "core")["http_status"])
+
 
 class RecordingCore:
     """The HAMCP-200 Core runtime surface the zone reader uses, recorded."""
@@ -895,7 +1071,11 @@ class RecordingCore:
 
 
 class ZoneReaderTests(unittest.IsolatedAsyncioTestCase):
-    """``HomeAssistantZoneReader`` over the real REST client and a loopback Core."""
+    """A loopback Core ``/api/config`` and the real REST client; helpers only.
+
+    The review 2 probe imports this class by name, so a test method on it
+    would be discovered again in that module under the same test id.
+    """
 
     async def asyncSetUp(self):
         self.requests: list[tuple[str, str, str | None]] = []
@@ -924,6 +1104,11 @@ class ZoneReaderTests(unittest.IsolatedAsyncioTestCase):
             port=8100, audit_path="unused-synthetic-audit.jsonl", rate_limit_per_minute=120,
             rate_limit_burst=20, destructive_services=frozenset(), ha_timeout_seconds=2.0,
         ))
+
+
+
+class ZoneReaderCases(ZoneReaderTests):
+    """``HomeAssistantZoneReader`` over the real REST client and a loopback Core."""
 
     async def test_reads_time_zone_under_its_own_committed_basic_rest_read(self):
         core = RecordingCore()
@@ -1017,6 +1202,65 @@ class ZoneReaderTests(unittest.IsolatedAsyncioTestCase):
         for name in ("acquire", "consume", "release", "revalidate", "finish"):
             self.assertEqual(positional(getattr(RecordingCore, name)), positional(getattr(CoreRuntime, name)),
                              name)
+
+
+class ZoneRebindReaderCases(TimeBasisServiceTests):
+    """The second /api/config read through the real reader, under its own lease (review 2 H1)."""
+
+    LEASE = ["acquire", "consume", "revalidate", "revalidate", "finish"]
+
+    async def setup_reader(self, core: RecordingCore) -> None:
+        await self.setup(now="2026-11-01T10:00:00.000")
+        await ZoneReaderTests.asyncSetUp(self)
+        self.service.zone_source = HomeAssistantZoneReader(self.client, core)
+        for at, label in [("05:00:00.000", "older"), ("05:50:00.000", "anchor"), ("08:10:00.000", "inside")]:
+            self.sim.journal(CORE).add(ms("2026-11-01T" + at), core_text(label))
+
+    async def read_window(self) -> dict:
+        return await self.read(sources=["core"], start="2026-11-01T08:00:00Z", end="2026-11-01T08:30:00Z")
+
+    async def test_unchanged_zone_is_read_twice_each_under_its_own_lease(self):
+        core = RecordingCore()
+        await self.setup_reader(core)
+        page = await self.read_window()
+        self.assertEqual([e["ts"] for e in page["entries"]], ["2026-11-01T08:10:00.000Z"])
+        self.assertTrue(page["complete"], page["omissions"])
+        self.assertEqual(self.requests, [("GET", "/api/config", f"Bearer {HA_TOKEN}")] * 2)
+        self.assertEqual(core.names(), self.LEASE * 2)
+        self.assertEqual((page["time_basis"]["time_zone_reads"], page["time_basis"]["time_zone_after_read_status"]),
+                         (2, "agrees"))
+
+    async def test_second_read_refused_by_its_lease_is_unverifiable(self):
+        # Valid for the first read (dispatch and value); lost before the second dispatch.
+        answers = iter((True, True, False))
+        core = RecordingCore(valid=lambda: next(answers))
+        await self.setup_reader(core)
+        page = await self.read_window()
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(core.names(), self.LEASE + ["acquire", "consume", "revalidate", "finish"])
+        self.assertEqual((page["returned"], page["complete"]), (0, False))
+        self.assertEqual(self.source(page, "core")["reason"], "zone_unverifiable_after_read")
+
+    async def test_second_read_failing_upstream_is_unverifiable(self):
+        # A refused response raises before the reader's post-response check.
+        failed = ["acquire", "consume", "revalidate", "finish"]
+        for status, payload, names in ((500, None, failed), (200, {"version": "2026.10.3"}, self.LEASE),
+                                       (200, {"time_zone": "Not/AZone"}, self.LEASE)):
+            with self.subTest(status=status, payload=payload):
+                core = RecordingCore()
+                await self.setup_reader(core)
+
+                def break_config(sim, status=status, payload=payload):
+                    self.status = status
+                    if payload is not None:
+                        self.payload = payload
+                self.sim.mutate_before[1] = break_config
+                page = await self.read_window()
+                self.assertEqual(len(self.requests), 2)
+                self.assertEqual(core.names(), self.LEASE + names)
+                self.assertEqual((page["returned"], page["complete"]), (0, False))
+                self.assertEqual(self.source(page, "core")["reason"], "zone_unverifiable_after_read")
+                self.assertIn("zone_unverifiable_after_read:core", page["omissions"])
 
 
 class TimeBasisHelperTests(unittest.TestCase):

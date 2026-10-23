@@ -39,6 +39,17 @@ reviewer's ``test_hamcp220_review1_probes`` and
 source (the edge flag is now one ``Item`` field of several; the zone
 failure is decided in ``_zones``; a source row carries its ordering count).
 
+Review 2 (H1 residual: Home Assistant's zone changes between the
+``/api/config`` read and the journal reads) adds one class and the
+reviewer's ``test_hamcp220_review2_zone_race_probe`` suite (its lease-cycle
+assertion amended from one cycle to two, every other line unchanged):
+- ``Z*``: the zone not bound across the call (``Z1``, the task's required
+  one: the post-read revalidation removed; a changed zone accepted; an
+  unreadable second read accepted; withheld sources still publishing what
+  they read; a continued source losing its cursor; only sources with items
+  rebound; the per-source omission or the partial status dropped).
+``H1b`` follows the zone read into ``_read_zone``, shared by both reads.
+
 Usage:
     python docs/evidence/hamcp220-mutations/run_mutations.py \\
         --work ~/.cache/hamcp220/mut --output docs/evidence/hamcp220-mutations/results.json
@@ -64,6 +75,7 @@ CALIBRATION = "realtime calibration bypassed"
 UTC_ZONE = "Zone(UTC_NAME, timezone.utc)"
 ZONE_BYPASS = "Home Assistant's configured zone bypassed"
 ORDERING = "ambiguous-span ordering asserted"
+ZONE_UNBOUND = "Home Assistant's zone not bound across the call"
 
 RETARGETED = {
     "W2-incident-start-exclusive": m(
@@ -126,7 +138,7 @@ REVIEW1_MUTATIONS = [
       (INC, '        args["addon_zone_status"] = "differs"\n',
        '        args["addon_zone_status"] = "differs"\n        args["zone"] = addon\n        return\n')),
     m("H1b-addon-tz-preferred", ZONE_BYPASS,
-      (INC, "            zone = load_zone(name)\n", "            zone = load_zone(self.addon_zone_source() or name)\n")),
+      (INC, "        return load_zone(name)\n", "        return load_zone(self.addon_zone_source() or name)\n")),
     m("H1c-unreadable-zone-falls-back-to-addon-tz", ZONE_BYPASS,
       (INC, '            # Never the add-on TZ, never UTC: no source is read without it.\n'
             '            args["zone_status"] = "unavailable"\n            return\n',
@@ -172,9 +184,32 @@ REVIEW1_MUTATIONS = [
        "                or budget.requests >= c.MAX_REQUESTS_PER_CALL):")),
 ]
 
+REVIEW2_MUTATIONS = [
+    m("Z1-post-read-zone-revalidation-removed", ZONE_UNBOUND,
+      (INC, "        await self._bind_zone(scans, args, states)\n", "")),
+    m("Z2-changed-zone-accepted", ZONE_UNBOUND,
+      (INC, 'args["zone_recheck"] = "agrees" if after.name == args["zone"].name else "zone_changed_during_read"',
+       'args["zone_recheck"] = "agrees"')),
+    m("Z3-unreadable-second-read-accepted", ZONE_UNBOUND,
+      (INC, '            args["zone_recheck"] = "zone_unverifiable_after_read"\n',
+       '            args["zone_recheck"] = "agrees"\n')),
+    m("Z4-withheld-source-still-publishes", ZONE_UNBOUND,
+      (INC, "            scans[scan.position] = held\n", "            scan.zone_unbound = held.zone_unbound\n")),
+    m("Z5-continued-source-loses-its-cursor", ZONE_UNBOUND,
+      (INC, '            if type(state) is dict and "c" in state:\n', "            if False:\n")),
+    m("Z6-only-sources-with-items-rebound", ZONE_UNBOUND,
+      (INC, "        affected = [scan for scan in scans if scan.requests]\n",
+       "        affected = [scan for scan in scans if scan.items]\n")),
+    m("Z7-zone-unbound-omission-dropped", ZONE_UNBOUND,
+      (INC, "                    reasons.append(f\"{row['zone_unbound']}:{row['source']}\")\n", "                    pass\n")),
+    m("Z8-zone-unbound-source-reported-complete", ZONE_UNBOUND,
+      (INC, "        elif (scan.deferred or scan.zone_unbound is not None\n",
+       "        elif (scan.deferred\n")),
+]
+
 base.MODULES = base.MODULES + ("test_hamcp220_incident_log_timestamps", "test_hamcp220_review1_probes",
-                               "test_hamcp220_review1_tool_local_probe")
-base.MUTATIONS = (REVIEW1_MUTATIONS + TIMESTAMP_MUTATIONS
+                               "test_hamcp220_review1_tool_local_probe", "test_hamcp220_review2_zone_race_probe")
+base.MUTATIONS = (REVIEW2_MUTATIONS + REVIEW1_MUTATIONS + TIMESTAMP_MUTATIONS
                   + [RETARGETED.get(item["id"], item) for item in base.MUTATIONS])
 
 

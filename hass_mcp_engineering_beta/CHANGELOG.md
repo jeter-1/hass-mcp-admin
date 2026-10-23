@@ -7,10 +7,15 @@ Builds on 2.4.1-beta.31.
 - Fix `get_incident_logs` reading the Supervisor log time as UTC.
   - Supervisor 2026.10.3 renders that time in Home Assistant's local time
     without an offset, so recent windows were reported after the tail.
-  - Home Assistant's configured `time_zone` is now read once per call from
-    Core `GET /api/config` (the HAMCP-200 `/config` route). The read runs
-    under the tool's own `core.basic_rest_read` lease.
+  - Home Assistant's configured `time_zone` is now read from Core
+    `GET /api/config` (the HAMCP-200 `/config` route) before a call's
+    journal reads, and once more after them. Each read runs under the
+    tool's own `core.basic_rest_read` lease.
     `get_incident_logs` is `CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY`.
+  - A zone that changed between the two reads, or a second read that
+    fails, withholds every source that read the journal
+    (`zone_changed_during_read`, `zone_unverifiable_after_read`; partial,
+    no times, the cursor kept).
   - If the zone cannot be read, Core and `addon:self` are unavailable
     (`time_zone_unavailable`), with zero journal requests. The add-on `TZ`
     and UTC are never substituted.

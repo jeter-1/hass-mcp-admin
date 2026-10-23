@@ -54,6 +54,11 @@ LIMITATIONS = (
     "cannot be read no journal is read. The add-on's TZ, set when the add-on started, is only compared with "
     "it: an offset difference anywhere in the window fails every source closed as timestamp_basis_mismatch "
     "(zone_mismatch) until the add-on restarts.",
+    "After a call's journal reads, Home Assistant's time zone is read from Core once more (at most two reads "
+    "per call, each bounded by time_zone_read_deadline_seconds). When it changed (zone_changed_during_read) "
+    "or cannot be read again (zone_unverifiable_after_read), every source that read the journal on this call "
+    "returns nothing, reports no times and resumes on the next page where this call started it. A change "
+    "that is reverted between the two reads is not seen by this check.",
     "A local time that occurs twice or never (DST) is resolved to its journal realtime with one single-entry "
     "read while the request budget allows; otherwise it is timestamp_uncertain with every candidate and the "
     "read is partial.",
@@ -130,6 +135,10 @@ class Scan:
     # The request budget ended before the window start was located: the
     # source resumes unlocated on the next page and holds the merge there.
     deferred: bool = False
+    # Home Assistant's zone changed, or could not be read again, after this
+    # call read the journal in it (review 2 H1): nothing this call read is
+    # returned, and the source resumes where the call started it.
+    zone_unbound: str | None = None
 
 
 class Deferred(Exception):
@@ -257,6 +266,7 @@ class IncidentLogService:
             except PageFailure as failure:
                 scan.failure, scan.status_code = failure.reason, failure.status
         await self._fill(scans, args, budget)
+        await self._bind_zone(scans, args, states)
         result = self._finish(scans, args, budget)
         telemetry = current_telemetry()
         if telemetry:
@@ -275,15 +285,13 @@ class IncidentLogService:
         """Home Assistant's zone, and the add-on TZ compared with it over the window."""
 
         args.update(zone=None, zone_status="not_read", zone_reads=0, addon_zone=None,
-                    addon_zone_status="not_read", zone_mismatch=None)
+                    addon_zone_status="not_read", zone_mismatch=None, zone_after_read=None,
+                    zone_recheck="not_read")
         if not reading:
             return
         args["zone_reads"] = 1
         try:
-            name = self.zone_source()
-            if inspect.isawaitable(name):
-                name = await name
-            zone = load_zone(name)
+            zone = await self._read_zone()
         except Exception:
             # Never the add-on TZ, never UTC: no source is read without it.
             args["zone_status"] = "unavailable"
@@ -309,6 +317,48 @@ class IncidentLogService:
             "home_assistant_time_zone": zone.name, "addon_time_zone": addon.name,
             "offsets_first_differ_at": c.format_ms(at),
         }
+
+    async def _read_zone(self) -> Zone:
+        name = self.zone_source()
+        if inspect.isawaitable(name):
+            name = await name
+        return load_zone(name)
+
+    async def _bind_zone(self, scans: list[Scan], args: dict, states: dict | None) -> None:
+        """Read Home Assistant's zone again after the journal reads (review 2 H1).
+
+        The first read is a snapshot: Core may change its zone, and Supervisor
+        render the text in the new one, while the pages are read, and a page's
+        first-entry check still agrees when that entry has the same offset in
+        both zones. Unless the second read names the same zone, every source
+        that sent a journal request is replaced by one that read nothing, so
+        no time, window position or completeness is published from either
+        zone; it resumes where this call started it.
+        """
+
+        affected = [scan for scan in scans if scan.requests]
+        if args["zone"] is None or not affected:
+            return
+        args["zone_reads"] = 2
+        try:
+            after = await self._read_zone()
+        except Exception:
+            args["zone_recheck"] = "zone_unverifiable_after_read"
+        else:
+            args["zone_after_read"] = after.name
+            args["zone_recheck"] = "agrees" if after.name == args["zone"].name else "zone_changed_during_read"
+        if args["zone_recheck"] == "agrees":
+            return
+        for scan in affected:
+            state = states.get(scan.key) if states else None
+            held = Scan(key=scan.key, position=scan.position, requests=scan.requests,
+                        zone_unbound=args["zone_recheck"])
+            if type(state) is dict and "c" in state:
+                held.continued, held.start_location = True, "continued"
+                held.anchor = Anchor(state["c"], state["k"], state["d"], state["t"], bool(state["r"]),
+                                     state["lv"])
+                held.max_ts = state["t"]
+            scans[scan.position] = held
 
     @staticmethod
     def _zone_refusal(scan: Scan, args: dict) -> bool:
@@ -677,7 +727,8 @@ class IncidentLogService:
             reasons = list(omissions)
             for scan in scans:
                 count = consumed[scan.position]
-                if scan.deferred:
+                if scan.deferred or (scan.zone_unbound is not None and scan.anchor is None):
+                    # Unlocated: the next page locates the window start afresh.
                     next_state[scan.key] = {"u": 1}
                 elif scan.failure is not None:
                     next_state[scan.key] = {"failed": 1}
@@ -723,6 +774,8 @@ class IncidentLogService:
                     reasons.append(f"zone_mismatch:{row['source']}")
                 if row.get("ordering_uncertain"):
                     reasons.append(f"ordering_uncertain:{row['source']}")
+                if row.get("zone_unbound"):
+                    reasons.append(f"{row['zone_unbound']}:{row['source']}")
             has_more = any("c" in state or "u" in state for state in next_state.values())
             if stopped:
                 reasons.append("entries_limit_reached")
@@ -759,6 +812,8 @@ class IncidentLogService:
                     "time_zone_source": c.TIME_ZONE_SOURCE,
                     "time_zone_status": args["zone_status"],
                     "time_zone_reads": args["zone_reads"],
+                    "time_zone_after_read": args["zone_after_read"],
+                    "time_zone_after_read_status": args["zone_recheck"],
                     "addon_time_zone": args["addon_zone"],
                     "addon_time_zone_source": c.ADDON_TIME_ZONE_SOURCE,
                     "addon_time_zone_status": args["addon_zone_status"],
@@ -802,7 +857,8 @@ class IncidentLogService:
 
         if scan.failure is not None:
             status = "unavailable" if not scan.items and scan.anchor_entry is None else "failed"
-        elif scan.deferred or scan.start_location in {"retention_edge", "not_located"} or scan.capped_pages:
+        elif (scan.deferred or scan.zone_unbound is not None
+              or scan.start_location in {"retention_edge", "not_located"} or scan.capped_pages):
             status = "partial"
         else:
             status = "complete"
@@ -812,7 +868,8 @@ class IncidentLogService:
             gaps.append({"from": c.format_ms(last), "to": None, "reason": "unread_after_failure"})
         row = {
             "source": scan.key, "status": status,
-            "reason": scan.failure or scan.finished or ("request_budget_exhausted" if scan.deferred else None),
+            "reason": scan.failure or scan.finished or scan.zone_unbound
+            or ("request_budget_exhausted" if scan.deferred else None),
             "route": c.READABLE_ROUTES[scan.key], "requests": scan.requests,
             "http_status": scan.status_code,
             "start_location": scan.start_location,
@@ -840,6 +897,8 @@ class IncidentLogService:
             row["timestamp_uncertain_bounds"] = uncertain_bounds
         if scan.zone_mismatch is not None:
             row["zone_mismatch"] = scan.zone_mismatch
+        if scan.zone_unbound is not None:
+            row["zone_unbound"] = scan.zone_unbound
         return row
 
 
@@ -857,6 +916,8 @@ _BOUNDS = {
     "max_message_chars": c.MAX_MESSAGE_CHARS,
     "response_byte_ceiling": c.RESPONSE_BUDGET,
     "cursor_ttl_seconds": 3600,
+    "max_time_zone_reads": c.MAX_ZONE_READS,
+    "time_zone_read_deadline_seconds": c.ZONE_READ_DEADLINE_SECONDS,
 }
 
 

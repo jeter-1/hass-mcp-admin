@@ -43,6 +43,8 @@ TEXT_TIMESTAMP_PIN = (
 TIME_ZONE_SOURCE = "home_assistant_api_config_time_zone"
 ADDON_TIME_ZONE_SOURCE = "addon_container_TZ_set_by_supervisor"
 ZONE_READ_DEADLINE_SECONDS = 5.0
+# One read before the journal reads, one after (review 2 H1).
+MAX_ZONE_READS = 2
 # Offsets are compared at least this often across the window, and at every
 # offset change found, located to the millisecond.
 ZONE_SAMPLE_SECONDS = 60

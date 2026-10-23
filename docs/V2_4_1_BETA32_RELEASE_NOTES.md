@@ -16,13 +16,19 @@ Acceptance: [`V2_4_1_BETA32_ACCEPTANCE.md`](V2_4_1_BETA32_ACCEPTANCE.md).
 
 - **Home Assistant's zone, from Core.**
   - Each call that reads a journal reads Home Assistant's configured
-    `time_zone` once, from Core's `GET /api/config` (the registered HAMCP-200
-    `/config` route). It does so under its own `core.basic_rest_read` lease.
+    `time_zone` from Core's `GET /api/config` (the registered HAMCP-200
+    `/config` route), before the journal reads and once more after them.
+    Each read runs under its own `core.basic_rest_read` lease.
   - If that read is refused or fails, no journal is read. The sources are
     `unavailable` with `time_zone_unavailable`. The add-on `TZ` and UTC are
     never used instead.
   - **While Core is down, `get_incident_logs` therefore returns no journal
     entries.**
+  - If the zone read after the journal reads differs from the first
+    (`zone_changed_during_read`) or fails (`zone_unverifiable_after_read`),
+    every source that read the journal returns nothing, reports no times
+    and is partial. A continued source resumes where the call started it.
+    A change reverted between the two reads is not seen.
 - **Fail closed on any zone disagreement.**
   - The add-on `TZ` is compared with Home Assistant's zone. If it names a
     zone whose offset differs at any minute of the window, every source is
@@ -54,9 +60,11 @@ Acceptance: [`V2_4_1_BETA32_ACCEPTANCE.md`](V2_4_1_BETA32_ACCEPTANCE.md).
   - Every entry has `ts_basis` and `time_zone`.
   - Every source has `timestamp_basis`, which includes `resolved_entries`
     and `unresolved_entries`.
-  - The response has `time_basis`: Home Assistant's zone and its status, the
-    add-on `TZ` and its status, and the uncertain and ordering-uncertain
-    counts.
+  - The response has `time_basis`: Home Assistant's zone and its status,
+    the zone read after the journal reads and its status, the add-on `TZ`
+    and its status, and the uncertain and ordering-uncertain counts.
+    `bounds` gains `max_time_zone_reads` (2) and
+    `time_zone_read_deadline_seconds`.
   - A page without a realtime is read in the zone and makes the read
     partial (`timestamp_basis_unverified`).
 

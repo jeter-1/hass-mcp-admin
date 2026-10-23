@@ -28,8 +28,9 @@ It authorizes none of the later stages.
 ## 1. Source and offline acceptance
 
 Bind the following:
-- Josh's HAMCP-220 objective and his review 1 decisions (H1: the zone from
-  `/api/config`; M1: ambiguous-span ordering);
+- Josh's HAMCP-220 objective, his review 1 decisions (H1: the zone from
+  `/api/config`; M1: ambiguous-span ordering) and his review 2 decision (the
+  zone bound across the call by a second `/api/config` read);
 - `2.4.1-beta.32` materialized in all three version authorities, with exact
   acceptance and release-note resolution from `scripts/codex-context.py` and
   no staged declaration left over;
@@ -47,10 +48,11 @@ The review needs a security section covering:
     counted in the same budget.
   - No permission, role, Supervisor route or add-on configuration is added.
 - **The Core read (owner-authorized, H1).**
-  - There is one `GET /api/config` per call that reads a journal. It goes
+  - A call that reads a journal makes one `GET /api/config` before the
+    journal reads and one after them (review 2), at most two. Each goes
     through the existing `HomeAssistantRestClient` and the registered
     HAMCP-200 `/config` route, with a 5 s deadline.
-  - It runs under the zone reader's own `core.basic_rest_read` lease:
+  - Each runs under the zone reader's own `core.basic_rest_read` lease:
     acquired, committed, revalidated before dispatch and after the
     response, then finished.
   - The dispatch authorizer chains any prior one. The caller's authorizer
@@ -69,6 +71,11 @@ The review needs a security section covering:
   - A first-entry or resolution realtime that disagrees with the text has
     the same effect: the source is partial with `zone_mismatch`.
   - None of these reads is ever complete, even with zero entries.
+  - If the zone read after the journal reads differs from the first, or
+    cannot be read, every source that read the journal is withheld: no
+    entries or times, partial, `zone_changed_during_read` or
+    `zone_unverifiable_after_read`. A continued source resumes where this
+    call started it. A change reverted between the two reads is not seen.
   - A page whose text matches no rendering is a failed page.
   - An unresolved time is never given one instant, and an order around it
     is never claimed (`ordering_uncertain`, partial).
@@ -90,14 +97,16 @@ Preserve the following:
 **Review decisions** (see the findings document):
 - the zone source is Home Assistant's `/api/config` `time_zone`, by Josh's
   review 1 decision, which supersedes the add-on `TZ`;
-- `ts` is nullable under the unchanged schema id `incident-logs-v1`.
+- `ts` is nullable under the unchanged schema id `incident-logs-v1`;
+- by Josh's review 2 decision, the reviewer's `ZoneRaceProbe` is committed
+  with only its lease-cycle count amended from one to two.
 
 ### Offline proof
 
 No test reaches a live system. All data is synthetic, and Core is a loopback
 peer.
 
-- `tests/test_hamcp220_incident_log_timestamps.py` (54 tests). It uses text
+- `tests/test_hamcp220_incident_log_timestamps.py` (63 tests). It uses text
   from the 2026.10.3 formatter, the 2026.09.1 formatter and the offset form,
   with systemd v257.9-shaped cursors. It covers:
   - the live reproduction (Chicago);
@@ -108,6 +117,8 @@ peer.
   - a Home Assistant zone change at runtime, with and without the
     Supervisor still rendering the old zone;
   - a one-hour rendering error refused;
+  - a zone change between pages, during a continuation and across DST,
+    and the second zone read failing: withheld, partial, never complete;
   - the zone read refused, malformed, raising or unreadable: unavailable,
     zero requests, partial, never UTC;
   - DST fall-back and spring-forward, resolved exactly within the budget,
@@ -121,11 +132,14 @@ peer.
   - a disagreeing resolution read failing closed;
   - window edges, Core and `addon:self` ordering, no realtime, the offset
     form and zone-name validation;
-  - `ZoneReaderTests`, which drive the real REST client against a loopback
-    `/api/config`.
+  - `ZoneReaderCases` and `ZoneRebindReaderCases`, which drive the real
+    REST client against a loopback `/api/config`, including both lease
+    cycles and a refused or failing second read.
 - `tests/test_hamcp220_review1_probes.py` and
   `tests/test_hamcp220_review1_tool_local_probe.py`: the review 1 probes,
   unchanged.
+- `tests/test_hamcp220_review2_zone_race_probe.py`: the review 2
+  `ZoneRaceProbe`, with only the lease-cycle count amended (1 to 2).
 - `tests/test_hamcp131_incident_logs.py` (81 tests) runs the HAMCP-131
   service tests under both renderings. It adds:
   - the configure wiring;
@@ -143,6 +157,10 @@ peer.
   - ambiguous-span ordering asserted (`M1*`): earliest-candidate ordering
     across ambiguous pages; the ordering mark, carry or omission dropped;
     the tail left unresolved;
+  - the zone not bound across the call (`Z*`): the post-read revalidation
+    removed, a changed or unreadable second zone accepted, withheld
+    sources publishing or losing their cursor, the omission or partial
+    status dropped;
   - the HAMCP-131 set, with moved fragments retargeted.
 
 ## 2. Release CI and publication
@@ -185,7 +203,8 @@ restarts or calls a service.
 
    Confirm and record:
    - `time_basis.time_zone` is Home Assistant's configured zone, with
-     `time_zone_status: loaded` and `time_zone_reads: 1`;
+     `time_zone_status: loaded`, `time_zone_reads: 2` and
+     `time_zone_after_read_status: agrees`;
    - `time_basis.addon_time_zone_status` (`agrees` is expected);
    - for `core` and `addon:self`:
      - `status`;

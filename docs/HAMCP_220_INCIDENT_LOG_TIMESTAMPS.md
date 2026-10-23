@@ -131,9 +131,10 @@ authorized reading Home Assistant's configured zone from Core's
 including the protected route and registration files. This supersedes the
 `TZ` decision.
 
-- **The zone.** `incident_logs/zone.py` (new) makes one `GET /api/config` per
-  call that reads a journal, through `HomeAssistantRestClient`. It reads
-  `time_zone`, which Core owns and may change at runtime.
+- **The zone.** `incident_logs/zone.py` (new) makes a `GET /api/config`
+  before the journal reads of each call that reads a journal, through
+  `HomeAssistantRestClient`, and one more after them (review 2, below). It
+  reads `time_zone`, which Core owns and may change at runtime.
 - **Authority.** `get_incident_logs` acquires no gateway Core lease, so the
   route can be reached while Core is down. The zone reader therefore
   acquires, commits and revalidates its own `core.basic_rest_read` lease.
@@ -165,6 +166,49 @@ including the protected route and registration files. This supersedes the
   the add-on `TZ` disagree, the continuation is refused as above. A cursor
   whose anchor entry's text was rendered again in another zone fails as
   `journal_continuity_broken`, because its digest covers the raw text.
+
+### Owner decision (review 2, H1 residual): zone bound across the call
+
+Review 2 found a remaining race. If Home Assistant's zone changes after the
+`/api/config` read and before the journal is read, Supervisor renders the
+page in the new zone. When the page's first entry has the same UTC offset in
+both zones, the first-entry check passes, the other entries are read in the
+old zone, and an empty window can be reported complete (the reviewer's
+`ZoneRaceProbe`: Chicago to Panama, the 08:10Z entry omitted as complete).
+Josh decided to fix it, not accept it as a residual: the zone is bound
+across the call by revalidation.
+
+- **Second read.** After every journal page of the call has been read, and
+  before any time, window or completeness result is published,
+  `_bind_zone` reads `/api/config` again. It uses the same zone reader, the
+  same registered route and its own `core.basic_rest_read` lease (acquired,
+  committed, revalidated before dispatch and after the response, finished).
+  A call that read no journal makes no second read.
+- **Zone changed.** If the second zone differs from the first, every source
+  that read the journal on this call is withheld: no entries, no
+  `earliest_available` or `latest_available`, status `partial`, reason and
+  `zone_unbound` `zone_changed_during_read`, and the omission
+  `zone_changed_during_read:<source>`. Its request count is kept. A
+  continued source resumes on the page where this call started it (its
+  incoming cursor anchor); a fresh source locates again. No window or
+  completeness claim is made, so an empty window is never complete.
+- **Second read failed.** A refused lease, an error, a timeout or a
+  malformed payload gives the same result with
+  `zone_unverifiable_after_read`.
+- **Disclosure.** `time_basis` reports `time_zone_reads: 2`,
+  `time_zone_after_read` and `time_zone_after_read_status` (`not_read`,
+  `agrees`, `zone_changed_during_read`, `zone_unverifiable_after_read`).
+  `bounds` reports `max_time_zone_reads: 2` and
+  `time_zone_read_deadline_seconds: 5.0`. `limitations` states the check.
+- **Residual.** A change that is reverted between the two reads (A to B to
+  A) is not seen by this check. The first-entry realtime check still
+  applies to each page.
+- **Reviewer's probe.** `ZoneRaceProbe` is committed as
+  `tests/test_hamcp220_review2_zone_race_probe.py`. By Josh's decision, its
+  only change is the lease-cycle assertion, from one cycle to two, for the
+  required second read; every other line is byte-identical to the bundle's
+  `zone_race_probe.py`. The unchanged probe fails only on that line, and its
+  completeness assertion passes.
 
 ## Part 2: Fix
 
@@ -243,11 +287,16 @@ The time fields are additive. The schema id stays `incident-logs-v1`, but
     `latest_available` is uncertain (that bound is then `null`);
   - `zone_mismatch` (`reason`, `home_assistant_time_zone`,
     `addon_time_zone`, and `offsets_first_differ_at` for an add-on
-    difference) when the source failed closed on a zone disagreement.
+    difference) when the source failed closed on a zone disagreement;
+  - `zone_unbound` when the source was withheld by the second zone read.
+- **Bounds** gain `max_time_zone_reads` and
+  `time_zone_read_deadline_seconds`.
 - **The envelope** gains `time_basis`:
   - `preferred`, plus `time_zone`, `time_zone_source`
     (`home_assistant_api_config_time_zone`), `time_zone_status`
     (`not_read`, `loaded`, `unavailable`) and `time_zone_reads`;
+  - `time_zone_after_read` and `time_zone_after_read_status` (`not_read`,
+    `agrees`, `zone_changed_during_read`, `zone_unverifiable_after_read`);
   - `addon_time_zone`, `addon_time_zone_source` and
     `addon_time_zone_status` (`not_read`, `agrees`,
     `same_offsets_in_window`, `differs`, `unavailable`);
@@ -255,13 +304,15 @@ The time fields are additive. The schema id stays `incident-logs-v1`, but
 
   It also gains the pin `supervisor_text_timestamps`.
 - **New omissions:** `time_zone_unavailable`, `addon_time_zone_unavailable`,
-  `zone_mismatch:<source>` and `ordering_uncertain:<source>`.
+  `zone_mismatch:<source>`, `ordering_uncertain:<source>`,
+  `zone_changed_during_read:<source>` and
+  `zone_unverifiable_after_read:<source>`.
 
 ### What changes and what does not
 
 - **Changes (review 1):**
-  - one Core `GET /api/config` per call that reads a journal, under its own
-    lease;
+  - one Core `GET /api/config` before and one after the journal reads of a
+    call that reads a journal, each under its own lease (review 2);
   - the tool's Core-independence basis;
   - the `o` field in the signed cursor payload;
   - resolution reads inside the existing request budget.
@@ -294,6 +345,10 @@ The time fields are additive. The schema id stays `incident-logs-v1`, but
   - the Home Assistant zone used when the add-on `TZ` is stale;
   - zones that agree except across a DST transition (Denver/Phoenix);
   - a Home Assistant zone change at runtime;
+  - review 2: a zone change between pages, during a continuation (resumes
+    its cursor) and across DST (an empty window never complete); the second
+    read unreadable (absent, invalid, raising); one read when no journal
+    is read; a failed source before a zone change;
   - a one-hour rendering error refused;
   - a cursor without realtime.
 
@@ -303,6 +358,14 @@ The time fields are additive. The schema id stays `incident-logs-v1`, but
   - no request when the lease is refused or uncommitted;
   - revalidation failure, errors and the bounded timeout;
   - authorizer chaining and restoration, and the preserved error code.
+
+  `ZoneRebindReaderCases` drive both reads through the real client: two
+  lease cycles when the zone is unchanged, and the second read refused by
+  its lease or failing upstream (500, missing or invalid `time_zone`) as
+  `zone_unverifiable_after_read`.
+- `tests/test_hamcp220_review2_zone_race_probe.py` is the review 2
+  reviewer's `ZoneRaceProbe`, with only its lease-cycle count amended (see
+  the review 2 decision).
 - `tests/test_hamcp220_review1_probes.py` and
   `tests/test_hamcp220_review1_tool_local_probe.py` are the review 1
   reviewer's probes, unchanged.
@@ -325,4 +388,9 @@ The time fields are additive. The schema id stays `incident-logs-v1`, but
     a source below its merge position, and the read stops advancing: pages
     return no entries but keep a cursor. The long fall-back test fails on
     that;
+  - the zone not bound across the call (`Z*`, review 2): the post-read
+    revalidation removed (`Z1`), a changed or unreadable second zone
+    accepted, a withheld source still publishing, a continued source losing
+    its cursor, only sources with entries withheld, the omission or the
+    partial status dropped;
   - the HAMCP-131 set, with the fragments this change moved retargeted.
