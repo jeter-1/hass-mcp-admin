@@ -11,10 +11,14 @@ One retry policy serves two read-only transports:
   with ``GH_TOKEN``); ``--include`` exposes the HTTP status and Retry-After.
 
 Only HTTP 429, HTTP 5xx and transient network failures are retried, at most
-``MAX_ATTEMPTS`` times within ``MAX_TOTAL_SECONDS``, honoring Retry-After up
-to ``RETRY_AFTER_CAP_SECONDS`` and otherwise backing off exponentially with
-jitter. Every other status (401, 403, 404, any redirect or other 4xx), a
-malformed or oversized response and a digest mismatch fail immediately.
+``MAX_ATTEMPTS`` times within ``MAX_TOTAL_SECONDS``, honoring Retry-After and
+otherwise backing off exponentially with jitter; no wait, jitter included,
+exceeds ``RETRY_AFTER_CAP_SECONDS``. Each attempt gets only the time left, and
+an archive download holds one absolute deadline across resolution,
+connection, handshake, headers and body. Every other status (401, 403, 404,
+any redirect or other 4xx), every TLS failure, an unrecognized gh transport
+failure, a malformed or oversized response and a digest mismatch fail
+immediately.
 Failure messages name only the host and the last status; the token is never
 printed, logged or written.
 """
@@ -28,10 +32,12 @@ import os
 from pathlib import Path
 import random
 import re
+import socket
 import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -46,6 +52,11 @@ RETRY_AFTER_CAP_SECONDS = 60.0
 GH_ATTEMPT_TIMEOUT_SECONDS = 30.0
 MIN_ATTEMPT_SECONDS = 1.0
 HEADER_BOUND = 65536
+GH_DIAGNOSTIC_BOUND = 4096
+GH_TLS_FAILURE = re.compile(rb"tls|ssl|x509|certificate", re.IGNORECASE)
+GH_TRANSIENT_FAILURE = re.compile(
+    rb"dial tcp|i/o timeout|context deadline exceeded|timeout awaiting response headers"
+    rb"|client\.timeout exceeded|connection refused", re.IGNORECASE)
 UNAVAILABLE_STATUSES = frozenset({"network", "timeout", "gh_unavailable"})
 
 
@@ -107,8 +118,8 @@ def retry_after_seconds(value, now):
 def backoff_delay(attempt, retry_after, jitter):
     """Seconds to wait before the next attempt; ``jitter`` is in [0, 1)."""
     if retry_after is not None:
-        # Honor the server's request, but never wait longer than the cap.
-        return min(RETRY_AFTER_CAP_SECONDS, retry_after) + jitter
+        # Honor the server's request; the final, jittered wait never exceeds the cap.
+        return min(RETRY_AFTER_CAP_SECONDS, retry_after + jitter)
     exponential = min(MAX_DELAY_SECONDS, BASE_DELAY_SECONDS * 2 ** (attempt - 1))
     return exponential * (0.5 + jitter / 2)
 
@@ -159,15 +170,27 @@ def parse_included(raw):
         headers[name.strip().lower().decode("latin-1")] = value.strip().decode("latin-1")
 
 
+def gh_transport_failure(diagnostic):
+    # gh names a failure that produced no response only on standard error,
+    # which is classified here and never exported. Every TLS failure is final;
+    # only a recognized connection or timeout failure is retried; anything else
+    # (an EOF or reset, which could be mid-handshake) fails closed.
+    if GH_TLS_FAILURE.search(diagnostic):
+        return FinalRead("tls_failed")
+    if GH_TRANSIENT_FAILURE.search(diagnostic):
+        return RetryableRead("network")
+    return FinalRead("transport_failed")
+
+
 def gh_read_attempt(route, max_bytes, timeout, run=None):
     # The route is repository-relative and GET-only; gh authenticates with
     # GH_TOKEN. Neither gh diagnostics nor response text is exported.
-    with tempfile.TemporaryFile() as output:
+    with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as diagnostics:
         try:
             result = (run or subprocess.run)(
                 ["gh", "api", route, "--include", "--hostname", "github.com",
                  "--method", "GET", "-H", "Accept: application/vnd.github+json"],
-                stdout=output, stderr=subprocess.DEVNULL,
+                stdout=output, stderr=diagnostics,
                 timeout=min(GH_ATTEMPT_TIMEOUT_SECONDS, timeout), check=False,
             )
         except subprocess.TimeoutExpired:
@@ -176,11 +199,13 @@ def gh_read_attempt(route, max_bytes, timeout, run=None):
             raise FinalRead("gh_unavailable") from None
         output.seek(0)
         raw = output.read(HEADER_BOUND + max_bytes + 1)
+        diagnostics.seek(0)
+        diagnostic = diagnostics.read(GH_DIAGNOSTIC_BOUND)
     if not raw:
         # gh prints no response when none arrived; exit 4 means no credentials.
         if result.returncode == 4:
             raise FinalRead("authentication_required")
-        raise RetryableRead("network")
+        raise gh_transport_failure(diagnostic)
     status, headers, body = parse_included(raw)
     if status == 200 and result.returncode == 0:
         return body[:max_bytes + 1]
@@ -206,6 +231,7 @@ API_BOUND = 4_000_000
 API_ROUTE = re.compile(r"repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+(?:\?[A-Za-z0-9_.=&-]+)?")
 MAX_PAGES = 50
 PAGE_SIZE = 100
+MAX_ITEMS = MAX_PAGES * PAGE_SIZE
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -215,10 +241,152 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def default_opener():
+class TLSFailure(ssl.SSLError):
+    """A failure while establishing TLS; final, like every TLS error."""
+
+
+class DeadlineIO:
+    """Socket mixin: every send and receive waits at most the time left before
+    ``deadline``, so no buffered read built from many receives can overrun it."""
+
+    deadline = None
+    clock = staticmethod(time.monotonic)
+
+    def budget(self):
+        if self.deadline is not None:
+            left = self.deadline - self.clock()
+            if left <= 0:
+                raise TimeoutError("attempt_deadline")
+            self.settimeout(min(DOWNLOAD_IDLE_TIMEOUT_SECONDS, left))
+
+    def recv_into(self, *args, **kwargs):
+        self.budget()
+        return super().recv_into(*args, **kwargs)
+
+    def send(self, *args, **kwargs):
+        self.budget()
+        return super().send(*args, **kwargs)
+
+    def sendall(self, *args, **kwargs):
+        self.budget()
+        return super().sendall(*args, **kwargs)
+
+
+class DeadlineSocket(DeadlineIO, socket.socket):
+    def gettimeout(self):
+        # A TLS socket wrapping this one inherits this as its handshake bound
+        # (after any proxy exchange): never more than the time left.
+        timeout = super().gettimeout()
+        if self.deadline is None:
+            return timeout
+        left = max(self.deadline - self.clock(), 0.001)
+        return left if timeout is None else min(timeout, left)
+
+
+class DeadlineSSLSocket(DeadlineIO, ssl.SSLSocket):
+    def do_handshake(self, *args, **kwargs):
+        # The handshake waits at most the TCP socket's time left in total. Any
+        # failure while establishing TLS (a reset, EOF or timeout included) is a
+        # TLS failure and final.
+        try:
+            return super().do_handshake(*args, **kwargs)
+        except ssl.SSLError:
+            raise
+        except OSError:
+            raise TLSFailure("tls_handshake_failed") from None
+
+
+def open_tcp(address, deadline, clock=time.monotonic, resolve=socket.getaddrinfo):
+    """Resolve and connect within the time left; any failure is a network failure."""
+    host, port = address
+    found = []
+
+    def lookup():
+        try:
+            found.append(resolve(host, port, type=socket.SOCK_STREAM))
+        except Exception:  # reported below as a network failure, without detail
+            found.append([])
+
+    # A resolver that hangs is abandoned at the deadline (a daemon thread).
+    worker = threading.Thread(target=lookup, daemon=True)
+    worker.start()
+    worker.join(max(0.0, deadline - clock()))
+    if not found:
+        raise TimeoutError("resolution_deadline")
+    for family, kind, proto, _name, target in found[0]:
+        left = deadline - clock()
+        if left <= 0:
+            raise TimeoutError("connect_deadline")
+        sock = DeadlineSocket(family, kind, proto)
+        try:
+            sock.settimeout(left)
+            sock.connect(target)
+        except OSError:
+            sock.close()
+            continue
+        left = deadline - clock()
+        if left <= 0:
+            sock.close()
+            raise TimeoutError("connect_deadline")
+        # A proxy exchange and the TLS handshake then wait at most the time left.
+        sock.settimeout(left)
+        sock.deadline, sock.clock = deadline, clock
+        return sock
+    raise OSError("connect_failed")
+
+
+class DeadlineHTTPSConnection(http.client.HTTPSConnection):
+    """An HTTPS connection whose ``timeout`` is the attempt's whole budget:
+    resolution, connection, handshake, request and every receive share one
+    absolute deadline."""
+
+    def __init__(self, host, **kwargs):
+        super().__init__(host, **kwargs)
+        budget = self.timeout if isinstance(self.timeout, (int, float)) else MAX_TOTAL_SECONDS
+        self.deadline = time.monotonic() + min(budget, MAX_TOTAL_SECONDS)
+        self._create_connection = lambda address, *_ignored: open_tcp(address, self.deadline)
+
+    def connect(self):
+        super().connect()
+        self.sock.deadline = self.deadline
+
+
+class DeadlineHTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, context):
+        super().__init__(context=context)
+        self.tls = context
+
+    def https_open(self, req):
+        return self.do_open(DeadlineHTTPSConnection, req, context=self.tls)
+
+
+def tls_context():
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2
-    return urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect)
+    context.sslsocket_class = DeadlineSSLSocket
+    return context
+
+
+def default_opener():
+    return urllib.request.build_opener(DeadlineHTTPSHandler(tls_context()), NoRedirect)
+
+
+def tls_failure(exc):
+    """The final status if ``exc`` is, wraps or was caused by a TLS error."""
+    pending, seen = [exc], set()
+    while pending and len(seen) < 16:
+        error = pending.pop()
+        if not isinstance(error, BaseException) or id(error) in seen:
+            continue
+        seen.add(id(error))
+        if isinstance(error, ssl.SSLCertVerificationError):
+            return "tls_verification_failed"
+        if isinstance(error, ssl.SSLError):
+            return "tls_failed"
+        if isinstance(error, urllib.error.URLError):
+            pending.append(error.reason)
+        pending += [error.__cause__, error.__context__]
+    return None
 
 
 def network_failure(exc):
@@ -231,22 +399,23 @@ def network_failure(exc):
             http_outcome(exc.status, retry_after)
         except (RetryableRead, FinalRead) as outcome:
             return outcome
+    status = tls_failure(exc)
+    if status is not None:
+        return FinalRead(status)
     reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
-    if isinstance(reason, ssl.SSLCertVerificationError):
-        return FinalRead("tls_verification_failed")
-    return RetryableRead("network")
+    return RetryableRead("timeout" if isinstance(reason, TimeoutError) else "network")
 
 
 def download_attempt(request, output, sha256, timeout, opener, clock):
-    # Every socket operation waits at most ``idle`` and the next one starts only
-    # before ``deadline``, so the attempt ends within ``timeout``.
-    idle = min(DOWNLOAD_IDLE_TIMEOUT_SECONDS, timeout / 3)
-    deadline = clock() + timeout - idle
+    # One absolute deadline covers connecting, the headers and the body: it is
+    # checked before every body read, and the default opener's sockets wait at
+    # most the time left on every send and receive, so no buffered read overruns.
+    deadline = clock() + timeout
     descriptor, partial = tempfile.mkstemp(dir=output.parent, prefix=".partial-")
     try:
         with os.fdopen(descriptor, "wb") as handle:
             try:
-                response = opener.open(request, timeout=idle)
+                response = opener.open(request, timeout=timeout)
             except (OSError, http.client.HTTPException) as exc:
                 raise network_failure(exc) from None
             with response:
@@ -255,10 +424,10 @@ def download_attempt(request, output, sha256, timeout, opener, clock):
                 digest = hashlib.sha256()
                 size = 0
                 while True:
-                    if clock() > deadline:
+                    if clock() >= deadline:
                         raise RetryableRead("timeout")
                     try:
-                        chunk = response.read(CHUNK_BYTES)
+                        chunk = response.read1(CHUNK_BYTES)
                     except (OSError, http.client.HTTPException) as exc:
                         raise network_failure(exc) from None
                     if not chunk:
@@ -321,6 +490,11 @@ def api_get(route, pages=None, run=None, **bounds):
         value = json.loads(body)
         if not isinstance(value, list):
             raise ValueError("github_response_malformed")
+        # The bounds hold locally: per_page is a request the server may ignore.
+        if len(value) > PAGE_SIZE:
+            raise ValueError("github_page_oversized")
+        if len(items) + len(value) > MAX_ITEMS:
+            raise ValueError("pagination_bound")
         items.extend(value)
         if len(value) < PAGE_SIZE:
             return json.dumps(items).encode()

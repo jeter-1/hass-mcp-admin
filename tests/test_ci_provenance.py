@@ -237,7 +237,10 @@ class CIProvenanceTests(unittest.TestCase):
                     self.assertIn("GET", args)
                     self.assertIn("--include", args)
                     self.assertEqual(kwargs["timeout"], 30)
-                    self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+                    # gh diagnostics go to a private file for classification
+                    # only; they never reach the job log.
+                    self.assertNotIn(kwargs["stderr"], (None, subprocess.PIPE))
+                    self.assertTrue(hasattr(kwargs["stderr"], "read"))
                     kwargs["stdout"].write(raw)
                     return subprocess.CompletedProcess(args, code)
                 with patch.object(validator.subprocess, "run", run), \

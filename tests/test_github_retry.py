@@ -13,10 +13,13 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 import ssl
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 import urllib.error
 from unittest.mock import patch
@@ -90,9 +93,17 @@ class FakeGh:
         item = self.responses.pop(0)
         if isinstance(item, BaseException):
             raise item
-        raw, code = item
+        raw, code, *diagnostic = item
         kwargs["stdout"].write(raw)
+        kwargs["stderr"].write(b"".join(diagnostic))
         return subprocess.CompletedProcess(args, code)
+
+
+# What gh prints, on standard error only, when no response arrived.
+GH_DIAL_TIMEOUT = (b"", 1, b'Get "https://api.github.com/x": dial tcp 140.82.112.6:443: i/o timeout\n')
+GH_TLS_REFUSAL = (b"", 1, b'Get "https://api.github.com/x": tls: failed to verify certificate: '
+                  b"x509: certificate signed by unknown authority\n")
+GH_EOF = (b"", 1, b'Get "https://api.github.com/x": EOF\n')
 
 
 def gh_status(status, **headers):
@@ -106,7 +117,7 @@ class FakeResponse:
         self.stream = io.BytesIO(body)
         self.fail_after = fail_after
 
-    def read(self, size):
+    def read1(self, size):
         if self.fail_after is not None and self.stream.tell() >= self.fail_after:
             raise http.client.IncompleteRead(b"")
         limit = size if self.fail_after is None else min(size, self.fail_after - self.stream.tell())
@@ -170,7 +181,7 @@ class RetryPolicyTests(unittest.TestCase):
 
     def test_5xx_and_transient_network_failures_are_retried_then_succeed(self):
         for failure in (gh_status(500), gh_status(502), gh_status(503), gh_status(504),
-                        (b"", 1), subprocess.TimeoutExpired(["gh"], 30)):
+                        GH_DIAL_TIMEOUT, subprocess.TimeoutExpired(["gh"], 30)):
             with self.subTest(failure=failure):
                 clock = Clock()
                 fake = FakeGh(failure, (included(200, b"[]"), 0))
@@ -262,7 +273,7 @@ class RetryPolicyTests(unittest.TestCase):
     def test_network_exhaustion_is_reported_as_unavailable(self):
         clock = Clock()
         with self.assertRaises(retry.GitHubReadError) as caught:
-            self.read(FakeGh(*[(b"", 1)] * 5), clock)
+            self.read(FakeGh(*[GH_DIAL_TIMEOUT] * 5), clock)
         self.assertEqual(caught.exception.category, "github_read_unavailable")
 
     def test_gh_invocation_is_a_fixed_read_only_get(self):
@@ -271,8 +282,42 @@ class RetryPolicyTests(unittest.TestCase):
         args, kwargs = fake.calls[0]
         self.assertEqual(args, ["gh", "api", ROUTE, "--include", "--hostname", "github.com",
                                 "--method", "GET", "-H", "Accept: application/vnd.github+json"])
-        self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+        # Standard error is captured for classification only, never exported.
+        self.assertNotIn(kwargs["stderr"], (None, subprocess.DEVNULL, subprocess.PIPE))
         self.assertFalse(kwargs["check"])
+
+    def test_every_gh_tls_failure_and_unrecognized_transport_failure_is_final(self):
+        for failure, status in (
+            (GH_TLS_REFUSAL, "tls_failed"),
+            ((b"", 1, b'Get "https://api.github.com/x": remote error: tls: handshake failure\n'),
+             "tls_failed"),
+            ((b"", 1, b"net/http: TLS handshake timeout\n"), "tls_failed"),
+            (GH_EOF, "transport_failed"),
+            ((b"", 1, b"read: connection reset by peer\n"), "transport_failed"),
+            ((b"", 1), "transport_failed"),
+        ):
+            with self.subTest(status=status, failure=failure):
+                clock = Clock()
+                fake = FakeGh(failure, (included(200), 0))
+                with self.assertRaises(retry.GitHubReadError) as caught:
+                    self.read(fake, clock)
+                self.assertEqual(caught.exception.status, status)
+                self.assertFalse(caught.exception.exhausted)
+                self.assertEqual(len(fake.calls), 1)
+                self.assertEqual(clock.sleeps, [])
+                # The fixed message carries no gh diagnostic.
+                self.assertNotIn("x509", str(caught.exception))
+                self.assertNotIn("handshake", str(caught.exception))
+
+    def test_retry_after_cap_applies_to_the_final_jittered_delay(self):
+        self.assertEqual(retry.backoff_delay(1, 3600, 0.75), 60.0)
+        self.assertEqual(retry.backoff_delay(1, 59.5, 0.75), 60.0)
+        self.assertEqual(retry.backoff_delay(1, 60, 0.0), 60.0)
+        self.assertEqual(retry.backoff_delay(1, 10, 0.75), 10.75)
+        clock = Clock()
+        fake = FakeGh(gh_status(429, Retry_After="3600"), (included(200), 0))
+        self.read(fake, clock, jitter=0.75)
+        self.assertEqual(clock.sleeps, [60.0])
 
     def test_oversized_body_stays_detectable(self):
         fake = FakeGh((included(200, b"x" * 100), 0))
@@ -343,6 +388,7 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(caught.exception.status, "tls_verification_failed")
         self.assertEqual(len(opener.requests), 1)
         for error in (urllib.error.URLError(ConnectionResetError()), TimeoutError(),
+                      urllib.error.URLError(TimeoutError("attempt_deadline")),
                       http.client.RemoteDisconnected("synthetic")):
             with self.subTest(error=error):
                 self.clock = Clock()
@@ -353,9 +399,12 @@ class DownloadTests(unittest.TestCase):
     def test_a_slow_download_attempt_stops_within_its_time_budget(self):
         clock = self.clock
 
+        starts = []
+
         class Trickle(FakeResponse):
-            def read(self, size):
-                clock.now += 20.0  # each socket read waits 20 s, under the idle cap
+            def read1(self, size):
+                starts.append(clock.now)
+                clock.now += 20.0  # each receive waits 20 s, under the idle cap
                 return b"x"
 
         opener = FakeOpener(Trickle())
@@ -363,10 +412,211 @@ class DownloadTests(unittest.TestCase):
             retry.download_attempt(retry.urllib.request.Request(CORE_URL), self.output,
                                    None, 90.0, opener, clock)
         self.assertEqual(caught.exception.status, "timeout")
-        # Idle cap 90 / 3 = 30 s; no read starts after 60 s, so it ends by 90 s.
-        self.assertEqual(opener.requests[0][1], 30.0)
-        self.assertLessEqual(clock.now, 90.0)
+        # The opener gets the whole budget as one absolute deadline, and no read
+        # starts at or after it.  (This fake read ignores the deadline; the
+        # default opener's sockets also cap each receive at the time left, see
+        # test_buffered_socket_reads_hold_the_absolute_deadline.)
+        self.assertEqual(opener.requests[0][1], 90.0)
+        self.assertEqual(starts, [0.0, 20.0, 40.0, 60.0, 80.0])
         self.assertEqual(self.leftovers(), [])
+
+    def test_every_tls_failure_is_final_direct_wrapped_or_chained(self):
+        def chained():
+            try:
+                raise ssl.SSLError(1, "synthetic")
+            except ssl.SSLError:
+                try:
+                    raise ConnectionResetError()
+                except ConnectionResetError as exc:
+                    return urllib.error.URLError(exc)
+
+        for error, status in (
+            (ssl.SSLError(1, "synthetic handshake failure"), "tls_failed"),
+            (urllib.error.URLError(ssl.SSLError(1, "synthetic")), "tls_failed"),
+            (urllib.error.URLError(ssl.SSLEOFError(8, "synthetic")), "tls_failed"),
+            (urllib.error.URLError(ssl.SSLZeroReturnError(6, "synthetic")), "tls_failed"),
+            (urllib.error.URLError(retry.TLSFailure("tls_handshake_failed")), "tls_failed"),
+            (chained(), "tls_failed"),
+            (urllib.error.URLError(ssl.SSLCertVerificationError("synthetic")),
+             "tls_verification_failed"),
+        ):
+            with self.subTest(error=error):
+                self.clock = Clock()
+                opener = FakeOpener(error, FakeResponse())
+                with self.assertRaises(retry.GitHubReadError) as caught:
+                    self.download(opener)
+                self.assertEqual(caught.exception.status, status)
+                self.assertEqual(len(opener.requests), 1)
+                self.assertEqual(self.clock.sleeps, [])
+                self.assertNotIn("synthetic", str(caught.exception))
+                self.assertEqual(self.leftovers(), [])
+        # A TLS failure while reading the body is final too.
+        self.clock = Clock()
+
+        class Broken(FakeResponse):
+            def read1(self, size):
+                raise ssl.SSLError(1, "synthetic record failure")
+
+        opener = FakeOpener(Broken(), FakeResponse())
+        with self.assertRaises(retry.GitHubReadError) as caught:
+            self.download(opener)
+        self.assertEqual((caught.exception.status, len(opener.requests)), ("tls_failed", 1))
+        # A cyclic or deep exception chain is walked boundedly.
+        loop = OSError("synthetic")
+        loop.__context__ = loop
+        self.assertIsNone(retry.tls_failure(loop))
+
+    def test_a_real_tls_handshake_failure_is_final(self):
+        # A loopback peer that answers the ClientHello with bytes that are not
+        # TLS; nothing leaves the host.
+        try:
+            client, server = socket.socketpair()
+        except OSError:
+            self.skipTest("socket pairs unavailable")
+        self.addCleanup(client.close)
+        self.addCleanup(server.close)
+
+        def peer():
+            with server:
+                server.settimeout(5)
+                try:
+                    server.recv(65536)
+                    server.sendall(b"HTTP/1.1 400 not a TLS record\r\n\r\n")
+                except OSError:
+                    pass
+
+        thread = threading.Thread(target=peer, daemon=True)
+        thread.start()
+        client.settimeout(5)
+        with self.assertRaises(OSError) as caught:
+            retry.tls_context().wrap_socket(client, server_hostname=retry.DOWNLOAD_HOST)
+        thread.join(5)
+        self.assertIsInstance(caught.exception, ssl.SSLError)
+        outcome = retry.network_failure(urllib.error.URLError(caught.exception))
+        self.assertIsInstance(outcome, retry.FinalRead)
+        self.assertEqual(outcome.status, "tls_failed")
+
+    def test_a_peer_that_closes_during_the_handshake_is_a_final_tls_failure(self):
+        try:
+            client, server = socket.socketpair()
+        except OSError:
+            self.skipTest("socket pairs unavailable")
+        self.addCleanup(client.close)
+        server.close()
+        client.settimeout(5)
+        with self.assertRaises(OSError) as caught:
+            retry.tls_context().wrap_socket(client, server_hostname=retry.DOWNLOAD_HOST)
+        self.assertIsInstance(caught.exception, ssl.SSLError)
+        self.assertEqual(retry.network_failure(caught.exception).status, "tls_failed")
+
+    def test_any_failure_while_establishing_tls_is_a_tls_failure(self):
+        sock = retry.DeadlineSSLSocket.__new__(retry.DeadlineSSLSocket)
+        for error in (ConnectionResetError(), TimeoutError(), OSError("synthetic")):
+            with self.subTest(error=error), \
+                    patch.object(ssl.SSLSocket, "do_handshake", side_effect=error):
+                with self.assertRaises(retry.TLSFailure) as caught:
+                    sock.do_handshake()
+                self.assertEqual(retry.network_failure(
+                    urllib.error.URLError(caught.exception)).status, "tls_failed")
+        handshake = ssl.SSLError(1, "synthetic")
+        with patch.object(ssl.SSLSocket, "do_handshake", side_effect=handshake):
+            with self.assertRaises(ssl.SSLError) as caught:
+                sock.do_handshake()
+        self.assertIs(caught.exception, handshake)
+
+    def test_buffered_socket_reads_hold_the_absolute_deadline(self):
+        # Slow headers: every receive takes 20 s, under the 30 s idle cap, so
+        # only the per-receive budget can stop a buffered read at the deadline.
+        clock = Clock()
+        try:
+            near, far = socket.socketpair()
+        except OSError:
+            self.skipTest("socket pairs unavailable")
+        self.addCleanup(far.close)
+        far.sendall(b"HTTP/1.1 200 OK\r\nX-Slow: " + b"x" * 400)
+
+        class SlowPeer(socket.socket):
+            def recv_into(self, buffer, nbytes=0, flags=0):
+                clock.now += 20.0
+                return super().recv_into(memoryview(buffer)[:1], 1, flags)
+
+        class Probe(retry.DeadlineIO, SlowPeer):
+            pass
+
+        probe = Probe(near.family, near.type, near.proto, near.detach())
+        self.addCleanup(probe.close)
+        probe.clock = clock
+        probe.deadline = 180.0
+        timeouts = []
+        real_settimeout = probe.settimeout
+        probe.settimeout = lambda value: (timeouts.append(value), real_settimeout(value))[1]
+        response = http.client.HTTPResponse(probe)
+        with self.assertRaises(TimeoutError):
+            response.begin()
+        self.assertEqual(clock.now, 180.0)
+        self.assertEqual(max(timeouts), retry.DOWNLOAD_IDLE_TIMEOUT_SECONDS)
+        self.assertEqual(timeouts[-1], 20.0)
+        self.assertEqual(retry.network_failure(urllib.error.URLError(TimeoutError())).status,
+                         "timeout")
+
+    def test_resolution_and_connection_share_the_deadline(self):
+        release = threading.Event()
+        self.addCleanup(release.set)
+
+        def hanging(*args, **kwargs):
+            release.wait(30)
+            return []
+
+        started = time.monotonic()
+        with self.assertRaises(TimeoutError):
+            retry.open_tcp(("codeload.github.com", 443), started + 0.2, resolve=hanging)
+        self.assertLess(time.monotonic() - started, 5)
+
+        def failing(*args, **kwargs):
+            raise socket.gaierror("synthetic")
+
+        with self.assertRaises(OSError):
+            retry.open_tcp(("codeload.github.com", 443), time.monotonic() + 5, resolve=failing)
+
+        made = []
+        with patch.object(retry, "DeadlineSocket", lambda *a: made.append(a)):
+            with self.assertRaises(TimeoutError):
+                retry.open_tcp(("codeload.github.com", 443), 100.0, clock=lambda: 100.0,
+                               resolve=lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6,
+                                                         "", ("192.0.2.1", 443))])
+        self.assertEqual(made, [])
+
+    def test_a_connected_socket_carries_the_deadline_to_the_handshake(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "s")
+            try:
+                listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                listener.bind(path)
+                listener.listen(1)
+            except OSError:
+                self.skipTest("unix sockets unavailable")
+            self.addCleanup(listener.close)
+            clock = Clock()
+            sock = retry.open_tcp(
+                ("codeload.github.com", 443), 50.0, clock=clock,
+                resolve=lambda *a, **k: [(socket.AF_UNIX, socket.SOCK_STREAM, 0, "", path)])
+            self.addCleanup(sock.close)
+            self.assertIsInstance(sock, retry.DeadlineSocket)
+            self.assertEqual((sock.deadline, sock.gettimeout()), (50.0, 50.0))
+            # A wrapping TLS socket inherits at most the time left.
+            clock.now = 45.0
+            self.assertEqual(sock.gettimeout(), 5.0)
+            clock.now = 60.0
+            self.assertEqual(sock.gettimeout(), 0.001)
+            with self.assertRaises(TimeoutError):
+                sock.sendall(b"x")
+
+    def test_the_default_connection_carries_one_deadline_to_its_socket(self):
+        connection = retry.DeadlineHTTPSConnection(
+            retry.DOWNLOAD_HOST, timeout=42.0, context=retry.tls_context())
+        self.assertAlmostEqual(connection.deadline - time.monotonic(), 42.0, delta=5)
+        connection = retry.DeadlineHTTPSConnection(retry.DOWNLOAD_HOST, timeout=900.0)
+        self.assertLessEqual(connection.deadline - time.monotonic(), retry.MAX_TOTAL_SECONDS)
 
     def test_download_attempt_bound_fails_closed(self):
         opener = FakeOpener(*[http_error(503)] * 10)
@@ -408,8 +658,8 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(request.get_method(), "GET")
         self.assertEqual(request.unredirected_hdrs, {"Authorization": "Bearer " + SYNTHETIC_TOKEN})
         self.assertNotIn("Authorization", request.headers)
-        # Socket waits are bounded; a full 180 s budget gives the 30 s idle cap.
-        self.assertEqual(timeout, retry.DOWNLOAD_IDLE_TIMEOUT_SECONDS)
+        # The attempt's whole remaining budget is its one absolute deadline.
+        self.assertEqual(timeout, retry.MAX_TOTAL_SECONDS)
         self.assertIsNone(retry.NoRedirect().redirect_request(
             request, None, 302, "Found", {}, "https://example.invalid/"))
         opener = retry.default_opener()
@@ -417,6 +667,9 @@ class DownloadTests(unittest.TestCase):
         https = next(h for h in opener.handlers if isinstance(h, retry.urllib.request.HTTPSHandler))
         self.assertEqual(https._context.minimum_version, ssl.TLSVersion.TLSv1_2)
         self.assertEqual(https._context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertIsInstance(https, retry.DeadlineHTTPSHandler)
+        self.assertIs(https._context.sslsocket_class, retry.DeadlineSSLSocket)
+        self.assertTrue(issubclass(retry.DeadlineSSLSocket, retry.DeadlineIO))
 
 
 class ApiGetTests(unittest.TestCase):
@@ -448,6 +701,30 @@ class ApiGetTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     retry.api_get(route, pages, fake, **Clock().bounds())
                 self.assertEqual(fake.calls, [])
+
+    def test_page_length_and_aggregate_are_bounded_locally(self):
+        oversized = json.dumps([{"id": index} for index in range(101)]).encode()
+        fake = FakeGh((included(200, oversized), 0), (included(200, b"[]"), 0))
+        with self.assertRaisesRegex(ValueError, "github_page_oversized"):
+            retry.api_get(self.TIMELINE, 50, fake, **Clock().bounds())
+        self.assertEqual(len(fake.calls), 1)
+        self.assertEqual(retry.MAX_ITEMS, 5000)
+        full = json.dumps([{"id": index} for index in range(100)]).encode()
+        fake = FakeGh(*[(included(200, full), 0)] * 3)
+        with patch.object(retry, "MAX_ITEMS", 150), \
+                self.assertRaisesRegex(ValueError, "pagination_bound"):
+            retry.api_get(self.TIMELINE, 50, fake, **Clock().bounds())
+        self.assertEqual(len(fake.calls), 2)
+        # Exactly 5,000 events across 50 full pages still fails closed: a full
+        # last page cannot prove the timeline ended.
+        fake = FakeGh(*[(included(200, full), 0)] * 50)
+        with self.assertRaisesRegex(ValueError, "pagination_bound"):
+            retry.api_get(self.TIMELINE, 50, fake, **Clock().bounds())
+        self.assertEqual(len(fake.calls), 50)
+        partial = json.dumps([{"id": index} for index in range(99)]).encode()
+        fake = FakeGh(*[(included(200, full), 0)] * 49, (included(200, partial), 0))
+        self.assertEqual(len(json.loads(retry.api_get(self.TIMELINE, 50, fake,
+                                                      **Clock().bounds()))), 4999)
 
     def test_a_failed_page_fails_the_whole_read(self):
         full = json.dumps([{}] * 100).encode()
@@ -541,6 +818,35 @@ class RedactionTests(unittest.TestCase):
             self.assertEqual(result.stdout, "")
             self.assertEqual(result.stderr, "GitHub read failed: host api.github.com, "
                              "last status 403, 1 attempt(s), not retried\n")
+            self.assert_no_token(result.stdout, result.stderr, log.read_text())
+            self.assertEqual(len(log.read_text().splitlines()), 1)
+
+    def test_cli_gh_tls_refusal_is_final_and_its_diagnostic_is_not_exported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "gh.log"
+            fake = root / "gh"
+            fake.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '%s\\n' \"$*\" >> \"$MOCK_GH_LOG\"\n"
+                "printf 'Get \"https://api.github.com/x\": tls: failed to verify certificate: "
+                "x509: synthetic %s\\n' \"$GH_TOKEN\" >&2\n"
+                "exit 1\n",
+                encoding="utf-8",
+            )
+            fake.chmod(0o700)
+            script = root / "github_retry.py"
+            script.write_bytes(HELPER.read_bytes())
+            result = subprocess.run(
+                [sys.executable, "-I", "-S", str(script), "api-get", "--route", ROUTE],
+                cwd=root, env={"PATH": f"{root}:/usr/bin:/bin", "GH_TOKEN": SYNTHETIC_TOKEN,
+                               "MOCK_GH_LOG": str(log)},
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60, check=False,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(result.stderr, "GitHub read failed: host api.github.com, "
+                             "last status tls_failed, 1 attempt(s), not retried\n")
             self.assert_no_token(result.stdout, result.stderr, log.read_text())
             self.assertEqual(len(log.read_text().splitlines()), 1)
 

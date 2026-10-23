@@ -111,6 +111,11 @@ RETRY_AFTER_CAP_SECONDS = 60.0
 GH_ATTEMPT_TIMEOUT_SECONDS = 30.0
 MIN_ATTEMPT_SECONDS = 1.0
 HEADER_BOUND = 65536
+GH_DIAGNOSTIC_BOUND = 4096
+GH_TLS_FAILURE = re.compile(rb"tls|ssl|x509|certificate", re.IGNORECASE)
+GH_TRANSIENT_FAILURE = re.compile(
+    rb"dial tcp|i/o timeout|context deadline exceeded|timeout awaiting response headers"
+    rb"|client\.timeout exceeded|connection refused", re.IGNORECASE)
 UNAVAILABLE_STATUSES = frozenset({"network", "timeout", "gh_unavailable"})
 
 
@@ -172,8 +177,8 @@ def retry_after_seconds(value, now):
 def backoff_delay(attempt, retry_after, jitter):
     """Seconds to wait before the next attempt; ``jitter`` is in [0, 1)."""
     if retry_after is not None:
-        # Honor the server's request, but never wait longer than the cap.
-        return min(RETRY_AFTER_CAP_SECONDS, retry_after) + jitter
+        # Honor the server's request; the final, jittered wait never exceeds the cap.
+        return min(RETRY_AFTER_CAP_SECONDS, retry_after + jitter)
     exponential = min(MAX_DELAY_SECONDS, BASE_DELAY_SECONDS * 2 ** (attempt - 1))
     return exponential * (0.5 + jitter / 2)
 
@@ -224,15 +229,27 @@ def parse_included(raw):
         headers[name.strip().lower().decode("latin-1")] = value.strip().decode("latin-1")
 
 
+def gh_transport_failure(diagnostic):
+    # gh names a failure that produced no response only on standard error,
+    # which is classified here and never exported. Every TLS failure is final;
+    # only a recognized connection or timeout failure is retried; anything else
+    # (an EOF or reset, which could be mid-handshake) fails closed.
+    if GH_TLS_FAILURE.search(diagnostic):
+        return FinalRead("tls_failed")
+    if GH_TRANSIENT_FAILURE.search(diagnostic):
+        return RetryableRead("network")
+    return FinalRead("transport_failed")
+
+
 def gh_read_attempt(route, max_bytes, timeout, run=None):
     # The route is repository-relative and GET-only; gh authenticates with
     # GH_TOKEN. Neither gh diagnostics nor response text is exported.
-    with tempfile.TemporaryFile() as output:
+    with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as diagnostics:
         try:
             result = (run or subprocess.run)(
                 ["gh", "api", route, "--include", "--hostname", "github.com",
                  "--method", "GET", "-H", "Accept: application/vnd.github+json"],
-                stdout=output, stderr=subprocess.DEVNULL,
+                stdout=output, stderr=diagnostics,
                 timeout=min(GH_ATTEMPT_TIMEOUT_SECONDS, timeout), check=False,
             )
         except subprocess.TimeoutExpired:
@@ -241,11 +258,13 @@ def gh_read_attempt(route, max_bytes, timeout, run=None):
             raise FinalRead("gh_unavailable") from None
         output.seek(0)
         raw = output.read(HEADER_BOUND + max_bytes + 1)
+        diagnostics.seek(0)
+        diagnostic = diagnostics.read(GH_DIAGNOSTIC_BOUND)
     if not raw:
         # gh prints no response when none arrived; exit 4 means no credentials.
         if result.returncode == 4:
             raise FinalRead("authentication_required")
-        raise RetryableRead("network")
+        raise gh_transport_failure(diagnostic)
     status, headers, body = parse_included(raw)
     if status == 200 and result.returncode == 0:
         return body[:max_bytes + 1]
