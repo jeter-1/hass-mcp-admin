@@ -162,10 +162,53 @@ class DormantProfileTests(unittest.TestCase):
                       checks[AVAILABILITY])
         self.assertIn("websocket_expose_entity_single_assistant_single_entity",
                       checks[EXPOSURE])
-        # Neither contract names a cloud or "expose new entities" setter.
+        # Neither contract names a cloud check or an "expose new entities" setter.
         self.assertFalse(
             {c for c in checks[AVAILABILITY] | checks[EXPOSURE]
-             if "cloud" in c or "expose_new" in c}
+             if "cloud" in c or ("expose_new" in c and not c.endswith("_get"))}
+        )
+
+    def test_each_profile_names_every_read_its_gateway_sends(self):
+        # HAMCP-222 OD-5 (Josh, 2026-10-23): the signed contract must name the
+        # enable disclosure's registry list and the exposure disclosure's
+        # read of the "expose new entities" setting.
+        from ha_mcp_engineering.governance import entity_availability_exposure as boundary
+
+        checks = {
+            profile.capability_id: tuple(profile.required_checks)
+            for profile in CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
+        }
+        self.assertEqual(checks[AVAILABILITY], (
+            "websocket_entity_registry_get",
+            "websocket_entity_registry_update_disabled_by_user_or_null",
+            "websocket_config_entries_get_single",
+            "websocket_entity_registry_list",
+            "entity_registry_readback_exact",
+        ))
+        self.assertEqual(checks[EXPOSURE], (
+            "websocket_entity_registry_get",
+            "websocket_expose_entity_single_assistant_single_entity",
+            "websocket_expose_new_entities_get",
+            "entity_registry_options_readback_exact",
+        ))
+        named = {
+            "config/entity_registry/get": "websocket_entity_registry_get",
+            "config/entity_registry/list": "websocket_entity_registry_list",
+            "config_entries/get_single": "websocket_config_entries_get_single",
+            "homeassistant/expose_new_entities/get": "websocket_expose_new_entities_get",
+        }
+        self.assertEqual(set(boundary.READ_COMMANDS), set(named))
+        every_check = set(checks[AVAILABILITY]) | set(checks[EXPOSURE])
+        for command, check in named.items():
+            with self.subTest(command=command):
+                self.assertIn(check, every_check)
+        self.assertEqual(
+            {profile.capability_id: profile.contract_fingerprint
+             for profile in CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES},
+            {
+                AVAILABILITY: "sha256:ae292fbc16ad82c8d8347b7e2eb1c3a7e8c7644d95783f5bf2ae9f9cc63a76b2",
+                EXPOSURE: "sha256:474c8ccaaae83c12f56a2848995ff089097936568a2ad5dc8d25ce855d51dbbd",
+            },
         )
 
     def test_no_signed_envelope_has_ever_referenced_them(self):

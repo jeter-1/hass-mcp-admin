@@ -499,7 +499,11 @@ CORE_ENTITY_METADATA_PROFILES = (
 )
 # HAMCP-069B: two further runtime-only mutation contracts.  Like 069A they are
 # never part of CORE_CAPABILITY_PROFILES and stay dormant until an owner-signed
-# registry reference (planned sequence 13) selects each one exactly.
+# registry reference (planned sequence 13) selects each one exactly.  Each
+# profile names every read its gateway sends (HAMCP-222 OD-5): the enable
+# disclosure counts the config entry's other entities through
+# ``config/entity_registry/list``, and the exposure disclosure reads the
+# assistant's "expose new entities" setting (never written).
 CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES = (
     _contract(
         "core.entity_registry_availability_operation",
@@ -509,6 +513,7 @@ CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES = (
             "websocket_entity_registry_get",
             "websocket_entity_registry_update_disabled_by_user_or_null",
             "websocket_config_entries_get_single",
+            "websocket_entity_registry_list",
             "entity_registry_readback_exact",
         ),
         provider_boundary="direct_ha_api",
@@ -530,6 +535,7 @@ CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES = (
         (
             "websocket_entity_registry_get",
             "websocket_expose_entity_single_assistant_single_entity",
+            "websocket_expose_new_entities_get",
             "entity_registry_options_readback_exact",
         ),
         provider_boundary="direct_ha_api",
