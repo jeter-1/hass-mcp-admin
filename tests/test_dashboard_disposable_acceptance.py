@@ -583,6 +583,13 @@ class DisposableRetainedWindowReplayTests(unittest.IsolatedAsyncioTestCase):
              "undeclared discarded window"),
             ("dropped receipt", lambda: self.rewrite("case-receipts.json", lambda x: x.pop(3)),
              "case receipt sequence mismatch"),
+            # Only the continuation numbering can refuse these two; the swapped
+            # receipts are otherwise intact and consistent with their files.
+            ("dropped first continuation", lambda: self.rewrite("case-receipts.json", lambda x: x.pop(1)),
+             "case receipt sequence mismatch"),
+            ("reordered continuations", lambda: self.rewrite(
+                "case-receipts.json", lambda x: x.__setitem__(slice(1, 3), x[2:0:-1])),
+             "case receipt sequence mismatch"),
             ("unreceipted window", lambda: self.rewrite("case-receipts.json", lambda x: x.pop(2)),
              "unreceipted retained window"),
             ("unknown window", lambda: (self.out / "extra-wire.json").write_text("{}\n"),
