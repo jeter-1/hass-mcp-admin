@@ -878,12 +878,18 @@ class CommandBatchClientTests(unittest.IsolatedAsyncioTestCase):
             pending = []
             answered = 0
             while answered < 40:
-                while len(pending) < BATCH_WINDOW + 1:
-                    try:
-                        command = await asyncio.wait_for(ws.receive_json(), 0.05)
-                    except asyncio.TimeoutError:
-                        break
-                    pending.append(command)
+                # A correct client always has min(window, unanswered)
+                # commands in flight here: wait for all of them under a
+                # generous hang guard, so a late command on a loaded host
+                # can never leave nothing to answer (HAMCP-208).
+                while len(pending) < min(BATCH_WINDOW, 40 - answered):
+                    pending.append(await asyncio.wait_for(ws.receive_json(), 30))
+                # A window-exceeding client would already have sent one more;
+                # this short probe can only miss such a bug, never fail.
+                try:
+                    pending.append(await asyncio.wait_for(ws.receive_json(), 0.05))
+                except asyncio.TimeoutError:
+                    pass
                 peer.max_in_flight = max(peer.max_in_flight, len(pending))
                 # Answer newest first, with an event in between.
                 command = pending.pop()
@@ -898,7 +904,8 @@ class CommandBatchClientTests(unittest.IsolatedAsyncioTestCase):
 
         peer, results = await self.run_peer(handler, _payloads(40))
         self.assertEqual(peer.connections, 1)
-        self.assertLessEqual(peer.max_in_flight, BATCH_WINDOW)
+        # Exactly the full window was pipelined, never more.
+        self.assertEqual(peer.max_in_flight, BATCH_WINDOW)
         self.assertEqual(len(results), 40)
         self.assertEqual(results[3], (False, "not_found"))
         self.assertEqual(results[5], (True, {"config": {"id": "automation.synthetic_5"}}))
