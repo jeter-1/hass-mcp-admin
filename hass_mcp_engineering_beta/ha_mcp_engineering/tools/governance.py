@@ -11,6 +11,14 @@ from ..errors import ErrorCode, GovernanceError
 from ..request_context import current_telemetry
 
 from ..governance import GOVERNANCE
+from ..governance.label_registry import (
+    COLOR_HEX_PATTERN,
+    LABEL_ID_PATTERN,
+    MAX_DESCRIPTION_LENGTH,
+    NAME_PATTERN,
+    THEME_COLORS,
+)
+from ..governance.label_registry_planning import MAX_CHILDREN as LABEL_MAX_CHILDREN
 from ..sanitization import sanitize_untrusted_data
 from ..tool_framework import run_structured
 from .compatibility import SETTINGS
@@ -75,6 +83,7 @@ IDENTIFIER_INPUTS: dict[str, tuple[str, ...]] = {
         "categories",
     ),
     "create_entity_availability_exposure_plan": ("entity_ids",),
+    "create_label_plan": ("operations[].label_id", "operations[].entity_ids"),
     "create_addon_restart_plan": ("addon_slug",),
     "create_home_assistant_restart_plan": (),
     "create_change_plan": ("operation", "automation_id"),
@@ -1037,12 +1046,149 @@ def registered_entity_availability_exposure_tool():
     return tool
 
 
+#: The closed published input schema (HAMCP-165).  1-8 ordered label
+#: operations; create needs ``name`` and update needs ``label_id`` plus at
+#: least one field.  The planner's closed validator is authoritative.
+LABEL_PLAN_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "title": "create_label_planArguments",
+    "additionalProperties": False,
+    "required": ["operations"],
+    "properties": {
+        "operations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": LABEL_MAX_CHILDREN,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["operation"],
+                "properties": {
+                    "operation": {"type": "string", "enum": ["create", "update"]},
+                    "label_id": {
+                        "type": "string",
+                        "pattern": LABEL_ID_PATTERN.pattern,
+                    },
+                    "name": {"type": "string", "pattern": NAME_PATTERN.pattern},
+                    "color": {
+                        "anyOf": [
+                            {"type": "string", "enum": list(THEME_COLORS)},
+                            {"type": "string", "pattern": COLOR_HEX_PATTERN.pattern},
+                            {"type": "null"},
+                        ]
+                    },
+                    "icon": {
+                        "anyOf": [
+                            {"type": "string", "pattern": "^[a-z0-9-]+:[a-z0-9-]+$"},
+                            {"type": "null"},
+                        ]
+                    },
+                    "description": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": MAX_DESCRIPTION_LENGTH,
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "entity_ids": {
+                        "type": "array",
+                        "maxItems": LABEL_MAX_CHILDREN,
+                        "uniqueItems": True,
+                        "items": {
+                            "type": "string",
+                            "maxLength": MAX_ENTITY_ID_LENGTH,
+                            "pattern": ENTITY_ID_PATTERN.pattern,
+                        },
+                    },
+                },
+            },
+        },
+        "expiration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "default": 120,
+        },
+    },
+}
+
+
+async def _label_plan(arguments: Any) -> str:
+    return await run_structured(
+        "create_label_plan",
+        "Created one governed label proposal without dispatching it.",
+        _screened(
+            "create_label_plan",
+            arguments,
+            lambda: GOVERNANCE.require().create_label_plan(arguments),
+        ),
+        metadata={
+            "resource_types": ["label_registry_entry", "entity_registry_metadata"],
+            "provider": "direct_home_assistant_label_registry",
+            "fallback": "none",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_label_plan(
+    operations: list[dict[str, Any]],
+    expiration_minutes: int = 120,
+) -> str:
+    """Propose governed label create/edit and entity assignment, no dispatch.
+
+    operations is 1-8 ordered items: create {name, color?, icon?,
+    description?, entity_ids?} or update {label_id, name?, color?, icon?,
+    description?, entity_ids?}. color is a Home Assistant theme colour,
+    #RRGGBB or null; icon is prefix:name or null. entity_ids assigns the
+    label to registered entities after it exists. Duplicate names, unknown
+    labels and no-op edits are refused before any plan is stored; labels are
+    never deleted. External administrator approval and apply_change_plan are
+    required; children run in order, non-atomically, stopping on the first
+    failure; rollback is not available. Until a signed registry admits this
+    capability the tool refuses with pending_signed_registry_admission.
+    """
+    return await _label_plan(
+        {"operations": operations, "expiration_minutes": expiration_minutes}
+    )
+
+
+class LabelPlanTool(Tool):
+    """Pass the exact raw argument object to the closed planner validation."""
+
+    async def run(self, arguments, context=None, convert_result=False):
+        rendered = await _label_plan(arguments)
+        return (
+            self.fn_metadata.convert_result(rendered)
+            if convert_result
+            else rendered
+        )
+
+
+def registered_label_plan_tool():
+    tool = LabelPlanTool.from_function(
+        create_label_plan,
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    tool.parameters = LABEL_PLAN_INPUT_SCHEMA
+    return tool
+
+
 GOVERNANCE_TOOLS = (
     create_backup_plan,
     create_reload_plan,
     create_helper_state_plan,
     create_entity_metadata_plan,
     create_entity_availability_exposure_plan,
+    create_label_plan,
     create_addon_restart_plan,
     create_home_assistant_restart_plan,
     create_change_plan,

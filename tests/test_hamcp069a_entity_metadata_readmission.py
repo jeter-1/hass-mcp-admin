@@ -222,8 +222,9 @@ class DormantProfileTests(unittest.TestCase):
         self.assertIn(ENTITY_METADATA, ids(CORE_RUNTIME_CAPABILITY_PROFILES))
         self.assertNotIn(ENTITY_METADATA, ids(CORE_CAPABILITY_PROFILES))
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
-        # 22 through 069A, plus the two dormant 069B profiles.
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 24)
+        # 22 through 069A, plus the two dormant 069B profiles and the
+        # dormant 165 label profile.
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 25)
         (profile,) = CORE_ENTITY_METADATA_PROFILES
         mapping = profile.to_mapping()
         self.assertEqual(
@@ -554,8 +555,10 @@ class StaticToolCompletenessTests(unittest.TestCase):
             targeted,
             {
                 "create_entity_metadata_plan",
-                # HAMCP-069B binds its own exact target (its tests cover it).
+                # HAMCP-069B and HAMCP-165 bind their own exact targets
+                # (their tests cover them).
                 "create_entity_availability_exposure_plan",
+                "create_label_plan",
             },
         )
         self.assertEqual(static_tool_target("create_entity_metadata_plan", ARGUMENTS), TARGET)
@@ -572,6 +575,7 @@ class StaticToolCompletenessTests(unittest.TestCase):
             if name not in {
                 "create_entity_metadata_plan",
                 "create_entity_availability_exposure_plan",
+                "create_label_plan",
             }:
                 for arguments in shapes:
                     with self.subTest(tool=name, arguments=repr(arguments)[:40]):
@@ -659,6 +663,7 @@ class OtherToolGatewayCallShapeTests(unittest.IsolatedAsyncioTestCase):
             if name in {
                 "create_entity_metadata_plan",
                 "create_entity_availability_exposure_plan",
+                "create_label_plan",
             }:
                 continue
             for arguments in ({}, {"entity_id": "LIGHT.PORCH"}, {"entity_id": "light.porch"}):

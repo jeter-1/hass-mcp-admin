@@ -682,11 +682,12 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
     evidence = b"Synthetic disposable Core nineteen-capability predecessor"
     refs = [{k: p.to_mapping()[k] for k in ("capability_id", "profile_id", "profile_version", "adapter_id", "contract_fingerprint")}
             for p in CORE_RUNTIME_CAPABILITY_PROFILES
-            # HAMCP-069A/069B: the dormant entity profiles are not signed here.
+            # HAMCP-069A/069B/165: the dormant entity and label profiles are not signed here.
             if p.capability_id not in {"core.automation_baseline_metadata_read",
                                        "core.entity_registry_metadata_operation",
                                        "core.entity_registry_availability_operation",
-                                       "core.entity_assistant_exposure_operation"}]
+                                       "core.entity_assistant_exposure_operation",
+                                       "core.label_registry_operation"}]
     added = [r for r in refs if r["capability_id"] == "core.integration_inspection_metadata_read"]
     old = [r for r in refs if r not in added]
     assert len(old) == 19 and len(added) == 1

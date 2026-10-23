@@ -185,6 +185,7 @@ class GovernanceRuntime:
                 entity_availability_exposure_gateway=(
                     resource_gateway.availability_exposure
                 ),
+                label_registry_gateway=resource_gateway.label_registry,
             )
             from ..f3_runtime.runtime import F3RuntimeIntegration
 

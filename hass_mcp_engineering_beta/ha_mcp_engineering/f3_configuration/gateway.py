@@ -75,6 +75,18 @@ class ExistingConfigurationGatewayBridge:
             target_id, current, proposed
         )
 
+    async def label_preflight_evidence(
+        self,
+        target_id: str,
+        current: dict[str, Any] | None,
+        proposed: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Recheck a HAMCP-165 label child's bound namespace."""
+
+        return await self._gateway.label_preflight_evidence(
+            target_id, current, proposed
+        )
+
     async def write(
         self,
         action: str,

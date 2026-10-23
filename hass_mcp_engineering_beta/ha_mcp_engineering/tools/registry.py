@@ -36,6 +36,7 @@ _PROPOSAL_TOOLS = {
     "create_helper_state_plan",
     "create_entity_metadata_plan",
     "create_entity_availability_exposure_plan",
+    "create_label_plan",
     "create_addon_restart_plan",
     "create_home_assistant_restart_plan",
     "create_change_plan",
@@ -157,6 +158,7 @@ from .history_slices import registered_tool as history_slices_tool
 from .governance import (
     registered_entity_availability_exposure_tool,
     registered_entity_metadata_tool,
+    registered_label_plan_tool,
     registered_reverification_tool,
 )
 
@@ -167,7 +169,8 @@ _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_core_log_history": core_log_to
                     "create_entity_metadata_plan": registered_entity_metadata_tool(),
                     "create_entity_availability_exposure_plan": (
                         registered_entity_availability_exposure_tool()
-                    )})
+                    ),
+                    "create_label_plan": registered_label_plan_tool()})
 
 from .audit_baseline import registered_tool as baseline_capture_tool
 from .integration_inspection import registered_tool as integration_inspection_tool

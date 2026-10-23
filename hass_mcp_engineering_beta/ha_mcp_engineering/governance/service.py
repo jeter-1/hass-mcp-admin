@@ -202,6 +202,8 @@ from .entity_metadata import (
 from . import entity_metadata_planning
 from . import entity_availability_exposure_planning
 from . import entity_availability_exposure
+from . import label_registry
+from . import label_registry_planning
 from .entity_metadata_disclosure import read_runtime_dependency_snapshot
 from .helper_dependency import (
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
@@ -685,6 +687,7 @@ class ChangeGovernanceService:
             ..., Awaitable[Any]
         ]
         | None = None,
+        label_registry_gateway: Any | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
@@ -710,6 +713,8 @@ class ChangeGovernanceService:
             entity_availability_exposure_snapshot_reader
             or read_runtime_dependency_snapshot
         )
+        # HAMCP-165: closed-vocabulary label registry reads and writes.
+        self.label_registry_gateway = label_registry_gateway
         self.provider_identity_reader = provider_identity_reader
         self.approval_notifications = approval_notifications
         self._plan_observability_cursor_key = (
@@ -5451,6 +5456,137 @@ class ChangeGovernanceService:
             _before_persist=_before_persist,
         )
 
+    async def create_label_plan(
+        self,
+        arguments: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Plan governed label create/edit plus entity assignment (HAMCP-165).
+
+        Admission is checked first: while ``core.label_registry_operation``
+        is not admitted by the signed registry the request is refused
+        ``pending_signed_registry_admission`` before validation, before any
+        Home Assistant read and before persistence.  Admitted planning lists
+        the label registry, prepares each entity assignment child through the
+        signed 069A path, and stores one ordered plan; nothing dispatches.
+        """
+
+        self._label_core()
+        try:
+            request = label_registry_planning.validate_request(arguments)
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self._entity_metadata_refusal_error(exc, {}) from None
+        lease = self._label_planning_lease(arguments, request)
+        async with lease:
+            try:
+                if self.label_registry_gateway is None or (
+                    request.entity_ids and self.entity_metadata_gateway is None
+                ):
+                    raise entity_metadata_planning.EntityMetadataRefusal(
+                        "label_registry_provider_unavailable",
+                        kind="unavailable",
+                    )
+                prepared = await label_registry_planning.prepare(
+                    self.label_registry_gateway,
+                    self.entity_metadata_gateway,
+                    self.entity_metadata_snapshot_reader,
+                    request,
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self._entity_metadata_refusal_error(exc, {}) from None
+            lease.require_current()
+            return await self._create_label_plan(
+                prepared,
+                caller_context=caller_context,
+                _before_persist=lease.require_current,
+            )
+
+    def _label_core(self) -> Any:
+        """Return Core only if it admits the label profile, else refuse.
+
+        Fails closed when no F3 runtime or Core runtime is composed: the
+        label profile is admitted only by an owner-signed registry.
+        """
+
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status((label_registry.CORE_CAPABILITY,)).get(
+                    "available"
+                )
+                is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": label_registry.PENDING_ADMISSION_REASON,
+                    "reason_code": label_registry.PENDING_ADMISSION_REASON,
+                    "resource_type": label_registry.LABEL_RESOURCE_TYPE,
+                    "core_capability": label_registry.CORE_CAPABILITY,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _label_planning_lease(self, arguments: Any, request: Any) -> Any:
+        """Hold the gateway's exact Core requirements and target for planning."""
+
+        from ..f3_runtime.runtime import _rollback_planning_lease
+        from ..ha_core_readmission.routes import (
+            LABEL_TOOL,
+            static_tool_requirements,
+        )
+
+        core = self._label_core()
+        return _rollback_planning_lease(
+            core,
+            static_tool_requirements(LABEL_TOOL, arguments),
+            target={
+                "target_type": label_registry.LABEL_RESOURCE_TYPE,
+                "target_id": ",".join(sorted(request.label_ids)),
+            },
+        )
+
+    async def _create_label_plan(
+        self,
+        prepared: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+        _before_persist: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        # Persistence re-checks admission and must hold a current Core lease.
+        self._label_core()
+        if _before_persist is None:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        labels = [
+            item.target_id
+            for item in prepared.items
+            if item.resource_type == label_registry.LABEL_RESOURCE_TYPE
+        ]
+        entities = [
+            item.target_id
+            for item in prepared.items
+            if item.resource_type == ENTITY_METADATA_RESOURCE_TYPE
+        ]
+        description = "Label create/edit: " + ", ".join(labels) + "."
+        if entities:
+            description += " Assign to: " + ", ".join(entities) + "."
+        return await self._create_configuration_plan(
+            title=("Labels: " + ", ".join(labels))[:160],
+            description=description,
+            operations=prepared.operations(),
+            expiration_minutes=prepared.request.expiration_minutes,
+            caller_context=caller_context,
+            _label_context=prepared,
+            _before_persist=_before_persist,
+        )
+
     @staticmethod
     def _entity_metadata_refusal_error(
         exc: Exception, arguments: Any
@@ -5483,6 +5619,7 @@ class ChangeGovernanceService:
         _rollback_context: dict[str, Any] | None = None,
         _entity_metadata_context: Any | None = None,
         _availability_exposure_context: Any | None = None,
+        _label_context: Any | None = None,
         _before_persist: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         """Internal builder; only F3's inverse route supplies durable context.
@@ -5496,13 +5633,35 @@ class ChangeGovernanceService:
         ``create_entity_availability_exposure_plan`` (and its F3 inverse
         route): exactly the prepared children, update-only, one resource
         type.
+        ``_label_context`` is supplied only by ``create_label_plan``
+        (HAMCP-165): exactly the prepared label and entity assignment
+        children, in order, and never by a rollback.
         """
 
         if (
-            _entity_metadata_context is not None
-            and _availability_exposure_context is not None
+            sum(
+                context is not None
+                for context in (
+                    _entity_metadata_context,
+                    _availability_exposure_context,
+                    _label_context,
+                )
+            )
+            > 1
+            or (_label_context is not None and _rollback_context is not None)
         ):
             raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        if _label_context is not None and operations != (
+            _label_context.operations()
+        ):
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={
+                    "validation_errors": [
+                        "label plans contain exactly the prepared operations"
+                    ]
+                },
+            )
         if _availability_exposure_context is not None and [
             item.get("operation_id") if isinstance(item, dict) else None
             for item in (operations if isinstance(operations, list) else [])
@@ -5520,6 +5679,8 @@ class ChangeGovernanceService:
             )
 
         entity_plan_id: str | None = None
+        if _label_context is not None:
+            entity_plan_id = self._new_id()
         if _availability_exposure_context is not None:
             entity_plan_id = (
                 _rollback_context["plan_id"]
@@ -5653,7 +5814,9 @@ class ChangeGovernanceService:
                 else ""
             )
             if resource_type not in (
-                {_availability_exposure_context.request.resource_type}
+                {_label_context.item(operation_id).resource_type}
+                if _label_context is not None
+                else {_availability_exposure_context.request.resource_type}
                 if _availability_exposure_context is not None
                 else SUPPORTED_CONFIGURATION_RESOURCES
                 if _entity_metadata_context is None
@@ -5670,6 +5833,10 @@ class ChangeGovernanceService:
             if (
                 _entity_metadata_context is not None
                 or _availability_exposure_context is not None
+                or (
+                    _label_context is not None
+                    and resource_type == ENTITY_METADATA_RESOURCE_TYPE
+                )
             ) and raw_operation["action"] != "update":
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_VALIDATION_FAILED,
@@ -5803,6 +5970,9 @@ class ChangeGovernanceService:
                 # disclosure and bindings were derived from; re-reading here
                 # could bind a different entry to that review.
                 current = _entity_metadata_context.current
+            elif _label_context is not None:
+                # Same rule for each prepared 165 child.
+                current = _label_context.item(operation_id).current
             elif _availability_exposure_context is not None:
                 # Same rule for each prepared 069B child.
                 current = _availability_exposure_context.item(
@@ -5858,7 +6028,25 @@ class ChangeGovernanceService:
                     resolved_type, current
                 )
                 proposed_hash = stable_hash(normalized_proposed)
-                if _availability_exposure_context is not None:
+                if _label_context is not None:
+                    item = _label_context.item(operation_id)
+                    diff = {
+                        "has_changes": True,
+                        "label_registry": label_registry_planning.projection(
+                            _label_context, item, plan_id=entity_plan_id
+                        ),
+                    }
+                    risk = (
+                        label_registry_planning.risk_assessment(
+                            operation_id, item
+                        )
+                        if item.resource_type
+                        == label_registry.LABEL_RESOURCE_TYPE
+                        else entity_metadata_planning.risk_assessment(
+                            operation_id, item.classification
+                        )
+                    )
+                elif _availability_exposure_context is not None:
                     item = _availability_exposure_context.item(operation_id)
                     diff = {
                         "has_changes": True,
@@ -6090,6 +6278,10 @@ class ChangeGovernanceService:
         if _availability_exposure_context is not None:
             plan.dry_run_results["entity_availability_exposure"] = deepcopy(
                 _availability_exposure_context.plan_disclosure
+            )
+        if _label_context is not None:
+            plan.dry_run_results["label_registry"] = deepcopy(
+                _label_context.plan_disclosure
             )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
@@ -14342,6 +14534,9 @@ class ChangeGovernanceService:
         operational["entity_availability_exposure_provider"] = (
             self._entity_availability_exposure_provider_health_snapshot()
         )
+        operational["label_registry_provider"] = (
+            self._label_registry_provider_health_snapshot()
+        )
         for operation, operation_health in operational["operations"].items():
             operation_health["active_reconciliations"] = (
                 self._active_lifecycle_reconciliations
@@ -14549,6 +14744,35 @@ class ChangeGovernanceService:
             ],
             "core_admission": "pending_signed_registry_admission",
             "writable_assistants": ["cloud.google_assistant", "conversation"],
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _label_registry_provider_health_snapshot(self) -> dict[str, Any]:
+        """Report the dormant HAMCP-165 label provider without a Core call.
+
+        Label create and edit stay refused until a signed registry sequence
+        admits ``core.label_registry_operation``; this snapshot shows that
+        state, it does not decide it.
+        """
+
+        configured = self.label_registry_gateway is not None
+        return {
+            "provider": label_registry.LABEL_PROVIDER,
+            "provider_contracts": {
+                label_registry.LABEL_RESOURCE_TYPE: (
+                    label_registry.LABEL_PROVIDER_CONTRACT
+                ),
+            },
+            "provider_contract_status": "code_owned_exact",
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capabilities": [label_registry.CORE_CAPABILITY],
+            "core_admission": label_registry.PENDING_ADMISSION_REASON,
+            "label_deletion": False,
             "fallback": "none",
             "fallback_count": 0,
             "fallback_policy": "none",

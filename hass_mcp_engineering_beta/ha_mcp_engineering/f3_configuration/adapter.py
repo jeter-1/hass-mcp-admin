@@ -368,9 +368,11 @@ class ConfigurationOperationAdapter:
                 proposed,
             )
             if evidence_codes:
-                if "dependency_evidence_changed" in evidence_codes or (
-                    "stale_reference_definition" in evidence_codes
-                ):
+                if {
+                    "dependency_evidence_changed",
+                    "stale_reference_definition",
+                    "label_namespace_changed",
+                } & set(evidence_codes):
                     self._increment("stale_rejections")
                 return self._preflight_rejected(operation, evidence_codes)
         if state_code != "state_matches_plan":

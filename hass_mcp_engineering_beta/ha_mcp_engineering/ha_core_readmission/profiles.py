@@ -551,10 +551,39 @@ CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES = (
                      "session_fingerprint", "generation"),
     ),
 )
+# HAMCP-165: the label registry create/update contract.  Like 069A/069B it is
+# runtime-only and stays dormant until an owner-signed registry reference
+# (planned sequence 13) selects it exactly.  ``delete`` is never sent.
+CORE_LABEL_REGISTRY_PROFILES = (
+    _contract(
+        "core.label_registry_operation",
+        CoreCapabilityClass.LABEL_REGISTRY_OPERATION,
+        "compiled-core-label-registry-operation-v1",
+        (
+            "websocket_label_registry_list",
+            "websocket_label_registry_create_single",
+            "websocket_label_registry_update_single",
+            "label_registry_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "bounded_exact_label_registry_entries",
+            "fields": ["name", "color", "icon", "description"],
+            "label_id": "exact_core_slug_of_name_no_suffix",
+            "dispatch": "at_most_once_label_create_or_update_per_label",
+            "never_sent": ["config/label_registry/delete"],
+            "readback": "authoritative_exact_label_registry_entry",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
     + CORE_AUTOMATION_BASELINE_PROFILES + CORE_ENTITY_METADATA_PROFILES
     + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
+    + CORE_LABEL_REGISTRY_PROFILES
 )
 
 
@@ -616,6 +645,7 @@ __all__ = [
     "CORE_TYPED_OPERATION_PROFILES",
     "CORE_ENTITY_METADATA_PROFILES",
     "CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES",
+    "CORE_LABEL_REGISTRY_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

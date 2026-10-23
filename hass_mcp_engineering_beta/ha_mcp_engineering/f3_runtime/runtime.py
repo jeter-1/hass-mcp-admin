@@ -123,6 +123,11 @@ from ..governance.entity_availability_exposure import (
     RESOURCE_TYPES as AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
     entry_errors as availability_exposure_entry_errors,
 )
+from ..governance import label_registry_planning
+from ..governance.label_registry import (
+    CAPABILITY_IDENTITIES as LABEL_CAPABILITY_IDENTITIES,
+    LABEL_RESOURCE_TYPE,
+)
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
 from ..governance.task_storage import ExecutionTaskStorageError
@@ -1069,6 +1074,11 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
+    async def label_preflight_evidence(self, target_id, current, proposed):
+        return await self.delegate.label_preflight_evidence(
+            target_id, current, proposed
+        )
+
     async def write(self, action, resource_type, target_id, proposed_config):
         self.auditor("provider_invocation_started")
         try:
@@ -1324,6 +1334,11 @@ class F3RuntimeIntegration:
             for resource in ("automation", "script", "input_boolean", "input_number")
             for action in ("create", "update")
         }
+        # HAMCP-165: label registry entries are created and updated.
+        for action, identity in LABEL_CAPABILITY_IDENTITIES.items():
+            configuration_adapters[identity] = ConfigurationOperationAdapter(
+                LABEL_RESOURCE_TYPE, action, config_gateway, now=service.now
+            )
         # HAMCP-069A-1 / 069B: entity registry writes are update-only.
         for resource, identity in AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES.items():
             configuration_adapters[identity] = ConfigurationOperationAdapter(
@@ -3872,6 +3887,21 @@ class F3RuntimeIntegration:
             raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
         if source_plan.contract_version == 3:
             raise GovernanceError(ErrorCode.ROLLBACK_NOT_AVAILABLE)
+        if any(
+            operation.resource_type == LABEL_RESOURCE_TYPE
+            for operation in source_plan.operations
+        ):
+            # HAMCP-165: undoing a label create needs deletion (HAMCP-155);
+            # a corrective edit is a new plan.  Refused locally: no read.
+            raise GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": label_registry_planning.ROLLBACK_NOT_SUPPORTED,
+                    "reason_code": label_registry_planning.ROLLBACK_NOT_SUPPORTED,
+                    "provider_dispatch_occurred": False,
+                },
+            )
         if source_plan.rollback.request_id:
             existing = self.service.repository.get(source_plan.rollback.request_id)
             if existing is not None:

@@ -32,6 +32,9 @@ from .ha_core_readmission.routes import (
     StaticCoreRoute,
     AVAILABILITY_EXPOSURE_OPERATIONS,
     AVAILABILITY_EXPOSURE_TOOL,
+    LABEL_PROFILE,
+    LABEL_RESOURCE_TYPE,
+    LABEL_TOOL,
     StaticToolTargetRefused,
     static_tool_core_route,
     static_tool_target,
@@ -386,19 +389,24 @@ class AuthenticatedMcpGateway:
         await send({"type": "http.response.body", "body": body})
 
     def _pending_admission_details(self, tool_name, parameters) -> dict:
-        """Name a 069B profile that no owner-signed registry admits yet.
+        """Name a 069B or 165 profile that no owner-signed registry admits yet.
 
         Only the selected profile's own admission state is reported; any other
         Core unavailability keeps the generic refusal with empty details.
         """
 
-        if (
-            tool_name != AVAILABILITY_EXPOSURE_TOOL
-            or self._core_runtime is None
-            or not isinstance(parameters, dict)
+        if self._core_runtime is None:
+            return {}
+        if tool_name == LABEL_TOOL:
+            selected = (LABEL_RESOURCE_TYPE, LABEL_PROFILE)
+        elif tool_name != AVAILABILITY_EXPOSURE_TOOL or not isinstance(
+            parameters, dict
         ):
             return {}
-        selected = AVAILABILITY_EXPOSURE_OPERATIONS.get(parameters.get("operation"))
+        else:
+            selected = AVAILABILITY_EXPOSURE_OPERATIONS.get(
+                parameters.get("operation")
+            )
         if selected is None:
             return {}
         if self._core_runtime.route_status((selected[1],))["available"]:
@@ -951,10 +959,16 @@ class AuthenticatedMcpGateway:
                 core_route.requirements if core_route is not None else ()
             )
             if self._core_runtime is not None and core_requirements:
+                # HAMCP-165: an unadmitted label profile is refused before the
+                # request is even validated; nothing is read or stored.
+                pending_label_admission = tool_name == LABEL_TOOL and bool(
+                    self._pending_admission_details(tool_name, parameters)
+                )
                 try:
                     core_target = (
                         static_tool_target(tool_name, parameters)
                         if isinstance(tool_name, str)
+                        and not pending_label_admission
                         else None
                     )
                 except StaticToolTargetRefused as refusal:
@@ -992,7 +1006,9 @@ class AuthenticatedMcpGateway:
                     )
                     return
                 core_authority = (
-                    self._core_runtime.acquire(core_requirements)
+                    None
+                    if pending_label_admission
+                    else self._core_runtime.acquire(core_requirements)
                     if core_target is None
                     else self._core_runtime.acquire(
                         core_requirements, target=core_target

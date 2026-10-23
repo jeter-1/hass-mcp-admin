@@ -139,8 +139,8 @@ verified.
 - Stale-state refusal at dispatch. Children are preflighted one at a time,
   immediately before their own dispatch. Preflight re-lists the registry and
   refuses before any write when:
-  - the target entry changed (`target_fingerprint_changed`);
-  - a create target already exists (`target_exists`);
+  - the target entry changed (`stale_target_state`);
+  - a create target already exists (`target_already_exists`);
   - the namespace fingerprint changed (`label_namespace_changed`).
 - Entity children keep the 069A preflight unchanged. Their reference
   bindings for in-plan labels use the label's FINAL id and name, which is what
@@ -210,7 +210,10 @@ verification audit records.
   exclusive `label_namespace:registry` lock (reason
   `label_namespace_mutation`). This replaces 069A §6's planned
   `label_registry:create`, which could collide with a label whose id is
-  `create`. The entity children's lock graph is the unchanged 069A graph.
+  `create`. Like every configuration child, each label child also takes the
+  shared `reload:label_registry_entry` lock. A label write needs no reload;
+  the lock keeps the uniform configuration lock graph (the 069A-1 V6
+  precedent). The entity children's lock graph is the unchanged 069A graph.
 
 ## 9. Rollback
 
@@ -249,11 +252,29 @@ The signed fingerprint is reported in the pull request and pinned by tests.
 Entity children route to the signed `core.entity_registry_metadata_operation`
 profile. A plan becomes executable only when both profiles are admitted.
 
-Evidence lane: `scripts/hamcp165_label_contract_acceptance.py` runs against
-the disposable CI Home Assistant with a TEST registry authority. It creates a
-label, edits it, assigns it to one entity, verifies the readback, proves
-`label_already_exists` and `label_namespace_changed`, and never sends delete.
-Its bounded result is uploaded as CI evidence for the seq-13 signing run.
+Evidence lane: the `label_registry` lane in
+`scripts/seq13_contract_acceptance.py` (with 069B's `availability_exposure`
+lane beside it). It runs against the disposable CI Home Assistant on each
+Alarmo-slot window Core, under two CI-only ephemeral authorities:
+
+- the predecessor holds the 22 shipped signed profiles. It must refuse at the
+  route and at the service (`pending_signed_registry_admission`, 0 Home
+  Assistant requests);
+- the extension appends the label profile (authority transition 22 → 23).
+
+It creates a label, edits it, and creates a second label and assigns it to a
+run-unique helper in one ordered plan, verifying each readback. It also proves
+`label_already_exists`, `label_name_in_use`, invalid colour and icon (0 Home
+Assistant commands), and a stale-state refusal that keeps a raw drift made
+between plan and apply. Only the lane's own raw client deletes fixtures,
+followed by an independent absence readback. The governed paths never send
+delete.
+
+The lane is defined, not wired. `ci.yml` sets
+`REAL_HA_SEQ13_LANES: dormant` on the `real-ha-contract-tests` job, and the
+lane's two steps (stage paths, upload evidence) run only when that value is
+`enabled`. The seq-13 batch evidence run flips that one value. No existing
+lane changes behaviour.
 
 ## 12. Live canary (after seq-13 signing only)
 

@@ -67,6 +67,7 @@ class CoreCapabilityClass(str, Enum):
     ENTITY_REGISTRY_METADATA_OPERATION = "entity_registry_metadata_operation"
     ENTITY_REGISTRY_AVAILABILITY_OPERATION = "entity_registry_availability_operation"
     ENTITY_ASSISTANT_EXPOSURE_OPERATION = "entity_assistant_exposure_operation"
+    LABEL_REGISTRY_OPERATION = "label_registry_operation"
     UNCLASSIFIED = "unclassified"
 
     @property
@@ -79,6 +80,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.ENTITY_REGISTRY_METADATA_OPERATION,
             CoreCapabilityClass.ENTITY_REGISTRY_AVAILABILITY_OPERATION,
             CoreCapabilityClass.ENTITY_ASSISTANT_EXPOSURE_OPERATION,
+            CoreCapabilityClass.LABEL_REGISTRY_OPERATION,
             CoreCapabilityClass.UNCLASSIFIED,
         }
 
@@ -100,6 +102,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.ENTITY_REGISTRY_METADATA_OPERATION,
             CoreCapabilityClass.ENTITY_REGISTRY_AVAILABILITY_OPERATION,
             CoreCapabilityClass.ENTITY_ASSISTANT_EXPOSURE_OPERATION,
+            CoreCapabilityClass.LABEL_REGISTRY_OPERATION,
         }
 
 

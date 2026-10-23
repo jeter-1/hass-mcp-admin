@@ -1,0 +1,297 @@
+[
+  {
+    "name": "baseline",
+    "exit": 0,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": true
+  },
+  {
+    "name": "gate_check_removed",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=15)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_internal_builder_refuses_without_admission_or_lease",
+      "test_missing_or_broken_core_fails_closed",
+      "test_only_the_label_profile_gates_label_plans",
+      "test_the_real_core_without_a_signed_reference_refuses",
+      "test_tool_refuses_while_unadmitted",
+      "test_unadmitted_core_refuses_every_request_with_zero_reads"
+    ],
+    "killed": true
+  },
+  {
+    "name": "gate_not_checked_first",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unadmitted_core_refuses_every_request_with_zero_reads"
+    ],
+    "killed": true
+  },
+  {
+    "name": "gate_not_rechecked_at_persist",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_internal_builder_refuses_without_admission_or_lease"
+    ],
+    "killed": true
+  },
+  {
+    "name": "builder_accepts_no_persist_lease",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_internal_builder_refuses_without_admission_or_lease"
+    ],
+    "killed": true
+  },
+  {
+    "name": "readback_skipped",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_error_after_send_is_indeterminate_not_verified",
+      "test_readback_mismatch_is_never_verified"
+    ],
+    "killed": true
+  },
+  {
+    "name": "generated_id_mismatch_ignored",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_different_generated_id_is_never_verified"
+    ],
+    "killed": true
+  },
+  {
+    "name": "duplicate_name_accepted_on_create",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=5)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_duplicate_name_is_refused_with_the_holder",
+      "test_name_taken_earlier_in_the_same_plan_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "duplicate_name_accepted_on_rename",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_rename_onto_another_labels_name_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "name_compare_case_sensitive",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=8)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_duplicate_name_is_refused_with_the_holder",
+      "test_every_validation_refusal_precedes_any_read",
+      "test_rename_onto_another_labels_name_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "in_plan_duplicate_create_accepted",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_every_validation_refusal_precedes_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "stale_fingerprint_constant",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (errors=18)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_audit_records_plan_approval_apply_and_verification",
+      "test_case_only_rename_of_the_same_label_is_allowed",
+      "test_create_target_appearing_before_dispatch_is_refused",
+      "test_create_then_assign_runs_in_order",
+      "test_create_with_every_field",
+      "test_different_generated_id_is_never_verified",
+      "test_edit_and_create_then_assign_both",
+      "test_edit_sends_only_the_changed_fields",
+      "test_error_after_send_is_indeterminate_not_verified",
+      "test_existing_plan_after_withdrawal_never_writes_across_restart",
+      "test_external_edit_before_dispatch_is_refused",
+      "test_namespace_change_before_dispatch_is_refused",
+      "test_partial_result_is_truthful_and_the_label_persists",
+      "test_readback_mismatch_is_never_verified",
+      "test_refused_write_stops_the_plan",
+      "test_rollback_is_refused_without_reads_or_plans",
+      "test_signed_test_registry_end_to_end"
+    ],
+    "killed": true
+  },
+  {
+    "name": "stale_target_state_ignored",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_external_edit_before_dispatch_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "namespace_change_ignored",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_namespace_change_before_dispatch_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "preflight_evidence_skipped",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_namespace_change_before_dispatch_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "send_allowlist_dropped",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=7)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_gateway_refuses_never_sent_and_unknown_commands_before_io"
+    ],
+    "killed": true
+  },
+  {
+    "name": "cap_8_to_9",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=33)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_every_validation_refusal_precedes_any_read",
+      "test_static_target_binds_the_exact_sorted_label_set",
+      "test_tool_policy_and_closed_schema"
+    ],
+    "killed": true
+  },
+  {
+    "name": "policy_contract_always_complete",
+    "exit": 1,
+    "tests": [
+      "62"
+    ],
+    "result": [
+      "FAILED (failures=7)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_tampered_plan_shapes_are_prohibited"
+    ],
+    "killed": true
+  }
+]
