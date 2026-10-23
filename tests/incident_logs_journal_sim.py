@@ -4,8 +4,16 @@ Synthetic data only. The response shape follows Supervisor 2026.09.1
 (40e3ee7640a3c44abe67f1a1397f39c3cd949806) ``APIHost.advanced_logs_handler``
 with ``journal_verbose_formatter``: ``text/plain``, one
 ``"{ts} {hostname} {identifier}[{pid}]: {message}"`` text per entry followed
-by a newline, the timestamp UTC ``YYYY-MM-DD HH:MM:SS.mmm`` (truncated), and
+by a newline, the timestamp ``YYYY-MM-DD HH:MM:SS.mmm`` (truncated), and
 ``X-First-Cursor`` naming the first returned entry only when there is one.
+
+HAMCP-220: ``render`` selects the prefix time. ``"utc"`` is the pinned
+2026.09.1 formatter; ``"local"`` is 2026.10.3 (9493d3a7, #7372):
+``datetime.fromtimestamp(realtime / 1e6, tz).replace(tzinfo=None)
+.isoformat(sep=" ", timespec="milliseconds")`` in Supervisor's zone;
+``"offset"`` appends ``+HH:MM``, as an unreleased Supervisor does. The
+cursor has the systemd v257.9 ``sd_journal_get_cursor`` field order
+(``sd-journal.c`` L1252-1258), ``t=`` being the realtime in hex microseconds.
 
 The ``Range: entries=<cursor>:<skip>:<count>`` arithmetic follows
 systemd v257.9 ``journal-gatewayd``: with a cursor, seek it (a vanished
@@ -30,6 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import re
+from zoneinfo import ZoneInfo
 
 from aiohttp import web
 
@@ -54,15 +63,32 @@ class Entry:
     message: str
     identifier: str = "homeassistant"
     pid: int | None = 77
+    # Sub-millisecond part of the realtime, which the text truncates.
+    sub_us: int = 437
+
+    @property
+    def realtime_us(self) -> int:
+        return self.ts_ms * 1000 + self.sub_us
+
+    def cursor_text(self, realtime: bool = True) -> str:
+        # Synthetic journal-cursor shape; the IDs are assembled, not literal.
+        fields = [f"s={_SEQNUM_ID}", f"i={self.seq:x}", f"b={_BOOT_ID}", f"m={self.seq * 1000:x}"]
+        if realtime:
+            fields.append(f"t={self.realtime_us:x}")
+        fields.append(f"x={(self.seq * 2654435761) & 0xffffffffffff:x}")
+        return ";".join(fields)
 
     @property
     def cursor(self) -> str:
-        # Synthetic journal-cursor shape; the IDs are assembled, not literal.
-        return f"s={_SEQNUM_ID};i={self.seq:x};b={_BOOT_ID};t={self.ts_ms:x}"
+        return self.cursor_text()
 
-    def text(self) -> str:
-        moment = datetime.fromtimestamp(self.ts_ms / 1000, timezone.utc)
-        stamp = moment.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    def text(self, render: str = "utc", zone: str = "UTC") -> str:
+        tz = timezone.utc if render == "utc" else ZoneInfo(zone)
+        moment = datetime.fromtimestamp(self.realtime_us / 1e6, tz)
+        stamp = moment.replace(tzinfo=None).isoformat(sep=" ", timespec="milliseconds")
+        if render == "offset":
+            offset = moment.strftime("%z")
+            stamp += f"{offset[:3]}:{offset[3:]}"
         ident = self.identifier if self.pid is None else f"{self.identifier}[{self.pid}]"
         return f"{stamp} {HOSTNAME} {ident}: {self.message}"
 
@@ -104,8 +130,14 @@ class Journal:
 class SupervisorSim:
     """``/core/logs`` and ``/addons/self/logs`` over separate journals."""
 
-    def __init__(self, token: str):
+    def __init__(self, token: str, render: str = "utc", zone: str = "UTC"):
         self.token = token
+        self.render = render
+        # Supervisor's own time zone, which may differ from the add-on's TZ.
+        self.zone = zone
+        self.cursor_realtime = True
+        # Journals whose X-First-Cursor carries no realtime (HAMCP-220 M1).
+        self.no_realtime_paths: set[str] = set()
         self.journals = {"/core/logs": Journal(), "/addons/self/logs": Journal()}
         self.calls: list[tuple[str, str, dict]] = []
         self.status: dict[str, int] = {}
@@ -133,10 +165,11 @@ class SupervisorSim:
         if not match:
             return web.Response(status=400)
         selected = self.journal(request.path).select(match[1], int(match[2]), int(match[3]))
-        body = "".join(entry.text() + "\n" for entry in selected).encode("utf-8")
+        body = "".join(entry.text(self.render, self.zone) + "\n" for entry in selected).encode("utf-8")
         if self.truncate_after is not None:
             body = body[: self.truncate_after]
-        headers = {"X-First-Cursor": selected[0].cursor} if selected else {}
+        realtime = self.cursor_realtime and request.path not in self.no_realtime_paths
+        headers = {"X-First-Cursor": selected[0].cursor_text(realtime)} if selected else {}
         return web.Response(body=body, headers=headers, content_type=self.content_type,
                             charset="utf-8")
 
