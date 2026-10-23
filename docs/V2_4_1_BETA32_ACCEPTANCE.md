@@ -309,16 +309,17 @@ The existing suites that pin the tool count, sanitizer sites, Core gate and
 reader purpose are updated. The Evidence tier on the PR head is the complete
 final run.
 
-Mutations: **235 of 235 killed, none survived**
-(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 289
+Mutations: **236 of 236 killed, none survived**
+(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 290
 tests across the three HAMCP-132 modules and both reviewer suites
 (`test_pr294_delta_review` and `test_pr294_corr2_extra`): OK, 1 skipped. Every kill is a test failure or
 a test-level error; none is an import or syntax failure.
 
 The set is slice 1's 80, 55 for slice 2, 31 for the independent-review
 corrections, 18 for the delta-review corrections, 21 for the second
-delta-review corrections, 13 for the owner policy decision and 17 for the
-owner derived-value decision. The first slice 2 run left two
+delta-review corrections, 13 for the owner policy decision, 17 for the
+owner derived-value decision and 1 for the owner decision on the
+Core-observed entity ID (`B6-O1`). The first slice 2 run left two
 survivors:
 - `B-L2` was equivalent. `_credential_shaped` also matches `db_url`, so
   removing only the nested `WITHHELD_KEYS` test changes nothing. It was

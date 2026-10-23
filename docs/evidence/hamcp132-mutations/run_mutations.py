@@ -98,6 +98,10 @@ of a withheld value or the diagnosis guard removed, a withheld key kept in
 the definition ID, a withheld legacy name matched, and the internal keys
 rendered.
 
+The owner decision of 2026-10-22 that the Core-observed entity ID of an
+exact registry match is Core's own data, shown rather than withheld, adds
+``B6-O1``: that ID withheld when the definition's own derivation was.
+
 Usage:
     python docs/evidence/hamcp132-mutations/run_mutations.py \
         --work ~/hamcp132-work/mut --output docs/evidence/hamcp132-mutations/results.json
@@ -168,6 +172,7 @@ B3_INVISIBLE = "corr2 review R2-H1: invisible, format or control text is withhel
 B3_COMPLETE = "corr2 review R2-M1: any withheld form anywhere in the final envelope makes the report partial"
 B4_POLICY = "owner decision 2026-10-22: only the SQL db_url policy redaction leaves a report complete"
 B5_DERIVED = "owner decision 2026-10-22: nothing is derived from a withheld input"
+B6_OBSERVED = "owner decision 2026-10-22: the Core-observed entity ID is shown, not withheld"
 
 
 def m(identifier, item, *replacements):
@@ -803,6 +808,10 @@ MUTATIONS = [
     m("B5-S1-internal-keys-rendered", B5_DERIVED,
       (DSVC, '_INTERNAL_KEYS = ("dependencies", "dependencies_withheld", "legacy_object_id")',
        '_INTERNAL_KEYS = ("dependencies",)')),
+    m("B6-O1-core-observed-entity-id-withheld", B6_OBSERVED,
+      (DMATCH, 'result.update(entity_id=hits[0], method=match["method"],',
+       'result.update(entity_id=None if expected.get("derivation_limit") == "derived_entity_id_withheld"'
+       ' else hits[0], method=match["method"],')),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)
