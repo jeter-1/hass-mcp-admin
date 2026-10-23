@@ -2251,7 +2251,9 @@ class WorkflowBindingTests(unittest.TestCase):
 
     def test_core_archive_uses_only_fixed_codeload_forms_and_exact_digest(self):
         step = self.step("Stage exact Alarmo and independent interval observer for the Core slot")
-        self.assertEqual(step["env"], {"REAL_HA_CORE_SOURCE_COMMIT": "${{ matrix.core_source_commit }}",
+        # HAMCP-221: the read-only job token authenticates the codeload reads.
+        self.assertEqual(step["env"], {"GH_TOKEN": "${{ github.token }}",
+                                       "REAL_HA_CORE_SOURCE_COMMIT": "${{ matrix.core_source_commit }}",
                                        "REAL_HA_CORE_SOURCE_SHA256": "${{ matrix.core_source_sha256 }}"})
         script = step["run"]
         self.assertTrue(script.startswith("set -euo pipefail\n"))
@@ -2263,7 +2265,14 @@ class WorkflowBindingTests(unittest.TestCase):
         self.assertEqual(script.count("sha256sum --check --strict"), 1)
         self.assertIn('printf \'%s  %s\\n\' "$REAL_HA_CORE_SOURCE_SHA256" "$core_archive" | sha256sum --check --strict', script)
         self.assertIn('test -n "$matched"', script)
-        self.assertIn("--proto '=https' --tlsv1.2", script)
+        # Both reads use the bounded retry helper (HTTPS, TLS 1.2+, no
+        # redirects); the Core form also checks its digest in the helper,
+        # where a mismatch is never retried, before the strict shell check.
+        self.assertNotIn("curl", script)
+        self.assertEqual(script.count("python3 -I -S scripts/github_retry.py download"), 2)
+        self.assertEqual(script.count('--sha256 "$REAL_HA_CORE_SOURCE_SHA256"'), 1)
+        self.assertIn('--sha256 "$REAL_HA_CORE_SOURCE_SHA256" \\\n'
+                      '     && printf \'%s  %s\\n\' "$REAL_HA_CORE_SOURCE_SHA256"', script)
         # No pinned Core commit or digest survives in the workflow step itself.
         self.assertEqual(re.findall(r"\b[0-9a-f]{40}\b", script), [acceptance.COMMIT])
         self.assertEqual(re.findall(r"\b[0-9a-f]{64}\b", script), [])
