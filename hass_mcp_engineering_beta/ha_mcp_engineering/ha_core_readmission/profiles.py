@@ -558,7 +558,7 @@ CORE_CONFIGURATION_DELETE_PROFILES = (
         (
             "rest_config_automation_script_get",
             "rest_config_automation_script_delete_no_body",
-            "websocket_entity_registry_get",
+            "websocket_entity_registry_list",
             "rest_entity_state_get",
             "config_registry_state_absence_readback",
         ),

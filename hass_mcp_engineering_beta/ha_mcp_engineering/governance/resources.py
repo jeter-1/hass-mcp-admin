@@ -613,6 +613,11 @@ class ConfigurationResourceGateway:
             websocket_client
         )
         self.availability_exposure_snapshot_reader: Any = None
+        # HAMCP-155: the only DELETE sender; the generic ``write`` keeps
+        # refusing every action other than create or update.
+        from .configuration_delete import ConfigurationDeleteGateway
+
+        self.configuration_delete = ConfigurationDeleteGateway(self)
 
     async def get(
         self, resource_type: str, resource_id: str

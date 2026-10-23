@@ -27,7 +27,7 @@ from ha_mcp_engineering.ha_core_readmission.probe_profiles import (
     LEGACY_PROBE_PROFILE, compiled_probe_profile, known_probe_profile,
 )
 from ha_mcp_engineering.ha_core_readmission.profiles import (
-    CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES,
+    CORE_CONFIGURATION_DELETE_PROFILES, CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES,
     CORE_RUNTIME_CAPABILITY_PROFILES, compiled_exact_authority,
 )
 from ha_mcp_engineering.ha_core_readmission.models import CORE_IDENTITY
@@ -224,9 +224,11 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
                           capabilities=[{k:p.to_mapping()[k] for k in (
                               'capability_id','profile_id','profile_version','adapter_id','contract_fingerprint')}
                               for p in CORE_RUNTIME_CAPABILITY_PROFILES
-                              # HAMCP-069B: the signed sequence-12 reference
-                              # set does not name the dormant 069B profiles.
-                              if p not in CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES])
+                              # HAMCP-069B/155: the signed sequence-12
+                              # reference set names neither the dormant 069B
+                              # profiles nor the dormant delete profile.
+                              if p not in CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
+                              and p not in CORE_CONFIGURATION_DELETE_PROFILES])
         self.now = NOW
         self.raw = None
         async def fetch(*_args):

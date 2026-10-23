@@ -2644,6 +2644,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         from ha_mcp_engineering.ha_core_readmission.profiles import (
             CORE_TYPED_OPERATION_PROFILES, CORE_INTEGRATION_INSPECTION_PROFILES, CORE_AUTOMATION_BASELINE_PROFILES,
             CORE_ENTITY_METADATA_PROFILES, CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES,
+            CORE_CONFIGURATION_DELETE_PROFILES,
         )
         source = _MutableSource(_core_2026_9_snapshot())
         events: list[dict] = []
@@ -2667,12 +2668,14 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["admitted_count"], len(CORE_CAPABILITY_PROFILES))
         self.assertEqual(summary["withheld_count"], len(CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES + CORE_AUTOMATION_BASELINE_PROFILES
                                                             + CORE_ENTITY_METADATA_PROFILES
-                                                            + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES))
+                                                            + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
+                                                            + CORE_CONFIGURATION_DELETE_PROFILES))
         self.assertEqual(
             {p["capability_id"] for p in runtime.health_snapshot()["authority_profiles"]
              if not p["disposition"].startswith("admitted_")},
             {p.capability_id for p in CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES + CORE_AUTOMATION_BASELINE_PROFILES
-             + CORE_ENTITY_METADATA_PROFILES + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES},
+             + CORE_ENTITY_METADATA_PROFILES + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
+             + CORE_CONFIGURATION_DELETE_PROFILES},
         )
         self.assertEqual(summary["fallback_count"], 0)
         encoded = json.dumps(event, sort_keys=True)

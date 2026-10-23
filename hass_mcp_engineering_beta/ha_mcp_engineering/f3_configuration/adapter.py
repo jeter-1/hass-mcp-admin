@@ -164,11 +164,7 @@ class ConfigurationOperationAdapter:
             "full_configuration_check_required": True,
         }
         verification_hash = stable_hash(verification_payload)
-        expected_effect = (
-            "configuration_resource_created"
-            if self.strategy.action == "create"
-            else "configuration_resource_updated"
-        )
+        expected_effect = self._expected_effect(self.strategy.action)
         prepared_payload = {
             "contract_model": F3_ADAPTER_CONTRACT_MODEL,
             "adapter_id": "configuration_operation",
@@ -264,53 +260,11 @@ class ConfigurationOperationAdapter:
         acquired_locks,
     ) -> ConfigurationPreflightResult:
         self._increment("preflight_attempts")
-        try:
-            self._require_operation(operation)
-        except ValueError:
-            return self._preflight_rejected(
-                operation, ("prepared_operation_invalid",)
-            )
-        required_locks = operation_lock_requests(operation)
-        try:
-            normalized_acquired = normalize_durable_lock_requests(
-                acquired_locks
-            )
-            normalized_required = normalize_durable_lock_requests(
-                required_locks
-            )
-        except (TypeError, ValueError):
-            self._increment("lock_conflicts")
-            return self._preflight_rejected(
-                operation,
-                ("lock_set_invalid",),
-                outcome=NormalizedOperationOutcome.LOCK_CONFLICT,
-            )
-        if normalized_acquired != normalized_required:
-            self._increment("lock_conflicts")
-            return self._preflight_rejected(
-                operation,
-                ("complete_lock_set_not_held",),
-                outcome=NormalizedOperationOutcome.LOCK_CONFLICT,
-            )
-        if not operation.policy_snapshot_valid:
-            return self._preflight_rejected(
-                operation, ("policy_snapshot_mismatch",)
-            )
-        if self._expired(operation.plan_expires_at):
-            return self._preflight_rejected(
-                operation, ("plan_expired",)
-            )
-        if not (
-            operation.provider_admitted
-            and getattr(self.gateway, "provider_admitted", False) is True
-        ):
-            return self._preflight_rejected(
-                operation,
-                ("provider_not_admitted",),
-                outcome=(
-                    NormalizedOperationOutcome.PROVIDER_UNAVAILABLE_PRE_DISPATCH
-                ),
-            )
+        required_locks, rejection = self._preflight_gates(
+            operation, acquired_locks
+        )
+        if rejection is not None:
+            return rejection
 
         proposed = operation.proposed_config()
         valid, _errors, _warnings = self.strategy.validate(
@@ -431,6 +385,62 @@ class ConfigurationOperationAdapter:
         )
         return result
 
+    def _preflight_gates(
+        self,
+        operation: PreparedConfigurationOperation,
+        acquired_locks,
+    ) -> tuple[Any, ConfigurationPreflightResult | None]:
+        """Shared lock, policy, expiry and provider-admission gates."""
+
+        try:
+            self._require_operation(operation)
+        except ValueError:
+            return (), self._preflight_rejected(
+                operation, ("prepared_operation_invalid",)
+            )
+        required_locks = operation_lock_requests(operation)
+        try:
+            normalized_acquired = normalize_durable_lock_requests(
+                acquired_locks
+            )
+            normalized_required = normalize_durable_lock_requests(
+                required_locks
+            )
+        except (TypeError, ValueError):
+            self._increment("lock_conflicts")
+            return (), self._preflight_rejected(
+                operation,
+                ("lock_set_invalid",),
+                outcome=NormalizedOperationOutcome.LOCK_CONFLICT,
+            )
+        if normalized_acquired != normalized_required:
+            self._increment("lock_conflicts")
+            return (), self._preflight_rejected(
+                operation,
+                ("complete_lock_set_not_held",),
+                outcome=NormalizedOperationOutcome.LOCK_CONFLICT,
+            )
+        if not operation.policy_snapshot_valid:
+            return (), self._preflight_rejected(
+                operation, ("policy_snapshot_mismatch",)
+            )
+        if self._expired(operation.plan_expires_at):
+            return (), self._preflight_rejected(
+                operation, ("plan_expired",)
+            )
+        if not (
+            operation.provider_admitted
+            and getattr(self.gateway, "provider_admitted", False) is True
+        ):
+            return (), self._preflight_rejected(
+                operation,
+                ("provider_not_admitted",),
+                outcome=(
+                    NormalizedOperationOutcome.PROVIDER_UNAVAILABLE_PRE_DISPATCH
+                ),
+            )
+        return required_locks, None
+
     async def dispatch(
         self,
         operation: PreparedConfigurationOperation,
@@ -456,6 +466,23 @@ class ConfigurationOperationAdapter:
                 provider_mutation_count=0,
             )
 
+        refusal = await self._predispatch_refusal(operation)
+        if refusal:
+            if any(
+                code in {"stale_target_state", "delete_target_missing"}
+                for code in refusal
+            ):
+                self._increment("stale_rejections")
+            return self._dispatch_result(
+                operation,
+                NormalizedOperationOutcome.FAILED_PRE_DISPATCH,
+                intent=False,
+                invocation_count=0,
+                may_have_dispatched=False,
+                response_received=False,
+                codes=refusal,
+                provider_mutation_count=0,
+            )
         proposed_config = operation.proposed_config()
         provider_config = self.strategy.dispatch_config(
             proposed_config, operation.current_config()
@@ -476,12 +503,7 @@ class ConfigurationOperationAdapter:
             )
 
         try:
-            await self.gateway.write(
-                operation.action,
-                operation.resource_type,
-                operation.target.target_id,
-                provider_config,
-            )
+            await self._send(operation, provider_config)
         except ConfigurationMutationNotDispatchedError as exc:
             self._increment("intents_committed")
             self._increment("dispatch_attempts")
@@ -1144,11 +1166,7 @@ class ConfigurationOperationAdapter:
             or operation.verification_contract_model
             != CONFIGURATION_VERIFICATION_CONTRACT_MODEL
             or operation.expected_effects
-            != (
-                "configuration_resource_created"
-                if operation.action == "create"
-                else "configuration_resource_updated",
-            )
+            != (self._expected_effect(operation.action),)
         ):
             raise ValueError("prepared operation does not match adapter")
         self._require_hash(
@@ -1204,11 +1222,7 @@ class ConfigurationOperationAdapter:
         )
         if verification_hash != operation.verification_contract_hash:
             raise ValueError("prepared verification contract is inconsistent")
-        expected_effect = (
-            "configuration_resource_created"
-            if operation.action == "create"
-            else "configuration_resource_updated"
-        )
+        expected_effect = self._expected_effect(operation.action)
         prepared_payload = {
             "contract_model": operation.contract_model,
             "adapter_id": operation.adapter_id,
@@ -1250,6 +1264,40 @@ class ConfigurationOperationAdapter:
         }
         if stable_hash(prepared_payload) != operation.prepared_operation_hash:
             raise ValueError("prepared operation hash is inconsistent")
+
+    @staticmethod
+    def _expected_effect(action: str) -> str:
+        """Name the one effect of a reviewed action; never default one.
+
+        HAMCP-155: an action other than create or update must not inherit
+        the update effect.  The delete adapter overrides this explicitly.
+        """
+
+        if action == "create":
+            return "configuration_resource_created"
+        if action == "update":
+            return "configuration_resource_updated"
+        raise ValueError("configuration action has no reviewed effect")
+
+    async def _predispatch_refusal(
+        self, operation: PreparedConfigurationOperation
+    ) -> tuple[str, ...]:
+        """Final checks before durable intent; any code refuses with no send."""
+
+        del operation
+        return ()
+
+    async def _send(
+        self,
+        operation: PreparedConfigurationOperation,
+        provider_config: dict[str, Any],
+    ) -> Any:
+        return await self.gateway.write(
+            operation.action,
+            operation.resource_type,
+            operation.target.target_id,
+            provider_config,
+        )
 
     @staticmethod
     def _require_hash(name: str, value: str) -> None:

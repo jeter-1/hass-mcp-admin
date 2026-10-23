@@ -77,6 +77,7 @@ from ..f3.operational_models import (
     OperationalPreparationRequest,
 )
 from ..f3_configuration.adapter import ConfigurationOperationAdapter
+from ..f3_configuration.delete import ConfigurationDeleteAdapter
 from ..f3_configuration.gateway import ExistingConfigurationGatewayBridge
 from ..f3_configuration.locks import lock_set_hash, resource_lock_key
 from ..f3_configuration.migration import (
@@ -122,6 +123,10 @@ from ..governance.entity_availability_exposure import (
     CAPABILITY_IDENTITIES as AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES,
     RESOURCE_TYPES as AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
     entry_errors as availability_exposure_entry_errors,
+)
+from ..governance.configuration_delete import (
+    CAPABILITY_IDENTITIES as CONFIGURATION_DELETE_CAPABILITY_IDENTITIES,
+    PROFILE as CONFIGURATION_DELETE_PROFILE,
 )
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
@@ -1069,12 +1074,37 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
+    async def delete_read_config(self, resource_type, target_id):
+        return await self.delegate.delete_read_config(resource_type, target_id)
+
+    async def delete_registry_entry(self, resource_type, target_id):
+        return await self.delegate.delete_registry_entry(
+            resource_type, target_id
+        )
+
+    async def delete_state_exists(self, entity_id):
+        return await self.delegate.delete_state_exists(entity_id)
+
+    async def delete_consumer_fingerprint(self, entity_id):
+        return await self.delegate.delete_consumer_fingerprint(entity_id)
+
     async def write(self, action, resource_type, target_id, proposed_config):
-        self.auditor("provider_invocation_started")
-        try:
-            result = await self.delegate.write(
+        return await self._audited(
+            self.delegate.write(
                 action, resource_type, target_id, proposed_config
             )
+        )
+
+    async def delete_configuration(self, resource_type, target_id):
+        # HAMCP-155: audited exactly like a write.
+        return await self._audited(
+            self.delegate.delete_configuration(resource_type, target_id)
+        )
+
+    async def _audited(self, call):
+        self.auditor("provider_invocation_started")
+        try:
+            result = await call
         except Exception as exc:
             # HAMCP-181 design section 5.1 (PR1 gateway-audit rule): label a
             # received response only when the exception proves one.
@@ -1337,6 +1367,17 @@ class F3RuntimeIntegration:
             config_gateway,
             now=service.now,
         )
+        # HAMCP-155: governed deletion is a separate adapter class that checks
+        # its own sibling-profile admission at preflight and again before
+        # durable intent, so it refuses with zero writes even when no Core
+        # runtime (and so no Core dispatch guard) is composed.
+        for resource, identity in CONFIGURATION_DELETE_CAPABILITY_IDENTITIES.items():
+            configuration_adapters[identity] = ConfigurationDeleteAdapter(
+                resource,
+                config_gateway,
+                admission=self._configuration_delete_admitted,
+                now=service.now,
+            )
         self.evidence_reader = _OperationalEvidenceReader(self)
         captured_backup = (
             None
@@ -1727,6 +1768,18 @@ class F3RuntimeIntegration:
             "fallback_occurred": False,
             "fallback": "none",
         }
+
+    def _configuration_delete_admitted(self) -> bool:
+        """Whether a signed registry admits the HAMCP-155 delete profile."""
+
+        core = self.core_runtime
+        if core is None:
+            return False
+        try:
+            status = core.route_status((CONFIGURATION_DELETE_PROFILE,))
+        except Exception:
+            return False
+        return isinstance(status, dict) and status.get("available") is True
 
     def _emit_lock_cleanup_audit_event(self, event: dict[str, object]) -> bool:
         # This sole repository callback is emitted after its transaction exits.

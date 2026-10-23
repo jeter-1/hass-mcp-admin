@@ -69,6 +69,16 @@ AVAILABILITY_EXPOSURE_REGISTRATIONS = (
     ),
 )
 
+# HAMCP-155: governed deletion of one UI-managed automation or script.  The
+# sole DELETE is code-owned and admitted only by its own dormant Core profile.
+CONFIGURATION_DELETE_REGISTRATIONS = (
+    ("delete_automation_configuration", "automation", "delete"),
+    ("delete_script_configuration", "script", "delete"),
+)
+CONFIGURATION_DELETE_PROVIDER_MODEL = (
+    "compiled-core-configuration-delete-operation-v1"
+)
+
 OPERATIONAL_REGISTRATIONS = (
     ("create_full_home_assistant_backup", "create_full_backup", "backup"),
     (
@@ -194,6 +204,30 @@ class ClosedAdapterRegistry:
         entries.extend(
             AdapterRegistration(
                 capability_id=capability,
+                adapter_id="configuration_operation",
+                operation_family="configuration",
+                plan_operation="configuration_plan",
+                target_type=target,
+                action=action,
+                provider_model=CONFIGURATION_DELETE_PROVIDER_MODEL,
+                resource_lock_model="f3-configuration-lock-set-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="exact_absence_readback",
+                recovery_model="exact_absence_readback_no_redispatch",
+                rollback_declaration="separate_governed_recreate_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+            for capability, target, action in CONFIGURATION_DELETE_REGISTRATIONS
+        )
+        entries.extend(
+            AdapterRegistration(
+                capability_id=capability,
                 adapter_id="operational_administration",
                 operation_family="operational_administration",
                 plan_operation=operation,
@@ -276,6 +310,7 @@ class ClosedAdapterRegistry:
                 HELPER_STATE_REGISTRATION,
                 ENTITY_METADATA_REGISTRATION,
                 *AVAILABILITY_EXPOSURE_REGISTRATIONS,
+                *CONFIGURATION_DELETE_REGISTRATIONS,
                 DASHBOARD_REGISTRATION,
             )
         }
@@ -291,6 +326,7 @@ class ClosedAdapterRegistry:
                 HELPER_STATE_REGISTRATION[0],
                 ENTITY_METADATA_REGISTRATION[0],
                 *(item[0] for item in AVAILABILITY_EXPOSURE_REGISTRATIONS),
+                *(item[0] for item in CONFIGURATION_DELETE_REGISTRATIONS),
             }
             if (
                 (
@@ -317,6 +353,19 @@ class ClosedAdapterRegistry:
                     )
                 )
                 or entry.runtime_route != "apply_change_plan"
+                or (
+                    entry.action == "delete"
+                    and (
+                        entry.capability_id
+                        not in {
+                            item[0]
+                            for item in CONFIGURATION_DELETE_REGISTRATIONS
+                        }
+                        or entry.target_type not in {"automation", "script"}
+                        or entry.provider_model
+                        != CONFIGURATION_DELETE_PROVIDER_MODEL
+                    )
+                )
                 or not entry.resource_lock_model
                 or not entry.provider_dependency_lock_model
                 or entry.target_type not in {
