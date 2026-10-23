@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import sys
 import tempfile
@@ -47,7 +48,13 @@ LABEL_CREATE, LABEL_UPDATE = "config/label_registry/create", "config/label_regis
 EXPOSE = "homeassistant/expose_entity"
 # Only these count as Home Assistant writes in a lane's Engineering client.
 WRITE_COMMANDS = frozenset({ENTITY_UPDATE, LABEL_CREATE, LABEL_UPDATE, EXPOSE})
-FIXTURE_ABSENCE = ("helper_config", "helper_entity", "labels")
+FIXTURE_ABSENCE = ("helper_config", "helper_entity", "labels", "config_entry")
+CONFIG_ENTRY_GET, REGISTRY_LIST = "config_entries/get_single", "config/entity_registry/list"
+# The two enable-path reads a config-entry-backed target must exercise (HAMCP-165 review1 M4).
+CONFIG_ENTRY_READS = frozenset({CONFIG_ENTRY_GET, REGISTRY_LIST})
+# Times of the Day: a Core helper whose config flow needs no network (Core 2026.10.0/2026.10.1 source).
+CONFIG_ENTRY_DOMAIN = "tod"
+CONFIG_ENTRY_ROUTE = re.compile(r"/config/config_entries/(?:flow|flow/[0-9A-Za-z]{1,64}|entry/[0-9A-Za-z]{1,64})")
 
 
 def _lane(key, *, capabilities, adapters, tool, output_env, reviewed, required, scenarios):
@@ -72,11 +79,12 @@ LANES = {
         adapters=("compiled-core-entity-registry-availability-operation-v1",
                   "compiled-core-entity-assistant-exposure-operation-v1"),
         tool="create_entity_availability_exposure_plan", output_env="REAL_HA_AVAILABILITY_EXPOSURE_RESULT",
-        reviewed={ENTITY_GET, "config/entity_registry/list", "config_entries/get_single",
+        reviewed={ENTITY_GET, REGISTRY_LIST, CONFIG_ENTRY_GET,
                   "homeassistant/expose_new_entities/get", ENTITY_UPDATE, EXPOSE},
-        required={ENTITY_GET, "homeassistant/expose_new_entities/get", ENTITY_UPDATE, EXPOSE},
-        scenarios=("disable", "already_disabled", "enable", "unexpose", "expose", "not_in_registry",
-                   "stale_state")),
+        required={ENTITY_GET, "homeassistant/expose_new_entities/get", ENTITY_UPDATE, EXPOSE,
+                  *CONFIG_ENTRY_READS},
+        scenarios=("disable", "already_disabled", "enable", "enable_config_entry", "unexpose", "expose",
+                   "not_in_registry", "stale_state")),
 }
 # Commands no lane's Engineering client may ever send (deletion is HAMCP-155).
 NEVER_SENT = frozenset({"config/label_registry/delete", "homeassistant/expose_entity/list",
@@ -163,6 +171,15 @@ def _availability_checks(name, value):
         assert value["write_types"] == [EXPOSE] and value["expected"] == {"should_expose": False}
     if name == "expose":
         assert value["write_types"] == [EXPOSE] and value["expected"] == {"should_expose": True}
+    if name == "enable_config_entry":
+        # Both config-entry reads ran during this plan and returned the lane-owned entry.
+        assert value["task_state"] == "succeeded_verified" and value["dispatch_counts"] == [1]
+        assert value["ha_writes"] == 1 and value["write_types"] == [ENTITY_UPDATE]
+        assert value["expected"] == {"disabled_by": None} and value["readback"] == value["expected"]
+        assert value["config_entry_reads"] == sorted(CONFIG_ENTRY_READS)
+        assert value["config_entry"] == {"status": "read", "domain": CONFIG_ENTRY_DOMAIN,
+                                         "supports_unload": True, "disabled_by": None}
+        assert value["other_entities_in_entry"] == 0 and value["reload"] == "config_entry_reload_after_30s"
     if name in {"already_disabled", "not_in_registry"}:
         assert value["ha_writes"] == 0 and value["plan_created"] is False
     if name == "already_disabled":
@@ -223,6 +240,44 @@ def verify_result(lane_key, result, *, core_version, support_slot):
             "fixture_cleanup": True}
 
 
+class LaneRaw(RawWebSocket):
+    """The raw client plus the lane's loopback config-entry routes, for setup and cleanup only.
+
+    Engineering never sends these. Only the flow, one flow step and one owned
+    entry's deletion are reachable, and only on a loopback Core.
+    """
+
+    def __init__(self, configured):
+        super().__init__(configured)
+        self.api_url = configured.api_url.rstrip("/")
+        self.token = configured.ha_token
+        if urlsplit(self.api_url).hostname not in {"127.0.0.1", "localhost", "::1"}:
+            raise ValueError("Seq-13 config-entry routes go only to a loopback Core")
+
+    async def rest(self, method, path, body=None):
+        import aiohttp
+        if CONFIG_ENTRY_ROUTE.fullmatch(path) is None:
+            raise ValueError("Not a seq-13 config-entry route")
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+            async with session.request(method, self.api_url + path, json=body, allow_redirects=False,
+                                       headers={"Authorization": "Bearer " + self.token}) as response:
+                if response.status >= 300:
+                    raise RawRefusal(method + " " + path.split("/")[3], str(response.status))
+                return await response.json()
+
+    async def create_config_entry(self, handler, user_input):
+        """Complete a one-form config flow; return the created entry id."""
+        flow = await self.rest("POST", "/config/config_entries/flow",
+                               {"handler": handler, "show_advanced_options": False})
+        assert flow.get("type") == "form"
+        created = await self.rest("POST", "/config/config_entries/flow/" + flow["flow_id"], user_input)
+        assert created.get("type") == "create_entry"
+        return created["result"]["entry_id"]
+
+    async def delete_config_entry(self, entry_id):
+        await self.rest("DELETE", "/config/config_entries/entry/" + entry_id)
+
+
 class ObservedWebSocket:
     """Engineering's real client, observed; every write and command type counted."""
 
@@ -252,6 +307,8 @@ async def cleanup_fixtures(raw, owned, *, attempts=50, delay=0.1):
         await raw.ok({"type": "input_boolean/delete", "input_boolean_id": owned["helper"]})
     for label_id in owned.get("labels", []):
         await raw.ok({"type": "config/label_registry/delete", "label_id": label_id})
+    if owned.get("config_entry"):
+        await raw.delete_config_entry(owned["config_entry"])
     if not owned:
         return None
 
@@ -264,8 +321,10 @@ async def cleanup_fixtures(raw, owned, *, attempts=50, delay=0.1):
         found = await raw.call({"type": ENTITY_GET, "entity_id": "input_boolean." + owned["helper"]})
         return found.get("success") is not True and (found.get("error") or {}).get("code") == "not_found"
 
-    checks = {"helper_config": lambda: ids("input_boolean/list", "id"), "labels": lambda: ids(LABEL_LIST, "label_id")}
-    created = {"helper_config": {owned.get("helper")} - {None}, "labels": set(owned.get("labels", []))}
+    checks = {"helper_config": lambda: ids("input_boolean/list", "id"), "labels": lambda: ids(LABEL_LIST, "label_id"),
+              "config_entry": lambda: ids("config_entries/get", "entry_id")}
+    created = {"helper_config": {owned.get("helper")} - {None}, "labels": set(owned.get("labels", [])),
+               "config_entry": {owned.get("config_entry")} - {None}}
     absence = {}
     for name in FIXTURE_ABSENCE:
         for _ in range(attempts):
@@ -376,7 +435,7 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
 
         engineering_ws = ObservedWebSocket(HomeAssistantWebSocketClient(configured))
         rest = HomeAssistantRestClient(configured)
-        raw = RawWebSocket(configured)
+        raw = LaneRaw(configured)
         service = None
 
         def compose(runtime):
@@ -407,9 +466,12 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
             telemetry, token = begin_request("seq13-" + lane["key"] + "-plan")
             telemetry.caller_id = caller
             commits = None
-            authority_lease = runtime.acquire(static_tool_requirements(tool, arguments),
-                                              target=static_tool_target(tool, arguments))
+            authority_lease = None
             try:
+                # An invalid exact target raises StaticToolTargetRefused before any
+                # authority is acquired, exactly as the route refuses it (HAMCP-165 M2).
+                authority_lease = runtime.acquire(static_tool_requirements(tool, arguments),
+                                                  target=static_tool_target(tool, arguments))
                 if authority_lease is None:
                     return None
 
@@ -431,17 +493,24 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
                 end_request(token)
 
         async def refused_plan(runtime, arguments):
+            """Record an expected refusal as the scenario outcome; acceptance is the failure."""
+            from ha_mcp_engineering.ha_core_readmission.routes import StaticToolTargetRefused
             writes, commands = len(engineering_ws.writes), len(engineering_ws.command_types)
             try:
                 await plan(runtime, arguments)
+            except StaticToolTargetRefused as exc:
+                # The route's InvalidStaticToolTarget refusal: no authority, no application call.
+                error_code, reason_code = "invalid_request", exc.reason_code
             except GovernanceError as exc:
                 details = exc.details if isinstance(exc.details, dict) else {}
                 assert details.get("plan_created") is False
                 assert details.get("provider_dispatch_occurred") is False
-                return {"result": "PASS", "error_code": exc.code.value, "reason_code": details.get("reason_code"),
-                        "plan_created": False, "ha_writes": len(engineering_ws.writes) - writes,
-                        "ha_commands": len(engineering_ws.command_types) - commands}
-            raise AssertionError("Seq-13 planner accepted a refused request")
+                error_code, reason_code = exc.code.value, details.get("reason_code")
+            else:
+                raise AssertionError("Seq-13 planner accepted a refused request")
+            return {"result": "PASS", "error_code": error_code, "reason_code": reason_code,
+                    "plan_created": False, "ha_writes": len(engineering_ws.writes) - writes,
+                    "ha_commands": len(engineering_ws.command_types) - commands}
 
         async def approve_apply(created):
             telemetry, token = begin_request("seq13-" + lane["key"] + "-apply")
@@ -467,10 +536,12 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
             items = service.f3_runtime.children.declarations_for_task(task_id)
             return [service.f3_runtime.children.get(item["child_id"]).dispatch_count for item in items]
 
-        async def governed(runtime, arguments, *, between=None):
-            writes = len(engineering_ws.writes)
+        async def governed(runtime, arguments, *, between=None, observed=None):
+            writes, commands = len(engineering_ws.writes), len(engineering_ws.command_types)
             created = await plan(runtime, arguments)
             assert created is not None and created.get("plan_id")
+            if observed is not None:
+                observed.update(plan=created, commands=engineering_ws.command_types[commands:])
             if between is not None:
                 await between()
             applied = await approve_apply(created)
@@ -545,7 +616,7 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
                     await _label_scenarios(stage, scenarios, owned, entity_id, governed, refused_plan,
                                            runtime, raw, label, entity)
                 else:
-                    await _availability_scenarios(stage, scenarios, entity_id, governed, refused_plan,
+                    await _availability_scenarios(stage, scenarios, owned, entity_id, governed, refused_plan,
                                                   runtime, raw, entity)
             assert all(runtime.health_snapshot()[name] == 0 for name in (
                 "issued_lease_count", "active_commit_count", "fallback_count"))
@@ -650,7 +721,7 @@ async def _label_scenarios(stage, scenarios, owned, entity_id, governed, refused
                                 and after["color"] == EDITED["color"]}
 
 
-async def _availability_scenarios(stage, scenarios, entity_id, governed, refused_plan, runtime, raw, entity):
+async def _availability_scenarios(stage, scenarios, owned, entity_id, governed, refused_plan, runtime, raw, entity):
     def exposure(entry):
         return {"should_expose": ((entry.get("options") or {}).get(ASSISTANT) or {}).get("should_expose")}
 
@@ -666,6 +737,32 @@ async def _availability_scenarios(stage, scenarios, entity_id, governed, refused
     _, _, value = await governed(runtime, {"operation": "enable", "entity_ids": [entity_id]})
     scenarios["enable"] = {**value, "expected": {"disabled_by": None},
                            "readback": {"disabled_by": (await entity(entity_id))["disabled_by"]}}
+
+    stage[0] = "enable_config_entry"
+    # A lane-owned config-entry-backed target: enable must read its config entry and
+    # count the entry's other entities (HAMCP-165 review1 M4). Owned before any wait.
+    owned["config_entry"] = await raw.create_config_entry(CONFIG_ENTRY_DOMAIN, {
+        "name": "Seq13 Entry " + secrets.token_hex(4), "after_time": "08:00:00", "before_time": "20:00:00"})
+    backed = None
+    for _ in range(100):
+        backed = next((item["entity_id"] for item in await raw.ok({"type": REGISTRY_LIST})
+                       if item.get("config_entry_id") == owned["config_entry"]), None)
+        if backed is not None:
+            break
+        await asyncio.sleep(0.1)
+    assert backed is not None
+    await raw.ok({"type": ENTITY_UPDATE, "entity_id": backed, "disabled_by": "user"})
+    observed = {}
+    _, _, value = await governed(runtime, {"operation": "enable", "entity_ids": [backed]}, observed=observed)
+    (disclosure,) = [item["dry_run_results"]["entity_availability_exposure"]
+                     for item in observed["plan"]["dry_run_results"]["operations"]]
+    read = disclosure.get("config_entry") or {}
+    scenarios["enable_config_entry"] = {
+        **value, "expected": {"disabled_by": None},
+        "readback": {"disabled_by": (await entity(backed))["disabled_by"]},
+        "config_entry_reads": sorted(CONFIG_ENTRY_READS & set(observed["commands"])),
+        "config_entry": {k: read.get(k) for k in ("status", "domain", "supports_unload", "disabled_by")},
+        "other_entities_in_entry": disclosure.get("other_entities_in_entry"), "reload": disclosure.get("reload")}
 
     # Core may already hold an explicit value for a new helper; start from the opposite one.
     first = "expose" if exposure(await entity(entity_id))["should_expose"] is False else "unexpose"

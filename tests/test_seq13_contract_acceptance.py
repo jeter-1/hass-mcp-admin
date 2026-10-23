@@ -70,6 +70,11 @@ def availability_scenarios():
         "disable": governed(seq13.ENTITY_UPDATE, expected={"disabled_by": "user"}),
         "already_disabled": refused("entity_already_disabled"),
         "enable": governed(seq13.ENTITY_UPDATE, expected={"disabled_by": None}),
+        "enable_config_entry": {**governed(seq13.ENTITY_UPDATE, expected={"disabled_by": None}),
+                                "config_entry_reads": sorted(seq13.CONFIG_ENTRY_READS),
+                                "config_entry": {"status": "read", "domain": "tod", "supports_unload": True,
+                                                 "disabled_by": None},
+                                "other_entities_in_entry": 0, "reload": "config_entry_reload_after_30s"},
         "unexpose": governed(seq13.EXPOSE, expected={"should_expose": False}),
         "expose": governed(seq13.EXPOSE, expected={"should_expose": True}),
         "not_in_registry": refused("entity_not_in_registry"),
@@ -81,6 +86,7 @@ SCENARIOS = {"label_registry": label_scenarios, "availability_exposure": availab
 
 
 def synthetic_receipt(lane_key, core_version):
+    """The receipt as the pre-review1 lane wrote it: no config-entry enable read was exercised."""
     lane = seq13.LANES[lane_key]
     binding = alarmo.slot_binding(core_version)
     return {
@@ -93,9 +99,16 @@ def synthetic_receipt(lane_key, core_version):
         "provider_identity": "synthetic_disposable_lane",
         "predecessor_admission": {"route_acquired": False, "service_reason_code": "pending_signed_registry_admission",
                                   "ha_requests": 0, "ha_writes": 0, "control_capability_acquired": True},
-        "engineering_command_types": sorted(lane["required_commands"]),
+        "engineering_command_types": sorted(lane["required_commands"] - seq13.CONFIG_ENTRY_READS),
         "scenarios": SCENARIOS[lane_key](), "fixture_cleanup": True,
         "fixture_absence": dict.fromkeys(seq13.FIXTURE_ABSENCE, True)}
+
+
+def complete_receipt(lane_key, core_version):
+    """A complete receipt: the availability lane also ran both config-entry enable reads (M4)."""
+    value = synthetic_receipt(lane_key, core_version)
+    value["engineering_command_types"] = sorted(seq13.LANES[lane_key]["required_commands"])
+    return value
 
 
 class LaneDefinitionTests(unittest.TestCase):
@@ -136,7 +149,7 @@ class ReceiptTests(unittest.TestCase):
         for lane_key, lane in seq13.LANES.items():
             for slot, version in SLOT_VERSIONS.items():
                 with self.subTest(lane=lane_key, slot=slot):
-                    summary = seq13.verify_result(lane_key, synthetic_receipt(lane_key, version),
+                    summary = seq13.verify_result(lane_key, complete_receipt(lane_key, version),
                                                   core_version=version, support_slot=slot)
                     self.assertEqual(summary, {
                         "result": "PASS", "lane": lane_key, "core": version, "support_slot": slot,
@@ -147,22 +160,22 @@ class ReceiptTests(unittest.TestCase):
     def test_serialized_receipt_round_trips_canonically(self):
         for lane_key in seq13.LANES:
             with self.subTest(lane=lane_key):
-                raw = receipt_bytes(synthetic_receipt(lane_key, CORE))
+                raw = receipt_bytes(complete_receipt(lane_key, CORE))
                 self.assertEqual(receipt_bytes(load_receipt(raw)), raw)
                 self.verify(lane_key, load_receipt(raw))
 
     def test_refuses_another_lanes_receipt(self):
-        self.verify("label_registry", synthetic_receipt("label_registry", CORE))
+        self.verify("label_registry", complete_receipt("label_registry", CORE))
         with self.assertRaises(REFUSED):
-            self.verify("label_registry", synthetic_receipt("availability_exposure", CORE))
+            self.verify("label_registry", complete_receipt("availability_exposure", CORE))
         with self.assertRaises(REFUSED):
-            self.verify("availability_exposure", synthetic_receipt("label_registry", CORE))
+            self.verify("availability_exposure", complete_receipt("label_registry", CORE))
         with self.assertRaises(KeyError):
-            self.verify("entity_metadata", synthetic_receipt("label_registry", CORE))
+            self.verify("entity_metadata", complete_receipt("label_registry", CORE))
 
     def test_refuses_wrong_core_slot_or_missing_binding_arguments(self):
         for lane_key in seq13.LANES:
-            value = synthetic_receipt(lane_key, CORE)
+            value = complete_receipt(lane_key, CORE)
             for other in [v for v in SLOT_VERSIONS.values() if v != CORE] + list(NOT_SLOTS):
                 with self.subTest(lane=lane_key, caller_core=other), self.assertRaises(REFUSED):
                     self.verify(lane_key, copy.deepcopy(value), core_version=other)
@@ -213,7 +226,7 @@ class ReceiptTests(unittest.TestCase):
         ]
         for lane_key in seq13.LANES:
             for index, mutate in enumerate(mutations):
-                value = synthetic_receipt(lane_key, CORE)
+                value = complete_receipt(lane_key, CORE)
                 mutate(value)
                 with self.subTest(lane=lane_key, mutation=index), self.assertRaises(REFUSED):
                     self.verify(lane_key, value)
@@ -221,7 +234,7 @@ class ReceiptTests(unittest.TestCase):
     def test_refuses_any_never_sent_command_even_when_otherwise_valid(self):
         for lane_key in seq13.LANES:
             for command in sorted(seq13.NEVER_SENT):
-                value = synthetic_receipt(lane_key, CORE)
+                value = complete_receipt(lane_key, CORE)
                 value["engineering_command_types"] = sorted({*value["engineering_command_types"], command})
                 with self.subTest(lane=lane_key, command=command), self.assertRaises(REFUSED):
                     self.verify(lane_key, value)
@@ -278,12 +291,38 @@ class ReceiptTests(unittest.TestCase):
             "not_in_registry_planned": lambda s: s["not_in_registry"].update(plan_created=True),
             "stale_dispatched": lambda s: s["stale_state"].update(dispatch_counts=[1]),
             "stale_overwrote": lambda s: s["stale_state"].update(drift_retained=False),
+            # HAMCP-165 review1 M4: the config-entry enable reads and their results are bound.
+            **{"config_entry_read_missing_" + c: (lambda c: lambda s: s["enable_config_entry"].update(
+                config_entry_reads=sorted(seq13.CONFIG_ENTRY_READS - {c})))(c) for c in seq13.CONFIG_ENTRY_READS},
+            "config_entry_unread": lambda s: s["enable_config_entry"]["config_entry"].update(status="unavailable"),
+            "config_entry_other_domain": lambda s: s["enable_config_entry"]["config_entry"].update(domain="input_boolean"),
+            "config_entry_no_unload": lambda s: s["enable_config_entry"]["config_entry"].update(supports_unload=False),
+            "config_entry_disabled": lambda s: s["enable_config_entry"]["config_entry"].update(disabled_by="user"),
+            "config_entry_count_unavailable": lambda s: s["enable_config_entry"].update(
+                other_entities_in_entry="unavailable"),
+            "config_entry_reload_unknown": lambda s: s["enable_config_entry"].update(reload="restart_required"),
+            "config_entry_enable_unverified": lambda s: s["enable_config_entry"].update(
+                task_state="manual_review_required"),
+            "config_entry_readback_mismatch": lambda s: s["enable_config_entry"]["readback"].update(disabled_by="user"),
         }
         self.assert_scenarios_refuse("availability_exposure", mutations)
 
+    def test_availability_receipt_requires_both_config_entry_reads(self):
+        # HAMCP-165 review1 M4: the lane fails unless both enable reads ran.
+        self.verify("availability_exposure", complete_receipt("availability_exposure", CORE))
+        for command in sorted(seq13.CONFIG_ENTRY_READS):
+            value = complete_receipt("availability_exposure", CORE)
+            value["engineering_command_types"].remove(command)
+            with self.subTest(command=command), self.assertRaises(REFUSED):
+                self.verify("availability_exposure", value)
+        with self.assertRaises(REFUSED):
+            self.verify("availability_exposure", synthetic_receipt("availability_exposure", CORE))
+        # The label lane never needs them.
+        self.assertFalse(seq13.LANES["label_registry"]["required_commands"] & seq13.CONFIG_ENTRY_READS)
+
     def assert_scenarios_refuse(self, lane_key, mutations):
         for name, mutate in mutations.items():
-            value = synthetic_receipt(lane_key, CORE)
+            value = complete_receipt(lane_key, CORE)
             mutate(value["scenarios"])
             with self.subTest(lane=lane_key, mutation=name), self.assertRaises(REFUSED):
                 self.verify(lane_key, value)
@@ -293,14 +332,21 @@ class FixturePeer:
     """Synthetic loopback stand-in: acknowledges every delete, optionally retaining objects."""
 
     HELPER = "seq13_lane_0a1b2c3d"
-    LISTS = {"input_boolean/list": ("helper_config", "id"), seq13.LABEL_LIST: ("labels", "label_id")}
+    ENTRY = "01JSEQ13LANEENTRY0000000000"
+    LISTS = {"input_boolean/list": ("helper_config", "id"), seq13.LABEL_LIST: ("labels", "label_id"),
+             "config_entries/get": ("config_entry", "entry_id")}
 
     def __init__(self, retain=()):
         self.retain = set(retain)
-        self.owned = {"helper": self.HELPER, "labels": [seq13.CANARY_ID, seq13.ASSIGN_ID]}
+        self.owned = {"helper": self.HELPER, "labels": [seq13.CANARY_ID, seq13.ASSIGN_ID], "config_entry": self.ENTRY}
         self.state = {"helper_config": {self.HELPER}, "helper_entity": {"input_boolean." + self.HELPER},
-                      "labels": set(self.owned["labels"])}
+                      "labels": set(self.owned["labels"]), "config_entry": {self.ENTRY}}
         self.commands = []
+
+    async def delete_config_entry(self, entry_id):
+        self.commands.append("DELETE config_entry")
+        if "config_entry" not in self.retain:
+            self.state["config_entry"].discard(entry_id)
 
     async def ok(self, payload):
         kind = payload["type"]
@@ -330,13 +376,15 @@ class FixturePeer:
 
 class FixtureCleanupTests(unittest.IsolatedAsyncioTestCase):
     COMPLETE = dict.fromkeys(seq13.FIXTURE_ABSENCE, True)
-    READS = {"helper_config": "input_boolean/list", "labels": seq13.LABEL_LIST, "helper_entity": seq13.ENTITY_GET}
+    READS = {"helper_config": "input_boolean/list", "labels": seq13.LABEL_LIST, "helper_entity": seq13.ENTITY_GET,
+             "config_entry": "config_entries/get"}
 
     async def test_complete_cleanup_reads_back_every_owned_type(self):
         peer = FixturePeer()
         absence = await seq13.cleanup_fixtures(peer, peer.owned, attempts=2, delay=0)
         self.assertEqual(absence, self.COMPLETE)
-        self.assertEqual(set(peer.commands) - {"input_boolean/delete", "config/label_registry/delete"},
+        self.assertEqual(set(peer.commands) - {"input_boolean/delete", "config/label_registry/delete",
+                                               "DELETE config_entry"},
                          set(self.READS.values()))
         self.assertTrue(all(not items for items in peer.state.values()))
 
@@ -365,6 +413,36 @@ class FixtureCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse({c for c in seq13.WRITE_COMMANDS if c.endswith("/delete")})
         source = inspect.getsource(seq13._run_disposable)
         self.assertNotIn("engineering_ws.command({", source)
+
+
+class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-165 review1 M4: the lane's config-entry routes are closed and loopback-only."""
+
+    def configured(self, host="127.0.0.1"):
+        return SimpleNamespace(websocket_url="ws://" + host + ":8123/api/websocket",
+                               api_url="http://" + host + ":8123/api", ha_token="synthetic")
+
+    def test_only_a_loopback_core_is_accepted(self):
+        self.assertEqual(seq13.LaneRaw(self.configured()).api_url, "http://127.0.0.1:8123/api")
+        with self.assertRaises(ValueError):
+            seq13.LaneRaw(self.configured("homeassistant.local"))
+
+    async def test_routes_outside_the_closed_set_are_refused_before_sending(self):
+        raw = seq13.LaneRaw(self.configured())
+        for path in ("/config/config_entries/entry", "/config/config_entries/entry/abc/reload",
+                     "/config/config_entries/options/flow", "/services/homeassistant/restart",
+                     "/config/config_entries/flow/../entry/abc", "/config/config_entries/flow/" + "a" * 65):
+            with self.subTest(path=path), patch("aiohttp.ClientSession") as session, \
+                    self.assertRaisesRegex(ValueError, "Not a seq-13 config-entry route"):
+                await raw.rest("DELETE", path)
+            session.assert_not_called()
+
+    def test_governed_scenario_targets_the_owned_entry_before_waiting(self):
+        source = inspect.getsource(seq13._availability_scenarios)
+        self.assertLess(source.index('owned["config_entry"] = await raw.create_config_entry('),
+                        source.index("for _ in range(100):"))
+        self.assertIn('"config_entry_reads": sorted(CONFIG_ENTRY_READS & set(observed["commands"]))', source)
+        self.assertEqual(inspect.getsource(seq13._run_disposable).count("raw = LaneRaw(configured)"), 1)
 
 
 class DormancyTests(unittest.IsolatedAsyncioTestCase):
