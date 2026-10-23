@@ -46,6 +46,12 @@ Builds on 2.4.1-beta.31.
   screened and shown (R2-H1); any withheld form anywhere in the final report
   makes it partial, naming each affected item (`withheld:definitions[3]`)
   (R2-M1).
+- Correction from the final32 review (correction batch 4): every
+  YAML-projected string is also screened with all whitespace and line-control
+  characters removed, so a tab, line feed, carriage return or space inside a
+  credential, literal or percent-encoded, withholds the whole value (partial).
+  Ordinary multi-line templates stay shown and complete; text with a colon
+  then `@` and no `/` between is withheld by design.
 - Owner decision (Josh, 2026-10-22): a SQL definition's own `db_url` is a
   fixed policy redaction, not missing evidence. It is reported as
   `{"redacted_by_policy": "database_url"}` and, through an explicit

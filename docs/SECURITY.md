@@ -685,6 +685,22 @@ shape, fallback or write path.
   screening, in the projection and again at the exit point. It is never
   screened and shown: a zero-width character inside `password=` previously
   hid the credential word.
+- **Whitespace inside a credential is screened (correction batch 4).**
+  Every YAML-projected string, and every string at the exit point, is
+  screened in two forms: the canonical form (bounded percent-decode, NFKC,
+  casefold, confusable fold) and its squashed form, the same text with every
+  character `str.isspace` accepts removed (space, tab, line feed, carriage
+  return and Unicode whitespace). If either form matches the credential or
+  known-secret checks, the original value is withheld whole as credential
+  text and the report is partial: `pass<tab>word=`, a line feed inside a URI's user-info and
+  their percent-encoded and double-encoded forms no longer reach the caller.
+  Tab, line feed and carriage return stay displayable in ordinary text, so a
+  multi-line template without credential text is shown and complete. Form
+  feed, vertical tab and other Cc characters stay withheld outright as
+  unverifiable text. **By design, text with a colon followed later by `@`
+  and no `/` between (for example `Alert: motion` then `@ {{ ... }}` on the
+  next line) squashes to a URI user-info shape and is withheld** (fail
+  closed; the report is partial).
 - **Any withholding is partial (second delta review R2-M1).** One scan of
   the final envelope at the exit point finds every withheld form and names
   each affected item in a bounded omission list (at most 20, then a count);

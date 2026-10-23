@@ -106,6 +106,21 @@ confusable fold, then credential screening. Ordinary templates, units such
 as `°C` and accented names are shown unchanged. **By design, an emoji
 written with a variation selector or a zero-width joiner is withheld too.**
 
+**Whitespace inside a credential is screened (correction batch 4).** Tab,
+line feed and carriage return stay displayable, so multi-line templates are
+shown. Every YAML-projected string, and every string at the exit point, is
+therefore screened in two forms: its canonical form (bounded percent-decode,
+NFKC, casefold and the confusable fold) and its squashed form, the same text
+with every whitespace and line-control character removed (everything
+`str.isspace` accepts). Whitespace inside a credential (`pass<tab>word=`,
+a line feed inside a URI's user-info, a connection URI split by a carriage return), literal,
+percent-encoded or double-encoded, hides it from the first form only. If
+either form matches, the original value is withheld whole as credential
+text and the report is partial. Form feed, vertical tab and other control
+characters remain withheld outright as unverifiable text. **By design, text
+with a colon followed later by `@` and no `/` between is withheld** (it
+squashes to a URI user-info shape).
+
 **Anything withheld makes the report partial.** One scan of the final
 envelope at the single exit point finds every withheld form: a
 `[withheld:credential_text]` or `[withheld:unverifiable_text]` string, a
@@ -453,6 +468,19 @@ withheld from the name but still slugged into its derived entity ID; the
 derived ID, generated unique IDs, dependencies, definition-ID keys and
 legacy candidates are now withheld with it, and the report is partial.
 
+## Corrections from the final32 review
+
+- **High: whitespace inside a credential (correction batch 4).** A tab,
+  line feed or carriage return inside a credential token, literal,
+  percent-encoded or double-encoded (nine variants), hid it from the
+  credential checks, which read the text with its whitespace intact. Spaces
+  and Unicode whitespace did the same. Owner-approved direction: whitespace
+  stays displayable in ordinary text, and every string is also screened in
+  its squashed form (above); either form matching withholds the original
+  value whole, partial. Withholding every value with a tab or line break was
+  rejected because it would hide nearly every multi-line template. Pinned by
+  `SquashedFormTests` and mutants `B7-W1` to `B7-W8`.
+
 ## Compatibility and rollback
 
 - **Additive.** One new tool; no existing descriptor or schema changes.
@@ -477,6 +505,10 @@ legacy candidates are now withheld with it, and the report is partial.
   - A YAML-projected value with an invisible, format or control character
     (an emoji with a variation selector included) is withheld whole as
     `[withheld:unverifiable_text]` (by design; the report is partial).
+  - Text with a colon followed later by `@` and no `/` between, across
+    whitespace or a line break (`Alert: motion` then `@ {{ ... }}`), is
+    withheld as credential text: its squashed form has a URI user-info
+    shape (by design, fail closed; the report is partial).
   - Every withholding makes the report partial, except the fixed SQL
     `db_url` policy redaction (`{"redacted_by_policy": "database_url"}`),
     which is not missing evidence (owner decision, 2026-10-22).

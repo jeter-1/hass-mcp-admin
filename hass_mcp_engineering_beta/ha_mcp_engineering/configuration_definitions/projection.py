@@ -20,7 +20,8 @@ position, before the shared sanitizer runs (``service.py``):
 - any string the exit point's credential predicate matches
   (``credentials.credential_text``: a URI with userinfo, a database
   connection URI by scheme, a user and password before a host, a
-  connection-string password)
+  connection-string password; read in two forms, as is and with every
+  whitespace and line-control character removed, correction batch 4)
   in any position: the reader already redacts a URI with userinfo, and this
   check keeps a database URL inside an allowlisted text field (a SQL
   ``query``, a template) withheld without depending on the reader;

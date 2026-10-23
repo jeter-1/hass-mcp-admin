@@ -96,6 +96,15 @@ The review needs a security section covering:
   percent-decode, is `[withheld:unverifiable_text]` (a key: dropped), never
   screened and shown. The exit point applies the same check to every key and
   string. Templates, units such as `°C` and accented names are shown.
+- **Whitespace inside a credential is screened (correction batch 4).**
+  Every YAML-projected string and every string at the exit point is
+  screened in its canonical form and in its squashed form (every
+  `str.isspace` character removed after the bounded percent-decode, NFKC
+  and confusable fold). Either form matching withholds the original value
+  whole as credential text and makes the report partial. Tab, line feed and
+  carriage return stay displayable: an ordinary multi-line template is shown
+  and complete. A colon followed later by `@` with no `/` between is
+  withheld by design.
 - **Anything withheld is partial.** One scan of the final envelope names
   each item with any withheld form (`withheld:definitions[3]`), at most 20
   then `withheld_items_not_listed:<n>`, and makes the report partial.
@@ -163,6 +172,11 @@ The review needs a security section covering:
 - **Owner decision on the Core-observed entity ID.** It is shown, not
   withheld (above), and pinned by
   `test_core_observed_entity_id_is_shown_when_the_name_is_withheld`.
+- **Final32 review correction (correction batch 4).** Whitespace inside a
+  credential is screened in the squashed form (above), pinned by
+  `SquashedFormTests`. The reviewer's final32 suite
+  (`tests/test_pr294_final32_review.py`) is to be added unchanged when it is
+  provided.
 
 Preserve the following:
 - stable v1.1.2;
@@ -303,7 +317,19 @@ credential-shaped string is assembled at test time.
     input and each unique_id input withheld; a withheld dependency read for
     nothing and diagnosed `undetermined`, while a clean one is still
     `dependency_unavailable`; a withheld legacy name never a candidate; and
-    clean inputs still derive.
+    clean inputs still derive;
+  - the squashed form: the nine tab, line feed and carriage return variants
+    (literal, percent-encoded and double-encoded) inside a query password,
+    a URI's user-info and a connection URI are withheld whole and partial,
+    through the service and through the real reader and authenticated
+    gateway; spaces and Unicode whitespace inside a credential, a run of
+    mixed whitespace, a nested key-value, a known secret split by
+    whitespace and a space-split credential in Core free text are
+    withheld; the exit point screens the squashed form of every string and
+    key; form feed, vertical tab and other control characters stay
+    withheld outright as unverifiable text; ordinary multi-line templates
+    with tabs, line feeds and CRLF are shown verbatim and complete; and a
+    colon followed by `@` across whitespace is withheld by design.
 
 The existing suites that pin the tool count, sanitizer sites, Core gate and
 reader purpose are updated. The Evidence tier on the PR head is the complete
@@ -429,6 +455,19 @@ The owner derived-value mutants cover:
 - a withheld key kept in the definition ID (`B5-K1`), a withheld legacy
   name matched (`B5-L1`), and the internal projection fields rendered
   (`B5-S1`).
+
+The final32 squashed-form mutants cover:
+- the squashed-form screening removed (`B7-W1`);
+- the squash narrowed to spaces only, to ASCII whitespace only, or keeping
+  the line controls (`B7-W2` to `B7-W4`);
+- the squashed form read before the percent-decode (`B7-W5`);
+- the known secrets dropped from the squashed form (`B7-W6`);
+- the squashed password field requiring a word boundary (`B7-W7`);
+- every value with whitespace withheld outright, which hides ordinary
+  multi-line templates (`B7-W8`).
+
+`B2-K1` and `B-X6` are re-anchored on the refactored checks; their
+behavior is unchanged.
 
 ## 2. Release CI and publication
 

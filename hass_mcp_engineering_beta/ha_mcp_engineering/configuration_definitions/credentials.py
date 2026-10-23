@@ -67,6 +67,18 @@ or that this check matches: a slug or a generated ID could otherwise carry
 the text past the exit point. The case is listed in the definition's
 ``withheld``, so the report is partial.
 
+**Whitespace inside a credential is screened too** (correction batch 4).
+Tab, line feed and carriage return stay displayable, so a multi-line
+template is shown. Every string is screened in two forms: the canonical,
+confusable-folded text below, and the same text with every whitespace and
+line-control character removed (``squash``: space, tab, line feed, carriage
+return, form feed, vertical tab and all Unicode whitespace). Either form
+matching withholds the original value whole; ``pass<tab>word=`` and
+a line feed inside a URI's user-info, literal or percent-encoded, are withheld. In the
+squashed form the password field is matched without a word boundary. Text
+with a colon and, later, an ``@`` and no slash between (``x: y @ z``) reads
+as a user and password before a host there, so it is withheld (fail closed).
+
 The checks read the reader's canonical form (percent-decoded, NFKC,
 casefold) with a bounded confusable fold on top (``fold_confusables``):
 the known look-alikes of ``/``, ``:`` and ``@`` that NFKC leaves unchanged
@@ -165,6 +177,9 @@ _CONNECTION_SCHEME = re.compile(
 # A user and password before a host: no whitespace, no further colon in the user part.
 _USER_PASS_HOST = re.compile(r"[^\s:/@]+:[^\s/@]+@[^\s/@]+")
 _PASSWORD_FIELD = re.compile(r"\b(?:password|passwd|pwd)\s*=")
+# The squashed form has no word boundaries left (``my pass word=`` squashes
+# to ``mypassword=``), so its password field is matched anywhere.
+_SQUASHED_PASSWORD_FIELD = re.compile(r"(?:password|passwd|pwd)=")
 _MARKER_FOLDED = WITHHELD_MARKER.casefold()
 
 # The allowlist for Core free text: printable ASCII only, and no
@@ -221,7 +236,14 @@ def unverifiable_text(value: str) -> bool:
 
 
 def credential_text(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
-    """Whether ``value`` must not reach the caller."""
+    """Whether ``value`` must not reach the caller.
+
+    Two forms of the canonical, confusable-folded text are checked: the text
+    itself and its ``squash`` (correction batch 4). Whitespace inside a
+    credential (``pass<tab>word=``, a line feed inside a URI's user-info, literal or
+    percent-encoded) hides it from the first form only; either form
+    matching withholds the original value whole.
+    """
 
     if any(secret and secret in value for secret in known_secrets):
         return True
@@ -231,13 +253,31 @@ def credential_text(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
         # Text the canonicalization refuses cannot be screened (fail closed).
         return True
     text = fold_confusables(text)
+    secrets = tuple(fold_confusables(secret.casefold()) for secret in known_secrets if secret)
+    return (_credential_form(text, secrets, _PASSWORD_FIELD)
+            or _credential_form(squash(text), tuple(squash(secret) for secret in secrets),
+                                _SQUASHED_PASSWORD_FIELD))
+
+
+def squash(text: str) -> str:
+    """``text`` with every whitespace and line-control character removed.
+
+    Space, tab, line feed, carriage return, form feed, vertical tab and every
+    other character ``str.isspace`` accepts (the Unicode whitespace, the
+    file, group, record and unit separators, U+0085 included).
+    """
+
+    return "".join(character for character in text if not character.isspace())
+
+
+def _credential_form(text: str, secrets: tuple[str, ...], password_field: re.Pattern) -> bool:
     return (
         _userinfo(text)
         or _CONNECTION_SCHEME.search(text) is not None
         or _USER_PASS_HOST.search(text) is not None
-        or _PASSWORD_FIELD.search(text) is not None
+        or password_field.search(text) is not None
         or _MARKER_FOLDED in text
-        or any(secret and fold_confusables(secret.casefold()) in text for secret in known_secrets)
+        or any(secret and secret in text for secret in secrets)
     )
 
 

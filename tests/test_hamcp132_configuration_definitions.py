@@ -3358,3 +3358,196 @@ class DerivedValueWithholdingTests(Base):
         self.assertFalse(credentials.withheld_at_exit("Token " + HA_TOKEN))
         self.assertTrue(credentials.withheld_at_exit("Token " + HA_TOKEN, (HA_TOKEN,)))
         self.assertTrue(credentials.withheld_at_exit("x" * (c.MAX_TEXT + 1)))
+
+
+# Correction batch 4: whitespace and line-control characters inside a
+# credential. Named by code point; every credential is assembled at runtime.
+LINE_CONTROLS = {"tab": 0x09, "line_feed": 0x0A, "carriage_return": 0x0D}
+OTHER_WHITESPACE = {"space": 0x20, "no_break_space": 0xA0, "ogham_space": 0x1680, "em_space": 0x2003,
+                    "narrow_no_break_space": 0x202F, "ideographic_space": 0x3000}
+# Withheld outright as invisible text (correction batch 3), not screened.
+INVISIBLE_WHITESPACE = {"form_feed": 0x0C, "vertical_tab": 0x0B, "next_line": 0x85,
+                        "file_separator": 0x1C, "unit_separator": 0x1F}
+SPLIT_PASSWORD = syn.needle("splitpassword")
+CREDENTIAL_WITHHELD = ({"withheld": "credential_uri"}, "[withheld:credential_text]")
+
+
+def encodings(marker):
+    """(literal, percent-encoded, double percent-encoded) forms of ``marker``."""
+
+    once = percent_encoded(marker)
+    return {"literal": marker, "encoded": once, "double_encoded": percent_encoded(once)}
+
+
+def split_credentials(marker):
+    """Credential text split by ``marker``: a query password field, a user and
+    password before a host, and a connection URI, built at runtime."""
+
+    return {
+        "query_password": "https://synthetic.invalid/?pass" + marker + "word=" + SPLIT_PASSWORD,
+        "user_password_host": "synthetic:" + SPLIT_PASSWORD + marker + "@synthetic.invalid",
+        "connection_uri": "postgresql:/" + marker + "/synthetic:" + SPLIT_PASSWORD + "@synthetic.invalid/db",
+    }
+
+
+class SquashedFormTests(Base):
+    """Correction batch 4: every YAML-projected string is screened in two forms.
+
+    The decoded, normalized and confusable-folded form, and the same form
+    with every whitespace and line-control character removed (``squash``).
+    Either form matching withholds the original value whole and makes the
+    report partial; ordinary multi-line text stays displayable.
+    """
+
+    async def state_report(self, text):
+        values = owner_yaml(template=[{"sensor": [{"name": "Probe", "state": "{{ '" + text + "' }}"}]}])
+        report = await self.run_report(values, integrations=("template",))
+        return report, report["definitions"][0]
+
+    def assert_withheld(self, report, row):
+        self.assertNotIn(SPLIT_PASSWORD, json.dumps(report))
+        self.assertIn(row["fields"]["state"], CREDENTIAL_WITHHELD)
+        self.assertIn("template[0].sensor[0].state", row["withheld"])
+        self.assert_partial(report, "withheld:definitions[0]")
+
+    async def test_reviewer_nine_line_control_variants_are_withheld_partial(self):
+        for name, point in LINE_CONTROLS.items():
+            for form, marker in encodings(chr(point)).items():
+                for shape, text in split_credentials(marker).items():
+                    with self.subTest(character=name, form=form, shape=shape):
+                        self.assertTrue(credentials.credential_text(text))
+                        report, row = await self.state_report(text)
+                        self.assert_withheld(report, row)
+
+    async def test_reviewer_nine_variants_through_the_real_reader_and_gateway(self):
+        from ha_mcp_engineering.providers import upstream_yaml_reader as reader
+
+        for name, point in LINE_CONTROLS.items():
+            for form, marker in encodings(chr(point)).items():
+                with self.subTest(character=name, form=form):
+                    parsed = [{"sensor": [{"name": "Probe",
+                                           "state": "{{ '" + split_credentials(marker)["query_password"] + "' }}"}]}]
+                    payload = {"success": True, "yaml_path": "template", "count": 1, "files_searched": 1,
+                               "files_unreadable": 0, "matches": [{"file": "configuration.yaml",
+                                                                   "yaml_path": "template", "parsed": parsed}]}
+                    result = reader.project_success({"content": [{"type": "text", "text": json.dumps(payload)}]},
+                                                    "template", known_secrets=(HA_TOKEN, ACCESS_SECRET))
+                    values = owner_yaml()
+                    values["template"]["data"] = result.envelope
+                    response, data, audit = await serve_through_gateway({"integrations": ["template"]}, values)
+                    self.assertNotIn(SPLIT_PASSWORD, response + audit)
+                    self.assertIn(data["data"]["definitions"][0]["fields"]["state"],
+                                  CREDENTIAL_WITHHELD + ({"withheld": "reader_redaction"},))
+                    self.assertEqual(data["metadata"]["completeness"], "partial")
+
+    async def test_spaces_and_unicode_whitespace_inside_a_credential_are_withheld(self):
+        for name, point in OTHER_WHITESPACE.items():
+            for form, marker in encodings(chr(point)).items():
+                for shape, text in split_credentials(marker).items():
+                    with self.subTest(character=name, form=form, shape=shape):
+                        report, row = await self.state_report(text)
+                        self.assert_withheld(report, row)
+
+    async def test_form_feed_vertical_tab_and_next_line_stay_withheld_outright(self):
+        for name, point in INVISIBLE_WHITESPACE.items():
+            for form, marker in encodings(chr(point)).items():
+                with self.subTest(character=name, form=form):
+                    report, row = await self.state_report(split_credentials(marker)["query_password"])
+                    self.assertNotIn(SPLIT_PASSWORD, json.dumps(report))
+                    self.assertEqual(row["fields"]["state"], UNVERIFIABLE)
+                    self.assert_partial(report, "unverifiable_text_withheld", "withheld:definitions[0]")
+
+    async def test_a_run_of_mixed_whitespace_inside_a_credential_is_withheld(self):
+        report, row = await self.state_report(split_credentials(" \t\r\n" + chr(0x3000))["query_password"])
+        self.assert_withheld(report, row)
+
+    async def test_whitespace_inside_a_credential_key_value_is_withheld_in_a_nested_value(self):
+        note = "pass" + chr(0x09) + "word" + chr(0x0A) + "=" + SPLIT_PASSWORD
+        values = owner_yaml(template=[{"sensor": [{"name": "Probe", "state": "on", "attributes": {"note": note}}]}])
+        report = await self.run_report(values, integrations=("template",))
+        self.assertNotIn(SPLIT_PASSWORD, json.dumps(report))
+        self.assertIn(report["definitions"][0]["fields"]["attributes"]["note"], CREDENTIAL_WITHHELD)
+        self.assert_partial(report, "withheld:definitions[0]")
+
+    async def test_exit_point_screens_the_squashed_form_of_every_string(self):
+        env = setup()
+        self.addCleanup(end_request, env.token)
+        base = await env.service.report((), ("template",))
+        self.assertTrue(base["complete"])
+        for name, point in LINE_CONTROLS.items():
+            for form, marker in encodings(chr(point)).items():
+                with self.subTest(character=name, form=form):
+                    report = dict(base, probe=split_credentials(marker)["user_password_host"],
+                                  probe_keys={"synthetic:" + SPLIT_PASSWORD + marker + "@synthetic.invalid": "x",
+                                              "kept": "yes"})
+                    omissions = list(report.pop("omissions"))
+                    result = env.service._finish(report, omissions, omissions.append)
+                    self.assertNotIn(SPLIT_PASSWORD, json.dumps(result))
+                    self.assertEqual(result["probe"], "[withheld:credential_text]")
+                    self.assertEqual(result["probe_keys"], {"kept": "yes"})
+                    self.assertIn("credential_text_withheld", result["omissions"])
+                    self.assertIn("withheld:probe", result["omissions"])
+                    self.assertIn("withheld:probe_keys", result["omissions"])
+                    self.assertFalse(result["complete"])
+
+    async def test_a_known_secret_split_by_whitespace_is_withheld(self):
+        for name, point in {**LINE_CONTROLS, "space": 0x20, "ideographic_space": 0x3000}.items():
+            for form, marker in encodings(chr(point)).items():
+                with self.subTest(character=name, form=form):
+                    split = HA_TOKEN[:8] + marker + HA_TOKEN[8:]
+                    self.assertFalse(credentials.credential_text(split))
+                    self.assertTrue(credentials.credential_text(split, (HA_TOKEN,)))
+                    values = owner_yaml(template=[{"sensor": [{"name": "Leak", "state": "{{ '" + split + "' }}"}]}])
+                    report = await self.run_report(values, integrations=("template",))
+                    self.assertNotIn(HA_TOKEN[8:], json.dumps(report))
+                    self.assertEqual(report["definitions"][0]["fields"]["state"], "[withheld:credential_text]")
+                    self.assert_partial(report, "credential_text_withheld", "withheld:definitions[0]")
+
+    def test_core_free_text_with_a_space_split_credential_is_withheld(self):
+        title = "Synthetic pass" + chr(0x20) + "word=" + SPLIT_PASSWORD
+        self.assertEqual(credentials.display_text(title, c.MAX_TITLE), "[withheld:credential_text]")
+
+    def test_squash_removes_every_whitespace_and_line_control_character(self):
+        points = {**LINE_CONTROLS, **OTHER_WHITESPACE, **INVISIBLE_WHITESPACE,
+                  "line_separator": 0x2028, "paragraph_separator": 0x2029}
+        for name, point in points.items():
+            with self.subTest(name):
+                self.assertEqual(credentials.squash("a" + chr(point) + "b"), "ab")
+        self.assertEqual(credentials.squash("{{ a }}" + chr(0x0D) + chr(0x0A) + chr(0x09) + "b"), "{{a}}b")
+
+    async def test_ordinary_multi_line_templates_are_shown_and_complete(self):
+        templates = {
+            "conditional": "{% if is_state('sun.sun', 'above_horizon') %}" + chr(0x0A)
+                           + chr(0x09) + "day" + chr(0x0A) + "{% else %}" + chr(0x0A)
+                           + chr(0x09) + "night" + chr(0x0A) + "{% endif %}",
+            "crlf_loop": "{% set total = namespace(value=0) %}" + chr(0x0D) + chr(0x0A)
+                         + "{% for state in states.sensor %}" + chr(0x0D) + chr(0x0A)
+                         + "  {% set total.value = total.value + 1 %}" + chr(0x0D) + chr(0x0A)
+                         + "{% endfor %}" + chr(0x0D) + chr(0x0A) + "{{ total.value }}",
+            "message": "Front door: {{ states('binary_sensor.front_door') }}" + chr(0x0A)
+                       + chr(0x09) + "Updated: {{ now().strftime('%H:%M') }}" + chr(0x0A)
+                       + "Battery = {{ states('sensor.front_door_battery') | int(0) }}",
+            "math": "{{ (states('sensor.a') | float(0)" + chr(0x0A) + chr(0x09) + " + states('sensor.b')"
+                    + " | float(0)) | round(1) }}",
+        }
+        for name, template in templates.items():
+            with self.subTest(name):
+                self.assertFalse(credentials.credential_text(template, (HA_TOKEN, ACCESS_SECRET)))
+                self.assertFalse(credentials.unverifiable_text(template))
+                values = owner_yaml(template=[{"sensor": [{"name": "Probe", "state": template,
+                                                           "attributes": {"note": template}}]}])
+                report = await self.run_report(values, integrations=("template",))
+                row = report["definitions"][0]
+                self.assertEqual(row["fields"]["state"], template)
+                self.assertEqual(row["fields"]["attributes"], {"note": template})
+                self.assertEqual(row["withheld"], [])
+                self.assert_complete(report)
+
+    async def test_a_colon_then_an_at_sign_across_whitespace_is_withheld_by_design(self):
+        # Disclosed over-withholding (fail closed): the squashed form reads
+        # "x: y @ z" as a user and password before a host.
+        text = "Alert: motion" + chr(0x0A) + "@ {{ states('sensor.hall_motion') }}"
+        self.assertFalse(credentials.unverifiable_text(text))
+        report, row = await self.state_report(text)
+        self.assertIn(row["fields"]["state"], CREDENTIAL_WITHHELD)
+        self.assert_partial(report, "withheld:definitions[0]")

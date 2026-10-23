@@ -102,6 +102,17 @@ The owner decision of 2026-10-22 that the Core-observed entity ID of an
 exact registry match is Core's own data, shown rather than withheld, adds
 ``B6-O1``: that ID withheld when the definition's own derivation was.
 
+The final32 review's correction batch 4 (whitespace and line-control
+characters inside a credential; the architect's two-form direction) adds
+``B7-W*``: the squashed-form screening removed (the required mutant), the
+squash narrowed to spaces, to ASCII whitespace or to everything but tab,
+line feed and carriage return, the squashed form read before the
+percent-decode, its known secrets dropped, its password field given a word
+boundary again, and every string with whitespace withheld outright (the
+multi-line templates must stay shown). ``B2-K1`` is re-anchored on the
+folded known-secret tuple the two forms now share, and ``B-X6`` on the
+password-field leg both forms now share.
+
 Usage:
     python docs/evidence/hamcp132-mutations/run_mutations.py \
         --work ~/hamcp132-work/mut --output docs/evidence/hamcp132-mutations/results.json
@@ -173,6 +184,7 @@ B3_COMPLETE = "corr2 review R2-M1: any withheld form anywhere in the final envel
 B4_POLICY = "owner decision 2026-10-22: only the SQL db_url policy redaction leaves a report complete"
 B5_DERIVED = "owner decision 2026-10-22: nothing is derived from a withheld input"
 B6_OBSERVED = "owner decision 2026-10-22: the Core-observed entity ID is shown, not withheld"
+B7_SQUASHED = "final32 review: whitespace inside a credential is screened in the squashed form"
 
 
 def m(identifier, item, *replacements):
@@ -582,7 +594,7 @@ MUTATIONS = [
     m("B-X5-user-pass-host-rule-removed", B_EXIT,
       (DCRED, '        or _USER_PASS_HOST.search(text) is not None\n', '')),
     m("B-X6-password-field-rule-removed", B_EXIT,
-      (DCRED, '        or _PASSWORD_FIELD.search(text) is not None\n', '')),
+      (DCRED, '        or password_field.search(text) is not None\n', '')),
     m("B-X7-userinfo-rule-removed", B_EXIT,
       (DCRED, '        _userinfo(text)\n        or ', '        ')),
     m("B-X8-refused-canonicalization-passes", B_EXIT,
@@ -662,8 +674,8 @@ MUTATIONS = [
     m("B2-T7-allowlist-key-value-leg-removed", B2_TEXT,
       (DCRED, ' or _KEY_VALUE.search(value) is not None):', '):')),
     m("B2-K1-case-varied-known-secret-missed", B2_TEXT,
-      (DCRED, '        or any(secret and fold_confusables(secret.casefold()) in text for secret in known_secrets)\n',
-       '')),
+      (DCRED, '    secrets = tuple(fold_confusables(secret.casefold()) for secret in known_secrets if secret)\n',
+       '    secrets = ()\n')),
     m("B2-C1-confusable-fold-removed", B2_FOLD,
       (DCRED, '    text = fold_confusables(text)\n', '')),
     m("B2-U1-unverifiable-text-left-complete", B2_TEXT,
@@ -812,6 +824,30 @@ MUTATIONS = [
       (DMATCH, 'result.update(entity_id=hits[0], method=match["method"],',
        'result.update(entity_id=None if expected.get("derivation_limit") == "derived_entity_id_withheld"'
        ' else hits[0], method=match["method"],')),
+    m("B7-W1-squashed-form-screening-removed", B7_SQUASHED,
+      (DCRED, '    return (_credential_form(text, secrets, _PASSWORD_FIELD)\n'
+              '            or _credential_form(squash(text), tuple(squash(secret) for secret in secrets),\n'
+              '                                _SQUASHED_PASSWORD_FIELD))\n',
+       '    return _credential_form(text, secrets, _PASSWORD_FIELD)\n')),
+    m("B7-W2-squash-removes-spaces-only", B7_SQUASHED,
+      (DCRED, '    return "".join(character for character in text if not character.isspace())',
+       '    return text.replace(" ", "")')),
+    m("B7-W3-squash-removes-ascii-whitespace-only", B7_SQUASHED,
+      (DCRED, '    return "".join(character for character in text if not character.isspace())',
+       '    return "".join(character for character in text if character not in " \\t\\n\\r\\f\\v")')),
+    m("B7-W4-squash-keeps-line-controls", B7_SQUASHED,
+      (DCRED, '    return "".join(character for character in text if not character.isspace())',
+       '    return "".join(character for character in text if character in "\\t\\n\\r" or not character.isspace())')),
+    m("B7-W5-squashed-form-read-before-decoding", B7_SQUASHED,
+      (DCRED, '            or _credential_form(squash(text), tuple(',
+       '            or _credential_form(squash(value.casefold()), tuple(')),
+    m("B7-W6-squashed-known-secrets-dropped", B7_SQUASHED,
+      (DCRED, 'tuple(squash(secret) for secret in secrets),', '(),')),
+    m("B7-W7-squashed-password-field-needs-a-word-boundary", B7_SQUASHED,
+      (DCRED, '                                _SQUASHED_PASSWORD_FIELD))', '                                _PASSWORD_FIELD))')),
+    m("B7-W8-whitespace-text-withheld-outright", B7_SQUASHED,
+      (DCRED, '    return "".join(character for character in text if not character.isspace())',
+       '    return text if not any(character.isspace() for character in text) else _MARKER_FOLDED')),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

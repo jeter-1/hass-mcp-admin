@@ -55,7 +55,14 @@ non-ASCII title is withheld by design.
 
 A YAML-projected string or key with an invisible, format or control
 character, literal or percent-encoded, is withheld whole as
-`[withheld:unverifiable_text]`, never screened and shown. Any withheld form
+`[withheld:unverifiable_text]`, never screened and shown. Every other
+YAML-projected string is screened for credential text in two forms
+(correction batch 4): its canonical form and that form with every
+whitespace and line-control character removed, so whitespace inside a
+credential, literal or percent-encoded, cannot hide it. Either form matching
+withholds the original value whole as credential text. Tab, line feed and
+carriage return stay displayable, so an ordinary multi-line template is
+shown and the report stays complete. Any withheld form
 anywhere in the final envelope makes the report partial, with a bounded
 `withheld:<item>` omission per affected item. The one exception is a fixed
 policy redaction, not missing evidence (owner decision, Josh, 2026-10-22): a
