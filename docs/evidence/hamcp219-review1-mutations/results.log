@@ -1,0 +1,96 @@
+# HAMCP-219 review 1 H1/M1 source mutations (run_mutations.py).
+# Tree: every file of commit 7754a34 byte-identical (checked with cmp) in a
+# detached worktree; Python 3.12.14, empty environment, memory-capped unit.
+# Modules: test_alarmo_interval_observer, test_dashboard_disposable_acceptance,
+# test_automation_baseline_disposable, test_hamcp219_review1_harness_probes.
+# Each mutation is applied alone and restored; KILLED = the suite failed.
+UNMUTATED: rc=0 Ran 137 tests in 30.409s OK 32s
+H1-tolerate-without-retry: rc=1 Ran 137 tests in 22.449s FAILED (failures=11, errors=1) 23s
+    ERROR: test_rerun_must_be_completely_clean (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_rerun_must_be_completely_clean)
+    FAIL: test_each_window_may_retain_one_discarded_observation (tests.test_alarmo_interval_observer.DiscardedWindowEvidenceTests.test_each_window_may_retain_one_discarded_observation)
+    FAIL: test_malformed_duplicate_clean_or_nonretryable_discards_refuse (tests.test_alarmo_interval_observer.DiscardedWindowEvidenceTests.test_malformed_duplicate_clean_or_nonretryable_discards_refuse)
+    FAIL: test_too_many_discards_refuse (tests.test_alarmo_interval_observer.DiscardedWindowEvidenceTests.test_too_many_discards_refuse)
+    FAIL: test_mutation_accepting_a_nonclean_rerun_passes_the_reproduction (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_mutation_accepting_a_nonclean_rerun_passes_the_reproduction)
+    FAIL: test_one_off_background_save_passes_on_the_clean_rerun_and_both_windows_are_kept (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_one_off_background_save_passes_on_the_clean_rerun_and_both_windows_are_kept)
+  -> KILLED
+H1-accept-nonclean-retry: rc=1 Ran 137 tests in 27.473s FAILED (failures=2) 28s
+    FAIL: test_reviewer_attribution_loss_recurs_on_the_rerun_and_fails (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_reviewer_attribution_loss_recurs_on_the_rerun_and_fails)
+    FAIL: test_second_background_save_on_the_rerun_fails (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_second_background_save_on_the_rerun_fails)
+  -> KILLED
+H1-client-tolerates-repairs-by-name: rc=1 FAILED (failures=3) Ran 137 tests in 26.615s FAILED (failures=10, errors=5) 27s
+    ERROR: test_each_window_may_retain_one_discarded_observation (tests.test_alarmo_interval_observer.DiscardedWindowEvidenceTests.test_each_window_may_retain_one_discarded_observation)
+    ERROR: test_immediate_repairs_save_or_write_fails_with_no_rerun (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_immediate_repairs_save_or_write_fails_with_no_rerun)
+    ERROR: test_strict_verification_still_refuses_every_repairs_save (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_strict_verification_still_refuses_every_repairs_save)
+    ERROR: test_discarded_export_windows_are_retained_and_reverified (tests.test_automation_baseline_disposable.DisposableReceiptTests.test_discarded_export_windows_are_retained_and_reverified)
+    ERROR: test_retained_export_observation_is_verified_strictly (tests.test_automation_baseline_disposable.DisposableReceiptTests.test_retained_export_observation_is_verified_strictly)
+    FAIL: test_immediate_repairs_save_or_write_fails_with_no_rerun (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_immediate_repairs_save_or_write_fails_with_no_rerun) (kind='storage_save')
+  -> KILLED
+H1-strict-default-ignored: rc=1 Ran 137 tests in 24.691s FAILED (failures=5, errors=1) 26s
+    ERROR: test_export_screen_reruns_only_a_retryable_window (tests.test_automation_baseline_disposable.DisposableReceiptTests.test_export_screen_reruns_only_a_retryable_window)
+    FAIL: test_one_off_background_save_passes_on_the_clean_rerun_and_both_windows_are_kept (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_one_off_background_save_passes_on_the_clean_rerun_and_both_windows_are_kept)
+    FAIL: test_reviewer_attribution_loss_recurs_on_the_rerun_and_fails (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_reviewer_attribution_loss_recurs_on_the_rerun_and_fails)
+    FAIL: test_second_background_save_on_the_rerun_fails (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_second_background_save_on_the_rerun_fails)
+    FAIL: test_strict_verification_still_refuses_every_repairs_save (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_strict_verification_still_refuses_every_repairs_save)
+    FAIL: test_retained_export_observation_is_verified_strictly (tests.test_automation_baseline_disposable.DisposableReceiptTests.test_retained_export_observation_is_verified_strictly)
+  -> KILLED
+H1-retry-before-other-checks: rc=1 Ran 137 tests in 30.456s FAILED (failures=4, errors=3) 32s
+    ERROR: test_command_origin_and_other_failures_never_rerun (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_command_origin_and_other_failures_never_rerun)
+    ERROR: test_immediate_repairs_save_or_write_fails_with_no_rerun (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_immediate_repairs_save_or_write_fails_with_no_rerun)
+    ERROR: test_one_off_background_save_passes_on_the_clean_rerun_and_both_windows_are_kept (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_one_off_background_save_passes_on_the_clean_rerun_and_both_windows_are_kept)
+    FAIL: test_malformed_duplicate_clean_or_nonretryable_discards_refuse (tests.test_alarmo_interval_observer.DiscardedWindowEvidenceTests.test_malformed_duplicate_clean_or_nonretryable_discards_refuse) (mutation='write')
+    FAIL: test_command_origin_and_other_failures_never_rerun (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_command_origin_and_other_failures_never_rerun) (first='commands_mismatch')
+    FAIL: test_immediate_repairs_save_or_write_fails_with_no_rerun (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_immediate_repairs_save_or_write_fails_with_no_rerun) (kind='delayed_with_write')
+  -> KILLED
+M1-alarmo-any-kind-retries: rc=1 Ran 137 tests in 29.117s FAILED (failures=2, errors=1) 31s
+    ERROR: test_immediate_repairs_save_or_write_fails_with_no_rerun (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_immediate_repairs_save_or_write_fails_with_no_rerun)
+    FAIL: test_immediate_repairs_save_or_write_fails_with_no_rerun (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_immediate_repairs_save_or_write_fails_with_no_rerun) (kind='storage_save')
+    FAIL: test_reviewer_attribution_loss_with_its_flush_inside_fails_without_a_rerun (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_reviewer_attribution_loss_with_its_flush_inside_fails_without_a_rerun)
+  -> KILLED
+H1-discard-diagnostic-unchecked: rc=1 Ran 137 tests in 25.709s FAILED (failures=2) 27s
+    FAIL: test_malformed_duplicate_clean_or_nonretryable_discards_refuse (tests.test_alarmo_interval_observer.DiscardedWindowEvidenceTests.test_malformed_duplicate_clean_or_nonretryable_discards_refuse) (mutation='diagnostic')
+    FAIL: test_discarded_export_windows_are_retained_and_reverified (tests.test_automation_baseline_disposable.DisposableReceiptTests.test_discarded_export_windows_are_retained_and_reverified) (mutation='diagnostic')
+  -> KILLED
+H1-discard-duplicate-window: rc=1 Ran 137 tests in 24.010s FAILED (failures=1) 25s
+    FAIL: test_malformed_duplicate_clean_or_nonretryable_discards_refuse (tests.test_alarmo_interval_observer.DiscardedWindowEvidenceTests.test_malformed_duplicate_clean_or_nonretryable_discards_refuse) (mutation='duplicate')
+  -> KILLED
+H1-observer-alarmo-tolerates-repairs: rc=1 Ran 137 tests in 25.546s FAILED (failures=2) 27s
+    FAIL: test_pending_issue_registry_save_holds_readiness_so_a_rerun_opens_after_its_flush (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_pending_issue_registry_save_holds_readiness_so_a_rerun_opens_after_its_flush)
+    FAIL: test_retry_store_is_named_mirrored_never_tolerated_and_never_hashed (tests.test_alarmo_interval_observer.RetryOnceCleanTests.test_retry_store_is_named_mirrored_never_tolerated_and_never_hashed)
+  -> KILLED
+H1-dashboard-tolerates-repairs-by-name: rc=1 FAILED (failures=3) Ran 137 tests in 26.109s FAILED (failures=9) 27s
+    FAIL: test_fixture_names_the_retry_store_and_never_hashes_or_tolerates_it (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_fixture_names_the_retry_store_and_never_hashes_or_tolerates_it)
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun) (event='save')
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun) (event='write')
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun)
+    FAIL: test_repairs_delayed_save_is_never_tolerated_and_refuses_strictly (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_repairs_delayed_save_is_never_tolerated_and_refuses_strictly) (kind='storage_save')
+    FAIL: test_repairs_delayed_save_is_never_tolerated_and_refuses_strictly (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_repairs_delayed_save_is_never_tolerated_and_refuses_strictly) (kind='storage_delay_save')
+  -> KILLED
+H1-dashboard-tolerate-without-retry: rc=1 Ran 137 tests in 23.809s FAILED (failures=1) 25s
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun)
+  -> KILLED
+H1-dashboard-strict-default-ignored: rc=1 Ran 137 tests in 28.392s FAILED (failures=2) 29s
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun)
+    FAIL: test_repairs_delayed_save_is_never_tolerated_and_refuses_strictly (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_repairs_delayed_save_is_never_tolerated_and_refuses_strictly) (kind='storage_delay_save')
+  -> KILLED
+H1-dashboard-never-requests-rerun: rc=1 Ran 137 tests in 26.028s FAILED (failures=1) 27s
+    FAIL: test_rerun_is_requested_only_after_every_other_check_and_only_through_the_shared_helper (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_rerun_is_requested_only_after_every_other_check_and_only_through_the_shared_helper)
+  -> KILLED
+M1-dashboard-any-kind-retries: rc=1 Ran 137 tests in 28.113s FAILED (failures=5) 29s
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun) (event='save')
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun) (event='write')
+    FAIL: test_other_stores_and_non_save_kinds_are_refused (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_other_stores_and_non_save_kinds_are_refused) (kind='storage_remove')
+    FAIL: test_other_stores_and_non_save_kinds_are_refused (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_other_stores_and_non_save_kinds_are_refused) (kind='flow')
+    FAIL: test_other_stores_and_non_save_kinds_are_refused (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_other_stores_and_non_save_kinds_are_refused) (kind='service')
+  -> KILLED
+H1-observer-dashboard-untracked-repairs: rc=1 Ran 137 tests in 23.471s FAILED (failures=1) 25s
+    FAIL: test_pending_repairs_save_holds_start_so_a_rerun_opens_after_its_flush (tests.test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_pending_repairs_save_holds_start_so_a_rerun_opens_after_its_flush)
+  -> KILLED
+H1-baseline-discards-unverified: rc=1 Ran 137 tests in 27.748s FAILED (failures=1) 29s
+    FAIL: test_discarded_export_windows_are_retained_and_reverified (tests.test_automation_baseline_disposable.DisposableReceiptTests.test_discarded_export_windows_are_retained_and_reverified)
+  -> KILLED
+H1-baseline-screen-never-reruns: rc=1 Ran 137 tests in 22.668s FAILED (failures=2) 24s
+    FAIL: test_export_screen_reruns_only_a_retryable_window (tests.test_automation_baseline_disposable.DisposableReceiptTests.test_export_screen_reruns_only_a_retryable_window) (case='retry_then_clean')
+    FAIL: test_export_screen_reruns_only_a_retryable_window (tests.test_automation_baseline_disposable.DisposableReceiptTests.test_export_screen_reruns_only_a_retryable_window) (case='retry_then_dirty')
+  -> KILLED
+TOTAL killed=17/17
+RESTORED: rc=0 Ran 137 tests in 22.134s OK 23s
