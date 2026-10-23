@@ -6,10 +6,14 @@ to the exact check. Never execute candidate code or follow returned URLs.
 """
 
 import argparse
+import email.utils
 import json
+import random
 import re
 import subprocess
+import sys
 import tempfile
+import time
 
 
 REPOSITORY = "jeter-1/hass-mcp-admin"
@@ -17,6 +21,166 @@ WORKFLOW_PATH = ".github/workflows/ci.yml"
 APP_ID = 15368
 MAX_RESPONSE_BYTES = 4_000_000
 PENDING = {"queued", "in_progress", "requested", "waiting", "pending"}
+
+
+# Verbatim copy of the shared bounded GitHub read (HAMCP-221);
+# tests.test_signing_workflow_supply_chain pins it to its source.
+# BEGIN COPY scripts/github_retry.py
+MAX_ATTEMPTS = 5
+MAX_TOTAL_SECONDS = 180.0
+BASE_DELAY_SECONDS = 2.0
+MAX_DELAY_SECONDS = 30.0
+RETRY_AFTER_CAP_SECONDS = 60.0
+GH_ATTEMPT_TIMEOUT_SECONDS = 30.0
+MIN_ATTEMPT_SECONDS = 1.0
+HEADER_BOUND = 65536
+UNAVAILABLE_STATUSES = frozenset({"network", "timeout", "gh_unavailable"})
+
+
+class GitHubReadError(Exception):
+    """A read that failed closed; ``str()`` names only the host and status."""
+
+    def __init__(self, host, status, attempts, exhausted):
+        self.host = host
+        self.status = status
+        self.attempts = attempts
+        self.exhausted = exhausted
+        self.category = ("github_read_unavailable" if status in UNAVAILABLE_STATUSES
+                         else "github_read_failed")
+        reason = "retry bound reached" if exhausted else "not retried"
+        super().__init__(f"GitHub read failed: host {host}, last status {status}, "
+                         f"{attempts} attempt(s), {reason}")
+
+
+class RetryableRead(Exception):
+    def __init__(self, status, retry_after=None):
+        super().__init__(status)
+        self.status = status
+        self.retry_after = retry_after
+
+
+class FinalRead(Exception):
+    def __init__(self, status):
+        super().__init__(status)
+        self.status = status
+
+
+def retryable_status(status):
+    return type(status) is int and (status == 429 or 500 <= status <= 599)
+
+
+def http_outcome(status, retry_after):
+    # Callers return the body for HTTP 200; every other status raises here.
+    if retryable_status(status):
+        raise RetryableRead(status, retry_after)
+    raise FinalRead(status)
+
+
+def retry_after_seconds(value, now):
+    """Parse Retry-After as delta-seconds or an HTTP-date; None if unusable."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if re.fullmatch(r"[0-9]{1,10}", value):
+        return float(int(value))
+    try:
+        when = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if when is None or when.tzinfo is None:
+        return None
+    return max(0.0, when.timestamp() - now)
+
+
+def backoff_delay(attempt, retry_after, jitter):
+    """Seconds to wait before the next attempt; ``jitter`` is in [0, 1)."""
+    if retry_after is not None:
+        # Honor the server's request, but never wait longer than the cap.
+        return min(RETRY_AFTER_CAP_SECONDS, retry_after) + jitter
+    exponential = min(MAX_DELAY_SECONDS, BASE_DELAY_SECONDS * 2 ** (attempt - 1))
+    return exponential * (0.5 + jitter / 2)
+
+
+def bounded_retry(attempt_read, host, clock=None, sleep=None, jitter=None, wall=None):
+    """Return ``attempt_read(remaining_seconds)`` under the shared bound."""
+    clock, sleep = clock or time.monotonic, sleep or time.sleep
+    jitter, wall = jitter or random.random, wall or time.time
+    start = clock()
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        remaining = MAX_TOTAL_SECONDS - (clock() - start)
+        try:
+            return attempt_read(remaining)
+        except FinalRead as exc:
+            raise GitHubReadError(host, exc.status, attempt, False) from None
+        except RetryableRead as exc:
+            delay = backoff_delay(attempt, retry_after_seconds(exc.retry_after, wall()), jitter())
+            # No attempt starts unless it can have MIN_ATTEMPT_SECONDS before the
+            # total bound; each attempt is limited to the time that remains.
+            if (attempt == MAX_ATTEMPTS
+                    or clock() - start + delay + MIN_ATTEMPT_SECONDS > MAX_TOTAL_SECONDS):
+                raise GitHubReadError(host, exc.status, attempt, True) from None
+            sleep(delay)
+    raise AssertionError("unreachable")
+
+
+def parse_included(raw):
+    """Split ``gh api --include`` output into status, lowercase headers, body."""
+    end = raw.find(b"\n")
+    if end < 0 or end > HEADER_BOUND:
+        raise FinalRead("malformed_response")
+    match = re.fullmatch(rb"HTTP/[0-9.]{1,3} ([0-9]{3})(?: [^\r\n]*)?\r?", raw[:end])
+    if match is None:
+        raise FinalRead("malformed_response")
+    headers = {}
+    position = end + 1
+    while True:
+        end = raw.find(b"\n", position)
+        if end < 0 or end > HEADER_BOUND:
+            raise FinalRead("malformed_response")
+        line = raw[position:end].rstrip(b"\r")
+        position = end + 1
+        if not line:
+            return int(match.group(1)), headers, raw[position:]
+        name, separator, value = line.partition(b":")
+        if not separator:
+            raise FinalRead("malformed_response")
+        headers[name.strip().lower().decode("latin-1")] = value.strip().decode("latin-1")
+
+
+def gh_read_attempt(route, max_bytes, timeout, run=None):
+    # The route is repository-relative and GET-only; gh authenticates with
+    # GH_TOKEN. Neither gh diagnostics nor response text is exported.
+    with tempfile.TemporaryFile() as output:
+        try:
+            result = (run or subprocess.run)(
+                ["gh", "api", route, "--include", "--hostname", "github.com",
+                 "--method", "GET", "-H", "Accept: application/vnd.github+json"],
+                stdout=output, stderr=subprocess.DEVNULL,
+                timeout=min(GH_ATTEMPT_TIMEOUT_SECONDS, timeout), check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise RetryableRead("timeout") from None
+        except OSError:
+            raise FinalRead("gh_unavailable") from None
+        output.seek(0)
+        raw = output.read(HEADER_BOUND + max_bytes + 1)
+    if not raw:
+        # gh prints no response when none arrived; exit 4 means no credentials.
+        if result.returncode == 4:
+            raise FinalRead("authentication_required")
+        raise RetryableRead("network")
+    status, headers, body = parse_included(raw)
+    if status == 200 and result.returncode == 0:
+        return body[:max_bytes + 1]
+    http_outcome(status, headers.get("retry-after"))
+
+
+def bounded_gh_read(route, max_bytes, run=None, **bounds):
+    """One GitHub API GET under the shared bound.  At most ``max_bytes`` + 1
+    body bytes are kept, so callers keep their own size refusal."""
+    return bounded_retry(lambda timeout: gh_read_attempt(route, max_bytes, timeout, run),
+                         "api.github.com", **bounds)
+# END COPY
 
 
 class Refusal(ValueError):
@@ -43,20 +207,14 @@ def unique_keys(pairs):
 
 def github_get(route):
     # All callers construct repository-relative GET routes from validated IDs.
-    # Output goes to a disposable file rather than unbounded memory; neither
-    # gh diagnostics nor arbitrary API text is exported on failure.
-    with tempfile.TemporaryFile() as output:
-        try:
-            result = subprocess.run(
-                ["gh", "api", route, "--hostname", "github.com", "--method", "GET",
-                 "-H", "Accept: application/vnd.github+json"],
-                stdout=output, stderr=subprocess.DEVNULL, timeout=30, check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise Refusal("github_read_unavailable") from exc
-        require(result.returncode == 0, "github_read_failed")
-        output.seek(0)
-        raw = output.read(MAX_RESPONSE_BYTES + 1)
+    # Only 429, 5xx and transient network failures are retried, within the
+    # shared bound; the failure names the host and last status, never gh
+    # diagnostics, the token or arbitrary API text.
+    try:
+        raw = bounded_gh_read(route, MAX_RESPONSE_BYTES)
+    except GitHubReadError as exc:
+        print(exc, file=sys.stderr)
+        raise Refusal(exc.category) from None
     require(len(raw) <= MAX_RESPONSE_BYTES, "github_response_too_large")
     try:
         value = json.loads(raw, object_pairs_hook=unique_keys)

@@ -7,7 +7,7 @@ import unittest
 
 import yaml
 
-from tests.test_ci_provenance import fixture as ci_fixture, MOCK_API_SHELL
+from tests.test_ci_provenance import fixture as ci_fixture, MOCK_API_SHELL, MOCK_INCLUDE_SHELL
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -251,9 +251,11 @@ class ReviewWorkflowTests(unittest.TestCase):
                 """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$MOCK_GH_LOG"
-if [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; then
+""" + MOCK_INCLUDE_SHELL + """if [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; then
+  include_header "$@"
   printf '%s\\n' "$MOCK_PR_JSON"
 elif [[ "$1" == "api" && "$*" == *"check-runs?check_name=validate&filter=latest"* ]]; then
+  include_header "$@"
   printf '%s\\n' "$MOCK_CHECKS_JSON"
 """ + MOCK_API_SHELL + """else
   printf 'unexpected gh invocation: %s\\n' "$*" >&2
@@ -345,9 +347,11 @@ fi
                 """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$MOCK_GH_LOG"
-if [[ "$1" == "api" && "$2" == "--paginate" ]]; then
+""" + MOCK_INCLUDE_SHELL + """if [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/issues/${PR_NUMBER}/timeline?per_page=100&page=1" ]]; then
+  include_header "$@"
   printf '%s\\n' '[{"event":"committed","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"id":22,"event":"ready_for_review","actor":{"login":"jeter-1"}}]'
 elif [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; then
+  include_header "$@"
   printf '%s\\n' "$MOCK_PR_JSON"
 elif [[ "$1" == "pr" && "$2" == "merge" ]]; then
   exit 0
