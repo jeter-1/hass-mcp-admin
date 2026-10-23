@@ -534,6 +534,9 @@ class DownloadTests(unittest.TestCase):
             self.skipTest("socket pairs unavailable")
         self.addCleanup(far.close)
         far.sendall(b"HTTP/1.1 200 OK\r\nX-Slow: " + b"x" * 400)
+        # End of stream after the header bytes, so a missing budget fails the
+        # assertions below instead of blocking on an idle pair.
+        far.shutdown(socket.SHUT_WR)
 
         class SlowPeer(socket.socket):
             def recv_into(self, buffer, nbytes=0, flags=0):
