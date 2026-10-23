@@ -479,7 +479,10 @@ legacy candidates are now withheld with it, and the report is partial.
   its squashed form (above); either form matching withholds the original
   value whole, partial. Withholding every value with a tab or line break was
   rejected because it would hide nearly every multi-line template. Pinned by
-  `SquashedFormTests` and mutants `B7-W1` to `B7-W8`.
+  `SquashedFormTests`, the reviewer's suite (kept unchanged as
+  `tests/test_pr294_final32_review.py`) and mutants `B7-W1` to `B7-W8`.
+- **Owner decision on the colon-then-`@` over-withholding.** Accepted as
+  disclosed (Josh, 2026-10-22).
 
 ## Compatibility and rollback
 
@@ -508,7 +511,8 @@ legacy candidates are now withheld with it, and the report is partial.
   - Text with a colon followed later by `@` and no `/` between, across
     whitespace or a line break (`Alert: motion` then `@ {{ ... }}`), is
     withheld as credential text: its squashed form has a URI user-info
-    shape (by design, fail closed; the report is partial).
+    shape (by design, fail closed; the report is partial; accepted by the
+    owner, 2026-10-22).
   - Every withholding makes the report partial, except the fixed SQL
     `db_url` policy redaction (`{"redacted_by_policy": "database_url"}`),
     which is not missing evidence (owner decision, 2026-10-22).

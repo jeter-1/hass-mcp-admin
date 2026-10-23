@@ -104,7 +104,8 @@ The review needs a security section covering:
   whole as credential text and makes the report partial. Tab, line feed and
   carriage return stay displayable: an ordinary multi-line template is shown
   and complete. A colon followed later by `@` with no `/` between is
-  withheld by design.
+  withheld by design (over-withholding accepted by the owner, Josh,
+  2026-10-22).
 - **Anything withheld is partial.** One scan of the final envelope names
   each item with any withheld form (`withheld:definitions[3]`), at most 20
   then `withheld_items_not_listed:<n>`, and makes the report partial.
@@ -174,9 +175,12 @@ The review needs a security section covering:
   `test_core_observed_entity_id_is_shown_when_the_name_is_withheld`.
 - **Final32 review correction (correction batch 4).** Whitespace inside a
   credential is screened in the squashed form (above), pinned by
-  `SquashedFormTests`. The reviewer's final32 suite
-  (`tests/test_pr294_final32_review.py`) is to be added unchanged when it is
-  provided.
+  `SquashedFormTests`. The reviewer's final32 suite is kept unchanged as
+  `tests/test_pr294_final32_review.py` (6 tests; its nine tab, line feed
+  and carriage return variants are withheld and partial).
+- **Owner decision on the colon-then-`@` over-withholding.** Accepted as
+  disclosed (Josh, 2026-10-22): such text is withheld as credential text
+  and the report is partial.
 
 Preserve the following:
 - stable v1.1.2;
@@ -336,9 +340,10 @@ reader purpose are updated. The Evidence tier on the PR head is the complete
 final run.
 
 Mutations: **244 of 244 killed, none survived**
-(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 302
-tests across the three HAMCP-132 modules and both reviewer suites
-(`test_pr294_delta_review` and `test_pr294_corr2_extra`): OK, 1 skipped. Every kill is a test failure or
+(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 308
+tests across the three HAMCP-132 modules and the three reviewer suites
+(`test_pr294_delta_review`, `test_pr294_corr2_extra` and
+`test_pr294_final32_review`): OK, 1 skipped. Every kill is a test failure or
 a test-level error; none is an import or syntax failure.
 
 The set is slice 1's 80, 55 for slice 2, 31 for the independent-review

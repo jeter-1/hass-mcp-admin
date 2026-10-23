@@ -78,6 +78,10 @@ leg removed, a dropped invisible key leaving the report complete) and
 ignored, dropped keys ignored, the item list unbounded, omission text
 scanned as items, completeness or the omission list ignoring the scan).
 
+The final32 review's correction batch 4 adds
+``tests/test_pr294_final32_review.py`` (that reviewer's suite, unchanged)
+and ``B7-W*`` (the squashed-form screening removed or narrowed).
+
 The owner decision of 2026-10-22 (a SQL definition's own ``db_url`` is a
 fixed policy redaction, reported as ``{"redacted_by_policy":
 "database_url"}``, that leaves the report complete) adds ``B4-P*``: the
@@ -147,7 +151,8 @@ DPROJ, DSVC, DMATCH, DDIAG, DCON, DCRED = (f"{DEFS}/{name}.py" for name in
                                             "credentials"))
 DTOOL = f"{E}/tools/configuration_definitions.py"
 MODULES = ("test_hamcp132_recorder_settings", "test_hamcp132_unregistered_entities",
-           "test_hamcp132_configuration_definitions", "test_pr294_delta_review", "test_pr294_corr2_extra")
+           "test_hamcp132_configuration_definitions", "test_pr294_delta_review", "test_pr294_corr2_extra",
+           "test_pr294_final32_review")
 ROW1 = "design 7: core_default only when the source is complete"
 ROW2 = "design 7: db_url withheld"
 ROW3 = "design 7: a failing source is partial with an exact reason"
