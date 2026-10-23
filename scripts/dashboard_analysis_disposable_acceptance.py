@@ -36,17 +36,18 @@ IMAGE_IDS = {
 }
 LABEL_KEY = "org.hass-mcp.dashboard-acceptance"
 OBSERVER = "dashboard_interval_observer"
-# HAMCP-219: Core's own background bookkeeping saves that may land inside an
-# observation window. Only background-origin saves of these exact stores pass;
-# a command-origin save, any other store, flows and services still fail.
-# Cites are Core 2026.9.4 (9212531f40a0b7b23229a90d688dd79d9dfccff4):
-# - auth, core.restore_state: tolerated before HAMCP-219 (unchanged).
-# - repairs.issue_registry: helpers/issue_registry.py:26 STORAGE_KEY, :100-128
-#   IssueRegistryStore; the registry saves through helpers/registry.py:13
-#   SAVE_DELAY = 10 and :78-79 async_delay_save, so a save scheduled before a
-#   window can fire inside it with no command in flight.
-TOLERATED_STORES = ("auth", "core.restore_state", "repairs.issue_registry")
+# Core's own background bookkeeping saves that pass inside an observation window.
+TOLERATED_STORES = ("auth", "core.restore_state")
 BACKGROUND_SAVE_KINDS = ("storage_save", "storage_delay_save", "storage_write")
+# HAMCP-219 review 1: never tolerated. A window whose only refusal is the
+# delayed-save scheduling of Core's issue registry (Core 2026.9.4 9212531f
+# helpers/issue_registry.py:26, :100-128; helpers/registry.py:13 SAVE_DELAY = 10,
+# :78-79 async_delay_save) is discarded, kept as evidence and rerun once; the
+# rerun must be clean. The observer's origin label is not trusted for this:
+# Core's executor and thread-safe callbacks drop the request context. An
+# immediate save or a write of this store fails with no rerun.
+RETRY_STORE = "repairs.issue_registry"
+RETRY_EVENT_KIND = "storage_delay_save"
 PATH = "dashboard-gate"
 EMPTY_PATH = "dashboard-empty"
 SENTINEL = "synthetic-dashboard-private-value"
@@ -77,6 +78,26 @@ def save(path, value):
 def background_bookkeeping(event):
     return (event.get("origin") == "background" and event.get("store") in TOLERATED_STORES
             and event.get("kind") in BACKGROUND_SAVE_KINDS)
+
+
+def retryable_delayed_save(event):
+    return (event.get("origin") == "background" and event.get("store") == RETRY_STORE
+            and event.get("kind") == RETRY_EVENT_KIND)
+
+
+def window_commands(events, *, retry_allowed=False):
+    """A window's commands and its count of retryable delayed saves.
+
+    Any other non-command event refuses. Retryable events count only when the
+    caller allows a rerun; otherwise they refuse like any other write.
+    """
+    commands, retryable = [], 0
+    for event in events:
+        if event["kind"] == "command": commands.append(event["command"])
+        elif retry_allowed is True and retryable_delayed_save(event): retryable += 1
+        else:
+            require(background_bookkeeping(event), "observed write/flow/service")
+    return commands, retryable
 
 
 def verify_mixed_projection(header, items):
@@ -328,7 +349,8 @@ async def scenario(lane, core_url):
     import aiohttp
     import real_ha_contract_tests as helper
     from core_registry_contract_lane import configure_with_test_authority
-    from alarmo_inspection_contract_acceptance import wait_disposable_setup
+    from alarmo_inspection_contract_acceptance import (wait_disposable_setup, observe_retry_once_clean,
+        RetryableObservation)
     from ha_mcp_engineering.clients import HomeAssistantWebSocketClient
     from ha_mcp_engineering.clients.mcp import MAX_TOOL_CATALOG_PAGES
     from ha_mcp_engineering.configuration import Settings
@@ -387,7 +409,9 @@ async def scenario(lane, core_url):
         async with asyncio.timeout(210): await wait_disposable_setup(ObserverSetup(), store_classes=False)
         receipts = []
 
-        async def call(name, arguments, expected, native_reads=0, upstream_read=0):
+        discarded = []
+
+        async def run_case(name, arguments, expected, native_reads, upstream_read):
             interval = (await ws.command({"type": OBSERVER + "/start", "kind": "inspection"}))["interval_id"]
             events = {"path": arguments.get("url_path", PATH), "mcp": [], "native_http": [], "native_ws": []}
             telemetry, context = begin_request(); telemetry.caller_id = "disposable-dashboard-owner"
@@ -411,15 +435,15 @@ async def scenario(lane, core_url):
                 observed = await ws.command({"type": OBSERVER + "/finish", "interval_id": interval})
                 save(lane.out / (name + "-observation.json"), observed)
                 save(lane.out / (name + "-wire.json"), events)
+            return (value, raw, events), observed
+
+        def verify_case(outcome, observed, retry_allowed, native_reads, upstream_read):
+            _value, _raw, events = outcome
             require(observed["overflow"] is False and observed["expired"] is False, "observer bound failed")
             require(observed["core_version"] == "2026.9.4" and all(observed["coverage"].values()), "observer unavailable")
             require(observed["observer_sha256"] == digest((lane.fixture / "__init__.py").read_bytes()), "observer identity drift")
             require(observed["baseline_store_hashes"] == observed["final_store_hashes"], "persisted fixture drift")
-            commands = []
-            for event in observed["events"]:
-                if event["kind"] == "command": commands.append(event["command"])
-                else:
-                    require(background_bookkeeping(event), "observed write/flow/service")
+            commands, retryable = window_commands(observed["events"], retry_allowed=retry_allowed)
             require(commands == (["lovelace/config"] if upstream_read else []) +
                     (["config/entity_registry/list"] if native_reads else []), "unexpected Core dispatch or retry")
             if upstream_read:
@@ -432,9 +456,25 @@ async def scenario(lane, core_url):
             else: require(not events["mcp"], "unexpected upstream I/O")
             require(events["native_http"] == (["GET /api/states", "GET /api/websocket"] if native_reads else []), "native HTTP mismatch")
             require(events["native_ws"] == (["auth", "config/entity_registry/list"] if native_reads else []), "native WS mismatch")
+            if retryable:
+                raise RetryableObservation("Dashboard window must be rerun once",
+                    {"condition": "retryable_delayed_save", "retryable_event_count": retryable})
+
+        async def call(name, arguments, expected, native_reads=0, upstream_read=0):
+            # HAMCP-219 review 1: rerun once only for a repairs delayed save;
+            # the discarded window's observation and wire stay beside the rerun's.
+            def discard(item):
+                save(lane.out / (name + "-discarded-observation.json"), item["observation"])
+                (lane.out / (name + "-wire.json")).replace(lane.out / (name + "-discarded-wire.json"))
+                discarded.append(name)
+            (value, raw, events), _observed, _, discard_item = await observe_retry_once_clean(
+                lambda: run_case(name, arguments, expected, native_reads, upstream_read),
+                lambda outcome, observed, retry: verify_case(outcome, observed, retry, native_reads, upstream_read),
+                on_discard=discard)
             receipts.append({"case": name, "success": value["success"], "wire": events,
                 "timing": value["timing"], "response_sha256": digest(raw.encode()), "bytes": len(raw.encode()),
-                "refusal_reason": value.get("details", {}).get("reason")})
+                "refusal_reason": value.get("details", {}).get("reason"),
+                "discarded_window": None if discard_item is None else discard_item["diagnostic"]})
             save(lane.out / "case-receipts.json", receipts)
             return value
 
@@ -476,7 +516,7 @@ async def scenario(lane, core_url):
                 "control executed or fixture entity missing")
         save(lane.out / "acceptance.json", {"status": "PASS", "candidate_sha": lane.head,
             "images": IMAGE_IDS, "cases": len(receipts), "fixture_config_sha256": digest(canonical(before)),
-            "tolerated_background_stores": list(TOLERATED_STORES),
+            "discarded_windows": discarded,
             "config_unchanged": True, "controls_executed": 0, "snapshot_after_refusal_unchanged": True,
             "scope": "assembled disposable in-process public analyzer; not installed HTTP gateway or rendered frontend"})
     finally:

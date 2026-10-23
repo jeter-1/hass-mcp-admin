@@ -185,10 +185,17 @@ OBSERVER_COMMANDS = ("manifest/get", "config_entries/get", "config/entity_regist
     "config/device_registry/list", "config/entity_registry/list", "ping", "alarmo/config", "alarmo/areas",
     "alarmo/sensors", "alarmo/entities", "alarmo/sensor_groups", "other")
 # Core background bookkeeping, mirrored from the observer's TOLERATED_KEYS
-# (a test binds the two); the observer cites the pinned Core source for each.
-TOLERATED_STORES = ("auth", "core.restore_state", "repairs.issue_registry")
+# (a test binds the two).
+TOLERATED_STORES = ("auth", "core.restore_state")
+# HAMCP-219 review 1: the one store whose delayed-save scheduling may make a
+# window rerunnable, mirrored from the observer's RETRY_KEYS. Never tolerated:
+# the observer's origin label cannot prove independence, because Core's executor
+# and thread-safe callbacks drop the request context. Only ``storage_delay_save``
+# qualifies; an immediate save or a write of this store fails with no rerun.
+RETRY_STORE = "repairs.issue_registry"
+RETRY_EVENT_KIND = "storage_delay_save"
 NAMED_STORES = ("alarmo.storage", "core.config_entries", "core.entity_registry", "core.device_registry",
-                *TOLERATED_STORES, "other")
+                *TOLERATED_STORES, RETRY_STORE, "other")
 # The observer's fixed store-class vocabulary, mirrored exactly (a test binds
 # the two). A class outside it is ``invalid``, never echoed (HAMCP-180).
 CORE_STORE_NAMES = ("analytics", "area_registry", "category_registry", "config", "config_entries",
@@ -250,6 +257,15 @@ class ObservationError(ValueError):
         self.diagnostic = diagnostic
 
 
+class RetryableObservation(ObservationError):
+    """A window whose only refusal is a repairs delayed-save scheduling (HAMCP-219).
+
+    Raised only when the caller allows a rerun, and only after every other
+    check passed. The window is still refused: it is discarded, recorded and
+    rerun once, and the rerun must verify strictly.
+    """
+
+
 def _token(value, allowed):
     return value if type(value) is str and value in allowed else "invalid"
 
@@ -290,12 +306,18 @@ def _event_counts(events):
 
 
 def verify_interval(value, identity, expected_commands, *, core_version, kind="inspection",
-                    window=None, window_index=None):
+                    window=None, window_index=None, retry_allowed=False):
     """Require independently observed Core activity, never client-side zero claims.
 
     A failure raises ``ObservationError`` naming the first failed condition
     with its window, the offending event's bounded summary and the interval's
     event counts. The checks themselves are unchanged.
+
+    With ``retry_allowed`` (HAMCP-219 review 1), a window that passes every
+    check except background ``storage_delay_save`` events of ``RETRY_STORE``
+    raises ``RetryableObservation`` instead; the caller may discard it and rerun
+    the same window once, strictly. Without it those events fail as
+    ``untolerated_store``, exactly as before.
     """
     import math
     import re
@@ -333,7 +355,7 @@ def verify_interval(value, identity, expected_commands, *, core_version, kind="i
                      if value["baseline_store_hashes"][key] != value["final_store_hashes"][key])
     require(not changed, "store_hash_changed", changed_stores=changed)
     require(type(events) is list and len(events) <= 128, "events_shape")
-    commands, background = [], []
+    commands, background, retryable = [], [], []
     for index, event in enumerate(events):
         detail = {"event_index": index, "event": _event_summary(event)}
         require(type(event) is dict and event.get("origin") in ("command", "background"), "event_shape", **detail)
@@ -342,26 +364,101 @@ def verify_interval(value, identity, expected_commands, *, core_version, kind="i
                     "command_event_shape", **detail)
             commands.append(event["command"])
         else:
-            # Auth token last-use, restore-state and repairs issue-registry
-            # bookkeeping may occur on Core's independent timers. Report it; do
-            # not call global writes zero.
+            # Auth token last-use and restore-state bookkeeping may occur on
+            # Core's independent timers. Report it; do not call global writes zero.
             require(event.get("kind") in ("storage_save", "storage_delay_save", "storage_write"),
                     "unexpected_event_kind", **detail)
             require(event["origin"] == "background", "command_origin_storage", **detail)
             fields = {"kind", "origin", "store", "store_class"} if event.get("store") == "other" else {
                 "kind", "origin", "store"}
             require(set(event) == fields, "storage_event_shape", **detail)
+            if retry_allowed is True and event["store"] == RETRY_STORE and event["kind"] == RETRY_EVENT_KIND:
+                retryable.append(index)
+                continue
             require(event["store"] in TOLERATED_STORES, "untolerated_store", **detail)
             background.append(event)
     require(commands == expected_commands, "commands_mismatch",
             expected_command_count=len(expected_commands) if type(expected_commands) is list else None,
             observed_command_count=len(commands),
             observed_commands=[_token(item, OBSERVER_COMMANDS) for item in commands[:MAX_DIAGNOSTIC_ITEMS]])
+    if retryable:
+        raise RetryableObservation("Disposable Core interval must be rerun once", {
+            "condition": "retryable_delayed_save", **context, "event_index": retryable[0],
+            "event": _event_summary(events[retryable[0]]), "retryable_event_count": len(retryable)})
     return {"result": "PASS", "commands": commands, "background_bookkeeping": background,
-            "tolerated_background_stores": list(TOLERATED_STORES), "config_options_flow_events": 0, "service_events": 0, "command_origin_storage_events": 0,
+            "config_options_flow_events": 0, "service_events": 0, "command_origin_storage_events": 0,
             "fixed_persisted_stores_unchanged": True,
             "limitations": ["Finite interval; no claim about future arbitrary tasks or writes bypassing Core Store.",
-                           "Background auth/restore-state/repairs-issue-registry bookkeeping is reported separately."]}
+                           "Background auth/restore-state bookkeeping is reported separately."]}
+
+
+# Each Alarmo window's expected commands and interval kind.
+ALARMO_WINDOWS = {"negative_control": (["other"], "control"), "missing_authority": ([], "control"),
+                  "inspection": (EXPECTED_COMMANDS, "inspection")}
+
+
+def verify_window(window, value, identity, *, core_version, retry_allowed=False):
+    expected, kind = ALARMO_WINDOWS[window]
+    return verify_interval(value, identity, expected, kind=kind, core_version=core_version, window=window,
+                           retry_allowed=retry_allowed)
+
+
+async def observe_retry_once_clean(run, verify, *, on_discard=None):
+    """One observation window, rerun at most once (HAMCP-219 review 1).
+
+    ``run()`` performs the same window each time and returns ``(outcome,
+    observation)``. ``verify(outcome, observation, retry_allowed)`` returns the
+    proof. Only a ``RetryableObservation`` from the first window discards it;
+    ``on_discard`` records it before the rerun. The rerun is verified with
+    ``retry_allowed=False``, so any repairs save, or anything else, fails it.
+    Returns ``(outcome, observation, proof, discarded)``.
+    """
+    outcome, observation = await run()
+    try:
+        return outcome, observation, verify(outcome, observation, True), None
+    except RetryableObservation as error:
+        discarded = {"observation": observation, "diagnostic": error.diagnostic}
+    if on_discard is not None:
+        on_discard(discarded)
+    outcome, observation = await run()
+    try:
+        proof = verify(outcome, observation, False)
+    except ObservationError as error:
+        error.diagnostic = {**error.diagnostic, "rerun_after_discard": True}
+        raise
+    return outcome, observation, proof, discarded
+
+
+def verify_discarded(discarded, verify, windows):
+    """Re-verify retained discarded windows offline: each must be retryable, once per window.
+
+    ``verify(window, observation, retry_allowed)`` is the window's own check;
+    every entry must raise ``RetryableObservation`` with the recorded
+    diagnostic, and strict verification of it must fail.
+    """
+    if type(discarded) is not list or len(discarded) > len(windows):
+        raise ValueError("Discarded observation evidence malformed")
+    seen = set()
+    for item in discarded:
+        if (type(item) is not dict or set(item) != {"window", "observation", "diagnostic"}
+                or type(item["observation"]) is not dict or item["window"] not in windows
+                or item["window"] in seen):
+            raise ValueError("Discarded observation evidence malformed")
+        seen.add(item["window"])
+        try:
+            verify(item["window"], item["observation"], True)
+        except RetryableObservation as error:
+            if error.diagnostic != item["diagnostic"]:
+                raise ValueError("Discarded observation diagnostic mismatch") from None
+        else:
+            raise ValueError("Discarded observation was not retryable")
+        try:
+            verify(item["window"], item["observation"], False)
+        except ObservationError:
+            pass
+        else:
+            raise ValueError("Discarded observation verifies strictly")
+    return sorted(seen)
 
 
 def _window(window, window_index):
@@ -668,13 +765,27 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
         return await start_interval(websocket, kind, window=window)
     async def finish(identity):
         return await websocket.command({"type": "alarmo_interval_observer/finish", "interval_id": identity})
+    # HAMCP-219 review 1: every window may be discarded and rerun once, only
+    # for a repairs delayed save; both windows stay in the receipt.
+    discarded = []
+    def keep(window):
+        return lambda item: discarded.append({"window": window, **item})
+    def observed_by(run):
+        async def window():
+            identity = await run()
+            return identity, await finish(identity)
+        return window
+
     # A real harmless extra command proves the observer/verifier rejects an
     # unexpected request; a fabricated zero client counter cannot satisfy it.
-    control_id = await start("control", "negative_control")
-    await websocket.command({"type": "get_states"})
-    control = await finish(control_id)
-    verify_interval(control, control_id, ["other"], kind="control", core_version=core_version,
-                    window="negative_control")
+    async def negative_control():
+        control_id = await start("control", "negative_control")
+        await websocket.command({"type": "get_states"})
+        return control_id
+    control_id, control, _proof, _ = await observe_retry_once_clean(
+        observed_by(negative_control), lambda identity, value, retry: verify_window(
+            "negative_control", value, identity, core_version=core_version, retry_allowed=retry),
+        on_discard=keep("negative_control"))
     try:
         verify_interval(control, control_id, [], kind="control", core_version=core_version)
     except ObservationError:
@@ -712,20 +823,23 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
             assert runtime.health_snapshot()["compatible_count"] == 19
             assert runtime.acquire(c.CORE_REQUIREMENTS) is None
             service = IntegrationInspectionService(AlarmoProvider(websocket, runtime))
-            denied_id = await start("control", "missing_authority")
-            telemetry, token = begin_request()
-            telemetry.caller_id = "synthetic_disposable_inspector"
-            telemetry.core_dispatch_authorizer = lambda: False
-            try:
-                with patch.object(INTEGRATION_INSPECTION, "service", service):
-                    denied = json.loads(await registered_tool().run({"alarm_entity_id": targets[0]}))
-                assert not denied["success"] and denied["details"]["reason"] == "authority_unavailable"
-                assert telemetry.ha_request_count == 0
-            finally:
-                end_request(token)
-            denied_observation = await finish(denied_id)
-            denial_proof = verify_interval(denied_observation, denied_id, [], kind="control",
-                                           core_version=core_version, window="missing_authority")
+            async def missing_authority():
+                denied_id = await start("control", "missing_authority")
+                telemetry, token = begin_request()
+                telemetry.caller_id = "synthetic_disposable_inspector"
+                telemetry.core_dispatch_authorizer = lambda: False
+                try:
+                    with patch.object(INTEGRATION_INSPECTION, "service", service):
+                        denied = json.loads(await registered_tool().run({"alarm_entity_id": targets[0]}))
+                    assert not denied["success"] and denied["details"]["reason"] == "authority_unavailable"
+                    assert telemetry.ha_request_count == 0
+                finally:
+                    end_request(token)
+                return denied_id
+            _denied_id, denied_observation, denial_proof, _ = await observe_retry_once_clean(
+                observed_by(missing_authority), lambda identity, value, retry: verify_window(
+                    "missing_authority", value, identity, core_version=core_version, retry_allowed=retry),
+                on_discard=keep("missing_authority"))
             previous = signed
             extension = canonical_json({"model": EXTENSION_EVIDENCE_MODEL, "version": entry["version"],
                 "previous_entry_sha256": hashlib.sha256(canonical_json(entry)).hexdigest(),
@@ -742,37 +856,40 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
             # admitted only through the restoration gate.
             await reconcile_through_gate(runtime)
             assert runtime.health_snapshot()["compatible_count"] == 20
-            authority = runtime.acquire(c.CORE_REQUIREMENTS)
-            assert authority is not None
-            commits = runtime.consume(authority)
-            assert commits
-            measured_id = await start("inspection", "inspection")
-            telemetry, token = begin_request()
-            telemetry.caller_id = "synthetic_disposable_inspector"
-            telemetry.core_dispatch_authorizer = lambda: runtime.revalidate(authority, commits)
-            calls = []
-            class Capture:
-                async def read_alarmo_inspection(self, kind, **kwargs):
-                    calls.append(c.command_payload(kind, kwargs.get("entity_ids")))
-                    return await websocket.read_alarmo_inspection(kind, **kwargs)
-            service = IntegrationInspectionService(AlarmoProvider(Capture(), runtime))
-            try:
-                with patch.object(INTEGRATION_INSPECTION, "service", service):
-                    first = json.loads(await registered_tool().run({"alarm_entity_id": targets[0], "limit": 10}))
-                    assert first["success"] and first["data"]["membership"]["total_in_scope"] == 4
-                    assert len(calls) == 9 and telemetry.ha_request_count == 9 and telemetry.upstream_request_count == 0
-                    cursor = first["data"]["pagination"]["next_cursor"]
-                    assert cursor
-                    second = json.loads(await registered_tool().run({"alarm_entity_id": targets[0], "limit": 10, "cursor": cursor}))
-                    assert second["success"] and len(calls) == 9 and telemetry.ha_request_count == 9
-                    assert not second["data"]["pagination"]["has_more"]
-                    assert second["data"]["pagination"]["snapshot_fingerprint"] == first["data"]["pagination"]["snapshot_fingerprint"]
-            finally:
-                end_request(token)
-                assert runtime.finish(commits)
-            observed = await finish(measured_id)
-            measured = verify_interval(observed, measured_id, EXPECTED_COMMANDS, core_version=core_version,
-                                       window="inspection")
+            async def inspection():
+                authority = runtime.acquire(c.CORE_REQUIREMENTS)
+                assert authority is not None
+                commits = runtime.consume(authority)
+                assert commits
+                measured_id = await start("inspection", "inspection")
+                telemetry, token = begin_request()
+                telemetry.caller_id = "synthetic_disposable_inspector"
+                telemetry.core_dispatch_authorizer = lambda: runtime.revalidate(authority, commits)
+                calls = []
+                class Capture:
+                    async def read_alarmo_inspection(self, kind, **kwargs):
+                        calls.append(c.command_payload(kind, kwargs.get("entity_ids")))
+                        return await websocket.read_alarmo_inspection(kind, **kwargs)
+                service = IntegrationInspectionService(AlarmoProvider(Capture(), runtime))
+                try:
+                    with patch.object(INTEGRATION_INSPECTION, "service", service):
+                        first = json.loads(await registered_tool().run({"alarm_entity_id": targets[0], "limit": 10}))
+                        assert first["success"] and first["data"]["membership"]["total_in_scope"] == 4
+                        assert len(calls) == 9 and telemetry.ha_request_count == 9 and telemetry.upstream_request_count == 0
+                        cursor = first["data"]["pagination"]["next_cursor"]
+                        assert cursor
+                        second = json.loads(await registered_tool().run({"alarm_entity_id": targets[0], "limit": 10, "cursor": cursor}))
+                        assert second["success"] and len(calls) == 9 and telemetry.ha_request_count == 9
+                        assert not second["data"]["pagination"]["has_more"]
+                        assert second["data"]["pagination"]["snapshot_fingerprint"] == first["data"]["pagination"]["snapshot_fingerprint"]
+                finally:
+                    end_request(token)
+                    assert runtime.finish(commits)
+                return (measured_id, first, second, calls), await finish(measured_id)
+            (measured_id, first, second, calls), observed, measured, _ = await observe_retry_once_clean(
+                inspection, lambda outcome, value, retry: verify_window(
+                    "inspection", value, outcome[0], core_version=core_version, retry_allowed=retry),
+                on_discard=keep("inspection"))
             records = []
             for page in (first["data"], second["data"]):
                 Inspection.model_validate(page)
@@ -802,6 +919,7 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
                 "observer_negative_control": "PASS", "negative_control_observation": control,
                 "missing_authority": denial_proof, "missing_authority_observation": denied_observation,
                 "interval": measured, "interval_observation": observed,
+                "discarded_observations": discarded,
                 "feature_commands": [p["type"] for p in calls], "continuation_reads": 0, "pages": 2,
                 "records": len(records), "assessment": first["data"]["assessment"],
                 "ephemeral_test_authority": True, "production_authority": False,
@@ -941,15 +1059,18 @@ def verify_disposable_cleanup(result_path, output, core_version, entity_metadata
             or value.get("core") != core_version or value.get("support_slot") != binding["slot"]
             or value.get("core_image") != binding["image"] or value.get("runtime_monitor_closed") is not True):
         raise ValueError("Required Alarmo integration did not pass")
-    for key, proof, expected, kind in (("interval_observation", "interval", EXPECTED_COMMANDS, "inspection"),
-                ("missing_authority_observation", "missing_authority", [], "control")):
+    for key, proof, window in (("interval_observation", "interval", "inspection"),
+                ("missing_authority_observation", "missing_authority", "missing_authority")):
         observation = value[key]
-        if verify_interval(observation, observation["interval_id"], expected, kind=kind,
-                           core_version=core_version, window=proof) != value[proof]:
+        if verify_window(window, observation, observation["interval_id"], core_version=core_version) != value[proof]:
             raise ValueError("Retained interval verification mismatch")
     control = value["negative_control_observation"]
-    verify_interval(control, control["interval_id"], ["other"], kind="control", core_version=core_version,
-                    window="negative_control")
+    verify_window("negative_control", control, control["interval_id"], core_version=core_version)
+    # HAMCP-219 review 1: a discarded window is retained, must be retryable
+    # and nothing else, and at most one per window.
+    discarded_windows = verify_discarded(value["discarded_observations"], lambda window, observation, retry:
+        verify_window(window, observation, observation["interval_id"], core_version=core_version,
+                      retry_allowed=retry), ALARMO_WINDOWS)
     from automation_baseline_contract_acceptance import verify_result as verify_baseline
     baseline = verify_baseline(value["automation_baseline"], core_version=core_version, support_slot=binding["slot"])
     entity_metadata = verify_entity_metadata(value["entity_metadata"], core_version=core_version,
@@ -961,7 +1082,8 @@ def verify_disposable_cleanup(result_path, output, core_version, entity_metadata
     entity_metadata["receipt_sha256"] = hashlib.sha256(canonical).hexdigest()
     receipt = {"result": "PASS", "core": core_version, "support_slot": binding["slot"],
                "owned_containers_remaining": 0, "owned_network_remaining": False,
-               "required_alarmo_interval": "PASS", "required_automation_baseline": baseline,
+               "required_alarmo_interval": "PASS", "discarded_windows": discarded_windows,
+               "required_automation_baseline": baseline,
                "required_entity_metadata": entity_metadata,
                "integration_receipt_sha256": hashlib.sha256(Path(result_path).read_bytes()).hexdigest()}
     Path(output).write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")

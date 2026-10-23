@@ -23,13 +23,16 @@ COMMANDS = frozenset({"lovelace/config", "manifest/get", "config_entries/get", "
     "auth/current_user", "config/device_registry/list", "config/entity_registry/list", "ping",
     "alarmo/config", "alarmo/areas", "alarmo/sensors", "alarmo/entities", "alarmo/sensor_groups"})
 CONTROL_COMMANDS = frozenset({DOMAIN + "/ready", DOMAIN + "/start", DOMAIN + "/finish"})
-# Core-owned background bookkeeping the driver tolerates by name (HAMCP-219);
-# naming repairs.issue_registry keeps its delayed save from reading as "other".
-# Core 2026.9.4 (9212531f): helpers/issue_registry.py:26 and :100-128.
-TOLERATED_KEYS = frozenset({"auth", "core.restore_state", "repairs.issue_registry"})
+TOLERATED_KEYS = frozenset({"auth", "core.restore_state"})
+# Named, never tolerated and never hashed (HAMCP-219 review 1); Core 2026.9.4
+# (9212531f) helpers/issue_registry.py:26, :100-128 schedules its save with
+# async_delay_save (helpers/registry.py:13, :78-79). The driver may discard a
+# window holding only that scheduling and rerun it once; the rerun must be
+# clean. /start waits for its pending save too, so a rerun opens after the flush.
+RETRY_KEYS = frozenset({"repairs.issue_registry"})
 STORE_KEYS = frozenset({"alarmo.storage", "core.config_entries", "core.entity_registry",
-                        "core.device_registry"}) | TOLERATED_KEYS
-HASH_KEYS = tuple(sorted(STORE_KEYS - TOLERATED_KEYS))
+                        "core.device_registry"}) | TOLERATED_KEYS | RETRY_KEYS
+HASH_KEYS = tuple(sorted(STORE_KEYS - TOLERATED_KEYS - RETRY_KEYS))
 REQUEST = ContextVar("alarmo_observer_request", default=None)
 
 
@@ -42,7 +45,7 @@ class Ledger:
 
     def record(self, kind, *, command=None, store=None):
         with self.lock:
-            if store is not None and store.key in HASH_KEYS:
+            if store is not None and (store.key in HASH_KEYS or store.key in RETRY_KEYS):
                 self.stores[store.key] = store
             current = self.active
             if current is None:

@@ -142,12 +142,9 @@ The observer hooks exact Core `ActiveConnection.async_handle`, config-entry and
 generic flow managers, service calls and Store save/delayed-save/write/remove.
 Context propagation associates asynchronous callbacks with their command.
 Independent background bookkeeping by Core's own timers is explicitly retained
-and reported, not refused: `auth`, `core.restore_state` and, since HAMCP-219,
-`repairs.issue_registry` (Core's issue registry, saved 10 seconds after any
-issue is created or deleted; `helpers/issue_registry.py:26`, `:100-128` and
-`helpers/registry.py:84-89` in both pinned Core slots). Only a background-origin
-save to one of these exact keys is tolerated; a command-origin save to them, or
-any write to another store, including another `repairs` key, still fails. It is
+and reported, not refused: only background-origin saves to `auth` and
+`core.restore_state`. A command-origin save to them, or any write to another
+store, still fails. It is
 not a global zero-write claim. This finite interval cannot prove absence
 of future arbitrary tasks or writes bypassing Core Store. Hashes of the fixed
 Alarmo/config-entry/entity/device stores supplement the hooks without retaining
@@ -158,10 +155,30 @@ Setup readiness covers every Core Store, not only the four hashed ones
 every Store a hook later sees. A Store is pending while its write lock is held,
 or while it holds data with a scheduled delayed save or final-write listener.
 Readiness also waits 2 seconds after the last untolerated store activity. Only
-`auth`, `core.restore_state` and `repairs.issue_registry` are excluded, because
-intervals already report them as background bookkeeping. Readiness and the
-interval share that one allowlist: a write to any other store inside a window
-still fails.
+`auth` and `core.restore_state` are excluded, because intervals already report
+them as background bookkeeping. Readiness and the interval share that one
+allowlist: a write to any other store inside a window still fails.
+
+`repairs.issue_registry` is never tolerated (HAMCP-219 review 1). Core's issue
+registry schedules a save 10 seconds after any issue is created or deleted
+(`helpers/issue_registry.py:26`, `:100-128` and `helpers/registry.py:84-89` in
+both pinned 2026.10 Core slots; 2026.9.4 has the same `SAVE_DELAY` and
+`async_delay_save`). The observer's origin label cannot prove such a save was
+independent of the window's commands: Core's executor (`core.py:875`) and
+thread-safe callbacks (`util/async_.py:72`) drop the request context, so a
+command-caused save is labelled background. Instead, a window whose every other
+check passes and whose only remaining events are background
+`storage_delay_save` events of exactly this store is discarded and the same
+observation runs once more. Readiness holds while that save is pending, so the
+rerun opens after its flush. The rerun must be completely clean; any event
+there, including another repairs save, fails exactly as before, and there is no
+second rerun. An immediate `storage_save` or `storage_write` of this store, a
+command-origin save, a command mismatch or a changed store hash fails at once
+with no rerun. Each discarded window is kept in the result
+(`discarded_observations`; at most one per window) and re-verified offline: it
+must still fail strict verification and still be retryable with the same
+diagnostic. The baseline-export and dashboard (Core 2026.9.4) lanes use the same
+rule and helper.
 
 An event for an unnamed store carries a `store_class` from a fixed vocabulary
 that the observer and the client share:

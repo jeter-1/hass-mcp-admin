@@ -11,8 +11,8 @@ writes that bypass Core's Store API. Fixed persisted-store hashes supplement it.
 
 Setup readiness covers every Core Store instance, not only the hashed ones
 (HAMCP-180): Stores alive when the hooks install and every Store a hook later
-sees. Only the stores whose background bookkeeping intervals already tolerate
-are excluded. Unnamed stores are reported by a class from a fixed
+sees. Only the two stores whose background bookkeeping intervals already
+tolerate are excluded. Unnamed stores are reported by a class from a fixed
 vocabulary (a known integration domain, a known ``core.<name>``, ``core`` or
 ``unclassified``), never the full key, an identifier suffix, a path or contents.
 A refused ``/start`` names one fixed cause and keeps it for ``/ready`` with
@@ -41,13 +41,18 @@ CONTROL_COMMANDS = frozenset({DOMAIN + "/ready", DOMAIN + "/start", DOMAIN + "/f
 STORE_KEYS = frozenset({"alarmo.storage", "core.config_entries", "core.entity_registry",
                         "core.device_registry", "auth", "core.restore_state", "repairs.issue_registry"})
 # Background bookkeeping on Core's own timers that intervals report, not refuse.
-# ``repairs.issue_registry`` (HAMCP-219): Core's issue registry Store
-# (helpers/issue_registry.py:26, :100-128, identical at the current-slot commit
-# abe1fdd7 and the rollback-slot commit 6a811d33) saves through ``async_delay_save`` on a 10 s
-# timer (helpers/registry.py:14, :84-89) whenever an issue is created or
-# deleted, e.g. by homeassistant_alerts' background update task.
-TOLERATED_KEYS = frozenset({"auth", "core.restore_state", "repairs.issue_registry"})
-HASH_KEYS = tuple(sorted(STORE_KEYS - TOLERATED_KEYS))
+TOLERATED_KEYS = frozenset({"auth", "core.restore_state"})
+# Named, never tolerated and never hashed (HAMCP-219 review 1). Core's issue
+# registry Store (helpers/issue_registry.py:26, :100-128, identical at the
+# current-slot commit abe1fdd7 and the rollback-slot commit 6a811d33) schedules
+# ``async_delay_save`` on a 10 s timer (helpers/registry.py:14, :84-89) whenever
+# an issue is created or deleted. A window holding only its delayed-save
+# scheduling may be discarded and rerun once by the client; the rerun must be
+# clean. Readiness still waits for its pending save, so a rerun opens only after
+# the flush. Origin is not trusted: Core's executor and thread-safe callbacks
+# drop the request context.
+RETRY_KEYS = frozenset({"repairs.issue_registry"})
+HASH_KEYS = tuple(sorted(STORE_KEYS - TOLERATED_KEYS - RETRY_KEYS))
 QUIET_SECONDS = 2
 MAX_STORE_CLASSES = 16
 # The fixed store-class vocabulary (HAMCP-180). Names are the ``core.<name>``
