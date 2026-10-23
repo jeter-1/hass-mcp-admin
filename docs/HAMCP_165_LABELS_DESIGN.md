@@ -197,7 +197,7 @@ verification audit records.
   - at most 8 children;
   - every entity child depends on the label children it references;
   - every target is unique.
-  
+
   Otherwise the plan is refused `label_registry_execution_contract_incomplete`.
 
 ## 8. Bounds
