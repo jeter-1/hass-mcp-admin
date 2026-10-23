@@ -557,10 +557,10 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         # Full discovery retains thousands of unrelated test objects. A major
         # collection walks that process-wide heap, making this focused timing
         # check depend on unrelated tests. Run the unchanged fixture in a fresh
-        # interpreter. The child bounds loop-thread CPU between yields with
-        # collection held off only for the timed window. -I avoids inherited
-        # Python startup/path settings; no retry, threshold adjustment or
-        # timing subtraction is performed.
+        # interpreter. The child bounds the heartbeat's loop gap and the
+        # loop-thread CPU between yields, with collection held off only for
+        # the timed window. -I avoids inherited Python startup/path settings;
+        # no retry, threshold adjustment or timing subtraction is performed.
         result = subprocess.run(
             [sys.executable, "-I", "-B", "-c",
              "import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); "
@@ -662,11 +662,12 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                                       "collected": info["collected"],
                                       "uncollectable": info["uncollectable"]})
         # Collect fixture garbage, then hold collection off only for the timed
-        # window so the bound measures the loop-thread CPU projection and
-        # fitting spend between yields. The old synchronous projection violates
-        # this CPU bound. Wall gaps are diagnostics only: eight xdist workers
-        # can oversubscribe a two-CPU runner and stretch them without any
-        # code change, while CPU time is not inflated by a busy host.
+        # window so the bounds measure the projection and fitting themselves.
+        # The CPU bound is the loop-thread CPU spent between yields; the old
+        # synchronous projection violates it, and a busy host cannot inflate
+        # it. CPU time cannot see a blocking wait (sleep, lock, I/O) on the
+        # loop thread, so the heartbeat's wall gap is bounded as well, below
+        # a 400 ms stall and with margin for a fully loaded host.
         gc.collect()
         gc.disable()
         try:
@@ -688,10 +689,11 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         print(json.dumps({"fixture": "maximum_alarmo_inventory", "maximum_loop_gap_seconds": maximum_gap,
                           "maximum_thread_cpu_gap_seconds": max(cpu_gaps),
                           "window_thread_cpu_seconds": window_cpu,
-                          "thread_cpu_bound_seconds": .1,
+                          "wall_bound_seconds": .3, "thread_cpu_bound_seconds": .1,
                           "sensors": c.MAX_SENSORS, "groups": c.MAX_GROUPS,
                           "gc_state": gc_state, "major_gc_events": gc_events}), flush=True)
         self.assertTrue(cpu_gaps)
+        self.assertLess(maximum_gap, .3, f"Projection and fitting left the event loop without a turn for {maximum_gap:.3f}s.")
         self.assertLess(max(cpu_gaps), .1, "Projection and fitting must yield within the loop-thread CPU budget.")
         self.assertEqual(report["membership"]["configured_members_retained"], 512)
         self.assertEqual(report["assessment"], "partial")

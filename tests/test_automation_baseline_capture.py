@@ -409,9 +409,10 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
 
     def test_maximum_capture_bounded_pages_responsive(self):
         # As in the Alarmo responsiveness check, isolate the measurement from
-        # the unrelated heap retained by full discovery. The child bounds
-        # loop-thread CPU between yields with collection held off for the
-        # timed window; it never subtracts time or retries.
+        # the unrelated heap retained by full discovery. The child bounds the
+        # heartbeat's loop gap and the loop-thread CPU between yields, with
+        # collection held off for the timed window; it never subtracts time
+        # or retries.
         result = subprocess.run(
             [sys.executable, '-I', '-B', '-c',
              'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); '
@@ -493,9 +494,10 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                                       'thread_cpu_seconds': time.thread_time()-cpu,
                                       'collected': info['collected'], 'uncollectable': info['uncollectable']})
         # Collect fixture garbage, then hold collection off only for the timed
-        # window: the bound is the loop-thread CPU the capture spends between
-        # yields. Wall gaps are reported as diagnostics only; host scheduling
-        # on an oversubscribed runner stretches them without any code change.
+        # window: the CPU bound is the loop-thread CPU the capture spends
+        # between yields. CPU time cannot see a blocking wait (sleep, lock,
+        # I/O) on the loop thread, so the heartbeat's wall gap is bounded as
+        # well, below a 400 ms stall and with margin for a fully loaded host.
         gc.collect()
         gc.disable()
         try:
@@ -517,10 +519,11 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                           'maximum_loop_gap_seconds': max(gaps),
                           'maximum_thread_cpu_gap_seconds': max(cpu_gaps),
                           'window_thread_cpu_seconds': window_cpu,
-                          'thread_cpu_bound_seconds': .1,
+                          'wall_bound_seconds': .3, 'thread_cpu_bound_seconds': .1,
                           'records': len(baseline['records']), 'gc_state': gc_state,
                           'major_gc_events': gc_events}), flush=True)
         self.assertTrue(cpu_gaps)
+        self.assertLess(max(gaps), .3, f'Capture and export left the event loop without a turn for {max(gaps):.3f}s.')
         self.assertLess(max(cpu_gaps), .1, 'Capture and export must yield within the loop-thread CPU budget.')
         self.validate(baseline)
         self.assertEqual(len(baseline['records']),1000)

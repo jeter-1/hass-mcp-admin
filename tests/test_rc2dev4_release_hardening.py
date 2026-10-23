@@ -263,21 +263,43 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         service = EntityDependencyAnalysisService(index)
         first = await service.analyze(entity_id=TARGET, detail_level="standard", limit=1)
         before = METRICS.snapshot()["dependency_analysis"]
+        gaps = []
+        async def heartbeat():
+            last = time.perf_counter()
+            while True:
+                await asyncio.sleep(.005)
+                now = time.perf_counter()
+                gaps.append(now - last)
+                last = now
         # The continuation is served from the built index: prove no build is
         # even scheduled, rather than inferring it from elapsed wall time, and
         # bound the CPU it spends (collection held off for the timed window).
+        # CPU time cannot see a blocking wait (sleep, lock, I/O) on the loop
+        # thread, so a separately scheduled heartbeat also bounds the longest
+        # the continuation leaves the event loop without a turn.
         with patch.object(index, "_ensure_build", wraps=index._ensure_build) as build:
             gc.collect()
             gc.disable()
             try:
-                started_cpu = time.thread_time()
-                continued = await service.analyze(
-                    entity_id=TARGET, detail_level="standard", limit=1,
-                    cursor=first.data["pagination"]["next_cursor"],
-                )
-                cpu_seconds = time.thread_time() - started_cpu
+                ticker = asyncio.create_task(heartbeat())
+                await asyncio.sleep(0)
+                try:
+                    started_cpu = time.thread_time()
+                    continued = await service.analyze(
+                        entity_id=TARGET, detail_level="standard", limit=1,
+                        cursor=first.data["pagination"]["next_cursor"],
+                    )
+                    cpu_seconds = time.thread_time() - started_cpu
+                    await asyncio.sleep(.01)
+                finally:
+                    ticker.cancel()
+                    await asyncio.gather(ticker, return_exceptions=True)
             finally:
                 gc.enable()
+        print(json.dumps({"fixture": "dependency_cursor_continuation",
+                          "maximum_loop_gap_seconds": max(gaps, default=None),
+                          "loop_gap_bound_seconds": .1,
+                          "thread_cpu_seconds": cpu_seconds, "thread_cpu_bound_seconds": .1}), flush=True)
         build.assert_not_called()
         self.assertEqual(provider.scan_count, 1)
         after = METRICS.snapshot()["dependency_analysis"]
@@ -289,6 +311,8 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(continued.data["index"]["generation"], first.data["index"]["generation"])
         self.assertEqual(continued.data["index"]["built_at"], first.data["index"]["built_at"])
         self.assertLess(cpu_seconds, 0.1)
+        self.assertTrue(gaps)
+        self.assertLess(max(gaps), .1, f"Continuation left the event loop without a turn for {max(gaps):.3f}s.")
 
     async def test_optional_prewarm_requires_connectivity_and_never_raises(self):
         unavailable_provider = FakeProvider(scan([finding()]))
