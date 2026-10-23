@@ -2277,3 +2277,102 @@ class WorkflowBindingTests(unittest.TestCase):
             "${{ runner.temp }}/alarmo-image-${{ matrix.lane }}*.json",
             "${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json"])
         self.assertEqual(step["with"]["if-no-files-found"], "error")
+
+
+class CoreBackgroundBookkeepingTests(unittest.TestCase):
+    """HAMCP-219: Core's own issue-registry save inside a window is reported, not refused.
+
+    The beta.32 publish run failed ``baseline_export`` on one background
+    ``storage_delay_save`` to a store the observer reported as ``other`` with
+    class ``repairs``: Core's ``repairs.issue_registry`` saving 10 s after an
+    issue changed. Only that exact key, with background origin, joins the
+    allowlist; command-origin saves and every other store still fail.
+    """
+
+    REPAIRS = "repairs.issue_registry"
+
+    def observed(self, key, *, command=False):
+        """One delayed save through the real observer ledger, as a verified-shape receipt."""
+        ledger = observer.Ledger(lambda: 1)
+        hashes = {name: None for name in acceptance.STORE_HASH_KEYS}
+        identity = ledger.start("control", hashes)
+        token = observer.REQUEST.set("synthetic-request") if command else None
+        try:
+            ledger.record("storage_delay_save", store=FakeStore(key, data={"private": "DO_NOT_RECORD"},
+                                                                delay_handle=object()))
+        finally:
+            if token is not None:
+                observer.REQUEST.reset(token)
+        value = ledger.finish(identity, dict(hashes), {name: True for name in acceptance.OBSERVER_HOOKS})
+        value.update(core_version=CORE, observer_sha256=sha256(acceptance.OBSERVER.read_bytes()))
+        self.assertNotIn("DO_NOT_RECORD", json.dumps(value))
+        return value
+
+    def verify(self, value):
+        return acceptance.verify_interval(value, value["interval_id"], [], kind="control", core_version=CORE,
+                                          window="baseline_export", window_index=1)
+
+    def refused(self, value):
+        with self.assertRaises(acceptance.ObservationError) as found:
+            self.verify(value)
+        assert_bounded(self, found.exception.diagnostic)
+        return found.exception.diagnostic
+
+    def test_background_issue_registry_save_is_tolerated_and_recorded(self):
+        value = self.observed(self.REPAIRS)
+        event = {"kind": "storage_delay_save", "origin": "background", "store": self.REPAIRS}
+        self.assertEqual(value["events"], [event])
+        proof = self.verify(value)
+        self.assertEqual(proof["background_bookkeeping"], [event])
+        self.assertEqual(proof["tolerated_background_stores"], ["auth", "core.restore_state", self.REPAIRS])
+        self.assertIn("repairs-issue-registry", proof["limitations"][-1])
+
+    def test_command_origin_issue_registry_save_still_fails(self):
+        diagnostic = self.refused(self.observed(self.REPAIRS, command=True))
+        self.assertEqual((diagnostic["condition"], diagnostic["window"], diagnostic["event"]),
+                         ("command_origin_storage", "baseline_export",
+                          {"kind": "storage_delay_save", "origin": "command", "store": self.REPAIRS}))
+
+    def test_other_repairs_and_core_stores_still_fail(self):
+        for key, store_class in (("repairs.synthetic_other", "repairs"), ("repairs", "repairs"),
+                                 ("core.synthetic_background", "core"), ("lovelace.dashboard_x", "lovelace"),
+                                 ("repairs.issue_registry_extra", "repairs")):
+            with self.subTest(key=key):
+                diagnostic = self.refused(self.observed(key))
+                self.assertEqual((diagnostic["condition"], diagnostic["event"]), ("untolerated_store", {
+                    "kind": "storage_delay_save", "origin": "background", "store": "other",
+                    "store_class": store_class}))
+
+    def test_the_old_publish_signature_still_fails(self):
+        # The beta.32 event as the previous observer reported it is not admitted by the class name.
+        value = receipt()
+        value["kind"] = "control"
+        value["events"].append({"kind": "storage_delay_save", "origin": "background", "store": "other",
+                                "store_class": "repairs"})
+        self.assertEqual(self.refused(value)["condition"], "untolerated_store")
+
+    def test_mutation_without_the_allowlist_entry_reproduces_the_publish_failure(self):
+        tolerated = tuple(item for item in acceptance.TOLERATED_STORES if item != self.REPAIRS)
+        with patch.object(acceptance, "TOLERATED_STORES", tolerated):
+            diagnostic = self.refused(self.observed(self.REPAIRS))
+        self.assertEqual((diagnostic["condition"], diagnostic["window"], diagnostic["window_index"]),
+                         ("untolerated_store", "baseline_export", 1))
+
+    def test_allowlist_is_shared_named_and_never_hashed(self):
+        self.assertEqual(set(acceptance.TOLERATED_STORES), observer.TOLERATED_KEYS)
+        self.assertEqual(len(acceptance.TOLERATED_STORES), len(observer.TOLERATED_KEYS))
+        self.assertLessEqual(observer.TOLERATED_KEYS, observer.STORE_KEYS)
+        self.assertFalse(observer.TOLERATED_KEYS & set(observer.HASH_KEYS))
+        self.assertEqual(set(observer.HASH_KEYS), acceptance.STORE_HASH_KEYS)
+        self.assertEqual(observer.store_class(self.REPAIRS), self.REPAIRS)
+        self.assertIn(self.REPAIRS, acceptance.STORE_CLASSES)
+
+    def test_pending_issue_registry_save_does_not_hold_readiness_but_other_repairs_does(self):
+        now = [0]
+        ledger = observer.Ledger(lambda: now[0])
+        repairs = FakeStore(self.REPAIRS, data={"x": 1}, delay_handle=object())
+        ledger.record("storage_delay_save", store=repairs)
+        self.assertEqual(ledger.pending_store_classes(), [])
+        other = FakeStore("repairs.synthetic_other", data={"x": 1}, delay_handle=object())
+        ledger.record("storage_delay_save", store=other)
+        self.assertEqual(ledger.pending_store_classes(), ["repairs"])

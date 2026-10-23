@@ -74,13 +74,16 @@ def verify_result(result, *, core_version, support_slot):
             raise ComparisonProofError(key, status, record)
     assert report.counts == result['comparison_counts']
     assert len(result['observations']) == 2
-    for index, observation in enumerate(result['observations'], start=1):
-        verify_interval(observation, observation['interval_id'],
-            EXPECTED_COMMANDS, kind='control', core_version=core_version,
-            window='baseline_export', window_index=index)
+    proofs = [verify_interval(observation, observation['interval_id'],
+        EXPECTED_COMMANDS, kind='control', core_version=core_version,
+        window='baseline_export', window_index=index)
+        for index, observation in enumerate(result['observations'], start=1)]
+    # HAMCP-219: tolerated Core background bookkeeping stays in the evidence, per window.
     return {'result': 'PASS', 'records_before': len(values[0]['records']),
             'records_after': len(values[1]['records']), 'comparison_counts': report.counts,
-            'continuation_reads': 0, 'fixture_cleanup': True}
+            'continuation_reads': 0, 'fixture_cleanup': True,
+            'background_bookkeeping': [proof['background_bookkeeping'] for proof in proofs],
+            'tolerated_background_stores': proofs[0]['tolerated_background_stores']}
 
 
 async def run_disposable(configured, *, expected_image, core_version):

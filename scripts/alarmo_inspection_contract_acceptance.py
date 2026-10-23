@@ -184,7 +184,9 @@ EVENT_KINDS = ("command", "config_flow_init", "flow_init", "flow_configure", "fl
 OBSERVER_COMMANDS = ("manifest/get", "config_entries/get", "config/entity_registry/get_entries", "auth/current_user",
     "config/device_registry/list", "config/entity_registry/list", "ping", "alarmo/config", "alarmo/areas",
     "alarmo/sensors", "alarmo/entities", "alarmo/sensor_groups", "other")
-TOLERATED_STORES = ("auth", "core.restore_state")
+# Core background bookkeeping, mirrored from the observer's TOLERATED_KEYS
+# (a test binds the two); the observer cites the pinned Core source for each.
+TOLERATED_STORES = ("auth", "core.restore_state", "repairs.issue_registry")
 NAMED_STORES = ("alarmo.storage", "core.config_entries", "core.entity_registry", "core.device_registry",
                 *TOLERATED_STORES, "other")
 # The observer's fixed store-class vocabulary, mirrored exactly (a test binds
@@ -340,8 +342,9 @@ def verify_interval(value, identity, expected_commands, *, core_version, kind="i
                     "command_event_shape", **detail)
             commands.append(event["command"])
         else:
-            # Auth token last-use and restore-state bookkeeping may occur on
-            # Core's independent timers. Report it; do not call global writes zero.
+            # Auth token last-use, restore-state and repairs issue-registry
+            # bookkeeping may occur on Core's independent timers. Report it; do
+            # not call global writes zero.
             require(event.get("kind") in ("storage_save", "storage_delay_save", "storage_write"),
                     "unexpected_event_kind", **detail)
             require(event["origin"] == "background", "command_origin_storage", **detail)
@@ -355,10 +358,10 @@ def verify_interval(value, identity, expected_commands, *, core_version, kind="i
             observed_command_count=len(commands),
             observed_commands=[_token(item, OBSERVER_COMMANDS) for item in commands[:MAX_DIAGNOSTIC_ITEMS]])
     return {"result": "PASS", "commands": commands, "background_bookkeeping": background,
-            "config_options_flow_events": 0, "service_events": 0, "command_origin_storage_events": 0,
+            "tolerated_background_stores": list(TOLERATED_STORES), "config_options_flow_events": 0, "service_events": 0, "command_origin_storage_events": 0,
             "fixed_persisted_stores_unchanged": True,
             "limitations": ["Finite interval; no claim about future arbitrary tasks or writes bypassing Core Store.",
-                           "Background auth/restore-state bookkeeping is reported separately."]}
+                           "Background auth/restore-state/repairs-issue-registry bookkeeping is reported separately."]}
 
 
 def _window(window, window_index):

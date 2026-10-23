@@ -141,8 +141,14 @@ fails. It then:
 The observer hooks exact Core `ActiveConnection.async_handle`, config-entry and
 generic flow managers, service calls and Store save/delayed-save/write/remove.
 Context propagation associates asynchronous callbacks with their command.
-Independent background auth/restore-state bookkeeping is explicitly retained;
-it is not a global zero-write claim. This finite interval cannot prove absence
+Independent background bookkeeping by Core's own timers is explicitly retained
+and reported, not refused: `auth`, `core.restore_state` and, since HAMCP-219,
+`repairs.issue_registry` (Core's issue registry, saved 10 seconds after any
+issue is created or deleted; `helpers/issue_registry.py:26`, `:100-128` and
+`helpers/registry.py:84-89` in both pinned Core slots). Only a background-origin
+save to one of these exact keys is tolerated; a command-origin save to them, or
+any write to another store, including another `repairs` key, still fails. It is
+not a global zero-write claim. This finite interval cannot prove absence
 of future arbitrary tasks or writes bypassing Core Store. Hashes of the fixed
 Alarmo/config-entry/entity/device stores supplement the hooks without retaining
 store contents. The observer retains no arguments, config bodies or credentials.
@@ -152,9 +158,10 @@ Setup readiness covers every Core Store, not only the four hashed ones
 every Store a hook later sees. A Store is pending while its write lock is held,
 or while it holds data with a scheduled delayed save or final-write listener.
 Readiness also waits 2 seconds after the last untolerated store activity. Only
-`auth` and `core.restore_state` are excluded, because intervals already report
-them as background bookkeeping. The interval allowlist is unchanged: a write to
-any other store inside a window still fails.
+`auth`, `core.restore_state` and `repairs.issue_registry` are excluded, because
+intervals already report them as background bookkeeping. Readiness and the
+interval share that one allowlist: a write to any other store inside a window
+still fails.
 
 An event for an unnamed store carries a `store_class` from a fixed vocabulary
 that the observer and the client share:
