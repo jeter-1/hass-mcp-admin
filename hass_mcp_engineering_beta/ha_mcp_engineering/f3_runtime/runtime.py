@@ -118,6 +118,7 @@ from ..governance.entity_metadata import (
 )
 from ..governance import entity_metadata_planning
 from ..governance import entity_availability_exposure_planning
+from ..governance import configuration_delete_planning
 from ..governance.entity_availability_exposure import (
     BINDINGS_KEY as AVAILABILITY_EXPOSURE_BINDINGS_KEY,
     CAPABILITY_IDENTITIES as AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES,
@@ -125,8 +126,10 @@ from ..governance.entity_availability_exposure import (
     entry_errors as availability_exposure_entry_errors,
 )
 from ..governance.configuration_delete import (
+    ACTION as CONFIGURATION_DELETE_ACTION,
     CAPABILITY_IDENTITIES as CONFIGURATION_DELETE_CAPABILITY_IDENTITIES,
     PROFILE as CONFIGURATION_DELETE_PROFILE,
+    intent as configuration_delete_intent,
 )
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
@@ -3952,6 +3955,10 @@ class F3RuntimeIntegration:
             ),
             None,
         ) if source_plan.contract_version == 2 else None
+        configuration_delete = source_plan.contract_version == 2 and any(
+            operation.action == CONFIGURATION_DELETE_ACTION
+            for operation in source_plan.operations
+        )
         # HAMCP-189 R1: every return above is local.  Fresh planning reads
         # current state, so it runs inside its own Core lease.
         async with _rollback_planning_lease(
@@ -3984,6 +3991,10 @@ class F3RuntimeIntegration:
         ) as lease:
             if availability_exposure is not None:
                 return await self._create_availability_exposure_rollback(
+                    source_plan, task, lease
+                )
+            if configuration_delete:
+                return await self._create_configuration_delete_rollback(
                     source_plan, task, lease
                 )
             if entity_metadata:
@@ -4119,6 +4130,127 @@ class F3RuntimeIntegration:
             "source_plan_id": source_plan.plan_id,
             "rollback_plan_id": rollback_plan.plan_id,
             "approval_required": not prohibited,
+            "plan_hash": self.service.plan_hash(rollback_plan),
+            "operations_to_restore": [item["operation_id"] for item in operations],
+            "operations_excluded": excluded,
+            "provider_dispatch_occurred": False,
+        }
+
+    async def _create_configuration_delete_rollback(
+        self, source_plan: Any, task: Any, lease: Any
+    ) -> dict[str, Any]:
+        """HAMCP-155 §2.4: plan a governed recreate of verified deletions.
+
+        Each child that dispatched once, was verified absent, captured a
+        reviewable pre-image and is still absent becomes one governed
+        ``create`` of the exact captured configuration under the existing
+        create identities.  Every other child is excluded and listed.  The
+        plan is separately approved; nothing is dispatched here.
+        """
+
+        if task is None or task.state not in {
+            ExecutionTaskState.SUCCEEDED_VERIFIED,
+            ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
+            ExecutionTaskState.FAILED_POST_DISPATCH,
+        }:
+            raise GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": "forward_not_verified",
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        records = {
+            item["operation_id"]: self.children.get(item["child_id"])
+            for item in self.children.declarations_for_task(task.task_id)
+        }
+        operations: list[dict[str, Any]] = []
+        excluded: list[str] = []
+        for operation in reversed(source_plan.operations):
+            record = records.get(operation.operation_id)
+            pre_image = operation.current_config
+            try:
+                eligible = configuration_delete_intent(
+                    operation.proposed_config
+                ).get("recreate_eligible") is True
+            except (TypeError, KeyError, AttributeError):
+                eligible = False
+            if (
+                operation.action != CONFIGURATION_DELETE_ACTION
+                or record is None
+                or not record.terminal
+                or record.normalized_outcome != "succeeded_verified"
+                or record.dispatch_intent is None
+                or record.dispatch_count != 1
+                or not eligible
+                or not isinstance(pre_image, dict)
+                or resource_fingerprint(operation.resource_type, pre_image)
+                != operation.current_state_fingerprint
+            ):
+                excluded.append(operation.operation_id)
+                continue
+            current = await self.service._read_configuration_resource(
+                operation.resource_type, operation.target_id
+            )
+            if current is not None:
+                # Recreated or replaced since: never overwrite it.
+                excluded.append(operation.operation_id)
+                continue
+            suffix = stable_hash(
+                {"source_operation_id": operation.operation_id}
+            )[:12]
+            operation_id = f"recreate_{operation.operation_id[:42]}_{suffix}"
+            operations.append(
+                {
+                    "operation_id": operation_id,
+                    "resource_type": operation.resource_type,
+                    "action": "create",
+                    "target_id": operation.target_id,
+                    "proposed_config": deepcopy(pre_image),
+                    "depends_on": (
+                        [operations[-1]["operation_id"]] if operations else []
+                    ),
+                }
+            )
+        if not operations:
+            raise GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": "no_verified_absent_deletion",
+                    "operations_excluded": excluded[:8],
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        lease.require_current()
+        created = await self.service._create_configuration_plan(
+            title=f"Rollback governed change {source_plan.plan_id}"[:160],
+            description=configuration_delete_planning.ROLLBACK_DISCLOSURE,
+            operations=operations,
+            caller_context={
+                "rollback_source_plan_id": source_plan.plan_id,
+                "rollback_model": "hamcp155-configuration-delete-recreate-v1",
+                "excluded_operation_ids": excluded[:8],
+            },
+            _before_persist=lease.require_current,
+        )
+        rollback_plan = self.service._load(created["plan_id"])
+        partial = bool(excluded)
+        source_plan.rollback.available = True
+        source_plan.rollback.status = (
+            "partial_governed_plan_created" if partial else "governed_plan_created"
+        )
+        source_plan.rollback.requested_at = self.service._timestamp()
+        source_plan.rollback.request_id = rollback_plan.plan_id
+        self.service._record(source_plan, "rollback_plan_created", "success")
+        return {
+            "status": (
+                "rollback_partial_plan_created" if partial else "rollback_plan_created"
+            ),
+            "source_plan_id": source_plan.plan_id,
+            "rollback_plan_id": rollback_plan.plan_id,
+            "approval_required": True,
             "plan_hash": self.service.plan_hash(rollback_plan),
             "operations_to_restore": [item["operation_id"] for item in operations],
             "operations_excluded": excluded,

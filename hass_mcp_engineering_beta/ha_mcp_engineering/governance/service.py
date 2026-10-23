@@ -5555,11 +5555,12 @@ class ChangeGovernanceService:
         if _before_persist is None:
             raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
         kinds = {item.resource_type for item in prepared.items}
+        count = len(prepared.items)
         noun = (
-            f"{next(iter(kinds))}s" if len(kinds) == 1 else "automations/scripts"
-        )
+            next(iter(kinds)) if len(kinds) == 1 else "automation/script"
+        ) + ("" if count == 1 else "s")
         return await self._create_configuration_plan(
-            title=f"Delete {len(prepared.items)} {noun}"[:160],
+            title=f"Delete {count} {noun}"[:160],
             description=(
                 "Delete: "
                 + ", ".join(

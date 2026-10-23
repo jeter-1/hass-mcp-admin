@@ -449,6 +449,15 @@ async def prepare(
             for code in row["reason_codes"]
         ):
             warnings.append(SCRIPT_CALL_WARNING)
+        recreate_disclosure = (
+            ROLLBACK_DISCLOSURE
+            if recreate_eligible
+            else NO_ROLLBACK_DISCLOSURE.format(
+                reason="; ".join(recreate_errors)[:200]
+            )
+        )
+        # Shown to the approver with every child, not only in the dry run.
+        warnings.append(recreate_disclosure)
         intent = delete_contract.build_intent(
             resource_type=resource_type,
             target_id=target_id,
@@ -482,13 +491,7 @@ async def prepare(
             "recreate": {
                 "eligible": recreate_eligible,
                 "window_days": RECREATE_WINDOW_DAYS,
-                "disclosure": (
-                    ROLLBACK_DISCLOSURE
-                    if recreate_eligible
-                    else NO_ROLLBACK_DISCLOSURE.format(
-                        reason="; ".join(recreate_errors)[:200]
-                    )
-                ),
+                "disclosure": recreate_disclosure,
             },
             "provider": delete_contract.PROVIDER,
             "fallback": "none",
