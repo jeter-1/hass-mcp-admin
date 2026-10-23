@@ -5463,12 +5463,14 @@ class ChangeGovernanceService:
     ) -> dict[str, Any]:
         """Plan governed deletion of 1-8 automations or scripts (HAMCP-155).
 
-        Input is validated before any Home Assistant read.  Admission of the
-        runtime-only ``core.configuration_delete_operation`` profile is
-        enforced next, before any read and before persistence; unadmitted
-        planning reads nothing and stores nothing.  Nothing is dispatched.
+        Admission of the runtime-only ``core.configuration_delete_operation``
+        profile is enforced first, before input validation, any read and any
+        persistence; unadmitted planning reads nothing and stores nothing.
+        Input is then validated before any Home Assistant read.  Nothing is
+        dispatched.
         """
 
+        self._configuration_delete_core()
         try:
             request = configuration_delete_planning.validate_request(arguments)
         except entity_metadata_planning.EntityMetadataRefusal as exc:
@@ -5637,6 +5639,10 @@ class ChangeGovernanceService:
         generic, rollback or internal caller can build a delete.
         """
 
+        if _configuration_delete_context is not None:
+            # HAMCP-155: admission first for the internal builder too, before
+            # any read or persistence.
+            self._configuration_delete_core()
         if (
             sum(
                 context is not None

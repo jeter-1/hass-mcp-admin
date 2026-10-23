@@ -274,27 +274,36 @@ class ConfigurationDeleteServiceTestCase(AvailabilityExposureServiceTestCase):
             decision="approve",
             approver_principal=REVIEWER,
         )
-        if granted.get("status") != "approval_pending":
-            return granted
-        # Elevated plans: the second, HAMCP-213 safety-critical step.
-        review, csrf = await self.service.issue_external_csrf(
-            created["plan_id"], granted["challenge_id"]
-        )
-        safety = review["safety_critical_acknowledgement"]
-        granted = await self.service.decide_external_approval(
-            plan_id=created["plan_id"],
-            challenge_id=granted["challenge_id"],
-            expected_plan_hash=created["plan_hash"],
-            approval_kind=granted["approval_kind"],
-            approval_action=granted["approval_action"],
-            csrf_nonce=csrf,
-            decision="approve",
-            approver_principal=REVIEWER,
-            acknowledged_objects=tuple(
-                row["object_ref"] for row in safety["objects"]
-            ),
-            acknowledged_projection_hash=safety["projection_hash"],
-        )
+        for _ in range(2):
+            if granted.get("status") != "approval_pending":
+                return granted
+            # Elevated plans: the second step, with the HAMCP-213
+            # safety-critical acknowledgement when the review asks for it.
+            review, csrf = await self.service.issue_external_csrf(
+                created["plan_id"], granted["challenge_id"]
+            )
+            safety = review.get("safety_critical_acknowledgement")
+            acknowledgement = (
+                {
+                    "acknowledged_objects": tuple(
+                        row["object_ref"] for row in safety["objects"]
+                    ),
+                    "acknowledged_projection_hash": safety["projection_hash"],
+                }
+                if safety
+                else {}
+            )
+            granted = await self.service.decide_external_approval(
+                plan_id=created["plan_id"],
+                challenge_id=granted["challenge_id"],
+                expected_plan_hash=created["plan_hash"],
+                approval_kind=granted["approval_kind"],
+                approval_action=granted["approval_action"],
+                csrf_nonce=csrf,
+                decision="approve",
+                approver_principal=REVIEWER,
+                **acknowledgement,
+            )
         if granted.get("status") != "approval_pending":
             return granted
         raise AssertionError("approval did not settle")
