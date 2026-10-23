@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.4.1-beta.33 - Label create, edit and assignment, inactive (HAMCP-165)
+
+Builds on 2.4.1-beta.32.
+
+- Add `create_label_plan`. It proposes 1-8 ordered `create` or `update`
+  operations over a label's `name`, `color` (theme colour or `#RRGGBB`),
+  `icon` and `description`. Each may assign the label to exact registered
+  entities through the signed HAMCP-069A path. Labels are never deleted.
+- Resource type `label_registry_entry`: `config/label_registry/create` or
+  `config/label_registry/update`, each verified by exact
+  `config/label_registry/list` readback. Duplicate names, slug collisions,
+  unknown labels and no-op edits are refused before a plan is stored; stale
+  state and namespace changes are refused before each write. Rollback is
+  refused (a corrective edit is a new plan).
+- New runtime-only Core profile `core.label_registry_operation`
+  (`sha256:b2f0dd11ff243aa2559c27738d962785e37455d37b836cb5a6997aeabb26813c`).
+  The signed registry (sequence 12) does not reference it, so every call is
+  refused with `CoreCapabilityUnavailable` /
+  `pending_signed_registry_admission`, admission checked first at the
+  service layer. Activates nothing new; switches on with the sequence-13
+  signing.
+- HAMCP-069B: the two dormant profiles name `websocket_entity_registry_list`
+  and `websocket_expose_new_entities_get`, the reads their gateway sends.
+  New fingerprints: availability
+  `sha256:ae292fbc16ad82c8d8347b7e2eb1c3a7e8c7644d95783f5bf2ae9f9cc63a76b2`,
+  exposure
+  `sha256:474c8ccaaae83c12f56a2848995ff089097936568a2ad5dc8d25ce855d51dbbd`.
+- CI: dormant seq-13 evidence lanes for 165 and 069B
+  (`REAL_HA_SEQ13_LANES: dormant`); no existing step changes.
+- Catalog: 66 static tools plus 28 delegated reads, 94 total (95 with the
+  optional YAML reader). No existing descriptor, schema, permission, signed
+  registry entry or signed fingerprint, or stable-v1 file changes.
+
 ## 2.4.1-beta.32 - Incident-log entry times (HAMCP-220)
 
 Builds on 2.4.1-beta.31.

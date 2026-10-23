@@ -2,6 +2,26 @@
 
 Date: 2026-07-10
 
+## Label create, edit and assignment, inactive (2.4.1-beta.33, HAMCP-165)
+
+`create_label_plan` is a native governed planning tool: `engineering_native`
+routing, no delegated provider, no fallback. It only creates a plan; dispatch
+is the existing external approval plus `apply_change_plan`. 1-8 ordered
+`create` or `update` operations over a label's `name`, `color`, `icon` and
+`description`, each optionally assigning the label to exact registered
+entities through the signed HAMCP-069A `entity_registry_metadata` path.
+Labels are never deleted (HAMCP-155).
+
+Its resource type `label_registry_entry` requires the runtime-only Core
+profile `core.label_registry_operation`, which the signed registry
+(sequence 12) does not reference. Every call is refused with
+`CoreCapabilityUnavailable` / `pending_signed_registry_admission`, with no
+plan stored and no provider contact; the governance service checks admission
+first. Capabilities and health show the same status. The release activates
+nothing new; it switches on with the sequence-13 signing. The catalog is 66
+static + 28 delegated = 94 (95 with the optional YAML reader). See
+[HAMCP_165_LABELS_DESIGN.md](docs/HAMCP_165_LABELS_DESIGN.md).
+
 ## Entity enable/disable and voice exposure, inactive (2.4.1-beta.31, HAMCP-069B)
 
 `create_entity_availability_exposure_plan` is a native governed planning tool:

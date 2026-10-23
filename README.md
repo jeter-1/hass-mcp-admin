@@ -1,5 +1,22 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.33** ships governed label create, edit and entity
+assignment **inactive** (HAMCP-165). The new tool `create_label_plan` proposes
+1-8 ordered label operations: create or edit a label's name, colour, icon and
+description, optionally assigning it to exact registered entities through the
+signed HAMCP-069A path. Its resource type needs the new Core capability profile
+`core.label_registry_operation`, which the signed registry (sequence 12) does
+not reference. Every call is therefore refused with
+`CoreCapabilityUnavailable` / `pending_signed_registry_admission`, with no plan
+stored and nothing dispatched. The release also makes the two dormant
+HAMCP-069B profiles name every read their gateway sends (new fingerprints). It
+activates nothing new; it switches on with the sequence-13 signing. Static
+tools 66, advertised catalog 94 (95 with the optional YAML reader). Read the
+[2.4.1-beta.33 release notes](docs/V2_4_1_BETA33_RELEASE_NOTES.md) and
+[2.4.1-beta.33 acceptance contract](docs/V2_4_1_BETA33_ACCEPTANCE.md).
+
+It builds on beta.32 below.
+
 Engineering **2.4.1-beta.32** corrects `get_incident_logs` entry times
 (HAMCP-220). Supervisor 2026.10.3 writes log times in Home Assistant's local
 time without an offset, and earlier betas read them as UTC. Each call now
@@ -430,12 +447,13 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**65 static tools plus 28 delegated reads, 93 total** (94 with the optional
-reviewed YAML reader admitted; the 65th static tool is HAMCP-069B's
-`create_entity_availability_exposure_plan`, refused until a signed registry
-admits its profiles). The Core inventory represents
-**24 capability profiles** (three dormant, unselected by any signed entry: the
-earlier one plus HAMCP-069B's two). Each signed entry selects its exact reviewed reference
+**66 static tools plus 28 delegated reads, 94 total** (95 with the optional
+reviewed YAML reader admitted; the 65th and 66th static tools are HAMCP-069B's
+`create_entity_availability_exposure_plan` and HAMCP-165's
+`create_label_plan`, refused until a signed registry admits their profiles).
+The Core inventory represents
+**25 capability profiles** (four dormant, unselected by any signed entry: the
+earlier one, HAMCP-069B's two and HAMCP-165's label profile). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol
 enumeration and descriptor comparison establish the catalog; a health count or
