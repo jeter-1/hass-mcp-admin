@@ -202,6 +202,8 @@ from .entity_metadata import (
 from . import entity_metadata_planning
 from . import entity_availability_exposure_planning
 from . import entity_availability_exposure
+from . import configuration_delete
+from . import configuration_delete_planning
 from .entity_metadata_disclosure import read_runtime_dependency_snapshot
 from .helper_dependency import (
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
@@ -685,6 +687,7 @@ class ChangeGovernanceService:
             ..., Awaitable[Any]
         ]
         | None = None,
+        configuration_delete_gateway: Any | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
@@ -710,6 +713,7 @@ class ChangeGovernanceService:
             entity_availability_exposure_snapshot_reader
             or read_runtime_dependency_snapshot
         )
+        self.configuration_delete_gateway = configuration_delete_gateway
         self.provider_identity_reader = provider_identity_reader
         self.approval_notifications = approval_notifications
         self._plan_observability_cursor_key = (
@@ -5451,6 +5455,135 @@ class ChangeGovernanceService:
             _before_persist=_before_persist,
         )
 
+    async def create_configuration_delete_plan(
+        self,
+        arguments: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Plan governed deletion of 1-8 automations or scripts (HAMCP-155).
+
+        Input is validated before any Home Assistant read.  Admission of the
+        runtime-only ``core.configuration_delete_operation`` profile is
+        enforced next, before any read and before persistence; unadmitted
+        planning reads nothing and stores nothing.  Nothing is dispatched.
+        """
+
+        try:
+            request = configuration_delete_planning.validate_request(arguments)
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self._entity_metadata_refusal_error(exc, {}) from None
+        lease = self._configuration_delete_planning_lease(request)
+        async with lease:
+            try:
+                if self.configuration_delete_gateway is None:
+                    raise configuration_delete_planning.Refusal(
+                        "configuration_delete_provider_unavailable",
+                        kind="unavailable",
+                    )
+                prepared = await configuration_delete_planning.prepare(
+                    self.configuration_delete_gateway,
+                    request,
+                    known_secrets=self.sensitive_values,
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self._entity_metadata_refusal_error(exc, {}) from None
+            lease.require_current()
+            return await self._create_configuration_delete_plan(
+                prepared,
+                caller_context=caller_context,
+                _before_persist=lease.require_current,
+            )
+
+    def _configuration_delete_core(self) -> Any:
+        """Return Core only if a signed registry admits the delete profile.
+
+        Fails closed when no F3 runtime or Core runtime is composed: the
+        HAMCP-155 profile is runtime-only and is admitted only by an
+        owner-signed registry.
+        """
+
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status((configuration_delete.PROFILE,)).get(
+                    "available"
+                )
+                is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": configuration_delete.PENDING_ADMISSION_REASON,
+                    "reason_code": configuration_delete.PENDING_ADMISSION_REASON,
+                    "core_capability": configuration_delete.PROFILE,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _configuration_delete_planning_lease(self, request: Any) -> Any:
+        """Hold exact-target Core authority across one delete planning."""
+
+        from ..f3_runtime.runtime import _rollback_planning_lease
+
+        core = self._configuration_delete_core()
+        return _rollback_planning_lease(
+            core,
+            ("core.dependency_helper_planning", configuration_delete.PROFILE),
+            target={
+                "target_type": "configuration_deletion",
+                "target_id": request.lease_target_id,
+            },
+        )
+
+    async def _create_configuration_delete_plan(
+        self,
+        prepared: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+        _before_persist: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        # Every delete persistence path re-checks admission and must hold a
+        # current Core lease; neither ever depends on the caller alone.
+        self._configuration_delete_core()
+        if _before_persist is None:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        kinds = {item.resource_type for item in prepared.items}
+        noun = (
+            f"{next(iter(kinds))}s" if len(kinds) == 1 else "automations/scripts"
+        )
+        return await self._create_configuration_plan(
+            title=f"Delete {len(prepared.items)} {noun}"[:160],
+            description=(
+                "Delete: "
+                + ", ".join(
+                    f"{item.resource_type} {item.target_id}"
+                    for item in prepared.items
+                )
+                + f". Reason: {prepared.request.reason}"
+            ),
+            operations=[
+                {
+                    "operation_id": item.operation_id,
+                    "resource_type": item.resource_type,
+                    "action": configuration_delete.ACTION,
+                    "target_id": item.target_id,
+                    "proposed_config": deepcopy(item.intent),
+                }
+                for item in prepared.items
+            ],
+            expiration_minutes=prepared.request.expiration_minutes,
+            caller_context=caller_context,
+            _configuration_delete_context=prepared,
+            _before_persist=_before_persist,
+        )
+
     @staticmethod
     def _entity_metadata_refusal_error(
         exc: Exception, arguments: Any
@@ -5483,6 +5616,7 @@ class ChangeGovernanceService:
         _rollback_context: dict[str, Any] | None = None,
         _entity_metadata_context: Any | None = None,
         _availability_exposure_context: Any | None = None,
+        _configuration_delete_context: Any | None = None,
         _before_persist: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         """Internal builder; only F3's inverse route supplies durable context.
@@ -5496,13 +5630,43 @@ class ChangeGovernanceService:
         ``create_entity_availability_exposure_plan`` (and its F3 inverse
         route): exactly the prepared children, update-only, one resource
         type.
+        ``_configuration_delete_context`` is supplied only by
+        ``create_configuration_delete_plan`` (HAMCP-155): exactly the
+        prepared delete children.  Without it ``delete`` is refused, so no
+        generic, rollback or internal caller can build a delete.
         """
 
         if (
-            _entity_metadata_context is not None
-            and _availability_exposure_context is not None
+            sum(
+                context is not None
+                for context in (
+                    _entity_metadata_context,
+                    _availability_exposure_context,
+                    _configuration_delete_context,
+                )
+            )
+            > 1
         ):
             raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        if _configuration_delete_context is not None:
+            # HAMCP-155: admission is re-checked inside the builder itself,
+            # so no path reaches persistence of a delete on unadmitted Core.
+            self._configuration_delete_core()
+            if _before_persist is None or _rollback_context is not None:
+                raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+            if [
+                item.get("operation_id") if isinstance(item, dict) else None
+                for item in (operations if isinstance(operations, list) else [])
+            ] != [item.operation_id for item in _configuration_delete_context.items]:
+                raise GovernanceError(
+                    ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                    details={
+                        "validation_errors": [
+                            "configuration delete plans contain exactly the "
+                            "prepared operations"
+                        ]
+                    },
+                )
         if _availability_exposure_context is not None and [
             item.get("operation_id") if isinstance(item, dict) else None
             for item in (operations if isinstance(operations, list) else [])
@@ -5655,6 +5819,8 @@ class ChangeGovernanceService:
             if resource_type not in (
                 {_availability_exposure_context.request.resource_type}
                 if _availability_exposure_context is not None
+                else set(configuration_delete.RESOURCE_TYPES)
+                if _configuration_delete_context is not None
                 else SUPPORTED_CONFIGURATION_RESOURCES
                 if _entity_metadata_context is None
                 else {ENTITY_METADATA_RESOURCE_TYPE}
@@ -5715,12 +5881,18 @@ class ChangeGovernanceService:
             action = (
                 action_value if isinstance(action_value, str) else ""
             )
-            if action not in SUPPORTED_CONFIGURATION_ACTIONS:
+            if (
+                action != configuration_delete.ACTION
+                if _configuration_delete_context is not None
+                else action not in SUPPORTED_CONFIGURATION_ACTIONS
+            ):
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                     details={
                         "validation_errors": [
-                            f"{operation_id}: action must be create or update"
+                            f"{operation_id}: action must be delete"
+                            if _configuration_delete_context is not None
+                            else f"{operation_id}: action must be create or update"
                         ]
                     },
                 )
@@ -5764,12 +5936,26 @@ class ChangeGovernanceService:
                         ]
                     },
                 )
-            valid, errors, warnings = validate_resource(
-                resolved_type,
-                target_id,
-                proposed_config,
-                self.sensitive_values,
-            )
+            if _configuration_delete_context is not None:
+                delete_item = _configuration_delete_context.item(operation_id)
+                errors = configuration_delete.intent_errors(
+                    resolved_type, target_id, proposed_config
+                )
+                if (
+                    depends_on
+                    or (delete_item.resource_type, delete_item.target_id)
+                    != (resource_type, target_id)
+                    or proposed_config != delete_item.intent
+                ):
+                    errors.append("delete operation does not match its preparation")
+                valid, warnings = not errors, []
+            else:
+                valid, errors, warnings = validate_resource(
+                    resolved_type,
+                    target_id,
+                    proposed_config,
+                    self.sensitive_values,
+                )
             if action == "create":
                 errors.extend(
                     validate_resource_create_identity(
@@ -5808,6 +5994,12 @@ class ChangeGovernanceService:
                 current = _availability_exposure_context.item(
                     operation_id
                 ).current
+            elif _configuration_delete_context is not None:
+                # The prepared pre-image is the exact state the removed
+                # effects, intent fingerprint and recreate were bound to.
+                current = deepcopy(
+                    _configuration_delete_context.item(operation_id).current
+                )
             else:
                 current = await self._read_configuration_resource(
                     resolved_type, target_id
@@ -5835,7 +6027,7 @@ class ChangeGovernanceService:
                         "operation_id": operation_id,
                     },
                 )
-            if action == "update" and current is None:
+            if action in {"update", configuration_delete.ACTION} and current is None:
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                     details={
@@ -5848,17 +6040,33 @@ class ChangeGovernanceService:
                 )
 
             try:
-                normalized_proposed = (
-                    normalize_resource_config(
-                        resolved_type, proposed_config
+                if _configuration_delete_context is not None:
+                    normalized_proposed = configuration_delete.normalize_intent(
+                        proposed_config
                     )
-                    or {}
-                )
+                else:
+                    normalized_proposed = (
+                        normalize_resource_config(
+                            resolved_type, proposed_config
+                        )
+                        or {}
+                    )
                 normalized_current = normalize_resource_config(
                     resolved_type, current
                 )
                 proposed_hash = stable_hash(normalized_proposed)
-                if _availability_exposure_context is not None:
+                if _configuration_delete_context is not None:
+                    item = _configuration_delete_context.item(operation_id)
+                    diff = {
+                        "has_changes": True,
+                        "configuration_delete": (
+                            configuration_delete_planning.projection(item)
+                        ),
+                    }
+                    risk = configuration_delete_planning.risk_assessment(
+                        operation_id, item.classification
+                    )
+                elif _availability_exposure_context is not None:
                     item = _availability_exposure_context.item(operation_id)
                     diff = {
                         "has_changes": True,
@@ -6090,6 +6298,10 @@ class ChangeGovernanceService:
         if _availability_exposure_context is not None:
             plan.dry_run_results["entity_availability_exposure"] = deepcopy(
                 _availability_exposure_context.plan_disclosure
+            )
+        if _configuration_delete_context is not None:
+            plan.dry_run_results["configuration_delete"] = deepcopy(
+                _configuration_delete_context.plan_disclosure
             )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
@@ -8859,6 +9071,19 @@ class ChangeGovernanceService:
             if self.f3_runtime is not None and self.f3_runtime.is_covered_plan(plan):
                 return self.f3_runtime.handle_legacy_apply(
                     plan, expected_plan_hash
+                )
+            if any(
+                op.action == configuration_delete.ACTION for op in plan.operations
+            ):
+                # HAMCP-155: never a legacy execution task for a delete.
+                raise GovernanceError(
+                    ErrorCode.PROVIDER_UNAVAILABLE,
+                    details={
+                        "reason": configuration_delete.PENDING_ADMISSION_REASON,
+                        "reason_code": configuration_delete.PENDING_ADMISSION_REASON,
+                        "core_capability": configuration_delete.PROFILE,
+                        "provider_dispatch_occurred": False,
+                    },
                 )
             if any(retry_proof_markers(op) or inverse_eligibility.markers(op) for op in plan.operations):
                 # This eligibility class requires F3's whole-bundle checks.
@@ -11835,6 +12060,22 @@ class ChangeGovernanceService:
         self, plan: ChangePlan, expected_plan_hash: str
     ) -> dict[str, Any]:
         started = time.perf_counter()
+        if any(
+            operation.action == configuration_delete.ACTION
+            for operation in plan.operations
+        ):
+            # HAMCP-155: a delete is dispatched only by the F3 delete
+            # adapter under signed Core admission.  This legacy path never
+            # reads, writes or records for one, retained or not.
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": configuration_delete.PENDING_ADMISSION_REASON,
+                    "reason_code": configuration_delete.PENDING_ADMISSION_REASON,
+                    "core_capability": configuration_delete.PROFILE,
+                    "provider_dispatch_occurred": False,
+                },
+            )
         self._resolve_lifecycle(plan)
         if plan.status == PlanStatus.EXPIRED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
@@ -13639,12 +13880,31 @@ class ChangeGovernanceService:
                 resource_type = ChangeGovernanceService._resolved_resource_type(
                     operation.resource_type, operation.helper_type
                 )
-                valid, _, _ = validate_resource(
-                    resource_type,
-                    operation.target_id,
-                    operation.proposed_config,
-                    self.sensitive_values,
-                )
+                deleting = operation.action == configuration_delete.ACTION
+                if deleting:
+                    # HAMCP-155: the proposal is the closed delete intent.
+                    valid = not configuration_delete.intent_errors(
+                        resource_type,
+                        operation.target_id,
+                        operation.proposed_config,
+                    ) and isinstance(operation.current_config, dict)
+                    normalized_proposed = (
+                        configuration_delete.normalize_intent(
+                            operation.proposed_config
+                        )
+                        if valid
+                        else None
+                    )
+                else:
+                    valid, _, _ = validate_resource(
+                        resource_type,
+                        operation.target_id,
+                        operation.proposed_config,
+                        self.sensitive_values,
+                    )
+                    normalized_proposed = normalize_resource_config(
+                        resource_type, operation.proposed_config
+                    )
                 target_key = (resource_type, operation.target_id)
                 if (
                     not valid
@@ -13656,13 +13916,14 @@ class ChangeGovernanceService:
                         dependency not in seen_ids
                         for dependency in operation.depends_on
                     )
-                    or operation.action
-                    not in SUPPORTED_CONFIGURATION_ACTIONS
+                    or (
+                        not deleting
+                        and operation.action
+                        not in SUPPORTED_CONFIGURATION_ACTIONS
+                    )
                     or operation.normalization_version
                     != RESOURCE_NORMALIZATION_VERSION
-                    or normalize_resource_config(
-                        resource_type, operation.proposed_config
-                    )
+                    or normalized_proposed
                     != operation.normalized_proposed_config
                     or normalize_resource_config(
                         resource_type, operation.current_config

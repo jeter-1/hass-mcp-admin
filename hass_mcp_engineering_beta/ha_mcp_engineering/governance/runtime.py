@@ -185,6 +185,11 @@ class GovernanceRuntime:
                 entity_availability_exposure_gateway=(
                     resource_gateway.availability_exposure
                 ),
+                # HAMCP-155: planning refuses before this is read unless a
+                # signed registry admits core.configuration_delete_operation.
+                configuration_delete_gateway=(
+                    resource_gateway.configuration_delete
+                ),
             )
             from ..f3_runtime.runtime import F3RuntimeIntegration
 
