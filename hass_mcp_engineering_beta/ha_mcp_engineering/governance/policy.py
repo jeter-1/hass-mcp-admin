@@ -39,6 +39,17 @@ from .entity_availability_exposure_planning import (
     MAX_ENTITIES as AVAILABILITY_EXPOSURE_MAX_ENTITIES,
     POLICY_TRIGGER as AVAILABILITY_EXPOSURE_POLICY_TRIGGER,
 )
+from .configuration_delete import (
+    ACTION as CONFIGURATION_DELETE_ACTION,
+    INTENT_KEY as CONFIGURATION_DELETE_INTENT_KEY,
+    RESOURCE_TYPES as CONFIGURATION_DELETE_RESOURCE_TYPES,
+    intent_errors as configuration_delete_intent_errors,
+)
+from .configuration_delete_planning import (
+    MAX_DELETIONS as CONFIGURATION_DELETE_MAX_TARGETS,
+    POLICY_TRIGGER as CONFIGURATION_DELETE_POLICY_TRIGGER,
+    expected_basis as configuration_delete_expected_basis,
+)
 
 
 POLICY_VERSION = "f2-v3"
@@ -201,15 +212,61 @@ def _exact_existing_automation_update(
     )
 
 
+def _exact_configuration_delete(operation: ConfigurationOperation) -> bool:
+    """Recognize an exact governed delete of one automation or script (HAMCP-155).
+
+    Exact means: the captured pre-image is the bound current state, the
+    proposal is the closed delete intent naming that pre-image, and the
+    proposal hash binds the intent. The F3 delete adapter re-reads the
+    target, refuses drift, and proves absence by readback.
+    """
+
+    from .resources import resource_fingerprint
+
+    proposed = operation.proposed_config
+    if (
+        operation.resource_type not in CONFIGURATION_DELETE_RESOURCE_TYPES
+        or operation.action != CONFIGURATION_DELETE_ACTION
+        or operation.helper_type is not None
+        or not isinstance(operation.target_id, str)
+        or not operation.target_id
+        or not isinstance(operation.current_config, dict)
+        or not isinstance(operation.normalized_current_config, dict)
+        or configuration_delete_intent_errors(
+            operation.resource_type, operation.target_id, proposed
+        )
+        or operation.normalized_proposed_config != proposed
+    ):
+        return False
+    try:
+        pre_image = resource_fingerprint(
+            operation.resource_type, operation.current_config
+        )
+    except (TypeError, ValueError, OverflowError):
+        return False
+    intent = proposed[CONFIGURATION_DELETE_INTENT_KEY]
+    return bool(
+        operation.current_state_fingerprint == pre_image
+        and intent["pre_image_fingerprint"] == pre_image
+        and operation.proposed_config_hash == stable_hash(proposed)
+        and operation.normalization_version >= 1
+        and operation.validation_results.get("valid") is True
+        and operation.risk.apply_allowed
+    )
+
+
 def _exact_configuration_write(operation: ConfigurationOperation) -> bool:
-    """Recognize an exact automation or script update or create (D3).
+    """Recognize an exact automation or script update, create or delete (D3).
 
     A create is exact when the identifier is new (no current configuration)
     and the proposed configuration is validated, normalized, and hash bound;
     the writer checks the identifier conflict and reads the result back.
+    A delete is exact only through :func:`_exact_configuration_delete`.
     """
 
     if _exact_existing_automation_update(operation, include_scripts=True):
+        return True
+    if _exact_configuration_delete(operation):
         return True
     return bool(
         operation.resource_type in {"automation", "script"}
@@ -759,6 +816,124 @@ def _availability_exposure_plan_complete(operations) -> bool:
     return True
 
 
+CONFIGURATION_DELETE_INCOMPLETE = "configuration_delete_contract_incomplete"
+
+
+def _configuration_delete_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one governed delete by the effects and dependents it removes.
+
+    The marker written at planning must agree exactly with the basis
+    recomputed here from the immutable plan: the protected-effect comparison
+    of the pre-image against absence, and the dependency reasons bound in
+    the hashed intent. A delete is never "no effect" because it is not a
+    create or update; any disagreement or gap is prohibited as incomplete.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (CONFIGURATION_DELETE_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") == CONFIGURATION_DELETE_POLICY_TRIGGER
+    ]
+    if not _exact_configuration_delete(operation) or len(markers_found) != 1:
+        return incomplete
+    comparison = compare_operation(operation)
+    if comparison.bounds_exceeded:
+        return _review_bounds_exceeded(
+            RiskDelta.HIGH, unlock_or_disarm=comparison.unlock_or_disarm
+        )
+    intent = operation.proposed_config[CONFIGURATION_DELETE_INTENT_KEY]
+    expected = configuration_delete_expected_basis(
+        comparison, intent["dependency_reasons"]
+    )
+    marker = markers_found[0]
+    basis = marker.get("basis")
+    if not isinstance(basis, str):
+        return incomplete
+    if tuple(item for item in basis.split(",") if item) != expected:
+        return incomplete
+    policy = marker.get("policy")
+    consequence = marker.get("physical_consequence")
+    if (
+        not expected
+        and policy == "standard"
+        and consequence == PhysicalConsequence.NONE.value
+        and operation.risk.level is RiskLevel.MEDIUM
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.STANDARD_ADMIN,
+            RiskDelta.MODERATE,
+            PhysicalConsequence.NONE,
+            (
+                "configuration_delete_standard_policy",
+                "supported_configuration_change",
+            ),
+        )
+    if not (
+        expected
+        and policy == "elevated"
+        and consequence == PhysicalConsequence.SAFETY_CRITICAL.value
+        and operation.risk.level is RiskLevel.HIGH
+    ):
+        return incomplete
+    reasons = {
+        *expected,
+        "configuration_delete_elevated_policy",
+        "supported_configuration_change",
+    }
+    acknowledgement = False
+    if comparison.protected:
+        # The existing HAMCP-213 mapping over the removed rows: elevated
+        # plus the per-object safety-critical acknowledgement.
+        protected = _safety_critical_comparison_policy(
+            operation,
+            triggers=set(),
+            safety_critical_services=set(),
+            risk_delta=RiskDelta.HIGH,
+        )
+        if (
+            protected is None
+            or protected.policy_class is not ApprovalPolicyClass.ELEVATED_ADMIN
+        ):
+            return protected or incomplete
+        reasons.update(protected.reason_codes)
+        acknowledgement = protected.safety_critical_acknowledgement
+    if comparison.unlock_or_disarm:
+        reasons.add("unlock_or_disarm_effect")
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.ELEVATED_ADMIN,
+        RiskDelta.HIGH,
+        PhysicalConsequence.SAFETY_CRITICAL,
+        tuple(sorted(reasons)),
+        safety_critical_acknowledgement=acknowledgement,
+    )
+
+
+def _configuration_delete_plan_complete(operations) -> bool:
+    """A delete plan holds only governed deletes: 1-8 unique, unordered."""
+
+    if not 1 <= len(operations) <= CONFIGURATION_DELETE_MAX_TARGETS:
+        return False
+    if any(
+        op.action != CONFIGURATION_DELETE_ACTION
+        or op.resource_type not in CONFIGURATION_DELETE_RESOURCE_TYPES
+        or op.depends_on
+        for op in operations
+    ):
+        return False
+    return len({(op.resource_type, op.target_id) for op in operations}) == len(
+        operations
+    )
+
+
 SAFETY_CRITICAL_REVIEW_BOUNDS_EXCEEDED = "safety_critical_review_bounds_exceeded"
 SPLIT_THE_CHANGE = "too_many_protected_objects_to_review_split_the_change"
 
@@ -805,6 +980,8 @@ def configuration_operation_policy(
         return _entity_metadata_operation_policy(operation)
     if operation.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
         return _availability_exposure_operation_policy(operation)
+    if operation.action == CONFIGURATION_DELETE_ACTION:
+        return _configuration_delete_operation_policy(operation)
     triggers = _risk_triggers(operation)
     safety_critical_services = _risk_services(operation)
     risk_delta = _risk_delta(operation.risk.level)
@@ -1225,6 +1402,18 @@ def _single_plan_policy(
                     RiskDelta.CRITICAL,
                     PhysicalConsequence.UNKNOWN,
                     (AVAILABILITY_EXPOSURE_INCOMPLETE,),
+                ),
+            )
+        if any(
+            op.action == CONFIGURATION_DELETE_ACTION for op in plan.operations
+        ) and not _configuration_delete_plan_complete(plan.operations):
+            # HAMCP-155: deletes are never mixed with other operations.
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.PROHIBITED,
+                    RiskDelta.CRITICAL,
+                    PhysicalConsequence.UNKNOWN,
+                    (CONFIGURATION_DELETE_INCOMPLETE,),
                 ),
             )
         if any(inverse_eligibility.markers(op) for op in plan.operations) and inverse_eligibility.bound(plan) is None:

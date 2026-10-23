@@ -44,9 +44,12 @@ INTENT_FIELDS = frozenset(
         "registry_entry_id",
         "pre_image_fingerprint",
         "consumer_evidence_fingerprint",
+        "dependency_reasons",
         "recreate_eligible",
     }
 )
+MAX_DEPENDENCY_REASONS = 64
+MAX_DEPENDENCY_REASON_LENGTH = 200
 EXPECTED_EFFECT = "configuration_resource_deleted"
 DELETE_REJECTED_REASON = "configuration_delete_rejected"
 # Core removes the registry entry in a fire-and-forget post-write hook, so
@@ -86,6 +89,7 @@ def build_intent(
     registry_entry_id: str,
     pre_image_fingerprint: str,
     consumer_evidence_fingerprint: str,
+    dependency_reasons: list[str],
     recreate_eligible: bool,
 ) -> dict[str, Any]:
     """Return the closed delete intent stored as a delete child's proposal."""
@@ -99,6 +103,7 @@ def build_intent(
             "registry_entry_id": registry_entry_id,
             "pre_image_fingerprint": pre_image_fingerprint,
             "consumer_evidence_fingerprint": consumer_evidence_fingerprint,
+            "dependency_reasons": list(dependency_reasons),
             "recreate_eligible": recreate_eligible,
         }
     }
@@ -156,6 +161,20 @@ def intent_errors(
     for name in ("pre_image_fingerprint", "consumer_evidence_fingerprint"):
         if not _is_hash(intent[name]):
             errors.append(f"delete intent {name} is invalid")
+    reasons = intent["dependency_reasons"]
+    if (
+        not isinstance(reasons, list)
+        or len(reasons) > MAX_DEPENDENCY_REASONS
+        or any(
+            not isinstance(item, str)
+            or not 1 <= len(item) <= MAX_DEPENDENCY_REASON_LENGTH
+            for item in reasons
+        )
+        or reasons != sorted(set(reasons))
+    ):
+        # Bound into the proposed hash so policy recomputes the protected
+        # dependency basis from the immutable plan alone.
+        errors.append("delete intent dependency_reasons are invalid")
     if type(intent["recreate_eligible"]) is not bool:
         errors.append("delete intent recreate_eligible must be a boolean")
     return errors

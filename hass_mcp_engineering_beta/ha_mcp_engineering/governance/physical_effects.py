@@ -80,7 +80,7 @@ ROW_EQUIVALENT = "equivalent"
 ROW_UNRESOLVED = "unresolved"
 
 SUPPORTED_RESOURCE_TYPES = frozenset({"automation", "script"})
-SUPPORTED_ACTIONS = frozenset({"create", "update"})
+SUPPORTED_ACTIONS = frozenset({"create", "update", "delete"})
 
 # Reference-only services (risk.REFERENCE_ONLY_*) never act on the entity
 # they mention (D2.1/D4.1).
@@ -227,6 +227,7 @@ BOUNDS_EXCEEDED_REASONS = frozenset(
         "comparison_bounds_exceeded",
         "comparison_input_invalid",
         "comparison_object_collision",
+        "comparison_action_unsupported",
         "called_script_depth_exceeded",
         "called_script_bounds_exceeded",
     }
@@ -1303,8 +1304,23 @@ def compare_physical_effects(
     without it every script call is ``unresolved``.
     """
 
-    if resource_type not in SUPPORTED_RESOURCE_TYPES or action not in SUPPORTED_ACTIONS:
+    if resource_type not in SUPPORTED_RESOURCE_TYPES:
         return NONE_COMPARISON
+    if action not in SUPPORTED_ACTIONS:
+        # HAMCP-155: "not a create or update" never means "no protected
+        # effect". An automation or script operation this comparison does
+        # not model is unresolved, so policy cannot treat it as ordinary.
+        return _unbounded_comparison(
+            resource_type,
+            str(action)[:32],
+            "comparison_action_unsupported",
+            floor=True,
+            fingerprints=None,
+        )
+    if action == "delete":
+        # A delete's proposal is its closed intent; the after side is absence,
+        # so every protected effect of the pre-image is removed (design §3.1).
+        normalized_proposed = None
     # Review H3: the unlock/disarm floor comes first, independent of bounds.
     try:
         floor = _unlock_or_disarm_scan(
@@ -1331,7 +1347,10 @@ def compare_physical_effects(
 
     reasons: list[str] = []
     unresolved = before.unresolved + after.unresolved
-    if before.structure is None or after.structure is None:
+    if action == "delete":
+        # Every protected effect of the pre-image is removed.
+        reasons.append("configuration_deleted")
+    elif before.structure is None or after.structure is None:
         # A create (or a deleted side) has no prior reachability to preserve,
         # so every protected effect it carries is new.
         reasons.append("configuration_created")

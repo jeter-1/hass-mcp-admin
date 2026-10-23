@@ -102,7 +102,7 @@ class OctoberDeviceShapeTests(unittest.TestCase):
     def test_default_and_september_profile_do_not_admit_october_shape(self):
         self.assertFalse(assess_device_registry(self.records).complete)
         self.assertFalse(assess_device_registry(self.records, schema=SEPTEMBER.device_registry_schema).complete)
-        ids = {e['capability_id'] for e in capability_evidence_for_probes(**probe_inputs(SEPTEMBER))}
+        self.assertEqual(len(ids), 22)  # +2 HAMCP-069B, +1 HAMCP-155 transport evidence (not admission)
         self.assertEqual(len(ids), 21)  # +2 HAMCP-069B transport evidence (not admission)
         self.assertTrue(DEVICE_CAPABILITIES.isdisjoint(ids))
 
