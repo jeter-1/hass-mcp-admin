@@ -3,7 +3,11 @@
 Every run of the suite (``python -m unittest discover -s tests``, the
 ``check.ps1 -Parallel`` workers and CI's shards) performs full discovery, which
 imports ``tests/test_process_isolation.py``; that import calls ``install()``.
-The hook therefore lives in unittest's own suite machinery, not in each module:
+Importing this module installs the hook too (HAMCP-219), so a run of named
+modules (``python -m unittest test_a test_b``) is guarded whenever any loaded
+module imports it; unittest loads every named module before the first test
+runs, so the guard binds to that run's own result. The hook therefore lives in
+unittest's own suite machinery, not in each module:
 
 * Shared reset: around every test the known process-wide state (``PROBES``) is
   captured before each test is called and restored after it, cleanups included.
@@ -607,3 +611,8 @@ def uninstall():
     _suite.TestSuite._handleModuleFixture = _suite.TestSuite._handleModuleFixture.__wrapped__
     _suite.TestSuite._handleModuleTearDown = _suite.TestSuite._handleModuleTearDown.__wrapped__
     delattr(unittest.TestCase, STATE_ATTRIBUTE)
+
+
+# HAMCP-219: a named-module run never imports tests/test_process_isolation.py,
+# so the modules that rely on the shared reset install it by importing this one.
+install()

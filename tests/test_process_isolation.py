@@ -387,6 +387,16 @@ class Leaker(unittest.TestCase):
     def test_runs(self):
         pass
 """
+# HAMCP-219: imports the guard but never calls install() itself.
+CONSUMER = f"""
+import os, unittest
+from support import process_isolation
+
+class Consumer(unittest.TestCase):
+    def test_baseline_restored(self):
+        self.assertNotIn({SYNTHETIC_ENV!r}, os.environ)
+"""
+INSTALL_ON_IMPORT = "\ninstall()\n"
 CLEAN = f"""
 import os, unittest
 
@@ -464,6 +474,41 @@ class RunnerParityTests(unittest.TestCase):
             cwd=str(root), env=env, capture_output=True, text=True, timeout=120)
         self.assertEqual(aggregate.returncode, 1, aggregate.stdout + aggregate.stderr)
         self.assertIn("refused: shard_fixture_error", aggregate.stderr)
+
+    def named_run_root(self, name, *, install_on_import=True):
+        """A copy of the synthetic tree plus a module that only imports the guard."""
+        root = Path(self.temp.name) / name
+        shutil.copytree(self.root, root)
+        (root / "tests/test_d_consumer.py").write_text(CONSUMER.lstrip())
+        guard = root / "tests/support/process_isolation.py"
+        source = guard.read_text()
+        self.assertTrue(source.endswith(INSTALL_ON_IMPORT))
+        if not install_on_import:
+            guard.write_text(source[:-len(INSTALL_ON_IMPORT)] + "\n")
+        return root
+
+    def run_named(self, root):
+        return subprocess.run([sys.executable, "-m", "unittest", "-v", "test_b_leaker", "test_d_consumer"],
+                              cwd=str(root / "tests"), env=self.env, capture_output=True, text=True,
+                              timeout=120)
+
+    def test_named_module_run_is_guarded_by_importing_the_guard(self):
+        # HAMCP-219: test_beta_v2 after test_hamcp131/132 run by name had no guard.
+        result = self.run_named(self.named_run_root("named"))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("ERROR: tearDownModule (test_b_leaker)", result.stderr)
+        self.assertIn(SYNTHETIC_ENV, result.stderr)
+        self.assertNotIn(SYNTHETIC_VALUE, result.stderr)
+        self.assertIn("test_baseline_restored (test_d_consumer.Consumer.test_baseline_restored) ... ok",
+                      result.stderr)
+        self.assertIn("FAILED (errors=1)", result.stderr)
+
+    def test_mutation_without_install_on_import_leaks_into_the_named_consumer(self):
+        result = self.run_named(self.named_run_root("named-mutant", install_on_import=False))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertNotIn("tearDownModule", result.stderr)
+        self.assertIn("FAIL: test_baseline_restored (test_d_consumer.Consumer", result.stderr)
+        self.assertIn("FAILED (failures=1)", result.stderr)
 
 
 if __name__ == "__main__":
