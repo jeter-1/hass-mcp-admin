@@ -469,10 +469,44 @@ class DependencyBuildAuthorityTests(unittest.IsolatedAsyncioTestCase):
         await self.unrelated_authority()
 
     async def test_whole_build_deadline_cancels_stalled_read(self):
+        # The real whole-build deadline stays in force. The index module's
+        # own asyncio.timeout is captured and expired only once the stalled
+        # read has actually reached the network, so no wall-clock budget can
+        # lapse early or late on a loaded host (HAMCP-208/219).
+        from ha_mcp_engineering.dependency import index as index_module
+        deadlines = []
+        real_asyncio = asyncio
+
+        class DeadlineRecorder:
+            def __getattr__(self, name):
+                return getattr(real_asyncio, name)
+
+            def timeout(self, delay):
+                deadline = real_asyncio.timeout(delay)
+                deadlines.append((delay, deadline))
+                return deadline
+
         self.network.hold("/states")
-        with patch("ha_mcp_engineering.dependency.index.BUILD_TIMEOUT_SECONDS", 0.02):
-            with self.assertRaises(TimeoutError):
-                await self.index.get()
+        with patch.object(index_module, "asyncio", DeadlineRecorder()):
+            pending = asyncio.create_task(self.index.get())
+            try:
+                async with asyncio.timeout(10):
+                    await self.network.entered["/states"].wait()
+                self.assertEqual(len(deadlines), 1)
+                self.assertFalse(pending.done())
+                deadlines[0][1].reschedule(asyncio.get_running_loop().time())
+                # Hang guard only; it cannot satisfy the TimeoutError check.
+                done, _ = await asyncio.wait([pending], timeout=10)
+                self.assertIn(pending, done)
+                with self.assertRaises(TimeoutError):
+                    pending.result()
+            finally:
+                self.network.gates["/states"].set()
+                if not pending.done():
+                    pending.cancel()
+                await asyncio.gather(pending, return_exceptions=True)
+        self.assertEqual([delay for delay, _ in deadlines], [index_module.BUILD_TIMEOUT_SECONDS])
+        self.assertEqual(self.network.calls, ["/config", "/states"])
         self.assertEqual(self.index.health()["last_build_failure_category"], "TimeoutError")
         self.assertIsNone(self.index.snapshot)
         self.assert_cleaned()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 from statistics import median
 import sys
@@ -166,6 +167,25 @@ def _profile(configuration: dict) -> AutomationActionRiskProfile:
         effect_projection_clipped=projected["effect_projection_clipped"],
         evidence_fingerprint=projected["evidence_fingerprint"],
     )
+
+
+def _cpu_timed(function, *args, **kwargs):
+    """``(function(*args, **kwargs), loop-thread CPU seconds)`` with GC held off (HAMCP-208).
+
+    Thread CPU time is not inflated by other processes preempting this one
+    on a loaded host, and collection of earlier suite garbage is kept out of
+    the timed window; the bound still measures this call's own work.
+    """
+    gc.collect()
+    enabled = gc.isenabled()
+    gc.disable()
+    try:
+        started = time.thread_time()
+        result = function(*args, **kwargs)
+        return result, time.thread_time() - started
+    finally:
+        if enabled:
+            gc.enable()
 
 
 class ObligationLedgerResourceBoundTests(unittest.TestCase):
@@ -433,12 +453,10 @@ class ObligationLedgerResourceBoundTests(unittest.TestCase):
         small_result = None
         large_result = None
         for _ in range(3):
-            started = time.perf_counter()
-            small_result = _analyze(small_template)
-            small_samples.append(time.perf_counter() - started)
-            started = time.perf_counter()
-            large_result = _analyze(large_template)
-            large_samples.append(time.perf_counter() - started)
+            small_result, elapsed = _cpu_timed(_analyze, small_template)
+            small_samples.append(elapsed)
+            large_result, elapsed = _cpu_timed(_analyze, large_template)
+            large_samples.append(elapsed)
 
         assert small_result is not None
         assert large_result is not None
@@ -466,12 +484,17 @@ class ObligationLedgerResourceBoundTests(unittest.TestCase):
         small_template = _mapping_template(128, dynamic_key=True)
         large_template = _mapping_template(512, dynamic_key=True)
         _analyze(small_template)
-        started = time.perf_counter()
-        small_result = _analyze(small_template)
-        small_elapsed = time.perf_counter() - started
-        started = time.perf_counter()
-        large_result = _analyze(large_template)
-        large_elapsed = time.perf_counter() - started
+        # Best of three CPU samples per size: a near-linear ratio, not one
+        # wall sample a loaded host can stretch (HAMCP-208).
+        small_samples = []
+        large_samples = []
+        for _ in range(3):
+            small_result, elapsed = _cpu_timed(_analyze, small_template)
+            small_samples.append(elapsed)
+            large_result, elapsed = _cpu_timed(_analyze, large_template)
+            large_samples.append(elapsed)
+        small_elapsed = min(small_samples)
+        large_elapsed = min(large_samples)
 
         self.assertTrue(small_result.coverage_failed)
         self.assertTrue(large_result.coverage_failed)
