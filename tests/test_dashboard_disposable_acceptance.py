@@ -225,3 +225,86 @@ class DisposableProjectionTests(unittest.TestCase):
         for altered in variants:
             with self.assertRaises(RuntimeError):
                 driver.verify_mixed_projection(header, altered)
+
+
+OBSERVER_SPEC = importlib.util.spec_from_file_location("dashboard_interval_observer_fixture",
+    ROOT / "tests/fixtures/dashboard_interval_observer/custom_components/dashboard_interval_observer/__init__.py")
+observer = importlib.util.module_from_spec(OBSERVER_SPEC)
+OBSERVER_SPEC.loader.exec_module(observer)
+
+
+class FakeStore:
+    def __init__(self, key):
+        self.key = key
+        self._data = {"private": "DO_NOT_RECORD"}
+
+
+class DisposableBackgroundBookkeepingTests(unittest.TestCase):
+    """HAMCP-219: Core's own delayed issue-registry save inside a window passes by name.
+
+    The beta.32 publish failure was a background ``storage_delay_save`` of
+    ``repairs.issue_registry`` (Core's 10 s registry SAVE_DELAY) inside an
+    observation window. The 2026.9.4 dashboard lane uses the same Core Store,
+    so it joins this lane's allowlist; command-origin saves, other stores,
+    flows and services still fail exactly as before.
+    """
+
+    def events(self, key, kind="storage_delay_save", *, command=False):
+        ledger = observer.Ledger(lambda: 1)
+        identity = ledger.start("inspection", {})
+        token = observer.REQUEST.set("lovelace/config") if command else None
+        try:
+            ledger.record(kind, store=FakeStore(key))
+        finally:
+            if token is not None:
+                observer.REQUEST.reset(token)
+        value = ledger.finish(identity, {}, {})
+        self.assertNotIn("DO_NOT_RECORD", json.dumps(value))
+        return value["events"]
+
+    def test_background_repairs_save_is_tolerated(self):
+        for kind in driver.BACKGROUND_SAVE_KINDS:
+            with self.subTest(kind=kind):
+                [event] = self.events("repairs.issue_registry", kind)
+                self.assertEqual(event, {"kind": kind, "origin": "background", "store": "repairs.issue_registry"})
+                self.assertTrue(driver.background_bookkeeping(event))
+
+    def test_previously_tolerated_background_stores_still_pass(self):
+        for key in ("auth", "core.restore_state"):
+            with self.subTest(key=key):
+                [event] = self.events(key)
+                self.assertTrue(driver.background_bookkeeping(event))
+
+    def test_command_origin_save_of_a_tolerated_store_is_refused(self):
+        for key in driver.TOLERATED_STORES:
+            with self.subTest(key=key):
+                [event] = self.events(key, command=True)
+                self.assertEqual(event["origin"], "command")
+                self.assertFalse(driver.background_bookkeeping(event))
+
+    def test_other_stores_and_non_save_kinds_are_refused(self):
+        for key in ("core.entity_registry", "core.config_entries", "alarmo.storage", "repairs.other", "unknown"):
+            with self.subTest(key=key):
+                [event] = self.events(key)
+                self.assertFalse(driver.background_bookkeeping(event))
+        for kind in ("storage_remove", "flow", "service"):
+            with self.subTest(kind=kind):
+                self.assertFalse(driver.background_bookkeeping(
+                    {"kind": kind, "origin": "background", "store": "repairs.issue_registry"}))
+        self.assertFalse(driver.background_bookkeeping({"kind": "storage_save", "store": "repairs.issue_registry"}))
+
+    def test_fixture_names_exactly_the_driver_allowlist_and_never_hashes_it(self):
+        self.assertEqual(observer.TOLERATED_KEYS, frozenset(driver.TOLERATED_STORES))
+        self.assertLessEqual(observer.TOLERATED_KEYS, observer.STORE_KEYS)
+        self.assertEqual(observer.HASH_KEYS, ("alarmo.storage", "core.config_entries", "core.device_registry",
+                                              "core.entity_registry"))
+
+    def test_window_check_refuses_every_event_through_the_allowlist(self):
+        import ast
+        source = (ROOT / "scripts/dashboard_analysis_disposable_acceptance.py").read_text()
+        checks = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call)
+                  and getattr(node.func, "id", None) == "require" and len(node.args) == 2
+                  and isinstance(node.args[1], ast.Constant) and node.args[1].value == "observed write/flow/service"]
+        self.assertEqual(len(checks), 1)
+        call = checks[0].args[0]
+        self.assertEqual((call.func.id, [arg.id for arg in call.args]), ("background_bookkeeping", ["event"]))

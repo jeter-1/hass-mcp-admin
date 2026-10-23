@@ -36,6 +36,17 @@ IMAGE_IDS = {
 }
 LABEL_KEY = "org.hass-mcp.dashboard-acceptance"
 OBSERVER = "dashboard_interval_observer"
+# HAMCP-219: Core's own background bookkeeping saves that may land inside an
+# observation window. Only background-origin saves of these exact stores pass;
+# a command-origin save, any other store, flows and services still fail.
+# Cites are Core 2026.9.4 (9212531f40a0b7b23229a90d688dd79d9dfccff4):
+# - auth, core.restore_state: tolerated before HAMCP-219 (unchanged).
+# - repairs.issue_registry: helpers/issue_registry.py:26 STORAGE_KEY, :100-128
+#   IssueRegistryStore; the registry saves through helpers/registry.py:13
+#   SAVE_DELAY = 10 and :78-79 async_delay_save, so a save scheduled before a
+#   window can fire inside it with no command in flight.
+TOLERATED_STORES = ("auth", "core.restore_state", "repairs.issue_registry")
+BACKGROUND_SAVE_KINDS = ("storage_save", "storage_delay_save", "storage_write")
 PATH = "dashboard-gate"
 EMPTY_PATH = "dashboard-empty"
 SENTINEL = "synthetic-dashboard-private-value"
@@ -61,6 +72,11 @@ def canonical(value):
 
 def save(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+
+
+def background_bookkeeping(event):
+    return (event.get("origin") == "background" and event.get("store") in TOLERATED_STORES
+            and event.get("kind") in BACKGROUND_SAVE_KINDS)
 
 
 def verify_mixed_projection(header, items):
@@ -403,8 +419,7 @@ async def scenario(lane, core_url):
             for event in observed["events"]:
                 if event["kind"] == "command": commands.append(event["command"])
                 else:
-                    require(event.get("origin") == "background" and event.get("store") in {"auth", "core.restore_state"}
-                        and event["kind"] in {"storage_save", "storage_delay_save", "storage_write"}, "observed write/flow/service")
+                    require(background_bookkeeping(event), "observed write/flow/service")
             require(commands == (["lovelace/config"] if upstream_read else []) +
                     (["config/entity_registry/list"] if native_reads else []), "unexpected Core dispatch or retry")
             if upstream_read:
@@ -461,6 +476,7 @@ async def scenario(lane, core_url):
                 "control executed or fixture entity missing")
         save(lane.out / "acceptance.json", {"status": "PASS", "candidate_sha": lane.head,
             "images": IMAGE_IDS, "cases": len(receipts), "fixture_config_sha256": digest(canonical(before)),
+            "tolerated_background_stores": list(TOLERATED_STORES),
             "config_unchanged": True, "controls_executed": 0, "snapshot_after_refusal_unchanged": True,
             "scope": "assembled disposable in-process public analyzer; not installed HTTP gateway or rendered frontend"})
     finally:
