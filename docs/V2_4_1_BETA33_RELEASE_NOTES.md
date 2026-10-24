@@ -116,6 +116,20 @@ Approval and execution:
 - The new write paths cannot be reached on a deployed server until a signed
   sequence 13 admits the profile. A tampered profile fingerprint keeps the
   profile withheld.
+- F3 re-checks Core admission of every dormant profile (labels and both
+  069B resource types) before each read and write: first apply, a retained
+  approved plan, recovery and private read-only reconciliation. Without
+  admission it refuses with `core_authority_unavailable` or
+  `pending_signed_registry_admission` and sends no Home Assistant command.
+  This also closes a gap in the beta.32 069B family: an F3 runtime composed
+  without Core would run a retained approved 069B plan in the legacy no-Core
+  mode.
+- Generic `create_configuration_plan` routing refuses an unadmitted dormant
+  profile before any read or store, and the lowest builder re-checks
+  admission at its own persistence boundary.
+- The final pre-dispatch label read compares the exact target with its bound
+  baseline; any drift refuses as `stale_target_state` and is never
+  overwritten.
 - The gateway accepts only its closed command vocabulary; delete is refused
   before any I/O.
 - The tool has no delegated provider and no direct fallback.

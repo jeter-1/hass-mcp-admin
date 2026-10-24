@@ -33,6 +33,7 @@ from ..f3.contracts import (
     LockScope,
     NormalizedOperationOutcome,
     ObservationResult,
+    VerificationResult,
 )
 from ..f3.locks import (
     DurableLockStore,
@@ -721,6 +722,9 @@ ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS = {
 # composed without Core is refused, not treated as the legacy no-Core mode.
 UNSIGNED_PROFILE_CORE_AUTHORITY_UNAVAILABLE = "core_authority_unavailable"
 UNSIGNED_PROFILE_PENDING_ADMISSION = "pending_signed_registry_admission"
+_UNSIGNED_PROFILE_HOLD_CODES = frozenset(
+    {UNSIGNED_PROFILE_CORE_AUTHORITY_UNAVAILABLE, UNSIGNED_PROFILE_PENDING_ADMISSION}
+)
 UNSIGNED_PROFILE_REQUIREMENTS = MappingProxyType(
     {
         LABEL_RESOURCE_TYPE: LABEL_CORE_CAPABILITY,
@@ -770,7 +774,7 @@ class _UnsignedProfileAdmissionAdapter:
     Checked at preflight (before the first read), again inside the
     irreversible boundary before approval consumption, and before every
     recovery or readback observation.  A refused observation is held for
-    manual review without a read.
+    manual review without a read, and its verification stays held.
     """
 
     def __init__(self, adapter: Any, refusal: Callable[[], str | None]):
@@ -828,6 +832,27 @@ class _UnsignedProfileAdmissionAdapter:
         if code is not None:
             return self._held_observation(code)
         return await self._adapter.observe(prepared, dispatch)
+
+    async def verify(self, prepared: Any, observation: Any):
+        # A held observation never reaches the provider's verifier, which
+        # expects its own readback evidence; it stays held for review.
+        code = self._refusal()
+        if code is None and not (
+            type(observation) is ObservationResult
+            and observation.outcome
+            == NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED
+            and set(observation.diagnostic_codes) & _UNSIGNED_PROFILE_HOLD_CODES
+        ):
+            return await self._adapter.verify(prepared, observation)
+        code = code or observation.diagnostic_codes[0]
+        return VerificationResult(
+            outcome=NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED,
+            attempt_count=getattr(observation, "attempt_count", 1),
+            verified=False,
+            resulting_state_fingerprint=None,
+            evidence_hash=stable_hash({"category": code}),
+            manual_review_reason_code=code,
+        )
 
 
 def _rollback_core_refusal(*, acquired: bool) -> GovernanceError:

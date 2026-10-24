@@ -23,7 +23,8 @@ signing, or a release.
   (`_create_configuration_plan`, including generic `create_configuration_plan`
   routing) checks it again first and at the persist boundary (review1 M1).
   F3 re-checks it at dispatch on every path (first apply, a retained approved
-  plan, resume and recovery): without a Core runtime the child refuses
+  plan, resume, recovery and private read-only reconciliation, whose
+  verification of a held observation stays held): without a Core runtime the child refuses
   `core_authority_unavailable`, and with a Core that does not admit the
   profile it refuses `pending_signed_registry_admission`, with zero Home
   Assistant commands (review1 H1; the same gate covers 069B's two resource

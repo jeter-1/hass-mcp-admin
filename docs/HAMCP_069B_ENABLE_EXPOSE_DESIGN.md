@@ -848,7 +848,8 @@ HAMCP-165 review1 H1 audit: before that review, an F3 runtime composed
 without a Core runtime ran a retained, approved 069B plan in the legacy no-Core
 mode, with no dispatch-time admission check. The dormant-profile F3 gate now
 covers both 069B resource types. It applies on first apply, on a retained plan,
-and before every recovery or readback observation. With no Core the child
+and before every recovery, readback or private read-only reconciliation
+observation (a held observation's verification stays held). With no Core the child
 refuses `core_authority_unavailable`; with an unadmitted profile it refuses
 `pending_signed_registry_admission`; either way no Home Assistant command is
 sent. Generic `create_configuration_plan` routing refuses these types first

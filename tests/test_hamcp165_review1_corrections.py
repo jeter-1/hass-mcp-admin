@@ -6,6 +6,10 @@ re-checks Core admission at dispatch.  No Core, a Core that cannot report
 status, or an unadmitted profile refuses with zero Home Assistant commands.
 M1: generic ``create_configuration_plan`` routing refuses an unadmitted
 dormant profile before any read or store.
+M1 also re-checks admission at the lowest builder's own persistence
+boundary, independent of the caller's planning lease, and the read-only
+reconciliation of a terminal dormant-profile child reads nothing without
+admission.
 M3: the final pre-dispatch label read judges the exact target against its
 bound baseline; any drift refuses as stale and is never overwritten.
 """
@@ -14,6 +18,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import unittest
+from unittest.mock import patch
 
 from tests.hamcp069b_fixtures import AdmittingCore, AvailabilityExposureServiceTestCase
 from tests.hamcp165_fixtures import LABEL_UPDATE, LabelAdmittingCore
@@ -24,6 +29,10 @@ from tests.test_hamcp165_label_registry import (
 )
 
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
+from ha_mcp_engineering.governance import (
+    entity_availability_exposure_planning,
+    label_registry_planning,
+)
 from ha_mcp_engineering.f3_runtime.runtime import (
     UNSIGNED_PROFILE_CORE_AUTHORITY_UNAVAILABLE as NO_CORE,
     UNSIGNED_PROFILE_PENDING_ADMISSION as PENDING,
@@ -68,6 +77,40 @@ def generic_operation(resource_type: str, target_id: str, proposed: dict) -> dic
         "target_id": target_id,
         "proposed_config": proposed,
     }
+
+
+def withdraw_at_policy_binding(service, core):
+    """Withdraw admission after validation and reads, at the persist boundary."""
+
+    original = service._bind_new_plan_policy
+
+    def binding(plan):
+        original(plan)
+        core.withdraw()
+
+    return patch.object(service, "_bind_new_plan_policy", side_effect=binding)
+
+
+async def reconcile(runtime, task_id: str) -> dict:
+    """Run the private read-only reconciliation on the task's only child."""
+
+    (declaration,) = runtime.children.declarations_for_task(task_id)
+    child_id = declaration["child_id"]
+    record = runtime.children.get(child_id)
+    assert record is not None and record.terminal and record.dispatch_intent
+    state = runtime.children.runtime(child_id)
+    await runtime.reconcile_child(
+        child_id=child_id,
+        action="rerun_observation",
+        record_generation=state["record_generation"],
+        prepared_hash=declaration["prepared_operation_hash"],
+        hold_generation_binding=",".join(
+            f"{item['key']}:{item['generation']}"
+            for item in state["selective_hold_tokens"]
+        ),
+        authorized_principal="home_assistant_admin_ingress:hamcp165_review1",
+    )
+    return runtime.children.runtime(child_id)["last_readback_summary"]
 
 
 class LabelDispatchAdmissionTests(ServiceTestCase):
@@ -170,6 +213,83 @@ class LabelBuilderAdmissionTests(ServiceTestCase):
                 self.assertEqual(raised.exception.details, PENDING_DETAILS)
                 self.assert_nothing_read_or_stored()
                 self.assertEqual(self.core.planning_leases, [])
+
+
+    async def test_lowest_builder_rechecks_admission_at_its_own_persist_boundary(self):
+        # The caller's lease is a no-op here: the builder alone must refuse.
+        request = label_registry_planning.validate_request(
+            {"operations": [{"operation": "update", "label_id": "outdoor", "name": "Garden"}]}
+        )
+        prepared = await label_registry_planning.prepare(
+            self.service.label_registry_gateway,
+            self.service.entity_metadata_gateway,
+            self.service.entity_metadata_snapshot_reader,
+            request,
+        )
+        with withdraw_at_policy_binding(self.service, self.core) as binding:
+            with self.assertRaises(GovernanceError) as raised:
+                await self.service._create_label_plan(
+                    prepared, _before_persist=lambda: None
+                )
+        self.assertEqual(binding.call_count, 1)
+        self.assertEqual(raised.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+        self.assertEqual(raised.exception.details, PENDING_DETAILS)
+        self.assertEqual(self.repository.list(), [])
+
+    async def test_lowest_builder_requires_a_persist_lease(self):
+        request = label_registry_planning.validate_request(
+            {"operations": [{"operation": "update", "label_id": "outdoor", "name": "Garden"}]}
+        )
+        prepared = await label_registry_planning.prepare(
+            self.service.label_registry_gateway,
+            self.service.entity_metadata_gateway,
+            self.service.entity_metadata_snapshot_reader,
+            request,
+        )
+        for builder in (
+            lambda: self.service._create_label_plan(prepared),
+            lambda: self.service._create_configuration_plan(
+                title="t", description="d",
+                operations=prepared.operations(), _label_context=prepared,
+            ),
+        ):
+            with self.assertRaises(GovernanceError) as raised:
+                await builder()
+            self.assertEqual(
+                raised.exception.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED
+            )
+        self.assertEqual(self.repository.list(), [])
+
+
+class LabelReconciliationAdmissionTests(ServiceTestCase):
+    """H1 on the private read-only reconciliation of a terminal label child."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.ws.add_label("outdoor", "Outdoor", color="green")
+        created = await self.approved(RECOLOR)
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.task_id = result["task_id"]
+
+    async def test_without_core_reconciliation_reads_nothing_and_holds(self):
+        for label, core in (("no core", None), ("broken core", BrokenLabelCore())):
+            with self.subTest(label):
+                self.core = core
+                await self.restart_runtime()
+                self.ws.commands.clear()
+                summary = await reconcile(self.runtime, self.task_id)
+                self.assertEqual(self.ws.commands, [])
+                self.assertEqual(summary["status"], "manual_review_required")
+                self.assertIs(summary["verified"], False)
+                self.assertEqual(self.ws.label("outdoor")["color"], "red")
+
+    async def test_admitted_core_reconciliation_reads_back_and_verifies(self):
+        self.ws.commands.clear()
+        summary = await reconcile(self.runtime, self.task_id)
+        self.assertNotEqual(self.ws.commands, [])
+        self.assertEqual(self.ws.writes(), [])
+        self.assertIs(summary["verified"], True, summary)
 
 
 class LabelFinalReadDriftTests(ServiceTestCase):
@@ -339,6 +459,46 @@ class AvailabilityExposureDispatchAdmissionTests(AvailabilityExposureServiceTest
                 self.assertEqual(self.ws.commands, [])
                 self.assertEqual(self.snapshot_reads, [])
                 self.assertEqual(self.repository.list(), [])
+
+    async def test_lowest_builder_rechecks_admission_at_its_own_persist_boundary(self):
+        for resource_type, request in self.CASES:
+            with self.subTest(resource_type):
+                self.core = AdmittingCore()
+                await self.restart_runtime()
+                prepared = await entity_availability_exposure_planning.prepare(
+                    self.service.entity_availability_exposure_gateway,
+                    self.service.entity_availability_exposure_snapshot_reader,
+                    entity_availability_exposure_planning.validate_request(
+                        deepcopy(request)
+                    ),
+                )
+                with withdraw_at_policy_binding(self.service, self.core) as binding:
+                    with self.assertRaises(GovernanceError) as raised:
+                        await self.service._create_availability_exposure_plan(
+                            prepared, _before_persist=lambda: None
+                        )
+                self.assertEqual(binding.call_count, 1)
+                self.assertEqual(raised.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+                self.assertEqual(raised.exception.details["reason_code"], PENDING)
+                self.assertEqual(raised.exception.details["resource_type"], resource_type)
+                self.assertEqual(self.repository.list(), [])
+
+    async def test_reconciliation_without_core_reads_nothing_and_holds(self):
+        for resource_type, request in self.CASES:
+            with self.subTest(resource_type):
+                created = await self.approved_under_admission(request)
+                result = await self.apply(created)
+                self.assertEqual(result["task_state"], "succeeded_verified", result)
+                applied = deepcopy(self.ws.entries["light.porch"])
+                self.core = None
+                await self.restart_runtime()
+                self.ws.commands.clear()
+                summary = await reconcile(self.runtime, result["task_id"])
+                self.assertEqual(self.ws.commands, [])
+                self.assertEqual(summary["status"], "manual_review_required")
+                self.assertIs(summary["verified"], False)
+                self.assertEqual(self.ws.entries["light.porch"], applied)
+                self.ws.entries["light.porch"] = deepcopy(self.baseline)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,18 @@ Builds on 2.4.1-beta.32.
   `pending_signed_registry_admission`, admission checked first at the
   service layer. Activates nothing new; switches on with the sequence-13
   signing.
+- Review1 (H1): F3 re-checks Core admission of a dormant profile (labels and
+  both 069B resource types) before every read and write, including a retained
+  approved plan, recovery and private read-only reconciliation. No Core, a
+  Core that cannot report status, or an unadmitted profile refuses with
+  `core_authority_unavailable` or `pending_signed_registry_admission` and
+  sends no Home Assistant command. Before this, an F3 runtime composed
+  without Core would run a retained approved 069B plan in the legacy no-Core
+  mode.
+  The lowest configuration builder, including generic
+  `create_configuration_plan` routing, refuses an unadmitted profile before
+  any read or store (M1); the final pre-dispatch label read refuses any drift
+  of the exact target as `stale_target_state` (M3).
 - HAMCP-069B: the two dormant profiles name `websocket_entity_registry_list`
   and `websocket_expose_new_entities_get`, the reads their gateway sends.
   New fingerprints: availability
