@@ -192,10 +192,12 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(busy.exception.retryable)
                 self.assertEqual(len(client.calls), 1)
                 release.set()
-                for _ in range(200):
-                    if not reader._active:
-                        break
-                    await asyncio.sleep(.001)
+                # The detached worker clears the slot from its done callback.
+                # Wait for that event under a generous hang guard instead of
+                # a fixed wall-clock poll budget.
+                async with asyncio.timeout(10):
+                    while reader._active:
+                        await asyncio.sleep(.001)
                 self.assertFalse(reader._active)
         finally:
             release.set()
@@ -316,9 +318,11 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.calls = 0
         self.mode = "ok"
         self.release = asyncio.Event()
+        self.arrived = asyncio.Event()
         app = web.Application()
         async def serve(request):
             self.calls += 1
+            self.arrived.set()
             if self.mode == "disconnect":
                 request.transport.close()
                 return web.Response()
@@ -418,12 +422,41 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.calls, before+1)
 
     async def test_timeout_and_cancel_finish_request_accounting(self):
+        # Keep a long configured deadline and expire aiohttp's own total
+        # timeout timer only once the request has reached the peer. A short
+        # real deadline let a descheduled runner time out while connecting,
+        # before any request was sent. 20 s is below MAX_SECONDS, so the
+        # recorded total also proves the configured value is honored.
+        from aiohttp import client as aiohttp_client
+        loop = asyncio.get_running_loop()
+        deadlines = []
+
+        class DeadlineRecorder(aiohttp_client.TimeoutHandle):
+            def start(self):
+                handle = super().start()
+                deadlines.append((self._timeout, self._ceil_threshold, self, handle))
+                return handle
+
         self.mode = "slow"
-        self.client.settings = replace(self.client.settings, ha_timeout_seconds=.03)
+        self.client.settings = replace(self.client.settings, ha_timeout_seconds=20)
         telemetry, token = begin_request("synthetic-logbook-timeout")
         try:
-            with self.assertRaises(Exception) as error:
-                await self.read()
+            with patch.object(aiohttp_client, "TimeoutHandle", DeadlineRecorder):
+                task = asyncio.create_task(self.read())
+                async with asyncio.timeout(10):
+                    await self.arrived.wait()
+                self.assertEqual(self.calls, 1)
+                self.assertEqual([entry[:2] for entry in deadlines], [(20, float("inf"))])
+                _, _, timer, handle = deadlines[0]
+                self.assertFalse(handle.cancelled())
+                self.assertGreater(handle.when(), loop.time())
+                self.assertFalse(task.done())
+                # Fire the same aiohttp deadline callback now.
+                handle.cancel()
+                loop.call_at(loop.time(), timer)
+                with self.assertRaises(Exception) as error:
+                    async with asyncio.timeout(10):
+                        await task
             self.assertEqual(error.exception.code, ErrorCode.HA_TIMEOUT)
             self.assertEqual(telemetry.ha_request_count, 1)
             self.assertTrue(telemetry.timeout_occurred)
@@ -432,22 +465,31 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls, 1)
 
     async def test_concurrent_heartbeat_and_useful_read(self):
+        import gc
         self.mode = "dense"
-        gaps, finished = [], asyncio.Event()
+        gaps, cpu_gaps, finished = [], [], asyncio.Event()
         entered, release = threading.Event(), threading.Event()
+        loop_thread, processing_threads = threading.get_ident(), []
         original = logbook.project
         def processing(*args):
+            processing_threads.append(threading.get_ident())
             entered.set()
             if not release.wait(3):
                 raise AssertionError("synthetic processing barrier timed out")
             return original(*args)
         async def heartbeat():
-            previous = time.perf_counter()
+            previous, previous_cpu = time.perf_counter(), time.thread_time()
             while not finished.is_set():
                 await asyncio.sleep(.002)
-                now = time.perf_counter()
+                now, now_cpu = time.perf_counter(), time.thread_time()
                 gaps.append(now-previous)
-                previous = now
+                cpu_gaps.append(now_cpu-previous_cpu)
+                previous, previous_cpu = now, now_cpu
+        # Measure event-loop-thread CPU between heartbeats rather than wall
+        # gaps, which host scheduling can stretch. Hold collection off only
+        # for the timed window so earlier suite state cannot be attributed.
+        gc.collect()
+        gc.disable()
         pulse = asyncio.create_task(heartbeat())
         task = None
         try:
@@ -464,11 +506,19 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         finally:
             release.set()
             finished.set()
-            await pulse
-            if task is not None and not task.done():
-                await task
-        self.assertTrue(gaps)
-        self.assertLess(max(gaps), .1)
+            try:
+                await pulse
+                if task is not None and not task.done():
+                    await task
+            finally:
+                gc.enable()
+        # Projection ran on a worker thread, never on the event-loop thread,
+        # and the loop thread stayed within its CPU budget between heartbeats.
+        self.assertEqual(len(processing_threads), 1)
+        self.assertNotEqual(processing_threads[0], loop_thread)
+        self.assertTrue(cpu_gaps)
+        self.assertLess(max(cpu_gaps), .1,
+                        f"loop-thread CPU gap {max(cpu_gaps):.4f}s; wall gap {max(gaps):.4f}s (diagnostic)")
 
     async def test_authority_refusal_is_before_http(self):
         telemetry, token = begin_request("synthetic-logbook-authority")

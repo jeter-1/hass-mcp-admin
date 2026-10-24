@@ -3,7 +3,11 @@
 Every run of the suite (``python -m unittest discover -s tests``, the
 ``check.ps1 -Parallel`` workers and CI's shards) performs full discovery, which
 imports ``tests/test_process_isolation.py``; that import calls ``install()``.
-The hook therefore lives in unittest's own suite machinery, not in each module:
+Importing this module installs the hook too (HAMCP-219), so a run of named
+modules (``python -m unittest test_a test_b``) is guarded whenever any loaded
+module imports it; unittest loads every named module before the first test
+runs, so the guard binds to that run's own result. The hook therefore lives in
+unittest's own suite machinery, not in each module:
 
 * Shared reset: around every test the known process-wide state (``PROBES``) is
   captured before each test is called and restored after it, cleanups included.
@@ -39,6 +43,15 @@ CATALOG_ATTRIBUTES = ("_DYNAMIC_UPSTREAM_CAPABILITIES", "_UPSTREAM_READ_GATEWAY_
 # The registered FastMCP server is process-wide and caches one streamable HTTP
 # session manager, which the SDK lets run only once per instance.
 SERVER_MODULE, SERVER_ATTRIBUTE = "ha_mcp_engineering.tools.registry", "_SERVER"
+# HAMCP-219: the process-wide Core runtime keeps its one-shot boot exception
+# across ``configure()`` (HAMCP-215). Once any test spends it, every later
+# configure() inherits the recovery gate instead of booting, so a later class
+# that boots Core once is refused (CoreCapabilityUnavailable). These are the
+# attributes ``CoreRuntime.configure`` carries when the exception is spent.
+CORE_MODULE, CORE_ATTRIBUTE = "ha_mcp_engineering.ha_core_readmission.runtime", "CORE_READMISSION"
+CORE_LATCH = "_boot_exception_spent"
+CORE_CARRIED = ("_admitted", "_recovery_active", "_recovery_required", "_flap_count",
+                "_backoff_level", "_retired_at", "_last_restored_at", "_last_restored_monotonic")
 STATE_ATTRIBUTE = "_hamcp_process_isolation"
 MAX_LISTED = 10
 _MISSING = object()
@@ -209,6 +222,58 @@ class ObjectAttributeProbe:
                 delattr(owner, self.attribute)
         else:
             setattr(owner, self.attribute, value)
+
+
+class CarriedStateProbe:
+    """What a runtime singleton's own ``configure()`` keeps from the last one.
+
+    ``latch`` gates the carry: while it is False, ``configure()`` resets every
+    other attribute itself, so only the latch is compared. Once it is True the
+    carried attributes reach the next configuration too and are compared by
+    value. A difference is restored as a whole, latch included.
+    """
+
+    def __init__(self, module, owner, latch, carried):
+        self.module, self.owner, self.latch, self.carried = module, owner, latch, tuple(carried)
+        self.name = f"{module}.{owner}"
+
+    def _values(self, owner):
+        return {name: getattr(owner, name, _MISSING) for name in (self.latch, *self.carried)}
+
+    def capture(self):
+        owner = getattr(sys.modules.get(self.module), self.owner, None)
+        if owner is None:
+            return _MISSING
+        return owner, self._values(owner)
+
+    def _effective(self, values):
+        if values[self.latch] is not True:
+            return {self.latch: values[self.latch]}
+        return values
+
+    def changes(self, saved):
+        if saved is _MISSING:
+            return []
+        owner, values = saved
+        before, after = self._effective(values), self._effective(self._values(owner))
+        if before == after:
+            return []
+        names = sorted(name for name in set(before) | set(after)
+                       if before.get(name, _MISSING) != after.get(name, _MISSING))
+        return [f"{self.name}: {self.latch} {values[self.latch]!r} -> "
+                f"{getattr(owner, self.latch, _MISSING)!r}; carried into the next configure(): "
+                f"{_listed(names)}"]
+
+    def restore(self, saved):
+        if saved is _MISSING or not self.changes(saved):
+            return
+        owner, values = saved
+        for name, value in values.items():
+            if value is _MISSING:
+                if hasattr(owner, name):
+                    delattr(owner, name)
+            else:
+                setattr(owner, name, value)
 
 
 def _catalog_entries(before, after):
@@ -424,6 +489,7 @@ PROBES = (
     ModuleAttributeProbe(CATALOG_MODULE, CATALOG_ATTRIBUTES[0], _catalog_entries),
     ModuleAttributeProbe(CATALOG_MODULE, CATALOG_ATTRIBUTES[1], _summary_keys),
     ObjectAttributeProbe(SERVER_MODULE, SERVER_ATTRIBUTE, "_session_manager"),
+    CarriedStateProbe(CORE_MODULE, CORE_ATTRIBUTE, CORE_LATCH, CORE_CARRIED),
     EnvironmentProbe(),
     WorkingDirectoryProbe(),
     SysPathProbe(),
@@ -607,3 +673,8 @@ def uninstall():
     _suite.TestSuite._handleModuleFixture = _suite.TestSuite._handleModuleFixture.__wrapped__
     _suite.TestSuite._handleModuleTearDown = _suite.TestSuite._handleModuleTearDown.__wrapped__
     delattr(unittest.TestCase, STATE_ATTRIBUTE)
+
+
+# HAMCP-219: a named-module run never imports tests/test_process_isolation.py,
+# so the modules that rely on the shared reset install it by importing this one.
+install()

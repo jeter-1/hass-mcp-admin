@@ -36,6 +36,18 @@ IMAGE_IDS = {
 }
 LABEL_KEY = "org.hass-mcp.dashboard-acceptance"
 OBSERVER = "dashboard_interval_observer"
+# Core's own background bookkeeping saves that pass inside an observation window.
+TOLERATED_STORES = ("auth", "core.restore_state")
+BACKGROUND_SAVE_KINDS = ("storage_save", "storage_delay_save", "storage_write")
+# HAMCP-219 review 1: never tolerated. A window whose only refusal is the
+# delayed-save scheduling of Core's issue registry (Core 2026.9.4 9212531f
+# helpers/issue_registry.py:26, :100-128; helpers/registry.py:13 SAVE_DELAY = 10,
+# :78-79 async_delay_save) is discarded, kept as evidence and rerun once; the
+# rerun must be clean. The observer's origin label is not trusted for this:
+# Core's executor and thread-safe callbacks drop the request context. An
+# immediate save or a write of this store fails with no rerun.
+RETRY_STORE = "repairs.issue_registry"
+RETRY_EVENT_KIND = "storage_delay_save"
 PATH = "dashboard-gate"
 EMPTY_PATH = "dashboard-empty"
 SENTINEL = "synthetic-dashboard-private-value"
@@ -59,8 +71,145 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
+def serialized(value):
+    return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
+
+
 def save(path, value):
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    path.write_bytes(serialized(value))
+
+
+def background_bookkeeping(event):
+    return (event.get("origin") == "background" and event.get("store") in TOLERATED_STORES
+            and event.get("kind") in BACKGROUND_SAVE_KINDS)
+
+
+def retryable_delayed_save(event):
+    return (event.get("origin") == "background" and event.get("store") == RETRY_STORE
+            and event.get("kind") == RETRY_EVENT_KIND)
+
+
+def window_commands(events, *, retry_allowed=False):
+    """A window's commands and its count of retryable delayed saves.
+
+    Any other non-command event refuses. Retryable events count only when the
+    caller allows a rerun; otherwise they refuse like any other write.
+    """
+    commands, retryable = [], 0
+    for event in events:
+        if event["kind"] == "command": commands.append(event["command"])
+        elif retry_allowed is True and retryable_delayed_save(event): retryable += 1
+        else:
+            require(background_bookkeeping(event), "observed write/flow/service")
+    return commands, retryable
+
+
+# Each scenario case's (expected success, native reads, upstream read), in order;
+# "continuation-N" pages run between "mixed" and the refusals.
+CASES = {"mixed": (True, 2, 1), "invalid": (False, 0, 0), "invalid-cursor": (False, 0, 0),
+         "provider-refusal": (False, 0, 1), "retired-new": (False, 0, 0), "retired-continuation": (False, 0, 0)}
+MAX_CONTINUATIONS = 20
+
+
+def case_expectation(name):
+    if re.fullmatch(r"continuation-(0|[1-9][0-9]?)", name) and int(name[13:]) < MAX_CONTINUATIONS:
+        return True, 0, 0
+    require(name in CASES, "unknown dashboard case")
+    return CASES[name]
+
+
+def verify_case_window(events, observed, retry_allowed, native_reads, upstream_read, *, observer_sha256):
+    """One dashboard window's observation and wire trace, online and offline alike.
+
+    Raises ``RetryableObservation`` only when the caller allows a rerun, every
+    other check passed and the only remaining events are repairs delayed saves.
+    """
+    from alarmo_inspection_contract_acceptance import RetryableObservation
+    require(observed["overflow"] is False and observed["expired"] is False, "observer bound failed")
+    require(observed["core_version"] == "2026.9.4" and all(observed["coverage"].values()), "observer unavailable")
+    require(observed["observer_sha256"] == observer_sha256, "observer identity drift")
+    require(observed["baseline_store_hashes"] == observed["final_store_hashes"], "persisted fixture drift")
+    commands, retryable = window_commands(observed["events"], retry_allowed=retry_allowed)
+    require(commands == (["lovelace/config"] if upstream_read else []) +
+            (["config/entity_registry/list"] if native_reads else []), "unexpected Core dispatch or retry")
+    if upstream_read:
+        from ha_mcp_engineering.clients.mcp import MAX_TOOL_CATALOG_PAGES
+        counts = Counter(events["mcp"])
+        require(counts["tools/call"] == counts["initialize"] == counts["notifications/initialized"] == 1,
+                "upstream dispatch or initialization count mismatch")
+        require(1 <= counts["tools/list"] <= MAX_TOOL_CATALOG_PAGES and counts["session_cleanup"] <= 1
+                and set(counts) <= {"tools/call", "initialize", "notifications/initialized", "tools/list", "session_cleanup"},
+                "unexpected upstream protocol dispatch")
+    else: require(not events["mcp"], "unexpected upstream I/O")
+    require(events["native_http"] == (["GET /api/states", "GET /api/websocket"] if native_reads else []), "native HTTP mismatch")
+    require(events["native_ws"] == (["auth", "config/entity_registry/list"] if native_reads else []), "native WS mismatch")
+    if retryable:
+        raise RetryableObservation("Dashboard window must be rerun once",
+            {"condition": "retryable_delayed_save", "retryable_event_count": retryable})
+
+
+def load_retained(path, sha256):
+    require(type(sha256) is str and path.is_file(), "retained window missing")
+    data = path.read_bytes()
+    require(digest(data) == sha256, "retained window altered")
+    return json.loads(data)
+
+
+def verify_retained_windows(out, observer_sha256):
+    """Replay every case's retained windows offline before acceptance (HAMCP-219 review 2).
+
+    Each case's kept observation and wire must be present, match the digests
+    its receipt recorded from the in-memory windows, and verify strictly. A
+    declared discarded window must be present and intact and must refuse only
+    with its recorded repairs delayed-save diagnostic, through the alarmo
+    lane's shared ``verify_discarded``; an undeclared one refuses. Every window
+    has its own observer interval. Returns the discarded case names, sorted.
+    """
+    from alarmo_inspection_contract_acceptance import ObservationError, verify_discarded
+    out = Path(out)
+    receipts = json.loads((out / "case-receipts.json").read_bytes())
+    require(type(receipts) is list and all(type(receipt) is dict for receipt in receipts), "case receipts malformed")
+    names = [receipt.get("case") for receipt in receipts]
+    middle = names[1:-5]
+    require(names[:1] == ["mixed"] and names[-5:] == list(CASES)[1:] and 1 <= len(middle) <= MAX_CONTINUATIONS
+            and middle == ["continuation-" + str(page) for page in range(len(middle))], "case receipt sequence mismatch")
+    discarded, wires, identities = [], {}, set()
+    for receipt in receipts:
+        name = receipt["case"]
+        success, native_reads, upstream_read = case_expectation(name)
+        require(receipt["success"] is success, "case outcome mismatch")
+        observation = load_retained(out / (name + "-observation.json"), receipt["observation_sha256"])
+        wire = load_retained(out / (name + "-wire.json"), receipt["wire_sha256"])
+        require(wire == receipt["wire"], "case receipt wire mismatch")
+        verify_case_window(wire, observation, False, native_reads, upstream_read, observer_sha256=observer_sha256)
+        identities.add(observation["interval_id"])
+        paths = out / (name + "-discarded-observation.json"), out / (name + "-discarded-wire.json")
+        if receipt["discarded_window"] is None:
+            require(receipt["discarded_sha256"] is None and not any(path.exists() for path in paths),
+                    "undeclared discarded window")
+            continue
+        hashes = receipt["discarded_sha256"]
+        require(type(hashes) is dict and set(hashes) == {"observation_sha256", "wire_sha256"},
+                "discarded window digests missing")
+        old = load_retained(paths[0], hashes["observation_sha256"])
+        wires[name] = load_retained(paths[1], hashes["wire_sha256"])
+        identities.add(old["interval_id"])
+        discarded.append({"window": name, "observation": old, "diagnostic": receipt["discarded_window"]})
+    require(len(identities) == len(receipts) + len(discarded) and all(type(x) is str for x in identities),
+            "observer interval reused")
+    retained = {path.name for path in out.iterdir() if path.name.endswith(("-observation.json", "-wire.json"))}
+    require(retained == {name + suffix for name in names for suffix in ("-observation.json", "-wire.json")}
+            | {item["window"] + suffix for item in discarded
+               for suffix in ("-discarded-observation.json", "-discarded-wire.json")}, "unreceipted retained window")
+
+    def replay(window, observation, retry_allowed):
+        _success, native_reads, upstream_read = case_expectation(window)
+        try:
+            verify_case_window(wires[window], observation, retry_allowed, native_reads, upstream_read,
+                               observer_sha256=observer_sha256)
+        except RuntimeError:
+            raise ObservationError("Discarded dashboard window refused", {"condition": "window_refused"}) from None
+    return verify_discarded(discarded, replay, set(names))
 
 
 def verify_mixed_projection(header, items):
@@ -312,9 +461,8 @@ async def scenario(lane, core_url):
     import aiohttp
     import real_ha_contract_tests as helper
     from core_registry_contract_lane import configure_with_test_authority
-    from alarmo_inspection_contract_acceptance import wait_disposable_setup
+    from alarmo_inspection_contract_acceptance import wait_disposable_setup, observe_retry_once_clean
     from ha_mcp_engineering.clients import HomeAssistantWebSocketClient
-    from ha_mcp_engineering.clients.mcp import MAX_TOOL_CATALOG_PAGES
     from ha_mcp_engineering.configuration import Settings
     from ha_mcp_engineering.ha_core_readmission import CoreRuntime
     from ha_mcp_engineering.providers.upstream_dashboard import UpstreamDashboardProvider
@@ -371,7 +519,9 @@ async def scenario(lane, core_url):
         async with asyncio.timeout(210): await wait_disposable_setup(ObserverSetup(), store_classes=False)
         receipts = []
 
-        async def call(name, arguments, expected, native_reads=0, upstream_read=0):
+        discarded = []
+
+        async def run_case(name, arguments, expected, native_reads, upstream_read):
             interval = (await ws.command({"type": OBSERVER + "/start", "kind": "inspection"}))["interval_id"]
             events = {"path": arguments.get("url_path", PATH), "mcp": [], "native_http": [], "native_ws": []}
             telemetry, context = begin_request(); telemetry.caller_id = "disposable-dashboard-owner"
@@ -395,42 +545,46 @@ async def scenario(lane, core_url):
                 observed = await ws.command({"type": OBSERVER + "/finish", "interval_id": interval})
                 save(lane.out / (name + "-observation.json"), observed)
                 save(lane.out / (name + "-wire.json"), events)
-            require(observed["overflow"] is False and observed["expired"] is False, "observer bound failed")
-            require(observed["core_version"] == "2026.9.4" and all(observed["coverage"].values()), "observer unavailable")
-            require(observed["observer_sha256"] == digest((lane.fixture / "__init__.py").read_bytes()), "observer identity drift")
-            require(observed["baseline_store_hashes"] == observed["final_store_hashes"], "persisted fixture drift")
-            commands = []
-            for event in observed["events"]:
-                if event["kind"] == "command": commands.append(event["command"])
-                else:
-                    require(event.get("origin") == "background" and event.get("store") in {"auth", "core.restore_state"}
-                        and event["kind"] in {"storage_save", "storage_delay_save", "storage_write"}, "observed write/flow/service")
-            require(commands == (["lovelace/config"] if upstream_read else []) +
-                    (["config/entity_registry/list"] if native_reads else []), "unexpected Core dispatch or retry")
-            if upstream_read:
-                counts = Counter(events["mcp"])
-                require(counts["tools/call"] == counts["initialize"] == counts["notifications/initialized"] == 1,
-                        "upstream dispatch or initialization count mismatch")
-                require(1 <= counts["tools/list"] <= MAX_TOOL_CATALOG_PAGES and counts["session_cleanup"] <= 1
-                        and set(counts) <= {"tools/call", "initialize", "notifications/initialized", "tools/list", "session_cleanup"},
-                        "unexpected upstream protocol dispatch")
-            else: require(not events["mcp"], "unexpected upstream I/O")
-            require(events["native_http"] == (["GET /api/states", "GET /api/websocket"] if native_reads else []), "native HTTP mismatch")
-            require(events["native_ws"] == (["auth", "config/entity_registry/list"] if native_reads else []), "native WS mismatch")
+            return (value, raw, events), observed
+
+        def verify_case(outcome, observed, retry_allowed, native_reads, upstream_read):
+            verify_case_window(outcome[2], observed, retry_allowed, native_reads, upstream_read,
+                               observer_sha256=digest((lane.fixture / "__init__.py").read_bytes()))
+
+        async def call(name, arguments, expected, native_reads=0, upstream_read=0):
+            # HAMCP-219 review 1: rerun once only for a repairs delayed save;
+            # the discarded window's observation and wire stay beside the rerun's.
+            # Review 2: the receipt binds every retained window's digest, taken
+            # from the window in memory, for the offline replay.
+            windows = {}
+            def discard(item):
+                wire = lane.out / (name + "-wire.json")
+                windows["discarded"] = {"observation_sha256": digest(serialized(item["observation"])),
+                                        "wire_sha256": digest(wire.read_bytes())}
+                save(lane.out / (name + "-discarded-observation.json"), item["observation"])
+                wire.replace(lane.out / (name + "-discarded-wire.json"))
+                discarded.append(name)
+            (value, raw, events), observed, _, discard_item = await observe_retry_once_clean(
+                lambda: run_case(name, arguments, expected, native_reads, upstream_read),
+                lambda outcome, observed, retry: verify_case(outcome, observed, retry, native_reads, upstream_read),
+                on_discard=discard)
             receipts.append({"case": name, "success": value["success"], "wire": events,
                 "timing": value["timing"], "response_sha256": digest(raw.encode()), "bytes": len(raw.encode()),
-                "refusal_reason": value.get("details", {}).get("reason")})
+                "refusal_reason": value.get("details", {}).get("reason"),
+                "observation_sha256": digest(serialized(observed)), "wire_sha256": digest(serialized(events)),
+                "discarded_window": None if discard_item is None else discard_item["diagnostic"],
+                "discarded_sha256": windows.get("discarded")})
             save(lane.out / "case-receipts.json", receipts)
             return value
 
-        first = await call("mixed", {"url_path": PATH, "limit": 1}, True, 2, 1)
+        first = await call("mixed", {"url_path": PATH, "limit": 1}, *case_expectation("mixed"))
         data = first["data"]; frozen = data["report_digest"]; first_cursor = data["pagination"]["next_cursor"]
         require(first_cursor, "fixture did not paginate")
         items = list(data["items"]); header = data["header"]
-        for page in range(20):
+        for page in range(MAX_CONTINUATIONS):
             if not data["pagination"]["next_cursor"]: break
             value = await call("continuation-" + str(page), {"url_path": PATH, "limit": 100,
-                "cursor": data["pagination"]["next_cursor"]}, True)
+                "cursor": data["pagination"]["next_cursor"]}, *case_expectation("continuation-" + str(page)))
             data = value["data"]
             require(data["header"] == header and data["report_digest"] == frozen, "frozen projection drift")
             items.extend(data["items"])
@@ -442,16 +596,17 @@ async def scenario(lane, core_url):
         save(lane.out / "projection.json", {"header": header, "items": items, "report_digest": frozen})
         verify_mixed_projection(header, items)
         size = len(service.snapshots)
-        await call("invalid", {"url_path": PATH, "limit": 0}, False)
-        await call("invalid-cursor", {"url_path": PATH, "cursor": "invalid"}, False)
-        refused = await call("provider-refusal", {"url_path": EMPTY_PATH}, False, 0, 1)
+        await call("invalid", {"url_path": PATH, "limit": 0}, *case_expectation("invalid"))
+        await call("invalid-cursor", {"url_path": PATH, "cursor": "invalid"}, *case_expectation("invalid-cursor"))
+        refused = await call("provider-refusal", {"url_path": EMPTY_PATH}, *case_expectation("provider-refusal"))
         require(refused.get("details", {}).get("reason") == "source_rejected", "expected provider refusal absent")
         require(len(service.snapshots) == size, "refused collection retained snapshot")
         monitor = core._connection_monitor_task
         core.request_reconciliation(connection_changed=True)
         if monitor: await asyncio.wait_for(asyncio.gather(monitor, return_exceptions=True), 10)
-        await call("retired-new", {"url_path": PATH}, False)
-        await call("retired-continuation", {"url_path": PATH, "cursor": first_cursor}, False)
+        await call("retired-new", {"url_path": PATH}, *case_expectation("retired-new"))
+        await call("retired-continuation", {"url_path": PATH, "cursor": first_cursor},
+                   *case_expectation("retired-continuation"))
         after = await ws.command({"type": "lovelace/config", "url_path": PATH, "force": True})
         require(after == before, "dashboard mutated")
         states = await ws.command({"type": "get_states"})
@@ -459,8 +614,12 @@ async def scenario(lane, core_url):
                              if x["entity_id"] in {"light.hamcp_contract_light", "switch.hamcp_contract_switch"}}
         require(observed_controls == {"light.hamcp_contract_light": 0, "switch.hamcp_contract_switch": 0},
                 "control executed or fixture entity missing")
+        # HAMCP-219 review 2: the retained windows, replayed offline, decide acceptance.
+        replayed = verify_retained_windows(lane.out, digest((lane.fixture / "__init__.py").read_bytes()))
+        require(replayed == sorted(discarded), "discarded window declaration mismatch")
         save(lane.out / "acceptance.json", {"status": "PASS", "candidate_sha": lane.head,
             "images": IMAGE_IDS, "cases": len(receipts), "fixture_config_sha256": digest(canonical(before)),
+            "discarded_windows": replayed, "retained_windows_replayed": len(receipts) + len(replayed),
             "config_unchanged": True, "controls_executed": 0, "snapshot_after_refusal_unchanged": True,
             "scope": "assembled disposable in-process public analyzer; not installed HTTP gateway or rendered frontend"})
     finally:

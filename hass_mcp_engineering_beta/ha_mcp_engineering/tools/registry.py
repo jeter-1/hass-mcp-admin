@@ -178,13 +178,15 @@ from .dashboard import registered_analysis_tool
 from .backup_inventory import registered_tool as backup_inventory_tool
 from .recorder_settings import registered_tool as recorder_settings_tool
 from .entity_reconciliation import registered_tool as entity_reconciliation_tool
+from .configuration_definitions import registered_tool as configuration_definitions_tool
 
 _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integration_inspection_tool(),
                     "capture_automation_baseline": baseline_capture_tool(),
                     "dashboard_integrity_analysis": registered_analysis_tool(),
                     "get_backup_inventory": backup_inventory_tool(),
                     "get_recorder_settings": recorder_settings_tool(),
-                    "get_unregistered_entities": entity_reconciliation_tool()})
+                    "get_unregistered_entities": entity_reconciliation_tool(),
+                    "get_configuration_definitions": configuration_definitions_tool()})
 
 
 # Freeze the exact local catalog before any admitted upstream reads are added.

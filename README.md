@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.33** ships governed label create, edit and entity
+Engineering **2.4.1-beta.34** ships governed label create, edit and entity
 assignment **inactive** (HAMCP-165). The new tool `create_label_plan` proposes
 1-8 ordered label operations: create or edit a label's name, colour, icon and
 description, optionally assigning it to exact registered entities through the
@@ -11,7 +11,26 @@ not reference. Every call is therefore refused with
 stored and nothing dispatched. The release also makes the two dormant
 HAMCP-069B profiles name every read their gateway sends (new fingerprints). It
 activates nothing new; it switches on with the sequence-13 signing. Static
-tools 66, advertised catalog 94 (95 with the optional YAML reader). Read the
+tools 67, advertised catalog 95 (96 with the optional YAML reader). Read the
+[2.4.1-beta.34 release notes](docs/V2_4_1_BETA34_RELEASE_NOTES.md) and
+[2.4.1-beta.34 acceptance contract](docs/V2_4_1_BETA34_ACCEPTANCE.md).
+
+It builds on beta.33 below.
+
+Engineering **2.4.1-beta.33** adds the read-only `get_configuration_definitions`
+tool (HAMCP-132 slice 2). For YAML-defined template, SQL and helper entities
+(template, sql, filter, derivative, statistics, group, integration, min_max,
+history_stats, threshold, trend, utility_meter) it reports:
+- how each is defined in `configuration.yaml`, as an allowlisted projection;
+- how the definition was matched to the entity: exact unique ID, a heuristic
+  with a stated confidence, ambiguous, or not found;
+- why an entity is unavailable, from Core's read-only signals.
+
+It never returns the SQL `db_url`, a credential or a `!secret` name. It
+discloses `!include` and packages without following them, and lists UI-created
+entries as not readable without a flow. The `ha_mcp_tools` component is not
+used. Static tools 66, advertised catalog 94 (95 with the optional YAML
+reader). Read the
 [2.4.1-beta.33 release notes](docs/V2_4_1_BETA33_RELEASE_NOTES.md) and
 [2.4.1-beta.33 acceptance contract](docs/V2_4_1_BETA33_ACCEPTANCE.md).
 
@@ -447,11 +466,14 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**66 static tools plus 28 delegated reads, 94 total** (95 with the optional
-reviewed YAML reader admitted; the 65th and 66th static tools are HAMCP-069B's
+**67 static tools plus 28 delegated reads, 95 total** (96 with the optional
+reviewed YAML reader admitted; the seven newest static tools are HAMCP-132's
+read-only `get_recorder_settings`, `get_unregistered_entities` and
+`get_configuration_definitions`, HAMCP-131's read-only `get_incident_logs`
+and `get_history_slices`, HAMCP-069B's
 `create_entity_availability_exposure_plan` and HAMCP-165's
-`create_label_plan`, refused until a signed registry admits their profiles).
-The Core inventory represents
+`create_label_plan`, the last two refused until a signed registry admits
+their profiles). The Core inventory represents
 **25 capability profiles** (four dormant, unselected by any signed entry: the
 earlier one, HAMCP-069B's two and HAMCP-165's label profile). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.

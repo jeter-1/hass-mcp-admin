@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 from mcp.server.fastmcp import FastMCP
@@ -249,16 +250,44 @@ class ScriptCollectionTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     active.remove(entity)
             reader.read = slow
-            with patch.object(scripts, "SCRIPT_SCAN_SECONDS", 0.03):
+            # Keep the production scan budget. The module clock is frozen so
+            # the elapsed-time checks cannot expire on a loaded host; the real
+            # scan deadline is captured and expired only once a worker is
+            # inside its read.
+            deadlines = []
+            real_asyncio = asyncio
+
+            class DeadlineRecorder:
+                def __getattr__(self, name):
+                    return getattr(real_asyncio, name)
+
+                def timeout(self, delay):
+                    deadline = real_asyncio.timeout(delay)
+                    deadlines.append((delay, deadline))
+                    return deadline
+
+            frozen_clock = SimpleNamespace(monotonic=lambda: 0.0)
+            with patch.object(scripts, "asyncio", DeadlineRecorder()), \
+                    patch.object(scripts, "time", frozen_clock):
                 task = asyncio.create_task(collect(reader))
-                await started.wait()
-                if cancel:
-                    task.cancel()
-                    with self.assertRaises(asyncio.CancelledError):
-                        await task
-                else:
-                    result = await task
-                    self.assertIn("script_scan_timeout: 1", result.coverage.warnings)
+                try:
+                    async with asyncio.timeout(10):  # hang guard only
+                        await started.wait()
+                        self.assertEqual(
+                            [delay for delay, _ in deadlines], [scripts.SCRIPT_SCAN_SECONDS]
+                        )
+                        if cancel:
+                            task.cancel()
+                            with self.assertRaises(asyncio.CancelledError):
+                                await task
+                        else:
+                            deadlines[0][1].reschedule(asyncio.get_running_loop().time())
+                            result = await task
+                            self.assertIn("script_scan_timeout: 1", result.coverage.warnings)
+                finally:
+                    if not task.done():
+                        task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
             self.assertFalse(active)
 
     async def test_concurrency_is_capped_and_evidence_order_is_deterministic(self):
