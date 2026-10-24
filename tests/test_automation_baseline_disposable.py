@@ -64,7 +64,7 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
             'predecessor_admission':{'acquired':False,'ha_requests':0,'reason':'authority_unavailable'},
             'recreated_anchor_differs':True,'restored_anchor_preserved':True,'baselines':[before,after],
             'baseline_sha256':[c.digest(before),c.digest(after)],
-            'comparison_counts':counts,'observations':observations}
+            'comparison_counts':counts,'observations':observations,'discarded_observations':[]}
 
     def tearDown(self):
         end_request(self.token)
@@ -95,6 +95,60 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
             value=copy.deepcopy(self.value);mutate(value)
             with self.assertRaises((AssertionError, ValueError, KeyError)):
                 lane.verify_result(value, core_version=CORE, support_slot=CORE_SLOT)
+
+    def delayed_repairs_save(self, observation):
+        observation['events'].append({'kind':'storage_delay_save','origin':'background','store':alarmo.RETRY_STORE})
+        return observation
+
+    def discarded_export(self, index):
+        observation = self.delayed_repairs_save(copy.deepcopy(self.value['observations'][index-1]))
+        with self.assertRaises(alarmo.RetryableObservation) as found:
+            lane.verify_export(observation, index, core_version=CORE, retry_allowed=True)
+        return {'window':'baseline_export_'+str(index),'observation':observation,'diagnostic':found.exception.diagnostic}
+
+    async def test_discarded_export_windows_are_retained_and_reverified(self):
+        # HAMCP-219 review 1: one discarded window per export, re-verified offline.
+        self.assertEqual(lane.verify_result(self.value, core_version=CORE, support_slot=CORE_SLOT)['discarded_windows'], [])
+        self.value['discarded_observations'] = [self.discarded_export(1), self.discarded_export(2)]
+        result = lane.verify_result(self.value, core_version=CORE, support_slot=CORE_SLOT)
+        self.assertEqual(result['discarded_windows'], ['baseline_export_1', 'baseline_export_2'])
+        self.assertNotIn('tolerated_background_stores', result)
+        for name, mutate in (
+                ('missing', lambda v: v.pop('discarded_observations')),
+                ('duplicate', lambda v: v['discarded_observations'].append(copy.deepcopy(v['discarded_observations'][0]))),
+                ('unknown_window', lambda v: v['discarded_observations'][0].update(window='inspection')),
+                ('clean', lambda v: v['discarded_observations'][0]['observation']['events'].pop()),
+                ('immediate_write', lambda v: v['discarded_observations'][0]['observation']['events'][-1].update(kind='storage_write')),
+                ('diagnostic', lambda v: v['discarded_observations'][0]['diagnostic'].update(window_index=2))):
+            value = copy.deepcopy(self.value); mutate(value)
+            with self.subTest(mutation=name), self.assertRaises((ValueError, KeyError, alarmo.ObservationError)):
+                lane.verify_result(value, core_version=CORE, support_slot=CORE_SLOT)
+
+    async def test_retained_export_observation_is_verified_strictly(self):
+        # A rerun that still carries a repairs save is never accepted as the kept window.
+        for index in range(2):
+            value = copy.deepcopy(self.value)
+            self.delayed_repairs_save(value['observations'][index])
+            with self.subTest(window=index+1), self.assertRaises(alarmo.ObservationError) as found:
+                lane.verify_result(value, core_version=CORE, support_slot=CORE_SLOT)
+            self.assertNotIsInstance(found.exception, alarmo.RetryableObservation)
+            self.assertEqual(found.exception.diagnostic['condition'], 'untolerated_store')
+
+    async def test_export_screen_reruns_only_a_retryable_window(self):
+        clean = self.value['observations'][0]
+        dirty = self.delayed_repairs_save(copy.deepcopy(clean))
+        for name, windows, runs in (('clean', [clean], 1), ('retry_then_clean', [dirty, clean], 2),
+                                    ('retry_then_dirty', [dirty, dirty], 2),
+                                    ('strict_failure', [{**clean, 'events': clean['events'][1:]}], 1)):
+            observed, discarded = [], []
+            async def run():
+                observed.append(windows[len(observed)])
+                return None, observed[-1]
+            result = await alarmo.observe_retry_once_clean(run, lambda _o, observation, retry: lane.screen_export(
+                observation, 1, core_version=CORE, retry_allowed=retry), on_discard=discarded.append)
+            with self.subTest(case=name):
+                # The screen never accepts: the kept window is refused or passed only by verify_result.
+                self.assertEqual((len(observed), len(discarded), result[1]), (runs, runs - 1, observed[-1]))
 
     async def test_failed_control_window_names_its_index_and_condition(self):
         # HAMCP-180: publish run 434's signature in the second baseline window.
@@ -391,8 +445,12 @@ class FixtureTests(unittest.TestCase):
 
     def test_existing_alarmo_predecessor_stays_nineteen_plus_one(self):
         from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
-        # HAMCP-069A: the dormant entity metadata profile is outside both lanes.
+        # HAMCP-069A/069B/155/165: the dormant entity, delete and label profiles are outside both lanes.
         refs=[p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES
-              if p.capability_id not in {c.CAPABILITY,'core.entity_registry_metadata_operation'}]
+              if p.capability_id not in {c.CAPABILITY,'core.entity_registry_metadata_operation',
+                                         'core.entity_registry_availability_operation',
+                                         'core.entity_assistant_exposure_operation',
+                                         'core.configuration_delete_operation',
+                                         'core.label_registry_operation'}]
         self.assertEqual(len(refs),20)
         self.assertEqual(len([r for r in refs if r!='core.integration_inspection_metadata_read']),19)

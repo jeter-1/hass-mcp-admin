@@ -17,7 +17,10 @@ from .historical_policy import (
 )
 from .operational_lifecycle import OperationalLifecycleGateway
 from .resources import ConfigurationResourceGateway
-from .entity_metadata_disclosure import runtime_consumer_evidence
+from .entity_metadata_disclosure import (
+    read_runtime_dependency_snapshot,
+    runtime_consumer_evidence,
+)
 from .operational import BackupAdministrationGateway
 from .helper_state import (
     HELPER_STATE_PROVIDER,
@@ -149,6 +152,11 @@ class GovernanceRuntime:
             resource_gateway.entity_metadata_consumer_evidence = (
                 runtime_consumer_evidence()
             )
+            # HAMCP-069B: the same fenced dependency index backs the
+            # post-lock consumer recheck of a disable child.
+            resource_gateway.availability_exposure_snapshot_reader = (
+                read_runtime_dependency_snapshot
+            )
             helper_state_gateway = HelperStateGateway(
                 rest_client, websocket_client
             )
@@ -174,6 +182,15 @@ class GovernanceRuntime:
                 provider_identity_reader=provider_identity_reader,
                 approval_notifications=approval_notifications,
                 entity_metadata_gateway=resource_gateway.entity_metadata,
+                entity_availability_exposure_gateway=(
+                    resource_gateway.availability_exposure
+                ),
+                label_registry_gateway=resource_gateway.label_registry,
+                # HAMCP-155: planning refuses before this is read unless a
+                # signed registry admits core.configuration_delete_operation.
+                configuration_delete_gateway=(
+                    resource_gateway.configuration_delete
+                ),
             )
             from ..f3_runtime.runtime import F3RuntimeIntegration
 

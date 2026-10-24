@@ -43,7 +43,7 @@ class CoreAuthorityTests(unittest.IsolatedAsyncioTestCase):
             source = Source(registry, "2026.9.3", typed_operations=True)
             runtime = CoreRuntime()
             runtime.configure(SimpleNamespace(), source=source, release_registry=registry)
-            await runtime.reconcile_once("synthetic-inspector")
+            await runtime.reconcile_once("startup")
             authority = runtime.acquire(c.CORE_REQUIREMENTS)
             self.assertEqual(authority is not None, admitted)
             commits = runtime.consume(authority) if authority else None
@@ -133,7 +133,7 @@ class CoreAuthorityTests(unittest.IsolatedAsyncioTestCase):
         retained = json.loads((FIXTURES / "core_metadata_applicability.json").read_text())
         self.assertEqual([p.to_mapping() for p in CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES], retained["old_core_profiles"])
         self.assertEqual(CHILD_DEVICE_PROBE_PROFILE.contract_fingerprint, retained["old_probe_fingerprint"])
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 22)
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 26)  # HAMCP-165 label + HAMCP-155 delete: +2 runtime-only profiles
         self.assertNotIn(c.CORE_CAPABILITY, {name for s in compiled_exact_authority("2026.9.1") for name in s.capability_ids})
         profile = CORE_INTEGRATION_INSPECTION_PROFILES[0]
         self.assertTrue(profile.capability_class.semantic)

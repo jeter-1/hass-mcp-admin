@@ -11,6 +11,14 @@ from ..errors import ErrorCode, GovernanceError
 from ..request_context import current_telemetry
 
 from ..governance import GOVERNANCE
+from ..governance.label_registry import (
+    COLOR_HEX_PATTERN,
+    LABEL_ID_PATTERN,
+    MAX_DESCRIPTION_LENGTH,
+    NAME_PATTERN,
+    THEME_COLORS,
+)
+from ..governance.label_registry_planning import MAX_CHILDREN as LABEL_MAX_CHILDREN
 from ..sanitization import sanitize_untrusted_data
 from ..tool_framework import run_structured
 from .compatibility import SETTINGS
@@ -73,6 +81,12 @@ IDENTIFIER_INPUTS: dict[str, tuple[str, ...]] = {
         "add_labels",
         "remove_labels",
         "categories",
+    ),
+    "create_entity_availability_exposure_plan": ("entity_ids",),
+    "create_label_plan": ("operations[].label_id", "operations[].entity_ids"),
+    "create_configuration_delete_plan": (
+        "deletions[].resource_type",
+        "deletions[].target_id",
     ),
     "create_addon_restart_plan": ("addon_slug",),
     "create_home_assistant_restart_plan": (),
@@ -919,11 +933,383 @@ def registered_entity_metadata_tool():
     return tool
 
 
+#: The closed published input schema (HAMCP-069B).  One operation over 1-8
+#: exact entities; ``assistant`` is required for expose/unexpose and refused
+#: otherwise by the planner.  Alexa is not offered (OD-3).
+ENTITY_AVAILABILITY_EXPOSURE_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "title": "create_entity_availability_exposure_planArguments",
+    "additionalProperties": False,
+    "required": ["operation", "entity_ids"],
+    "properties": {
+        "operation": {
+            "type": "string",
+            "enum": ["disable", "enable", "expose", "unexpose"],
+        },
+        "entity_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": True,
+            "items": {
+                "type": "string",
+                "maxLength": MAX_ENTITY_ID_LENGTH,
+                "pattern": ENTITY_ID_PATTERN.pattern,
+            },
+        },
+        "assistant": {
+            "type": "string",
+            "enum": ["conversation", "cloud.google_assistant"],
+        },
+        "expiration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "default": 120,
+        },
+    },
+}
+
+
+async def _entity_availability_exposure_plan(arguments: Any) -> str:
+    return await run_structured(
+        "create_entity_availability_exposure_plan",
+        "Created one governed entity availability or exposure proposal "
+        "without dispatching it.",
+        _screened(
+            "create_entity_availability_exposure_plan",
+            arguments,
+            lambda: GOVERNANCE.require().create_entity_availability_exposure_plan(
+                arguments
+            ),
+        ),
+        metadata={
+            "resource_types": [
+                "entity_registry_availability",
+                "entity_assistant_exposure",
+            ],
+            "provider": "direct_home_assistant_entity_registry",
+            "fallback": "none",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_entity_availability_exposure_plan(
+    operation: str,
+    entity_ids: list[str],
+    assistant: str | None = None,
+    expiration_minutes: int = 120,
+) -> str:
+    """Propose governed entity enable/disable or assistant exposure, no dispatch.
+
+    operation is disable, enable, expose or unexpose over 1-8 exact
+    registered entity_ids. expose/unexpose require assistant (conversation
+    for Assist, or cloud.google_assistant); Alexa is refused. An enable plan
+    covers one config entry. Devices, config entries, Core-internal disables
+    and already-applied states are refused before any plan is stored.
+    Protected entities need the elevated acknowledgement. External
+    administrator approval and apply_change_plan are required; children run
+    in order, non-atomically, stopping on the first failure. Until a signed
+    registry admits these capabilities the tool refuses with
+    pending_signed_registry_admission.
+    """
+    return await _entity_availability_exposure_plan(
+        {
+            "operation": operation,
+            "entity_ids": entity_ids,
+            **({"assistant": assistant} if assistant is not None else {}),
+            "expiration_minutes": expiration_minutes,
+        }
+    )
+
+
+class EntityAvailabilityExposurePlanTool(Tool):
+    """Pass the exact raw argument object to the closed planner validation."""
+
+    async def run(self, arguments, context=None, convert_result=False):
+        rendered = await _entity_availability_exposure_plan(arguments)
+        return (
+            self.fn_metadata.convert_result(rendered)
+            if convert_result
+            else rendered
+        )
+
+
+def registered_entity_availability_exposure_tool():
+    tool = EntityAvailabilityExposurePlanTool.from_function(
+        create_entity_availability_exposure_plan,
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    tool.parameters = ENTITY_AVAILABILITY_EXPOSURE_INPUT_SCHEMA
+    return tool
+
+
+#: The closed published input schema (HAMCP-165).  1-8 ordered label
+#: operations; create needs ``name`` and update needs ``label_id`` plus at
+#: least one field.  The planner's closed validator is authoritative.
+LABEL_PLAN_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "title": "create_label_planArguments",
+    "additionalProperties": False,
+    "required": ["operations"],
+    "properties": {
+        "operations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": LABEL_MAX_CHILDREN,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["operation"],
+                "properties": {
+                    "operation": {"type": "string", "enum": ["create", "update"]},
+                    "label_id": {
+                        "type": "string",
+                        "pattern": LABEL_ID_PATTERN.pattern,
+                    },
+                    "name": {"type": "string", "pattern": NAME_PATTERN.pattern},
+                    "color": {
+                        "anyOf": [
+                            {"type": "string", "enum": list(THEME_COLORS)},
+                            {"type": "string", "pattern": COLOR_HEX_PATTERN.pattern},
+                            {"type": "null"},
+                        ]
+                    },
+                    "icon": {
+                        "anyOf": [
+                            {"type": "string", "pattern": "^[a-z0-9-]+:[a-z0-9-]+$"},
+                            {"type": "null"},
+                        ]
+                    },
+                    "description": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": MAX_DESCRIPTION_LENGTH,
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "entity_ids": {
+                        "type": "array",
+                        "maxItems": LABEL_MAX_CHILDREN,
+                        "uniqueItems": True,
+                        "items": {
+                            "type": "string",
+                            "maxLength": MAX_ENTITY_ID_LENGTH,
+                            "pattern": ENTITY_ID_PATTERN.pattern,
+                        },
+                    },
+                },
+            },
+        },
+        "expiration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "default": 120,
+        },
+    },
+}
+
+
+async def _label_plan(arguments: Any) -> str:
+    return await run_structured(
+        "create_label_plan",
+        "Created one governed label proposal without dispatching it.",
+        _screened(
+            "create_label_plan",
+            arguments,
+            lambda: GOVERNANCE.require().create_label_plan(arguments),
+        ),
+        metadata={
+            "resource_types": ["label_registry_entry", "entity_registry_metadata"],
+            "provider": "direct_home_assistant_label_registry",
+            "fallback": "none",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_label_plan(
+    operations: list[dict[str, Any]],
+    expiration_minutes: int = 120,
+) -> str:
+    """Propose governed label create/edit and entity assignment, no dispatch.
+
+    operations is 1-8 ordered items: create {name, color?, icon?,
+    description?, entity_ids?} or update {label_id, name?, color?, icon?,
+    description?, entity_ids?}. color is a Home Assistant theme colour,
+    #RRGGBB or null; icon is prefix:name or null. entity_ids assigns the
+    label to registered entities after it exists. Duplicate names, unknown
+    labels and no-op edits are refused before any plan is stored; labels are
+    never deleted. External administrator approval and apply_change_plan are
+    required; children run in order, non-atomically, stopping on the first
+    failure; rollback is not available. Until a signed registry admits this
+    capability the tool refuses with pending_signed_registry_admission.
+    """
+    return await _label_plan(
+        {"operations": operations, "expiration_minutes": expiration_minutes}
+    )
+
+
+class LabelPlanTool(Tool):
+    """Pass the exact raw argument object to the closed planner validation."""
+
+    async def run(self, arguments, context=None, convert_result=False):
+        rendered = await _label_plan(arguments)
+        return (
+            self.fn_metadata.convert_result(rendered)
+            if convert_result
+            else rendered
+        )
+
+
+def registered_label_plan_tool():
+    tool = LabelPlanTool.from_function(
+        create_label_plan,
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    tool.parameters = LABEL_PLAN_INPUT_SCHEMA
+    return tool
+
+
+#: The closed published input schema (HAMCP-155).  1-8 exact automation or
+#: script configuration deletions; the planner enforces the exact identifier
+#: rules per resource type, duplicates and the reason bound.
+CONFIGURATION_DELETE_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "title": "create_configuration_delete_planArguments",
+    "additionalProperties": False,
+    "required": ["deletions", "reason"],
+    "properties": {
+        "deletions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["resource_type", "target_id"],
+                "properties": {
+                    "resource_type": {
+                        "type": "string",
+                        "enum": ["automation", "script"],
+                    },
+                    "target_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_-]+$",
+                    },
+                },
+            },
+        },
+        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+        "expiration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "default": 120,
+        },
+    },
+}
+
+
+async def _configuration_delete_plan(arguments: Any) -> str:
+    return await run_structured(
+        "create_configuration_delete_plan",
+        "Created one governed automation or script deletion proposal "
+        "without dispatching it.",
+        _screened(
+            "create_configuration_delete_plan",
+            arguments,
+            lambda: GOVERNANCE.require().create_configuration_delete_plan(
+                arguments
+            ),
+        ),
+        metadata={
+            "resource_types": ["automation", "script"],
+            "provider": "direct_home_assistant_configuration",
+            "fallback": "none",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_configuration_delete_plan(
+    deletions: list[dict[str, str]],
+    reason: str,
+    expiration_minutes: int = 120,
+) -> str:
+    """Propose governed deletion of 1-8 automations or scripts, no dispatch.
+
+    deletions lists {resource_type: automation|script, target_id}. Each
+    target must exist with a registry entry; its exact configuration is
+    captured as the rollback pre-image. Consumers found by the dependency
+    reader and the evidence that could not be checked are disclosed;
+    deleting a protected effect or with incomplete evidence needs the
+    elevated acknowledgement. External administrator approval and
+    apply_change_plan are required; children run in order, non-atomically,
+    stopping on the first failure, and rollback_change recreates a verified
+    deletion from its pre-image. Until a signed registry admits this
+    capability the tool refuses with pending_signed_registry_admission.
+    """
+    return await _configuration_delete_plan(
+        {
+            "deletions": deletions,
+            "reason": reason,
+            "expiration_minutes": expiration_minutes,
+        }
+    )
+
+
+class ConfigurationDeletePlanTool(Tool):
+    """Pass the exact raw argument object to the closed planner validation."""
+
+    async def run(self, arguments, context=None, convert_result=False):
+        rendered = await _configuration_delete_plan(arguments)
+        return (
+            self.fn_metadata.convert_result(rendered)
+            if convert_result
+            else rendered
+        )
+
+
+def registered_configuration_delete_tool():
+    tool = ConfigurationDeletePlanTool.from_function(
+        create_configuration_delete_plan,
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    tool.parameters = CONFIGURATION_DELETE_INPUT_SCHEMA
+    return tool
+
+
 GOVERNANCE_TOOLS = (
     create_backup_plan,
     create_reload_plan,
     create_helper_state_plan,
     create_entity_metadata_plan,
+    create_entity_availability_exposure_plan,
+    create_label_plan,
+    create_configuration_delete_plan,
     create_addon_restart_plan,
     create_home_assistant_restart_plan,
     create_change_plan,

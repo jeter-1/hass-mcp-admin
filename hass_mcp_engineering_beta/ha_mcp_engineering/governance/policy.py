@@ -20,12 +20,55 @@ from .normalize import stable_hash
 from .risk import SAFETY_CRITICAL_SERVICES
 from .configuration_eligibility import bound_proof, local_member_marked, markers
 from . import configuration_rollback_eligibility as inverse_eligibility
+from .physical_effects import (
+    MAX_ACKNOWLEDGED_OBJECTS,
+    VERDICT_EQUIVALENT,
+    VERDICT_NONE,
+    compare_operation,
+    plan_acknowledgement_binding,
+)
 from .entity_metadata import ENTITY_METADATA_RESOURCE_TYPE
 from .entity_metadata_planning import POLICY_TRIGGER as ENTITY_METADATA_POLICY_TRIGGER
+from .entity_availability_exposure import (
+    BINDINGS_KEY as AVAILABILITY_EXPOSURE_BINDINGS_KEY,
+    RESOURCE_TYPES as AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
+    exposure_value,
+    proposed_errors as availability_exposure_proposed_errors,
+)
+from .entity_availability_exposure_planning import (
+    MAX_ENTITIES as AVAILABILITY_EXPOSURE_MAX_ENTITIES,
+    POLICY_TRIGGER as AVAILABILITY_EXPOSURE_POLICY_TRIGGER,
+)
+from .label_registry import (
+    BINDINGS_KEY as LABEL_BINDINGS_KEY,
+    LABEL_RESOURCE_TYPE,
+    proposed_errors as label_proposed_errors,
+)
+from .label_registry_planning import (
+    MAX_CHILDREN as LABEL_MAX_CHILDREN,
+    POLICY_TRIGGER as LABEL_POLICY_TRIGGER,
+)
+from .configuration_delete import (
+    ACTION as CONFIGURATION_DELETE_ACTION,
+    INTENT_KEY as CONFIGURATION_DELETE_INTENT_KEY,
+    RESOURCE_TYPES as CONFIGURATION_DELETE_RESOURCE_TYPES,
+    intent_errors as configuration_delete_intent_errors,
+)
+from .configuration_delete_planning import (
+    MAX_DELETIONS as CONFIGURATION_DELETE_MAX_TARGETS,
+    POLICY_TRIGGER as CONFIGURATION_DELETE_POLICY_TRIGGER,
+    expected_basis as configuration_delete_expected_basis,
+)
 
 
-POLICY_VERSION = "f2-v2"
-COMPATIBLE_POLICY_VERSIONS = frozenset({"f2-v1", POLICY_VERSION})
+POLICY_VERSION = "f2-v3"
+# f2-v3 (HAMCP-213) adds the protected physical-effect comparison and the
+# safety-critical owner acknowledgement. Exact f2-v1 and f2-v2 snapshots
+# remain recognizable review evidence; they never acquire f2-v3 authority.
+F2_V2_POLICY_VERSION = "f2-v2"
+COMPATIBLE_POLICY_VERSIONS = frozenset(
+    {"f2-v1", F2_V2_POLICY_VERSION, POLICY_VERSION}
+)
 
 _RISK_RANK = {
     RiskDelta.NONE: 0,
@@ -109,6 +152,7 @@ class OperationPolicyClassification:
     risk_delta: RiskDelta
     physical_consequence: PhysicalConsequence
     reason_codes: tuple[str, ...]
+    safety_critical_acknowledgement: bool = False
 
 
 def _risk_delta(level: RiskLevel) -> RiskDelta:
@@ -143,6 +187,8 @@ def _risk_services(operation: ConfigurationOperation) -> set[str]:
 
 def _exact_existing_automation_update(
     operation: ConfigurationOperation,
+    *,
+    include_scripts: bool = False,
 ) -> bool:
     """Recognize the first exact typed configuration-write authority.
 
@@ -154,7 +200,10 @@ def _exact_existing_automation_update(
     """
 
     return bool(
-        operation.resource_type == "automation"
+        (
+            operation.resource_type == "automation"
+            or (include_scripts and operation.resource_type == "script")
+        )
         and operation.action == "update"
         and isinstance(operation.current_config, dict)
         and isinstance(operation.proposed_config, dict)
@@ -169,6 +218,161 @@ def _exact_existing_automation_update(
         and operation.normalization_version >= 1
         and operation.validation_results.get("valid") is True
         and operation.risk.apply_allowed
+    )
+
+
+def _exact_configuration_delete(operation: ConfigurationOperation) -> bool:
+    """Recognize an exact governed delete of one automation or script (HAMCP-155).
+
+    Exact means: the captured pre-image is the bound current state, the
+    proposal is the closed delete intent naming that pre-image, and the
+    proposal hash binds the intent. The F3 delete adapter re-reads the
+    target, refuses drift, and proves absence by readback.
+    """
+
+    from .resources import resource_fingerprint
+
+    proposed = operation.proposed_config
+    if (
+        operation.resource_type not in CONFIGURATION_DELETE_RESOURCE_TYPES
+        or operation.action != CONFIGURATION_DELETE_ACTION
+        or operation.helper_type is not None
+        or not isinstance(operation.target_id, str)
+        or not operation.target_id
+        or not isinstance(operation.current_config, dict)
+        or not isinstance(operation.normalized_current_config, dict)
+        or configuration_delete_intent_errors(
+            operation.resource_type, operation.target_id, proposed
+        )
+        or operation.normalized_proposed_config != proposed
+    ):
+        return False
+    try:
+        pre_image = resource_fingerprint(
+            operation.resource_type, operation.current_config
+        )
+    except (TypeError, ValueError, OverflowError):
+        return False
+    intent = proposed[CONFIGURATION_DELETE_INTENT_KEY]
+    return bool(
+        operation.current_state_fingerprint == pre_image
+        and intent["pre_image_fingerprint"] == pre_image
+        and operation.proposed_config_hash == stable_hash(proposed)
+        and operation.normalization_version >= 1
+        and operation.validation_results.get("valid") is True
+        and operation.risk.apply_allowed
+    )
+
+
+def _exact_configuration_write(operation: ConfigurationOperation) -> bool:
+    """Recognize an exact automation or script update, create or delete (D3).
+
+    A create is exact when the identifier is new (no current configuration)
+    and the proposed configuration is validated, normalized, and hash bound;
+    the writer checks the identifier conflict and reads the result back.
+    A delete is exact only through :func:`_exact_configuration_delete`.
+    """
+
+    if _exact_existing_automation_update(operation, include_scripts=True):
+        return True
+    if _exact_configuration_delete(operation):
+        return True
+    return bool(
+        operation.resource_type in {"automation", "script"}
+        and operation.action == "create"
+        and operation.current_config is None
+        and operation.normalized_current_config is None
+        and isinstance(operation.proposed_config, dict)
+        and isinstance(operation.normalized_proposed_config, dict)
+        and isinstance(operation.target_id, str)
+        and bool(operation.target_id)
+        and isinstance(operation.current_state_fingerprint, str)
+        and len(operation.current_state_fingerprint) == 64
+        and isinstance(operation.proposed_config_hash, str)
+        and len(operation.proposed_config_hash) == 64
+        and operation.normalization_version >= 1
+        and operation.validation_results.get("valid") is True
+        and operation.risk.apply_allowed
+    )
+
+
+def _safety_critical_comparison_policy(
+    operation: ConfigurationOperation,
+    *,
+    triggers: set[str],
+    safety_critical_services: set[str],
+    risk_delta: RiskDelta,
+) -> OperationPolicyClassification | None:
+    """Map the D2 comparison to policy (HAMCP-213 D3); ``None`` = not protected.
+
+    The comparison selects only which owner decision is required. It never
+    removes the exact execution contract: an incomplete contract stays
+    prohibited.
+    """
+
+    if operation.resource_type not in {"automation", "script"}:
+        return None
+    comparison = compare_operation(operation)
+    risk_protected = bool(
+        triggers & _SAFETY_CRITICAL_TRIGGERS or safety_critical_services
+    )
+    if comparison.verdict == VERDICT_NONE:
+        if risk_protected:
+            # The two classifiers disagree about a protected object; the
+            # comparison cannot be trusted, so fail closed.
+            return OperationPolicyClassification(
+                ApprovalPolicyClass.PROHIBITED,
+                risk_delta,
+                PhysicalConsequence.SAFETY_CRITICAL,
+                (
+                    "safety_critical_effect_comparison_mismatch",
+                    "supported_configuration_change",
+                ),
+            )
+        return None
+    if not _exact_configuration_write(operation):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.PROHIBITED,
+            risk_delta,
+            PhysicalConsequence.SAFETY_CRITICAL,
+            (
+                "safety_critical_execution_contract_incomplete",
+                "supported_configuration_change",
+            ),
+        )
+    if not comparison.acknowledgement_required:
+        if comparison.verdict != VERDICT_EQUIVALENT:
+            # Every non-equivalent comparison names acknowledgement rows.
+            return OperationPolicyClassification(
+                ApprovalPolicyClass.PROHIBITED,
+                risk_delta,
+                PhysicalConsequence.SAFETY_CRITICAL,
+                ("safety_critical_effect_comparison_mismatch",),
+            )
+        # OD-5: an equivalent comparison keeps the elevated review page with
+        # plan approval only; its delta comes from the non-effect changes.
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            min(risk_delta, RiskDelta.MODERATE, key=lambda item: _RISK_RANK[item]),
+            PhysicalConsequence.SAFETY_CRITICAL,
+            (
+                "safety_critical_effect_equivalent",
+                "supported_configuration_change",
+            ),
+        )
+    reasons = {
+        "safety_critical_owner_acknowledgement_required",
+        "supported_configuration_change",
+        f"safety_critical_effect_{comparison.verdict}",
+    }
+    if safety_critical_services:
+        reasons.add("unlock_or_disarm_effect")
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.ELEVATED_ADMIN,
+        max(risk_delta, RiskDelta.HIGH, key=lambda item: _RISK_RANK[item]),
+        PhysicalConsequence.SAFETY_CRITICAL,
+        tuple(sorted(reasons)),
+        safety_critical_acknowledgement=True,
     )
 
 
@@ -461,14 +665,432 @@ def _entity_metadata_operation_policy(
     return incomplete
 
 
+AVAILABILITY_EXPOSURE_INCOMPLETE = (
+    "entity_availability_exposure_execution_contract_incomplete"
+)
+
+
+def _availability_exposure_expected_basis(
+    operation: ConfigurationOperation,
+) -> tuple[str, ...]:
+    """Recompute the OD-5 basis from the bound evidence, not the marker."""
+
+    bindings = operation.proposed_config[AVAILABILITY_EXPOSURE_BINDINGS_KEY]
+    kind = bindings["operation"]
+    protection = bindings["protection"]
+    basis: list[str] = []
+    if kind == "expose" and protection["object_reasons"]:
+        basis.append("expose_protected_object")
+    elif kind == "disable":
+        if protection["object_reasons"]:
+            basis.append("disable_protected_object")
+        if protection["dependency_reasons"]:
+            basis.append("disable_protected_dependency")
+    elif (
+        kind == "enable"
+        and protection["object_reasons"]
+        and any(
+            exposure_value(operation.current_config, assistant)["should_expose"]
+            is True
+            for assistant in (
+                "cloud.alexa", "cloud.google_assistant", "conversation",
+            )
+        )
+    ):
+        basis.append("enable_exposed_protected_object")
+    return tuple(basis)
+
+
+def _availability_exposure_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one entity enable/disable or exposure update (HAMCP-069B, OD-5).
+
+    The marker must agree exactly with the basis recomputed from the bound
+    protection evidence; any disagreement or gap is prohibited as incomplete.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (AVAILABILITY_EXPOSURE_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") == AVAILABILITY_EXPOSURE_POLICY_TRIGGER
+    ]
+    if (
+        operation.action != "update"
+        or operation.helper_type is not None
+        or not isinstance(operation.target_id, str)
+        or not operation.target_id
+        or not isinstance(operation.current_config, dict)
+        or not isinstance(operation.proposed_config, dict)
+        or availability_exposure_proposed_errors(
+            operation.resource_type, operation.target_id, operation.proposed_config
+        )
+        or not isinstance(operation.current_state_fingerprint, str)
+        or len(operation.current_state_fingerprint) != 64
+        or not isinstance(operation.proposed_config_hash, str)
+        or len(operation.proposed_config_hash) != 64
+        or operation.risk.apply_allowed is not True
+        or len(markers_found) != 1
+    ):
+        return incomplete
+    marker = markers_found[0]
+    basis = marker.get("basis")
+    if not isinstance(basis, str):
+        return incomplete
+    basis_codes = tuple(item for item in basis.split(",") if item)
+    if basis_codes != _availability_exposure_expected_basis(operation):
+        return incomplete
+    policy = marker.get("policy")
+    consequence = marker.get("physical_consequence")
+    if (
+        not basis_codes
+        and policy == "standard"
+        and consequence == PhysicalConsequence.NONE.value
+        and operation.risk.level is RiskLevel.LOW
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.STANDARD_ADMIN,
+            RiskDelta.LOW,
+            PhysicalConsequence.NONE,
+            (
+                "entity_availability_exposure_standard_policy",
+                "supported_configuration_change",
+            ),
+        )
+    if (
+        basis_codes
+        and policy == "elevated"
+        and consequence == PhysicalConsequence.SAFETY_CRITICAL.value
+        and operation.risk.level is RiskLevel.HIGH
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            RiskDelta.HIGH,
+            PhysicalConsequence.SAFETY_CRITICAL,
+            tuple(
+                sorted(
+                    {
+                        *basis_codes,
+                        "entity_availability_exposure_elevated_policy",
+                        "supported_configuration_change",
+                    }
+                )
+            ),
+        )
+    return incomplete
+
+
+def _availability_exposure_plan_complete(operations) -> bool:
+    """One 069B type, one operation and assistant, at most 8 children.
+
+    An enable plan also binds exactly one config entry (OD-7).
+    """
+
+    types = {op.resource_type for op in operations}
+    if len(types) != 1 or not types <= set(AVAILABILITY_EXPOSURE_RESOURCE_TYPES):
+        return False
+    if not 1 <= len(operations) <= AVAILABILITY_EXPOSURE_MAX_ENTITIES:
+        return False
+    bindings = []
+    for op in operations:
+        proposed = op.proposed_config
+        value = (
+            proposed.get(AVAILABILITY_EXPOSURE_BINDINGS_KEY)
+            if isinstance(proposed, dict)
+            else None
+        )
+        if not isinstance(value, dict):
+            return False
+        bindings.append(value)
+    if len({op.target_id for op in operations}) != len(operations):
+        return False
+    if len({(item.get("operation"), item.get("assistant")) for item in bindings}) != 1:
+        return False
+    if bindings[0].get("operation") == "enable":
+        entries = {
+            op.current_config.get("config_entry_id")
+            if isinstance(op.current_config, dict)
+            else ()
+            for op in operations
+        }
+        if len(entries) != 1:
+            return False
+    return True
+
+
+LABEL_REGISTRY_INCOMPLETE = "label_registry_execution_contract_incomplete"
+
+
+def _label_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one label create or edit (HAMCP-165 design §7).
+
+    A label is registry metadata with no device effect: a complete child is
+    always standard.  Any gap in the bound contract is prohibited.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (LABEL_REGISTRY_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict) and item.get("trigger") == LABEL_POLICY_TRIGGER
+    ]
+    if (
+        operation.action not in ("create", "update")
+        or operation.helper_type is not None
+        or label_proposed_errors(operation.target_id, operation.proposed_config)
+        or operation.proposed_config[LABEL_BINDINGS_KEY]["operation"]
+        != operation.action
+        or (operation.action == "create") != (operation.current_config is None)
+        or not isinstance(operation.current_state_fingerprint, str)
+        or len(operation.current_state_fingerprint) != 64
+        or not isinstance(operation.proposed_config_hash, str)
+        or len(operation.proposed_config_hash) != 64
+        or operation.risk.apply_allowed is not True
+        or operation.risk.level is not RiskLevel.LOW
+        or len(markers_found) != 1
+    ):
+        return incomplete
+    marker = markers_found[0]
+    if (
+        marker.get("policy") != "standard"
+        or marker.get("physical_consequence") != PhysicalConsequence.NONE.value
+        or marker.get("basis") != ""
+        or marker.get("operation") != operation.action
+    ):
+        return incomplete
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.STANDARD_ADMIN,
+        RiskDelta.LOW,
+        PhysicalConsequence.NONE,
+        ("label_registry_standard_policy", "supported_configuration_change"),
+    )
+
+
+def _label_plan_complete(operations) -> bool:
+    """Design §7: label children first, then entity assignment children.
+
+    At most 8 children; every target unique; each assignment depends only
+    on label children of this plan and adds no label it does not depend on.
+    """
+
+    if not 1 <= len(operations) <= LABEL_MAX_CHILDREN:
+        return False
+    kinds = [op.resource_type for op in operations]
+    if not set(kinds) <= {LABEL_RESOURCE_TYPE, ENTITY_METADATA_RESOURCE_TYPE}:
+        return False
+    labels = [op for op in operations if op.resource_type == LABEL_RESOURCE_TYPE]
+    if not labels or kinds != sorted(
+        kinds, key=lambda kind: kind != LABEL_RESOURCE_TYPE
+    ):
+        return False
+    label_targets = {op.operation_id: op.target_id for op in labels}
+    if len(set(label_targets.values())) != len(labels) or any(
+        op.depends_on for op in labels
+    ):
+        return False
+    entities = [op for op in operations if op.resource_type != LABEL_RESOURCE_TYPE]
+    if len({op.target_id for op in entities}) != len(entities):
+        return False
+    for op in entities:
+        if (
+            op.action != "update"
+            or not op.depends_on
+            or len(set(op.depends_on)) != len(op.depends_on)
+            or not set(op.depends_on) <= set(label_targets)
+            or not isinstance(op.current_config, dict)
+            or not isinstance(op.proposed_config, dict)
+        ):
+            return False
+        current = set(op.current_config.get("labels") or [])
+        final = set(op.proposed_config.get("labels") or [])
+        depended = {label_targets[item] for item in op.depends_on}
+        if not final - current or not final - current <= depended <= final:
+            return False
+    return True
+
+
+CONFIGURATION_DELETE_INCOMPLETE = "configuration_delete_contract_incomplete"
+
+
+def _configuration_delete_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one governed delete by the effects and dependents it removes.
+
+    The marker written at planning must agree exactly with the basis
+    recomputed here from the immutable plan: the protected-effect comparison
+    of the pre-image against absence, and the dependency reasons bound in
+    the hashed intent. A delete is never "no effect" because it is not a
+    create or update; any disagreement or gap is prohibited as incomplete.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (CONFIGURATION_DELETE_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") == CONFIGURATION_DELETE_POLICY_TRIGGER
+    ]
+    if not _exact_configuration_delete(operation) or len(markers_found) != 1:
+        return incomplete
+    comparison = compare_operation(operation)
+    if comparison.bounds_exceeded:
+        return _review_bounds_exceeded(
+            RiskDelta.HIGH, unlock_or_disarm=comparison.unlock_or_disarm
+        )
+    intent = operation.proposed_config[CONFIGURATION_DELETE_INTENT_KEY]
+    expected = configuration_delete_expected_basis(
+        comparison, intent["dependency_reasons"]
+    )
+    marker = markers_found[0]
+    basis = marker.get("basis")
+    if not isinstance(basis, str):
+        return incomplete
+    if tuple(item for item in basis.split(",") if item) != expected:
+        return incomplete
+    policy = marker.get("policy")
+    consequence = marker.get("physical_consequence")
+    if (
+        not expected
+        and policy == "standard"
+        and consequence == PhysicalConsequence.NONE.value
+        and operation.risk.level is RiskLevel.MEDIUM
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.STANDARD_ADMIN,
+            RiskDelta.MODERATE,
+            PhysicalConsequence.NONE,
+            (
+                "configuration_delete_standard_policy",
+                "supported_configuration_change",
+            ),
+        )
+    if not (
+        expected
+        and policy == "elevated"
+        and consequence == PhysicalConsequence.SAFETY_CRITICAL.value
+        and operation.risk.level is RiskLevel.HIGH
+    ):
+        return incomplete
+    reasons = {
+        *expected,
+        "configuration_delete_elevated_policy",
+        "supported_configuration_change",
+    }
+    acknowledgement = False
+    if comparison.protected:
+        # The existing HAMCP-213 mapping over the removed rows: elevated
+        # plus the per-object safety-critical acknowledgement.
+        protected = _safety_critical_comparison_policy(
+            operation,
+            triggers=set(),
+            safety_critical_services=set(),
+            risk_delta=RiskDelta.HIGH,
+        )
+        if (
+            protected is None
+            or protected.policy_class is not ApprovalPolicyClass.ELEVATED_ADMIN
+        ):
+            return protected or incomplete
+        reasons.update(protected.reason_codes)
+        acknowledgement = protected.safety_critical_acknowledgement
+    if comparison.unlock_or_disarm:
+        reasons.add("unlock_or_disarm_effect")
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.ELEVATED_ADMIN,
+        RiskDelta.HIGH,
+        PhysicalConsequence.SAFETY_CRITICAL,
+        tuple(sorted(reasons)),
+        safety_critical_acknowledgement=acknowledgement,
+    )
+
+
+def _configuration_delete_plan_complete(operations) -> bool:
+    """A delete plan holds only governed deletes: 1-8 unique, unordered."""
+
+    if not 1 <= len(operations) <= CONFIGURATION_DELETE_MAX_TARGETS:
+        return False
+    if any(
+        op.action != CONFIGURATION_DELETE_ACTION
+        or op.resource_type not in CONFIGURATION_DELETE_RESOURCE_TYPES
+        or op.depends_on
+        for op in operations
+    ):
+        return False
+    return len({(op.resource_type, op.target_id) for op in operations}) == len(
+        operations
+    )
+
+
+SAFETY_CRITICAL_REVIEW_BOUNDS_EXCEEDED = "safety_critical_review_bounds_exceeded"
+SPLIT_THE_CHANGE = "too_many_protected_objects_to_review_split_the_change"
+
+
+def _review_bounds_exceeded(
+    risk_delta: RiskDelta, *, unlock_or_disarm: bool
+) -> OperationPolicyClassification:
+    """Prohibit an incomplete safety-critical review (HAMCP-213 review H3)."""
+
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        max(risk_delta, RiskDelta.HIGH, key=lambda item: _RISK_RANK[item]),
+        PhysicalConsequence.SAFETY_CRITICAL,
+        tuple(
+            sorted(
+                {
+                    SAFETY_CRITICAL_REVIEW_BOUNDS_EXCEEDED,
+                    SPLIT_THE_CHANGE,
+                    "supported_configuration_change",
+                    *(("unlock_or_disarm_effect",) if unlock_or_disarm else ()),
+                }
+            )
+        ),
+    )
+
+
 def configuration_operation_policy(
     operation: ConfigurationOperation,
     *,
     owner_authoritative: bool = True,
+    safety_critical_comparison: bool = True,
+    unlock_or_disarm_floor: bool | None = None,
 ) -> OperationPolicyClassification:
-    """Classify one operation for both policy and approval review."""
+    """Classify one operation for both policy and approval review.
+
+    ``safety_critical_comparison`` selects the f2-v3 (HAMCP-213) protected
+    physical-effect mapping and script parity. It is false only for the
+    exact recomputation of historical f2-v1 and f2-v2 snapshots and for the
+    legacy contract-v1 route. ``unlock_or_disarm_floor`` (default: the same
+    as ``safety_critical_comparison``) applies the current OD-6(b) floor; the
+    legacy route passes it under current policy.
+    """
     if operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE:
         return _entity_metadata_operation_policy(operation)
+    if operation.resource_type == LABEL_RESOURCE_TYPE:
+        return _label_operation_policy(operation)
+    if operation.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
+        return _availability_exposure_operation_policy(operation)
+    if operation.action == CONFIGURATION_DELETE_ACTION:
+        return _configuration_delete_operation_policy(operation)
     triggers = _risk_triggers(operation)
     safety_critical_services = _risk_services(operation)
     risk_delta = _risk_delta(operation.risk.level)
@@ -476,10 +1098,43 @@ def configuration_operation_policy(
     consequence = PhysicalConsequence.NONE
     exact_automation_update = bool(
         owner_authoritative
-        and _exact_existing_automation_update(operation)
+        and _exact_existing_automation_update(
+            operation, include_scripts=safety_critical_comparison
+        )
     )
 
-    if _retained_safety_critical_effect_is_non_risk_increasing(
+    if unlock_or_disarm_floor is None:
+        unlock_or_disarm_floor = safety_critical_comparison
+    comparison = (
+        compare_operation(operation)
+        if unlock_or_disarm_floor
+        and operation.resource_type in {"automation", "script"}
+        else None
+    )
+    if comparison is not None and comparison.bounds_exceeded:
+        # Review H3: a comparison that exceeded a reviewed bound is
+        # incomplete. It is prohibited on every route, before any shortcut,
+        # and never a weaker class; the floor scan still reports an unlock
+        # or disarm in its reason codes.
+        return _review_bounds_exceeded(
+            risk_delta, unlock_or_disarm=comparison.unlock_or_disarm
+        )
+    unlock_or_disarm = bool(comparison is not None and comparison.unlock_or_disarm)
+    if unlock_or_disarm and owner_authoritative and safety_critical_comparison:
+        # Review H3 / OD-6(b): where an unlock or disarm effect is (or may
+        # be) present, no shortcut (retained effect, garage inverse, retry
+        # transfer) applies. The comparison mapping always requires the
+        # per-object acknowledgement for it.
+        protected = _safety_critical_comparison_policy(
+            operation,
+            triggers=triggers,
+            safety_critical_services=safety_critical_services,
+            risk_delta=risk_delta,
+        )
+        if protected is not None:
+            return protected
+
+    if not unlock_or_disarm and _retained_safety_critical_effect_is_non_risk_increasing(
         operation,
         triggers=triggers,
         safety_critical_services=safety_critical_services,
@@ -537,6 +1192,15 @@ def configuration_operation_policy(
             consequence,
             tuple(sorted({*reasons, "proved_configuration_retry_transfer", "owner_decision_required"})),
         )
+    if owner_authoritative and safety_critical_comparison:
+        protected = _safety_critical_comparison_policy(
+            operation,
+            triggers=triggers,
+            safety_critical_services=safety_critical_services,
+            risk_delta=risk_delta,
+        )
+        if protected is not None:
+            return protected
     if consequence_uncertain and exact_automation_update:
         return OperationPolicyClassification(
             ApprovalPolicyClass.ELEVATED_ADMIN,
@@ -624,6 +1288,7 @@ def _single_plan_policy(
     plan: ChangePlan,
     *,
     owner_authoritative: bool = True,
+    safety_critical_comparison: bool = True,
 ) -> tuple[OperationPolicyClassification, ...]:
     if plan.operation == ChangeOperation.CREATE_FULL_BACKUP:
         return (
@@ -822,7 +1487,21 @@ def _single_plan_policy(
                     ("unknown_policy_classification",),
                 ),
             )
-        if len(plan.operations) != 1 and any(
+        if any(
+            op.resource_type == LABEL_RESOURCE_TYPE for op in plan.operations
+        ):
+            if not _label_plan_complete(plan.operations):
+                # HAMCP-165: only a complete label plan holds label children
+                # or relaxes the single-operation entity metadata rule.
+                return (
+                    OperationPolicyClassification(
+                        ApprovalPolicyClass.PROHIBITED,
+                        RiskDelta.CRITICAL,
+                        PhysicalConsequence.UNKNOWN,
+                        (LABEL_REGISTRY_INCOMPLETE,),
+                    ),
+                )
+        elif len(plan.operations) != 1 and any(
             op.resource_type == ENTITY_METADATA_RESOURCE_TYPE
             for op in plan.operations
         ):
@@ -833,6 +1512,31 @@ def _single_plan_policy(
                     RiskDelta.CRITICAL,
                     PhysicalConsequence.UNKNOWN,
                     ("entity_metadata_execution_contract_incomplete",),
+                ),
+            )
+        if any(
+            op.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES
+            for op in plan.operations
+        ) and not _availability_exposure_plan_complete(plan.operations):
+            # One 069B resource type per plan, never mixed, at most 8 children.
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.PROHIBITED,
+                    RiskDelta.CRITICAL,
+                    PhysicalConsequence.UNKNOWN,
+                    (AVAILABILITY_EXPOSURE_INCOMPLETE,),
+                ),
+            )
+        if any(
+            op.action == CONFIGURATION_DELETE_ACTION for op in plan.operations
+        ) and not _configuration_delete_plan_complete(plan.operations):
+            # HAMCP-155: deletes are never mixed with other operations.
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.PROHIBITED,
+                    RiskDelta.CRITICAL,
+                    PhysicalConsequence.UNKNOWN,
+                    (CONFIGURATION_DELETE_INCOMPLETE,),
                 ),
             )
         if any(inverse_eligibility.markers(op) for op in plan.operations) and inverse_eligibility.bound(plan) is None:
@@ -846,10 +1550,28 @@ def _single_plan_policy(
                 PhysicalConsequence.SAFETY_CRITICAL,
                 ("configuration_retry_proof_invalid",),
             ),)
+        if safety_critical_comparison:
+            binding = plan_acknowledgement_binding(plan.operations)
+            if (
+                binding is not None
+                and len(binding["objects"]) > MAX_ACKNOWLEDGED_OBJECTS
+            ):
+                # Review H3: more acknowledgement rows than one review can
+                # bind is an incomplete review, never an unbindable one.
+                return (
+                    _review_bounds_exceeded(
+                        RiskDelta.HIGH,
+                        unlock_or_disarm=any(
+                            compare_operation(op).unlock_or_disarm
+                            for op in plan.operations
+                        ),
+                    ),
+                )
         return tuple(
             configuration_operation_policy(
                 operation,
                 owner_authoritative=owner_authoritative,
+                safety_critical_comparison=safety_critical_comparison,
             )
             for operation in plan.operations
         )
@@ -884,8 +1606,12 @@ def _single_plan_policy(
                 synthetic,
                 # ADR-022 intentionally authorizes only the current typed
                 # configuration-plan route. The legacy contract-v1 route
-                # retains its historical consequence-policy boundary.
+                # retains its historical consequence-policy boundary, except
+                # that under current policy the retained-effect exception no
+                # longer admits an unlock or disarm change (review H3).
                 owner_authoritative=False,
+                safety_critical_comparison=False,
+                unlock_or_disarm_floor=safety_critical_comparison,
             ),
         )
     return (
@@ -924,6 +1650,10 @@ def aggregate_policy_classifications(
                     for reason in classification.reason_codes
                 }
             )
+        ),
+        safety_critical_acknowledgement=any(
+            classification.safety_critical_acknowledgement
+            for classification in classifications
         ),
     )
 
@@ -966,6 +1696,11 @@ def policy_subject_payload(plan: ChangePlan) -> dict[str, Any]:
                     )
                 }
                 if operation.semantic_projection_hash is not None
+                else {}
+            ),
+            **(
+                {"called_scripts_hash": stable_hash(operation.called_scripts)}
+                if operation.called_scripts is not None
                 else {}
             ),
         }
@@ -1037,11 +1772,13 @@ def _evaluate_change_policy_version(
     *,
     policy_version: str,
     owner_authoritative: bool,
+    safety_critical_comparison: bool = True,
 ) -> ChangePolicyDecision:
     classification = aggregate_policy_classifications(
         _single_plan_policy(
             plan,
             owner_authoritative=owner_authoritative,
+            safety_critical_comparison=safety_critical_comparison,
         )
     )
     dependency_binding = (
@@ -1063,7 +1800,10 @@ def _evaluate_change_policy_version(
                 plan.operation == ChangeOperation.CONFIGURATION_PLAN
                 and bool(plan.operations)
                 and all(
-                    _exact_existing_automation_update(operation)
+                    _exact_existing_automation_update(
+                        operation,
+                        include_scripts=safety_critical_comparison,
+                    )
                     for operation in plan.operations
                 )
             )
@@ -1088,6 +1828,17 @@ def _evaluate_change_policy_version(
         ),
         ApprovalPolicyClass.PROHIBITED: (),
     }[classification.policy_class]
+    if (
+        classification.safety_critical_acknowledgement
+        and classification.policy_class is ApprovalPolicyClass.ELEVATED_ADMIN
+    ):
+        # D1: the safety-critical acknowledgement subsumes the elevated
+        # acknowledgement and no exactness shortcut ever removes it. Only a
+        # different, recomputed comparison result can.
+        required = (
+            ApprovalActionKind.PLAN_APPROVAL,
+            ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT,
+        )
     subject_hash = stable_hash(policy_subject_payload(plan))
     decision_payload = {
         "policy_version": policy_version,
@@ -1131,8 +1882,33 @@ def persisted_f2_v1_policy_snapshot_matches(plan: ChangePlan) -> bool:
             plan,
             policy_version="f2-v1",
             owner_authoritative=False,
+            safety_critical_comparison=False,
         )
     )
+
+
+def persisted_f2_v2_policy_snapshot_matches(plan: ChangePlan) -> bool:
+    """Recognize an exact pre-HAMCP-213 F2 snapshot without granting authority."""
+
+    return bool(
+        plan.policy_decision is not None
+        and plan.policy_decision.policy_version == F2_V2_POLICY_VERSION
+        and plan.policy_decision
+        == _evaluate_change_policy_version(
+            plan,
+            policy_version=F2_V2_POLICY_VERSION,
+            owner_authoritative=True,
+            safety_critical_comparison=False,
+        )
+    )
+
+
+def persisted_historical_policy_snapshot_matches(plan: ChangePlan) -> bool:
+    """Recognize an exact superseded (f2-v1 or f2-v2) snapshot as evidence only."""
+
+    return persisted_f2_v1_policy_snapshot_matches(
+        plan
+    ) or persisted_f2_v2_policy_snapshot_matches(plan)
 
 
 def policy_snapshot_matches(plan: ChangePlan) -> bool:

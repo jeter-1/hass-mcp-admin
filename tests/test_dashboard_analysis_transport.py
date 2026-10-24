@@ -18,6 +18,45 @@ from ha_mcp_engineering.dashboard_analysis import contracts as c
 from ha_mcp_engineering.dashboard_analysis.provider import project_inventory
 from ha_mcp_engineering.request_context import begin_request, end_request
 from support.real_time import real_time_measurement
+from ha_mcp_engineering.clients import dashboard_analysis as client_module
+
+
+class DeadlineRecorder:
+    """Stand-in for the client module's ``asyncio`` that captures deadlines.
+
+    Production deadlines stay at their real, large values. A test expires the
+    captured context deterministically with ``reschedule`` once the peer has
+    confirmed receipt, so host load cannot expire it early or late.
+    """
+
+    def __init__(self):
+        self.timeouts, self.timeouts_at = [], []
+
+    def __getattr__(self, name):
+        return getattr(asyncio, name)
+
+    def timeout(self, delay):
+        context = asyncio.timeout(delay)
+        self.timeouts.append((delay, context))
+        return context
+
+    def timeout_at(self, when):
+        context = asyncio.timeout_at(when)
+        self.timeouts_at.append((when, context))
+        return context
+
+
+class FrozenMonotonic:
+    """Client-module ``time`` stand-in with a fixed monotonic reading."""
+
+    def __init__(self):
+        self.now = time.monotonic()
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+    def monotonic(self):
+        return self.now
 
 
 class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
@@ -56,6 +95,10 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def states(self, request):
         self.calls.append("states")
+        gate = getattr(self, "states_gate", None)
+        if gate is not None:
+            self.states_entered.set()
+            await gate.wait()
         await asyncio.sleep(self.delay)
         return web.Response(body=self.states_raw, status=self.status,
                             headers={"Content-Encoding": self.encoding, "Location": "/forbidden"})
@@ -249,13 +292,46 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls, ["websocket"])
 
     async def test_deadline_no_retry_and_closes(self):
-        self.delay = .1
-        self.client._read_timeout = .02
-        async with self.client.collection("2026.9.4", self.authorize, self.budget) as peer:
-            with self.assertRaises(c.AnalysisError) as error:
+        # Production computes the real per-read deadline; the peer holds the
+        # request and the captured asyncio.timeout is expired only after the
+        # peer has received it (HAMCP-208/219). A frozen budget clock makes
+        # the expected delay exact.
+        self.client = DashboardAnalysisClient(SimpleNamespace(
+            api_url=self.client._api_url, websocket_url=self.client._ws_url,
+            ha_token='synthetic-offline-token', ha_timeout_seconds=60))
+        self.assertEqual(self.client._read_timeout, c.READ_SECONDS)
+        self.budget = CollectionBudget(clock=lambda: 0.0)
+        self.states_gate, self.states_entered = asyncio.Event(), asyncio.Event()
+        recorder = DeadlineRecorder()
+        peer = None
+
+        async def read_states():
+            nonlocal peer
+            async with self.client.collection("2026.9.4", self.authorize, self.budget) as peer:
                 await peer.read("states")
+
+        with patch.object(client_module, "asyncio", recorder):
+            task = asyncio.create_task(read_states())
+            try:
+                async with asyncio.timeout(10):
+                    await self.states_entered.wait()
+                self.assertEqual(len(recorder.timeouts), 1)
+                self.assertFalse(task.done())
+                recorder.timeouts[0][1].reschedule(asyncio.get_running_loop().time())
+                with self.assertRaises(c.AnalysisError) as error:
+                    async with asyncio.timeout(10):
+                        await task
+            finally:
+                self.states_gate.set()
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        self.assertEqual([delay for delay, _ in recorder.timeouts],
+                         [min(self.budget.remaining(), self.client._read_timeout)])
+        self.assertEqual(recorder.timeouts[0][0], c.READ_SECONDS)
         self.assertEqual(error.exception.reason, "timeout")
         self.assertEqual(self.calls, ["states"])
+        self.assertEqual(self.budget.requests, 1)
         self.assertTrue(peer.session.closed)
 
     async def test_authority_change_before_return_refuses(self):
@@ -482,11 +558,51 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.drop_at = 'tools/call' if mode == 'disconnect' else None
                 self.call_raw = b'{' if mode == 'malformed' else None
                 self.reject = 'input_schema_mismatch' if mode == 'admission' else None
-                self.delay_at, self.delay = ('initialize', .3) if mode == 'timeout' else (None, 0)
-                self.transport._timeout = timedelta(seconds=.2 if mode == 'timeout' else 2)
+                self.delay_at, self.delay = ('initialize', 0) if mode == 'timeout' else (None, 0)
+                # Every mode keeps a large real deadline, so none can expire
+                # by host load. The timeout mode holds initialize at the peer
+                # and expires the module's own whole-exchange timeout_at only
+                # after the peer has received it (HAMCP-208/219).
+                self.transport._timeout = timedelta(seconds=60)
                 try:
-                    with self.assertRaises((DashboardTransportError, c.AnalysisError)):
-                        await self.call()
+                    if mode == 'timeout':
+                        self.budget = CollectionBudget(clock=lambda: 0.0)
+                        self.release_delay = asyncio.Event()
+                        self.entered.clear()
+                        recorder, clock = DeadlineRecorder(), FrozenMonotonic()
+                        with patch.object(client_module, 'asyncio', recorder), \
+                                patch.object(client_module, 'time', clock):
+                            task = asyncio.create_task(self.call())
+                            try:
+                                async with asyncio.timeout(10):
+                                    await self.entered.wait()
+                                self.assertEqual(self.calls, ['initialize'])
+                                self.assertEqual(len(recorder.timeouts_at), 1)
+                                self.assertFalse(task.done())
+                                recorder.timeouts_at[0][1].reschedule(
+                                    asyncio.get_running_loop().time())
+                                with self.assertRaises(DashboardTransportError) as error:
+                                    async with asyncio.timeout(10):
+                                        await task
+                            finally:
+                                self.release_delay.set()
+                                if not task.done():
+                                    task.cancel()
+                                await asyncio.gather(task, return_exceptions=True)
+                        self.assertEqual(error.exception.category, 'timeout')
+                        self.assertEqual(
+                            [when for when, _ in recorder.timeouts_at],
+                            [clock.now + min(self.budget.remaining(),
+                                             self.transport._timeout.total_seconds())])
+                        self.assertEqual(recorder.timeouts_at[0][0] - clock.now, c.READ_SECONDS)
+                    else:
+                        self.release_delay = None
+                        with self.assertRaises((DashboardTransportError, c.AnalysisError)) as error:
+                            await self.call()
+                        if isinstance(error.exception, DashboardTransportError):
+                            self.assertNotEqual(error.exception.category, 'timeout')
+                        else:
+                            self.assertNotEqual(error.exception.reason, 'timeout')
                     self.assertIn('initialize', self.calls)
                     self.assertEqual(telemetry.upstream_request_count, 1)
                     self.assertEqual(telemetry.upstream_active_requests, 0)
@@ -826,31 +942,42 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
         import socket
         import threading
         from ha_mcp_engineering.clients.mcp import McpDashboardTransport
+        # A large real read deadline, so the exchange cannot time out by host
+        # load before it is cancelled (HAMCP-208/219).
         self.transport = McpDashboardTransport('http://synthetic.invalid/mcp',
-                                               timeout_seconds=2, client_version='synthetic')
+                                               timeout_seconds=60, client_version='synthetic')
         entered = asyncio.Event()
         release = threading.Event()
+        resolver_returned = threading.Event()
         loop = asyncio.get_running_loop()
         def blocked_resolver(*args, **kwargs):
             self.assertIn(args[0], ('synthetic.invalid', b'synthetic.invalid'))
             loop.call_soon_threadsafe(entered.set)
-            release.wait(2)
+            # No wall-clock bound: DNS stays withheld until the test releases
+            # it in its finally block, whatever the host load.
+            release.wait()
+            resolver_returned.set()
             raise socket.gaierror('synthetic resolver refusal')
         with patch.object(socket, 'getaddrinfo', blocked_resolver):
             task = asyncio.create_task(self.call())
             try:
-                await asyncio.wait_for(entered.wait(), 2)
+                async with asyncio.timeout(10):
+                    await entered.wait()
                 task.cancel()
-                done, _ = await asyncio.wait([task], timeout=.5)
                 # Functional ownership check: cancellation must finish while
                 # DNS is still withheld, not wait for a per-call loop shutdown.
-                self.assertIn(task, done)
+                # Waiting for the resolver would hang until the guard fires.
+                async with asyncio.timeout(10):
+                    await asyncio.wait([task])
                 self.assertTrue(task.cancelled())
                 self.assertFalse(release.is_set())
+                self.assertFalse(resolver_returned.is_set())
                 self.assertEqual(self.calls, [])
             finally:
                 release.set()
                 await asyncio.gather(task, return_exceptions=True)
+        # Hang guard only: the released resolver returns promptly.
+        self.assertTrue(await asyncio.to_thread(resolver_returned.wait, 10))
 
     @real_time_measurement("asserts event-loop wall and CPU gap bounds")
     async def test_maximum_upstream_transport_responsiveness(self):

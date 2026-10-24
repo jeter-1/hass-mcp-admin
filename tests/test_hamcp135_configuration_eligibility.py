@@ -50,7 +50,12 @@ class EligibilityTests(ConfigurationPlanTestCase):
         plan = self.repository.get(created['plan_id'])
         self.assertIsNotNone(derive_proof(plan.operations))
         self.assertIsNone(bound_proof(plan.operations))
-        self.assertEqual(plan.policy_decision.policy_class.value,'prohibited')
+        # HAMCP-213 D3/OD-1: without the retained proof the exact protected
+        # change is owner-actionable only through the separate
+        # safety-critical acknowledgement; it never inherits proof authority.
+        self.assertEqual(plan.policy_decision.policy_class.value,'elevated_admin')
+        self.assertEqual([a.value for a in plan.policy_decision.required_acknowledgements],
+                         ['plan_approval','safety_critical_acknowledgement'])
         self.assertTrue(policy_snapshot_matches(plan))
 
     async def test_every_positive_gate_and_response_shape_is_bound(self):

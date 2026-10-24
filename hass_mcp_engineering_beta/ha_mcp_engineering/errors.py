@@ -45,6 +45,12 @@ class ErrorCode(str, Enum):
     ELEVATED_RISK_ACKNOWLEDGEMENT_REQUIRED = (
         "elevated_risk_acknowledgement_required"
     )
+    SAFETY_CRITICAL_ACKNOWLEDGEMENT_REQUIRED = (
+        "safety_critical_acknowledgement_required"
+    )
+    SAFETY_CRITICAL_ACKNOWLEDGEMENT_MISMATCH = (
+        "safety_critical_acknowledgement_mismatch"
+    )
     APPROVAL_PRINCIPAL_MISMATCH = "approval_principal_mismatch"
     APPROVAL_SEQUENCE_FAILURE = "approval_sequence_failure"
     AUTOMATION_VALIDATION_FAILED = "automation_validation_failed"
@@ -232,6 +238,18 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ),
     ErrorCode.ELEVATED_RISK_ACKNOWLEDGEMENT_REQUIRED: ErrorDefinition(
         "A separate elevated-risk acknowledgement is required.",
+        False,
+        409,
+        "invalid_request",
+    ),
+    ErrorCode.SAFETY_CRITICAL_ACKNOWLEDGEMENT_REQUIRED: ErrorDefinition(
+        "A separate per-object safety-critical acknowledgement is required.",
+        False,
+        409,
+        "invalid_request",
+    ),
+    ErrorCode.SAFETY_CRITICAL_ACKNOWLEDGEMENT_MISMATCH: ErrorDefinition(
+        "The safety-critical acknowledgement does not match the plan's exact objects.",
         False,
         409,
         "invalid_request",

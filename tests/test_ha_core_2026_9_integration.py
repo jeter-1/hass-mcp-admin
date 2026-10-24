@@ -86,6 +86,7 @@ from tests.test_ha_core_capability_auto_readmission import (  # noqa: E402
     _evidence,
     _snapshot,
 )
+from tests.support.core_gate import reconcile_through_gate  # noqa: E402
 from tests.f3_synthetic_adapter import (  # noqa: E402
     prepared_dashboard_operation,
 )
@@ -2324,7 +2325,9 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         plan_created_at = datetime.now(timezone.utc).isoformat()
 
         source.snapshot = _core_2026_9_snapshot()
-        await runtime.reconcile_once("identity_or_connection_change")
+        # HAMCP-215 H1: the version change retires the admitted generation;
+        # restoration needs the agreeing background confirmations.
+        await reconcile_through_gate(runtime, "identity_or_connection_change")
         health = runtime.health_snapshot()
         self.assertGreater(health["current_generation"], old_generation)
         self.assertEqual(health["compatible_count"], len(CORE_CAPABILITY_PROFILES))
@@ -2489,8 +2492,13 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(old_authority)
         old_generation = runtime.health_snapshot()["current_generation"]
 
+        # HAMCP-215 hysteresis: after a connection retirement one spaced
+        # confirmation precedes republication; keep that spacing short here.
         supervisor = asyncio.create_task(
-            runtime.supervise(interval_seconds=3_600)
+            runtime.supervise(
+                interval_seconds=3_600, confirmation_seconds=0.01,
+                jitter=lambda: 0.5,
+            )
         )
         try:
             await asyncio.wait_for(source.monitor_started.wait(), timeout=1)
@@ -2507,11 +2515,17 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(runtime.acquire(("core.basic_rest_read",)))
 
             source.release_reprobe.set()
-            for _ in range(20):
-                await asyncio.sleep(0)
-                observation = runtime.current_observation
-                if observation is not None and observation.version == "2026.9.1":
-                    break
+            async with asyncio.timeout(2):
+                while runtime.health_snapshot()["recovery"]["confirmations"] < 1:
+                    await asyncio.sleep(0)
+            # The first complete re-verification does not publish yet.
+            self.assertIsNone(runtime.acquire(("core.basic_rest_read",)))
+            async with asyncio.timeout(2):
+                while True:
+                    observation = runtime.current_observation
+                    if observation is not None and observation.version == "2026.9.1":
+                        break
+                    await asyncio.sleep(0.001)
             observation = runtime.current_observation
             self.assertIsNotNone(observation)
             self.assertEqual(observation.version, "2026.9.1")
@@ -2571,6 +2585,14 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             runtime.health_snapshot()["recent_events"],
         )
 
+        # HAMCP-215 hysteresis: the first complete re-verification after a
+        # connection retirement confirms; the second consecutive one publishes.
+        await runtime.reconcile_once("identity_or_connection_change")
+        self.assertIsNone(runtime.current_observation)
+        self.assertIsNone(runtime.acquire(("core.basic_rest_read",)))
+        self.assertEqual(
+            runtime.health_snapshot()["recovery"]["recovery_state"], "confirming"
+        )
         await runtime.reconcile_once("identity_or_connection_change")
         observation = runtime.current_observation
         self.assertIsNotNone(observation)
@@ -2621,7 +2643,9 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_material_reconciliation_audit_is_bounded_and_redacted(self):
         from ha_mcp_engineering.ha_core_readmission.profiles import (
             CORE_TYPED_OPERATION_PROFILES, CORE_INTEGRATION_INSPECTION_PROFILES, CORE_AUTOMATION_BASELINE_PROFILES,
-            CORE_ENTITY_METADATA_PROFILES,
+            CORE_ENTITY_METADATA_PROFILES, CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES,
+            CORE_LABEL_REGISTRY_PROFILES,
+            CORE_CONFIGURATION_DELETE_PROFILES,
         )
         source = _MutableSource(_core_2026_9_snapshot())
         events: list[dict] = []
@@ -2644,12 +2668,17 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["observed_core_version"], "2026.9.0")
         self.assertEqual(summary["admitted_count"], len(CORE_CAPABILITY_PROFILES))
         self.assertEqual(summary["withheld_count"], len(CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES + CORE_AUTOMATION_BASELINE_PROFILES
-                                                            + CORE_ENTITY_METADATA_PROFILES))
+                                                            + CORE_ENTITY_METADATA_PROFILES
+                                                            + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
+                                                            + CORE_CONFIGURATION_DELETE_PROFILES
+                                                            + CORE_LABEL_REGISTRY_PROFILES))
         self.assertEqual(
             {p["capability_id"] for p in runtime.health_snapshot()["authority_profiles"]
              if not p["disposition"].startswith("admitted_")},
             {p.capability_id for p in CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES + CORE_AUTOMATION_BASELINE_PROFILES
-             + CORE_ENTITY_METADATA_PROFILES},
+             + CORE_ENTITY_METADATA_PROFILES + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
+             + CORE_CONFIGURATION_DELETE_PROFILES
+             + CORE_LABEL_REGISTRY_PROFILES},
         )
         self.assertEqual(summary["fallback_count"], 0)
         encoded = json.dumps(event, sort_keys=True)
@@ -2883,7 +2912,7 @@ class CoreRuntimeLoopReconfigurationTests(unittest.TestCase):
     def test_reconfiguration_rebinds_async_primitives_to_the_serving_loop(self):
         runtime = CoreRuntime()
 
-        async def exercise_once(session_id: str) -> None:
+        async def exercise_once(session_id: str, *, first_boot: bool) -> None:
             source = _MutableSource(
                 _snapshot(
                     "2026.8.1",
@@ -2893,21 +2922,34 @@ class CoreRuntimeLoopReconfigurationTests(unittest.TestCase):
             )
             runtime.configure(object(), source=source)
             await runtime.reconcile_once("startup")
+            # HAMCP-215 H1: only the process's first boot admits directly; the
+            # re-initialization restores through two background confirmations
+            # (two verifications of two snapshots each) on recovery pacing.
+            self.assertIs(runtime.initialized, first_boot)
             supervisor = asyncio.create_task(
-                runtime.supervise(interval_seconds=3_600)
+                runtime.supervise(
+                    interval_seconds=3_600, sleep=lambda _delay: asyncio.sleep(0)
+                )
             )
+            for _ in range(50):
+                await asyncio.sleep(0)
+                if runtime.initialized:
+                    break
+            self.assertTrue(runtime.initialized)
+            before = source.calls
+            self.assertEqual(before, 2 if first_boot else 6)
             await asyncio.sleep(0)
             runtime.request_reconciliation()
             for _ in range(10):
                 await asyncio.sleep(0)
-                if source.calls == 4:
+                if source.calls == before + 2:
                     break
-            self.assertEqual(source.calls, 4)
+            self.assertEqual(source.calls, before + 2)
             supervisor.cancel()
             await asyncio.gather(supervisor, return_exceptions=True)
 
-        asyncio.run(exercise_once("core-loop-one"))
-        asyncio.run(exercise_once("core-loop-two"))
+        asyncio.run(exercise_once("core-loop-one", first_boot=True))
+        asyncio.run(exercise_once("core-loop-two", first_boot=False))
 
 
 class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
@@ -2920,7 +2962,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         registry = load_reviewed_upstream_release_registry()
         policy = registry.by_version["8.4.3"].policy
         counts = policy.classification_counts
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 60)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 68)
         self.assertEqual(counts["automatic_read"], 28)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
@@ -2931,7 +2973,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             },
             {"ha_get_operation_status"},
         )
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 88)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 96)
         # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
         # never a stock policy entry (30 -> 31).
         self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
@@ -2996,7 +3038,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(counts["reviewed_upstream_version"], "8.6.0")
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
         self.assertEqual(counts["expected_delegated_reads"], 28)
-        self.assertEqual(counts["expected_connector_total"], 88)
+        self.assertEqual(counts["expected_connector_total"], 96)
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
         evidence = [
@@ -3070,7 +3112,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         health = gateway.health_snapshot()
         self.assertEqual(health["core_withheld_read_count"], 5)
         self.assertEqual(health["dynamically_exposed_count"], 20)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 80)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 88)
         self.assertEqual(
             {item["tool"] for item in health["core_withheld_tools"]},
             set(DEVICE_DEPENDENT_DELEGATED_TOOLS),

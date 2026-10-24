@@ -1,5 +1,449 @@
 # Changelog
 
+## 2.4.1-beta.35 - Governed deletion of automations and scripts, inactive (HAMCP-155)
+
+Builds on 2.4.1-beta.34. Activates nothing new.
+
+- New tool `create_configuration_delete_plan` (1-8 automation or script
+  deletions) and runtime-only Core profile
+  `core.configuration_delete_operation`
+  (`compiled-core-configuration-delete-operation-v1`, contract fingerprint
+  `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d`).
+  - Signed sequence 12 does not reference it: `pending_signed_registry_admission`.
+  - The governance service refuses first, with zero reads and nothing
+    stored; dispatch re-checks admission on every F3 path.
+- Once admitted:
+  - one no-body `DELETE /api/config/<automation|script>/config/<id>`, sent
+    only by the new gateway method under `delete_automation_configuration`
+    or `delete_script_configuration`;
+  - drift against the bound pre-image immediately before the DELETE is
+    `stale_target_state`;
+  - verification proves absence (config 404, registry entry gone, state
+    gone); partial absence is `manual_review_required`;
+  - policy follows the removed protected effects (elevated with a
+    consequence statement); a delete is never "no effect";
+  - `rollback_change` recreates a verified deletion from its exact
+    pre-image under a separately approved plan.
+- The F3 executor stores every code of a pre-intent dispatch refusal; the
+  outcome is unchanged for every adapter.
+- Dormant seq-13 delete acceptance lane
+  `scripts/configuration_delete_contract_acceptance.py`, not wired.
+- Delete-lane dormant steps join the existing `REAL_HA_SEQ13_LANES` gate in
+  `ci.yml`; no signed profile, signed registry, permission, add-on
+  configuration, dependency or stable-v1 file changes; static tools 68,
+  catalog 96 (97).
+
+## 2.4.1-beta.34 - Label create, edit and assignment, inactive (HAMCP-165)
+
+Builds on 2.4.1-beta.33.
+
+- Add `create_label_plan`. It proposes 1-8 ordered `create` or `update`
+  operations over a label's `name`, `color` (theme colour or `#RRGGBB`),
+  `icon` and `description`. Each may assign the label to exact registered
+  entities through the signed HAMCP-069A path. Labels are never deleted.
+- Resource type `label_registry_entry`: `config/label_registry/create` or
+  `config/label_registry/update`, each verified by exact
+  `config/label_registry/list` readback. Duplicate names, slug collisions,
+  unknown labels and no-op edits are refused before a plan is stored; stale
+  state and namespace changes are refused before each write. Rollback is
+  refused (a corrective edit is a new plan).
+- New runtime-only Core profile `core.label_registry_operation`
+  (`sha256:b2f0dd11ff243aa2559c27738d962785e37455d37b836cb5a6997aeabb26813c`).
+  The signed registry (sequence 12) does not reference it, so every call is
+  refused with `CoreCapabilityUnavailable` /
+  `pending_signed_registry_admission`, admission checked first at the
+  service layer. Activates nothing new; switches on with the sequence-13
+  signing.
+- Review1 (H1): F3 re-checks Core admission of a dormant profile (labels and
+  both 069B resource types) before every read and write, including a retained
+  approved plan, recovery and private read-only reconciliation. No Core, a
+  Core that cannot report status, or an unadmitted profile refuses with
+  `core_authority_unavailable` or `pending_signed_registry_admission` and
+  sends no Home Assistant command. Before this, an F3 runtime composed
+  without Core would run a retained approved 069B plan in the legacy no-Core
+  mode.
+  The lowest configuration builder, including generic
+  `create_configuration_plan` routing, refuses an unadmitted profile before
+  any read or store (M1); the final pre-dispatch label read refuses any drift
+  of the exact target as `stale_target_state` (M3).
+- Entry admission (HAMCP-155 review finding, same pattern): an unadmitted
+  first apply of a label or 069B plan refuses with `provider_unavailable`
+  (`pending_signed_registry_admission` or `core_authority_unavailable`)
+  before any persistence. The plan, task, child, manifest and lock stores
+  stay byte-identical and no Home Assistant request is made, on every path:
+  F3 with a withdrawn profile, F3 without Core, a Core that cannot report
+  status, and a service with no F3 runtime (which used to read the registry
+  and store a task before failing). The dispatch gate stays as the second
+  barrier.
+- HAMCP-069B: the two dormant profiles name `websocket_entity_registry_list`
+  and `websocket_expose_new_entities_get`, the reads their gateway sends.
+  New fingerprints: availability
+  `sha256:ae292fbc16ad82c8d8347b7e2eb1c3a7e8c7644d95783f5bf2ae9f9cc63a76b2`,
+  exposure
+  `sha256:474c8ccaaae83c12f56a2848995ff089097936568a2ad5dc8d25ce855d51dbbd`.
+- CI: dormant seq-13 evidence lanes for 165 and 069B
+  (`REAL_HA_SEQ13_LANES: dormant`); no existing step changes.
+- Catalog: 67 static tools plus 28 delegated reads, 95 total (96 with the
+  optional YAML reader). No existing descriptor, schema, permission, signed
+  registry entry or signed fingerprint, or stable-v1 file changes.
+
+## 2.4.1-beta.33 - Configuration definitions (HAMCP-132 slice 2)
+
+Builds on 2.4.1-beta.32.
+
+- Add the read-only `get_configuration_definitions` tool for up to 50
+  `entity_ids` and/or whole `integrations` from template, sql, filter,
+  derivative, statistics, group, integration, min_max, history_stats,
+  threshold, trend and utility_meter.
+- Project each `configuration.yaml` definition through a positive
+  per-integration allowlist. The admitted YAML reader is used through a new
+  fixed gateway purpose, `configuration_definitions`, with eight paths.
+  `db_url`, credential keys, credential URIs in text and `!secret`/`!env_var`
+  names are withheld in every position. Unrecognized keys are counted only.
+- Match entities to definitions:
+  - `exact_config_entry` (UI-defined: `definition_not_readable_without_flow`);
+  - `exact_unique_id`;
+  - `heuristic`, with `high`, `medium` or `low` confidence;
+  - `ambiguous` (never resolved);
+  - `unmatched` or `not_applicable`.
+- Diagnose unavailability from Core's signals: disabled, config entry, or
+  platform or integration not loaded, dependency unavailable, transient,
+  entity level, not found or undetermined. Report the `ha_mcp_tools`
+  component from Core's own reads only; its commands are not used (owner
+  decision, 2026-10-21).
+- Disclose `!include`, packages and labelled keys without following them. Any
+  unreadable source, trim or redaction makes the report partial. The complete
+  envelope is sanitized once with the known secrets.
+- Corrections from the independent review: credential text is withheld from
+  every string of the final report, config entry titles included (H1);
+  ambiguity rules are identical from both sides (M1); a unique ID YAML 1.1
+  could read differently is never exact (M2); a YAML source gap or an
+  unchecked UI or template definition is `undetermined` (M3); a malformed
+  source value invalidates only its item (M4).
+- Corrections from the delta review: a config entry title is checked whole
+  before any truncation and shown only through a printable-ASCII allowlist,
+  so an ordinary non-ASCII title is withheld as `[withheld:unverifiable_text]`
+  by design (H1, H2); YAML-projected text is screened through a bounded
+  confusable fold (H2); an unexpanded template blueprint is a definition gap
+  (M3); a malformed registry identity is `invalid_response` and never
+  matched, while `null` stays a legitimate absence (M4).
+- Corrections from the second delta review: a YAML-projected string or key
+  with an invisible, format or control character, literal or
+  percent-encoded, is withheld whole as `[withheld:unverifiable_text]`, never
+  screened and shown (R2-H1); any withheld form anywhere in the final report
+  makes it partial, naming each affected item (`withheld:definitions[3]`)
+  (R2-M1).
+- Correction from the final32 review (correction batch 4): every
+  YAML-projected string is also screened with all whitespace and line-control
+  characters removed, so a tab, line feed, carriage return or space inside a
+  credential, literal or percent-encoded, withholds the whole value (partial).
+  Ordinary multi-line templates stay shown and complete; text with a colon
+  then `@` and no `/` between is withheld by design.
+- Owner decision (Josh, 2026-10-22): a SQL definition's own `db_url` is a
+  fixed policy redaction, not missing evidence. It is reported as
+  `{"redacted_by_policy": "database_url"}` and, through an explicit
+  allowlist inside the same final-envelope scan (SQL `fields.db_url` only),
+  leaves the report complete. Every other withholding is still partial.
+- Owner decision (Josh, 2026-10-22): nothing is derived from a withheld
+  input. A withheld name, default-name input or key derives no entity ID
+  (`derived_entity_id_withheld`); a withheld unique_id input generates no
+  unique ID (`unique_id_withheld`); a withheld dependency value is not read
+  (`dependencies_withheld`, diagnosis `undetermined`); a withheld key is not
+  in the definition ID; a withheld legacy name is never a candidate. Each is
+  listed as withheld, so the report is partial.
+- Owner decision (Josh, 2026-10-22): the Core-observed entity ID of an exact
+  registry match is Core's data and is not withheld. An entity that Home
+  Assistant itself named from a credential-bearing string shows that entity
+  ID (disclosed limitation; rename the entity in Home Assistant).
+- Catalog: 66 static tools, 94 advertised (95 with the optional YAML reader).
+  No existing descriptor, schema, stored format, dependency or workflow
+  changes.
+
+## 2.4.1-beta.32 - Incident-log entry times (HAMCP-220)
+
+Builds on 2.4.1-beta.31.
+
+- Fix `get_incident_logs` reading the Supervisor log time as UTC.
+  - Supervisor 2026.10.3 renders that time in Home Assistant's local time
+    without an offset, so recent windows were reported after the tail.
+  - Home Assistant's configured `time_zone` is now read from Core
+    `GET /api/config` (the HAMCP-200 `/config` route) before a call's
+    journal reads, and once more after them. Each read runs under the
+    tool's own `core.basic_rest_read` lease.
+    `get_incident_logs` is `CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY`.
+  - A zone that changed between the two reads, or a second read that
+    fails, withholds every source that read the journal
+    (`zone_changed_during_read`, `zone_unverifiable_after_read`; partial,
+    no times, the cursor kept).
+  - If the zone cannot be read, Core and `addon:self` are unavailable
+    (`time_zone_unavailable`), with zero journal requests. The add-on `TZ`
+    and UTC are never substituted.
+- Fail closed on any zone disagreement.
+  - An add-on `TZ` whose offsets differ from Home Assistant's anywhere in
+    the window makes every source partial with `zone_mismatch`.
+  - So does a page's first entry whose `X-First-Cursor` realtime (`t=`)
+    disagrees with its text.
+  - Other entries are read from their text in the confirmed rendering, with
+    `zoneinfo` DST rules. An explicit `+HH:MM` is read exactly.
+- DST-ambiguous and nonexistent local times.
+  - They are resolved exactly by single-entry realtime reads within the
+    request budget.
+  - Otherwise they are `ts_basis: uncertain`, with `ts: null` and every
+    candidate.
+  - Around an unresolved time, each source keeps its journal order and the
+    rows up to its latest candidate are `ordering_uncertain`, on later pages
+    too (carried in the signed cursor). The read is partial.
+- Output.
+  - Entries gain `ts_basis`, `time_zone` and `ordering_uncertain`.
+  - Sources gain `timestamp_basis` and `zone_mismatch`.
+  - The response gains `time_basis`, with the Home Assistant and add-on zone
+    statuses.
+  - The schema id is unchanged, and `ts` is nullable.
+- No descriptor, input schema, Supervisor route, permission, add-on
+  configuration, dependency or stable-v1 file changes; catalog 93 (94).
+
+## 2.4.1-beta.31 - Entity enable/disable and voice exposure, inactive (HAMCP-069B)
+
+Builds on 2.4.1-beta.30.
+
+- Add `create_entity_availability_exposure_plan`. It proposes one operation
+  (`disable`, `enable`, `expose`, `unexpose`) over 1-8 exact registered
+  entities. `expose`/`unexpose` need `assistant` (`conversation` or
+  `cloud.google_assistant`); Alexa is refused. There is no free-text field.
+- Two resource types, `entity_registry_availability`
+  (`config/entity_registry/update` with exactly `entity_id` and
+  `disabled_by`) and `entity_assistant_exposure`
+  (`homeassistant/expose_entity`, one assistant and one entity), each
+  verified by exact `config/entity_registry/get` readback. A non-target
+  `cloud.alexa` key going from absent to present is the one tolerated
+  difference, reported as `tolerated_new_exposure_key_cloud_alexa`.
+- Two new runtime-only Core capability profiles. The signed registry
+  (sequence 12) does not reference them, so every call is refused with
+  `CoreCapabilityUnavailable` / `pending_signed_registry_admission` before a
+  plan is stored. `list_capabilities` and health report the same status.
+  The governance service checks admission first, before any Home Assistant
+  read or plan storage, on every entry point. Nothing new is active until an
+  owner-signed sequence 13.
+- Once admitted: protected entities need the existing elevated
+  acknowledgement. A disable whose dependency evidence is incomplete for any
+  reason is protected, with "impact could not be fully determined". An
+  enable plan covers one config entry; unregistered
+  entities, devices, config entries, Core-internal disables and
+  already-applied states are refused; rollback is an inverse plan. The
+  gateway never sends `cloud/status`, `homeassistant/expose_entity/list`,
+  `homeassistant/expose_new_entities/set` or either cloud entity-update
+  command.
+- Catalog: 65 static tools plus 28 delegated reads, 93 total (94 with the
+  optional YAML reader). No existing descriptor, schema, permission,
+  workflow, signed registry entry or fingerprint, or stable-v1 file changes.
+
+## 2.4.1-beta.30 - Incident-window logs and continuable history (HAMCP-131)
+
+Builds on 2.4.1-beta.29.
+
+- Add read-only `get_incident_logs`. It reads one window of at most 6 hours
+  from the Core journal (`/core/logs`) and Engineering's own add-on journal
+  (`/addons/self/logs`), through HAMCP-200 typed routes with a gatewayd
+  `Range` header, and merges the entries in time order. The level filter and
+  a literal text filter (at most 128 characters) report skip counts. A limit
+  of 1-200 applies, with a signed cursor. Pages are strictly time-ordered
+  across sources; a source that runs out of request budget holds the merged
+  page at its earliest unread point and is reported `partial`
+  (`request_budget_exhausted`). Wrong-typed arguments are refused as invalid
+  arguments.
+- Each source reports its coverage: earliest and latest retained entry,
+  retention edge, scanned range, gaps with reasons, and filter and window
+  skips. `supervisor`, `host` and other add-on sources need Supervisor role
+  `manager`. They are listed `unavailable` with `authority_not_granted`, the
+  required role and zero requests, also when they are the only sources
+  selected; no role or permission is added. An add-on slug must be one
+  validated segment, so a traversal is refused with zero requests.
+- Add read-only `get_history_slices`. It reads entity history continuously
+  through the admitted delegated `ha_get_history` route (ha-mcp 8.5.0 or
+  8.6.0) using a new fixed gateway `history_reader`. Windows are at most
+  7 days, read as fixed 6-hour slices, with per-page coverage whose
+  `complete_until` is exclusive while tied states may remain. The cursor
+  binds the query, the fixed end, the provider contract and a cumulative
+  digest of all history the read has returned, which every continuation
+  re-reads (at most 40 verification reads of 100 states; past that no cursor
+  is issued, `continuation_verification_limit`). Any change to returned
+  history on any earlier page, a purge, a late write, a changed slice-start
+  state or a contract change is refused as `STALE_CURSOR`. The native `get_history` tool is not used.
+- Each tool sanitizes its whole response once, at a single exit, with the
+  known secrets; a redaction makes the result partial. `get_incident_logs` is
+  Core-independent (Supervisor only); `get_history_slices` maps to
+  `core.basic_rest_read`.
+- Catalog: 64 static tools plus 28 delegated reads, 92 total (93 with the
+  optional YAML reader). No existing descriptor, schema, permission,
+  workflow, signed registry entry or stable-v1 file changes.
+
+## 2.4.1-beta.29 - Safety-critical acknowledgement (HAMCP-213 PR 1)
+
+Builds on 2.4.1-beta.28.
+
+- Compare each automation or script create or update's protected physical
+  effects before and after (`physical-effect-comparison-v1`): `none`,
+  `equivalent`, `changed` or `unresolved`. Reference-only services never name
+  an effect; run mode, abort points (conservative OD-10) and run occupancy
+  count.
+- Policy `f2-v3`: `equivalent` is `elevated_admin` with plan approval only;
+  `changed` or `unresolved` adds the per-object
+  `safety_critical_acknowledgement` (Ingress only, authority version 4).
+  Unlock and disarm effects always need it (OD-6(b)), and no shortcut applies
+  to them. An incomplete execution contract stays `prohibited`. Otherwise the
+  Beta 33 retained proof, garage inverse and retry-transfer paths are
+  unchanged.
+- An effect-capable call with a templated, variable-driven or area, device,
+  floor or label target, or a templated service name, is `unresolved`. A
+  reference step that can run before an effect is compared in full; any
+  change to it is `changed`.
+- The comparison is an allowlist: only the keys in the design's
+  ignorable-differences table (D2 item 8) are ignored. An `enabled` flag or
+  an unknown key on an effect path is `changed`.
+- A change past the review bounds (nesting depth, step count, called-script
+  depth or count, or more than 32 acknowledged objects) is `prohibited` on
+  every route, with
+  `safety_critical_review_bounds_exceeded` or
+  `too_many_protected_objects_to_review_split_the_change`. The unlock or
+  disarm floor is computed first.
+- Every called script's fingerprint is bound to the plan and re-read before
+  approval is consumed and before each write. A changed or unreadable callee
+  refuses as `stale_target_state` (reason `stale_called_script`) with no
+  write, on the service path and in F3.
+- A called script the same plan updates or deletes is analyzed with its
+  current and proposed configurations together, so callers are judged
+  against the post-plan callee. Before each caller write the live callee must
+  match its pre-plan fingerprint (callee not yet written) or its proposed
+  fingerprint (callee already written); otherwise the caller refuses as
+  stale with no write, including on F3 resume and recovery.
+- Dispatch rechecks the exact acknowledged object set and comparison hash
+  independently of the bundle state; plan approval alone never dispatches.
+- E013 precision: logbook mentions are not targets, notify routed by name has
+  no omitted target, no retry warning outside a retry candidate, recipient
+  reason only when recipients change.
+- OD-4: `principal_separation_status.reason` is `no_decision_recorded` or
+  `not_approvable`.
+- New audit events and the stable error codes
+  `safety_critical_acknowledgement_required` and
+  `safety_critical_acknowledgement_mismatch`.
+- Pending `f2-v2` plans must be replanned. An applied `f2-v2` plan is
+  admitted only as read-only evidence: as an F3 rollback source, and when
+  reverifying its own consumed task.
+- Rollback to beta.28 quarantines every plan record written under `f2-v3`,
+  terminal ones included (beta.28, like beta.27, accepts only `f2-v1` and
+  `f2-v2`; its plan storage is unchanged from beta.27). If the quarantine
+  move fails, beta.28 deletes the record; the backup is the protection.
+  Procedure: take a fresh Home Assistant backup (it includes the Engineering
+  add-on data), finish or reject pending plans, then roll back.
+  Execution-task records stay readable.
+- On startup, beta.29 restores plan records an older version quarantined,
+  before cleanup and recovery. Only records whose canonical bytes, plan
+  identifier, namespace and content screen verify are restored. Restoration
+  never overwrites, is idempotent and is logged. Anything else stays
+  quarantined and is reported in health (`quarantine_restoration`).
+
+## 2.4.1-beta.28 - Core authority recovery and visibility (HAMCP-215)
+
+Builds on 2.4.1-beta.27.
+
+- Retry a failed Core verification with bounded exponential backoff and ±20%
+  jitter: 20 s, doubling, capped at 240 s. This replaces the fixed 300 s
+  `failure_retry`.
+- Pass every non-admitted state (transient retirement, incompatible,
+  unavailable, not initialized at boot, changed version or registry
+  authority, re-initialization) through one restoration gate:
+  `CORE_RECOVERY_CONFIRMATIONS = 2` consecutive complete background
+  verifications by the supervisor, spaced about 15 s apart, with the same Core
+  identity, version, selected signed-registry authority and admitted reviewed
+  contracts. A retirement within 600 s of a restoration needs 3, at doubled
+  spacing. Any failure or connection move, and any background or on-demand
+  observation of a changed identity, version, registry authority or contract
+  set, restarts the count. On-demand verification never confirms or restores
+  from any state; it is refused and counted in `recovery_on_demand_refusals`.
+- Make the boot exception a one-shot latch per process: only the boot
+  sequence's first admission, while the process has never admitted, retired
+  or failed, is exempt. Any admission, failure, retirement or non-boot check
+  spends it, and only a new process re-arms it, so an application rebuild or
+  runtime reconfiguration restores through the full gate. A failed first
+  startup check ends the boot retries; the supervisor then recovers on
+  backoff pacing.
+- Keep a complete but unadmitted observation retired
+  (`recovery_state: incompatible`). Re-check it every reconciliation interval
+  without backoff; once compatible it passes the same gate.
+- Log `core_authority_verification_failed`, `core_authority_retired`,
+  `core_authority_capabilities_withdrawn`, `core_catalog_tools_withdrawn`,
+  `core_catalog_tools_restored`, `core_authority_recovery_attempt`,
+  `core_authority_recovery_confirming`, `core_authority_recovery_reset` and
+  `core_authority_restored` at WARNING, and `core_authority_recovery_scheduled`
+  and `core_authority_recovery_on_demand_refused` at INFO. Each carries a bounded reason or detail and an `at` timestamp. Probe
+  failures are classified into closed `core_probe_*` details.
+- Add `home_assistant_core_authority.recovery` to health, with recovery state,
+  failure reason, detail and time, retirement, attempt, next-attempt and
+  restoration times, and confirmations. Add the counters `recovery_attempts`,
+  `recovery_confirmations` (accepted confirmations only),
+  `recovery_on_demand_refusals` and `authority_restorations`.
+- A lifecycle-socket movement, including the reconnect after a Core restart,
+  now waits one confirmation interval (about 15–18 s) before authority returns.
+  Core-backed tools refuse during it. Josh accepted this on 2026-10-20, and
+  the same wait (about 15 s) after a Core version change, a moved
+  signed-registry authority, an incompatible Core becoming compatible, or a
+  Core not initialized at boot (which first waits one backoff delay).
+- No tool, schema, descriptor, permission, workflow or stored-format change.
+
+## 2.4.1-beta.27 - Recorder settings and unregistered entities (HAMCP-132)
+
+Builds on 2.4.1-beta.26.
+
+- Add `get_recorder_settings`, a read-only tool that reports the recorder's
+  effective settings. Each setting carries an `origin` (`configured`,
+  `core_default` with the Core 2026.10.1 pin, or `unknown` with a reason).
+  The report also covers include and exclude filters with Core's filter case,
+  live `recorder/info` runtime state, and, for up to 50 entities, Core's own
+  recorded answer next to the filter computed from configuration. A
+  disagreement is `filter_drift`.
+- Report unwritten settings as `unknown`, never as defaults, when packages,
+  `!include`, truncation or an unreadable source could supply them (owner
+  decision (v)). `unknown_command` from `recorder/info` means the recorder is
+  not set up, never "not recording".
+- Never return `db_url`, a `!secret` or `!env_var` reference name, or an
+  unrecognized recorder key: the projection is a positive allowlist.
+- Sanitize each tool's complete response once, with the known secrets, at a
+  single exit point. Nothing is appended afterwards, and a redaction makes
+  the report partial.
+- Report a written value as `parser_dependent`, not `fails_core_schema`,
+  when its YAML 1.1 readings change Core's verdict. Examples are unquoted
+  `off` or `yes`, `1:20` and exponent floats. A plain integer is definite,
+  and `coverage.yaml_numeric_spelling` discloses that a leading-zero spelling
+  such as `010` is not observed. Quoted strings, and `y` or `n`, are definite
+  strings.
+- Add `get_unregistered_entities`, a read-only tool that lists entities with a
+  state but no registry entry. It reports the platform (from
+  `entity/source`), whether the state was written directly, and the config
+  entry from `search/related` (`ambiguous` when more than one is found). The
+  definition location is always `not_determinable`. A truncation is partial.
+- Read configuration through the admitted YAML reader for three fixed paths
+  (`recorder`, `homeassistant.packages`, `homeassistant`) via a new gateway
+  `yaml_config_reader`. The batch allowlist adds exactly
+  `recorder/entity_options/get` and `search/related` with `item_type: entity`,
+  both with a strict entity-ID pattern. Map both tools in the HAMCP-164 Core
+  gate.
+- Catalog 90 tools (91 with the optional YAML reader). No existing tool,
+  schema, descriptor, permission, workflow or dependency change.
+
+## 2.4.1-beta.26 - certifi 2026.10.19 dependency security release (HAMCP-217)
+
+Builds on 2.4.1-beta.25. Split from HAMCP-215 by Josh's decision so that
+other pull requests can merge; HAMCP-215 receives it through `main`.
+
+- Bump `certifi` 2026.7.22 → 2026.10.19 in both hashed locks and
+  `build-inputs.json` for GHSA-6q48-6c7w-9gw2 (PYSEC-2026-4320). The bundle
+  loses only the `emSign ECC Root CA - G3` root. There are no transitive
+  changes, and `requirements.txt` is unchanged.
+  `tests/test_hamcp217_certifi_20261019_contract.py` pins the Engineering
+  httpx trust.
+- No runtime code, tool, schema, descriptor, permission, workflow or
+  stored-format change. Stable v1 does not pin certifi.
+
 ## 2.4.1-beta.25 - Loaded script configuration (HAMCP-212)
 
 Builds on 2.4.1-beta.24.

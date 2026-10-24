@@ -70,7 +70,8 @@ class ConfigurationReverificationTests(unittest.IsolatedAsyncioTestCase):
         self.binding = {"task_id": self.provenance["task_id"],
                         "expected_plan_hash": self.provenance["plan_hash"],
                         "request_id": str(uuid.uuid4())}
-        self.plan = self.service._load(self.provenance["plan_id"])
+        # The same loader as reverification: the beta6 plan is f2-v2 history.
+        self.plan = self.service._load(self.provenance["plan_id"], reverification_history=True)
         self.gateway.configs.clear()
         self.gateway.calls.clear()
         for op in self.plan.operations:
@@ -298,17 +299,39 @@ class ConfigurationReverificationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cleanup_failure_and_timeout_remain_unresolved_without_repeated_reads(self):
         from ha_mcp_engineering.governance import configuration_reverification as module
+        # The asyncio deadline alone must end the hung read. It is the
+        # module's own production asyncio.timeout, recorded and made to
+        # expire only once the read hangs, so no wall-clock budget can lapse
+        # first on a loaded host. A frozen module-local clock keeps the
+        # authority window's elapsed-time check from expiring first
+        # (HAMCP-206, HAMCP-208).
+        deadlines = []
+        reads = []
+        real_asyncio = asyncio
+
+        class DeadlineRecorder:
+            def __getattr__(self, name):
+                return getattr(real_asyncio, name)
+
+            def timeout(self, delay):
+                deadline = real_asyncio.timeout(delay)
+                deadlines.append((delay, deadline))
+                return deadline
+
         async def hung(*args):
+            reads.append(args)
+            self.assertEqual(len(deadlines), 1)
+            deadlines[0][1].reschedule(asyncio.get_running_loop().time())
             await asyncio.Event().wait()
-        # The asyncio deadline alone must end the hung read.  A frozen
-        # module-local clock keeps the authority window's elapsed-time check
-        # from expiring first on a slow host, and the larger deadline leaves
-        # setup time before the read intent is recorded.
         frozen_clock = SimpleNamespace(monotonic=lambda: 0.0)
         with patch.object(self.gateway, "read", side_effect=hung), \
-                patch.object(module, "DEADLINE_SECONDS", 0.5), \
+                patch.object(module, "asyncio", DeadlineRecorder()), \
                 patch.object(module, "time", frozen_clock):
             result = await self.run_check()
+        self.assertEqual([delay for delay, _ in deadlines], [module.DEADLINE_SECONDS])
+        self.assertEqual(module.DEADLINE_SECONDS, 30)
+        self.assertTrue(deadlines[0][1].expired())
+        self.assertEqual(len(reads), 1)
         self.assertEqual(result["status"], "read_timeout")
         replay = await self.run_check()
         self.assertEqual(replay["status"], "interrupted_read")

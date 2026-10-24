@@ -23,6 +23,9 @@ _NON_CAUSAL_AUTOMATION_RELATIONS = frozenset(
     {"action_data", "action_target", "service_target"}
 )
 UNCONSTRAINED_INPUT_BOOLEAN_DEPENDENCY = "input_boolean_dynamic"
+#: HAMCP-165: every label create or edit changes the registry's name
+#: namespace, so label children of every plan serialize on one exclusive key.
+LABEL_NAMESPACE_LOCK_KEY = "label_namespace:registry"
 
 
 def resource_lock_key(resource_type: str, target_id: str) -> str:
@@ -34,8 +37,17 @@ def resource_lock_key(resource_type: str, target_id: str) -> str:
         prefix = "script"
     elif resource_type in {"input_boolean", "input_number"}:
         prefix = "helper"
-    elif resource_type == "entity_registry_metadata":
+    elif resource_type in {
+        "entity_registry_metadata",
+        "entity_registry_availability",
+        "entity_assistant_exposure",
+    }:
+        # HAMCP-069B: every registry-entry mutation for one entity shares the
+        # same exclusive identity, so metadata, availability, and exposure
+        # plans for one entity can never run concurrently.
         prefix = "entity_registry"
+    elif resource_type == "label_registry_entry":
+        prefix = "label_registry"
     else:
         raise ValueError("configuration resource type has no lock identity")
     key = f"{prefix}:{target_id.lower()}"
@@ -177,6 +189,11 @@ def operation_lock_requests(
         # needs no reload, but it keeps the uniform configuration lock graph
         # rather than a special-case path.
         "entity_registry_metadata": "reload:entity_registry_metadata",
+        "entity_registry_availability": (
+            "reload:entity_registry_availability"
+        ),
+        "entity_assistant_exposure": "reload:entity_assistant_exposure",
+        "label_registry_entry": "reload:label_registry_entry",
     }.get(operation.resource_type)
     if reload_key is None:
         raise ValueError("configuration resource type has no reload lock")
@@ -204,7 +221,23 @@ def operation_lock_requests(
                 reason_codes=("home_assistant_availability_dependency",),
             ),
             *_automation_helper_dependency_locks(operation),
+            *_label_namespace_locks(operation),
         )
+    )
+
+
+def _label_namespace_locks(
+    operation: PreparedConfigurationOperation,
+) -> tuple[LockRequest, ...]:
+    if operation.resource_type != "label_registry_entry":
+        return ()
+    return (
+        LockRequest(
+            key=LABEL_NAMESPACE_LOCK_KEY,
+            scopes=(LockScope.RESOURCE,),
+            mode=LockMode.EXCLUSIVE,
+            reason_codes=("label_namespace_mutation",),
+        ),
     )
 
 

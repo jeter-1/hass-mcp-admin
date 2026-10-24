@@ -1,5 +1,178 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.35** ships governed deletion of UI-managed
+automations and scripts **inactive** (HAMCP-155). The new tool
+`create_configuration_delete_plan` proposes one to eight deletions. Its
+runtime-only Core profile `core.configuration_delete_operation` is not
+referenced by the signed registry (sequence 12), so the tool refuses with
+`pending_signed_registry_admission` before any Home Assistant read; the
+release activates nothing new. Once signed, a delete is checked for drift
+immediately before its single no-body `DELETE`, is verified by proof of
+absence (config 404, registry entry gone, state gone), is classified by the
+protected effects it removes, and can be recreated exactly from its
+pre-image by a separately approved `rollback_change` plan. Static tools 68,
+advertised catalog 96 (97 with the optional YAML reader).
+Read the [2.4.1-beta.35 release notes](docs/V2_4_1_BETA35_RELEASE_NOTES.md)
+and [2.4.1-beta.35 acceptance contract](docs/V2_4_1_BETA35_ACCEPTANCE.md).
+
+It builds on beta.34 below.
+
+Engineering **2.4.1-beta.34** ships governed label create, edit and entity
+assignment **inactive** (HAMCP-165). The new tool `create_label_plan` proposes
+1-8 ordered label operations: create or edit a label's name, colour, icon and
+description, optionally assigning it to exact registered entities through the
+signed HAMCP-069A path. Its resource type needs the new Core capability profile
+`core.label_registry_operation`, which the signed registry (sequence 12) does
+not reference. Every call is therefore refused with
+`CoreCapabilityUnavailable` / `pending_signed_registry_admission`, with no plan
+stored and nothing dispatched. The release also makes the two dormant
+HAMCP-069B profiles name every read their gateway sends (new fingerprints). It
+activates nothing new; it switches on with the sequence-13 signing. Static
+tools 67, advertised catalog 95 (96 with the optional YAML reader). Read the
+[2.4.1-beta.34 release notes](docs/V2_4_1_BETA34_RELEASE_NOTES.md) and
+[2.4.1-beta.34 acceptance contract](docs/V2_4_1_BETA34_ACCEPTANCE.md).
+
+It builds on beta.33 below.
+
+Engineering **2.4.1-beta.33** adds the read-only `get_configuration_definitions`
+tool (HAMCP-132 slice 2). For YAML-defined template, SQL and helper entities
+(template, sql, filter, derivative, statistics, group, integration, min_max,
+history_stats, threshold, trend, utility_meter) it reports:
+- how each is defined in `configuration.yaml`, as an allowlisted projection;
+- how the definition was matched to the entity: exact unique ID, a heuristic
+  with a stated confidence, ambiguous, or not found;
+- why an entity is unavailable, from Core's read-only signals.
+
+It never returns the SQL `db_url`, a credential or a `!secret` name. It
+discloses `!include` and packages without following them, and lists UI-created
+entries as not readable without a flow. The `ha_mcp_tools` component is not
+used. Static tools 66, advertised catalog 94 (95 with the optional YAML
+reader). Read the
+[2.4.1-beta.33 release notes](docs/V2_4_1_BETA33_RELEASE_NOTES.md) and
+[2.4.1-beta.33 acceptance contract](docs/V2_4_1_BETA33_ACCEPTANCE.md).
+
+It builds on beta.32 below.
+
+Engineering **2.4.1-beta.32** corrects `get_incident_logs` entry times
+(HAMCP-220). Supervisor 2026.10.3 writes log times in Home Assistant's local
+time without an offset, and earlier betas read them as UTC. Each call now
+reads Home Assistant's configured zone from Core's `/api/config`, under the
+tool's own read lease, before and again after its journal reads; a zone that
+changed or cannot be read again withholds what was read. Each page's first
+entry takes its exact UTC journal time, which confirms the zone. An unreadable zone reads no journal, so while
+Core is down the tool returns no entries; it never assumes the add-on's `TZ`
+or UTC. Any zone disagreement makes the read partial with `zone_mismatch`.
+DST-ambiguous or nonexistent times are resolved exactly within the request
+budget, or reported as uncertain with every candidate. Their surroundings
+are marked `ordering_uncertain`, and the read is partial. No tool, schema,
+permission or configuration changes; catalog 93 (94). Read the
+[2.4.1-beta.32 release notes](docs/V2_4_1_BETA32_RELEASE_NOTES.md) and
+[2.4.1-beta.32 acceptance contract](docs/V2_4_1_BETA32_ACCEPTANCE.md).
+
+It builds on beta.31 below.
+
+Engineering **2.4.1-beta.31** ships governed entity enable/disable and voice
+assistant exposure **inactive** (HAMCP-069B). The new tool
+`create_entity_availability_exposure_plan` proposes one operation (`disable`,
+`enable`, `expose` or `unexpose`) over 1-8 exact registered entities, for
+Assist or Google Assistant (Alexa refused). Its two resource types need two
+new Core capability profiles that the signed registry (sequence 12) does not
+reference. Every call is therefore refused with `CoreCapabilityUnavailable` /
+`pending_signed_registry_admission`, with no plan stored and nothing
+dispatched. `list_capabilities` and health show the same status. The
+release activates nothing new; activation and the live canaries wait for a
+separate owner-signed registry sequence 13. Static tools 65, advertised
+catalog 93 (94 with the optional YAML reader). Read the
+[2.4.1-beta.31 release notes](docs/V2_4_1_BETA31_RELEASE_NOTES.md) and
+[2.4.1-beta.31 acceptance contract](docs/V2_4_1_BETA31_ACCEPTANCE.md).
+
+It builds on beta.30 below.
+
+Engineering **2.4.1-beta.30** adds two read-only tools (HAMCP-131).
+`get_incident_logs` reads one incident window of at most 6 hours from the Core
+journal and Engineering's own add-on journal. It merges them in time order,
+with per-source coverage, gaps, retention edges, filter skips and a signed
+cursor. Supervisor, host and other add-on logs need Supervisor role `manager`.
+They are listed as unavailable with that exact reason and zero requests; no
+role is added. `get_history_slices` reads entity history continuously, through
+the sanitized delegated `ha_get_history` route. It uses fixed 6-hour slices
+over at most 7 days and a cursor that fails closed as stale when earlier
+history changes. Static tools 64, advertised catalog 92 (93 with the optional
+YAML reader). Read the
+[2.4.1-beta.30 release notes](docs/V2_4_1_BETA30_RELEASE_NOTES.md) and
+[2.4.1-beta.30 acceptance contract](docs/V2_4_1_BETA30_ACCEPTANCE.md).
+
+It builds on beta.29 below.
+
+Engineering **2.4.1-beta.29** makes exact automation and script changes that
+touch a protected physical object (lock, alarm panel, valve, water control or
+garage cover) actionable instead of prohibited (HAMCP-213 PR 1, policy
+`f2-v3`). Engineering compares the before and after physical effects. An
+equivalent change needs plan approval only. A changed or undeterminable
+effect, and any unlock or disarm, also needs a per-object safety-critical
+acknowledgement on the Ingress panel, which dispatch rechecks. Incomplete
+execution contracts, and changes past the review bounds, stay prohibited.
+Every called script is re-read before approval is consumed and before each
+write. No tool, schema or descriptor changes (90 tools, 91 with the optional
+YAML reader). Read the
+[2.4.1-beta.29 release notes](docs/V2_4_1_BETA29_RELEASE_NOTES.md) and
+[2.4.1-beta.29 acceptance contract](docs/V2_4_1_BETA29_ACCEPTANCE.md).
+
+It builds on beta.28 below.
+
+Engineering **2.4.1-beta.28** is a break-fix for Home Assistant Core
+authority (HAMCP-215). After a transient verification failure, Core authority
+now recovers on its own:
+- a bounded, jittered backoff (20 s doubling to a 240 s cap) replaces the
+  fixed 300 s retry;
+- authority returns only after 2 consecutive complete background
+  re-verifications about 15 s apart, or 3 when it flaps; a changed Core
+  version, identity, signed-registry authority or reviewed contract, seen by
+  any check, restarts the count;
+- only a process's very first boot may admit without confirmation; any later
+  re-initialization passes the same gate;
+- the catalog, the YAML reader and the dependency index then resume.
+
+Every verification failure, retirement, catalog withdrawal, recovery attempt
+and restoration is now a bounded WARNING log event. Health's
+`home_assistant_core_authority.recovery` reports the recovery state, the last
+failure reason and time, and the next attempt. Fail-closed behavior during
+recovery is unchanged. After a Core restart or update, Core-backed tools refuse
+for about 15–18 s until the confirmation completes. The same wait (about
+15 s) follows a changed Core version or signed-registry authority, an
+incompatible Core becoming compatible, and a Core not initialized at boot.
+Josh accepted these delays.
+No tool, schema, permission or descriptor changes (90
+tools, 91 with the optional YAML reader). Read the
+[2.4.1-beta.28 release notes](docs/V2_4_1_BETA28_RELEASE_NOTES.md) and
+[2.4.1-beta.28 acceptance contract](docs/V2_4_1_BETA28_ACCEPTANCE.md).
+
+It builds on beta.27 below.
+
+Engineering **2.4.1-beta.27** adds two read-only tools (HAMCP-132 slice 1).
+`get_recorder_settings` reports the recorder's effective settings, each with
+its origin: written in `configuration.yaml`, Core's default, or `unknown` with
+the reason, such as packages that could supply the key. It also reports
+filters, live recorder state, and Core's own "is this entity recorded" answer
+beside the computed filter, with `filter_drift` when they disagree. It never
+returns `db_url` or secret names. `get_unregistered_entities` lists entities
+that have a state but no registry entry, with their platform and config entry.
+The definition file is never guessed. Static tools 62, advertised catalog 90
+(91 with the optional YAML reader). Read the
+[2.4.1-beta.27 release notes](docs/V2_4_1_BETA27_RELEASE_NOTES.md) and
+[2.4.1-beta.27 acceptance contract](docs/V2_4_1_BETA27_ACCEPTANCE.md).
+
+It builds on beta.26 below.
+
+Engineering **2.4.1-beta.26** is a dependency security release (HAMCP-217).
+It upgrades `certifi` to 2026.10.19 for GHSA-6q48-6c7w-9gw2, removing the
+`emSign ECC Root CA - G3` root from the bundle that Engineering's httpx MCP
+clients trust. No runtime code, tool, schema or descriptor changes. Read the
+[2.4.1-beta.26 release notes](docs/V2_4_1_BETA26_RELEASE_NOTES.md) and
+[2.4.1-beta.26 acceptance contract](docs/V2_4_1_BETA26_ACCEPTANCE.md).
+
+It builds on beta.25 below.
+
 Engineering **2.4.1-beta.25** reads script configuration from what Home
 Assistant has loaded (HAMCP-212, fast dependency index part 2). The index
 build's single WebSocket batch adds two fixed, read-only commands per available
@@ -169,8 +342,8 @@ beta.7's delegated platform reads (`ha_get_system_health`, `ha_get_app` and
 deep-health correction, beta.4's dormant governed
 entity-registry metadata administration (`create_entity_metadata_plan`) and
 beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
-The healthy catalog is **87 tools: 59 native and 28 admitted delegated
-reads**. The Core profiles, probe and signed fingerprints, storage
+At beta.18 the healthy catalog was **87 tools: 59 native and 28 admitted
+delegated reads** (the current count is under *Capabilities and compatibility*). The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
 See the [release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
 [acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md).
@@ -267,7 +440,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.25 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.29 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
@@ -310,10 +483,16 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**60 static tools plus 28 delegated reads, 88 total** (89 with the optional
-reviewed YAML reader admitted; the 60th static tool is HAMCP-130's read-only
-`get_backup_inventory`). The Core inventory represents
-**22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
+**67 static tools plus 28 delegated reads, 95 total** (96 with the optional
+reviewed YAML reader admitted; the seven newest static tools are HAMCP-132's
+read-only `get_recorder_settings`, `get_unregistered_entities` and
+`get_configuration_definitions`, HAMCP-131's read-only `get_incident_logs`
+and `get_history_slices`, HAMCP-069B's
+`create_entity_availability_exposure_plan` and HAMCP-165's
+`create_label_plan`, the last two refused until a signed registry admits
+their profiles). The Core inventory represents
+**25 capability profiles** (four dormant, unselected by any signed entry: the
+earlier one, HAMCP-069B's two and HAMCP-165's label profile). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol
 enumeration and descriptor comparison establish the catalog; a health count or

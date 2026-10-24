@@ -13,6 +13,7 @@ import unittest
 
 from tests import test_beta37_exact_helper_state as helper_fixtures
 from tests import test_core_update_continuity as core_fixtures
+from tests.support.core_gate import reconcile_through_gate
 from tests.test_dependency_build_authority import _Network
 from tests.test_ha_core_2026_9_integration import settings
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
@@ -20,6 +21,7 @@ from ha_mcp_engineering.clients.websocket import HomeAssistantWebSocketClient
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime
 from ha_mcp_engineering.governance.helper_dependency import HelperDependencyRiskService
 from ha_mcp_engineering.governance.helper_dependency import home_assistant_version_admission
+from ha_mcp_engineering.ha_core_readmission.runtime import CORE_RECOVERY_FLAP_CONFIRMATIONS
 from ha_mcp_engineering.errors import HomeAssistantUnavailableError
 from ha_mcp_engineering.dependency.index import DependencyFenceError
 from ha_mcp_engineering.dependency import semantic_registry as registry_module
@@ -164,7 +166,9 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
                                  if c["capability_id"] != "core.template_semantics"]
         self.registry_case.raw = self.registry_case.next_journal(entries=[entry])
         await self.registry_case.registry.refresh()
-        await self.core.reconcile_once("synthetic_partial_review")
+        # HAMCP-215 H1: the registry change retires the generation; the
+        # partial review is restored only through the background gate.
+        await reconcile_through_gate(self.core)
         await self.assert_planning_refused()
         self.assertEqual(self.network.calls, [])
         # Failure remains local: an unrelated admitted read retains useful
@@ -234,6 +238,9 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
         snapshot, _, _ = await self.index.get()
         self.core.configure(object(), source=self.source, release_registry=self.registry_case.registry)
         await self.core.reconcile_once("startup")
+        # HAMCP-215 H1: a re-initialization never reopens first admission.
+        self.registry_case.assert_admitted(self.core, 0)
+        await reconcile_through_gate(self.core)
         self.registry_case.assert_admitted(self.core)
         self.assertFalse(home_assistant_version_admission(snapshot)["admitted"])
         self.assertFalse(self.index.active_identity()["current"])
@@ -375,7 +382,12 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
         await self.registry_case.registry.refresh()
         self.source.version = "2026.9.3"
         self.network.payloads["/config"]["version"] = "2026.9.3"
-        await self.core.reconcile_once("synthetic_version_change")
+        # HAMCP-215: the retired generation restores only after the bounded
+        # recovery confirmations from a supervisor-paced trigger.
+        for _ in range(CORE_RECOVERY_FLAP_CONFIRMATIONS):
+            await self.core.reconcile_once("identity_or_connection_change")
+            if self.core.initialized:
+                break
         self.registry_case.assert_admitted(self.core)
         result = await self.service.apply(plan["plan_id"], plan["plan_hash"])
         self.assertEqual(result["task_state"], "failed_pre_dispatch", result)

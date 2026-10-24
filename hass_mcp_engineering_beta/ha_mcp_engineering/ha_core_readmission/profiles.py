@@ -497,9 +497,124 @@ CORE_ENTITY_METADATA_PROFILES = (
                      "session_fingerprint", "generation"),
     ),
 )
+# HAMCP-069B: two further runtime-only mutation contracts.  Like 069A they are
+# never part of CORE_CAPABILITY_PROFILES and stay dormant until an owner-signed
+# registry reference (planned sequence 13) selects each one exactly.  Each
+# profile names every read its gateway sends (HAMCP-222 OD-5): the enable
+# disclosure counts the config entry's other entities through
+# ``config/entity_registry/list``, and the exposure disclosure reads the
+# assistant's "expose new entities" setting (never written).
+CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES = (
+    _contract(
+        "core.entity_registry_availability_operation",
+        CoreCapabilityClass.ENTITY_REGISTRY_AVAILABILITY_OPERATION,
+        "compiled-core-entity-registry-availability-operation-v1",
+        (
+            "websocket_entity_registry_get",
+            "websocket_entity_registry_update_disabled_by_user_or_null",
+            "websocket_config_entries_get_single",
+            "websocket_entity_registry_list",
+            "entity_registry_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "bounded_exact_existing_entity_registry_entries",
+            "fields": ["disabled_by"],
+            "values": ["user", None],
+            "dispatch": "at_most_once_entity_registry_update_per_entity",
+            "readback": "authoritative_exact_entity_registry_entry",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+    _contract(
+        "core.entity_assistant_exposure_operation",
+        CoreCapabilityClass.ENTITY_ASSISTANT_EXPOSURE_OPERATION,
+        "compiled-core-entity-assistant-exposure-operation-v1",
+        (
+            "websocket_entity_registry_get",
+            "websocket_expose_entity_single_assistant_single_entity",
+            "websocket_expose_new_entities_get",
+            "entity_registry_options_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "bounded_exact_existing_entity_registry_entries",
+            "fields": ["options.<assistant>.should_expose"],
+            "assistants": ["cloud.google_assistant", "conversation"],
+            "dispatch": "at_most_once_expose_entity_per_entity",
+            "readback": "authoritative_exact_entity_registry_options",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+)
+# HAMCP-165: the label registry create/update contract.  Like 069A/069B it is
+# runtime-only and stays dormant until an owner-signed registry reference
+# (planned sequence 13) selects it exactly.  ``delete`` is never sent.
+CORE_LABEL_REGISTRY_PROFILES = (
+    _contract(
+        "core.label_registry_operation",
+        CoreCapabilityClass.LABEL_REGISTRY_OPERATION,
+        "compiled-core-label-registry-operation-v1",
+        (
+            "websocket_label_registry_list",
+            "websocket_label_registry_create_single",
+            "websocket_label_registry_update_single",
+            "label_registry_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "bounded_exact_label_registry_entries",
+            "fields": ["name", "color", "icon", "description"],
+            "label_id": "exact_core_slug_of_name_no_suffix",
+            "dispatch": "at_most_once_label_create_or_update_per_label",
+            "never_sent": ["config/label_registry/delete"],
+            "readback": "authoritative_exact_label_registry_entry",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+)
+# HAMCP-155: a runtime-only deletion contract for automation and script
+# configuration.  Like 069A/069B it is never part of CORE_CAPABILITY_PROFILES,
+# so no signed probe fingerprint changes, and it stays dormant until an
+# owner-signed registry reference (planned sequence 13) selects it exactly.
+# The generic governed_configuration_operation contract never covers DELETE.
+CORE_CONFIGURATION_DELETE_PROFILES = (
+    _contract(
+        "core.configuration_delete_operation",
+        CoreCapabilityClass.CONFIGURATION_DELETE_OPERATION,
+        "compiled-core-configuration-delete-operation-v1",
+        (
+            "rest_config_automation_script_get",
+            "rest_config_automation_script_delete_no_body",
+            "websocket_entity_registry_list",
+            "rest_entity_state_get",
+            "config_registry_state_absence_readback",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "one_exact_existing_automation_or_script_configuration",
+            "resource_types": ["automation", "script"],
+            "dispatch": "at_most_once_config_delete_no_body",
+            "absent_target": "400_resource_not_found_no_write",
+            "readback": "config_404_registry_entry_absent_state_absent",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
     + CORE_AUTOMATION_BASELINE_PROFILES + CORE_ENTITY_METADATA_PROFILES
+    + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
+    + CORE_LABEL_REGISTRY_PROFILES
+    + CORE_CONFIGURATION_DELETE_PROFILES
 )
 
 
@@ -560,6 +675,9 @@ __all__ = [
     "CORE_CAPABILITY_PROFILES",
     "CORE_TYPED_OPERATION_PROFILES",
     "CORE_ENTITY_METADATA_PROFILES",
+    "CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES",
+    "CORE_LABEL_REGISTRY_PROFILES",
+    "CORE_CONFIGURATION_DELETE_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

@@ -585,7 +585,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 60)
+        self.assertEqual(len(self.beta_tools), 68)
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -595,6 +595,11 @@ class ToolParityTests(unittest.TestCase):
                 "capture_automation_baseline",
                 "get_integration_inspection",
                 "get_backup_inventory",
+                "get_recorder_settings",
+                "get_unregistered_entities",
+                "get_configuration_definitions",
+                "get_incident_logs",
+                "get_history_slices",
                 "get_core_log_history",
                 "get_server_health",
                 "list_dashboards",
@@ -603,6 +608,9 @@ class ToolParityTests(unittest.TestCase):
                 "create_reload_plan",
                 "create_helper_state_plan",
                 "create_entity_metadata_plan",
+                "create_entity_availability_exposure_plan",
+                "create_label_plan",
+                "create_configuration_delete_plan",
                 "create_addon_restart_plan",
                 "create_home_assistant_restart_plan",
                 "create_change_plan",
@@ -682,7 +690,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], SERVER_VERSION)
-        self.assertEqual(result["data"]["tool_count"], 60)
+        self.assertEqual(result["data"]["tool_count"], 68)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -690,7 +698,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 60)
+        self.assertEqual(catalog["registered_count"], 68)
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
@@ -700,7 +708,12 @@ class ToolParityTests(unittest.TestCase):
                 "capture_automation_baseline",
                 "get_integration_inspection",
                 "get_backup_inventory",
+                "get_recorder_settings",
+                "get_unregistered_entities",
+                "get_configuration_definitions",
                 "get_core_log_history",
+                "get_incident_logs",
+                "get_history_slices",
                 "control_power",
                 "control_fan",
                 "run_held_read_canary",
@@ -709,6 +722,9 @@ class ToolParityTests(unittest.TestCase):
                 "create_addon_restart_plan",
                 "create_helper_state_plan",
                 "create_entity_metadata_plan",
+                "create_entity_availability_exposure_plan",
+                "create_label_plan",
+                "create_configuration_delete_plan",
                 "create_home_assistant_restart_plan",
                 "get_server_health",
                 "list_dashboards",
@@ -736,10 +752,10 @@ class ToolParityTests(unittest.TestCase):
             Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(catalog["provider_matrix"]), 23)
+        self.assertEqual(len(catalog["provider_matrix"]), 28)
         self.assertEqual(
             {item["selected_provider"] for item in catalog["provider_matrix"]},
-            {"direct_ha_api", "supervisor_core_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power", "upstream_platform_reads", "ha_mcp_delegated"},
+            {"direct_ha_api", "supervisor_core_logs", "supervisor_incident_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power", "upstream_platform_reads", "ha_mcp_delegated"},
         )
 
 
@@ -761,9 +777,7 @@ class BetaApplicationTests(unittest.TestCase):
             core_snapshot_source=SyntheticCoreSource(),
         )
         asyncio.run(
-            CORE_READMISSION.reconcile_once(
-                "synthetic-application-startup"
-            )
+            CORE_READMISSION.reconcile_once("startup")
         )
         asyncio.run(
             GOVERNANCE.require().f3_runtime.recover_once(
@@ -855,7 +869,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 60)
+        self.assertEqual(len(names), 68)
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]
@@ -933,6 +947,9 @@ class BetaApplicationTests(unittest.TestCase):
             "create_reload_plan",
             "create_helper_state_plan",
             "create_entity_metadata_plan",
+            "create_entity_availability_exposure_plan",
+            "create_label_plan",
+            "create_configuration_delete_plan",
             "create_addon_restart_plan",
             "create_home_assistant_restart_plan",
             "list_dashboards",

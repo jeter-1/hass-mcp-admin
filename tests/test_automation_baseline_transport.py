@@ -10,14 +10,26 @@ from aiohttp import web
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'hass_mcp_engineering_beta'))
 from ha_mcp_engineering.clients.audit_baseline import BaselineReadClient
+from ha_mcp_engineering.clients import audit_baseline as client_module
 from ha_mcp_engineering.audit_baseline import capture_contracts as c
 from ha_mcp_engineering.request_context import begin_request,end_request
+
+class _DeadlineRecorder:
+    """Client-module ``asyncio`` stand-in that captures per-attempt deadlines."""
+    def __init__(self):
+        self.timeouts=[]
+    def __getattr__(self, name):
+        return getattr(asyncio, name)
+    def timeout(self, delay):
+        context=asyncio.timeout(delay);self.timeouts.append((delay,context))
+        return context
 
 class TransportTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.requests=[];self.commands=[];self.auth_version='2026.9.4';self.frame=None
         self.body=b'{"id":"1","action":[]}';self.status=200;self.headers={};self.drop=False;self.hold=False
         self.authority=True
+        self.held=asyncio.Event();self.release=asyncio.Event()
         async def handler(request):
             self.requests.append((request.method,request.path))
             if self.drop:
@@ -35,7 +47,8 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                     await ws.send_str(self.frame or json.dumps({'id':command['id'],'type':'result','success':True,'result':{'is_admin':True}}))
                 return ws
             self.assertEqual(request.headers.get('Authorization'),'Bearer SYNTHETIC_BASELINE_TOKEN')
-            if self.hold: await asyncio.sleep(.3)
+            if self.hold:
+                self.held.set();await self.release.wait()
             return web.Response(body=self.body,status=self.status,headers=self.headers)
         app=web.Application();app.router.add_get('/{path:.*}',handler)
         self.runner=web.AppRunner(app,access_log=None);await self.runner.setup()
@@ -44,6 +57,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.client=BaselineReadClient(SimpleNamespace(api_url=f'http://127.0.0.1:{port}/api',websocket_url=f'ws://127.0.0.1:{port}/api/websocket',ha_token='SYNTHETIC_BASELINE_TOKEN'))
         self.telemetry,self.token=begin_request()
     async def asyncTearDown(self):
+        self.release.set()
         end_request(self.token);await self.runner.cleanup()
     def authorize(self):
         if not self.authority: raise c.CaptureError('authority_unavailable')
@@ -66,17 +80,46 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                                  ('disconnect', 'source_unavailable'), ('timeout', 'timeout')):
                 with self.subTest(kind=kind, case=case):
                     self.status=200;self.headers={};self.drop=self.hold=False
+                    self.held=asyncio.Event();self.release=asyncio.Event()
                     async with self.client.capture('2026.9.4',self.authorize) as peer:
                         before=len(self.requests)
                         if case=='redirect': self.status=302;self.headers={'Location':'/forbidden'}
                         if case=='disconnect': self.drop=True
                         if case=='timeout': self.hold=True
-                        with patch.object(c,'READ_SECONDS',.04):
-                            with self.assertRaises(c.CaptureError) as found:
-                                if kind == 'states':
-                                    await peer.read('states')
-                                else:
-                                    await peer.configuration('1')
+                        # The real READ_SECONDS stays in force for every case,
+                        # so a redirect or disconnect cannot become a timeout
+                        # under host load. The timeout case holds the request
+                        # at the peer and expires the client's own captured
+                        # asyncio.timeout only once the peer has received it
+                        # (HAMCP-208/219).
+                        recorder = _DeadlineRecorder()
+                        with patch.object(client_module, 'asyncio', recorder):
+                            read = asyncio.create_task(
+                                peer.read('states') if kind == 'states'
+                                else peer.configuration('1'))
+                            try:
+                                if case == 'timeout':
+                                    async with asyncio.timeout(10):
+                                        await self.held.wait()
+                                    self.assertEqual(len(recorder.timeouts), 1)
+                                    self.assertFalse(read.done())
+                                    recorder.timeouts[0][1].reschedule(
+                                        asyncio.get_running_loop().time())
+                                # Hang guard only; the read's own outcome is
+                                # asserted below.
+                                done, _ = await asyncio.wait([read], timeout=10)
+                                self.assertIn(read, done)
+                                with self.assertRaises(c.CaptureError) as found:
+                                    read.result()
+                            finally:
+                                self.release.set()
+                                if not read.done():
+                                    read.cancel()
+                                await asyncio.gather(read, return_exceptions=True)
+                        self.assertEqual([delay for delay, _ in recorder.timeouts],
+                                         [min(c.READ_SECONDS, peer.remaining())])
+                        self.assertEqual(recorder.timeouts[0][0], c.READ_SECONDS)
+                        self.assertEqual(self.held.is_set(), case == 'timeout')
                         self.assertEqual(found.exception.reason, reason)
                         self.assertIs(found.exception.retryable, True)
                         self.assertEqual(self.requests[before:], [('GET', path)])

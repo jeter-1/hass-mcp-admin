@@ -406,7 +406,12 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
     output = Path(os.environ["REAL_HA_ENTITY_METADATA_RESULT"])
     probe_profile = probe_profile_for(core_version)
     added = source_profile()
-    refs = [{k: p.to_mapping()[k] for k in REFERENCE_KEYS} for p in CORE_RUNTIME_CAPABILITY_PROFILES]
+    refs = [{k: p.to_mapping()[k] for k in REFERENCE_KEYS} for p in CORE_RUNTIME_CAPABILITY_PROFILES
+            # HAMCP-069B/155/165: the dormant availability/exposure, delete and label profiles are not signed here.
+            if p.capability_id not in {"core.entity_registry_availability_operation",
+                                       "core.entity_assistant_exposure_operation",
+                                       "core.configuration_delete_operation",
+                                       "core.label_registry_operation"}]
     old = [r for r in refs if r["capability_id"] != CAPABILITY]
     new = old + [added]
     assert len(old) == 21 and len(new) == 22 and len({r["capability_id"] for r in new}) == 22
@@ -441,7 +446,7 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
             runtime = CoreRuntime()
             runtimes.append(runtime)
             runtime.configure(configured, release_registry=registry)
-            await runtime.reconcile_once("hamcp179_entity_metadata_disposable")
+            await runtime.reconcile_once("startup")
             assert runtime.health_snapshot()["compatible_count"] == len(references)
             return runtime
 

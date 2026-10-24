@@ -101,15 +101,30 @@ from .normalize import (
 from .risk import classify_risk
 from .configuration_eligibility import (
     TRIGGER as RETRY_PROOF_TRIGGER,
+    ProofRefused,
     derive_proof,
     markers as retry_proof_markers,
+    script_baseline,
+)
+from .physical_effects import (
+    CALLED_SCRIPT_MODEL,
+    MAX_ACKNOWLEDGED_OBJECTS,
+    MAX_CALL_DEPTH,
+    MAX_CALLED_SCRIPTS,
+    acknowledgement_object_token,
+    called_script_references,
+    compare_operation,
+    compare_physical_effects,
+    plan_acknowledgement_binding,
+    script_storage_key,
 )
 from . import configuration_rollback_eligibility as inverse_eligibility
 from .policy import (
     POLICY_VERSION,
     configuration_operation_policy,
     evaluate_change_policy,
-    persisted_f2_v1_policy_snapshot_matches,
+    persisted_f2_v2_policy_snapshot_matches,
+    persisted_historical_policy_snapshot_matches,
     policy_snapshot_matches,
 )
 from .resources import (
@@ -185,6 +200,12 @@ from .entity_metadata import (
     ENTITY_METADATA_RESOURCE_TYPE,
 )
 from . import entity_metadata_planning
+from . import entity_availability_exposure_planning
+from . import entity_availability_exposure
+from . import label_registry
+from . import label_registry_planning
+from . import configuration_delete
+from . import configuration_delete_planning
 from .entity_metadata_disclosure import read_runtime_dependency_snapshot
 from .helper_dependency import (
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
@@ -199,6 +220,13 @@ from .semantic_projection import (
     build_semantic_projection,
     validate_projection_plan_size,
     validate_semantic_projection,
+)
+
+
+# HAMCP-165: resource types admitted only by an unsigned (dormant) Core
+# profile; see ``f3_runtime.runtime.UNSIGNED_PROFILE_REQUIREMENTS``.
+DORMANT_PROFILE_RESOURCE_TYPES = frozenset(
+    {label_registry.LABEL_RESOURCE_TYPE, *entity_availability_exposure.RESOURCE_TYPES}
 )
 
 
@@ -252,12 +280,99 @@ def principal_separation_status(approval: Any) -> dict[str, Any]:
         "evaluated": evaluated,
         "enforced": enforced,
         "reason": (
-            "no_external_approver_exists" if not evaluated
+            # HAMCP-213 OD-4: an unevaluated record has no recorded Ingress
+            # decision yet, or it can never be approved.
+            (
+                "not_approvable"
+                if getattr(approval, "bundle_state", None) == "prohibited"
+                else "no_decision_recorded"
+            )
+            if not evaluated
             else "anonymous_fallback_principal" if anonymous
             else "external_administrator_distinct" if enforced
             else "external_principal_not_distinct"
         ),
     }
+
+
+# HAMCP-213 D1: the ordered second administrator action. The persisted slot
+# keeps its historical name ``elevated_risk_acknowledgement``; its ``kind``
+# says which action it records. Only the safety-critical acknowledgement uses
+# action authority version 4 and binds the recomputed physical-effect
+# comparison and the exact acknowledged objects.
+SAFETY_CRITICAL_ACKNOWLEDGEMENT_AUTHORITY_VERSION = 4
+SECOND_ACTION_PENDING_STATES = {
+    ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT: (
+        "pending_elevated_risk_acknowledgement"
+    ),
+    ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT: (
+        "pending_safety_critical_acknowledgement"
+    ),
+}
+SECOND_ACTION_EVENT_PREFIXES = {
+    ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT: (
+        "elevated_risk_acknowledgement"
+    ),
+    ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT: (
+        "safety_critical_acknowledgement"
+    ),
+}
+SECOND_ACTION_VALUES = frozenset(
+    kind.value for kind in SECOND_ACTION_PENDING_STATES
+)
+
+
+def second_action_kind(decision: Any) -> ApprovalActionKind | None:
+    """Return the decision's ordered second action, or ``None``.
+
+    Callers that need the exact sequence validate it separately; this returns
+    the first second-action kind the decision requires.
+    """
+
+    if decision is None:
+        return None
+    for kind in decision.required_acknowledgements:
+        if kind in SECOND_ACTION_PENDING_STATES:
+            return kind
+    return None
+
+
+def second_action_authority_version(kind: ApprovalActionKind) -> int:
+    return (
+        SAFETY_CRITICAL_ACKNOWLEDGEMENT_AUTHORITY_VERSION
+        if kind is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+        else APPROVAL_AUTHORITY_VERSION
+    )
+
+
+def safety_critical_binding(plan: Any) -> dict[str, Any] | None:
+    """Recompute the plan's bounded acknowledgement binding, or ``None``.
+
+    ``None`` means the immutable plan names no acknowledgeable object or more
+    than ``MAX_ACKNOWLEDGED_OBJECTS``; either way no acknowledgement can be
+    bound to it and the plan fails closed.
+    """
+
+    try:
+        binding = plan_acknowledgement_binding(plan.operations)
+    except Exception:  # noqa: BLE001 - malformed persisted operations fail closed
+        return None
+    if binding is None or not binding["objects"]:
+        return None
+    if len(binding["objects"]) > MAX_ACKNOWLEDGED_OBJECTS:
+        return None
+    return binding
+
+
+def safety_critical_object_rows(binding: dict[str, Any]) -> list[dict[str, str]]:
+    return [
+        {
+            "operation_id": str(row["operation_id"]),
+            "object_id": str(row["object_id"]),
+            "object_ref": acknowledgement_object_token(row),
+        }
+        for row in binding["objects"]
+    ]
 
 
 CONFIGURATION_PLAN_CONTRACT_VERSION = 2
@@ -576,6 +691,13 @@ class ChangeGovernanceService:
         entity_metadata_gateway: Any | None = None,
         entity_metadata_snapshot_reader: Callable[..., Awaitable[Any]]
         | None = None,
+        entity_availability_exposure_gateway: Any | None = None,
+        entity_availability_exposure_snapshot_reader: Callable[
+            ..., Awaitable[Any]
+        ]
+        | None = None,
+        label_registry_gateway: Any | None = None,
+        configuration_delete_gateway: Any | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
@@ -594,6 +716,16 @@ class ChangeGovernanceService:
         self.entity_metadata_snapshot_reader = (
             entity_metadata_snapshot_reader or read_runtime_dependency_snapshot
         )
+        self.entity_availability_exposure_gateway = (
+            entity_availability_exposure_gateway
+        )
+        self.entity_availability_exposure_snapshot_reader = (
+            entity_availability_exposure_snapshot_reader
+            or read_runtime_dependency_snapshot
+        )
+        # HAMCP-165: closed-vocabulary label registry reads and writes.
+        self.label_registry_gateway = label_registry_gateway
+        self.configuration_delete_gateway = configuration_delete_gateway
         self.provider_identity_reader = provider_identity_reader
         self.approval_notifications = approval_notifications
         self._plan_observability_cursor_key = (
@@ -649,6 +781,13 @@ class ChangeGovernanceService:
         bind_known_secrets = getattr(self.repository, "bind_known_secrets", None)
         if bind_known_secrets is not None:
             bind_known_secrets(lambda: self.sensitive_values)
+        # HAMCP-213 batch 4 (H6): records an older version quarantined on
+        # rollback return to service before cleanup and recovery see them.
+        restore_quarantined = getattr(
+            self.repository, "restore_quarantined_records", None
+        )
+        if restore_quarantined is not None:
+            restore_quarantined()
         self.repository.cleanup(now=self.now())
         self.repository.recover_incomplete(self._timestamp())
         self.task_repository.cleanup(now=self.now())
@@ -914,6 +1053,10 @@ class ChangeGovernanceService:
                     immutable_operation["semantic_projection_hash"] = (
                         operation.semantic_projection_hash
                     )
+                if operation.called_scripts is not None:
+                    immutable_operation["called_scripts_hash"] = stable_hash(
+                        operation.called_scripts
+                    )
                 immutable_operations.append(immutable_operation)
             immutable = {
                 "contract_version": plan.contract_version,
@@ -988,16 +1131,26 @@ class ChangeGovernanceService:
             else "pending_plan_approval"
         )
         plan.approval.same_principal_confirmed = None
-        plan.approval.elevated_risk_acknowledgement = (
-            ApprovalActionRecord(
-                kind=(
-                    ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                )
-            )
-            if ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-            in decision.required_acknowledgements
-            else None
+        kind = second_action_kind(decision)
+        if kind is None:
+            plan.approval.elevated_risk_acknowledgement = None
+            return
+        record = ApprovalActionRecord(
+            kind=kind,
+            authority_version=second_action_authority_version(kind),
         )
+        if kind is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT:
+            binding = safety_critical_binding(plan)
+            if binding is None:
+                raise GovernanceError(
+                    ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+                    details={
+                        "reason": "safety_critical_acknowledgement_unbindable",
+                        "max_acknowledged_objects": MAX_ACKNOWLEDGED_OBJECTS,
+                    },
+                )
+            record.safety_critical_projection_hash = binding["projection_hash"]
+        plan.approval.elevated_risk_acknowledgement = record
 
     def _require_policy_snapshot(self, plan: ChangePlan, *, projection_only: bool = False) -> None:
         if plan.policy_decision is None:
@@ -1060,10 +1213,10 @@ class ChangeGovernanceService:
             # source at load/apply and the complete-bundle preflight boundary.
             self._require_policy_snapshot(plan, projection_only=True)
             return
-        if persisted_f2_v1_policy_snapshot_matches(plan):
-            # Exact F2-v1 is immutable review evidence only. Approval, apply,
+        if persisted_historical_policy_snapshot_matches(plan):
+            # Exact F2-v1 or F2-v2 is immutable review evidence only. Approval, apply,
             # rollback, and recovery load through _require_policy_snapshot and
-            # therefore cannot acquire F2-v2 execution authority.
+            # therefore cannot acquire current execution authority.
             bundle_error = self._approval_bundle_integrity_error(plan)
             if bundle_error is not None:
                 METRICS.record_classified_outcome(bundle_error.value)
@@ -1125,18 +1278,44 @@ class ChangeGovernanceService:
             is not ApprovalActionKind.PLAN_APPROVAL
         ):
             return ErrorCode.APPROVAL_SEQUENCE_FAILURE
-        acknowledgement_required = (
-            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-            in decision.required_acknowledgements
-        )
-        if acknowledgement_required != (acknowledgement is not None):
-            return ErrorCode.APPROVAL_SEQUENCE_FAILURE
-        if (
-            acknowledgement is not None
-            and acknowledgement.kind
-            is not ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+        required_kind = second_action_kind(decision)
+        if tuple(decision.required_acknowledgements) != (
+            (ApprovalActionKind.PLAN_APPROVAL,)
+            if required_kind is None
+            else (ApprovalActionKind.PLAN_APPROVAL, required_kind)
         ):
             return ErrorCode.APPROVAL_SEQUENCE_FAILURE
+        if (required_kind is not None) != (acknowledgement is not None):
+            return ErrorCode.APPROVAL_SEQUENCE_FAILURE
+        if acknowledgement is not None and (
+            acknowledgement.kind is not required_kind
+            or acknowledgement.authority_version
+            != second_action_authority_version(required_kind)
+        ):
+            return ErrorCode.APPROVAL_SEQUENCE_FAILURE
+        safety_binding: dict[str, Any] | None = None
+        if acknowledgement is not None:
+            if (
+                required_kind
+                is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+            ):
+                safety_binding = safety_critical_binding(plan)
+                if (
+                    safety_binding is None
+                    or acknowledgement.safety_critical_projection_hash
+                    != safety_binding["projection_hash"]
+                ):
+                    return ErrorCode.POLICY_SNAPSHOT_MISMATCH
+                if acknowledgement.acknowledged_objects is not None and (
+                    acknowledgement.acknowledged_objects
+                    != safety_binding["objects"]
+                ):
+                    return ErrorCode.APPROVAL_SEQUENCE_FAILURE
+            elif (
+                acknowledgement.safety_critical_projection_hash is not None
+                or acknowledgement.acknowledged_objects is not None
+            ):
+                return ErrorCode.APPROVAL_SEQUENCE_FAILURE
 
         expected_state_pairs: dict[
             str, tuple[ApprovalState, ApprovalState | None]
@@ -1149,9 +1328,15 @@ class ChangeGovernanceService:
                     else None
                 ),
             ),
-            "pending_elevated_risk_acknowledgement": (
-                ApprovalState.APPROVED,
-                ApprovalState.EXTERNAL_PENDING,
+            **(
+                {
+                    SECOND_ACTION_PENDING_STATES[required_kind]: (
+                        ApprovalState.APPROVED,
+                        ApprovalState.EXTERNAL_PENDING,
+                    )
+                }
+                if required_kind is not None
+                else {}
             ),
             "fully_approved": (
                 ApprovalState.APPROVED,
@@ -1247,9 +1432,7 @@ class ChangeGovernanceService:
         ):
             return ErrorCode.APPROVAL_SEQUENCE_FAILURE
         if acknowledgement is not None and acknowledgement.challenge_id and (
-            acknowledgement.authority_version
-            != APPROVAL_AUTHORITY_VERSION
-            or acknowledgement.bound_plan_hash
+            acknowledgement.bound_plan_hash
             != ChangeGovernanceService.plan_hash(plan)
             or acknowledgement.policy_decision_hash
             != decision.policy_decision_hash
@@ -1270,6 +1453,18 @@ class ChangeGovernanceService:
             )
         ):
             return ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
+        if safety_binding is not None and acknowledgement is not None:
+            granted = acknowledgement.acknowledged_objects is not None
+            if (
+                acknowledgement.state
+                in {ApprovalState.APPROVED, ApprovalState.CONSUMED}
+                and not granted
+            ) or (
+                acknowledgement.state
+                in {ApprovalState.REQUIRED, ApprovalState.EXTERNAL_PENDING}
+                and granted
+            ):
+                return ErrorCode.APPROVAL_SEQUENCE_FAILURE
         return None
 
     @staticmethod
@@ -1456,7 +1651,7 @@ class ChangeGovernanceService:
             if (
                 not policy_snapshot_validated
                 and not policy_snapshot_matches(plan)
-                and not persisted_f2_v1_policy_snapshot_matches(plan)
+                and not persisted_historical_policy_snapshot_matches(plan)
             ):
                 failures.append("legacy_policy_snapshot_invalid")
         if plan.risk.apply_allowed:
@@ -1572,7 +1767,7 @@ class ChangeGovernanceService:
             if (
                 not policy_snapshot_validated
                 and not policy_snapshot_matches(plan)
-                and not persisted_f2_v1_policy_snapshot_matches(plan)
+                and not persisted_historical_policy_snapshot_matches(plan)
             ):
                 failures.append("policy_snapshot_invalid")
         if plan.risk.apply_allowed:
@@ -1713,7 +1908,13 @@ class ChangeGovernanceService:
                 safe[key] = value
         return safe
 
-    def _load(self, plan_id: str) -> ChangePlan:
+    def _load(
+        self,
+        plan_id: str,
+        *,
+        f3_rollback_source: bool = False,
+        reverification_history: bool = False,
+    ) -> ChangePlan:
         try:
             plan = self.repository.get(plan_id)
         except ChangePlanStorageError as exc:
@@ -1725,7 +1926,29 @@ class ChangeGovernanceService:
                 details=self._identifier_details(resource_id=plan_id),
             )
         self._require_v2_persisted_plan_safe(plan)
-        if plan.policy_decision is not None:
+        if (
+            reverification_history
+            and plan.approval.state == ApprovalState.CONSUMED
+            and persisted_f2_v2_policy_snapshot_matches(plan)
+        ):
+            # A consumed pre-HAMCP-213 plan stays readback-only evidence for
+            # reverifying its own applied task. Reverification reads and
+            # records receipts; it never dispatches under this decision.
+            bundle_error = self._approval_bundle_integrity_error(plan)
+            if bundle_error is not None:
+                METRICS.record_classified_outcome(bundle_error.value)
+                raise GovernanceError(
+                    bundle_error,
+                    details={"resource_id": plan.plan_id},
+                )
+            return plan
+        if plan.policy_decision is not None and not (
+            # An exact pre-HAMCP-213 snapshot remains read-only rollback source
+            # evidence. F3 evaluates the inverse plan under current policy, so
+            # the historical decision never authorizes the new dispatch.
+            f3_rollback_source
+            and persisted_f2_v2_policy_snapshot_matches(plan)
+        ):
             self._require_policy_snapshot(plan)
         return plan
 
@@ -1835,6 +2058,28 @@ class ChangeGovernanceService:
                 "granted_at": acknowledgement.granted_at,
                 "consumed_at": acknowledgement.consumed_at,
             }
+            if (
+                acknowledgement.kind
+                is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+            ):
+                value["elevated_risk_acknowledgement"].update(
+                    {
+                        "safety_critical_projection_hash": (
+                            acknowledgement.safety_critical_projection_hash
+                        ),
+                        # Task evidence is depth-bounded; record the exact
+                        # acknowledged object set as a digest and count. The
+                        # plan record keeps the set and dispatch rechecks it.
+                        "acknowledged_objects_hash": (
+                            stable_hash(acknowledgement.acknowledged_objects)
+                            if acknowledgement.acknowledged_objects is not None
+                            else None
+                        ),
+                        "acknowledged_object_count": len(
+                            acknowledgement.acknowledged_objects or []
+                        ),
+                    }
+                )
         return value
 
     def _task_idempotency_key(
@@ -1889,9 +2134,8 @@ class ChangeGovernanceService:
             "policy_decision_hash": task.approval_reference.get(
                 "policy_decision_hash"
             ),
-            "same_principal_requirement": (
-                ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
-                in (
+            "same_principal_requirement": bool(
+                SECOND_ACTION_VALUES.intersection(
                     task.approval_reference.get(
                         "required_acknowledgements"
                     )
@@ -2663,10 +2907,8 @@ class ChangeGovernanceService:
             "challenge_id": plan.approval.challenge_id,
             "approval_principal_present": bool(approval_principal),
             "approval_bundle_state": self._approval_bundle_state(plan),
-            "same_principal_requirement": bool(
-                plan.policy_decision
-                and ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                in plan.policy_decision.required_acknowledgements
+            "same_principal_requirement": (
+                second_action_kind(plan.policy_decision) is not None
             ),
             "same_principal_confirmed": (
                 plan.approval.same_principal_confirmed
@@ -3090,8 +3332,8 @@ class ChangeGovernanceService:
 
     def _approval_lifecycle(self, plan: ChangePlan) -> str:
         bundle_state = self._effective_approval_bundle_state(plan)
-        if bundle_state == "pending_elevated_risk_acknowledgement":
-            return "pending_elevated_risk_acknowledgement"
+        if bundle_state in SECOND_ACTION_PENDING_STATES.values():
+            return bundle_state
         if bundle_state == "fully_approved":
             return "approved"
         if bundle_state == "prohibited":
@@ -3150,7 +3392,7 @@ class ChangeGovernanceService:
             in {
                 "approval_not_requested",
                 "approval_pending_external",
-                "pending_elevated_risk_acknowledgement",
+                *SECOND_ACTION_PENDING_STATES.values(),
             }
         )
 
@@ -3421,6 +3663,11 @@ class ChangeGovernanceService:
         action: str,
         diff: dict[str, Any],
         proposed: dict[str, Any],
+        *,
+        current: dict[str, Any] | None = None,
+        normalized_current: dict[str, Any] | None = None,
+        normalized_proposed: dict[str, Any] | None = None,
+        called_scripts: dict[str, Any] | None = None,
     ) -> ChangeRiskAssessment:
         if resource_type == "helper":
             return ChangeRiskAssessment(
@@ -3438,14 +3685,22 @@ class ChangeGovernanceService:
                 warnings=[],
             )
 
+        def script_view(config: dict[str, Any] | None) -> dict[str, Any] | None:
+            if not isinstance(config, dict):
+                return config
+            view = dict(config)
+            if "sequence" in config and not any(
+                key in config for key in ("action", "actions")
+            ):
+                view["action"] = config["sequence"]
+            return view
+
         risk_config = proposed
+        risk_current = current
         risk_diff = diff
         if resource_type == "script":
-            risk_config = dict(proposed)
-            if "sequence" in proposed and not any(
-                key in proposed for key in ("action", "actions")
-            ):
-                risk_config["action"] = proposed["sequence"]
+            risk_config = script_view(proposed)
+            risk_current = script_view(current)
             risk_diff = dict(diff)
             changed_fields = [
                 dict(item)
@@ -3465,17 +3720,31 @@ class ChangeGovernanceService:
             if action == "create"
             else ChangeOperation.UPDATE_AUTOMATION
         )
-        risk = classify_risk(legacy_operation, risk_diff, risk_config)
+        comparison = compare_physical_effects(
+            resource_type,
+            action,
+            normalized_current,
+            normalized_proposed,
+            called_scripts,
+        )
+        risk = classify_risk(
+            legacy_operation,
+            risk_diff,
+            risk_config,
+            current=risk_current,
+            protected_effect_verdict=comparison.verdict,
+        )
         if (
-            resource_type == "automation"
-            and action == "update"
+            resource_type in {"automation", "script"}
+            and action in {"update", "create"}
             and not risk.apply_allowed
         ):
-            # The risk classifier describes what the stored automation may do.
-            # For an existing typed automation update, that consequence does
-            # not make the exact configuration provider target or payload
-            # ambiguous. Policy v2 keeps the high/safety evidence while F3,
-            # optimistic state, readback, and verification remain mandatory.
+            # The risk classifier describes what the stored automation or
+            # script may do. For a typed update or create, that consequence
+            # does not make the exact configuration provider target or payload
+            # ambiguous (HAMCP-213 script parity and OD-6(a)). Policy keeps
+            # the high/safety evidence while F3, optimistic state, readback,
+            # and verification remain mandatory.
             risk = ChangeRiskAssessment(
                 level=risk.level,
                 reasons=list(risk.reasons),
@@ -3489,6 +3758,307 @@ class ChangeGovernanceService:
                 for reason in risk.reasons
             ]
         return risk
+
+    async def _capture_called_scripts(
+        self, operations: list[ConfigurationOperation]
+    ) -> None:
+        """Capture the scripts each automation or script operation calls.
+
+        HAMCP-213: a call to a script counts as that script's protected
+        effects. The called scripts are read through the same governed
+        configuration and entity-registry reads as the plan's own targets,
+        normalized, and stored on the operation so the comparison stays pure
+        and is bound by the plan hash. A script that this plan also changes
+        is summarized over its current and proposed configurations. A script
+        that cannot be read, is unknown, or carries prohibited data is
+        recorded as unresolved (its configuration is never persisted); the
+        comparison then requires the acknowledgement.
+        """
+
+        cache: dict[str, dict[str, Any]] = {}
+        for operation in operations:
+            snapshot = await self._called_script_snapshot(
+                operation, operations, cache
+            )
+            if snapshot is None:
+                continue
+            operation.called_scripts = snapshot
+            operation.risk = self._configuration_risk(
+                operation.operation_id,
+                operation.resource_type,
+                operation.action,
+                operation.dry_run_results,
+                operation.proposed_config,
+                current=operation.current_config,
+                normalized_current=operation.normalized_current_config,
+                normalized_proposed=operation.normalized_proposed_config,
+                called_scripts=operation.called_scripts,
+            )
+
+    async def _called_script_snapshot(
+        self,
+        operation: ConfigurationOperation,
+        operations: list[ConfigurationOperation],
+        cache: dict[str, dict[str, Any]],
+        *,
+        dispatch_order: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Build one operation's called-script snapshot from governed reads.
+
+        Used at plan creation and, unchanged, at every dispatch to prove the
+        snapshot is still current (HAMCP-213 review H5). ``cache`` holds the
+        reads of one capture or one verification. Reads beyond
+        ``MAX_CALLED_SCRIPTS`` mark the snapshot ``truncated``.
+
+        A script changed by the same plan is summarized from the plan's own
+        bodies: its proposed (post-plan) body and its current body, since a
+        non-atomic plan can stop with a caller written and the callee not
+        (batch 4 H5). At plan creation (``dispatch_order`` ``None``) it is
+        not read. At dispatch, before the operation at ``dispatch_order`` is
+        written, it is read live and must match its exact expected state at
+        that point in the plan's order: the plan's proposed fingerprint when
+        its own operation is ordered earlier (already written), otherwise its
+        pre-plan fingerprint. Any other state makes the snapshot stale.
+        """
+
+        if operation.resource_type not in {"automation", "script"} or (
+            operation.action not in {"create", "update"}
+        ):
+            return None
+        in_plan = {
+            item.target_id: item
+            for item in operations
+            if item.resource_type == "script"
+        }
+        scripts = cache.setdefault("scripts", {})
+        entities = cache.setdefault("entities", {})
+
+        async def read_script(key: str) -> dict[str, Any]:
+            if key in scripts:
+                return scripts[key]
+            planned = in_plan.get(key)
+            if planned is not None and dispatch_order is not None:
+                # Batch 4 H5: observe, never substitute stored bodies.
+                try:
+                    live = await self._read_configuration_resource(
+                        "script", key
+                    )
+                    current_matches = (
+                        live is None
+                        or resource_identity_matches("script", key, live)
+                    ) and resource_fingerprint("script", live) == (
+                        self._in_plan_callee_expected_fingerprint(
+                            planned, dispatch_order
+                        )
+                    )
+                except Exception:  # noqa: BLE001 - unobservable is stale
+                    current_matches = False
+                if not current_matches:
+                    entry = {"stale": "called_script_in_plan_state_mismatch"}
+                    scripts[key] = entry
+                    return entry
+            if planned is not None:
+                configs = [
+                    config
+                    for config in (
+                        planned.normalized_current_config,
+                        planned.normalized_proposed_config,
+                    )
+                    if isinstance(config, dict)
+                ]
+                entry: dict[str, Any] = (
+                    {"configs": configs}
+                    if configs
+                    else {"unresolved": "called_script_unreadable"}
+                )
+            else:
+                try:
+                    current = await self._read_configuration_resource(
+                        "script", key
+                    )
+                    if current is None:
+                        entry = {"unresolved": "called_script_unknown"}
+                    elif (
+                        not isinstance(current, dict)
+                        or "use_blueprint" in current
+                        or persistence_safety_errors(
+                            current, self.sensitive_values
+                        )
+                    ):
+                        entry = {"unresolved": "called_script_unreadable"}
+                    else:
+                        normalized = normalize_resource_config("script", current)
+                        entry = (
+                            {"configs": [normalized]}
+                            if isinstance(normalized, dict)
+                            else {"unresolved": "called_script_unreadable"}
+                        )
+                except Exception:  # noqa: BLE001 - recorded as unresolved
+                    entry = {"unresolved": "called_script_unreadable"}
+            scripts[key] = entry
+            return entry
+
+        async def resolve_entity(entity_id: str) -> Any:
+            if entity_id in entities:
+                return entities[entity_id]
+            try:
+                entry = await self._read_configuration_resource(
+                    ENTITY_METADATA_RESOURCE_TYPE, entity_id
+                )
+                unique_id = entry.get("unique_id") if isinstance(entry, dict) else None
+                if entry is None:
+                    value: Any = {"unresolved": "called_script_unknown"}
+                elif (
+                    entry.get("platform") == "script"
+                    and script_storage_key(unique_id) is not None
+                ):
+                    value = unique_id
+                else:
+                    value = {"unresolved": "called_script_entity_unresolved"}
+            except Exception:  # noqa: BLE001 - recorded as unresolved
+                value = {"unresolved": "called_script_unreadable"}
+            entities[entity_id] = value
+            return value
+
+        reached: dict[str, Any] = {}
+        reached_entities: dict[str, Any] = {}
+        truncated = False
+        frontier = [
+            (operation.resource_type, config)
+            for config in (
+                operation.normalized_current_config,
+                operation.normalized_proposed_config,
+            )
+            if isinstance(config, dict)
+        ]
+        for _depth in range(MAX_CALL_DEPTH):
+            next_frontier: list[tuple[str, Any]] = []
+            for resource_type, config in frontier:
+                keys, script_entities = called_script_references(
+                    resource_type, config
+                )
+                for entity_id in script_entities:
+                    if entity_id in reached_entities:
+                        continue
+                    if len(reached_entities) >= MAX_CALLED_SCRIPTS:
+                        truncated = True
+                        break
+                    value = await resolve_entity(entity_id)
+                    reached_entities[entity_id] = value
+                    if isinstance(value, str):
+                        keys = [*keys, value]
+                for key in keys:
+                    if key in reached:
+                        continue
+                    if len(reached) >= MAX_CALLED_SCRIPTS:
+                        # Review H3: an uncaptured script is a bound overflow.
+                        truncated = True
+                        break
+                    entry = await read_script(key)
+                    reached[key] = entry
+                    next_frontier.extend(
+                        ("script", config) for config in entry.get("configs", [])
+                    )
+            frontier = next_frontier
+            if not frontier:
+                break
+        if not reached and not reached_entities:
+            return None
+        snapshot: dict[str, Any] = {
+            "model": CALLED_SCRIPT_MODEL,
+            "scripts": {key: reached[key] for key in sorted(reached)},
+            "entities": {
+                key: reached_entities[key] for key in sorted(reached_entities)
+            },
+        }
+        if truncated:
+            snapshot["truncated"] = True
+        return deepcopy(snapshot)
+
+    @staticmethod
+    def _in_plan_callee_expected_fingerprint(
+        planned: ConfigurationOperation, dispatch_order: int
+    ) -> str:
+        """The exact state a script the plan changes has before a write.
+
+        Batch 4 H5: both dispatch paths write in ``order`` and stop at the
+        first failure, so before the operation at ``dispatch_order`` is
+        written every earlier operation has been written and verified and no
+        later one has been attempted.
+        """
+
+        if planned.order < dispatch_order:
+            return resource_fingerprint(
+                "script",
+                None if planned.action == "delete" else planned.proposed_config,
+            )
+        return planned.current_state_fingerprint
+
+    async def _called_scripts_stale(
+        self,
+        operations: list[ConfigurationOperation],
+        *,
+        only: ConfigurationOperation | None = None,
+        dispatch_order: int | None = None,
+    ) -> dict[str, str] | None:
+        """Re-read every operation's called scripts; name the first stale one.
+
+        HAMCP-213 review H5: the called-script snapshot is review evidence
+        bound by the plan hash and the comparison projection. Every dispatch
+        path (configuration service, F3 first dispatch, resume and recovery)
+        rebuilds it from fresh governed reads before any write and refuses the
+        plan as stale when any operation's snapshot differs. Returns ``None``
+        when every snapshot is current. ``only`` limits the check to one
+        operation; the whole plan still decides which scripts are in-plan.
+        ``dispatch_order`` is the order of the operation about to be written
+        (``None``: before the first write). Scripts the plan itself changes
+        are read live and checked against their state at that point (batch 4
+        H5).
+        """
+
+        if dispatch_order is None:
+            dispatch_order = min(
+                (operation.order for operation in operations), default=0
+            )
+        cache: dict[str, dict[str, Any]] = {}
+        for operation in sorted(operations, key=lambda item: item.order):
+            if operation.resource_type not in {"automation", "script"}:
+                continue
+            if only is not None and operation is not only:
+                continue
+            try:
+                fresh = await self._called_script_snapshot(
+                    operation, operations, cache, dispatch_order=dispatch_order
+                )
+            except Exception:  # noqa: BLE001 - an unreadable snapshot is stale
+                fresh = {"unreadable": True}
+            if stable_hash(fresh) != stable_hash(operation.called_scripts):
+                return {
+                    "operation_id": operation.operation_id,
+                    "resource_id": operation.target_id,
+                    "reason": "stale_called_script",
+                }
+        return None
+
+    @staticmethod
+    def _script_retry_candidate(operations: list[ConfigurationOperation]) -> bool:
+        """Whether a plan has the shape of a retry transformation (D4.3)."""
+
+        if (
+            len(operations) not in (1, 5)
+            or operations[0].resource_type != "script"
+            or operations[0].action != "update"
+            or not isinstance(operations[0].current_config, dict)
+        ):
+            return False
+        try:
+            script_baseline(operations[0].current_config)
+        except (
+            ProofRefused, KeyError, IndexError, TypeError, ValueError,
+            RecursionError, OverflowError,
+        ):
+            return False
+        return True
 
     @staticmethod
     def _aggregate_configuration_risk(
@@ -4756,6 +5326,449 @@ class ChangeGovernanceService:
             _entity_metadata_context=prepared,
         )
 
+    async def create_entity_availability_exposure_plan(
+        self,
+        arguments: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Plan governed entity enable/disable or exposure (HAMCP-069B).
+
+        Input is validated before any Home Assistant read.  One plan holds
+        one operation over 1-8 entities; every child is one exact
+        update-only registry or exposure write.  Nothing is dispatched here.
+        """
+
+        try:
+            request = entity_availability_exposure_planning.validate_request(
+                arguments
+            )
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self._entity_metadata_refusal_error(exc, {}) from None
+        # HAMCP-069B M1: admission is enforced here first, before any Home
+        # Assistant read and before persistence, in addition to the MCP
+        # gateway and F3 gates.  Unadmitted planning reads nothing and
+        # stores nothing.
+        lease = self._availability_exposure_planning_lease(request)
+        async with lease:
+            try:
+                if self.entity_availability_exposure_gateway is None:
+                    raise entity_metadata_planning.EntityMetadataRefusal(
+                        "entity_availability_exposure_provider_unavailable",
+                        kind="unavailable",
+                    )
+                prepared = await entity_availability_exposure_planning.prepare(
+                    self.entity_availability_exposure_gateway,
+                    self.entity_availability_exposure_snapshot_reader,
+                    request,
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self._entity_metadata_refusal_error(exc, {}) from None
+            lease.require_current()
+            return await self._create_availability_exposure_plan(
+                prepared,
+                caller_context=caller_context,
+                _before_persist=lease.require_current,
+            )
+
+    def _availability_exposure_core(self, resource_type: str) -> Any:
+        """Return Core only if it admits ``resource_type``'s profile, else refuse.
+
+        Fails closed when no F3 runtime or Core runtime is composed: the 069B
+        resource types are admitted only by an owner-signed registry.
+        """
+
+        from ..f3_runtime.runtime import ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS
+
+        profile = ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS[resource_type][-1]
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status((profile,)).get("available") is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": entity_availability_exposure.PENDING_ADMISSION_REASON,
+                    "reason_code": entity_availability_exposure.PENDING_ADMISSION_REASON,
+                    "resource_type": resource_type,
+                    "core_capability": profile,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _availability_exposure_planning_lease(self, request: Any) -> Any:
+        """Hold exact-target Core authority across one fresh 069B planning."""
+
+        from ..f3_runtime.runtime import (
+            ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS,
+            _rollback_planning_lease,
+        )
+
+        core = self._availability_exposure_core(request.resource_type)
+        return _rollback_planning_lease(
+            core,
+            ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS[request.resource_type],
+            target={
+                "target_type": request.resource_type,
+                "target_id": ",".join(sorted(request.entity_ids)),
+            },
+        )
+
+    async def _create_availability_exposure_plan(
+        self,
+        prepared: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+        title: str | None = None,
+        description: str | None = None,
+        _before_persist: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        request = prepared.request
+        # Every 069B persistence path re-checks admission and must hold a
+        # current Core lease; neither ever depends on the caller alone.
+        self._availability_exposure_core(request.resource_type)
+        if _before_persist is None:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        entity_ids = [item.entity_id for item in prepared.items]
+        target = (
+            f" for {request.assistant}" if request.assistant is not None else ""
+        )
+        return await self._create_configuration_plan(
+            title=(
+                title
+                or f"Entity {request.operation}{target}: {len(entity_ids)} entities"
+            )[:160],
+            description=(
+                description
+                or f"{request.operation.capitalize()}{target}: "
+                + ", ".join(entity_ids)
+                + "."
+            ),
+            operations=[
+                {
+                    "operation_id": item.operation_id,
+                    "resource_type": item.resource_type,
+                    "action": "update",
+                    "target_id": item.entity_id,
+                    "proposed_config": item.final,
+                }
+                for item in prepared.items
+            ],
+            expiration_minutes=request.expiration_minutes,
+            caller_context=caller_context,
+            _availability_exposure_context=prepared,
+            _before_persist=_before_persist,
+        )
+
+    async def create_label_plan(
+        self,
+        arguments: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Plan governed label create/edit plus entity assignment (HAMCP-165).
+
+        Admission is checked first: while ``core.label_registry_operation``
+        is not admitted by the signed registry the request is refused
+        ``pending_signed_registry_admission`` before validation, before any
+        Home Assistant read and before persistence.  Admitted planning lists
+        the label registry, prepares each entity assignment child through the
+        signed 069A path, and stores one ordered plan; nothing dispatches.
+        """
+
+        self._label_core()
+        try:
+            request = label_registry_planning.validate_request(arguments)
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self._entity_metadata_refusal_error(exc, {}) from None
+        lease = self._label_planning_lease(arguments, request)
+        async with lease:
+            try:
+                if self.label_registry_gateway is None or (
+                    request.entity_ids and self.entity_metadata_gateway is None
+                ):
+                    raise entity_metadata_planning.EntityMetadataRefusal(
+                        "label_registry_provider_unavailable",
+                        kind="unavailable",
+                    )
+                prepared = await label_registry_planning.prepare(
+                    self.label_registry_gateway,
+                    self.entity_metadata_gateway,
+                    self.entity_metadata_snapshot_reader,
+                    request,
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self._entity_metadata_refusal_error(exc, {}) from None
+            lease.require_current()
+            return await self._create_label_plan(
+                prepared,
+                caller_context=caller_context,
+                _before_persist=lease.require_current,
+            )
+
+    def _label_core(self) -> Any:
+        """Return Core only if it admits the label profile, else refuse.
+
+        Fails closed when no F3 runtime or Core runtime is composed: the
+        label profile is admitted only by an owner-signed registry.
+        """
+
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status((label_registry.CORE_CAPABILITY,)).get(
+                    "available"
+                )
+                is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": label_registry.PENDING_ADMISSION_REASON,
+                    "reason_code": label_registry.PENDING_ADMISSION_REASON,
+                    "resource_type": label_registry.LABEL_RESOURCE_TYPE,
+                    "core_capability": label_registry.CORE_CAPABILITY,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _label_planning_lease(self, arguments: Any, request: Any) -> Any:
+        """Hold the gateway's exact Core requirements and target for planning."""
+
+        from ..f3_runtime.runtime import _rollback_planning_lease
+        from ..ha_core_readmission.routes import (
+            LABEL_TOOL,
+            static_tool_requirements,
+        )
+
+        core = self._label_core()
+        return _rollback_planning_lease(
+            core,
+            static_tool_requirements(LABEL_TOOL, arguments),
+            target={
+                "target_type": label_registry.LABEL_RESOURCE_TYPE,
+                "target_id": ",".join(sorted(request.label_ids)),
+            },
+        )
+
+    async def _create_label_plan(
+        self,
+        prepared: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+        _before_persist: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        # Persistence re-checks admission and must hold a current Core lease.
+        self._label_core()
+        if _before_persist is None:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        labels = [
+            item.target_id
+            for item in prepared.items
+            if item.resource_type == label_registry.LABEL_RESOURCE_TYPE
+        ]
+        entities = [
+            item.target_id
+            for item in prepared.items
+            if item.resource_type == ENTITY_METADATA_RESOURCE_TYPE
+        ]
+        description = "Label create/edit: " + ", ".join(labels) + "."
+        if entities:
+            description += " Assign to: " + ", ".join(entities) + "."
+        return await self._create_configuration_plan(
+            title=("Labels: " + ", ".join(labels))[:160],
+            description=description,
+            operations=prepared.operations(),
+            expiration_minutes=prepared.request.expiration_minutes,
+            caller_context=caller_context,
+            _label_context=prepared,
+            _before_persist=_before_persist,
+        )
+
+    def _require_dormant_profile_admission(
+        self,
+        operations: Any,
+        *,
+        label_context: Any | None,
+        availability_exposure_context: Any | None,
+    ) -> bool:
+        """HAMCP-165 review1 M1: admission first in the lowest builder.
+
+        A label or 069B resource type, named by a prepared context or by any
+        raw operation (including the generic configuration route), is refused
+        ``pending_signed_registry_admission`` before validation, before any
+        Home Assistant read and before anything is stored.  Returns whether
+        the request involves a dormant profile at all.
+        """
+
+        resource_types = {
+            item.get("resource_type")
+            for item in (operations if isinstance(operations, list) else [])
+            if isinstance(item, dict) and isinstance(item.get("resource_type"), str)
+        }
+        label = (
+            label_context is not None
+            or label_registry.LABEL_RESOURCE_TYPE in resource_types
+        )
+        availability_exposure = resource_types & set(
+            entity_availability_exposure.RESOURCE_TYPES
+        )
+        if availability_exposure_context is not None:
+            availability_exposure.add(
+                availability_exposure_context.request.resource_type
+            )
+        if label:
+            self._label_core()
+        for resource_type in sorted(availability_exposure):
+            self._availability_exposure_core(resource_type)
+        return label or bool(availability_exposure)
+
+    async def create_configuration_delete_plan(
+        self,
+        arguments: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Plan governed deletion of 1-8 automations or scripts (HAMCP-155).
+
+        Admission of the runtime-only ``core.configuration_delete_operation``
+        profile is enforced first, before input validation, any read and any
+        persistence; unadmitted planning reads nothing and stores nothing.
+        Input is then validated before any Home Assistant read.  Nothing is
+        dispatched.
+        """
+
+        self._configuration_delete_core()
+        try:
+            request = configuration_delete_planning.validate_request(arguments)
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self._entity_metadata_refusal_error(exc, {}) from None
+        lease = self._configuration_delete_planning_lease(request)
+        async with lease:
+            try:
+                if self.configuration_delete_gateway is None:
+                    raise configuration_delete_planning.Refusal(
+                        "configuration_delete_provider_unavailable",
+                        kind="unavailable",
+                    )
+                prepared = await configuration_delete_planning.prepare(
+                    self.configuration_delete_gateway,
+                    request,
+                    known_secrets=self.sensitive_values,
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self._entity_metadata_refusal_error(exc, {}) from None
+            lease.require_current()
+            return await self._create_configuration_delete_plan(
+                prepared,
+                caller_context=caller_context,
+                _before_persist=lease.require_current,
+            )
+
+    def _configuration_delete_core(self) -> Any:
+        """Return Core only if a signed registry admits the delete profile.
+
+        Fails closed when no F3 runtime or Core runtime is composed: the
+        HAMCP-155 profile is runtime-only and is admitted only by an
+        owner-signed registry.
+        """
+
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status((configuration_delete.PROFILE,)).get(
+                    "available"
+                )
+                is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": configuration_delete.PENDING_ADMISSION_REASON,
+                    "reason_code": configuration_delete.PENDING_ADMISSION_REASON,
+                    "resource_type": "configuration_deletion",
+                    "core_capability": configuration_delete.PROFILE,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _configuration_delete_planning_lease(self, request: Any) -> Any:
+        """Hold exact-target Core authority across one delete planning."""
+
+        from ..f3_runtime.runtime import _rollback_planning_lease
+
+        core = self._configuration_delete_core()
+        return _rollback_planning_lease(
+            core,
+            ("core.dependency_helper_planning", configuration_delete.PROFILE),
+            target={
+                "target_type": "configuration_deletion",
+                "target_id": request.lease_target_id,
+            },
+        )
+
+    async def _create_configuration_delete_plan(
+        self,
+        prepared: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+        _before_persist: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        # Every delete persistence path re-checks admission and must hold a
+        # current Core lease; neither ever depends on the caller alone.
+        self._configuration_delete_core()
+        if _before_persist is None:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        kinds = {item.resource_type for item in prepared.items}
+        count = len(prepared.items)
+        noun = (
+            next(iter(kinds)) if len(kinds) == 1 else "automation/script"
+        ) + ("" if count == 1 else "s")
+        return await self._create_configuration_plan(
+            title=f"Delete {count} {noun}"[:160],
+            description=(
+                "Delete: "
+                + ", ".join(
+                    f"{item.resource_type} {item.target_id}"
+                    for item in prepared.items
+                )
+                + f". Reason: {prepared.request.reason}"
+            ),
+            operations=[
+                {
+                    "operation_id": item.operation_id,
+                    "resource_type": item.resource_type,
+                    "action": configuration_delete.ACTION,
+                    "target_id": item.target_id,
+                    "proposed_config": deepcopy(item.intent),
+                }
+                for item in prepared.items
+            ],
+            expiration_minutes=prepared.request.expiration_minutes,
+            caller_context=caller_context,
+            _configuration_delete_context=prepared,
+            _before_persist=_before_persist,
+        )
+
     @staticmethod
     def _entity_metadata_refusal_error(
         exc: Exception, arguments: Any
@@ -4787,6 +5800,9 @@ class ChangeGovernanceService:
         expiration_minutes: int = 120, caller_context: dict[str, Any] | None = None,
         _rollback_context: dict[str, Any] | None = None,
         _entity_metadata_context: Any | None = None,
+        _availability_exposure_context: Any | None = None,
+        _label_context: Any | None = None,
+        _configuration_delete_context: Any | None = None,
         _before_persist: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         """Internal builder; only F3's inverse route supplies durable context.
@@ -4796,9 +5812,103 @@ class ChangeGovernanceService:
         exactly one ``entity_registry_metadata`` update whose current entry,
         final entry and classification were already prepared; the public
         configuration resource set is unchanged.
+        ``_availability_exposure_context`` is the HAMCP-069B equivalent from
+        ``create_entity_availability_exposure_plan`` (and its F3 inverse
+        route): exactly the prepared children, update-only, one resource
+        type.
+        ``_label_context`` is supplied only by ``create_label_plan``
+        (HAMCP-165): exactly the prepared label and entity assignment
+        children, in order, and never by a rollback.
+        ``_configuration_delete_context`` is supplied only by
+        ``create_configuration_delete_plan`` (HAMCP-155): exactly the
+        prepared delete children.  Without it ``delete`` is refused, so no
+        generic, rollback or internal caller can build a delete.
         """
 
+        dormant_profiles = self._require_dormant_profile_admission(
+            operations,
+            label_context=_label_context,
+            availability_exposure_context=_availability_exposure_context,
+        )
+        if dormant_profiles and _before_persist is None:
+            # Every dormant-profile persistence holds a current Core lease.
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        if _configuration_delete_context is not None:
+            # HAMCP-155: admission first for the internal builder too, before
+            # any read or persistence.
+            self._configuration_delete_core()
+        if (
+            sum(
+                context is not None
+                for context in (
+                    _entity_metadata_context,
+                    _availability_exposure_context,
+                    _label_context,
+                    _configuration_delete_context,
+                )
+            )
+            > 1
+            or (_label_context is not None and _rollback_context is not None)
+            or (
+                _configuration_delete_context is not None
+                and _rollback_context is not None
+            )
+        ):
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        if _label_context is not None and operations != (
+            _label_context.operations()
+        ):
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={
+                    "validation_errors": [
+                        "label plans contain exactly the prepared operations"
+                    ]
+                },
+            )
+        if _configuration_delete_context is not None:
+            # Admission was checked above; a delete also needs the caller's
+            # current lease and is never a rollback.
+            if _before_persist is None or _rollback_context is not None:
+                raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+            if [
+                item.get("operation_id") if isinstance(item, dict) else None
+                for item in (operations if isinstance(operations, list) else [])
+            ] != [item.operation_id for item in _configuration_delete_context.items]:
+                raise GovernanceError(
+                    ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                    details={
+                        "validation_errors": [
+                            "configuration delete plans contain exactly the "
+                            "prepared operations"
+                        ]
+                    },
+                )
+        if _availability_exposure_context is not None and [
+            item.get("operation_id") if isinstance(item, dict) else None
+            for item in (operations if isinstance(operations, list) else [])
+        ] != [
+            item.operation_id for item in _availability_exposure_context.items
+        ]:
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={
+                    "validation_errors": [
+                        "entity availability/exposure plans contain exactly "
+                        "the prepared operations"
+                    ]
+                },
+            )
+
         entity_plan_id: str | None = None
+        if _label_context is not None:
+            entity_plan_id = self._new_id()
+        if _availability_exposure_context is not None:
+            entity_plan_id = (
+                _rollback_context["plan_id"]
+                if _rollback_context is not None
+                else self._new_id()
+            )
         if _entity_metadata_context is not None:
             if len(operations) != 1:
                 raise GovernanceError(
@@ -4926,7 +6036,13 @@ class ChangeGovernanceService:
                 else ""
             )
             if resource_type not in (
-                SUPPORTED_CONFIGURATION_RESOURCES
+                {_label_context.item(operation_id).resource_type}
+                if _label_context is not None
+                else {_availability_exposure_context.request.resource_type}
+                if _availability_exposure_context is not None
+                else set(configuration_delete.RESOURCE_TYPES)
+                if _configuration_delete_context is not None
+                else SUPPORTED_CONFIGURATION_RESOURCES
                 if _entity_metadata_context is None
                 else {ENTITY_METADATA_RESOURCE_TYPE}
             ):
@@ -4940,8 +6056,12 @@ class ChangeGovernanceService:
                 )
             if (
                 _entity_metadata_context is not None
-                and raw_operation["action"] != "update"
-            ):
+                or _availability_exposure_context is not None
+                or (
+                    _label_context is not None
+                    and resource_type == ENTITY_METADATA_RESOURCE_TYPE
+                )
+            ) and raw_operation["action"] != "update":
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                     details={
@@ -4986,12 +6106,18 @@ class ChangeGovernanceService:
             action = (
                 action_value if isinstance(action_value, str) else ""
             )
-            if action not in SUPPORTED_CONFIGURATION_ACTIONS:
+            if (
+                action != configuration_delete.ACTION
+                if _configuration_delete_context is not None
+                else action not in SUPPORTED_CONFIGURATION_ACTIONS
+            ):
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                     details={
                         "validation_errors": [
-                            f"{operation_id}: action must be create or update"
+                            f"{operation_id}: action must be delete"
+                            if _configuration_delete_context is not None
+                            else f"{operation_id}: action must be create or update"
                         ]
                     },
                 )
@@ -5035,12 +6161,26 @@ class ChangeGovernanceService:
                         ]
                     },
                 )
-            valid, errors, warnings = validate_resource(
-                resolved_type,
-                target_id,
-                proposed_config,
-                self.sensitive_values,
-            )
+            if _configuration_delete_context is not None:
+                delete_item = _configuration_delete_context.item(operation_id)
+                errors = configuration_delete.intent_errors(
+                    resolved_type, target_id, proposed_config
+                )
+                if (
+                    depends_on
+                    or (delete_item.resource_type, delete_item.target_id)
+                    != (resource_type, target_id)
+                    or proposed_config != delete_item.intent
+                ):
+                    errors.append("delete operation does not match its preparation")
+                valid, warnings = not errors, []
+            else:
+                valid, errors, warnings = validate_resource(
+                    resolved_type,
+                    target_id,
+                    proposed_config,
+                    self.sensitive_values,
+                )
             if action == "create":
                 errors.extend(
                     validate_resource_create_identity(
@@ -5074,6 +6214,20 @@ class ChangeGovernanceService:
                 # disclosure and bindings were derived from; re-reading here
                 # could bind a different entry to that review.
                 current = _entity_metadata_context.current
+            elif _label_context is not None:
+                # Same rule for each prepared 165 child.
+                current = _label_context.item(operation_id).current
+            elif _availability_exposure_context is not None:
+                # Same rule for each prepared 069B child.
+                current = _availability_exposure_context.item(
+                    operation_id
+                ).current
+            elif _configuration_delete_context is not None:
+                # The prepared pre-image is the exact state the removed
+                # effects, intent fingerprint and recreate were bound to.
+                current = deepcopy(
+                    _configuration_delete_context.item(operation_id).current
+                )
             else:
                 current = await self._read_configuration_resource(
                     resolved_type, target_id
@@ -5101,7 +6255,7 @@ class ChangeGovernanceService:
                         "operation_id": operation_id,
                     },
                 )
-            if action == "update" and current is None:
+            if action in {"update", configuration_delete.ACTION} and current is None:
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                     details={
@@ -5114,17 +6268,66 @@ class ChangeGovernanceService:
                 )
 
             try:
-                normalized_proposed = (
-                    normalize_resource_config(
-                        resolved_type, proposed_config
+                if _configuration_delete_context is not None:
+                    normalized_proposed = configuration_delete.normalize_intent(
+                        proposed_config
                     )
-                    or {}
-                )
+                else:
+                    normalized_proposed = (
+                        normalize_resource_config(
+                            resolved_type, proposed_config
+                        )
+                        or {}
+                    )
                 normalized_current = normalize_resource_config(
                     resolved_type, current
                 )
                 proposed_hash = stable_hash(normalized_proposed)
-                if _entity_metadata_context is not None:
+                if _configuration_delete_context is not None:
+                    item = _configuration_delete_context.item(operation_id)
+                    diff = {
+                        "has_changes": True,
+                        "configuration_delete": (
+                            configuration_delete_planning.projection(item)
+                        ),
+                    }
+                    risk = configuration_delete_planning.risk_assessment(
+                        operation_id, item.classification
+                    )
+                elif _label_context is not None:
+                    item = _label_context.item(operation_id)
+                    diff = {
+                        "has_changes": True,
+                        "label_registry": label_registry_planning.projection(
+                            _label_context, item, plan_id=entity_plan_id
+                        ),
+                    }
+                    risk = (
+                        label_registry_planning.risk_assessment(
+                            operation_id, item
+                        )
+                        if item.resource_type
+                        == label_registry.LABEL_RESOURCE_TYPE
+                        else entity_metadata_planning.risk_assessment(
+                            operation_id, item.classification
+                        )
+                    )
+                elif _availability_exposure_context is not None:
+                    item = _availability_exposure_context.item(operation_id)
+                    diff = {
+                        "has_changes": True,
+                        "entity_availability_exposure": (
+                            entity_availability_exposure_planning.projection(
+                                _availability_exposure_context,
+                                item,
+                                plan_id=entity_plan_id,
+                            )
+                        ),
+                    }
+                    risk = entity_availability_exposure_planning.risk_assessment(
+                        operation_id, item.classification
+                    )
+                elif _entity_metadata_context is not None:
                     diff = {
                         "has_changes": True,
                         "entity_metadata": entity_metadata_planning.projection(
@@ -5144,6 +6347,9 @@ class ChangeGovernanceService:
                         action,
                         diff,
                         proposed_config,
+                        current=current,
+                        normalized_current=normalized_current,
+                        normalized_proposed=normalized_proposed,
                     )
             except (TypeError, ValueError, OverflowError) as exc:
                 raise GovernanceError(
@@ -5182,6 +6388,7 @@ class ChangeGovernanceService:
             seen_operation_ids.add(operation_id)
             seen_targets.add(target_key)
 
+        await self._capture_called_scripts(prepared)
         # Prove the complete immutable composition before risk/policy projection.
         # Existing unmarked records are never retrofitted by this creation path.
         retry_proof = derive_proof(prepared)
@@ -5196,8 +6403,12 @@ class ChangeGovernanceService:
                     "runtime activation is unverified, and script restoration is not eligible."
                 )
         else:
+            # D4.3: the missing-proof warning describes only a plan shaped
+            # like a retry transformation; otherwise the comparison explains
+            # the script change.
+            retry_candidate = self._script_retry_candidate(prepared)
             for operation in prepared:
-                if _rollback_context is None and operation.resource_type == "script" and not operation.risk.apply_allowed:
+                if _rollback_context is None and operation.resource_type == "script" and retry_candidate:
                     operation.risk.warnings.append(
                         "No complete retry-transformation proof: required structure "
                         "is unsupported or its proof bounds were exhausted."
@@ -5330,8 +6541,27 @@ class ChangeGovernanceService:
             plan.dry_run_results["entity_metadata"] = prepared[0].dry_run_results[
                 "entity_metadata"
             ]
+        if _availability_exposure_context is not None:
+            plan.dry_run_results["entity_availability_exposure"] = deepcopy(
+                _availability_exposure_context.plan_disclosure
+            )
+        if _label_context is not None:
+            plan.dry_run_results["label_registry"] = deepcopy(
+                _label_context.plan_disclosure
+            )
+        if _configuration_delete_context is not None:
+            plan.dry_run_results["configuration_delete"] = deepcopy(
+                _configuration_delete_context.plan_disclosure
+            )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        if dormant_profiles:
+            # The final persistence boundary re-checks admission itself.
+            self._require_dormant_profile_admission(
+                operations,
+                label_context=_label_context,
+                availability_exposure_context=_availability_exposure_context,
+            )
         if _before_persist is not None:
             _before_persist()  # HAMCP-189 R1: F3 rollback lease, after last read
         if _rollback_context is not None:
@@ -6541,7 +7771,7 @@ class ChangeGovernanceService:
         if (
             plan.policy_decision is not None
             and plan.policy_decision.policy_version != POLICY_VERSION
-            and not persisted_f2_v1_policy_snapshot_matches(plan)
+            and not persisted_historical_policy_snapshot_matches(plan)
         ):
             self._require_policy_snapshot(plan)
         self._resolve_lifecycle(plan)
@@ -6637,6 +7867,21 @@ class ChangeGovernanceService:
             self.now() + APPROVAL_CHALLENGE_TTL,
             datetime.fromisoformat(plan.expires_at),
         ).isoformat()
+        second_kind = second_action_kind(decision)
+        safety_projection_hash: str | None = None
+        if second_kind is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT:
+            # D1: the acknowledgement binds the comparison recomputed from the
+            # immutable plan, never a caller-supplied value.
+            binding = safety_critical_binding(plan)
+            if binding is None:
+                raise GovernanceError(
+                    ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+                    details={
+                        "resource_id": plan.plan_id,
+                        "reason": "safety_critical_acknowledgement_unbindable",
+                    },
+                )
+            safety_projection_hash = binding["projection_hash"]
         # HAMCP-191 A: the sanitized note is Engineering's own output; the
         # plan-content chokepoint keeps that exact object (D4 identity).
         with plan_output_registry() as note_registry:
@@ -6666,10 +7911,10 @@ class ChangeGovernanceService:
                 bundle_state="pending_plan_approval",
                 elevated_risk_acknowledgement=(
                     ApprovalActionRecord(
-                        kind=(
-                            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+                        kind=second_kind,
+                        authority_version=(
+                            second_action_authority_version(second_kind)
                         ),
-                        authority_version=APPROVAL_AUTHORITY_VERSION,
                         bound_plan_hash=calculated,
                         policy_decision_hash=(
                             decision.policy_decision_hash
@@ -6679,9 +7924,11 @@ class ChangeGovernanceService:
                         physical_consequence=(
                             decision.physical_consequence.value
                         ),
+                        safety_critical_projection_hash=(
+                            safety_projection_hash
+                        ),
                     )
-                    if ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                    in decision.required_acknowledgements
+                    if second_kind is not None
                     else None
                 ),
             )
@@ -7036,10 +8283,8 @@ class ChangeGovernanceService:
             ),
             "approval_action": self._active_challenge_projection(plan)[0],
             "approval_bundle_state": self._approval_bundle_state(plan),
-            "same_principal_requirement": bool(
-                plan.policy_decision
-                and ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                in plan.policy_decision.required_acknowledgements
+            "same_principal_requirement": (
+                second_action_kind(plan.policy_decision) is not None
             ),
             "request_note": str(
                 # Stored-plan re-scan: D11 exception (HAMCP-207).
@@ -7059,6 +8304,13 @@ class ChangeGovernanceService:
             "snapshot_fingerprint": plan.snapshot.fingerprint if plan.snapshot and plan.approval.approval_kind == "rollback" else None,
             "rollback_target": plan.target_id if plan.approval.approval_kind == "rollback" else None,
         }
+        second_kind = second_action_kind(plan.policy_decision)
+        if second_kind is not None:
+            summary["second_action"] = second_kind.value
+        if second_kind is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT:
+            summary["safety_critical_acknowledgement"] = (
+                self._safety_critical_review(plan)
+            )
         if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
             operational = plan.operational
             if operational is None:
@@ -7232,6 +8484,60 @@ class ChangeGovernanceService:
             raise GovernanceError(ErrorCode.INTERNAL_SERVER_ERROR)
         return sanitized
 
+    def _safety_critical_review(self, plan: ChangePlan) -> dict[str, Any]:
+        """Return the bounded per-object rows the administrator acknowledges.
+
+        Rows are recomputed from the immutable plan. Each carries the opaque
+        token the review form submits; the decision accepts only the exact
+        token set of the recomputed binding.
+        """
+
+        binding = safety_critical_binding(plan)
+        if binding is None:
+            return {"available": False, "objects": []}
+        rows: list[dict[str, Any]] = []
+        for operation in sorted(plan.operations, key=lambda item: item.order):
+            comparison = compare_operation(operation)
+            if not comparison.protected:
+                continue
+            for row in (comparison.projection or {}).get("rows", []):
+                if not row.get("acknowledgement_required"):
+                    continue
+                rows.append(
+                    {
+                        "object_ref": acknowledgement_object_token(
+                            {
+                                "operation_id": operation.operation_id,
+                                "object_id": row["object_id"],
+                            }
+                        ),
+                        "operation_id": operation.operation_id,
+                        "operation_order": operation.order,
+                        "object_id": row["object_id"],
+                        "verdict": row.get("verdict"),
+                        "protection": row.get("protection"),
+                        "reason_codes": list(row.get("reason_codes") or [])[:16],
+                        "before": list(row.get("before") or [])[:16],
+                        "after": list(row.get("after") or [])[:16],
+                    }
+                )
+        expected = {
+            acknowledgement_object_token(row) for row in binding["objects"]
+        }
+        if {row["object_ref"] for row in rows} != expected or len(rows) != len(
+            expected
+        ):
+            return {"available": False, "objects": []}
+        # Stored-plan re-scan: D11 exception (HAMCP-207).
+        sanitized = rescan_stored_plan(
+            rows, known_secrets=self.sensitive_values, max_string=500
+        ).value
+        return {
+            "available": True,
+            "projection_hash": binding["projection_hash"],
+            "objects": sanitized if isinstance(sanitized, list) else [],
+        }
+
     async def issue_external_csrf(self, plan_id: str, challenge_id: str) -> tuple[dict[str, Any], str]:
         lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with lock:
@@ -7252,8 +8558,7 @@ class ChangeGovernanceService:
             nonce = secrets.token_urlsafe(32)
             digest = hashlib.sha256(nonce.encode("utf-8")).hexdigest()
             if (
-                action
-                == ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
+                action in SECOND_ACTION_VALUES
                 and plan.approval.elevated_risk_acknowledgement
                 is not None
             ):
@@ -7284,8 +8589,14 @@ class ChangeGovernanceService:
         decision: str,
         approver_principal: str,
         approval_action: str = ApprovalActionKind.PLAN_APPROVAL.value,
+        acknowledged_objects: tuple[str, ...] = (),
+        acknowledged_projection_hash: str = "",
     ) -> dict[str, Any]:
-        """Perform the private Ingress-authority decision under the plan lock."""
+        """Perform the private Ingress-authority decision under the plan lock.
+
+        ``acknowledged_objects`` are the opaque row tokens a safety-critical
+        acknowledgement form submitted; every other action refuses them.
+        """
 
         lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with lock:
@@ -7339,8 +8650,7 @@ class ChangeGovernanceService:
             acknowledgement = approval.elevated_risk_acknowledgement
             expected_csrf = (
                 acknowledgement.csrf_digest
-                if active_action
-                == ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
+                if active_action in SECOND_ACTION_VALUES
                 and acknowledgement is not None
                 else approval.csrf_digest
             )
@@ -7360,8 +8670,7 @@ class ChangeGovernanceService:
                     plan, ErrorCode.EXTERNAL_APPROVAL_INVALID
                 )
             if (
-                active_action
-                == ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
+                active_action in SECOND_ACTION_VALUES
                 and acknowledgement is not None
             ):
                 acknowledgement.csrf_digest = None
@@ -7370,9 +8679,20 @@ class ChangeGovernanceService:
                 approval.csrf_digest = None
                 approval.csrf_issued_at = None
             principal = approver_principal[:160]
-            if (
+            safety_action = (
                 active_action
-                == ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
+                == ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT.value
+            )
+            if (acknowledged_objects or acknowledged_projection_hash) and not (
+                safety_action and decision == "approve"
+            ):
+                # Object acknowledgements belong only to the safety-critical
+                # approve decision; anywhere else they are a forged form.
+                self._reject_external_decision(
+                    plan, ErrorCode.EXTERNAL_APPROVAL_INVALID
+                )
+            if (
+                active_action in SECOND_ACTION_VALUES
                 and (
                     acknowledgement is None
                     or approval.approver_principal != principal
@@ -7380,7 +8700,7 @@ class ChangeGovernanceService:
             ):
                 self._record(
                     plan,
-                    "elevated_risk_acknowledgement_failed",
+                    f"{SECOND_ACTION_EVENT_PREFIXES[ApprovalActionKind(active_action)]}_failed",
                     "rejected",
                     error_code=(
                         ErrorCode.APPROVAL_PRINCIPAL_MISMATCH.value
@@ -7400,11 +8720,12 @@ class ChangeGovernanceService:
                     approval.principal_separation_enforced = (
                         principal_separation_proven(principal)
                     )
-                    if (
-                        ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
-                        in plan.policy_decision.required_acknowledgements
-                    ):
-                        if acknowledgement is None:
+                    second_kind = second_action_kind(plan.policy_decision)
+                    if second_kind is not None:
+                        if (
+                            acknowledgement is None
+                            or acknowledgement.kind is not second_kind
+                        ):
                             self._reject_external_decision(
                                 plan,
                                 ErrorCode.APPROVAL_SEQUENCE_FAILURE,
@@ -7420,8 +8741,21 @@ class ChangeGovernanceService:
                             requested_at
                         )
                         acknowledgement.authority_version = (
-                            APPROVAL_AUTHORITY_VERSION
+                            second_action_authority_version(second_kind)
                         )
+                        if (
+                            second_kind
+                            is ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+                        ):
+                            binding = safety_critical_binding(plan)
+                            if (
+                                binding is None
+                                or binding["projection_hash"]
+                                != acknowledgement.safety_critical_projection_hash
+                            ):
+                                self._reject_external_decision(
+                                    plan, ErrorCode.POLICY_SNAPSHOT_MISMATCH
+                                )
                         acknowledgement.bound_plan_hash = calculated
                         acknowledgement.policy_decision_hash = (
                             plan.policy_decision.policy_decision_hash
@@ -7440,7 +8774,7 @@ class ChangeGovernanceService:
                             datetime.fromisoformat(plan.expires_at),
                         ).isoformat()
                         approval.bundle_state = (
-                            "pending_elevated_risk_acknowledgement"
+                            SECOND_ACTION_PENDING_STATES[second_kind]
                         )
                         approval.same_principal_confirmed = None
                         self._record(
@@ -7452,12 +8786,9 @@ class ChangeGovernanceService:
                         )
                         self._record(
                             plan,
-                            "elevated_risk_acknowledgement_requested",
+                            f"{SECOND_ACTION_EVENT_PREFIXES[second_kind]}_requested",
                             "success",
-                            approval_action=(
-                                ApprovalActionKind.
-                                ELEVATED_RISK_ACKNOWLEDGEMENT.value
-                            ),
+                            approval_action=second_kind.value,
                         )
                         return self._approval_pending_response(plan)
                     approval.bundle_state = "fully_approved"
@@ -7480,10 +8811,51 @@ class ChangeGovernanceService:
                         "approval_bundle_state": "fully_approved",
                     }
 
-                if acknowledgement is None:
+                if (
+                    acknowledgement is None
+                    or acknowledgement.kind.value != active_action
+                ):
                     self._reject_external_decision(
                         plan, ErrorCode.APPROVAL_SEQUENCE_FAILURE
                     )
+                if safety_action:
+                    binding = safety_critical_binding(plan)
+                    if binding is None or (
+                        binding["projection_hash"]
+                        != acknowledgement.safety_critical_projection_hash
+                    ):
+                        self._reject_external_decision(
+                            plan, ErrorCode.POLICY_SNAPSHOT_MISMATCH
+                        )
+                    expected_tokens = sorted(
+                        row["object_ref"]
+                        for row in safety_critical_object_rows(binding)
+                    )
+                    if (
+                        not hmac.compare_digest(
+                            acknowledged_projection_hash.encode("utf-8"),
+                            binding["projection_hash"].encode("utf-8"),
+                        )
+                        or len(acknowledged_objects)
+                        != len(set(acknowledged_objects))
+                        or sorted(acknowledged_objects) != expected_tokens
+                    ):
+                        self._record(
+                            plan,
+                            "safety_critical_acknowledgement_failed",
+                            "rejected",
+                            error_code=(
+                                ErrorCode.
+                                SAFETY_CRITICAL_ACKNOWLEDGEMENT_MISMATCH.value
+                            ),
+                            approval_action=active_action,
+                        )
+                        raise GovernanceError(
+                            ErrorCode.SAFETY_CRITICAL_ACKNOWLEDGEMENT_MISMATCH
+                        )
+                    acknowledgement.acknowledged_objects = [
+                        dict(row) for row in binding["objects"]
+                    ]
                 acknowledgement.state = ApprovalState.APPROVED
                 acknowledgement.granted_at = self._timestamp()
                 acknowledgement.approver_principal = principal
@@ -7495,7 +8867,7 @@ class ChangeGovernanceService:
                     plan.rollback.approved_at = approval.approved_at
                 self._record(
                     plan,
-                    "elevated_risk_acknowledgement_granted",
+                    f"{SECOND_ACTION_EVENT_PREFIXES[acknowledgement.kind]}_granted",
                     "success",
                     approval_principal=principal,
                     approval_action=active_action,
@@ -7928,7 +9300,7 @@ class ChangeGovernanceService:
             if (
                 plan.policy_decision is not None
                 and plan.policy_decision.policy_version != POLICY_VERSION
-                and not persisted_f2_v1_policy_snapshot_matches(plan)
+                and not persisted_historical_policy_snapshot_matches(plan)
             ):
                 self._require_policy_snapshot(plan)
             if (
@@ -7956,6 +9328,21 @@ class ChangeGovernanceService:
             if self.f3_runtime is not None and self.f3_runtime.is_covered_plan(plan):
                 return self.f3_runtime.handle_legacy_apply(
                     plan, expected_plan_hash
+                )
+            self._refuse_dormant_profile_without_f3(plan)
+            if any(
+                op.action == configuration_delete.ACTION for op in plan.operations
+            ):
+                # HAMCP-155: never a legacy execution task for a delete.
+                raise GovernanceError(
+                    ErrorCode.PROVIDER_UNAVAILABLE,
+                    details={
+                        "reason": configuration_delete.PENDING_ADMISSION_REASON,
+                        "reason_code": configuration_delete.PENDING_ADMISSION_REASON,
+                        "resource_type": "configuration_deletion",
+                        "core_capability": configuration_delete.PROFILE,
+                        "provider_dispatch_occurred": False,
+                    },
                 )
             if any(retry_proof_markers(op) or inverse_eligibility.markers(op) for op in plan.operations):
                 # This eligibility class requires F3's whole-bundle checks.
@@ -10932,6 +12319,23 @@ class ChangeGovernanceService:
         self, plan: ChangePlan, expected_plan_hash: str
     ) -> dict[str, Any]:
         started = time.perf_counter()
+        if any(
+            operation.action == configuration_delete.ACTION
+            for operation in plan.operations
+        ):
+            # HAMCP-155: a delete is dispatched only by the F3 delete
+            # adapter under signed Core admission.  This legacy path never
+            # reads, writes or records for one, retained or not.
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": configuration_delete.PENDING_ADMISSION_REASON,
+                    "reason_code": configuration_delete.PENDING_ADMISSION_REASON,
+                    "resource_type": "configuration_deletion",
+                    "core_capability": configuration_delete.PROFILE,
+                    "provider_dispatch_occurred": False,
+                },
+            )
         self._resolve_lifecycle(plan)
         if plan.status == PlanStatus.EXPIRED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
@@ -11070,6 +12474,19 @@ class ChangeGovernanceService:
                             },
                         )
                     preflight[operation.operation_id] = current
+                # HAMCP-213 review H5: the called scripts are review evidence
+                # too; a changed callee refuses the plan as stale.
+                stale_callee = await self._called_scripts_stale(plan.operations)
+                if stale_callee is not None:
+                    self._record(
+                        plan,
+                        "change_apply_rejected",
+                        "rejected",
+                        error_code=ErrorCode.STALE_TARGET_STATE.value,
+                    )
+                    raise GovernanceError(
+                        ErrorCode.STALE_TARGET_STATE, details=stale_callee
+                    )
             except GovernanceError:
                 raise
             except Exception as exc:
@@ -11170,11 +12587,22 @@ class ChangeGovernanceService:
                         "resource_revalidation_unavailable"
                     )
                     prewrite_failure_category = type(exc).__name__
+                if (
+                    prewrite_failure_reason is None
+                    and await self._called_scripts_stale(
+                        plan.operations,
+                        only=operation,
+                        dispatch_order=operation.order,
+                    )
+                    is not None
+                ):
+                    prewrite_failure_reason = "stale_called_script"
 
                 if prewrite_failure_reason is not None:
                     stale_target = prewrite_failure_reason in {
                         "resource_identity_mismatch",
                         "stale_target_state",
+                        "stale_called_script",
                     }
                     root_error = (
                         ErrorCode.STALE_TARGET_STATE
@@ -12162,6 +13590,34 @@ class ChangeGovernanceService:
             "plan": self._public(plan, include_configs=False),
         }
 
+    def _refuse_dormant_profile_without_f3(self, plan: ChangePlan) -> None:
+        """HAMCP-165: a dormant-profile plan never applies outside F3.
+
+        Label and HAMCP-069B availability/exposure plans need current Core
+        admission that only the F3 runtime checks.  Without that route the
+        apply refuses before any plan event, task, or Home Assistant request.
+        """
+
+        dormant = sorted(
+            {
+                operation.resource_type
+                for operation in plan.operations
+                if operation.resource_type in DORMANT_PROFILE_RESOURCE_TYPES
+            }
+        )
+        if dormant:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": "core_authority_unavailable",
+                    "reason_code": "core_authority_unavailable",
+                    "resource_types": dormant,
+                    "required_action": "active_f3_execution_required",
+                    "execution_state_persisted": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+
     def _reject_apply(
         self,
         plan: ChangePlan,
@@ -12257,10 +13713,64 @@ class ChangeGovernanceService:
                 or approval.same_principal_confirmed is not True
             ):
                 return ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
+        safety_error = self._safety_critical_dispatch_error(plan)
+        if safety_error is not None:
+            return safety_error
         if plan.status != expected_status:
             return ErrorCode.EXTERNAL_APPROVAL_REQUIRED
         if self._approval_bundle_state(plan) != "fully_approved":
             return ErrorCode.EXTERNAL_APPROVAL_REQUIRED
+        return None
+
+    def _safety_critical_dispatch_error(
+        self, plan: ChangePlan
+    ) -> ErrorCode | None:
+        """HAMCP-213 D1: refuse dispatch without the exact acknowledgement.
+
+        This check is independent of the stored bundle state and plan status:
+        plan approval alone, or a record that only claims ``fully_approved``,
+        never dispatches a plan that requires the safety-critical
+        acknowledgement. The binding is recomputed from the immutable plan.
+        """
+
+        decision = plan.policy_decision
+        if (
+            decision is None
+            or ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+            not in decision.required_acknowledgements
+        ):
+            return None
+        approval = plan.approval
+        acknowledgement = approval.elevated_risk_acknowledgement
+        if (
+            acknowledgement is None
+            or acknowledgement.kind
+            is not ApprovalActionKind.SAFETY_CRITICAL_ACKNOWLEDGEMENT
+            or acknowledgement.authority_version
+            != SAFETY_CRITICAL_ACKNOWLEDGEMENT_AUTHORITY_VERSION
+            or acknowledgement.state != ApprovalState.APPROVED
+            or not acknowledgement.granted_at
+            or not acknowledgement.challenge_id
+            or acknowledgement.bound_plan_hash != self.plan_hash(plan)
+            or acknowledgement.policy_decision_hash
+            != decision.policy_decision_hash
+        ):
+            return ErrorCode.SAFETY_CRITICAL_ACKNOWLEDGEMENT_REQUIRED
+        binding = safety_critical_binding(plan)
+        if (
+            binding is None
+            or acknowledgement.safety_critical_projection_hash
+            != binding["projection_hash"]
+            or acknowledgement.acknowledged_objects != binding["objects"]
+        ):
+            return ErrorCode.SAFETY_CRITICAL_ACKNOWLEDGEMENT_MISMATCH
+        if (
+            not acknowledgement.approver_principal
+            or acknowledgement.approver_principal
+            != approval.approver_principal
+            or approval.same_principal_confirmed is not True
+        ):
+            return ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
         return None
 
     @staticmethod
@@ -12658,12 +14168,31 @@ class ChangeGovernanceService:
                 resource_type = ChangeGovernanceService._resolved_resource_type(
                     operation.resource_type, operation.helper_type
                 )
-                valid, _, _ = validate_resource(
-                    resource_type,
-                    operation.target_id,
-                    operation.proposed_config,
-                    self.sensitive_values,
-                )
+                deleting = operation.action == configuration_delete.ACTION
+                if deleting:
+                    # HAMCP-155: the proposal is the closed delete intent.
+                    valid = not configuration_delete.intent_errors(
+                        resource_type,
+                        operation.target_id,
+                        operation.proposed_config,
+                    ) and isinstance(operation.current_config, dict)
+                    normalized_proposed = (
+                        configuration_delete.normalize_intent(
+                            operation.proposed_config
+                        )
+                        if valid
+                        else None
+                    )
+                else:
+                    valid, _, _ = validate_resource(
+                        resource_type,
+                        operation.target_id,
+                        operation.proposed_config,
+                        self.sensitive_values,
+                    )
+                    normalized_proposed = normalize_resource_config(
+                        resource_type, operation.proposed_config
+                    )
                 target_key = (resource_type, operation.target_id)
                 if (
                     not valid
@@ -12675,13 +14204,14 @@ class ChangeGovernanceService:
                         dependency not in seen_ids
                         for dependency in operation.depends_on
                     )
-                    or operation.action
-                    not in SUPPORTED_CONFIGURATION_ACTIONS
+                    or (
+                        not deleting
+                        and operation.action
+                        not in SUPPORTED_CONFIGURATION_ACTIONS
+                    )
                     or operation.normalization_version
                     != RESOURCE_NORMALIZATION_VERSION
-                    or normalize_resource_config(
-                        resource_type, operation.proposed_config
-                    )
+                    or normalized_proposed
                     != operation.normalized_proposed_config
                     or normalize_resource_config(
                         resource_type, operation.current_config
@@ -12770,7 +14300,9 @@ class ChangeGovernanceService:
     async def rollback_change(self, plan_id: str, expected_plan_hash: str = "") -> dict[str, Any]:
         plan_lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with plan_lock:
-            plan = self._load(plan_id)
+            plan = self._load(
+                plan_id, f3_rollback_source=self.f3_runtime is not None
+            )
             if self.f3_runtime is not None:
                 return await self.f3_runtime.create_rollback_plan(
                     plan, expected_plan_hash
@@ -13356,6 +14888,15 @@ class ChangeGovernanceService:
         operational["entity_metadata_provider"] = (
             self._entity_metadata_provider_health_snapshot()
         )
+        operational["configuration_delete_provider"] = (
+            self._configuration_delete_provider_health_snapshot()
+        )
+        operational["entity_availability_exposure_provider"] = (
+            self._entity_availability_exposure_provider_health_snapshot()
+        )
+        operational["label_registry_provider"] = (
+            self._label_registry_provider_health_snapshot()
+        )
         for operation, operation_health in operational["operations"].items():
             operation_health["active_reconciliations"] = (
                 self._active_lifecycle_reconciliations
@@ -13526,6 +15067,98 @@ class ChangeGovernanceService:
             "core_capability": "core.entity_registry_metadata_operation",
             "core_admission": "owner_signed_reference_required",
             "label_creation": False,
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _entity_availability_exposure_provider_health_snapshot(
+        self,
+    ) -> dict[str, Any]:
+        """Report the dormant HAMCP-069B providers without a Core call.
+
+        Both resource types stay refused until a signed registry sequence
+        admits their profiles; this snapshot shows that state, it does not
+        decide it.
+        """
+
+        configured = self.entity_availability_exposure_gateway is not None
+        return {
+            "provider": "direct_home_assistant_entity_registry",
+            "provider_contracts": {
+                "entity_registry_availability": (
+                    "compiled-core-entity-registry-availability-operation-v1"
+                ),
+                "entity_assistant_exposure": (
+                    "compiled-core-entity-assistant-exposure-operation-v1"
+                ),
+            },
+            "provider_contract_status": "code_owned_exact",
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capabilities": [
+                "core.entity_registry_availability_operation",
+                "core.entity_assistant_exposure_operation",
+            ],
+            "core_admission": "pending_signed_registry_admission",
+            "writable_assistants": ["cloud.google_assistant", "conversation"],
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _label_registry_provider_health_snapshot(self) -> dict[str, Any]:
+        """Report the dormant HAMCP-165 label provider without a Core call.
+
+        Label create and edit stay refused until a signed registry sequence
+        admits ``core.label_registry_operation``; this snapshot shows that
+        state, it does not decide it.
+        """
+
+        configured = self.label_registry_gateway is not None
+        return {
+            "provider": label_registry.LABEL_PROVIDER,
+            "provider_contracts": {
+                label_registry.LABEL_RESOURCE_TYPE: (
+                    label_registry.LABEL_PROVIDER_CONTRACT
+                ),
+            },
+            "provider_contract_status": "code_owned_exact",
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capabilities": [label_registry.CORE_CAPABILITY],
+            "core_admission": label_registry.PENDING_ADMISSION_REASON,
+            "label_deletion": False,
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _configuration_delete_provider_health_snapshot(self) -> dict[str, Any]:
+        """Report the dormant HAMCP-155 provider without a Core call.
+
+        Deletion stays refused until a signed registry sequence admits its
+        profile; this snapshot shows that state, it does not decide it.
+        """
+
+        configured = self.configuration_delete_gateway is not None
+        return {
+            "provider": "direct_home_assistant_configuration",
+            "provider_contracts": {
+                "automation": configuration_delete.PROVIDER_CONTRACT,
+                "script": configuration_delete.PROVIDER_CONTRACT,
+            },
+            "provider_contract_status": "code_owned_exact",
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capabilities": [configuration_delete.PROFILE],
+            "core_admission": configuration_delete.PENDING_ADMISSION_REASON,
             "fallback": "none",
             "fallback_count": 0,
             "fallback_policy": "none",

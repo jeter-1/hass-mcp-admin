@@ -29,8 +29,9 @@ from .models import (
 )
 from .normalize import normalize_automation, stable_hash, state_fingerprint
 from .policy import (
+    POLICY_VERSION,
     evaluate_change_policy,
-    persisted_f2_v1_policy_snapshot_matches,
+    persisted_historical_policy_snapshot_matches,
     policy_snapshot_matches,
     policy_subject_payload,
 )
@@ -78,7 +79,7 @@ class _DecisionShape:
 
 
 _CURRENT_RETAINED_EFFECT_SHAPE = _DecisionShape(
-    policy_version="f2-v2",
+    policy_version=POLICY_VERSION,
     policy_class=ApprovalPolicyClass.ELEVATED_ADMIN,
     risk_delta=RiskDelta.MODERATE,
     physical_consequence=PhysicalConsequence.SAFETY_CRITICAL,
@@ -236,6 +237,10 @@ def _configuration_plan_hash(plan: ChangePlan) -> str:
         if operation.semantic_projection_hash is not None:
             immutable_operation["semantic_projection_hash"] = (
                 operation.semantic_projection_hash
+            )
+        if operation.called_scripts is not None:
+            immutable_operation["called_scripts_hash"] = stable_hash(
+                operation.called_scripts
             )
         immutable_operations.append(immutable_operation)
     immutable: dict[str, object] = {
@@ -745,11 +750,11 @@ def _validation_failed_automation_matches(plan: ChangePlan) -> bool:
         _BETA32_RETAINED_EFFECT_SHAPE, policy_version=decision.policy_version
     )
     if (
-        decision.policy_version not in {"f2-v1", "f2-v2"}
+        decision.policy_version not in {"f2-v1", "f2-v2", "f2-v3"}
         or _decision_shape(decision) != expected
         or not (
             policy_snapshot_matches(plan)
-            or persisted_f2_v1_policy_snapshot_matches(plan)
+            or persisted_historical_policy_snapshot_matches(plan)
         )
     ):
         return False

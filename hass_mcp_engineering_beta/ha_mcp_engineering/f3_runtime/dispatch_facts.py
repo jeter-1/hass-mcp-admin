@@ -110,7 +110,26 @@ _R_PROVEN_CONFLICTING_CODES = frozenset(
 # P1: configuration REST write, automation and script only.
 _P1_TARGET_TYPES = frozenset({"automation", "script"})
 # P3: entity metadata command answered unauthorized/forbidden.
-_P3_TARGET_TYPE = "entity_registry_metadata"
+# HAMCP-069B: both 069B writes are ``require_admin`` before their handler
+# (Core 2026.10.1), so an unauthorized result proves no mutation there too.
+_P3_TARGET_TYPES = frozenset(
+    {
+        "entity_registry_metadata",
+        "entity_registry_availability",
+        "entity_assistant_exposure",
+        # HAMCP-165: label create and update are ``require_admin`` too.
+        "label_registry_entry",
+    }
+)
+# V9 applies to every code-owned entity registry write identity.
+ALREADY_PRESENT_CAPABILITY_IDENTITIES = frozenset(
+    {
+        ENTITY_METADATA_CAPABILITY_IDENTITY,
+        "update_entity_registry_availability_configuration",
+        "update_entity_assistant_exposure_configuration",
+        "update_label_registry_entry_configuration",
+    }
+)
 _VERIFIED_NO_DISPATCH_CLASS = "verified_no_dispatch"
 
 ALREADY_PRESENT_OUTCOME = ENTITY_METADATA_NOT_DISPATCHED_OUTCOME
@@ -397,7 +416,7 @@ def child_facts(
             and (
                 target_type in _P1_TARGET_TYPES
                 or (
-                    target_type == _P3_TARGET_TYPE
+                    target_type in _P3_TARGET_TYPES
                     and PROVIDER_PERMISSION_DENIED in codes
                 )
             )
@@ -441,7 +460,7 @@ def is_entity_metadata_already_present(
     if not declarations or len(declarations) != len(records):
         return False
     return all(
-        declaration["capability_id"] == ENTITY_METADATA_CAPABILITY_IDENTITY
+        declaration["capability_id"] in ALREADY_PRESENT_CAPABILITY_IDENTITIES
         and record_already_present(record)
         for declaration, record in zip(declarations, records, strict=True)
     )

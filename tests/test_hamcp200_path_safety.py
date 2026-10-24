@@ -403,7 +403,8 @@ class WebhookReachabilityTests(unittest.TestCase):
                 self.assertNotIn("webhook", template)
                 self.assertIn(
                     template.split("/")[1],
-                    {"addons", "config", "events", "history", "logbook",
+                    # HAMCP-131 adds the fixed Supervisor /core/logs route.
+                    {"addons", "config", "core", "events", "history", "logbook",
                      "services", "states", "template"},
                 )
 
@@ -778,7 +779,7 @@ class ToolRefusalTests(unittest.TestCase):
             rate_limit_burst=1000,
         )
         gateway = create_application(settings, core_snapshot_source=SyntheticCoreSource())
-        asyncio.run(CORE_READMISSION.reconcile_once("synthetic-application-startup"))
+        asyncio.run(CORE_READMISSION.reconcile_once("startup"))
         asyncio.run(
             GOVERNANCE.require().f3_runtime.recover_once("synthetic-application-startup")
         )
@@ -977,6 +978,13 @@ SCAN_EXEMPTIONS = frozenset({
     (
         "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/strategies.py",
         "f'/config/{self.resource_type}/config/{target_id}'",
+    ),
+    # HAMCP-155: hashed into the F3 delete descriptor only, in the same form
+    # as create/update above. The DELETE itself is sent on the guarded
+    # ``_config_route`` in the same module.
+    (
+        "hass_mcp_engineering_beta/ha_mcp_engineering/governance/configuration_delete.py",
+        "f'/config/{resource_type}/config/{target_id}'",
     ),
 })
 
@@ -1289,9 +1297,13 @@ class SourceScanTests(unittest.TestCase):
 
 HARNESS_BINDERS = frozenset({"rest_path", "state_path"})
 # Reviewed raw HTTP sessions in harnesses that are not the guarded client:
-# the disposable-Core onboarding bootstrap and the 850 relay passthrough.
+# the disposable-Core onboarding bootstrap and the 850 relay passthrough, and
+# the seq-13 lane's config-entry setup and cleanup (HAMCP-165 review1 M4),
+# which ``LaneRaw.rest`` closes to ``CONFIG_ENTRY_ROUTE`` on a loopback Core
+# (pinned in tests/test_seq13_contract_acceptance.py ``LaneRawRouteTests``).
 HARNESS_EXEMPTIONS = frozenset({
     ("real_ha_contract_tests.py", "f'{HA_URL}{path}'"),
+    ("seq13_contract_acceptance.py", "self.api_url + path"),
 })
 
 

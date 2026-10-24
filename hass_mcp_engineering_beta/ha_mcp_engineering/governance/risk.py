@@ -36,6 +36,22 @@ DESTRUCTIVE_ACTION_NAMES = {"delete", "remove", "shutdown", "reboot", "restart",
 MEDIUM_SERVICE_PREFIXES = ("light.", "switch.", "climate.", "cover.", "fan.")
 SENSITIVE_ENTITY_DOMAINS = {"lock", "alarm_control_panel", "valve"}
 WATER_TARGET_TERMS = {"water", "shutoff", "shut_off", "main_valve"}
+# Closed table of services that only mention an entity (HAMCP-213 D2.1/D4.1):
+# their ``data.entity_id`` is a reference for display, never an action target.
+REFERENCE_ONLY_EXACT_SERVICES = frozenset({"logbook.log", "system_log.write"})
+REFERENCE_ONLY_SERVICE_PREFIXES = ("notify.", "persistent_notification.")
+# Triggers that describe a protected physical object (HAMCP-213 D4.5).
+PROTECTED_OBJECT_TRIGGERS = frozenset(
+    {
+        "sensitive_entity_domain",
+        "sensitive_blueprint_input",
+        "garage_cover_target",
+        "water_control_target",
+    }
+)
+_PROTECTED_HIGH_SERVICE_PREFIXES = ("lock.", "alarm_control_panel.", "valve.")
+_RECIPIENT_SERVICE_PREFIXES = ("notify.", "climate.")
+_UNSET: Any = object()
 _ACTION_CONTROL_FAMILIES = frozenset(
     {"choose", "if", "parallel", "repeat", "sequence"}
 )
@@ -533,6 +549,29 @@ def _unresolved_action_paths(
             )
 
 
+def is_reference_only_service(service: str) -> bool:
+    return service in REFERENCE_ONLY_EXACT_SERVICES or service.startswith(
+        REFERENCE_ONLY_SERVICE_PREFIXES
+    )
+
+
+def _node_service(node: dict[str, Any]) -> str | None:
+    """Return the literal lowercased service of one call node, if any."""
+
+    for alias in ("action", "service"):
+        value = node.get(alias)
+        if alias in node:
+            if isinstance(value, str) and value.strip() and not _has_template(value):
+                return value.strip().lower()
+            return None
+    return None
+
+
+def _is_reference_only_node(node: dict[str, Any]) -> bool:
+    service = _node_service(node)
+    return service is not None and is_reference_only_service(service)
+
+
 def _target_selectors(
     node: dict[str, Any],
 ) -> Iterable[tuple[str, str, Any]]:
@@ -547,7 +586,11 @@ def _target_selectors(
         if selector in node:
             yield selector, selector, node[selector]
     data = node.get("data")
-    if isinstance(data, dict) and "entity_id" in data:
+    if (
+        isinstance(data, dict)
+        and "entity_id" in data
+        and not _is_reference_only_node(node)
+    ):
         yield "data.entity_id", "entity_id", data["entity_id"]
 
 
@@ -569,9 +612,11 @@ def _target_shape_evidence(
     evidence: list[dict[str, str]] = []
     unresolved = False
     if not selectors:
-        evidence.append(
-            {"field": f"{path}.target", "trigger": "omitted_action_target"}
-        )
+        if not _is_reference_only_node(node):
+            # Notify-style services are routed by name, not by target.
+            evidence.append(
+                {"field": f"{path}.target", "trigger": "omitted_action_target"}
+            )
         return evidence, unresolved
 
     selector_names = {selector for _field, selector, _value in selectors}
@@ -699,6 +744,18 @@ def _structured_analysis(
                 node, path
             )
             evidence.extend(shape_evidence)
+            data = node.get("data")
+            if (
+                _is_reference_only_node(node)
+                and isinstance(data, dict)
+                and "entity_id" in data
+            ):
+                evidence.append(
+                    {
+                        "field": f"{path}.data.entity_id",
+                        "trigger": "reference_target",
+                    }
+                )
             if unresolved_target:
                 warnings.add(
                     "Dynamic action target could not be bounded structurally."
@@ -1745,11 +1802,62 @@ def _is_high_service(service: str) -> bool:
     }
 
 
+def _recipient_set(config: dict[str, Any] | None) -> set[str]:
+    """Return {(service, recipient)} for notify and climate calls (D4.4)."""
+
+    recipients: set[str] = set()
+    if not isinstance(config, dict):
+        return recipients
+    for root_path, root in _action_roots(config):
+        for _path, node in _action_nodes(root, root_path):
+            service = _node_service(node)
+            if service is None or not service.startswith(
+                _RECIPIENT_SERVICE_PREFIXES
+            ):
+                continue
+            data = node.get("data")
+            data = data if isinstance(data, dict) else {}
+            recipients.add(
+                json.dumps(
+                    [
+                        service,
+                        node.get("target"),
+                        node.get("entity_id"),
+                        data.get("target"),
+                        data.get("entity_id"),
+                    ],
+                    sort_keys=True,
+                    default=str,
+                )
+            )
+    return recipients
+
+
+def _protected_high_evidence(item: dict[str, Any]) -> bool:
+    return item.get("trigger") in PROTECTED_OBJECT_TRIGGERS or (
+        item.get("trigger") == "high_risk_service"
+        and str(item.get("service", "")).startswith(
+            _PROTECTED_HIGH_SERVICE_PREFIXES
+        )
+    )
+
+
 def classify_risk(
     operation: ChangeOperation,
     diff: dict[str, Any],
     proposed: dict[str, Any],
+    *,
+    current: dict[str, Any] | None = _UNSET,
+    protected_effect_verdict: str | None = None,
 ) -> ChangeRiskAssessment:
+    """Classify one automation-shaped configuration.
+
+    ``current`` (HAMCP-213 D4.4) limits the recipient reason to a changed
+    recipient set. ``protected_effect_verdict`` (D4.5) is the D2 comparison
+    verdict: when the protected effects are ``equivalent`` they do not by
+    themselves raise HIGH; the policy keeps the operation elevated.
+    """
+
     fields = {item["field"] for item in diff.get("changed_fields", [])}
     services, evidence, warnings, _targets = _structured_analysis(proposed)
     reasons: list[str] = []
@@ -1761,10 +1869,14 @@ def classify_risk(
         }
     )
 
-    if behavioral_change and any(item["trigger"] in {
-        "high_risk_service", "sensitive_entity_domain", "sensitive_blueprint_input",
-        "garage_cover_target", "water_control_target",
-    } for item in evidence):
+    if behavioral_change and any(
+        item["trigger"] in {"high_risk_service", *PROTECTED_OBJECT_TRIGGERS}
+        and not (
+            protected_effect_verdict == "equivalent"
+            and _protected_high_evidence(item)
+        )
+        for item in evidence
+    ):
         reasons.append("Structured action or target requires high-risk review")
     if behavioral_change and _has_unrestricted_action_target(proposed):
         reasons.append("Broad or unrestricted target detected")
@@ -1789,7 +1901,14 @@ def classify_risk(
             medium_reasons.append(f"Behavior-impacting {field} change")
     if "actions" in fields and any(service.startswith(MEDIUM_SERVICE_PREFIXES) for service in services):
         medium_reasons.append("Physical-device action detected")
-    if "actions" in fields and any(service.startswith(("notify.", "climate.")) for service in services):
+    if (
+        "actions" in fields
+        and any(service.startswith(_RECIPIENT_SERVICE_PREFIXES) for service in services)
+        and (
+            current is _UNSET
+            or _recipient_set(current) != _recipient_set(proposed)
+        )
+    ):
         medium_reasons.append("Recipient or environmental-control behavior may change")
     if warnings:
         medium_reasons.append("Actionable service or target structure could not be fully resolved")

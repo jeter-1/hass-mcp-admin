@@ -581,6 +581,7 @@ SANITIZER_SITES = {
     ("dependency/script_calls.py", "extract_script_calls", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/script_calls.py", "extract_script_calls.add", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/script_sources.py", "select_script_candidates", "sanitize_untrusted_data"): (1, "analysis"),
+    ("entity_reconciliation/service.py", "EntityReconciliationService._finish", "sanitize_untrusted_data"): (1, "analysis"),
     ("f3_dashboard/approval_projection.py", "validate_dashboard_approval_projection", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/config_validation.py", "normalize_configuration_validation", "sanitize_untrusted_data"): (2, "governance"),
     ("governance/operational_lifecycle.py", "OperationalLifecycleGateway.configuration_validation", "sanitize_untrusted_data"): (1, "governance"),
@@ -590,6 +591,7 @@ SANITIZER_SITES = {
     ("governance/service.py", "ChangeGovernanceService._public", "rescan_stored_plan"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService._public_plan_observability_projection", "rescan_stored_plan"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService._review_summary", "rescan_stored_plan"): (3, "governance"),
+    ("governance/service.py", "ChangeGovernanceService._safety_critical_review", "rescan_stored_plan"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService.approve", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService.create_dashboard_update_plan", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "_sanitize_configuration_caller_context", "sanitize_untrusted_data"): (1, "governance"),
@@ -598,6 +600,7 @@ SANITIZER_SITES = {
     ("handoff/provider.py", "EngineeringHandoffProvider._automation_configs.one", "sanitize_untrusted_data"): (1, "analysis"),
     ("handoff/provider.py", "EngineeringHandoffProvider._states.one", "sanitize_untrusted_data"): (1, "analysis"),
     ("handoff/service.py", "HandoffGenerationService.generate", "sanitize_untrusted_data"): (1, "analysis"),
+    ("history_slices/service.py", "HistorySliceService._finish", "sanitize_untrusted_data"): (1, "delegated"),
     ("impact/provider.py", "DirectHaImpactProvider._entity_registry", "sanitize_untrusted_data"): (1, "analysis"),
     ("impact/provider.py", "DirectHaImpactProvider._exact_state", "sanitize_untrusted_data"): (1, "analysis"),
     ("impact/provider.py", "DirectHaImpactProvider._safe_dependency", "sanitize_untrusted_data"): (1, "analysis"),
@@ -608,6 +611,8 @@ SANITIZER_SITES = {
     ("incident/provider.py", "DirectHaIncidentProvider._registry", "sanitize_untrusted_data"): (1, "analysis"),
     ("incident/provider.py", "DirectHaIncidentProvider._states", "sanitize_untrusted_data"): (1, "analysis"),
     ("incident/provider.py", "DirectHaIncidentProvider._system_log", "sanitize_untrusted_data"): (1, "logs"),
+    ("incident_logs/service.py", "IncidentLogService._finish", "sanitize_log_lines"): (1, "logs"),
+    ("incident_logs/service.py", "IncidentLogService._finish", "sanitize_untrusted_data"): (1, "logs"),
     ("integration_inspection/projection.py", "Projector._project_steps.scalar", "sanitize_untrusted_data"): (1, "identifier"),
     ("integration_inspection/projection.py", "Projector.identifier", "sanitize_untrusted_data"): (1, "identifier"),
     ("integrity/provider.py", "DirectHaIntegrityProvider._current_states", "sanitize_untrusted_data"): (1, "analysis"),
@@ -629,6 +634,9 @@ SANITIZER_SITES = {
     ("providers/upstream_yaml_reader.py", "_sanitizer_rule", "sanitize_untrusted_data"): (1, "delegated"),
     ("providers/upstream_yaml_reader.py", "project_success", "sanitize_untrusted_data"): (1, "delegated"),
     ("providers/upstream_yaml_reader.py", "seal", "sanitize_untrusted_data"): (1, "delegated"),
+    ("recorder_settings/service.py", "RecorderSettingsService._finish", "sanitize_untrusted_data"): (1, "analysis"),
+    ("configuration_definitions/service.py", "ConfigurationDefinitionsService._finish", "sanitize_untrusted_data"): (1, "analysis"),
+    ("configuration_definitions/credentials.py", "withheld_at_exit", "sanitize_untrusted_data"): (1, "analysis"),
     ("reliability/provider.py", "DirectHaReliabilityProvider._collect_system_log", "sanitize_untrusted_data"): (1, "logs"),
     ("reliability/provider.py", "DirectHaReliabilityProvider._collect_traces.fetch", "sanitize_untrusted_data"): (1, "analysis"),
     ("reliability/provider.py", "DirectHaReliabilityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),
@@ -1104,7 +1112,7 @@ class StoredPlanExceptionTests(unittest.TestCase):
             site: count for site, count in scan_package().items() if site[2] == "rescan_stored_plan"
         }
         self.assertEqual(found, STORED_PLAN_RESCAN_SITES)
-        self.assertEqual(sum(found.values()), 6)
+        self.assertEqual(sum(found.values()), 7)
         self.assertEqual({module for module, _scope, _name in found}, {"governance/resources.py", "governance/service.py"})
 
     def test_the_allow_list_proof_fails_for_a_new_caller(self):

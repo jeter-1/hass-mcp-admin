@@ -53,7 +53,7 @@ class ContainerFaultTests(unittest.IsolatedAsyncioTestCase):
             core = CoreRuntime()
             core.configure(object(), release_registry=registry,
                            source=ProjectedCoreSource(registry, "2026.9.3", typed_operations=True))
-            await core.reconcile_once("offline_disposable_rehearsal")
+            await core.reconcile_once("startup")
             fan_transport, power_transport = FixtureFan(), FixturePower("8.5.0")
             fan_transport.catalog = power_transport.catalog
             fan_transport.state["entity_id"] = FAN

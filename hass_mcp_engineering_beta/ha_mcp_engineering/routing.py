@@ -30,6 +30,13 @@ from .ha_core_readmission.routes import (
     CORE_ROUTE_DELEGATED,
     CORE_ROUTE_UNMAPPED,
     StaticCoreRoute,
+    AVAILABILITY_EXPOSURE_OPERATIONS,
+    AVAILABILITY_EXPOSURE_TOOL,
+    LABEL_PROFILE,
+    LABEL_RESOURCE_TYPE,
+    LABEL_TOOL,
+    CONFIGURATION_DELETE_PROFILE,
+    CONFIGURATION_DELETE_TOOL,
     StaticToolTargetRefused,
     static_tool_core_route,
     static_tool_target,
@@ -382,6 +389,40 @@ class AuthenticatedMcpGateway:
             ],
         })
         await send({"type": "http.response.body", "body": body})
+
+    def _pending_admission_details(self, tool_name, parameters) -> dict:
+        """Name a 069B, 165 or 155 profile that no owner-signed registry admits yet.
+
+        Only the selected profile's own admission state is reported; any other
+        Core unavailability keeps the generic refusal with empty details.
+        """
+
+        if self._core_runtime is None:
+            return {}
+        if tool_name == LABEL_TOOL:
+            selected = (LABEL_RESOURCE_TYPE, LABEL_PROFILE)
+        elif tool_name == CONFIGURATION_DELETE_TOOL:
+            selected = ("configuration_deletion", CONFIGURATION_DELETE_PROFILE)
+        elif tool_name != AVAILABILITY_EXPOSURE_TOOL or not isinstance(
+            parameters, dict
+        ):
+            return {}
+        else:
+            selected = AVAILABILITY_EXPOSURE_OPERATIONS.get(
+                parameters.get("operation")
+            )
+        if selected is None:
+            return {}
+        if self._core_runtime.route_status((selected[1],))["available"]:
+            return {}
+        return {
+            "reason": "pending_signed_registry_admission",
+            "reason_code": "pending_signed_registry_admission",
+            "resource_type": selected[0],
+            "core_capability": selected[1],
+            "plan_created": False,
+            "provider_dispatch_occurred": False,
+        }
 
     @classmethod
     async def _respond_mcp_tool_result(
@@ -801,6 +842,31 @@ class AuthenticatedMcpGateway:
                         send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
                     )
                     return
+            # Equality, not set membership: tool_name is not yet known to be
+            # hashable here (HAMCP-189 non-string names).
+            if tool_name == "get_recorder_settings" or tool_name == "get_unregistered_entities" or tool_name == "get_configuration_definitions":
+                if tool_name == "get_recorder_settings":
+                    from .recorder_settings.contracts import validate_arguments as validate_hamcp132
+                    error, message = "InvalidRecorderSettingsRequest", "Invalid recorder settings arguments."
+                elif tool_name == "get_configuration_definitions":
+                    from .configuration_definitions.contracts import validate_arguments as validate_hamcp132
+                    error, message = "InvalidConfigurationDefinitionsRequest", "Invalid configuration definition arguments."
+                else:
+                    from .entity_reconciliation.contracts import validate_arguments as validate_hamcp132
+                    error, message = "InvalidUnregisteredEntitiesRequest", "Invalid unregistered entity arguments."
+                try:
+                    validate_hamcp132(raw_parameters)
+                except ValueError:
+                    telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                    failure = FailureResponse(
+                        operation=tool_name, error=error,
+                        error_code=telemetry.error_code, message=message,
+                        retryable=False, request_id=request_id,
+                    )
+                    await self._respond_mcp_tool_result(
+                        send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
+                    )
+                    return
             if tool_name == "capture_automation_baseline":
                 from .audit_baseline.capture_contracts import validate_arguments, CaptureError
                 try:
@@ -902,10 +968,26 @@ class AuthenticatedMcpGateway:
                 core_route.requirements if core_route is not None else ()
             )
             if self._core_runtime is not None and core_requirements:
+                # HAMCP-165: an unadmitted label profile is refused before the
+                # request is even validated; nothing is read or stored.
+                pending_label_admission = tool_name == LABEL_TOOL and bool(
+                    self._pending_admission_details(tool_name, parameters)
+                )
+                # HAMCP-155: an unadmitted delete profile is refused before
+                # the request is even validated; nothing is read or stored
+                # and no Core authority is acquired.
+                pending_delete_admission = (
+                    tool_name == CONFIGURATION_DELETE_TOOL
+                    and bool(
+                        self._pending_admission_details(tool_name, parameters)
+                    )
+                )
                 try:
                     core_target = (
                         static_tool_target(tool_name, parameters)
                         if isinstance(tool_name, str)
+                        and not pending_label_admission
+                        and not pending_delete_admission
                         else None
                     )
                 except StaticToolTargetRefused as refusal:
@@ -942,13 +1024,16 @@ class AuthenticatedMcpGateway:
                         request_id=request_id,
                     )
                     return
-                core_authority = (
-                    self._core_runtime.acquire(core_requirements)
-                    if core_target is None
-                    else self._core_runtime.acquire(
+                if pending_label_admission or pending_delete_admission:
+                    core_authority = None
+                elif core_target is None:
+                    core_authority = self._core_runtime.acquire(
+                        core_requirements
+                    )
+                else:
+                    core_authority = self._core_runtime.acquire(
                         core_requirements, target=core_target
                     )
-                )
                 if core_authority is None:
                     definition = error_definition(
                         ErrorCode.PROVIDER_UNAVAILABLE
@@ -964,6 +1049,9 @@ class AuthenticatedMcpGateway:
                         error="CoreCapabilityUnavailable",
                         error_code=telemetry.error_code,
                         message=definition.message,
+                        details=self._pending_admission_details(
+                            tool_name, parameters
+                        ),
                         retryable=definition.retryable,
                         timing=Timing(
                             total_ms=telemetry.total_duration_ms
@@ -1092,7 +1180,7 @@ class AuthenticatedMcpGateway:
                         "upstream_attempted": False,
                     }
                     resource_ids = {}
-                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
+                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -1287,6 +1375,74 @@ class AuthenticatedMcpGateway:
                         "provider": "engineering", "fallback": "none",
                     }
                     resource_ids = {}
+                elif tool_name == "get_recorder_settings":
+                    # Only a bounded count is retained; entity IDs, rejected
+                    # keys and malformed values are never copied into the audit.
+                    entity_ids = parameters.get("entity_ids", [])
+                    audit_parameters = {
+                        "profile": "recorder-settings-read-v1",
+                        "entity_count": len(entity_ids) if type(entity_ids) is list and len(entity_ids) <= 50 else None,
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
+                elif tool_name == "get_unregistered_entities":
+                    domains = parameters.get("domains")
+                    limit = parameters.get("limit", 200)
+                    audit_parameters = {
+                        "profile": "unregistered-entities-read-v1",
+                        "domain_count": len(domains) if type(domains) is list and len(domains) <= 50 else None,
+                        "limit": limit if type(limit) is int and 1 <= limit <= 500 else None,
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
+                elif tool_name == "get_configuration_definitions":
+                    # Only bounded counts are retained; entity IDs, integration
+                    # names and rejected values are never copied into the audit.
+                    entity_ids = parameters.get("entity_ids", [])
+                    integrations = parameters.get("integrations", [])
+                    audit_parameters = {
+                        "profile": "configuration-definitions-read-v1",
+                        "entity_count": len(entity_ids) if type(entity_ids) is list and len(entity_ids) <= 50 else None,
+                        "integration_count": len(integrations) if type(integrations) is list and len(integrations) <= 12 else None,
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
+                elif tool_name == "get_incident_logs":
+                    # HAMCP-131: only validated source keys and bounded values;
+                    # the text filter, times and cursor are never copied.
+                    from .incident_logs.contracts import validate_arguments as validate_hamcp131
+                    try:
+                        checked = validate_hamcp131(parameters)
+                    except ValueError:
+                        checked = None
+                    audit_parameters = {
+                        "profile": "incident-window-journal-read-v1",
+                        "sources": list(checked["sources"]) if checked else None,
+                        "min_level": checked["min_level"] if checked else None,
+                        "limit": checked["limit"] if checked else None,
+                        "text_filter_present": bool(checked and checked["text"] is not None),
+                        "cursor_present": bool(checked and checked["cursor"] is not None),
+                        "provider": "supervisor_incident_logs", "fallback": "none",
+                    }
+                    resource_ids = {}
+                elif tool_name == "get_history_slices":
+                    # HAMCP-131: the entity domain and bounded values only;
+                    # the entity ID, times and cursor are never copied.
+                    from .history_slices.contracts import validate_arguments as validate_hamcp131_history
+                    try:
+                        checked = validate_hamcp131_history(parameters)
+                    except ValueError:
+                        checked = None
+                    audit_parameters = {
+                        "profile": "history-slices-read-v1",
+                        "entity_domain": checked["entity_id"].split(".", 1)[0] if checked else None,
+                        "limit": checked["limit"] if checked else None,
+                        "end_defaulted": bool(checked and checked["end_defaulted"]),
+                        "cursor_present": bool(checked and checked["cursor"] is not None),
+                        "provider": "engineering", "data_providers": ["upstream_read_gateway"],
+                        "fallback": "none",
+                    }
+                    resource_ids = {}
                 elif tool_name == "run_held_read_canary":
                     # Canary arguments and upstream result content are
                     # untrusted and may contain sensitive Home Assistant data.
@@ -1371,8 +1527,13 @@ class AuthenticatedMcpGateway:
                             "handoff_generation",
                             "run_held_read_canary",
                             "get_core_log_history",
+                            "get_incident_logs",
+                            "get_history_slices",
                             "get_integration_inspection",
                             "get_backup_inventory",
+                            "get_recorder_settings",
+                            "get_unregistered_entities",
+                            "get_configuration_definitions",
                             "capture_automation_baseline",
                             "dashboard_integrity_analysis",
                         }

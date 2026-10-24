@@ -286,6 +286,13 @@ def capability_evidence_for_probes(
                 rest_ok and websocket_ok,
                 semantic=True,
             )
+            for capability_id in (
+                "core.entity_registry_availability_operation",
+                "core.entity_assistant_exposure_operation",
+                "core.label_registry_operation",
+                "core.configuration_delete_operation",
+            ):
+                add(capability_id, rest_ok and websocket_ok, semantic=True)
     return evidence
 
 

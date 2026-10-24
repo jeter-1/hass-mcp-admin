@@ -1738,6 +1738,13 @@ async def _decide_f2_action(
     )
     assert review["plan_hash"] == created["plan_hash"]
     assert review["approval_action"] == pending["approval_action"]
+    # HAMCP-213 D1: the safety-critical acknowledgement names every reviewed
+    # object and the bound comparison hash, as the Ingress form submits them.
+    safety = (
+        review.get("safety_critical_acknowledgement") or {}
+        if pending["approval_action"] == "safety_critical_acknowledgement"
+        else {}
+    )
     return await service.decide_external_approval(
         plan_id=created["plan_id"],
         challenge_id=pending["challenge_id"],
@@ -1747,6 +1754,10 @@ async def _decide_f2_action(
         csrf_nonce=csrf,
         decision="approve",
         approver_principal=principal,
+        acknowledged_objects=tuple(
+            row["object_ref"] for row in safety.get("objects", [])
+        ),
+        acknowledged_projection_hash=safety.get("projection_hash", ""),
     )
 
 
@@ -2048,7 +2059,8 @@ async def _run_f2_policy_acceptance_contract(
                 "safety_critical"
             )
             assert safety_policy["required_acknowledgements"] == [
-                "plan_approval"
+                "plan_approval",
+                "safety_critical_acknowledgement",
             ]
             assert safety_critical["approval_actionable"] is True
             safety_pending = service.approve(
@@ -2058,6 +2070,16 @@ async def _run_f2_policy_acceptance_contract(
                 service,
                 safety_critical,
                 safety_pending,
+                principal=F2_ADMIN_A,
+            )
+            assert safety_approved["status"] == "approval_pending"
+            assert safety_approved["approval_action"] == (
+                "safety_critical_acknowledgement"
+            )
+            safety_approved = await _decide_f2_action(
+                service,
+                safety_critical,
+                safety_approved,
                 principal=F2_ADMIN_A,
             )
             assert safety_approved["status"] == "approved"
@@ -2100,7 +2122,8 @@ async def _run_f2_policy_acceptance_contract(
                 "safety_critical"
             )
             assert device_policy["required_acknowledgements"] == [
-                "plan_approval"
+                "plan_approval",
+                "safety_critical_acknowledgement",
             ]
             assert uncertain_device_target["approval_actionable"] is True
             device_pending = service.approve(
@@ -2111,6 +2134,16 @@ async def _run_f2_policy_acceptance_contract(
                 service,
                 uncertain_device_target,
                 device_pending,
+                principal=F2_ADMIN_A,
+            )
+            assert device_approved["status"] == "approval_pending"
+            assert device_approved["approval_action"] == (
+                "safety_critical_acknowledgement"
+            )
+            device_approved = await _decide_f2_action(
+                service,
+                uncertain_device_target,
+                device_approved,
                 principal=F2_ADMIN_A,
             )
             assert device_approved["status"] == "approved"
@@ -3621,12 +3654,30 @@ async def _run_core_2026_9_child_contract(
                 expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
             if entity_metadata_result.get("result") != "PASS":
                 raise RuntimeError("Required entity metadata disposable scenario did not pass")
+            # HAMCP-165/069B/155: the seq-13 lanes are defined here and run only when the
+            # batch evidence run sets REAL_HA_SEQ13_LANES=enabled; otherwise nothing runs.
+            seq13_results = {}
+            if os.environ.get("REAL_HA_SEQ13_LANES") == "enabled":
+                import seq13_contract_acceptance as seq13
+                for lane_key in seq13.LANES:
+                    seq13_results["seq13_" + lane_key] = await seq13.run_disposable(
+                        lane_key, configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+                        core_version=EXPECTED_HA_VERSION)
+                    if seq13_results["seq13_" + lane_key].get("result") != "PASS":
+                        raise RuntimeError("Required seq-13 disposable scenario did not pass")
+                import configuration_delete_contract_acceptance as configuration_delete
+                seq13_results["seq13_configuration_delete"] = await configuration_delete.run_disposable(
+                    configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+                    core_version=EXPECTED_HA_VERSION)
+                if seq13_results["seq13_configuration_delete"].get("result") != "PASS":
+                    raise RuntimeError("Required seq-13 disposable scenario did not pass")
             # The existing required artifact carries every clearly named proof.
             receipt = Path(os.environ["REAL_HA_ALARMO_RESULT"])
             # HAMCP-180: the shared strict loader refuses a repeated key before the rewrite.
             retained = load_receipt(receipt.read_bytes())
             retained["automation_baseline"] = baseline_result
             retained["entity_metadata"] = entity_metadata_result
+            retained.update(seq13_results)
             receipt.write_text(json.dumps(retained, sort_keys=True, indent=2) + "\n")
         # Native interval observations must finish before the independent
         # upstream client starts its background traffic. Unexpected commands

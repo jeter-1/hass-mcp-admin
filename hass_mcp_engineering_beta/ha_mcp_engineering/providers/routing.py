@@ -41,6 +41,10 @@ class RoutingDecision:
 _ENGINEERING_NATIVE = {
     ProviderCapability.INTEGRATION_INSPECTION,
     ProviderCapability.BACKUP_INVENTORY,
+    ProviderCapability.RECORDER_SETTINGS,
+    ProviderCapability.HISTORY_SLICES,
+    ProviderCapability.UNREGISTERED_ENTITIES,
+    ProviderCapability.CONFIGURATION_DEFINITIONS,
     ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     ProviderCapability.TYPED_FAN_EXECUTION,
@@ -98,6 +102,8 @@ class RoutingPolicy:
     def resolve(self, capability: ProviderCapability) -> RoutingDecision:
         if capability == ProviderCapability.CORE_LOG_HISTORY:
             return RoutingDecision(capability, CapabilityRoute.ENGINEERING_NATIVE, "supervisor_core_logs")
+        if capability == ProviderCapability.INCIDENT_LOGS:
+            return RoutingDecision(capability, CapabilityRoute.ENGINEERING_NATIVE, "supervisor_incident_logs")
         if capability in _ENGINEERING_NATIVE:
             return RoutingDecision(capability, CapabilityRoute.ENGINEERING_NATIVE, "engineering")
         if capability in _STANDARD_PREFERRED:
@@ -124,6 +130,9 @@ class RoutingPolicy:
 TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_integration_inspection": ProviderCapability.INTEGRATION_INSPECTION,
     "get_backup_inventory": ProviderCapability.BACKUP_INVENTORY,
+    "get_recorder_settings": ProviderCapability.RECORDER_SETTINGS,
+    "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
+    "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     "dashboard_integrity_analysis": ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
@@ -140,6 +149,8 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_logbook": ProviderCapability.LOGBOOK_READ,
     "get_error_log": ProviderCapability.ERROR_LOG_READ,
     "get_core_log_history": ProviderCapability.CORE_LOG_HISTORY,
+    "get_incident_logs": ProviderCapability.INCIDENT_LOGS,
+    "get_history_slices": ProviderCapability.HISTORY_SLICES,
     "list_automations": ProviderCapability.AUTOMATION_LIST,
     "get_automation_config": ProviderCapability.AUTOMATION_CONFIG,
     "list_devices": ProviderCapability.DEVICE_REGISTRY_READ,
@@ -169,6 +180,13 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     ),
     "create_helper_state_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
     "create_entity_metadata_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
+    "create_entity_availability_exposure_plan": (
+        ProviderCapability.OPERATIONAL_ADMINISTRATION
+    ),
+    "create_label_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
+    "create_configuration_delete_plan": (
+        ProviderCapability.OPERATIONAL_ADMINISTRATION
+    ),
     "get_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "list_change_plans": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "get_execution_task": ProviderCapability.GOVERNANCE_PERSISTENCE,
@@ -226,6 +244,26 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "get_backup_inventory": {
         "policy_id": "backup_inventory_read_v1", "access": "read", "orchestrator": "engineering",
         "scope": "Core backup/config/info and backup/info only; bounded allowlisted projection",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_recorder_settings": {
+        "policy_id": "recorder_settings_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "admitted YAML reader at fixed recorder/homeassistant paths, recorder/info and up to 50 recorder/entity_options/get; db_url withheld",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_history_slices": {
+        "policy_id": "history_slices_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "admitted ha_get_history route only; one entity; Engineering-built absolute slice bounds, ascending, minimal; bounded offset paging",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_unregistered_entities": {
+        "policy_id": "unregistered_entities_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "GET /api/states, config/entity_registry/list, entity/source and up to 500 search/related; bounded projection",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_configuration_definitions": {
+        "policy_id": "configuration_definitions_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "admitted YAML reader at fixed definition paths, GET /api/states and /api/config, entity registry, entity/source, config_entries/get for closed domains and manifest/get ha_mcp_tools; db_url and secrets withheld",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "automation_reliability_analysis": {
@@ -436,6 +474,30 @@ def core_log_policy_allows_read() -> bool:
         decision.capability == ProviderCapability.CORE_LOG_HISTORY
         and decision.route == CapabilityRoute.ENGINEERING_NATIVE
         and decision.preferred_provider == "supervisor_core_logs"
+        and not decision.fallback_providers
+        and not decision.explicit_direct_fallback_allowed
+    )
+
+
+def history_slices_policy_allows_read() -> bool:
+    """HAMCP-131: the admitted delegated history route only; no direct fallback."""
+    decision = routing_for_tool("get_history_slices")
+    return (
+        decision.capability == ProviderCapability.HISTORY_SLICES
+        and decision.route == CapabilityRoute.ENGINEERING_NATIVE
+        and decision.preferred_provider == "engineering"
+        and not decision.fallback_providers
+        and not decision.explicit_direct_fallback_allowed
+    )
+
+
+def incident_logs_policy_allows_read() -> bool:
+    """HAMCP-131: fixed Supervisor journal reads only; no forwarding or fallback."""
+    decision = routing_for_tool("get_incident_logs")
+    return (
+        decision.capability == ProviderCapability.INCIDENT_LOGS
+        and decision.route == CapabilityRoute.ENGINEERING_NATIVE
+        and decision.preferred_provider == "supervisor_incident_logs"
         and not decision.fallback_providers
         and not decision.explicit_direct_fallback_allowed
     )

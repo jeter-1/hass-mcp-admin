@@ -20,6 +20,7 @@ from unittest.mock import patch
 from tests import test_ha_core_2026_9_integration as core_tests
 from tests import test_rc3_postcore_regressions as postcore
 from tests import test_dependency_build_authority as dependency_tests
+from tests.support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.ha_core_readmission.device_registry import (
     MAX_DEVICE_ID_CHARS, MAX_DEVICE_RECORD_BYTES, MAX_DEVICE_RECORDS,
     assess_device_registry,
@@ -188,7 +189,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(version=version):
                 self.network.version = version
                 before = deepcopy(self.network.records)
-                health = await self.core.reconcile_once("synthetic_identifier")
+                health = await reconcile_through_gate(self.core)
                 self.assertEqual(health["compatible_count"], 17)
                 self.assertEqual(self.network.records, before)
                 for capability in postcore.DEVICE_CAPABILITIES:
@@ -203,7 +204,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 self.network.records = registry()
                 self.network.records[0]["identifiers"] = [["test", "I" * 149]]
                 self.network.records[0][field] = value
-                health = await self.core.reconcile_once("synthetic_invalid_identifier")
+                health = await reconcile_through_gate(self.core)
                 self.assertEqual(health["compatible_count"], 14)
                 missing = {p["capability_id"] for p in health["authority_profiles"]
                            if p["reason_code"] == "capability_evidence_missing"}
@@ -213,7 +214,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 self.assert_authority_round_trip()
 
     async def test_useful_delegated_reads_and_exact_catalog_recover(self):
-        await self.core.reconcile_once("synthetic_identifier")
+        await reconcile_through_gate(self.core)
         reviewed = core_tests.load_reviewed_upstream_release_registry()
         release = reviewed.by_version["8.4.3"]
         capture = core_tests._capture_for_release(release)
@@ -232,7 +233,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         await gateway.initialize(server)
         baseline = {tool.name: tool.model_dump(mode="json")
                     for tool in await server.list_tools()}
-        self.assertEqual(len(baseline), 88)
+        self.assertEqual(len(baseline), 96)  # HAMCP-165 + HAMCP-155: +2 inactive planners
         self.assertNotIn("ha_get_operation_status", baseline)
         cases = {"ha_get_device": {"device_id": "parent-garage"},
                  "ha_get_entity": {"entity_id": "cover.synthetic_garage_door"},
@@ -252,22 +253,22 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(finish.call_count, len(cases))
         calls = len(transport.calls)
         self.network.records[2]["identifiers"] = [["test", 1]]
-        await self.core.reconcile_once("synthetic_later_rejection")
+        await reconcile_through_gate(self.core)
         await gateway.initialize(server)
-        self.assertEqual(len(postcore.registered_tools(server)), 83)
+        self.assertEqual(len(postcore.registered_tools(server)), 91)  # HAMCP-165 + HAMCP-155: +2 static
         self.assertEqual(len(transport.calls), calls)
         result = json.loads(await postcore.registered_tools(server)["ha_get_state"].run(
             {"entity_id": "sensor.synthetic"}))
         self.assertTrue(result["success"])
         self.network.records[2]["identifiers"] = [["test", "I" * 149]]
-        await self.core.reconcile_once("synthetic_restore_identifiers")
+        await reconcile_through_gate(self.core)
         await gateway.initialize(server)
         self.assertEqual({tool.name: tool.model_dump(mode="json")
                           for tool in await server.list_tools()}, baseline)
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
 
     async def test_native_device_read_retains_dispatch_authority(self):
-        await self.core.reconcile_once("synthetic_identifier")
+        await reconcile_through_gate(self.core)
         network = dependency_tests._Network()
         network.payloads["config/device_registry/list"] = self.network.records
         client = HomeAssistantWebSocketClient(self.settings)
@@ -299,7 +300,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.assert_settled()
 
     async def test_dependency_prewarm_and_refresh_use_owned_authority(self):
-        await self.core.reconcile_once("synthetic_identifier")
+        await reconcile_through_gate(self.core)
         network = dependency_tests._Network()
         network.payloads["/config"] = {"version": "2026.9.1"}
         runtime = DependencyAnalysisRuntime()
@@ -331,7 +332,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(context.authorize_core_dispatch())
         self.assert_settled()
         self.network.records[2]["identifiers"] = [["test", False]]
-        await self.core.reconcile_once("synthetic_later_invalid_identifier")
+        await reconcile_through_gate(self.core)
         calls = len(network.calls)
         with patch("ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
                    side_effect=network.session):
@@ -342,6 +343,6 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_identifier_correction_does_not_admit_unreviewed_core(self):
         self.network.version = "2026.9.2"
-        await self.core.reconcile_once("synthetic_unreviewed_patch")
+        await reconcile_through_gate(self.core)
         for capability in postcore.DEVICE_CAPABILITIES:
             self.assertIsNone(self.core.acquire((capability,)))

@@ -23,6 +23,7 @@ from ha_mcp_engineering.signed_registry import canonical_json, RegistryValidatio
 from ha_mcp_engineering.signed_registry.canonical import sha256_digest
 from core_registry_fixtures import CoreSigner, ProjectedCoreSource, core_entry, core_revocation, NOW
 from support import core_bindings
+from support.core_gate import reconcile_through_gate
 
 
 class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
@@ -260,7 +261,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.raw = self.signer.journal_raw(envelopes=[previous.to_mapping(), envelope])
         self.assertTrue(await self.registry.refresh())
         self.assertFalse(runtime.route_status(("core.basic_rest_read",))["available"])
-        await runtime.reconcile_once()
+        await reconcile_through_gate(runtime)
         self.assert_admitted(runtime)
         self.assertEqual(source.version, "2026.9.2")
 
@@ -446,7 +447,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
                     finally:
                         runtime.release(unused)
                         self.assertTrue(runtime.finish(commits))
-                    await runtime.reconcile_once()
+                    await reconcile_through_gate(runtime)
                     self.assert_admitted(runtime, 0 if change == "revocation" else 16)
                     self.assertIsNone(runtime.acquire(("core.basic_rest_read",)))
                     if change == "replacement":
@@ -501,7 +502,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         runtime, source = await self.runtime("2026.9.1")
         lease = runtime.acquire(("core.basic_rest_read",))
         source.version = "2026.9.2"
-        await runtime.reconcile_once()
+        await reconcile_through_gate(runtime)
         self.assertIsNone(runtime.consume(lease))
         self.assert_admitted(runtime)
 
@@ -551,7 +552,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, transport = await self.gateway(runtime)
         tools = registered_tools(server)
         self.assertEqual(len(tools), 28)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 88)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 96)
         self.assertNotIn("ha_get_operation_status", tools)
         result = json.loads(await tools["ha_get_state"].run({"entity_id": "sensor.synthetic"}))
         self.assertTrue(result["success"])

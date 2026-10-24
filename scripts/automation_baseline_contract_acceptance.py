@@ -48,7 +48,7 @@ def verify_result(result, *, core_version, support_slot):
     """
     from ha_mcp_engineering.audit_baseline import load_baseline, compare_baselines
     from ha_mcp_engineering.audit_baseline.capture_contracts import digest, canonical
-    from alarmo_inspection_contract_acceptance import verify_interval
+    from alarmo_inspection_contract_acceptance import verify_discarded
     assert type(core_version) is str and result['result'] == 'PASS' and result['core'] == core_version
     assert type(support_slot) is str and type(result.get('support_slot')) is str
     assert result['support_slot'] == support_slot
@@ -74,13 +74,43 @@ def verify_result(result, *, core_version, support_slot):
             raise ComparisonProofError(key, status, record)
     assert report.counts == result['comparison_counts']
     assert len(result['observations']) == 2
-    for index, observation in enumerate(result['observations'], start=1):
-        verify_interval(observation, observation['interval_id'],
-            EXPECTED_COMMANDS, kind='control', core_version=core_version,
-            window='baseline_export', window_index=index)
+    proofs = [verify_export(observation, index, core_version=core_version)
+              for index, observation in enumerate(result['observations'], start=1)]
+    # HAMCP-219 review 1: a discarded export window is retained and must be
+    # retryable and nothing else, at most once per export.
+    discarded = verify_discarded(result['discarded_observations'], lambda window, observation, retry:
+        verify_export(observation, EXPORT_WINDOWS[window], core_version=core_version, retry_allowed=retry),
+        EXPORT_WINDOWS)
     return {'result': 'PASS', 'records_before': len(values[0]['records']),
             'records_after': len(values[1]['records']), 'comparison_counts': report.counts,
-            'continuation_reads': 0, 'fixture_cleanup': True}
+            'continuation_reads': 0, 'fixture_cleanup': True,
+            'background_bookkeeping': [proof['background_bookkeeping'] for proof in proofs],
+            'discarded_windows': discarded}
+
+
+# Discarded-window labels for the two exports (HAMCP-219 review 1).
+EXPORT_WINDOWS = {'baseline_export_1': 1, 'baseline_export_2': 2}
+
+
+def verify_export(observation, index, *, core_version, retry_allowed=False):
+    from alarmo_inspection_contract_acceptance import verify_interval
+    return verify_interval(observation, observation['interval_id'], EXPECTED_COMMANDS, kind='control',
+        core_version=core_version, window='baseline_export', window_index=index, retry_allowed=retry_allowed)
+
+
+def screen_export(observation, index, *, core_version, retry_allowed):
+    """Only decide whether an export window is rerun; never accept it here.
+
+    A retryable window raises; any other refusal is left to ``verify_result``
+    after fixture cleanup, so the sanitized exports are still retained.
+    """
+    from alarmo_inspection_contract_acceptance import ObservationError, RetryableObservation
+    try:
+        verify_export(observation, index, core_version=core_version, retry_allowed=retry_allowed)
+    except RetryableObservation:
+        raise
+    except ObservationError:
+        pass
 
 
 async def run_disposable(configured, *, expected_image, core_version):
@@ -126,7 +156,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
     from core_registry_contract_lane import lane_entry, probe_profile_for
     from prepare_core_release_registry import prepare_candidate, sign_candidate
     from alarmo_inspection_contract_acceptance import (slot_binding, wait_disposable_setup, start_interval,
-        close_disposable_authority)
+        close_disposable_authority, observe_retry_once_clean)
     from entity_metadata_contract_acceptance import load_receipt
     from ha_mcp_engineering.clients import HomeAssistantWebSocketClient
     from ha_mcp_engineering.clients.audit_baseline import BaselineReadClient
@@ -154,8 +184,12 @@ async def _run_disposable(configured, *, expected_image, core_version):
             and image['core_version']==core_version and image['support_slot']==binding['slot'])
     refs = [{k:p.to_mapping()[k] for k in ('capability_id','profile_id','profile_version','adapter_id','contract_fingerprint')}
             for p in CORE_RUNTIME_CAPABILITY_PROFILES
-            # HAMCP-069A: the dormant entity metadata profile is not signed here.
-            if p.capability_id != 'core.entity_registry_metadata_operation']
+            # HAMCP-069A/069B/155/165: the dormant entity, delete and label profiles are not signed here.
+            if p.capability_id not in {'core.entity_registry_metadata_operation',
+                                       'core.entity_registry_availability_operation',
+                                       'core.entity_assistant_exposure_operation',
+                                       'core.configuration_delete_operation',
+                                       'core.label_registry_operation'}]
     old = [r for r in refs if r['capability_id'] != c.CAPABILITY]
     assert len(old)==20 and len(refs)==21
     key=Ed25519PrivateKey.generate(); now=datetime.now(timezone.utc)
@@ -179,7 +213,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
             assert await registry.refresh()
             runtime=CoreRuntime();runtimes.append(runtime)
             runtime.configure(configured,release_registry=registry)
-            await runtime.reconcile_once('native_baseline_disposable')
+            await runtime.reconcile_once('startup')
             assert runtime.health_snapshot()['compatible_count']==len(references)
             return runtime
         def service(runtime, options=configured):
@@ -197,7 +231,17 @@ async def _run_disposable(configured, *, expected_image, core_version):
             finally:
                 end_request(token)
                 if commits: assert runtime.finish(commits)
+        discarded=[]
         async def export(runtime,capture,index):
+            # HAMCP-219 review 1: rerun once only for a repairs delayed save.
+            async def window():
+                return await export_once(runtime,capture,index)
+            def screen(outcome,observed,retry):
+                screen_export(observed,index,core_version=core_version,retry_allowed=retry)
+            (baseline,artifact),observed,_,_=await observe_retry_once_clean(window,screen,
+                on_discard=lambda item: discarded.append({'window':'baseline_export_'+str(index),**item}))
+            return baseline,artifact,observed
+        async def export_once(runtime,capture,index):
             interval=await start_interval(websocket,'control',window='baseline_export',window_index=index)
             first, reads,_=await request(runtime,capture,{'limit':17})
             assert first['success'], 'Baseline public call refused'
@@ -213,7 +257,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
             assert c.digest(baseline)==artifact and continuation_reads==0
             assert reads==len(baseline['records'])+11
             assert baseline['installation']['status']=='established'
-            return baseline,artifact,observed
+            return (baseline,artifact),observed
         seeded=False
         try:
             predecessor=await authority(old,'old')
@@ -262,7 +306,8 @@ async def _run_disposable(configured, *, expected_image, core_version):
                 'predecessor_admission':predecessor_admission,
                 'recreated_anchor_differs':True,'restored_anchor_preserved':True,'continuation_reads':0,
                 'baselines':[before,after],'baseline_sha256':[before_hash,after_hash],
-                'comparison_counts':compared['counts'],'observations':[obs1,obs2],'fixture_cleanup':False}
+                'comparison_counts':compared['counts'],'observations':[obs1,obs2],
+                'discarded_observations':discarded,'fixture_cleanup':False}
         finally:
             try:
                 if seeded:

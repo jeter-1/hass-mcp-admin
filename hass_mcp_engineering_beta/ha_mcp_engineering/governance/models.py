@@ -82,6 +82,9 @@ class ApprovalActionKind(str, Enum):
     ELEVATED_RISK_ACKNOWLEDGEMENT = (
         "elevated_risk_acknowledgement"
     )
+    SAFETY_CRITICAL_ACKNOWLEDGEMENT = (
+        "safety_critical_acknowledgement"
+    )
 
 
 _POLICY_REASON_CODE = re.compile(r"^[a-z][a-z0-9_]{0,95}$")
@@ -102,7 +105,7 @@ class ChangePolicyDecision:
     policy_decision_hash: str
 
     def __post_init__(self) -> None:
-        if self.policy_version not in {"f2-v1", "f2-v2"}:
+        if self.policy_version not in {"f2-v1", "f2-v2", "f2-v3"}:
             raise ValueError("unsupported policy version")
         if (
             not self.reason_codes
@@ -199,6 +202,13 @@ class ApprovalActionRecord:
     consumed_at: str | None = None
     csrf_digest: str | None = None
     csrf_issued_at: str | None = None
+    # HAMCP-213 D1: only a safety-critical acknowledgement (action authority
+    # version 4) binds the recomputed physical-effect comparison and the
+    # exact (operation_id, object_id) rows the administrator acknowledged.
+    # Both are omitted from storage when absent so authority-v3 records keep
+    # their persisted shape.
+    safety_critical_projection_hash: str | None = None
+    acknowledged_objects: list[dict[str, str]] | None = None
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "ApprovalActionRecord":
@@ -338,6 +348,10 @@ class ConfigurationOperation:
     dry_run_results: dict[str, Any] = field(default_factory=dict)
     semantic_projection: dict[str, Any] | None = None
     semantic_projection_hash: str | None = None
+    # HAMCP-213: scripts this automation or script calls, captured at plan
+    # creation for the pure protected-effect comparison; bound by the plan
+    # hash. ``None`` for every other resource and for older records.
+    called_scripts: dict[str, Any] | None = None
     execution_status: StepExecutionStatus = StepExecutionStatus.PENDING
     execution_receipt: dict[str, Any] | None = None
     snapshot: ChangeSnapshot | None = None
@@ -364,6 +378,7 @@ class ConfigurationOperation:
         data["verification"] = ChangeVerification(**data.get("verification", {}))
         data.setdefault("semantic_projection", None)
         data.setdefault("semantic_projection_hash", None)
+        data.setdefault("called_scripts", None)
         data.setdefault("execution_receipt", None)
         data.setdefault("post_apply_fingerprint", None)
         data.setdefault("failure_information", None)
@@ -497,6 +512,11 @@ class ChangePlan:
             ):
                 if approval.get(key) is None:
                     approval.pop(key, None)
+            acknowledgement = approval.get("elevated_risk_acknowledgement")
+            if isinstance(acknowledgement, dict):
+                for key in ("safety_critical_projection_hash", "acknowledged_objects"):
+                    if acknowledgement.get(key) is None:
+                        acknowledgement.pop(key, None)
         # Contract-v1 records predate ordered configuration operations. Keep
         # their persisted and public representation byte-for-byte compatible:
         # the additive fields exist only on contract-v2 records.
@@ -522,6 +542,8 @@ class ChangePlan:
                 operation.pop("semantic_projection", None)
             if operation.get("semantic_projection_hash") is None:
                 operation.pop("semantic_projection_hash", None)
+            if operation.get("called_scripts") is None:
+                operation.pop("called_scripts", None)
         return value
 
     @classmethod

@@ -56,6 +56,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_f3_configuration_resources.py",
     "tests/test_f3_configuration_sequence.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+    # HAMCP-155: the configuration delete strategy and adapter.
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/delete.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/locks.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/models.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/outcomes.py",
@@ -237,6 +239,7 @@ class BuiltImageImportClosureTests(unittest.TestCase):
             importers,
             {
                 "adapter.py",
+                "delete.py",  # HAMCP-155
                 "locks.py",
                 "models.py",
                 "outcomes.py",

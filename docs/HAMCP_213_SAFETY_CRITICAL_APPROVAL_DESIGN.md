@@ -428,7 +428,9 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
      button ids are recorded as reference evidence and shown (OD-9).
    - **Transitive calls** (`script.*`, `script.turn_on`, `automation.trigger`,
      `scene.turn_on`) are effects keyed by callee id. A callee updated in the
-     same plan gets its own comparison.
+     same plan gets its own comparison, and every caller in the plan is
+     analyzed against the post-plan callee (batch 4, H5; see "Callee
+     changed in the same plan" below).
 2. **Effect record**: (service, the resolved target set limited to protected
    objects, canonical data excluding display-only fields, and the control path
    of enclosing `choose`, `if`, `repeat`, `parallel` and `sequence` positions
@@ -490,8 +492,154 @@ each operation. Its output is bounded, server-owned evidence and never a grant.
    the review page for every plan with protected effects, including
    `equivalent` ones, as the comparison evidence the register Outcome requires.
 
+7. **Implementation (PR 1, independent-review corrections).** When the
+   comparison cannot prove that a protected effect and its reachability are
+   unchanged, the verdict is `changed` or `unresolved` and the
+   acknowledgement is required; it is never `none` or `equivalent`.
+   - **Unresolvable effects (H1).** A call is effect-capable when its service
+     is in `cover`, `lock`, `alarm_control_panel`, `valve`, `siren`, `switch`
+     or `water_heater`, is `homeassistant.turn_on`, `turn_off` or `toggle`, or
+     is an unknown service. It is also effect-capable when it is a device
+     action of those domains. If its target is templated, variable-driven, or
+     an `area_id`, `device_id`, `floor_id` or `label_id` selector (in `target`
+     or `data`), it is an `unresolved` effect. The same holds when its service
+     name is templated or uses `service_template`. Registry selectors are
+     never resolved, which is stricter than resolving them through the
+     registry. A templated service name may be an unlock or disarm, so it
+     carries the OD-6(b) floor. `light`, `fan` and `climate` calls are not
+     flagged (residual).
+   - **Reference steps before an effect (H2).** A reference-only step that
+     can run before a protected effect is compared in full: service, every
+     data field (nested data included), target, `continue_on_error`,
+     `enabled`, and its position relative to conditions, waits and branches.
+     Only the display `alias` is ignored. Any difference is `changed`. This
+     supersedes the template-free `message`/`title` allowance in item 4 for
+     such steps. A reference step after the last effect differs only in the
+     ignorable fields of item 8, so trailing wording stays `equivalent`.
+   - **Unlock and disarm floor (H3, OD-6(b)).** Where an unlock or disarm
+     effect is or may be present, no shortcut applies: the Beta 33
+     retained-effect proof, the garage inverse and the retry transfer are
+     skipped, and the per-object acknowledgement is always required. That
+     includes an `equivalent` unlock in an otherwise-edited automation. Under
+     current policy, the legacy contract-v1 route refuses such a change
+     (`prohibited`). Historical `f2-v1` and `f2-v2` recomputation is unchanged.
+   - **Bounds overflow (H3, batch 3).** The unlock/disarm floor is computed
+     first by a grammar-free scan of the whole configuration and every
+     captured callee, independent of every comparison bound. It is set by a
+     literal or templated unlock or disarm service, a device lock or disarm
+     action, an unresolved script call, or a scan that itself exceeds its
+     node budget. When any comparison bound is exceeded (more than 32
+     protected objects, the step or nesting bound, an invalid or colliding
+     object, more than 8 call levels, more than 16 called scripts or 256
+     callee analyses), the review is incomplete. The policy class is then
+     `prohibited` on every route, the legacy contract-v1 route included,
+     with the reason codes `safety_critical_review_bounds_exceeded` and
+     `too_many_protected_objects_to_review_split_the_change`; it is never a
+     weaker class. A plan whose acknowledgement binding would exceed 32
+     objects in total is prohibited the same way. The floor still adds
+     `unlock_or_disarm_effect` to the reason codes.
+   - **Called scripts (owner correction).** A call to a script is compared
+     as that script's protected effects, reached at the calling step. The
+     forms are `script.<key>`, `script.turn_on`, `turn_off` or `toggle` with
+     script entities, and `homeassistant.turn_on`, `turn_off` or `toggle`
+     with script entities. Effects through further scripts count, up to 8
+     levels. The calling step's reachability is compared as for a direct
+     effect: triggers, conditions, mode, waits, abort points, branch, and
+     reference-only steps before it (OD-10). Rows name the protected object
+     (for example `cover.garage_main`). An unlock or disarm reached this way
+     keeps the OD-6(b) floor.
+     - Plan creation captures the called scripts through governed reads into
+       the new operation field `called_scripts` (`called-script-snapshot-v1`).
+       It holds the normalized configuration of each called script, the
+       current and proposed configuration for a script changed in the same
+       plan, and the registry resolution of each script entity. The snapshot
+       is bound into the plan hash and the policy subject
+       (`called_scripts_hash`). The comparison stays pure: it reads only the
+       stored operation, so challenge, decision and dispatch recompute the
+       same rows.
+     - It is `unresolved`, with the floor, when the called script cannot be
+       resolved. The reason codes are: `called_script_dynamic` (a templated or
+       variable name, or a selector target), `called_script_unknown`,
+       `called_script_unreadable` (a read error, a blueprint-backed script, or
+       an unsafe body), `called_script_entity_unresolved` (a registry row that
+       is not a script), `called_script_cycle` and
+       `called_script_not_captured` (no snapshot entry). The bound reasons
+       `called_script_depth_exceeded` and `called_script_bounds_exceeded`
+       (more than 16 called scripts or 256 callee analyses, or a truncated
+       snapshot) are bound overflows and prohibited (H3, batch 3).
+     - A change to the called script itself stays covered by script parity on
+       that script's own operation.
+     - **Deviation.** The governance path reuses the dependency index's
+       script-call grammar (`dependency/script_calls.py`), not the index's
+       loaded configurations. Those configurations are diagnostic evidence
+       and never authority, so the configurations are read through the
+       governed configuration read at plan creation.
+     - **Stale callee (H5, batch 3).** The comparison projection binds the
+       snapshot's fingerprints (`called_script_fingerprints`: the snapshot
+       hash, each script entry hash and each entity resolution hash). Every
+       dispatch path rebuilds each operation's snapshot from fresh governed
+       reads before approval is consumed and again immediately before each
+       write: the configuration service apply, F3 first dispatch, resume and
+       recovery (a preflight adapter on every contract-v2 child). Any
+       difference, a script that became readable or unreadable included,
+       refuses the plan as stale (`STALE_TARGET_STATE`, reason
+       `stale_called_script`) with no write; the owner replans.
+     - **Callee changed in the same plan (H5, batch 4).** When the plan also
+       updates or deletes a called script, the caller's analysis uses that
+       script's current and proposed configurations together, recursively
+       within the same bounds. This covers the post-plan world and the
+       intermediate state a non-atomic stop can leave. The unlock and disarm
+       floor and the acknowledgement requirement derive from that union, so
+       a light-only callee changed to unlock, with the caller's guard removed,
+       requires the acknowledgement in either operation order. Before each
+       caller write (configuration service apply, F3 first dispatch, resume
+       and recovery), the live callee is read and its fingerprint compared
+       with the pre-plan fingerprint when the callee's operation comes later
+       in the plan, or with the proposed configuration's fingerprint (absent
+       for a delete) when it comes earlier. A mismatch refuses the caller as
+       stale with no write. The union is deliberately conservative: a
+       callee-first plan can require an acknowledgement that the final state
+       alone would not.
+     - **Residual.** `automation.trigger`, `automation.turn_on` and
+       `scene.*` stay transitive-only and are not followed.
+
+8. **Allowlist of ignorable differences (PR 1, review batch 3, H4).** The
+   comparison is inverted. On every run path that can reach a protected
+   effect, directly or through a called script, the normalized before and
+   after structures must be identical except for the fields below. Any other
+   difference at any level is `changed`: `enabled` on a step, block, branch,
+   parallel or sequence member, choose option or condition; `mode` and
+   `max`; variables; `continue_on_error`; wait and timeout values; response
+   handling; and unknown keys. Unknown or unreviewed keys are never
+   ignorable. The table is `IGNORABLE_DIFFERENCES` in
+   `governance/physical_effects.py`; a test asserts that it equals this one.
+   "After effects" means a reference-only step that runs strictly after
+   every protected effect on its path.
+
+<!-- ignorable-differences:start -->
+| Scope | Field | Condition |
+| --- | --- | --- |
+| `automation` | `alias` | display name |
+| `automation` | `description` | display text |
+| `script` | `alias` | display name |
+| `script` | `description` | display text |
+| `script` | `icon` | display icon |
+| `step` | `alias` | display name of any action step |
+| `choose_option` | `alias` | display name of a choose option |
+| `parallel_branch` | `alias` | display name of a parallel branch wrapper |
+| `reference_step_after_effects` | `data.message` | template-free text of a reference-only step that runs after every protected effect on its path |
+| `reference_step_after_effects` | `data.title` | template-free text of a reference-only step that runs after every protected effect on its path |
+| `reference_step_after_effects` | `data.data` | notification payload of a reference-only step that runs after every protected effect on its path |
+| `reference_step_after_effects` | `entity_id placement` | step, target or data placement and list form of the same entity ids |
+| `reference_step_after_effects` | `action/service key` | the legacy service key spelling of the same reference-only service |
+| `non_aborting_reference_step_after_effects` | `*` | a reference-only step with continue_on_error: true that runs after every protected effect on its path |
+<!-- ignorable-differences:end -->
+
 **Effect on the audit plan:** see D6. The owner's real plan replaced the
 earlier inference from the audit description, and the predicted verdicts held.
+The review corrections and the called-script comparison leave them
+unchanged (op1 `none`, op2 `changed`, op3 `equivalent`, op4 `none`). The
+anonymized audit operations call no script.
 
 ### D3. Policy mapping (replaces `policy.py:567-591` for protected effects)
 
@@ -666,6 +814,11 @@ a design-validation prototype of D2, not runtime code):
   the new action kind as read-only.
 - The new action uses `authority_version` 4. Version 3 bundles remain valid
   for plans that do not require it.
+- **Implementation (PR 1).** Two read-only boundaries keep admitting an exact
+  `f2-v2` snapshot: F3 rollback creation reads an applied source as evidence
+  (the inverse is evaluated under `f2-v3`), and reverification reads the
+  consumed plan of the task it reverifies. Neither dispatches under the
+  historical decision; every other load refuses it.
 - Public output changes:
   - the new `ApprovalActionKind` value;
   - new reason codes;
@@ -675,6 +828,33 @@ a design-validation prototype of D2, not runtime code):
   `tools/governance.py` descriptions and capability metadata. The
   implementation task must name them explicitly
   (`-AuthorizedProtectedPath hass_mcp_engineering_beta/ha_mcp_engineering/`).
+- **Implementation deviation (PR 1).** The projection hash is not bound into
+  the policy subject. The comparison is a deterministic function of the
+  operation's normalized before and after configurations, which the plan hash
+  already binds, and `policy_snapshot_matches` recomputes the decision from
+  them. The acknowledgement record stores `safety_critical_projection_hash`
+  and the sorted object set. The grant and every dispatch recompute the
+  binding from the immutable plan and refuse a mismatch with
+  `safety_critical_acknowledgement_mismatch`. Keeping the policy subject
+  unchanged leaves the historical policy projections and hashes for `f2-v1`
+  and `f2-v2` records untouched.
+- **Rollback and re-upgrade (PR 1, batch 4, H6; owner decision).** beta.27
+  quarantines every `f2-v3` plan record at startup, and deletes it if the
+  quarantine move fails. beta.28 (HAMCP-215), the rollback target once this
+  PR was restaged as beta.29, keeps that plan storage unchanged. That behavior is in released code and is accepted
+  as a documented risk. It is mitigated by the rollback procedure in
+  `docs/EXTERNAL_APPROVAL.md`: take a fresh Home Assistant backup (which
+  includes the Engineering add-on data), finish or reject pending plans, then
+  roll back. On re-upgrade, beta.29 scans the quarantine directories at
+  startup, before cleanup and recovery. It restores each record whose bytes
+  are canonical, parse as a supported plan, match the file name's identifier
+  and namespace, and pass the stored-plan content screen. Restoration links
+  the record into place without overwriting, removes byte-identical
+  duplicates left by an interrupted restore, and is logged and idempotent.
+  Unverifiable, conflicting or ambiguous records stay quarantined and are
+  reported in health (`quarantine_restoration`). Restoration grants no
+  authority: a restored pending plan is validated like any other. Records
+  an older version deleted are recoverable only from the backup.
 
 ### D9. Security section (for the implementation PR)
 

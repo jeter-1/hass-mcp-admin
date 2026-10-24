@@ -62,7 +62,13 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                    for tool in await get_registered_server().list_tools()}
         # HAMCP-069A-1 adds exactly one further native tool after the c82 baseline.
         self.assertEqual(set(current) - set(baseline["descriptors"]),
-                         {"dashboard_integrity_analysis", "create_entity_metadata_plan", "get_backup_inventory"})
+                         {"dashboard_integrity_analysis", "create_entity_metadata_plan", "get_backup_inventory",
+                          "get_recorder_settings", "get_unregistered_entities",
+                          "get_configuration_definitions",
+                          "get_incident_logs", "get_history_slices",
+                          "create_entity_availability_exposure_plan",
+                          "create_label_plan",
+                          "create_configuration_delete_plan"})
         current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])
 
@@ -592,7 +598,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(await registry.refresh())
                 runtime = CoreRuntime()
                 runtime.configure(SimpleNamespace(), source=ProjectedCoreSource(registry, version), release_registry=registry)
-                await runtime.reconcile_once('synthetic-dashboard')
+                await runtime.reconcile_once('startup')
                 lease = runtime.acquire(c.REQUIREMENTS)
                 self.assertEqual(lease is not None, omitted is None)
                 commits = runtime.consume(lease) if lease else None

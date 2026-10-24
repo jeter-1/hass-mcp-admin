@@ -1,0 +1,729 @@
+{
+ "home_assistant_version": "2026.9.1",
+ "pr001_house": [
+  {
+   "helper": "input_boolean.visitor_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "safety_critical",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op1_open_warning",
+    "automation.pr001_op2_departure_close",
+    "automation.pr001_op4_evening_alert",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_safety_critical"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op1_open_warning",
+    "consumer_safety_critical:automation.pr001_op2_departure_close",
+    "consumer_unknown:automation.pr001_op4_evening_alert"
+   ]
+  },
+  {
+   "helper": "input_boolean.service_visit_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "safety_critical",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op1_open_warning",
+    "automation.pr001_op2_departure_close",
+    "automation.pr001_op4_evening_alert",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_safety_critical"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op1_open_warning",
+    "consumer_safety_critical:automation.pr001_op2_departure_close",
+    "consumer_unknown:automation.pr001_op4_evening_alert"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_quiet_notify",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "unknown",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op4_evening_alert",
+    "automation.synthetic_notify",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_unknown"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op4_evening_alert"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_lights_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "direct",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op4_evening_alert",
+    "automation.synthetic_lights",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_direct"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op4_evening_alert"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_blind_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "direct",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op4_evening_alert",
+    "automation.synthetic_blind",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_direct"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op4_evening_alert"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_gate_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "direct",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op4_evening_alert",
+    "automation.synthetic_gate",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_direct"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op4_evening_alert",
+    "consumer_protected_target:automation.synthetic_gate:cover.synthetic_side_gate:cover_device_class_gate"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_script_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "unknown",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op4_evening_alert",
+    "automation.synthetic_opaque",
+    "automation.synthetic_script"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_unknown"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op4_evening_alert",
+    "consumer_unknown:automation.synthetic_script"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_lock_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "safety_critical",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op4_evening_alert",
+    "automation.synthetic_lock",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_safety_critical"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op4_evening_alert",
+    "consumer_safety_critical:automation.synthetic_lock"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_opaque_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "unknown",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op4_evening_alert",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_unknown"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op4_evening_alert"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_unused",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "unknown",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op4_evening_alert",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_unknown"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op4_evening_alert"
+   ]
+  }
+ ],
+ "op4_is_number_as_test": [
+  {
+   "helper": "input_boolean.visitor_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "safety_critical",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op1_open_warning",
+    "automation.pr001_op2_departure_close",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_safety_critical"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op1_open_warning",
+    "consumer_safety_critical:automation.pr001_op2_departure_close"
+   ]
+  },
+  {
+   "helper": "input_boolean.service_visit_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "safety_critical",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op1_open_warning",
+    "automation.pr001_op2_departure_close",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_safety_critical"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op1_open_warning",
+    "consumer_safety_critical:automation.pr001_op2_departure_close"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_quiet_notify",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "unknown",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "bounded_opaque",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_notify",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque",
+    "consequence_unknown"
+   ],
+   "owner": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_lights_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "direct",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "bounded_opaque",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_lights",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque",
+    "consequence_direct"
+   ],
+   "owner": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_blind_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "direct",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "bounded_opaque",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_blind",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque",
+    "consequence_direct"
+   ],
+   "owner": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_gate_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "direct",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "bounded_opaque",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_gate",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque",
+    "consequence_direct"
+   ],
+   "owner": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque",
+    "consumer_protected_target:automation.synthetic_gate:cover.synthetic_side_gate:cover_device_class_gate"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_script_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "unknown",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.synthetic_opaque",
+    "automation.synthetic_script"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_unknown"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.synthetic_script"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_lock_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "safety_critical",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "bounded_opaque",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_lock",
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque",
+    "consequence_safety_critical"
+   ],
+   "owner": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque",
+    "consumer_safety_critical:automation.synthetic_lock"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_opaque_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "unknown",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "bounded_opaque",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque",
+    "consequence_unknown"
+   ],
+   "owner": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_unused",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "unknown",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "bounded_opaque",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_opaque"
+   ],
+   "strict": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque",
+    "consequence_unknown"
+   ],
+   "owner": [
+    "consequence_evidence_complete_false",
+    "semantic_precision_bounded_opaque"
+   ]
+  }
+ ],
+ "no_opaque_consumers": [
+  {
+   "helper": "input_boolean.visitor_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "safety_critical",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op1_open_warning",
+    "automation.pr001_op2_departure_close"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_safety_critical"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op1_open_warning",
+    "consumer_safety_critical:automation.pr001_op2_departure_close"
+   ]
+  },
+  {
+   "helper": "input_boolean.service_visit_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "safety_critical",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.pr001_op1_open_warning",
+    "automation.pr001_op2_departure_close"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_safety_critical"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.pr001_op1_open_warning",
+    "consumer_safety_critical:automation.pr001_op2_departure_close"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_quiet_notify",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "none",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "exact",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_notify"
+   ],
+   "strict": "QUALIFIES",
+   "owner": "QUALIFIES"
+  },
+  {
+   "helper": "input_boolean.synthetic_lights_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "direct",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "exact",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_lights"
+   ],
+   "strict": [
+    "consequence_direct"
+   ],
+   "owner": "QUALIFIES"
+  },
+  {
+   "helper": "input_boolean.synthetic_blind_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "direct",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "exact",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_blind"
+   ],
+   "strict": [
+    "consequence_direct"
+   ],
+   "owner": "QUALIFIES"
+  },
+  {
+   "helper": "input_boolean.synthetic_gate_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "direct",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "exact",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_gate"
+   ],
+   "strict": [
+    "consequence_direct"
+   ],
+   "owner": [
+    "consumer_protected_target:automation.synthetic_gate:cover.synthetic_side_gate:cover_device_class_gate"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_script_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "unknown",
+   "coverage_failure_reason_codes": [
+    "action_profile_semantic_incomplete"
+   ],
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.synthetic_script"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_unknown"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.synthetic_script"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_lock_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "safety_critical",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "exact",
+   "coverage_complete": true,
+   "consumers": [
+    "automation.synthetic_lock"
+   ],
+   "strict": [
+    "consequence_safety_critical"
+   ],
+   "owner": [
+    "consumer_safety_critical:automation.synthetic_lock"
+   ]
+  },
+  {
+   "helper": "input_boolean.synthetic_opaque_mode",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "none",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "exact",
+   "coverage_complete": true,
+   "consumers": [],
+   "strict": "QUALIFIES",
+   "owner": "QUALIFIES"
+  },
+  {
+   "helper": "input_boolean.synthetic_unused",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "none",
+   "coverage_failure_reason_codes": [],
+   "semantic_precision": "exact",
+   "coverage_complete": true,
+   "consumers": [],
+   "strict": "QUALIFIES",
+   "owner": "QUALIFIES"
+  }
+ ],
+ "beta51_production_replay": [
+  {
+   "helper": "input_boolean.target_standard",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "none",
+   "semantic_precision": "exact",
+   "coverage_complete": true,
+   "consumers": [],
+   "strict": "QUALIFIES",
+   "owner": "QUALIFIES"
+  },
+  {
+   "helper": "input_boolean.entity_001",
+   "model": "helper-dependency-risk-v13",
+   "physical_consequence": "unknown",
+   "semantic_precision": "coverage_failure",
+   "coverage_complete": false,
+   "consumers": [
+    "automation.source_01",
+    "automation.source_02"
+   ],
+   "strict": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consequence_unknown"
+   ],
+   "owner": [
+    "coverage_complete_false",
+    "consequence_evidence_complete_false",
+    "semantic_precision_coverage_failure",
+    "consumer_unknown:automation.source_01",
+    "consumer_unknown:automation.source_02"
+   ]
+  }
+ ]
+}

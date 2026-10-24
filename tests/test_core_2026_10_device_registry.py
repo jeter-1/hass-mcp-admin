@@ -15,6 +15,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 from core_registry_fixtures import CoreSigner, core_entry, core_revocation, NOW
+from support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.ha_core_readmission.device_registry import (
     DeviceRegistrySchema, MAX_DEVICE_RECORD_BYTES, MAX_DEVICE_RECORDS,
     assess_device_registry, assess_device_entity_semantics,
@@ -26,6 +27,7 @@ from ha_mcp_engineering.ha_core_readmission.probe_profiles import (
     LEGACY_PROBE_PROFILE, compiled_probe_profile, known_probe_profile,
 )
 from ha_mcp_engineering.ha_core_readmission.profiles import (
+    CORE_CONFIGURATION_DELETE_PROFILES, CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES, CORE_LABEL_REGISTRY_PROFILES,
     CORE_RUNTIME_CAPABILITY_PROFILES, compiled_exact_authority,
 )
 from ha_mcp_engineering.ha_core_readmission.models import CORE_IDENTITY
@@ -101,7 +103,7 @@ class OctoberDeviceShapeTests(unittest.TestCase):
         self.assertFalse(assess_device_registry(self.records).complete)
         self.assertFalse(assess_device_registry(self.records, schema=SEPTEMBER.device_registry_schema).complete)
         ids = {e['capability_id'] for e in capability_evidence_for_probes(**probe_inputs(SEPTEMBER))}
-        self.assertEqual(len(ids), 19)
+        self.assertEqual(len(ids), 23)  # +2 HAMCP-069B, +1 HAMCP-165, +1 HAMCP-155 transport evidence (not admission)
         self.assertTrue(DEVICE_CAPABILITIES.isdisjoint(ids))
 
     def test_october_profile_restores_all_required_probe_evidence(self):
@@ -221,7 +223,13 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
                           probe_profile_sha256=OCTOBER.contract_fingerprint,
                           capabilities=[{k:p.to_mapping()[k] for k in (
                               'capability_id','profile_id','profile_version','adapter_id','contract_fingerprint')}
-                              for p in CORE_RUNTIME_CAPABILITY_PROFILES])
+                              for p in CORE_RUNTIME_CAPABILITY_PROFILES
+                              # HAMCP-069B/165/155: the signed sequence-12
+                              # reference set names neither the dormant 069B,
+                              # 165 label nor 155 delete profiles.
+                              if p not in CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
+                              + CORE_LABEL_REGISTRY_PROFILES
+                              and p not in CORE_CONFIGURATION_DELETE_PROFILES])
         self.now = NOW
         self.raw = None
         async def fetch(*_args):
@@ -249,7 +257,8 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
             generated_at=NOW,
         )
         self.assertTrue(await self.registry.refresh())
-        return await self.core.reconcile_once('synthetic_october_registry')
+        # A withheld Core admitted by a new signed profile passes the gate.
+        return await reconcile_through_gate(self.core)
 
     async def test_observation_alone_withholds_then_exact_signed_profile_admits(self):
         before = await self.core.reconcile_once('synthetic_missing_authority')

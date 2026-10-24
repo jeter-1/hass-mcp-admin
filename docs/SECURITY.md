@@ -613,6 +613,278 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.33` configuration-definition slice (HAMCP-132 slice 2) adds
+the read-only `get_configuration_definitions` tool. It adds no permission,
+add-on option, HTTP client, Supervisor call, route template, batch-allowlist
+shape, fallback or write path.
+
+- **Reads.** The tool issues:
+  - REST `GET /api/states` (only whether each state exists and is
+    `unavailable` or `unknown`) and `GET /api/config` (`components` only);
+  - WebSocket `config/entity_registry/list` and `entity/source`;
+  - `config_entries/get` with one domain from a closed set;
+  - Core's `manifest/get` for `ha_mcp_tools`.
+
+  Core's `config_entries/get` never includes an entry's `data` or `options`.
+  So a UI-defined SQL entry's `db_url` is never fetched, and UI definitions
+  are reported as not readable without a flow.
+- **No component commands.** The `ha_mcp_tools` custom component exposes
+  admin-only WebSocket commands, including writes and a backup preparation
+  that returns a password. Josh decided on 2026-10-21 that it is not used.
+  No `ha_mcp_tools/*` command is reachable; an AST test pins the package's
+  exact command literals and dispatch.
+- **YAML reader purpose.** The admitted ha-mcp YAML reader is used through a
+  second fixed gateway purpose, `configuration_definitions`:
+  - eight fixed `configuration.yaml` paths and its own audit event;
+  - Engineering builds the only argument;
+  - each purpose's path set is closed, so neither purpose can read the
+    other's paths, and an unknown purpose returns no reader;
+  - L1–L4, the Core gate, the response seal and the before-and-after
+    authority rechecks are unchanged.
+- **Withholding.** The projection is a positive per-integration allowlist
+  from Core 2026.10.1's schemas. The following are withheld:
+  - `db_url`, in every position;
+  - `!secret` and `!env_var` references, with their names;
+  - nested user-defined keys that look like credential or connection keys;
+  - any credential-bearing URI inside an allowlisted text field such as a
+    SQL query. The shared sanitizer redacts userinfo only for `http(s)`.
+
+  Unrecognized keys are counted, never copied. Config-entry `reason` text is
+  withheld. State values are never copied.
+- **One screened and sanitized exit point.** The complete envelope (report,
+  omissions, coverage and every identifier) is first screened in every key
+  and string for credential text: a URI with userinfo, a database or broker
+  connection URI by scheme, a user and password before a host without a scheme, a password field, a known
+  secret, or text the reader's canonicalization refuses. Such a string is
+  replaced with `[withheld:credential_text]` and the report is partial
+  (`credential_text_withheld`). This covers Core text the projection never
+  sees, such as config entry titles (independent review H1). The checks
+  read the canonical text through a bounded confusable fold (a fixed table
+  of look-alikes of `/`, `:` and Latin letters, not general confusable
+  coverage; delta review H2). The envelope
+  is then sanitized once with the access secret and the Home Assistant
+  token as known secrets. A redaction makes the report partial. Budget trimming rebuilds the envelope and sanitizes it
+  again. Tests plant a known secret in every identifier-bearing field, prove
+  with a control run that it reaches each one, and check through the
+  authenticated gateway that the protected response never contains it.
+- **Free text by allowlist (delta review H1, H2).** A config entry title,
+  the only Core free text the report echoes, is checked whole before any
+  truncation and shown verbatim only when it is printable ASCII without a
+  control character, within 255 characters, and has no `@`, no `://`, no
+  password-like `key=value` or `key: value`, no known secret in any letter
+  case and no credential text. Anything else is replaced whole with
+  `[withheld:credential_text]` or `[withheld:unverifiable_text]` and the
+  report is partial (`unverifiable_text_withheld`). An ordinary non-ASCII
+  title is withheld by design.
+- **Invisible text withheld whole (second delta review R2-H1).** A
+  YAML-projected string or key containing an invisible, format or control
+  character (Cc except tab, line feed and carriage return; Cf, Cs, Co, Cn,
+  Zl, Zp; every Default_Ignorable_Code_Point), in the original text or after
+  a bounded percent-decode, is replaced whole with
+  `[withheld:unverifiable_text]` (a key: dropped) before any credential
+  screening, in the projection and again at the exit point. It is never
+  screened and shown: a zero-width character inside `password=` previously
+  hid the credential word.
+- **Whitespace inside a credential is screened (correction batch 4).**
+  Every YAML-projected string, and every string at the exit point, is
+  screened in two forms: the canonical form (bounded percent-decode, NFKC,
+  casefold, confusable fold) and its squashed form, the same text with every
+  character `str.isspace` accepts removed (space, tab, line feed, carriage
+  return and Unicode whitespace). If either form matches the credential or
+  known-secret checks, the original value is withheld whole as credential
+  text and the report is partial: `pass<tab>word=`, a line feed inside a URI's user-info and
+  their percent-encoded and double-encoded forms no longer reach the caller.
+  Tab, line feed and carriage return stay displayable in ordinary text, so a
+  multi-line template without credential text is shown and complete. Form
+  feed, vertical tab and other Cc characters stay withheld outright as
+  unverifiable text. **By design, text with a colon followed later by `@`
+  and no `/` between (for example `Alert: motion` then `@ {{ ... }}` on the
+  next line) squashes to a URI user-info shape and is withheld** (fail
+  closed; the report is partial).
+- **Any withholding is partial (second delta review R2-M1).** One scan of
+  the final envelope at the exit point finds every withheld form and names
+  each affected item in a bounded omission list (at most 20, then a count);
+  any such item makes the report partial.
+- **A fixed policy redaction is not missing evidence (owner decision, Josh,
+  2026-10-22).** A SQL definition's own `db_url` (the `sql:` key or a legacy
+  `platform: sql` sensor) is always replaced with
+  `{"redacted_by_policy": "database_url"}`, never read out. The final-envelope
+  scan still runs over it; an explicit allowlist inside that scan
+  (`credentials.POLICY_REDACTIONS`, exactly one entry: integration `sql`,
+  field `db_url`, kind `database_url`, at `definitions[<n>].fields.db_url`)
+  is the only form it does not count. A `db_url` in any other integration or
+  nested position, a credential in any other SQL field, invisible text,
+  unverifiable titles, confusables, and a `redacted_by_policy`-shaped value
+  that came from configuration are all still withheld and partial. The
+  sanitizer's own `redacted_by_policy` omission (HAMCP-191) is unrelated and
+  still makes the report partial.
+- **Nothing is derived from a withheld input (owner decision, Josh,
+  2026-10-22).** Before deriving an entity ID, a unique ID, dependencies, a
+  definition-ID key or a legacy candidate, the projection checks every input
+  with its own withholding and with `credentials.withheld_at_exit` (the exit
+  point's credential, known-secret and sanitizer checks). A withheld input
+  yields no derived value (`derived_entity_id_withheld`,
+  `unique_id_withheld`, `dependencies_withheld`, a positional definition ID)
+  and a path in the definition's `withheld`, so the report is partial. A
+  slug of a credential is therefore never derived, though the exit point
+  would not recognize it.
+- **The Core-observed entity ID is not withheld (owner decision, Josh,
+  2026-10-22).** An exact registry match reports Core's own `entity_id`,
+  which every state read already exposes. An entity that Home Assistant
+  itself named from a credential-bearing string shows that entity ID; the
+  exit point would not recognize the slug. This is a disclosed limitation:
+  rename the entity in Home Assistant.
+
+Arguments are validated before SDK coercion and rejected without echoing
+them. The audit records counts and source outcomes only. Stable v1.1.2 is
+unchanged.
+
+The `2.4.1-beta.31` slice (HAMCP-069B) adds governed entity enable/disable and
+voice assistant exposure, **unreachable at release**. It adds no permission,
+add-on option, role, fallback or delegated provider.
+
+- **New write paths.** `config/entity_registry/update` with exactly
+  `entity_id` and `disabled_by`, and `homeassistant/expose_entity` with one
+  assistant, one entity and `should_expose`. Both are reachable only through
+  an externally approved plan dispatched by the F3 runtime, for a Core
+  capability profile admitted by a signed registry. Neither new profile is
+  referenced by the shipped sequence 12. The routing layer refuses every call
+  with `CoreCapabilityUnavailable` / `pending_signed_registry_admission`
+  before planning, provider contact or storage. The governance service
+  repeats that check before any Home Assistant read or storage, on every
+  entry point (planning service, internal plan builder, F3 inverse). It fails
+  closed without a Core runtime. A tampered profile fingerprint keeps the
+  profile withheld.
+- **Closed vocabulary.** The gateway allow-lists the two writes and four reads
+  (`config/entity_registry/get`, `config/entity_registry/list`,
+  `config_entries/get_single`, `homeassistant/expose_new_entities/get`) and
+  raises on anything else before I/O. `cloud/status` (which returns the
+  Google secure-devices PIN), `homeassistant/expose_entity/list`,
+  `homeassistant/expose_new_entities/set` and both cloud entity-update
+  commands are never sent; a static check pins every occurrence of
+  `cloud/status`. Alexa is refused.
+- **Approval and verification.** Protected entities need the existing
+  `ELEVATED_ADMIN` acknowledgement, and so does a disable whose dependency
+  evidence is incomplete for any reason; a tampered policy marker is
+  `PROHIBITED`. Exact registry readback decides every child; the empty
+  `expose_entity` result is never proof. The only tolerated difference is a
+  non-target `cloud.alexa` options key going from absent to present, which is
+  reported.
+
+The `2.4.1-beta.34` slice (HAMCP-165) adds governed label create, edit and
+entity assignment, **unreachable at release**. It activates nothing new and
+switches on with the sequence-13 signing. It adds no permission, add-on
+option, role, fallback or delegated provider.
+
+- **New write paths.** `config/label_registry/create` with exactly `name`,
+  `color`, `icon` and `description`, and `config/label_registry/update` with
+  `label_id` and only the changed fields. Both are reachable only through an
+  externally approved plan dispatched by the F3 runtime, for the Core
+  capability profile `core.label_registry_operation` admitted by a signed
+  registry. The shipped sequence 12 does not reference it. The routing layer
+  refuses every call with `CoreCapabilityUnavailable` /
+  `pending_signed_registry_admission`, and the governance service checks
+  admission first, before any Home Assistant read or storage. A tampered
+  profile fingerprint keeps the profile withheld.
+- **Closed vocabulary.** The label gateway allow-lists
+  `config/label_registry/list`, `create` and `update` and raises on anything
+  else before I/O. `config/label_registry/delete` is never constructed.
+  Entity assignment uses the signed 069A path unchanged.
+- **Approval and verification.** Label children are standard (metadata, no
+  device effect); assignments keep their 069A classification. A tampered
+  plan shape or proposal is `PROHIBITED`. Exact label-registry readback
+  decides every child; a different generated `label_id` is never verified.
+  Stale state and any label namespace change are refused immediately before
+  the write.
+- **HAMCP-069B profiles.** The two unsigned 069B profiles now name every read
+  their gateway sends; no signed profile changes.
+
+The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
+Neither adds a permission, add-on option, role, fallback or write path.
+
+- **`get_incident_logs`** issues Supervisor `GET /core/logs` and
+  `GET /addons/self/logs` only. Both are registered HAMCP-200 route templates;
+  `/core/logs` is newly registered. Role `homeassistant` admits `/core/.+`,
+  and the Supervisor `api_bypass` admits `/addons/self/<one segment>`
+  (Supervisor 2026.09.1, `api/middleware/security.py`).
+  `/supervisor/logs`, `/host/logs` and `/addons/<slug>/logs` need role
+  `manager`. They are reported unavailable with zero requests and are never
+  attempted. The `/.+/info` pattern quirk that would expose host journal
+  entries tagged `info` is deliberately not used. Caller slugs pass the
+  shared `path_segment` guard and a slug pattern before any request, session
+  or credential exists. Requests carry the Supervisor token only to the fixed
+  Supervisor host. Per-call request, byte and deadline ceilings bound the
+  download.
+- **`get_history_slices`** dispatches only the admitted `ha_get_history`
+  automatic-read route, through a new fixed gateway `history_reader`. It
+  accepts only reviewed versions 8.5.0 and 8.6.0, rechecks route currency
+  before each read, and builds the argument shape itself (strict validation;
+  zero dispatch on a mismatch). The parent caller's telemetry and authority
+  apply, and the audit event is `history_slice_read`. The native `get_history`
+  REST tool is not used, and there is no direct Home Assistant fallback.
+
+Journal text and recorder states are untrusted. Each service merges, filters
+and limits raw values, then assembles its complete envelope: entries or
+states, coverage, omissions, limitations and cursor. Its single `_finish`
+exit then runs the shared sanitizers once. For logs this is
+`sanitize_log_lines`, then the strict `sanitize_untrusted_data` with the
+access secret and Home Assistant token as known secrets and a shared reference
+registry. A redaction makes the result partial. `SANITIZER_SITES` and AST
+tests pin these as the only call sites. A planted-secret sweep checks every
+output field. Cursors are HMAC-signed with a per-process key and a 1-hour
+TTL. The query fingerprint is keyed, so a text filter is not revealed. See
+[HAMCP_131_INCIDENT_LOGS.md](HAMCP_131_INCIDENT_LOGS.md). Stable v1.1.2 is
+unchanged.
+
+The `2.4.1-beta.27` definition visibility slice (HAMCP-132) adds two read-only
+tools. Neither adds a permission, add-on option, HTTP client, Supervisor call,
+route template, fallback or write path.
+
+- **`get_recorder_settings`** issues Core WebSocket `recorder/info`. For up to
+  50 entities it issues `recorder/entity_options/get`, which is admin-only but
+  read-only. Each runs in its own pipelined batch. It also uses the admitted
+  ha-mcp YAML reader through a new gateway `yaml_config_reader` route:
+  - Engineering builds the only argument, one of three fixed
+    `configuration.yaml` paths;
+  - the reader's L1–L4 projection, Core gate and response seal apply
+    unchanged;
+  - the route's authority is rechecked before and after every read, through
+    the same `_bounded_route_current` check as the HAMCP-212 script reader.
+
+  The shared sanitizer redacts URL userinfo only for `http(s)` and has no
+  `db_url` rule. So the recorder projection is a positive allowlist of the
+  keys recognized from Core's recorder schema:
+  - `db_url` is reduced to `value_withheld` and a default-location flag;
+  - a `!secret` or `!env_var` reference is withheld with its name;
+  - unrecognized keys are counted, never copied.
+
+  Tests plant database URLs under several schemes and credential needles, and
+  check that none appears in the serialized output.
+- **`get_unregistered_entities`** issues:
+  - REST `GET /api/states`;
+  - WebSocket `config/entity_registry/list` and `entity/source`;
+  - batched `search/related` with `item_type: entity`.
+
+  None of these is admin-only.
+
+The pipelined batch allowlist gains exactly two shapes, each with an exact
+key set and a strict entity-ID pattern. AST tests pin the new modules to these
+reads. Arguments are validated before SDK coercion. The audit carries counts
+and source outcomes, never entity IDs. Both tools are mapped in the HAMCP-164
+Core gate.
+
+Each tool assembles its complete response before sanitizing. This covers the
+report, omissions, warnings, limitations and every entity ID, platform, config
+entry and filter item. The tool then runs the strict shared sanitizer once on
+that final envelope. The access secret and the Home Assistant token are
+passed as known secrets. Nothing is appended afterwards, and any redaction
+makes the report partial. An earlier head appended entity-bearing omissions
+after sanitization (review finding H1 on `de1433f`). Tests now plant a known
+secret in every identifier-bearing field, through the authenticated gateway,
+and check that the serialized response never contains it. See the
+[implementation notes](HAMCP_132_SLICE1_IMPLEMENTATION_NOTES.md). Stable
+v1.1.2 is unchanged.
+
 The `2.4.1-beta.24` backup inventory (HAMCP-130) adds the read-only
 `get_backup_inventory` tool. It makes exactly two fixed Core WebSocket reads,
 `backup/config/info` and `backup/info`, through Engineering's existing
@@ -652,6 +924,16 @@ frames and time. Inherited behaviour changes are listed in the
 [release notes](V2_4_1_BETA22_RELEASE_NOTES.md) and pinned by
 `tests/test_hamcp211_aiohttp_3144_contract.py`. Stable v1.1.2 still pins
 `aiohttp==3.9.5` and is unchanged.
+
+The `2.4.1-beta.26` dependency-security release (HAMCP-217) advances
+`certifi` to 2026.10.19 for GHSA-6q48-6c7w-9gw2. The new bundle drops the
+`emSign ECC Root CA - G3` root, whose intermediates have compromised keys.
+Engineering's httpx-based MCP clients verify against `certifi.where()`: the
+SDK default client and the dashboard-analysis delegate. Its aiohttp clients use
+the interpreter default store. The signed registries are additionally
+signature-verified. `tests/test_hamcp217_certifi_20261019_contract.py` pins
+exact bundle trust and refusal of roots outside it. The base image's CA store
+is unchanged.
 
 Published 2.2.2 retains the Host/Origin configuration risk tracked in issue #62.
 Engineering 2.2.3 adds an Engineering-owned policy before all MCP gateway paths.

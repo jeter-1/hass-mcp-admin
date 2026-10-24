@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 
 from core_registry_fixtures import CoreSigner, ProjectedCoreSource, core_entry, core_revocation, NOW
+from support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.ha_core_readmission.runtime import CoreRuntime
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry
 from ha_mcp_engineering.ha_core_readmission.registry_models import CoreRegistryEnvelope
@@ -60,7 +61,9 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.services = []
 
     async def runtime(self):
-        await self.core.reconcile_once('test')
+        # HAMCP-215 H1: the first background verification may admit a fresh
+        # runtime; later version or registry changes restore through the gate.
+        await reconcile_through_gate(self.core)
 
     async def publish(self, entries, revocations=()):
         previous = json.loads(self.raw)

@@ -407,6 +407,36 @@ is limited to reviewed automation action positions; conditions are not scanned
 as executable actions, and unsupported action nesting fails closed. Other
 high-risk service names retain their existing policy mapping.
 
+Policy `f2-v3` (HAMCP-213) narrows this. The Beta 33 retained-effect proof
+above is unchanged and is evaluated first, except where an unlock or disarm
+effect is or may be present: it then does not apply, and the acknowledgement
+below is always required. Otherwise, a safety-critical script
+or automation create or update is no longer prohibited by the risk class
+alone. Engineering compares the before and after physical effects (model
+`physical-effect-comparison-v1`). An exact write whose effects are `equivalent`
+is `elevated_admin` with plan approval only; a `changed` or `unresolved`
+comparison is `elevated_admin` with a high risk delta and also requires the
+per-object safety-critical acknowledgement. An effect-capable call whose
+service or target is templated, variable-driven or a registry selector is
+`unresolved`. A call to a script counts as the protected effects of that
+script, reached at the calling step, up to 8 levels of further scripts; a
+called script that cannot be resolved is `unresolved`. An unlock or disarm
+effect always requires that acknowledgement (owner decision OD-6(b), ADR-022). A write that
+is not exact remains prohibited. The comparison is an allowlist: on any path
+that can reach a protected effect, every difference other than the reviewed
+ignorable fields (display names and descriptions, and the wording of
+reference-only steps that run after every protected effect) is `changed`,
+including `enabled` flags and unknown keys. A review that exceeds a comparison
+bound (for example more than 32 protected objects, or the called-script depth
+or count limits) is `prohibited` on every route, the legacy route included,
+with the reasons `safety_critical_review_bounds_exceeded` and
+`too_many_protected_objects_to_review_split_the_change`. Engineering re-reads
+every called script before the approval is consumed and again before each
+write; a called script that changed since plan creation refuses the apply as
+`stale_target_state` (reason `stale_called_script`) with no write. See the
+HAMCP-213 design, D2 items 7 and 8, and
+[External approval](EXTERNAL_APPROVAL.md#safety-critical-acknowledgement).
+
 Governed configuration reads, writes, verification, and rollback are
 `direct_ha_required` facilitator capabilities. They do not route through ordinary
 service execution or fall back to an unverified write. See ADR-002 for provider rules.
@@ -509,7 +539,13 @@ Plans are stored only in beta add-on data, by default under
 `/data/governance/change_plans`. Each uses a random 128-bit ID and an atomic
 write-and-replace operation. Records survive restarts. Terminal records are
 retained for 90 days by default. Invalid or corrupt records are quarantined and
-counted in health output rather than preventing startup.
+counted in health output rather than preventing startup. At startup, before
+cleanup and recovery, records an older version quarantined (for example
+beta.28 or beta.27 after a rollback from beta.29) are restored when their
+canonical bytes, identifier, namespace and content screen verify. Restoration
+never overwrites an existing record, is idempotent and is logged. Records that do
+not verify stay quarantined and are reported under `quarantine_restoration`
+in health output.
 
 Proposals containing access-secret, token, authorization, cookie, password,
 API-key, webhook-ID, or authenticated MCP URL fields are rejected before
@@ -527,7 +563,11 @@ Lifecycle events include `change_plan_created`,
 `external_approval_requested`, optional `external_approval_viewed`,
 `external_approval_granted`, `external_approval_rejected`,
 `external_approval_expired`, `external_approval_invalidated`, and
-`external_approval_consumed`.
+`external_approval_consumed`. Policy `f2-v3` adds
+`safety_critical_acknowledgement_requested`,
+`safety_critical_acknowledgement_granted`, and
+`safety_critical_acknowledgement_failed`; see
+[External approval](EXTERNAL_APPROVAL.md#safety-critical-acknowledgement).
 
 Events contain only request ID, plan ID, target type/ID, operation, risk,
 result status, stable error code, duration, caller ID, approval state, bounded
@@ -554,6 +594,8 @@ policy_snapshot_required
 policy_snapshot_mismatch
 prohibited_change
 elevated_risk_acknowledgement_required
+safety_critical_acknowledgement_required
+safety_critical_acknowledgement_mismatch
 approval_principal_mismatch
 approval_sequence_failure
 stale_target_state
