@@ -172,25 +172,50 @@ def verify_result(result, *, core_version, support_slot):
             "scenarios": len(SCENARIOS), "authority_transition": AUTHORITY_TRANSITION, "fixture_cleanup": True}
 
 
+def config_route(resource_type, target_id):
+    """The bound runtime route for one automation or script config (HAMCP-200)."""
+    from ha_mcp_engineering.clients.paths import rest_path
+    if resource_type == "automation":
+        return rest_path("/config/automation/config/{}", target_id)
+    if resource_type == "script":
+        return rest_path("/config/script/config/{}", target_id)
+    raise ValueError("unsupported resource type")
+
+
+def state_route(resource_type, target_id):
+    from ha_mcp_engineering.clients.paths import rest_path
+    return rest_path("/states/{}", resource_type + "." + target_id, kinds=("entity_id",))
+
+
 class RawRest:
-    """Lane-owned loopback REST client for setup and independent readback."""
+    """Lane-owned REST client for setup and independent readback.
+
+    A separate guarded Engineering client, so every path is a bound runtime
+    route (HAMCP-200) and none of its requests is counted as Engineering's.
+    """
 
     def __init__(self, configured):
-        self.base = configured.api_url.rstrip("/")
-        self.token = configured.ha_token
+        from ha_mcp_engineering.clients import HomeAssistantRestClient
+        self.client = HomeAssistantRestClient(configured)
 
-    async def call(self, method, path, body=None):
-        import aiohttp
-        headers = {"Authorization": "Bearer " + self.token}
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            async with session.request(method, self.base + path, json=body, headers=headers) as response:
-                payload = await response.json(content_type=None) if response.status == 200 else None
-                return response.status, payload
+    async def call(self, method, route, body=None):
+        from ha_mcp_engineering.clients.rest import ExpectedHttpStatus
+        from ha_mcp_engineering.errors import HomeAssistantApiError
+        try:
+            payload = await self.client.request(method, route, body, expected_statuses=frozenset({404}))
+        except HomeAssistantApiError as exc:
+            status = (exc.details if isinstance(exc.details, dict) else {}).get("status")
+            if type(status) is not int:
+                raise
+            return status, None
+        if isinstance(payload, ExpectedHttpStatus):
+            return payload.status, None
+        return 200, payload
 
-    async def ok(self, method, path, body=None):
-        status, payload = await self.call(method, path, body)
+    async def ok(self, method, route, body=None):
+        status, payload = await self.call(method, route, body)
         if status != 200:
-            raise RawRefusal(method + " " + path.split("/")[1], status)
+            raise RawRefusal(method + " " + route.split("/")[1], status)
         return payload
 
 
@@ -212,12 +237,12 @@ class ObservedRest:
 
 async def independent_readback(rest, raw, resource_type, target_id):
     """The three absence facts, each read by the lane, never inferred."""
-    config_status, config = await rest.call("GET", "/config/" + resource_type + "/config/" + target_id)
+    config_status, config = await rest.call("GET", config_route(resource_type, target_id))
     matches = [item for item in await raw.ok({"type": REGISTRY_LIST})
                if item.get("platform") == resource_type and item.get("unique_id") == target_id]
     assert len(matches) <= 1
     entry = matches[0] if matches else None
-    state_status, _state = await rest.call("GET", "/states/" + resource_type + "." + target_id)
+    state_status, _state = await rest.call("GET", state_route(resource_type, target_id))
     return {"config_status": config_status, "registry_entry": None if entry is None else entry.get("id"),
             "state_status": state_status}, config
 
@@ -231,9 +256,9 @@ async def cleanup_fixtures(rest, raw, owned, *, attempts=50, delay=0.1):
     if not owned:
         return None
     for resource_type, target_id in owned:
-        status, _ = await rest.call("GET", "/config/" + resource_type + "/config/" + target_id)
+        status, _ = await rest.call("GET", config_route(resource_type, target_id))
         if status == 200:
-            await rest.ok("DELETE", "/config/" + resource_type + "/config/" + target_id)
+            await rest.ok("DELETE", config_route(resource_type, target_id))
     absence = dict.fromkeys(FIXTURE_ABSENCE, True)
     for resource_type, target_id in owned:
         for _ in range(attempts):
@@ -450,7 +475,7 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
 
         async def create_fixture(resource_type, target_id, config):
             owned.append((resource_type, target_id))
-            await rest.ok("POST", "/config/" + resource_type + "/config/" + target_id, config)
+            await rest.ok("POST", config_route(resource_type, target_id), config)
             for _ in range(100):
                 readback, stored = await independent_readback(rest, raw, resource_type, target_id)
                 if readback["config_status"] == 200 and readback["registry_entry"] and readback["state_status"] == 200:
@@ -577,7 +602,7 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                     "ha_writes": len(engineering_rest.writes) - writes}
 
                 stage[0] = "not_found"
-                status, _ = await rest.call("GET", "/config/automation/config/" + ABSENT_ID)
+                status, _ = await rest.call("GET", config_route("automation", ABSENT_ID))
                 details = await refused_plan(runtime, service, {
                     "deletions": [{"resource_type": "automation", "target_id": ABSENT_ID}],
                     "reason": "HAMCP-155 not found"})
@@ -592,7 +617,7 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                     "deletions": [{"resource_type": "automation", "target_id": stale_id}],
                     "reason": "HAMCP-155 stale state"})
                 drifted = automation_config(stale_id, {"event": "hamcp155_drifted", "event_data": {}})
-                await rest.ok("POST", "/config/automation/config/" + stale_id, drifted)
+                await rest.ok("POST", config_route("automation", stale_id), drifted)
                 applied = await approve_apply(service, created)
                 counts, codes = children(service, applied["task_id"])
                 readback, stored = await independent_readback(rest, raw, "automation", stale_id)

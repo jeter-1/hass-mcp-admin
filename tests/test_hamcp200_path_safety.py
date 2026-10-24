@@ -979,6 +979,13 @@ SCAN_EXEMPTIONS = frozenset({
         "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/strategies.py",
         "f'/config/{self.resource_type}/config/{target_id}'",
     ),
+    # HAMCP-155: hashed into the F3 delete descriptor only, in the same form
+    # as create/update above. The DELETE itself is sent on the guarded
+    # ``_config_route`` in the same module.
+    (
+        "hass_mcp_engineering_beta/ha_mcp_engineering/governance/configuration_delete.py",
+        "f'/config/{resource_type}/config/{target_id}'",
+    ),
 })
 
 

@@ -341,7 +341,8 @@ class F3ContractDeclarationTests(unittest.TestCase):
                 "superseded",
             },
         )
-        self.assertEqual(len(registered_tools(get_registered_server())), 65)
+        # HAMCP-155: +1 inactive create_configuration_delete_plan.
+        self.assertEqual(len(registered_tools(get_registered_server())), 66)
 
     def test_canonical_contract_has_only_standard_library_imports(self):
         contract = (
