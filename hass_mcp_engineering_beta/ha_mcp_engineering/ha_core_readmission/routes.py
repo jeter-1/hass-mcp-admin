@@ -676,6 +676,33 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
     return tuple(sorted(values))
 
 
+# HAMCP-155 M3: runtime-only profiles that only an owner-signed registry
+# admits.  An initial F3 apply whose plan needs one of these refuses before
+# any execution-state persistence or Home Assistant request when Core does not
+# currently admit it; the dispatch-time guard still applies afterwards.
+F3_ENTRY_ADMISSION_PROFILES = frozenset(
+    {AVAILABILITY_PROFILE, EXPOSURE_PROFILE, CONFIGURATION_DELETE_PROFILE}
+)
+
+
+@dataclass(frozen=True)
+class _F3Identity:
+    capability_id: str
+    operation: str
+
+
+def f3_entry_admission_profiles(identities: Any) -> tuple[str, ...]:
+    """Entry-admission profiles that these F3 capability identities need."""
+
+    profiles: set[str] = set()
+    for identity in identities:
+        requirements = f3_requirements(
+            _F3Identity(capability_id=identity, operation=identity)
+        )
+        profiles.update(set(requirements) & F3_ENTRY_ADMISSION_PROFILES)
+    return tuple(sorted(profiles))
+
+
 __all__ = [
     "CONDITIONAL_CORE_STATIC_TOOLS",
     "CORE_2026_9_DEVICE_ADAPTER_RELEASES",
@@ -694,6 +721,8 @@ __all__ = [
     "delegated_requirements",
     "delegated_provider_compatibility",
     "f3_requirements",
+    "F3_ENTRY_ADMISSION_PROFILES",
+    "f3_entry_admission_profiles",
     "AVAILABILITY_EXPOSURE_OPERATIONS",
     "AVAILABILITY_EXPOSURE_TOOL",
     "STATIC_TARGET_INVALID_ENTITY_ID",

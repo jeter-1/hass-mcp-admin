@@ -38,9 +38,13 @@ While the profile is unadmitted:
 - the governance service refuses first, before any Home Assistant read and
   before storing anything. This covers the tool, the generic builder and the
   internal builder;
-- dispatch re-checks admission on every F3 path (first apply, resume,
-  recovery, retained or approved plans, and F3 composed without Core). Each
-  refuses with zero writes.
+- a first F3 apply of a retained or approved plan refuses at the F3 entry,
+  before any plan, task, child or lock state is stored and before any Home
+  Assistant request (`PROVIDER_UNAVAILABLE`,
+  `pending_signed_registry_admission`, `execution_state_persisted: false`).
+  This includes F3 composed without Core;
+- dispatch still re-checks admission on every F3 path (resume, recovery and
+  re-apply of an existing task). Each refuses with zero writes.
 
 ## Behavior once a signed registry admits the profile
 
@@ -88,6 +92,13 @@ The F3 executor now stores every code of an adapter's pre-intent dispatch
 refusal, not only the first. The outcome (`failed_pre_dispatch`, nothing
 sent) is unchanged for every adapter.
 
+The F3 entry admission check covers every runtime-only profile the shipped
+signed registry lacks. Besides the delete profile, that is the dormant
+HAMCP-069B availability and exposure profiles: an unadmitted first apply of
+those plans now refuses before storing anything, where it previously stored
+a `failed_pre_dispatch` task with zero writes. Signed profiles keep their
+existing dispatch-time checks.
+
 ## Interim disclosures until HAMCP-181 PR2
 
 - A call refused after intent but before sending can appear as
@@ -115,9 +126,15 @@ and runtime, the Core readmission profiles, models, routes and source, the
 capability catalog, routing and provider routing, the MCP server, the
 governance tools and tool registry, and the version.
 
-No workflow, add-on permission, Supervisor route, add-on configuration,
-signed registry entry, HOLD, support window, dependency or stable-v1 file
-changes.
+**Dormant workflow wiring.** Josh authorized one `ci.yml` change for the
+dormant seq-13 deletion lane, gated exactly like #303's lanes: the `real-ha`
+job sets `REAL_HA_SEQ13_LANES: dormant`, and two new steps (stage the receipt
+path, upload the bounded receipt) run only when it is `enabled`. No existing
+step, condition, artifact, permission or action changes. The harness calls
+the lane only when the flag is exactly `enabled`.
+
+No add-on permission, Supervisor route, add-on configuration, signed
+registry entry, HOLD, support window, dependency or stable-v1 file changes.
 
 ## Post-signing canary
 

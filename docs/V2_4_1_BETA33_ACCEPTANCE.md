@@ -54,10 +54,14 @@ The review needs a security section covering:
     with `CoreCapabilityUnavailable` / `pending_signed_registry_admission`.
     The governance service refuses first, before any Home Assistant read or
     plan storage, for the tool and the generic and internal builders.
-  - Dispatch re-checks admission on every F3 path: first apply, resume,
-    recovery, retained or approved plans, and F3 composed without Core.
-    Each refuses with zero writes. Preflight refuses before its live-state
-    read, and observation refuses to verify without admission.
+  - A first F3 apply of a retained or approved plan, including F3 composed
+    without Core, refuses at the F3 entry before the plan, task, child or
+    lock stores change and with zero Home Assistant requests. The same entry
+    check covers the dormant HAMCP-069B profiles.
+  - Dispatch still re-checks admission on resume, recovery and re-apply of
+    an existing task. Each refuses with zero writes. Preflight refuses
+    before its live-state read, and observation refuses to verify without
+    admission.
 - **Closed vocabulary.** Reads are the config GET, the entity registry list
   and the entity state GET. `create_configuration_plan` still refuses
   `delete`; legacy `delete_automation` stays prohibited; upstream
@@ -91,7 +95,10 @@ Preserve the following:
   `sha256:cc09630e…` are unchanged), owner-signed Core registry entries
   (sequence 12) and the signed ha-mcp registry;
 - the HOLD and the support window;
-- workflows, add-on permissions and dependencies.
+- add-on permissions and dependencies;
+- every existing workflow step, condition, artifact, permission and action.
+  The only `ci.yml` change is the owner-authorized dormant seq-13 deletion
+  lane (`REAL_HA_SEQ13_LANES: dormant` plus two steps gated on `enabled`).
 
 The new profile's contract fingerprint is
 `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d`.
@@ -116,18 +123,34 @@ No test reaches a live system. Every fixture is synthetic.
   the generic and internal builders; admission re-checked at preflight,
   immediately before the DELETE, at observation, after restart, on resume
   and recovery mid-plan (lease or route withdrawn after the first delete),
-  after an uncertain delete, through the legacy routes and without Core; a
-  TEST signed
+  after an uncertain delete, through the legacy routes and without Core
+  (a first apply refuses before storing a task); a TEST signed
   registry fixture that admits it; the closed tool schema.
 - `tests/test_hamcp155_configuration_delete_policy.py` (17 tests):
   removed-effect classification, elevation and acknowledgement, the
   unlock floor, incomplete consumer evidence, tamper refusals, removed rows
   with an empty after side, and planning refusals before any read.
-- `tests/test_hamcp155_configuration_delete_lane.py` (9 tests): the dormant
+- `tests/test_hamcp155_configuration_delete_lane.py` (24 tests): the dormant
   seq-13 delete lane `scripts/configuration_delete_contract_acceptance.py`.
-  Refusals are expected outcomes with exact codes, every claimed read
-  (config 404, registry entry gone, state gone) is asserted, the lane is
-  unwired, and the shipped lanes exclude the inactive profile.
+  Refusals are expected outcomes with exact codes, and every claimed read
+  (config 404, registry entry gone, state gone) is asserted. Absence is
+  proven at the entity ID captured from the registry before the delete,
+  never a guessed one, and the recreate restores that identity. Only the
+  exact `POST /config/core/check_config` is allowlisted, exactly twice per
+  recreate and never for a delete; any other non-GET is a write bound to the
+  target's route (also proven on the real service). The harness runs the
+  lane only when `REAL_HA_SEQ13_LANES` is exactly `enabled`, requires PASS
+  and retains the receipt; the cleanup verifier refuses a missing, failed,
+  partial or non-identical receipt when enabled and any receipt when
+  dormant. The F3 entry admission set equals the dormant set, and the
+  shipped lanes exclude the inactive profile.
+- `tests/test_hamcp155_review1_probes.py` (9 tests): the independent
+  reviewer's PR #304 probes, kept unchanged apart from a path prelude.
+- `tests/test_hamcp069b_review1_corrections.py`: an unadmitted 069B first
+  apply refuses before storing anything, and the plan files stay
+  byte-identical across restart.
+- `tests/test_alarmo_interval_observer.py`: the dormant workflow steps, their
+  gating, order, paths and pinned upload action.
 - Count and catalog pins in the existing suites are updated from 65 to 66
   static tools.
 - Mutations: `docs/evidence/hamcp155-mutations/`. 35 of 35 mutants are

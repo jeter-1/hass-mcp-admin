@@ -1,10 +1,12 @@
 """HAMCP-155 exact-Core governed deletion evidence lane for the seq-13 batch.
 
-Defined, not wired: no harness or workflow calls this lane yet. Wiring it into
-the disposable Alarmo-slot harness, and the CI container lane, is a follow-up
-(``ci.yml`` is outside HAMCP-155). Even when called it refuses unless
-``REAL_HA_SEQ13_LANES`` is exactly ``enabled``, which only the owner's seq-13
-batch evidence run sets. No standalone or live CLI.
+Wired dormant: the disposable Alarmo-slot harness (``real_ha_contract_tests``)
+calls this lane, ``ci.yml`` stages and uploads its receipt, and
+``--verify-cleanup`` strictly re-verifies the retained receipt, each only when
+``REAL_HA_SEQ13_LANES`` is exactly ``enabled``. Only the owner's seq-13 batch
+evidence run sets that; the committed workflow keeps it ``dormant``. Even when
+called the lane refuses unless the flag is exactly ``enabled``. No standalone or
+live CLI.
 
 The lane exercises the dormant ``core.configuration_delete_operation`` profile
 against the exact window Core under two CI-only ephemeral authorities: a
@@ -17,9 +19,13 @@ Refusals are expected outcomes, not failures: the predecessor's service refusal
 not-found planner refusal and the drifted-target stale refusal are each recorded
 with their exact code and asserted. Every absence the lane claims is read back
 independently by its own raw clients: the config GET answers 404, no entity
-registry entry has the target's platform and unique ID, and the state GET
-answers 404. Every Home Assistant object the lane writes is synthetic, created
-inside the disposable instance, and deleted and read back as absent at cleanup.
+registry entry has the target's platform and unique ID, and the state GET at the
+entity ID Core registered for the target, captured from the registry before the
+delete, answers 404; an entity ID is never derived from a config ID. Engineering's
+requests are observed: the exact config check POST is the one allowlisted
+non-write, and every other non-GET request is a write bound to its target route.
+Every Home Assistant object the lane writes is synthetic, created inside the
+disposable instance, and deleted and read back as absent at cleanup.
 """
 import asyncio
 import base64
@@ -61,6 +67,13 @@ STALE = "stale_target_state"
 BASIS_PROTECTED_EFFECT = "delete_removes_protected_effect"
 ABSENT_ID = "hamcp155_absent"
 FIXTURE_ABSENCE = ("automation_config", "script_config", "registry_entries", "states")
+# The one non-mutating POST Engineering's configuration writer sends: a config
+# check before and after a recreate (none for a delete). Exactly this route is
+# allowlisted; every other non-GET request is counted as a write (M2).
+CHECK_CONFIG = ("POST", "/config/core/check_config")
+RECREATE_CONFIG_CHECKS = 2
+READBACK_KEYS = frozenset({"config_status", "registry_entry", "registry_entity_id", "entity_id",
+                           "state_status"})
 SYNTHETIC_PROVIDER_IDENTITY = {"slug": "hamcp155_disposable_lane",
                                "evidence_hash": hashlib.sha256(b"HAMCP-155 synthetic provider lock").hexdigest()}
 
@@ -99,8 +112,27 @@ def script_config(target_id):
             "sequence": [{"event": "hamcp155_" + target_id, "event_data": {}}]}
 
 
+def entity_of(resource_type, entity_id):
+    """Whether ``entity_id`` is a valid entity identity of ``resource_type``."""
+    from ha_mcp_engineering.entity_ids import validate_entity_id
+    try:
+        validate_entity_id(entity_id)
+    except ValueError:
+        return False
+    return entity_id.split(".", 1)[0] == resource_type
+
+
 def _absent(readback):
-    return readback == {"config_status": 404, "registry_entry": None, "state_status": 404}
+    """Absence at the captured entity identity, never at a guessed one (M1)."""
+    return (type(readback) is dict and set(readback) == READBACK_KEYS
+            and readback["config_status"] == 404 and readback["registry_entry"] is None
+            and readback["registry_entity_id"] is None and readback["state_status"] == 404
+            and type(readback["entity_id"]) is str
+            and entity_of(readback["entity_id"].split(".", 1)[0], readback["entity_id"]))
+
+
+def _scenario_type(name):
+    return name.split("_", 1)[1]
 
 
 def _scenario_checks(name, value):
@@ -108,15 +140,22 @@ def _scenario_checks(name, value):
     if name in {"delete_automation", "delete_script"}:
         assert value["task_state"] == "succeeded_verified" and value["dispatch_counts"] == [1]
         assert value["write_methods"] == ["DELETE"] and value["ha_writes"] == 1
+        assert value["write_routes_bound"] is True and value["config_checks"] == 0
         assert value["protected"] is False and value["risk_level"] == "medium"
+        assert entity_of(_scenario_type(name), value["entity_id"])
         assert value["preflight_present"] is True and _absent(value["readback"])
+        assert value["readback"]["entity_id"] == value["entity_id"]
     if name in {"recreate_automation", "recreate_script"}:
         assert value["rollback_status"] == "rollback_plan_created"
         assert value["rollback_dispatched_on_create"] is False and value["operations_excluded"] == []
         assert value["task_state"] == "succeeded_verified" and value["dispatch_counts"] == [1]
         assert value["write_methods"] == ["POST"] and value["ha_writes"] == 1
+        assert value["write_routes_bound"] is True
+        assert value["config_checks"] == RECREATE_CONFIG_CHECKS
         assert value["config_matches_pre_image"] is True
-        assert value["registry_entry_id_restored"] is True and value["state_present"] is True
+        assert entity_of(_scenario_type(name), value["entity_id"])
+        assert value["registry_entry_id_restored"] is True and value["entity_id_restored"] is True
+        assert value["state_present"] is True
     if name == "protected_effect":
         assert value["plan_created"] is True and value["protected"] is True
         assert BASIS_PROTECTED_EFFECT in value["basis"] and value["risk_level"] == "high"
@@ -167,6 +206,10 @@ def verify_result(result, *, core_version, support_slot):
     for name in SCENARIOS:
         assert scenarios[name]["result"] == "PASS"
         _scenario_checks(name, scenarios[name])
+    for resource_type in ("automation", "script"):
+        # The recreate restores exactly the identity captured before the delete.
+        assert (scenarios["recreate_" + resource_type]["entity_id"]
+                == scenarios["delete_" + resource_type]["entity_id"])
     return {"result": "PASS", "lane": "configuration_delete", "core": core_version,
             "support_slot": support_slot, "contract_fingerprint": reference["contract_fingerprint"],
             "scenarios": len(SCENARIOS), "authority_transition": AUTHORITY_TRANSITION, "fixture_cleanup": True}
@@ -182,9 +225,10 @@ def config_route(resource_type, target_id):
     raise ValueError("unsupported resource type")
 
 
-def state_route(resource_type, target_id):
+def state_route(entity_id):
+    """The state route of a registered or captured entity identity, never a guess."""
     from ha_mcp_engineering.clients.paths import rest_path
-    return rest_path("/states/{}", resource_type + "." + target_id, kinds=("entity_id",))
+    return rest_path("/states/{}", entity_id, kinds=("entity_id",))
 
 
 class RawRest:
@@ -220,49 +264,85 @@ class RawRest:
 
 
 class ObservedRest:
-    """Engineering's real REST client; every non-GET request is counted."""
+    """Engineering's real REST client; every non-GET request is counted.
+
+    Only the exact ``CHECK_CONFIG`` request is recorded apart, as a config
+    check; every other non-GET request is a write with its route.
+    """
 
     def __init__(self, inner):
         self.inner = inner
         self.writes = []
+        self.write_routes = []
+        self.config_checks = 0
 
     async def request(self, method, path, *args, **kwargs):
-        if method != "GET":
+        if (method, str(path)) == CHECK_CONFIG:
+            self.config_checks += 1
+        elif method != "GET":
             self.writes.append(method)
+            self.write_routes.append(str(path))
         return await self.inner.request(method, path, *args, **kwargs)
 
     def __getattr__(self, name):
         return getattr(self.inner, name)
 
 
-async def independent_readback(rest, raw, resource_type, target_id):
-    """The three absence facts, each read by the lane, never inferred."""
+async def independent_readback(rest, raw, resource_type, target_id, entity_id=None):
+    """The three absence facts, each read by the lane, never inferred.
+
+    The state is read at the registry entry's entity identity, or at
+    ``entity_id`` captured from the registry before a delete. With neither the
+    lane refuses rather than derive an entity ID from the config ID (M1).
+    """
     config_status, config = await rest.call("GET", config_route(resource_type, target_id))
     matches = [item for item in await raw.ok({"type": REGISTRY_LIST})
                if item.get("platform") == resource_type and item.get("unique_id") == target_id]
     assert len(matches) <= 1
     entry = matches[0] if matches else None
-    state_status, _state = await rest.call("GET", state_route(resource_type, target_id))
+    registered = None if entry is None else entry.get("entity_id")
+    if entry is not None and not entity_of(resource_type, registered):
+        raise ValueError("Registry entry lacks a valid entity identity")
+    if entity_id is None:
+        if registered is None:
+            raise ValueError("No captured or registered entity identity to read back")
+        entity_id = registered
+    elif not entity_of(resource_type, entity_id):
+        raise ValueError("Captured entity identity is invalid")
+    state_status, _state = await rest.call("GET", state_route(entity_id))
     return {"config_status": config_status, "registry_entry": None if entry is None else entry.get("id"),
-            "state_status": state_status}, config
+            "registry_entity_id": registered, "entity_id": entity_id, "state_status": state_status}, config
 
 
 async def cleanup_fixtures(rest, raw, owned, *, attempts=50, delay=0.1):
     """Delete every owned fixture with the lane's raw client, then read back absence.
 
     An acknowledged delete is not evidence of absence; only an independent
-    read-back is. Returns the per-type absence, or None when nothing was owned.
+    read-back at each fixture's captured entity identity is. A fixture whose
+    identity was never captured cannot prove state absence and fails closed.
+    Returns the per-type absence, or None when nothing was owned.
     """
     if not owned:
         return None
-    for resource_type, target_id in owned:
-        status, _ = await rest.call("GET", config_route(resource_type, target_id))
+    for fixture in owned:
+        route = config_route(fixture["resource_type"], fixture["target_id"])
+        status, _ = await rest.call("GET", route)
         if status == 200:
-            await rest.ok("DELETE", config_route(resource_type, target_id))
+            await rest.ok("DELETE", route)
     absence = dict.fromkeys(FIXTURE_ABSENCE, True)
-    for resource_type, target_id in owned:
+    for fixture in owned:
+        resource_type, target_id = fixture["resource_type"], fixture["target_id"]
+        if fixture["entity_id"] is None:
+            absence["states"] = False
+            status, _ = await rest.call("GET", config_route(resource_type, target_id))
+            absence[resource_type + "_config"] &= status == 404
+            absence["registry_entries"] &= not [
+                item for item in await raw.ok({"type": REGISTRY_LIST})
+                if item.get("platform") == resource_type and item.get("unique_id") == target_id]
+            continue
         for _ in range(attempts):
-            readback, _config = await independent_readback(rest, raw, resource_type, target_id)
+            readback, _config = await independent_readback(
+                rest, raw, resource_type, target_id, fixture["entity_id"])
             if _absent(readback):
                 break
             await asyncio.sleep(delay)
@@ -277,7 +357,7 @@ async def run_disposable(configured, *, expected_image, core_version):
     stage = ["binding"]
     try:
         if not enabled():
-            raise ValueError("Seq-13 lanes are defined but not wired")
+            raise ValueError("Seq-13 lanes are dormant")
         return await _run_disposable(configured, expected_image=expected_image,
                                      core_version=core_version, stage=stage)
     except Exception as exc:
@@ -474,18 +554,45 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
             return operation["dry_run_results"]["configuration_delete"]
 
         async def create_fixture(resource_type, target_id, config):
-            owned.append((resource_type, target_id))
+            """Create one fixture and capture Core's registered entity identity."""
+            fixture = {"resource_type": resource_type, "target_id": target_id, "entity_id": None}
+            owned.append(fixture)
             await rest.ok("POST", config_route(resource_type, target_id), config)
             for _ in range(100):
-                readback, stored = await independent_readback(rest, raw, resource_type, target_id)
-                if readback["config_status"] == 200 and readback["registry_entry"] and readback["state_status"] == 200:
-                    return readback, stored
+                registered = [item.get("entity_id") for item in await raw.ok({"type": REGISTRY_LIST})
+                              if item.get("platform") == resource_type and item.get("unique_id") == target_id]
+                assert len(registered) <= 1
+                if registered:
+                    readback, stored = await independent_readback(
+                        rest, raw, resource_type, target_id, registered[0])
+                    if (readback["config_status"] == 200 and readback["registry_entry"]
+                            and readback["state_status"] == 200):
+                        fixture["entity_id"] = readback["entity_id"]
+                        return readback, stored
                 await asyncio.sleep(0.1)
             raise AssertionError("Synthetic fixture did not appear")
 
+        def captured(resource_type, target_id):
+            (fixture,) = [item for item in owned
+                          if (item["resource_type"], item["target_id"]) == (resource_type, target_id)]
+            assert entity_of(resource_type, fixture["entity_id"])
+            return fixture["entity_id"]
+
+        def scenario_writes(start, checks, resource_type, target_id):
+            """Methods, count, config checks and route binding since ``start``."""
+            route = str(config_route(resource_type, target_id))
+            return {"write_methods": engineering_rest.writes[start:],
+                    "ha_writes": len(engineering_rest.writes) - start,
+                    "write_routes_bound": all(item == route for item in engineering_rest.write_routes[start:]),
+                    "config_checks": engineering_rest.config_checks - checks}
+
         async def governed_delete(runtime, service, resource_type, target_id):
-            before, pre_image = await independent_readback(rest, raw, resource_type, target_id)
-            writes = len(engineering_rest.writes)
+            # The identity is captured from the registry before the delete;
+            # absence is then proven for exactly that entity ID.
+            entity_id = captured(resource_type, target_id)
+            before, pre_image = await independent_readback(rest, raw, resource_type, target_id, entity_id)
+            assert before["registry_entity_id"] == entity_id
+            writes, checks = len(engineering_rest.writes), engineering_rest.config_checks
             created, _ = await plan(runtime, service, {
                 "deletions": [{"resource_type": resource_type, "target_id": target_id}],
                 "reason": "HAMCP-155 disposable lane"})
@@ -493,10 +600,9 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
             shown = disclosure(created)
             applied = await approve_apply(service, created)
             counts, codes = children(service, applied["task_id"])
-            readback, _config = await independent_readback(rest, raw, resource_type, target_id)
+            readback, _config = await independent_readback(rest, raw, resource_type, target_id, entity_id)
             value = {"result": "PASS", "task_state": applied["task_state"], "dispatch_counts": counts,
-                     "write_methods": engineering_rest.writes[writes:],
-                     "ha_writes": len(engineering_rest.writes) - writes,
+                     **scenario_writes(writes, checks, resource_type, target_id), "entity_id": entity_id,
                      "protected": shown["protection"]["protected"],
                      "risk_level": str(created.get("risk_level", "")).lower(),
                      "preflight_present": before["config_status"] == 200 and before["registry_entry"] is not None
@@ -504,23 +610,24 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
             return value, created, pre_image, before
 
         async def governed_recreate(runtime, service, created, resource_type, target_id, pre_image, before):
-            writes = len(engineering_rest.writes)
+            writes, checks = len(engineering_rest.writes), engineering_rest.config_checks
             rolled = await rollback(service, created["plan_id"])
             recreate = service.get_plan(rolled["rollback_plan_id"])
             applied = await approve_apply(service, recreate)
             counts, _codes = children(service, applied["task_id"])
             for _ in range(100):
-                readback, stored = await independent_readback(rest, raw, resource_type, target_id)
+                readback, stored = await independent_readback(
+                    rest, raw, resource_type, target_id, before["entity_id"])
                 if readback["state_status"] == 200:
                     break
                 await asyncio.sleep(0.1)
             return {"result": "PASS", "rollback_status": rolled["status"],
                     "rollback_dispatched_on_create": rolled["provider_dispatch_occurred"],
                     "operations_excluded": rolled["operations_excluded"], "task_state": applied["task_state"],
-                    "dispatch_counts": counts, "write_methods": engineering_rest.writes[writes:],
-                    "ha_writes": len(engineering_rest.writes) - writes,
-                    "config_matches_pre_image": stored == pre_image,
+                    "dispatch_counts": counts, **scenario_writes(writes, checks, resource_type, target_id),
+                    "config_matches_pre_image": stored == pre_image, "entity_id": before["entity_id"],
                     "registry_entry_id_restored": readback["registry_entry"] == before["registry_entry"],
+                    "entity_id_restored": readback["registry_entity_id"] == before["entity_id"],
                     "state_present": readback["state_status"] == 200}
 
         dependency_runtime = DependencyAnalysisRuntime()
@@ -620,7 +727,8 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                 await rest.ok("POST", config_route("automation", stale_id), drifted)
                 applied = await approve_apply(service, created)
                 counts, codes = children(service, applied["task_id"])
-                readback, stored = await independent_readback(rest, raw, "automation", stale_id)
+                readback, stored = await independent_readback(
+                    rest, raw, "automation", stale_id, captured("automation", stale_id))
                 scenarios["stale_state"] = {
                     "result": "PASS", "task_state": applied["task_state"], "dispatch_counts": counts,
                     "codes": codes, "ha_writes": len(engineering_rest.writes) - writes,

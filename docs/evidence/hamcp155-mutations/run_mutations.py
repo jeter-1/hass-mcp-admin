@@ -3,6 +3,9 @@
 Groups follow the four HAMCP-165 review lessons (admission at every layer,
 drift at dispatch, evidence/readback, protected effects) plus rollback,
 the no-default expected effect and the executor pre-intent refusal.
+Review 1 adds M3 (entry admission before persistence), M1 (captured entity
+identity), M2 (bounded config-check allowlist) and the dormant wiring. A path
+starting with "/" is repository-relative; every other path is under RT.
 """
 import concurrent.futures, json, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
@@ -17,6 +20,8 @@ ALL = [
     'tests.test_hamcp155_configuration_delete_admission',
     'tests.test_hamcp155_configuration_delete_policy',
     'tests.test_hamcp155_configuration_delete_lane',
+    'tests.test_hamcp155_review1_probes',
+    'tests.test_hamcp069b_review1_corrections',
 ]
 S = 'governance/service.py'
 D = 'f3_configuration/delete.py'
@@ -27,6 +32,10 @@ PE = 'governance/physical_effects.py'
 PO = 'governance/policy.py'
 RU = 'f3_runtime/runtime.py'
 EXE = 'f3/executor.py'
+RO = 'ha_core_readmission/routes.py'
+LN = '/scripts/configuration_delete_contract_acceptance.py'
+AL = '/scripts/alarmo_inspection_contract_acceptance.py'
+HN = '/scripts/real_ha_contract_tests.py'
 M = [
  ('baseline', []),
  # Lesson 1: admission at every layer.
@@ -132,6 +141,64 @@ M = [
  ('gw_generic_write_deletes',
   [('governance/resources.py', '        raise ValueError("action must be create or update")',
     '        return await self.configuration_delete.delete(resource_type, resource_id)')]),
+ # Review 1 M3: an unadmitted first apply refuses before any persistence.
+ ('m3_entry_refusal_removed',
+  [(RU, '        if existing is None:\n            self._refuse_unadmitted_entry(plan)\n',
+        '        if existing is None:\n')]),
+ ('m3_entry_delete_profile_dropped',
+  [(RO, '    {AVAILABILITY_PROFILE, EXPOSURE_PROFILE, CONFIGURATION_DELETE_PROFILE}\n)',
+        '    {AVAILABILITY_PROFILE, EXPOSURE_PROFILE}\n)')]),
+ ('m3_entry_availability_profile_dropped',
+  [(RO, '    {AVAILABILITY_PROFILE, EXPOSURE_PROFILE, CONFIGURATION_DELETE_PROFILE}\n)',
+        '    {EXPOSURE_PROFILE, CONFIGURATION_DELETE_PROFILE}\n)')]),
+ ('m3_entry_status_ignored',
+  [(RU, '                    core is not None\n                    and core.route_status((profile,)).get("available") is True',
+        '                    True')]),
+ # Review 1 M1: absence is proven at the entity identity captured before the delete.
+ ('m1_absent_ignores_entity_identity',
+  [(LN, '            and type(readback["entity_id"]) is str\n            and entity_of(readback["entity_id"].split(".", 1)[0], readback["entity_id"]))',
+        '            )')]),
+ ('m1_absent_ignores_registry_identity',
+  [(LN, '            and readback["registry_entity_id"] is None and readback["state_status"] == 404',
+        '            and readback["state_status"] == 404')]),
+ ('m1_state_route_guesses',
+  [(LN, '    return rest_path("/states/{}", entity_id, kinds=("entity_id",))',
+        '    return rest_path("/states/{}", entity_id.split(".", 1)[0] + "." + "hamcp155_guessed", kinds=("entity_id",))')]),
+ ('m1_readback_guesses_without_capture',
+  [(LN, '        if registered is None:\n            raise ValueError("No captured or registered entity identity to read back")',
+        '        if registered is None:\n            registered = resource_type + "." + target_id')]),
+ ('m1_readback_identity_unbound',
+  [(LN, '        assert value["readback"]["entity_id"] == value["entity_id"]\n', '')]),
+ ('m1_recreate_identity_unbound',
+  [(LN, '        assert (scenarios["recreate_" + resource_type]["entity_id"]\n                == scenarios["delete_" + resource_type]["entity_id"])',
+        '        pass')]),
+ # Review 1 M2: only the exact config check is allowlisted, and it is bounded.
+ ('m2_config_check_counted_as_write',
+  [(LN, '        if (method, str(path)) == CHECK_CONFIG:', '        if False:')]),
+ ('m2_any_post_allowlisted',
+  [(LN, '        if (method, str(path)) == CHECK_CONFIG:', '        if method == "POST":')]),
+ ('m2_recreate_checks_unbounded',
+  [(LN, '        assert value["config_checks"] == RECREATE_CONFIG_CHECKS\n', '')]),
+ ('m2_delete_checks_unbounded',
+  [(LN, '        assert value["write_routes_bound"] is True and value["config_checks"] == 0\n',
+        '        assert value["write_routes_bound"] is True\n')]),
+ # Review 1 wiring: dormant never runs; enabled must pass and be retained.
+ ('wr_harness_runs_while_dormant',
+  [(HN, '            if os.environ.get("REAL_HA_SEQ13_LANES") == "enabled":\n                import configuration_delete_contract_acceptance',
+        '            if True:\n                import configuration_delete_contract_acceptance')]),
+ ('wr_harness_failure_tolerated',
+  [(HN, '                if seq13_results["seq13_configuration_delete"].get("result") != "PASS":',
+        '                if False:')]),
+ ('wr_harness_receipt_not_retained',
+  [(HN, '            retained.update(seq13_results)\n', '')]),
+ ('wr_cleanup_enabled_check_bypassed',
+  [(AL, '    if key not in value or standalone is None or not Path(standalone).is_file():\n        raise ValueError("Required seq-13 configuration delete receipt missing")',
+        '    if key not in value:\n        return {}')]),
+ ('wr_cleanup_byte_identity_unchecked',
+  [(AL, '    if Path(standalone).read_bytes() != canonical:', '    if False:')]),
+ ('wr_cleanup_dormant_receipt_accepted',
+  [(AL, '        if key in value:\n            raise ValueError("Seq-13 configuration delete receipt retained while dormant")',
+        '        if False:\n            raise ValueError("Seq-13 configuration delete receipt retained while dormant")')]),
 ]
 only = set(sys.argv[1:])
 if only:
@@ -151,7 +218,7 @@ def run(case):
         for args in (['init', '-q'], ['add', '-A'], ['commit', '-q', '-m', 'unmutated']):
             subprocess.run([*git, *args], cwd=dest, check=True, stdout=subprocess.DEVNULL)
         for f, old, new in edits:
-            p = dest / RT / f
+            p = dest / f[1:] if f.startswith('/') else dest / RT / f
             s = p.read_text()
             assert s.count(old) == 1, (name, f, s.count(old))
             p.write_text(s.replace(old, new))
@@ -178,7 +245,7 @@ def run(case):
 # Validate every anchor before running anything.
 for name, edits in M:
     for f, old, _new in edits:
-        n = (SRC / RT / f).read_text().count(old)
+        n = (SRC / f[1:] if f.startswith('/') else SRC / RT / f).read_text().count(old)
         assert n == 1, (name, f, n)
 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
     rows = list(pool.map(run, M))

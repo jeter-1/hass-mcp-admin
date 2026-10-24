@@ -24,6 +24,7 @@ from ..f3.executor import (
 )
 from ..ha_core_readmission.routes import (
     CORE_REQUIREMENT_UNMAPPED,
+    f3_entry_admission_profiles,
     f3_requirements,
 )
 from ..f3.contracts import (
@@ -278,6 +279,13 @@ def _operator_cancelled(record: Any) -> bool:
             for event in record.events
         )
     )
+
+
+def _configuration_capability(operation: Any) -> str:
+    """The contract-v2 F3 capability identity of one plan operation."""
+
+    resource = operation.helper_type or operation.resource_type
+    return f"{operation.action}_{resource}_configuration"
 
 
 def _refuse_unmapped_f3_operation(prepared: object) -> None:
@@ -1997,8 +2005,7 @@ class F3RuntimeIntegration:
         if plan.contract_version == 2:
             prepared = []
             for operation in sorted(plan.operations, key=lambda item: item.order):
-                resource = operation.helper_type or operation.resource_type
-                capability = f"{operation.action}_{resource}_configuration"
+                capability = _configuration_capability(operation)
                 adapter = self.registry.adapter(capability)
                 proposal = proposal_from_configuration_operation(
                     plan,
@@ -3271,9 +3278,44 @@ class F3RuntimeIntegration:
             # do not turn a rejected plan into a restart-required global outage.
             raise
 
+    def _refuse_unadmitted_entry(self, plan: Any) -> None:
+        """HAMCP-155 M3: refuse an unadmitted first apply before persistence.
+
+        A runtime-only profile that Core does not currently admit refuses
+        here, before the task, child, lock or plan stores change and before
+        any Home Assistant request.  The dispatch-time guard still applies.
+        """
+
+        if plan.contract_version != 2:
+            return
+        profiles = f3_entry_admission_profiles(
+            _configuration_capability(operation) for operation in plan.operations
+        )
+        core = self.core_runtime
+        for profile in profiles:
+            try:
+                available = (
+                    core is not None
+                    and core.route_status((profile,)).get("available") is True
+                )
+            except Exception:
+                available = False
+            if not available:
+                raise GovernanceError(
+                    ErrorCode.PROVIDER_UNAVAILABLE,
+                    details={
+                        "reason": "pending_signed_registry_admission",
+                        "reason_code": "pending_signed_registry_admission",
+                        "core_capability": profile,
+                        "execution_state_persisted": False,
+                        "provider_dispatch_occurred": False,
+                    },
+                )
+
     async def _apply(self, plan: Any, expected_plan_hash: str) -> dict[str, Any]:
         existing = self.service.task_repository.get_for_plan(plan.plan_id)
         if existing is None:
+            self._refuse_unadmitted_entry(plan)
             try:
                 task, prepared, requests = await self._initialize(
                     plan, expected_plan_hash

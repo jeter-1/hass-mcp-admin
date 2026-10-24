@@ -597,20 +597,40 @@ class DispatchAdmissionTests(ConfigurationDeleteServiceTestCase):
         self.assertIn("porch_light", self.config_rest.configs["automation"])
         self.assertIn("automation.porch_light", self.ws.entries)
 
+    async def assert_entry_refused(self, created: dict) -> None:
+        """M3: an unadmitted first apply refuses before any persistence."""
+
+        reads = self.reads()
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(raised.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+        self.assertEqual(raised.exception.details["reason_code"], PENDING)
+        self.assertEqual(raised.exception.details["core_capability"], DELETE)
+        self.assertIs(raised.exception.details["provider_dispatch_occurred"], False)
+        self.assertIsNone(
+            self.service.task_repository.get_for_plan(created["plan_id"])
+        )
+        self.assertEqual(self.reads(), reads)
+        self.assert_not_deleted()
+
     async def test_admission_withdrawn_after_approval(self):
         created = await self.approved_plan()
         self.core.withdraw()
-        result = await self.apply(created)
-        self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
-        self.assertIs(result["provider_dispatch_occurred"], False)
-        self.assert_not_deleted()
+        await self.assert_entry_refused(created)
 
     async def test_adapter_refuses_at_preflight_while_the_lease_holds(self):
         self.core = RouteWithdrawnCore(self.core.admitted)
         await self.restart_runtime()
         created = await self.approved_plan()
         gets = dict(self.config_rest.config_gets)
-        self.core.route_withdrawn = True
+        entry = self.runtime._refuse_unadmitted_entry
+
+        def withdraw_after_entry(plan):
+            # The entry check passed; withdraw before the adapter preflight.
+            entry(plan)
+            self.core.route_withdrawn = True
+
+        self.runtime._refuse_unadmitted_entry = withdraw_after_entry
         result = await self.apply(created)
         self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
         self.assertIn("core_admission_unavailable", self.child_codes(result["task_id"]))
@@ -700,18 +720,14 @@ class DispatchAdmissionTests(ConfigurationDeleteServiceTestCase):
     async def test_f3_composed_without_core_never_deletes(self):
         created = await self.approved_plan()
         self.runtime.core_runtime = None
-        result = await self.apply(created)
-        self.assertNotEqual(result.get("task_state"), "succeeded_verified", result)
-        self.assertIs(result["provider_dispatch_occurred"], False)
-        self.assert_not_deleted()
+        await self.assert_entry_refused(created)
 
     async def test_retained_approved_plan_after_restart_never_deletes(self):
         created = await self.approved_plan()
         self.core.withdraw()
         await self.restart_runtime()
         await self.runtime.recover_once("synthetic_restart")
-        result = await self.apply(created)
-        self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
+        await self.assert_entry_refused(created)
         await self.restart_runtime()
         await self.runtime.recover_once("synthetic_restart")
         self.assert_not_deleted()
