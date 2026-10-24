@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.4.1-beta.33 - Governed deletion of automations and scripts, inactive (HAMCP-155)
+## 2.4.1-beta.35 - Governed deletion of automations and scripts, inactive (HAMCP-155)
 
-Builds on 2.4.1-beta.32. Activates nothing new.
+Builds on 2.4.1-beta.34. Activates nothing new.
 
 - New tool `create_configuration_delete_plan` (1-8 automation or script
   deletions) and runtime-only Core profile
@@ -28,8 +28,136 @@ Builds on 2.4.1-beta.32. Activates nothing new.
   outcome is unchanged for every adapter.
 - Dormant seq-13 delete acceptance lane
   `scripts/configuration_delete_contract_acceptance.py`, not wired.
-- No signed profile, signed registry, workflow, permission, add-on
-  configuration, dependency or stable-v1 file changes; catalog 94 (95).
+- Delete-lane dormant steps join the existing `REAL_HA_SEQ13_LANES` gate in
+  `ci.yml`; no signed profile, signed registry, permission, add-on
+  configuration, dependency or stable-v1 file changes; static tools 68,
+  catalog 96 (97).
+
+## 2.4.1-beta.34 - Label create, edit and assignment, inactive (HAMCP-165)
+
+Builds on 2.4.1-beta.33.
+
+- Add `create_label_plan`. It proposes 1-8 ordered `create` or `update`
+  operations over a label's `name`, `color` (theme colour or `#RRGGBB`),
+  `icon` and `description`. Each may assign the label to exact registered
+  entities through the signed HAMCP-069A path. Labels are never deleted.
+- Resource type `label_registry_entry`: `config/label_registry/create` or
+  `config/label_registry/update`, each verified by exact
+  `config/label_registry/list` readback. Duplicate names, slug collisions,
+  unknown labels and no-op edits are refused before a plan is stored; stale
+  state and namespace changes are refused before each write. Rollback is
+  refused (a corrective edit is a new plan).
+- New runtime-only Core profile `core.label_registry_operation`
+  (`sha256:b2f0dd11ff243aa2559c27738d962785e37455d37b836cb5a6997aeabb26813c`).
+  The signed registry (sequence 12) does not reference it, so every call is
+  refused with `CoreCapabilityUnavailable` /
+  `pending_signed_registry_admission`, admission checked first at the
+  service layer. Activates nothing new; switches on with the sequence-13
+  signing.
+- Review1 (H1): F3 re-checks Core admission of a dormant profile (labels and
+  both 069B resource types) before every read and write, including a retained
+  approved plan, recovery and private read-only reconciliation. No Core, a
+  Core that cannot report status, or an unadmitted profile refuses with
+  `core_authority_unavailable` or `pending_signed_registry_admission` and
+  sends no Home Assistant command. Before this, an F3 runtime composed
+  without Core would run a retained approved 069B plan in the legacy no-Core
+  mode.
+  The lowest configuration builder, including generic
+  `create_configuration_plan` routing, refuses an unadmitted profile before
+  any read or store (M1); the final pre-dispatch label read refuses any drift
+  of the exact target as `stale_target_state` (M3).
+- Entry admission (HAMCP-155 review finding, same pattern): an unadmitted
+  first apply of a label or 069B plan refuses with `provider_unavailable`
+  (`pending_signed_registry_admission` or `core_authority_unavailable`)
+  before any persistence. The plan, task, child, manifest and lock stores
+  stay byte-identical and no Home Assistant request is made, on every path:
+  F3 with a withdrawn profile, F3 without Core, a Core that cannot report
+  status, and a service with no F3 runtime (which used to read the registry
+  and store a task before failing). The dispatch gate stays as the second
+  barrier.
+- HAMCP-069B: the two dormant profiles name `websocket_entity_registry_list`
+  and `websocket_expose_new_entities_get`, the reads their gateway sends.
+  New fingerprints: availability
+  `sha256:ae292fbc16ad82c8d8347b7e2eb1c3a7e8c7644d95783f5bf2ae9f9cc63a76b2`,
+  exposure
+  `sha256:474c8ccaaae83c12f56a2848995ff089097936568a2ad5dc8d25ce855d51dbbd`.
+- CI: dormant seq-13 evidence lanes for 165 and 069B
+  (`REAL_HA_SEQ13_LANES: dormant`); no existing step changes.
+- Catalog: 67 static tools plus 28 delegated reads, 95 total (96 with the
+  optional YAML reader). No existing descriptor, schema, permission, signed
+  registry entry or signed fingerprint, or stable-v1 file changes.
+
+## 2.4.1-beta.33 - Configuration definitions (HAMCP-132 slice 2)
+
+Builds on 2.4.1-beta.32.
+
+- Add the read-only `get_configuration_definitions` tool for up to 50
+  `entity_ids` and/or whole `integrations` from template, sql, filter,
+  derivative, statistics, group, integration, min_max, history_stats,
+  threshold, trend and utility_meter.
+- Project each `configuration.yaml` definition through a positive
+  per-integration allowlist. The admitted YAML reader is used through a new
+  fixed gateway purpose, `configuration_definitions`, with eight paths.
+  `db_url`, credential keys, credential URIs in text and `!secret`/`!env_var`
+  names are withheld in every position. Unrecognized keys are counted only.
+- Match entities to definitions:
+  - `exact_config_entry` (UI-defined: `definition_not_readable_without_flow`);
+  - `exact_unique_id`;
+  - `heuristic`, with `high`, `medium` or `low` confidence;
+  - `ambiguous` (never resolved);
+  - `unmatched` or `not_applicable`.
+- Diagnose unavailability from Core's signals: disabled, config entry, or
+  platform or integration not loaded, dependency unavailable, transient,
+  entity level, not found or undetermined. Report the `ha_mcp_tools`
+  component from Core's own reads only; its commands are not used (owner
+  decision, 2026-10-21).
+- Disclose `!include`, packages and labelled keys without following them. Any
+  unreadable source, trim or redaction makes the report partial. The complete
+  envelope is sanitized once with the known secrets.
+- Corrections from the independent review: credential text is withheld from
+  every string of the final report, config entry titles included (H1);
+  ambiguity rules are identical from both sides (M1); a unique ID YAML 1.1
+  could read differently is never exact (M2); a YAML source gap or an
+  unchecked UI or template definition is `undetermined` (M3); a malformed
+  source value invalidates only its item (M4).
+- Corrections from the delta review: a config entry title is checked whole
+  before any truncation and shown only through a printable-ASCII allowlist,
+  so an ordinary non-ASCII title is withheld as `[withheld:unverifiable_text]`
+  by design (H1, H2); YAML-projected text is screened through a bounded
+  confusable fold (H2); an unexpanded template blueprint is a definition gap
+  (M3); a malformed registry identity is `invalid_response` and never
+  matched, while `null` stays a legitimate absence (M4).
+- Corrections from the second delta review: a YAML-projected string or key
+  with an invisible, format or control character, literal or
+  percent-encoded, is withheld whole as `[withheld:unverifiable_text]`, never
+  screened and shown (R2-H1); any withheld form anywhere in the final report
+  makes it partial, naming each affected item (`withheld:definitions[3]`)
+  (R2-M1).
+- Correction from the final32 review (correction batch 4): every
+  YAML-projected string is also screened with all whitespace and line-control
+  characters removed, so a tab, line feed, carriage return or space inside a
+  credential, literal or percent-encoded, withholds the whole value (partial).
+  Ordinary multi-line templates stay shown and complete; text with a colon
+  then `@` and no `/` between is withheld by design.
+- Owner decision (Josh, 2026-10-22): a SQL definition's own `db_url` is a
+  fixed policy redaction, not missing evidence. It is reported as
+  `{"redacted_by_policy": "database_url"}` and, through an explicit
+  allowlist inside the same final-envelope scan (SQL `fields.db_url` only),
+  leaves the report complete. Every other withholding is still partial.
+- Owner decision (Josh, 2026-10-22): nothing is derived from a withheld
+  input. A withheld name, default-name input or key derives no entity ID
+  (`derived_entity_id_withheld`); a withheld unique_id input generates no
+  unique ID (`unique_id_withheld`); a withheld dependency value is not read
+  (`dependencies_withheld`, diagnosis `undetermined`); a withheld key is not
+  in the definition ID; a withheld legacy name is never a candidate. Each is
+  listed as withheld, so the report is partial.
+- Owner decision (Josh, 2026-10-22): the Core-observed entity ID of an exact
+  registry match is Core's data and is not withheld. An entity that Home
+  Assistant itself named from a credential-bearing string shows that entity
+  ID (disclosed limitation; rename the entity in Home Assistant).
+- Catalog: 66 static tools, 94 advertised (95 with the optional YAML reader).
+  No existing descriptor, schema, stored format, dependency or workflow
+  changes.
 
 ## 2.4.1-beta.32 - Incident-log entry times (HAMCP-220)
 

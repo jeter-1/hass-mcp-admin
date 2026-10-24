@@ -489,6 +489,7 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
                 "get_backup_inventory",
                 "get_recorder_settings",
                 "get_unregistered_entities",
+                "get_configuration_definitions",
                 "get_incident_logs",
                 "get_history_slices",
                 "dashboard_integrity_analysis",
@@ -506,6 +507,7 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
                 "create_helper_state_plan",
                 "create_entity_metadata_plan",
                 "create_entity_availability_exposure_plan",
+                "create_label_plan",
                 "create_configuration_delete_plan",
                 "get_execution_task",
                 "list_execution_tasks",
@@ -517,9 +519,9 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
         }
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), F2_PUBLIC_SCHEMA_SHA256)
-        self.assertEqual(len(tools), 66)
+        self.assertEqual(len(tools), 68)
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 66)
+        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 68)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

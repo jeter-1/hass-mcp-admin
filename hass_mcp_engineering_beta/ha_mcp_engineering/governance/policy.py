@@ -39,6 +39,15 @@ from .entity_availability_exposure_planning import (
     MAX_ENTITIES as AVAILABILITY_EXPOSURE_MAX_ENTITIES,
     POLICY_TRIGGER as AVAILABILITY_EXPOSURE_POLICY_TRIGGER,
 )
+from .label_registry import (
+    BINDINGS_KEY as LABEL_BINDINGS_KEY,
+    LABEL_RESOURCE_TYPE,
+    proposed_errors as label_proposed_errors,
+)
+from .label_registry_planning import (
+    MAX_CHILDREN as LABEL_MAX_CHILDREN,
+    POLICY_TRIGGER as LABEL_POLICY_TRIGGER,
+)
 from .configuration_delete import (
     ACTION as CONFIGURATION_DELETE_ACTION,
     INTENT_KEY as CONFIGURATION_DELETE_INTENT_KEY,
@@ -816,6 +825,104 @@ def _availability_exposure_plan_complete(operations) -> bool:
     return True
 
 
+LABEL_REGISTRY_INCOMPLETE = "label_registry_execution_contract_incomplete"
+
+
+def _label_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one label create or edit (HAMCP-165 design §7).
+
+    A label is registry metadata with no device effect: a complete child is
+    always standard.  Any gap in the bound contract is prohibited.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (LABEL_REGISTRY_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict) and item.get("trigger") == LABEL_POLICY_TRIGGER
+    ]
+    if (
+        operation.action not in ("create", "update")
+        or operation.helper_type is not None
+        or label_proposed_errors(operation.target_id, operation.proposed_config)
+        or operation.proposed_config[LABEL_BINDINGS_KEY]["operation"]
+        != operation.action
+        or (operation.action == "create") != (operation.current_config is None)
+        or not isinstance(operation.current_state_fingerprint, str)
+        or len(operation.current_state_fingerprint) != 64
+        or not isinstance(operation.proposed_config_hash, str)
+        or len(operation.proposed_config_hash) != 64
+        or operation.risk.apply_allowed is not True
+        or operation.risk.level is not RiskLevel.LOW
+        or len(markers_found) != 1
+    ):
+        return incomplete
+    marker = markers_found[0]
+    if (
+        marker.get("policy") != "standard"
+        or marker.get("physical_consequence") != PhysicalConsequence.NONE.value
+        or marker.get("basis") != ""
+        or marker.get("operation") != operation.action
+    ):
+        return incomplete
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.STANDARD_ADMIN,
+        RiskDelta.LOW,
+        PhysicalConsequence.NONE,
+        ("label_registry_standard_policy", "supported_configuration_change"),
+    )
+
+
+def _label_plan_complete(operations) -> bool:
+    """Design §7: label children first, then entity assignment children.
+
+    At most 8 children; every target unique; each assignment depends only
+    on label children of this plan and adds no label it does not depend on.
+    """
+
+    if not 1 <= len(operations) <= LABEL_MAX_CHILDREN:
+        return False
+    kinds = [op.resource_type for op in operations]
+    if not set(kinds) <= {LABEL_RESOURCE_TYPE, ENTITY_METADATA_RESOURCE_TYPE}:
+        return False
+    labels = [op for op in operations if op.resource_type == LABEL_RESOURCE_TYPE]
+    if not labels or kinds != sorted(
+        kinds, key=lambda kind: kind != LABEL_RESOURCE_TYPE
+    ):
+        return False
+    label_targets = {op.operation_id: op.target_id for op in labels}
+    if len(set(label_targets.values())) != len(labels) or any(
+        op.depends_on for op in labels
+    ):
+        return False
+    entities = [op for op in operations if op.resource_type != LABEL_RESOURCE_TYPE]
+    if len({op.target_id for op in entities}) != len(entities):
+        return False
+    for op in entities:
+        if (
+            op.action != "update"
+            or not op.depends_on
+            or len(set(op.depends_on)) != len(op.depends_on)
+            or not set(op.depends_on) <= set(label_targets)
+            or not isinstance(op.current_config, dict)
+            or not isinstance(op.proposed_config, dict)
+        ):
+            return False
+        current = set(op.current_config.get("labels") or [])
+        final = set(op.proposed_config.get("labels") or [])
+        depended = {label_targets[item] for item in op.depends_on}
+        if not final - current or not final - current <= depended <= final:
+            return False
+    return True
+
+
 CONFIGURATION_DELETE_INCOMPLETE = "configuration_delete_contract_incomplete"
 
 
@@ -978,6 +1085,8 @@ def configuration_operation_policy(
     """
     if operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE:
         return _entity_metadata_operation_policy(operation)
+    if operation.resource_type == LABEL_RESOURCE_TYPE:
+        return _label_operation_policy(operation)
     if operation.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
         return _availability_exposure_operation_policy(operation)
     if operation.action == CONFIGURATION_DELETE_ACTION:
@@ -1378,7 +1487,21 @@ def _single_plan_policy(
                     ("unknown_policy_classification",),
                 ),
             )
-        if len(plan.operations) != 1 and any(
+        if any(
+            op.resource_type == LABEL_RESOURCE_TYPE for op in plan.operations
+        ):
+            if not _label_plan_complete(plan.operations):
+                # HAMCP-165: only a complete label plan holds label children
+                # or relaxes the single-operation entity metadata rule.
+                return (
+                    OperationPolicyClassification(
+                        ApprovalPolicyClass.PROHIBITED,
+                        RiskDelta.CRITICAL,
+                        PhysicalConsequence.UNKNOWN,
+                        (LABEL_REGISTRY_INCOMPLETE,),
+                    ),
+                )
+        elif len(plan.operations) != 1 and any(
             op.resource_type == ENTITY_METADATA_RESOURCE_TYPE
             for op in plan.operations
         ):

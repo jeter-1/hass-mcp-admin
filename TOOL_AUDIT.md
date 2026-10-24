@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-## Automation and script deletion, inactive (2.4.1-beta.33, HAMCP-155)
+## Automation and script deletion, inactive (2.4.1-beta.35, HAMCP-155)
 
 `create_configuration_delete_plan` is a native governed planning tool:
 `engineering_native` routing, governed configuration, no delegated provider,
@@ -21,9 +21,118 @@ per child, sent by the dedicated gateway method; the generic configuration
 write and `create_configuration_plan` still refuse `delete`, legacy
 `delete_automation` stays prohibited and upstream `ha_config_remove_*` stays
 unrouted. Verification is proof of absence; rollback recreates the exact
-pre-image under a new approved plan. The catalog is 66 static + 28
-delegated = 94 (95 with the optional YAML reader). See
+pre-image under a new approved plan. The catalog is 68 static + 28
+delegated = 96 (97 with the optional YAML reader). See
 [HAMCP_155_GOVERNED_DELETION_DESIGN.md](docs/HAMCP_155_GOVERNED_DELETION_DESIGN.md).
+
+## Label create, edit and assignment, inactive (2.4.1-beta.34, HAMCP-165)
+
+`create_label_plan` is a native governed planning tool: `engineering_native`
+routing, no delegated provider, no fallback. It only creates a plan; dispatch
+is the existing external approval plus `apply_change_plan`. 1-8 ordered
+`create` or `update` operations over a label's `name`, `color`, `icon` and
+`description`, each optionally assigning the label to exact registered
+entities through the signed HAMCP-069A `entity_registry_metadata` path.
+Labels are never deleted (HAMCP-155).
+
+Its resource type `label_registry_entry` requires the runtime-only Core
+profile `core.label_registry_operation`, which the signed registry
+(sequence 12) does not reference. Every call is refused with
+`CoreCapabilityUnavailable` / `pending_signed_registry_admission`, with no
+plan stored and no provider contact; the governance service checks admission
+first. Capabilities and health show the same status. The release activates
+nothing new; it switches on with the sequence-13 signing. The catalog is 67
+static + 28 delegated = 95 (96 with the optional YAML reader). See
+[HAMCP_165_LABELS_DESIGN.md](docs/HAMCP_165_LABELS_DESIGN.md).
+
+## Read-only configuration definitions (2.4.1-beta.33, HAMCP-132 slice 2)
+
+`get_configuration_definitions` is native read-only evidence:
+`engineering_native` routing, `risk=read`, policy
+`configuration_definitions_read_v1`, no fallback.
+
+For up to 50 entity IDs and/or whole integrations from a closed set of twelve,
+it reads:
+- `configuration.yaml` paths `template`, `sql`, `group`, `utility_meter`,
+  `sensor` and `binary_sensor`, only those the request needs, plus
+  `homeassistant.packages` and, only to classify a missing packages key,
+  `homeassistant`. These go through the admitted YAML reader's new fixed
+  `configuration_definitions` gateway purpose: attributed, audited as
+  `configuration_definitions_yaml_read`, with no caller-selected path;
+- REST `GET /api/states` (availability only) and `GET /api/config`
+  (`components` only);
+- WebSocket `config/entity_registry/list` and `entity/source`;
+- `config_entries/get` for a closed domain;
+- `manifest/get` for `ha_mcp_tools`.
+
+It returns:
+- each definition as a positive allowlist projection;
+- the match method: `exact_config_entry`, `exact_unique_id`, `heuristic`
+  with `high`/`medium`/`low` confidence, `ambiguous`, `unmatched` or
+  `not_applicable`;
+- a per-entity unavailability diagnosis;
+- a Core-only capability block for the `ha_mcp_tools` component.
+
+What it never does:
+- return `db_url` (in any position), credential keys, credential URIs
+  inside text, reference names or unrecognized keys;
+- follow `!include`, packages or labelled keys (it discloses them and
+  reports partial);
+- read UI-created definitions. They are listed as
+  `definition_not_readable_without_flow`;
+- call any `ha_mcp_tools/*` command (owner decision, 2026-10-21).
+
+A unique ID that Home Assistant's YAML 1.1 loader could read differently is
+never an exact match, and ambiguity rules are identical from both sides.
+Diagnosis never claims `definition_absent` after a YAML source gap or
+`entity_level` without a dependency check, nor after an unexpanded template
+blueprint. A malformed source value, a malformed registry identity included,
+invalidates only its item and is never matched.
+
+Config entry titles are shown through an allowlist: the whole original title,
+never a truncated one, is shown only when it is printable ASCII within 255
+characters with no `@`, `://`, password-like `key=value`, known secret or
+credential text. Anything else is `[withheld:credential_text]` or
+`[withheld:unverifiable_text]` and the report is partial; an ordinary
+non-ASCII title is withheld by design.
+
+A YAML-projected string or key with an invisible, format or control
+character, literal or percent-encoded, is withheld whole as
+`[withheld:unverifiable_text]`, never screened and shown. Every other
+YAML-projected string is screened for credential text in two forms
+(correction batch 4): its canonical form and that form with every
+whitespace and line-control character removed, so whitespace inside a
+credential, literal or percent-encoded, cannot hide it. Either form matching
+withholds the original value whole as credential text. Tab, line feed and
+carriage return stay displayable, so an ordinary multi-line template is
+shown and the report stays complete. Any withheld form
+anywhere in the final envelope makes the report partial, with a bounded
+`withheld:<item>` omission per affected item. The one exception is a fixed
+policy redaction, not missing evidence (owner decision, Josh, 2026-10-22): a
+SQL definition's own `db_url` is always replaced with
+`{"redacted_by_policy": "database_url"}` and, through an explicit allowlist
+inside that same scan (SQL `fields.db_url` only), does not make the report
+partial. A `db_url` anywhere else, a credential in any other SQL field, or a
+policy-shaped value from configuration is still withheld and partial.
+Nothing is derived from a withheld input (owner decision, Josh,
+2026-10-22): a withheld name, key or unique_id input yields no derived entity
+ID, generated unique ID, dependency, definition-ID key or legacy candidate,
+and is listed as withheld, so the report is partial. The Core-observed entity
+ID of an exact registry match is Core's data and is not withheld (owner
+decision, 2026-10-22): an entity that Home Assistant itself named from a
+credential-bearing string shows that entity ID; rename the entity in Home
+Assistant.
+
+At a single exit point every key and string of the final envelope (titles,
+metadata, reasons, omissions included) is screened for credential text and
+withheld as `[withheld:credential_text]`, making the report partial (the
+checks read a bounded confusable fold of the canonical text); the
+envelope is then sanitized once, with the known secrets. It is mapped in the HAMCP-164 Core gate (`core.basic_rest_read`,
+`core.basic_websocket_read`, `core.non_device_registry_read`). Arguments are
+validated before the SDK, and the audit carries counts only. There is no
+write, reload, flow or service-call path and no new batch-allowlist shape.
+The catalog is 66 static + 28 delegated = 94 (95 with the optional YAML
+reader).
 
 ## Entity enable/disable and voice exposure, inactive (2.4.1-beta.31, HAMCP-069B)
 

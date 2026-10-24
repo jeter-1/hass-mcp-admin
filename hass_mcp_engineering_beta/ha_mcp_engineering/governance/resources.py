@@ -50,6 +50,8 @@ from .entity_availability_exposure import (
     RESOURCE_TYPES as AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
     EntityAvailabilityExposureGateway,
 )
+from . import label_registry
+from .label_registry import LABEL_RESOURCE_TYPE, LabelRegistryGateway
 
 
 RESOURCE_NORMALIZATION_VERSION = 2
@@ -61,6 +63,7 @@ SUPPORTED_RESOURCE_TYPES = frozenset(
         "input_number",
         ENTITY_METADATA_RESOURCE_TYPE,
         *AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
+        LABEL_RESOURCE_TYPE,
     }
 )
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
@@ -189,6 +192,10 @@ def validate_resource(
             resource_type, resource_id, proposed_config
         )
         warnings = []
+    elif resource_type == LABEL_RESOURCE_TYPE:
+        # HAMCP-165: the reviewed label fields plus the closed plan bindings.
+        errors = label_registry.proposed_errors(resource_id, proposed_config)
+        warnings = []
     else:
         errors = _validate_resource_id(resource_type, resource_id)
         warnings: list[str] = []
@@ -275,6 +282,8 @@ def normalize_resource_config(
         return normalize_entity_metadata_entry(config)
     if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
         return availability_exposure.normalize_entry(config)
+    if resource_type == LABEL_RESOURCE_TYPE:
+        return label_registry.normalize_entry(config)
     normalized = {
         key: value
         for key, value in config.items()
@@ -467,6 +476,8 @@ def compare_resource_verification(
             "disabled_by",
             "exposure",
             "options_guard",
+            "color",
+            "label_id",
         }
         mismatch_categories = tuple(
             sorted(
@@ -582,6 +593,8 @@ def resource_identity_matches(
     ):
         # The registry ``id`` is a UUID; identity is the exact entity_id.
         return config.get("entity_id") == resource_id
+    if resource_type == LABEL_RESOURCE_TYPE:
+        return config.get("label_id") == resource_id
     returned_id = config.get("id")
     if resource_type in SUPPORTED_HELPER_TYPES:
         _, object_id = _split_helper_entity_id(resource_type, resource_id)
@@ -613,6 +626,9 @@ class ConfigurationResourceGateway:
             websocket_client
         )
         self.availability_exposure_snapshot_reader: Any = None
+        # HAMCP-165: closed-vocabulary label registry gateway (list, one
+        # create or update per child; delete is never sent).
+        self.label_registry = LabelRegistryGateway(websocket_client)
         # HAMCP-155: the only DELETE sender; the generic ``write`` keeps
         # refusing every action other than create or update.
         from .configuration_delete import ConfigurationDeleteGateway
@@ -629,6 +645,8 @@ class ConfigurationResourceGateway:
             return await self.entity_metadata.read_entry(resource_id)
         if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
             return await self.availability_exposure.read_entry(resource_id)
+        if resource_type == LABEL_RESOURCE_TYPE:
+            return await self.label_registry.read_entry(resource_id)
         if resource_type in _CONFIG_ENDPOINTS:
             value = await self.rest_client.request(
                 "GET",
@@ -704,6 +722,12 @@ class ConfigurationResourceGateway:
             raise ValueError("entity registry metadata is update-only")
         if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
             raise ValueError("entity availability and exposure are update-only")
+        if resource_type == LABEL_RESOURCE_TYPE:
+            # ``approved_config`` is the one closed command built by the
+            # strategy; the provider re-checks its shape before sending.
+            return await self.label_registry.write(
+                "create", resource_id, approved_config
+            )
         self._require_valid(resource_type, resource_id, approved_config)
         create_identity_errors = validate_resource_create_identity(
             resource_type, resource_id, approved_config
@@ -846,6 +870,10 @@ class ConfigurationResourceGateway:
             return await self.availability_exposure.update(
                 resource_type, resource_id, approved_config
             )
+        if resource_type == LABEL_RESOURCE_TYPE:
+            return await self.label_registry.write(
+                "update", resource_id, approved_config
+            )
         self._require_valid(resource_type, resource_id, approved_config)
         if resource_type in _CONFIG_ENDPOINTS:
             return await self._write_rest_configuration(
@@ -986,6 +1014,49 @@ class ConfigurationResourceGateway:
             return ("dependency_evidence_changed",)
         return ()
 
+    async def label_preflight_evidence(
+        self,
+        resource_id: str,
+        current: dict[str, Any] | None,
+        proposed: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Recheck a label child's bound namespace immediately before dispatch.
+
+        The fingerprint covers every ``(label_id, normalized name)`` pair, so
+        any label created, renamed or deleted since planning (by Home
+        Assistant or anyone else) refuses before the write.  The target is
+        judged from the same final read (HAMCP-165 review1 M3): an update
+        target whose exact state differs from its bound baseline, or a
+        create target that now exists, refuses ``stale_target_state`` and is
+        never overwritten.  Nothing is written; an empty tuple means the
+        binding still holds.
+        """
+
+        bindings = (
+            proposed.get(label_registry.BINDINGS_KEY)
+            if isinstance(proposed, dict)
+            else None
+        )
+        if label_registry.bindings_errors(bindings):
+            return ("plan_bindings_invalid",)
+        if (current is None) != (bindings["operation"] == "create"):
+            return ("plan_bindings_invalid",)
+        try:
+            snapshot = await self.label_registry.namespace()
+            observed = snapshot.entries.get(resource_id)
+            target_changed = resource_fingerprint(
+                label_registry.LABEL_RESOURCE_TYPE, observed
+            ) != resource_fingerprint(label_registry.LABEL_RESOURCE_TYPE, current)
+        except AuthorizationError:
+            return ("permission_failure",)
+        except Exception:
+            return ("label_namespace_unavailable",)
+        if target_changed:
+            return ("stale_target_state",)
+        if snapshot.fingerprint != bindings["namespace_fingerprint"]:
+            return (label_registry.NAMESPACE_CHANGED,)
+        return ()
+
     async def validate(self) -> Any:
         """Run Home Assistant's bounded full configuration check."""
 
@@ -1114,6 +1185,12 @@ def _validate_resource_id(
             validate_entity_id(resource_id)
         except ValueError:
             return [f"{resource_type} resource_id must be an entity_id"]
+        return []
+    if resource_type == LABEL_RESOURCE_TYPE:
+        if not isinstance(resource_id, str) or not (
+            label_registry.LABEL_ID_PATTERN.fullmatch(resource_id)
+        ):
+            return ["label_registry_entry resource_id must be a label_id"]
         return []
     if resource_type == "automation":
         valid, errors, _ = validate_automation(

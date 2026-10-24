@@ -1,25 +1,32 @@
 # Engineering 2.4.1-beta.33 acceptance
 
-This contract covers HAMCP-155: governed deletion of UI-managed automations
-and scripts, shipped **inactive**. It adds one tool,
-`create_configuration_delete_plan`, and one runtime-only Core capability
-profile, `core.configuration_delete_operation`. The signed registry
-(sequence 12) does not reference that profile. The release activates nothing
-new. It follows 2.4.1-beta.32 (HAMCP-220).
+This contract covers HAMCP-132 slice 2: configuration definitions (item B) and
+unavailability and capability diagnosis (item D). It adds one read-only tool,
+`get_configuration_definitions`. It builds on these releases:
+- 2.4.1-beta.32 (HAMCP-220);
+- 2.4.1-beta.31 (HAMCP-069B);
+- 2.4.1-beta.30 (HAMCP-131);
+- 2.4.1-beta.29 (HAMCP-213 PR 1);
+- 2.4.1-beta.28 (HAMCP-215);
+- 2.4.1-beta.27 (HAMCP-132 slice 1).
 
 See also:
 - Release notes:
   [`V2_4_1_BETA33_RELEASE_NOTES.md`](V2_4_1_BETA33_RELEASE_NOTES.md).
-- Design, Core contract and Josh's 2026-10-23 decisions:
-  [`HAMCP_155_GOVERNED_DELETION_DESIGN.md`](HAMCP_155_GOVERNED_DELETION_DESIGN.md).
+- Design: [`HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md`](HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md)
+  (draft PR #291).
+- Component review and Josh's decision not to use `ha_mcp_tools`:
+  [`HAMCP_132_SLICE2_COMPONENT_REVIEW.md`](HAMCP_132_SLICE2_COMPONENT_REVIEW.md#11-owner-decision-josh-2026-10-21).
 
-**Release target.** `2.4.1-beta.33` is staged by one owner-authorized run of
-`scripts/promote_next_release.py --apply` on a base that carries
-2.4.1-beta.32. The run consumes the declaration. PRs #294 (HAMCP-132 slice 2)
-and #303 (HAMCP-165) also stage beta.33. The tooling accepts only the strict
-next beta, so if another release takes beta.33 first, this PR merges that
-base with a merge commit and restages to the next free beta (beta.34 or
-beta.35), renaming this document and the release notes.
+**Release target.** `2.4.1-beta.33`. It is staged by one owner-authorized run
+of `scripts/promote_next_release.py --apply` on a base that already carries
+2.4.1-beta.32. The run consumes the declaration. This PR first targeted
+beta.30; HAMCP-131 (#295) released it first, so this PR merged that base
+with a merge commit and took beta.31. HAMCP-069B (#297) then released
+beta.31, so this PR merged that base with a merge commit and took beta.32.
+HAMCP-220 (#298) then released beta.32, so this PR merged that base with a
+merge commit and took beta.33. If another release takes beta.33 first, this
+PR merges that base again and takes the next free beta.
 
 The contract separates four stages:
 1. source and offline acceptance;
@@ -32,148 +39,453 @@ It authorizes none of the later stages.
 ## 1. Source and offline acceptance
 
 Bind the following:
-- Josh's HAMCP-155 objective and decisions;
-- `2.4.1-beta.33` (or the restaged beta) materialized in all three version
-  authorities, with exact acceptance and release-note resolution from
-  `scripts/codex-context.py` and no staged declaration left over;
+- Josh's HAMCP-132 objective, owner decisions (i)–(vii) of 2026-10-20
+  (design section 8), and the 2026-10-21 decision not to use the
+  `ha_mcp_tools` component;
+- `2.4.1-beta.33` materialized in all three version authorities, with exact
+  acceptance and release-note resolution from `scripts/codex-context.py` and
+  no staged declaration left over;
 - the PR head SHA;
 - the passing PR `validate` run for that exact head;
 - the Evidence tier log named in the PR.
 
 The review needs a security section covering:
-- **New write path, unreachable at release.**
-  - `DELETE /api/config/automation/config/<id>` and
-    `DELETE /api/config/script/config/<object_id>`, with no body.
-  - It is reachable only through an approved plan dispatched by the F3
-    runtime under `delete_automation_configuration` or
-    `delete_script_configuration`, and only for a profile admitted by a
-    signed registry. Only the new gateway method sends DELETE. The generic
-    configuration write still raises for any action other than create or
-    update.
-  - With the shipped sequence 12, the routing layer refuses before planning
-    with `CoreCapabilityUnavailable` / `pending_signed_registry_admission`.
-    The governance service refuses first, before any Home Assistant read or
-    plan storage, for the tool and the generic and internal builders.
-  - A first F3 apply of a retained or approved plan, including F3 composed
-    without Core, refuses at the F3 entry before the plan, task, child or
-    lock stores change and with zero Home Assistant requests. The same entry
-    check covers the dormant HAMCP-069B profiles.
-  - Dispatch still re-checks admission on resume, recovery and re-apply of
-    an existing task. Each refuses with zero writes. Preflight refuses
-    before its live-state read, and observation refuses to verify without
-    admission.
-- **Closed vocabulary.** Reads are the config GET, the entity registry list
-  and the entity state GET. `create_configuration_plan` still refuses
-  `delete`; legacy `delete_automation` stays prohibited; upstream
-  `ha_config_remove_*` stays unrouted.
-- **Drift at dispatch.** Immediately before the DELETE the live config is
-  compared with the bound baseline fingerprint. Drift, or an already absent
-  item, is `stale_target_state` with zero writes.
-- **Approval.**
-  - The policy follows the removed effects. Protected or unresolved removed
-    effects, incomplete dependency evidence, and protected or unresolved
-    consumers need the existing `ELEVATED_ADMIN` acknowledgement with a
-    plain-language consequence statement. No approval-core change.
-  - A delete is never classified as having no effect. An ordinary delete is
-    `standard_admin` at medium risk.
-  - A tampered policy marker or basis, a protected effect relabelled
-    standard, or a hash or pre-image mismatch is `PROHIBITED`.
-- **Verification.** Absence is proven by config 404, registry entry absent
-  and state absent, polled within a bound. Partial absence is
-  `manual_review_required` (`config_removed_runtime_unverified`); a config
-  still present is a readback mismatch.
-- **Fallback.** There is no delegated provider, no direct fallback and no
-  free-text input.
+- **New sources.**
+  - REST `GET /api/config` (`components` only).
+  - WebSocket `config_entries/get` with one closed domain.
+  - WebSocket `manifest/get` for `ha_mcp_tools`.
+  - The slice-1 reads `GET /api/states`, `config/entity_registry/list` and
+    `entity/source`.
+
+  All run under the existing administrative token, with no new permission.
+  `config_entries/get` never returns an entry's `data` or `options`, so a
+  UI-defined SQL `db_url` cannot be returned.
+- **YAML reader purpose.** The new gateway purpose `configuration_definitions`
+  fixes eight paths and its own audit event. The `recorder_settings` purpose
+  and its three paths are unchanged. An unknown purpose gives no reader. The
+  L1–L4 pipeline, Core gate, response seal and authority rechecks are
+  unchanged, with no fallback.
+- **No component command.** No `ha_mcp_tools/*` command, options flow,
+  `.storage` file or Supervisor endpoint is reachable. There is no new
+  batch-allowlist shape, and no write, reload, service call, flow, fallback
+  or forwarding reachability.
+- **Withholding.** `db_url` is withheld in every position, except that a
+  SQL definition's own `fields.db_url` is the fixed policy redaction
+  `{"redacted_by_policy": "database_url"}`. So are `!secret`
+  and `!env_var` references with their names, credential-shaped nested keys,
+  and credential URIs inside allowlisted text, a gap the shared sanitizer
+  does not cover. The projection is a positive allowlist. Unrecognized keys
+  are counted only.
+- **One screened and sanitized exit point.** The complete envelope is
+  screened once for credential text, in every key and string (config entry
+  titles, metadata, reasons, omissions and coverage included), and then
+  sanitized once, with the known secrets. Nothing is appended afterwards.
+  Withheld text is replaced with `[withheld:credential_text]` and makes the
+  report partial (`credential_text_withheld`), as does a redaction. Budget
+  trimming re-screens and re-sanitizes the rebuilt envelope. The screening
+  reads a bounded confusable fold of the canonical text.
+- **Titles by allowlist.** A config entry title is checked whole, never
+  truncated first, and shown only when it is printable ASCII within 255
+  characters with no `@`, `://`, password-like `key=value` or `key: value`,
+  known secret or credential text. Otherwise it is
+  `[withheld:credential_text]` or `[withheld:unverifiable_text]` and the
+  report is partial (`unverifiable_text_withheld`). **An ordinary non-ASCII
+  title is withheld by design**; a plain ASCII title is shown unchanged.
+- **Invisible text withheld whole.** A YAML-projected string or key with an
+  invisible, format or control character (Cc except tab, line feed and
+  carriage return; Cf, Cs, Co, Cn, Zl, Zp; every
+  Default_Ignorable_Code_Point), in the original text or after a bounded
+  percent-decode, is `[withheld:unverifiable_text]` (a key: dropped), never
+  screened and shown. The exit point applies the same check to every key and
+  string. Templates, units such as `°C` and accented names are shown.
+- **Whitespace inside a credential is screened (correction batch 4).**
+  Every YAML-projected string and every string at the exit point is
+  screened in its canonical form and in its squashed form (every
+  `str.isspace` character removed after the bounded percent-decode, NFKC
+  and confusable fold). Either form matching withholds the original value
+  whole as credential text and makes the report partial. Tab, line feed and
+  carriage return stay displayable: an ordinary multi-line template is shown
+  and complete. A colon followed later by `@` with no `/` between is
+  withheld by design (over-withholding accepted by the owner, Josh,
+  2026-10-22).
+- **Anything withheld is partial.** One scan of the final envelope names
+  each item with any withheld form (`withheld:definitions[3]`), at most 20
+  then `withheld_items_not_listed:<n>`, and makes the report partial.
+- **A fixed policy redaction is not missing evidence (owner decision, Josh,
+  2026-10-22).** A SQL definition's own `db_url` (the `sql:` key or a legacy
+  `platform: sql` sensor) is reported as
+  `{"redacted_by_policy": "database_url"}` and does not make the report
+  partial. The exemption is an explicit allowlist with one entry inside the
+  same scan (`credentials.POLICY_REDACTIONS`), not a skipped scan. A
+  `db_url` in any other integration or nested position, a credential in any
+  other SQL field, invisible text, unverifiable titles, confusables and a
+  policy-shaped value from configuration are still withheld and partial.
+  The sanitizer's `redacted_by_policy` omission (HAMCP-191) is a different
+  thing and still makes the report partial.
+- **Nothing is derived from a withheld input (owner decision, Josh,
+  2026-10-22).** A withheld name, default-name input or key derives no
+  entity ID (`derived_entity_id_withheld`); a withheld unique_id input
+  generates no unique ID (`unique_id_withheld`); a withheld dependency value
+  is not read (`dependencies_withheld`, diagnosis `undetermined`); a withheld
+  key is not in the definition ID; a withheld legacy name is never a
+  candidate. "Withheld" includes anything the exit point would withhold
+  (`credentials.withheld_at_exit`). Each case lists a path in the
+  definition's `withheld`, so the report is partial.
+- **The Core-observed entity ID is not withheld (owner decision, Josh,
+  2026-10-22).** An exact registry match reports Core's own `entity_id`,
+  visible through every state read. An entity that Home Assistant itself
+  named from a credential-bearing string shows that entity ID (a disclosed
+  limitation; rename the entity in Home Assistant), while the tool's own
+  derivation stays withheld.
+- **Truthfulness.**
+  - A heuristic match is never reported as exact, and its confidence names
+    the signals behind it.
+  - Ambiguity is never resolved, and the rules are identical from the
+    entity's and the definition's side.
+  - A unique ID that YAML 1.1 could read differently is never exact.
+  - A failed source makes the report partial. A malformed source value
+    invalidates only its item (`invalid_response`); it never aborts the
+    report.
+  - Diagnosis says `undetermined` rather than `entity_level` when a signal is
+    missing, no single definition matched, or the dependencies were not
+    checked. It never says `definition_absent` after a YAML source gap or
+    an unexpanded template blueprint (`blueprint_definitions_not_projected`).
+  - A malformed registry `platform`, `unique_id` or `config_entry_id` makes
+    the row's `registry.identity` `invalid_response` and the registry source
+    partial; the row is never matched and is `undetermined`. `null` stays a
+    legitimate absence.
+- **Arguments and audit.** Validation happens before the SDK, and rejections
+  are non-reflecting. The audit records counts only.
+- **Implementation corrections.** The five corrections listed in the release
+  notes: four self-found, and one found by PR CI.
+- **Independent review corrections.** H1, M1 to M4 and L1 from the review of
+  `dfd1f02`, listed in the release notes. Each reproduction is a permanent
+  test.
+- **Delta review corrections.** H1, H2, M3, M4 and L from the delta review of
+  `cde9cd1`, listed in the release notes. The reviewer's regression suite is
+  kept unchanged as `tests/test_pr294_delta_review.py`.
+- **Second delta review corrections.** R2-H1 and R2-M1 from the review of
+  `5f6acb0`, listed in the release notes. The reviewer's suite is kept
+  unchanged as `tests/test_pr294_corr2_extra.py`.
+- **Owner decision on policy redaction.** The SQL `db_url` policy redaction
+  leaves a report complete (above); both reviewer suites are unchanged and
+  pass.
+- **Owner decision on derived values.** Nothing is derived from a withheld
+  input (above); both reviewer suites are unchanged and pass.
+- **Owner decision on the Core-observed entity ID.** It is shown, not
+  withheld (above), and pinned by
+  `test_core_observed_entity_id_is_shown_when_the_name_is_withheld`.
+- **Final32 review correction (correction batch 4).** Whitespace inside a
+  credential is screened in the squashed form (above), pinned by
+  `SquashedFormTests`. The reviewer's final32 suite is kept unchanged as
+  `tests/test_pr294_final32_review.py` (6 tests; its nine tab, line feed
+  and carriage return variants are withheld and partial).
+- **Owner decision on the colon-then-`@` over-withholding.** Accepted as
+  disclosed (Josh, 2026-10-22): such text is withheld as credential text
+  and the report is partial.
 
 Preserve the following:
 - stable v1.1.2;
 - persisted formats;
 - every existing descriptor and input schema. The catalog is **94 tools,
-  95 with the optional YAML reader admitted**: 66 static plus 28 delegated.
-- probe fingerprints, the 17 signed Core capability profiles (the governed
-  configuration profile `sha256:d517fa73…` and the 069A profile
-  `sha256:cc09630e…` are unchanged), owner-signed Core registry entries
-  (sequence 12) and the signed ha-mcp registry;
+  95 with the optional YAML reader admitted**: 66 static plus 28 delegated;
+- probe fingerprints, Core capability profiles, owner-signed Core registry
+  entries and the signed ha-mcp registry;
 - the HOLD and the support window;
-- add-on permissions and dependencies;
-- every existing workflow step, condition, artifact, permission and action.
-  The only `ci.yml` change is the owner-authorized dormant seq-13 deletion
-  lane (`REAL_HA_SEQ13_LANES: dormant` plus two steps gated on `enabled`).
-
-The new profile's contract fingerprint is
-`sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d`.
-Signed sequence 13 must reference exactly this value.
+- workflows, add-on permissions and dependencies.
 
 ### Offline proof
 
-No test reaches a live system. Every fixture is synthetic.
+No test reaches a live system. Every fixture is synthetic, and every
+credential-shaped string is assembled at test time.
 
-- `tests/test_hamcp155_configuration_delete_execution.py` (21 tests): the
-  real service, F3 runtime and gateways over a synthetic config, registry
-  and state store (`tests/hamcp155_fixtures.py`). It covers end to end
-  delete and recreate rollback, drift at dispatch, stale and already absent
-  targets, a 400 rejection, an uncertain send, partial plans, partial
-  runtime absence (registry entry only, state only, both), a still-present
-  config, and storage of every pre-intent refusal code.
-- `tests/test_hamcp155_configuration_delete_admission.py` (31 tests): the
-  profile is runtime-only and referenced by no signed envelope, and its
-  contract fingerprint (and the unchanged governed configuration
-  fingerprint) is pinned; refusal
-  while unadmitted with zero reads and nothing stored, through the tool and
-  the generic and internal builders; admission re-checked at preflight,
-  immediately before the DELETE, at observation, after restart, on resume
-  and recovery mid-plan (lease or route withdrawn after the first delete),
-  after an uncertain delete, through the legacy routes and without Core
-  (a first apply refuses before storing a task); a TEST signed
-  registry fixture that admits it; the closed tool schema.
-- `tests/test_hamcp155_configuration_delete_policy.py` (17 tests):
-  removed-effect classification, elevation and acknowledgement, the
-  unlock floor, incomplete consumer evidence, tamper refusals, removed rows
-  with an empty after side, and planning refusals before any read.
-- `tests/test_hamcp155_configuration_delete_lane.py` (24 tests): the dormant
-  seq-13 delete lane `scripts/configuration_delete_contract_acceptance.py`.
-  Refusals are expected outcomes with exact codes, and every claimed read
-  (config 404, registry entry gone, state gone) is asserted. Absence is
-  proven at the entity ID captured from the registry before the delete,
-  never a guessed one, and the recreate restores that identity. Only the
-  exact `POST /config/core/check_config` is allowlisted, exactly twice per
-  recreate and never for a delete; any other non-GET is a write bound to the
-  target's route (also proven on the real service). The harness runs the
-  lane only when `REAL_HA_SEQ13_LANES` is exactly `enabled`, requires PASS
-  and retains the receipt; the cleanup verifier refuses a missing, failed,
-  partial or non-identical receipt when enabled and any receipt when
-  dormant. The F3 entry admission set equals the dormant set, and the
-  shipped lanes exclude the inactive profile.
-- `tests/test_hamcp155_review1_probes.py` (9 tests): the independent
-  reviewer's PR #304 probes, kept unchanged apart from a path prelude.
-- `tests/test_hamcp069b_review1_corrections.py`: an unadmitted 069B first
-  apply refuses before storing anything, and the plan files stay
-  byte-identical across restart.
-- `tests/test_alarmo_interval_observer.py`: the dormant workflow steps, their
-  gating, order, paths and pinned upload action.
-- Count and catalog pins in the existing suites are updated from 65 to 66
-  static tools.
-- Mutations: `docs/evidence/hamcp155-mutations/`. 55 of 55 mutants are
-  killed over six suites: the four suites above, the review 1 probes and
-  `tests/test_hamcp069b_review1_corrections.py` (baseline 137 tests OK).
-  They cover the four HAMCP-165 lessons (admission at every layer, drift at
-  dispatch, every claimed read asserted, removed-effect classification
-  including "not create/update means no effect"), rollback, adapter expected
-  effects, executor refusal storage and the closed gateway. Review 1 added
-  the F3 entry refusal before persistence, absence bound to the captured
-  entity identity, the bounded config-check allowlist, and the dormant
-  harness and cleanup wiring. `results.json` records each mutant and the
-  tests that killed it.
+`tests/test_hamcp132_configuration_definitions.py` (151 tests) covers:
+- pinned shapes for each projected form: template blocks (including trigger
+  and blueprint blocks), the SQL integration key (list and single),
+  old-style groups, utility meters, `sensor:` and `binary_sensor:` platforms,
+  legacy platforms flagged and never expected, other platforms counted, and
+  unrecognized keys counted;
+- the owner's six YAML definitions, anonymized: two SQL sensors with a
+  database URL, a filter, two derivatives (one renamed and matched by unique
+  ID) and an old-style group. Each is matched and diagnosed end to end, by
+  entity and by integration;
+- `db_url` and credentials withheld in every position, references and
+  markers withheld, a database URL inside a SQL query withheld, the final
+  sanitizer still applied to kept text, a known secret redacted with the
+  report partial, config-entry reason text withheld, and provider exception
+  text never public;
+- a planted-secret sweep. A control run first proves the secret reaches every
+  identifier-bearing output field; the protected run then finds it in none;
+- match quality:
+  - `exact_config_entry` with the UI entry listed;
+  - `exact_unique_id`;
+  - `heuristic` at each confidence, with `high` requiring every signal;
+  - `ambiguous`, by name and by shared unique ID;
+  - platform filtering;
+  - a registered entity never matched by name;
+  - `unmatched`, `not_applicable` and `not_found`;
+  - unread config entries;
+  - legacy candidates;
+  - definition-side results;
+- packages (absent, present, unreadable, not determined), the `homeassistant`
+  node read, and `!include` disclosed at the path, entry and value levels. A
+  truncated reader value makes the report partial;
+- source failures mapped to closed reasons. Each failed source makes the
+  report partial. With the reader not admitted, no YAML is dispatched. When
+  every source fails, the error carries no text;
+- diagnosis for each classification and reason, the capability block for
+  each component state, and the authority recheck at every read stage;
+- the definition and UI-entry limits, the response budget (trim order,
+  listed counts, the overflow estimate) and the single sanitizer exit, using
+  a spy that proves the returned report is the sanitizer's output;
+- the read-only static check. It pins the package's exact command literals,
+  client attributes, reader calls, dispatch, imports and YAML arguments, and
+  a banned-word scan of the code without docstrings. The runtime dispatch is
+  also pinned exactly;
+- registration: the Core gate, capability metadata, read-only annotations,
+  the schema, non-reflecting refusal in the tool and in the gateway before
+  the SDK, the positive gateway output and audit, and a gateway sweep with
+  the access secret planted;
+- the `configuration_definitions` reader purpose, through the YAML admission
+  harness: its exact path set and audit event. The recorder purpose cannot
+  read its paths, and the reverse also holds;
+- the independent review's reproductions, kept as permanent tests:
+  - a database URI in a config entry title, through the authenticated
+    gateway (response and audit);
+  - PostgreSQL, MySQL, MSSQL, sqlite with a path, MongoDB and HTTP basic
+    auth, plus a user and password before a host without a scheme, a percent-encoded URI, a user-only
+    userinfo, a password field and a URI inside prose, each planted in a
+    title and in every metadata field, directly and through the gateway;
+  - the API error-detail `db_url` case;
+  - two definitions sharing a unique ID, and one definition whose unique ID
+    two registry rows carry, `ambiguous` from both sides;
+  - unquoted `on`, `off`, `yes`, `no` and `1:30` unique IDs, registered as
+    the raw text or as Core's reading, never exact, with quoted and integer
+    controls exact;
+  - a failed YAML source, each gap type, an unreadable UI definition and a
+    template definition, each `undetermined`, with absence and
+    `entity_level` controls;
+  - malformed states, registry and config-entry values and a projection
+    error, each confined to its item, with a valid control;
+- the delta review's suite, unchanged (`tests/test_pr294_delta_review.py`),
+  including its two High reproductions through the authenticated gateway: a
+  credential cut by title truncation, and credentials written with the ratio
+  sign, the division slash or a Cyrillic `o`; and the added tests:
+  - plain ASCII titles shown through the gateway, the report complete;
+  - benign non-ASCII, control-character and `DEL` titles withheld as
+    `[withheld:unverifiable_text]`, partial (disclosed and accepted);
+  - `@`, `://` and password-like `key=value` titles, an over-length title
+    withheld whole, a credential past the length bound found on the
+    original, and case-varied known secrets;
+  - confusable credentials in a YAML-projected definition withheld;
+  - a template blueprint block as a gap, with an absence control;
+  - malformed registry identities never matched in either direction, with
+    a `null` control;
+- the second delta review's suite, unchanged
+  (`tests/test_pr294_corr2_extra.py`), and the added tests:
+  - the reviewer's 12 leak cases (six invisible characters, literal and
+    percent-encoded, inside `password=`), through the projection and
+    through the real reader and the authenticated gateway, each withheld
+    whole and partial;
+  - one representative of each invisible class (Cc, Cf, Cs, Co, Cn, Zl, Zp,
+    zero-width, bidi controls, variation selectors, tag characters, Hangul
+    fillers, the soft hyphen, the combining grapheme joiner), literal,
+    percent-encoded and double-encoded, each withheld even when it is not
+    credential text;
+  - encoding beyond the decode bound withheld, an invisible nested key
+    dropped, and invisible strings and keys at the exit point;
+  - benign definitions shown and complete: a multi-line template with tabs
+    and newlines, `°C`, `µg/m³`, an accented name, an en dash, a no-break
+    space, an emoji without a selector and plain percent text;
+  - the reviewer's two completeness cases, and every withholding path (each
+    reference, reader marker, credential URI, credential and connection
+    key, `db_url`, non-text key, unsupported value, invisible value and key,
+    known secret, withheld titles, a dropped key at the exit point) partial
+    with its named item; the item list bounded; omission text never itself
+    an item; nothing withheld stays complete;
+  - the policy redaction: a SQL definition (the `sql:` key and a legacy
+    platform) with only its `db_url` redacted is complete with the
+    `redacted_by_policy` marker; the same plus any other withheld item
+    (invisible query, reference, nested `db_url`, another withheld
+    definition, a withheld title) is partial; a credential in a non-`db_url`
+    SQL field is partial; a `db_url` outside a SQL definition stays withheld
+    and partial; a policy-shaped value from configuration is not exempt; an
+    exit-point marker outside the allowlist (another kind, extra key, another
+    field, another integration, top level) is partial; and the allowlist is
+    exactly the SQL `db_url`;
+  - the derived values: a credential URL in a SQL name withholds the name
+    and derives no entity ID, partial, through the service and through the
+    authenticated gateway; every withheld form (credential URI, known
+    secret, bearer, JWT, invisible text, a `!secret` reference, text over
+    the length bound) in a name derives nothing; a withheld group, utility
+    meter or trend key leaves a positional definition ID and no derived ID;
+    a withheld tariff withholds only its own entity; each default-name
+    input and each unique_id input withheld; a withheld dependency read for
+    nothing and diagnosed `undetermined`, while a clean one is still
+    `dependency_unavailable`; a withheld legacy name never a candidate; and
+    clean inputs still derive;
+  - the squashed form: the nine tab, line feed and carriage return variants
+    (literal, percent-encoded and double-encoded) inside a query password,
+    a URI's user-info and a connection URI are withheld whole and partial,
+    through the service and through the real reader and authenticated
+    gateway; spaces and Unicode whitespace inside a credential, a run of
+    mixed whitespace, a nested key-value, a known secret split by
+    whitespace and a space-split credential in Core free text are
+    withheld; the exit point screens the squashed form of every string and
+    key; form feed, vertical tab and other control characters stay
+    withheld outright as unverifiable text; ordinary multi-line templates
+    with tabs, line feeds and CRLF are shown verbatim and complete; and a
+    colon followed by `@` across whitespace is withheld by design.
+
+The existing suites that pin the tool count, sanitizer sites, Core gate and
+reader purpose are updated. The Evidence tier on the PR head is the complete
+final run.
+
+Mutations: **244 of 244 killed, none survived**
+(`docs/evidence/hamcp132-mutations/results.json`). The baseline ran 308
+tests across the three HAMCP-132 modules and the three reviewer suites
+(`test_pr294_delta_review`, `test_pr294_corr2_extra` and
+`test_pr294_final32_review`): OK, 1 skipped. Every kill is a test failure or
+a test-level error; none is an import or syntax failure.
+
+The set is slice 1's 80, 55 for slice 2, 31 for the independent-review
+corrections, 18 for the delta-review corrections, 21 for the second
+delta-review corrections, 13 for the owner policy decision, 17 for the
+owner derived-value decision, 1 for the owner decision on the
+Core-observed entity ID (`B6-O1`) and 8 for the final32 review correction
+(`B7-W1` to `B7-W8`). The first slice 2 run left two
+survivors:
+- `B-L2` was equivalent. `_credential_shaped` also matches `db_url`, so
+  removing only the nested `WITHHELD_KEYS` test changes nothing. It was
+  redefined to remove both nested guards.
+- `B-M8` exposed a test gap: a registered entity whose ID a uid-less
+  definition also derives by name. That test was added.
+
+The slice-2 mutants cover:
+- `db_url` leaked, as a field, nested, or under a credential key;
+- the userinfo guard removed;
+- references or reader redactions projected;
+- the known secrets dropped;
+- a heuristic reported as exact;
+- ambiguity guessed;
+- high confidence on incomplete sources or after a suffix;
+- the platform filter removed;
+- a heuristic applied to a registered entity;
+- a UI entry claimed readable;
+- a failed source (Core or YAML) reported complete;
+- packages or includes not disclosed;
+- omissions appended after sanitization;
+- a redaction not making the report partial;
+- each diagnosis rule weakened;
+- the path set widened;
+- the Core gate or either pre-SDK validation removed;
+- an open integration or entries domain;
+- the audit copying identifiers;
+- the annotation not read-only;
+- each authority recheck removed;
+- each bound removed;
+- a stale listed count.
+
+The correction mutants cover:
+- the reviewer's own API error-detail `db_url` mutant (`REVIEW-2`);
+- the exit point's credential withholding removed, a config entry title
+  copied without credential screening, a credential key kept, each
+  credential rule removed, refused canonicalization passed, and a
+  withholding that leaves the report complete;
+- reverse-match ambiguity resolved, by definitions or by registry rows. The
+  first run left the registry-row mutant surviving; a test with the raw text
+  and Core's reading both registered was added;
+- a parser-dependent unique ID indexed or marked as exact, a dependent name
+  deriving an entity ID, Core's reading not registered, and the
+  parser-dependence disclosure dropped;
+- absence or `entity_level` claimed despite a YAML gap, an unreadable UI
+  definition or an unchecked template definition;
+- each malformed-value type guard removed, a projection error aborting the
+  report, a malformed value diagnosed as if valid, and a malformed item
+  that leaves the report complete.
+
+The delta-review mutants cover:
+- the reviewer's own omission-credential bypass (`DELTA-REVIEW-1`), and
+  the known secrets dropped from the exit-point withholding only
+  (`DELTA-REVIEW-2`; the earlier `B-L7` rationale called this equivalent,
+  which was wrong: it fails three tests and loses case-variant protection);
+- a title truncated before screening (`B2-T1`) and the allowlist bypassed
+  (`B2-T2`);
+- each allowlist leg removed: the length bound, printable ASCII, `@`, `://`
+  and password-like `key=value` (`B2-T3` to `B2-T7`);
+- the casefolded known-secret comparison removed (`B2-K1`);
+- the confusable fold removed (`B2-C1`);
+- an unverifiable title that leaves the report complete (`B2-U1`);
+- an unprojected blueprint not treated as a definition gap (`B2-G1`);
+- a malformed registry identity accepted, matched, reverse-matched without
+  disclosure or diagnosed as valid, and a `null` identity called malformed
+  (`B2-I1` to `B2-I5`).
+
+The second delta-review mutants cover:
+- invisible text screened instead of withheld whole (`B3-H1`);
+- the bounded percent-decode leg removed (`B3-H2`);
+- each invisible class removed: the Default_Ignorable ranges, format
+  characters, control characters, the other categories and the ASCII
+  control check (`B3-H3` to `B3-H7`);
+- tab and newline treated as invisible, which withholds benign multi-line
+  templates (`B3-H8`);
+- each withholding leg removed: projected values, projected keys, exit-point
+  strings and exit-point keys (`B3-H9` to `B3-H12`);
+- a dropped invisible key that leaves the report complete (`B3-H13`);
+- the final-envelope withheld scan removed (`B3-M1`);
+- the scan ignoring the withheld object form, the marker strings or the
+  dropped keys (`B3-M2` to `B3-M4`);
+- the item list unbounded, omission text scanned as items, `complete`
+  ignoring the items and the items not listed (`B3-M5` to `B3-M8`).
+
+The owner policy-decision mutants cover:
+- the policy allowlist broadened to every withheld marker (`B4-P1`);
+- each allowlist check removed: the redaction kind, the integration, the
+  field, the path depth, the `definitions` list, the `fields` segment and
+  the single-key shape (`B4-P2` to `B4-P8`);
+- a boolean list index accepted (`B4-P9`);
+- a policy-shaped value from configuration not treated as withheld
+  (`B4-P10`);
+- the marker emitted for every integration, the SQL `db_url` listed as
+  withheld again, and the `db_url` value copied into the marker
+  (`B4-P11` to `B4-P13`).
+
+The owner derived-value mutants cover:
+- the entity ID derived from a withheld name (`B5-N1`), derived though the
+  name is listed (`B5-N2`), and a withheld name not listed (`B5-N3`);
+- the unique_id guard removed, a withheld unique_id not listed, and the
+  template block or tariff unique_id input dropped (`B5-U1` to `B5-U4`);
+- each leg of the input check removed: the projection's own withholding, the
+  exit point's sanitizer, the known secrets in the check and the known
+  secrets passed to the projection (`B5-X1` to `B5-X4`);
+- dependencies read from a withheld value, the flag not set, and the
+  diagnosis guard removed (`B5-D1` to `B5-D3`);
+- a withheld key kept in the definition ID (`B5-K1`), a withheld legacy
+  name matched (`B5-L1`), and the internal projection fields rendered
+  (`B5-S1`).
+
+The final32 squashed-form mutants cover:
+- the squashed-form screening removed (`B7-W1`);
+- the squash narrowed to spaces only, to ASCII whitespace only, or keeping
+  the line controls (`B7-W2` to `B7-W4`);
+- the squashed form read before the percent-decode (`B7-W5`);
+- the known secrets dropped from the squashed form (`B7-W6`);
+- the squashed password field requiring a word boundary (`B7-W7`);
+- every value with whitespace withheld outright, which hides ordinary
+  multi-line templates (`B7-W8`).
+
+`B2-K1` and `B-X6` are re-anchored on the refactored checks; their
+behavior is unchanged.
 
 ## 2. Release CI and publication
 
 Require exact-head CI before release acceptance. Pending or unavailable jobs
 are not passing evidence.
 
-Publication needs Josh's Ready authorization and the protected merge handoff.
-Verify the following with the shipped verifiers:
+Publication needs Josh's Ready authorization and the protected merge
+handoff. Verify the following with the shipped verifiers:
 - the merged source;
-- the release tag;
+- v2.4.1-beta.33;
 - the immutable version and commit images;
 - provenance and SBOM.
 
@@ -184,36 +496,57 @@ No stored format changes. Rollback is reinstalling the beta.32 artifact.
 
 ## 3. Installed Engineering
 
-All installed checks in this section are read-only. None of them writes,
-reloads, restarts or calls a service.
+All installed checks below are read-only. None of them writes, reloads,
+creates, opens a flow or calls a service.
 
 1. **Installed-image binding.** Separately authorize installation of the
    published Engineering artifact. Bind the running add-on to:
    - the published image index digest;
-   - the release tag;
+   - the v2.4.1-beta.33 tag;
    - the protected `main` merge commit that contains this PR.
-2. **Catalog.** `tools/list` shows 94 tools (95 with the YAML reader
-   admitted), including `create_configuration_delete_plan`.
-3. **Inactive.**
-   - `list_capabilities` and server health show the configuration delete
-     capability as `pending_signed_registry_admission`.
-   - One `create_configuration_delete_plan` call is refused with
-     `CoreCapabilityUnavailable`, `plan_created: false` and
-     `provider_dispatch_occurred: false`. `list_change_plans` shows no new
-     plan.
-4. **Unchanged create and update.** `create_configuration_plan` remains
-   admitted, with no change in behavior, and still refuses `delete`.
+2. **Catalog.** Using fresh protocol enumeration, confirm:
+   - 94 tools, or 95 with the optional YAML reader admitted;
+   - `get_configuration_definitions` present, with read-only annotations;
+   - every other descriptor unchanged from beta.32;
+   - Core signed selection, storage and audit health, and zero fallback.
+3. **The owner's six YAML definitions (live read).** Josh names the six
+   YAML-defined entities from the HAMCP-132 objective: two SQL sensors, a
+   filter sensor, two derivative sensors and an old-style group. Call
+   `get_configuration_definitions` with `entity_ids` set to those six. For
+   each entity, record:
+   - `definition.method` and `confidence`. An entity with a YAML
+     `unique_id` should be `exact_unique_id`. One without should be
+     `heuristic` with a stated confidence, or `ambiguous`/`unmatched` with a
+     reason. A heuristic must never appear as exact;
+   - the matched `definitions[]` row: its form, projected fields and
+     `expected_entities`;
+   - `diagnosis.classification` and `reasons`. For any entity that is
+     unavailable, check that the reasons agree with what Josh knows about it;
+   - for both SQL definitions, that `fields.db_url` is exactly
+     `{"redacted_by_policy": "database_url"}`, that `withheld` does not list
+     `db_url`, and that `omissions` has no `withheld:definitions[<n>]` for
+     them. With nothing else withheld and every source complete, the report
+     is complete; any `withheld:` omission must name another withheld item.
 
-## 4. Live canary: to do after signed sequence 13
+   Also record:
+   - every `sources[]` status and reason, `packages`, `omissions` and
+     `completeness`. With `homeassistant.packages` configured, the report
+     must be partial with `definitions_in_packages_not_read`;
+   - the `capability` block, with `component_commands:
+     not_used_owner_decision`;
+   - that the serialized response contains no database URL, credential,
+     secret name or state value.
+4. **By integration (live read).** Call `get_configuration_definitions` with
+   `integrations: ["sql", "filter", "derivative", "group"]`. Confirm:
+   - the six definitions appear, each SQL definition with `fields.db_url`
+     as the `redacted_by_policy` marker and no `withheld:definitions[<n>]`
+     omission for it;
+   - any UI-created entries of those integrations are listed under
+     `ui_entries` as `definition_not_readable_without_flow`, with no options
+     or data;
+   - the response is within its bound.
+5. **No change.** No configuration, registry entry, config entry or state is
+   modified by steps 3 and 4. The audit shows counts only.
 
-This canary **cannot run on this release as shipped**. It waits for a
-separate, reviewed, owner-signed Core registry sequence 13 that references
-`core.configuration_delete_operation` with the fingerprint above. Josh
-approves it separately, on one test automation:
-1. delete it under an approved plan and read back its absence (config 404,
-   registry entry gone, state gone);
-2. roll it back with `rollback_change` under a separately approved plan and
-   read back that the recreated config matches the pre-image exactly.
-
-Running the canary is a live change, and this document does not authorize
-it.
+No push, CI trigger, signing, publication, installation or live action is
+authorized by source completion.

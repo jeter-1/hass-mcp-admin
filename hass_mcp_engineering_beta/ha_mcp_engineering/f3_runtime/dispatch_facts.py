@@ -117,6 +117,8 @@ _P3_TARGET_TYPES = frozenset(
         "entity_registry_metadata",
         "entity_registry_availability",
         "entity_assistant_exposure",
+        # HAMCP-165: label create and update are ``require_admin`` too.
+        "label_registry_entry",
     }
 )
 # V9 applies to every code-owned entity registry write identity.
@@ -125,6 +127,7 @@ ALREADY_PRESENT_CAPABILITY_IDENTITIES = frozenset(
         ENTITY_METADATA_CAPABILITY_IDENTITY,
         "update_entity_registry_availability_configuration",
         "update_entity_assistant_exposure_configuration",
+        "update_label_registry_entry_configuration",
     }
 )
 _VERIFIED_NO_DISPATCH_CLASS = "verified_no_dispatch"

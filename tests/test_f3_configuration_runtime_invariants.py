@@ -67,8 +67,8 @@ class RuntimeInertInvariantTests(unittest.TestCase):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     decorators.extend(ast.unparse(item) for item in node.decorator_list)
         self.assertFalse(any("tool" in item for item in decorators), decorators)
-        # HAMCP-155: +1 inactive create_configuration_delete_plan.
-        self.assertEqual(len(registered_tools(get_registered_server())), 66)
+        # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
+        self.assertEqual(len(registered_tools(get_registered_server())), 68)
 
     def test_task_and_plan_vocabularies_are_unchanged(self):
         self.assertEqual(TASK_SCHEMA_VERSION, 1)

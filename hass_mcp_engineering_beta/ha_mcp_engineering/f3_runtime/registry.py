@@ -69,6 +69,24 @@ AVAILABILITY_EXPOSURE_REGISTRATIONS = (
     ),
 )
 
+# HAMCP-165: the code-owned label registry create and update, admitted only
+# by the dormant ``core.label_registry_operation`` profile.  Rollback is not
+# available: undoing a create would need deletion (HAMCP-155).
+LABEL_REGISTRATIONS = (
+    (
+        "create_label_registry_entry_configuration",
+        "label_registry_entry",
+        "create",
+        "direct-ha-exact-label-registry-v1",
+    ),
+    (
+        "update_label_registry_entry_configuration",
+        "label_registry_entry",
+        "update",
+        "direct-ha-exact-label-registry-v1",
+    ),
+)
+
 # HAMCP-155: governed deletion of one UI-managed automation or script.  The
 # sole DELETE is code-owned and admitted only by its own dormant Core profile.
 CONFIGURATION_DELETE_REGISTRATIONS = (
@@ -209,6 +227,30 @@ class ClosedAdapterRegistry:
                 plan_operation="configuration_plan",
                 target_type=target,
                 action=action,
+                provider_model=provider_model,
+                resource_lock_model="f3-configuration-lock-set-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="exact_registry_readback",
+                recovery_model="exact_configuration_readback",
+                rollback_declaration="unavailable",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+            for capability, target, action, provider_model in LABEL_REGISTRATIONS
+        )
+        entries.extend(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="configuration_operation",
+                operation_family="configuration",
+                plan_operation="configuration_plan",
+                target_type=target,
+                action=action,
                 provider_model=CONFIGURATION_DELETE_PROVIDER_MODEL,
                 resource_lock_model="f3-configuration-lock-set-v1",
                 provider_dependency_lock_model=(
@@ -310,6 +352,7 @@ class ClosedAdapterRegistry:
                 HELPER_STATE_REGISTRATION,
                 ENTITY_METADATA_REGISTRATION,
                 *AVAILABILITY_EXPOSURE_REGISTRATIONS,
+                *LABEL_REGISTRATIONS,
                 *CONFIGURATION_DELETE_REGISTRATIONS,
                 DASHBOARD_REGISTRATION,
             )
@@ -326,6 +369,7 @@ class ClosedAdapterRegistry:
                 HELPER_STATE_REGISTRATION[0],
                 ENTITY_METADATA_REGISTRATION[0],
                 *(item[0] for item in AVAILABILITY_EXPOSURE_REGISTRATIONS),
+                *(item[0] for item in LABEL_REGISTRATIONS),
                 *(item[0] for item in CONFIGURATION_DELETE_REGISTRATIONS),
             }
             if (
@@ -373,6 +417,7 @@ class ClosedAdapterRegistry:
                     "backup", "reload_domain", "addon", "home_assistant",
                     "dashboard", "entity_registry_metadata",
                     "entity_registry_availability", "entity_assistant_exposure",
+                    "label_registry_entry",
                 }
             ):
                 raise AdapterRegistryError("F3 route admission binding is invalid")

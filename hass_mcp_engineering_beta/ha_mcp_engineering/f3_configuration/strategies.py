@@ -22,6 +22,7 @@ from ..governance.entity_metadata import (
     update_fields as entity_metadata_update_fields,
 )
 from ..governance import entity_availability_exposure as availability_exposure
+from ..governance import label_registry
 from ..governance.normalize import stable_hash
 from ..governance.resources import (
     configuration_write_config,
@@ -59,6 +60,10 @@ CAPABILITY_IDENTITIES = {
         for resource_type, identity in (
             availability_exposure.CAPABILITY_IDENTITIES.items()
         )
+    },
+    **{
+        (label_registry.LABEL_RESOURCE_TYPE, action): identity
+        for action, identity in label_registry.CAPABILITY_IDENTITIES.items()
     },
 }
 
@@ -662,6 +667,141 @@ class EntityAssistantExposureConfigurationStrategy(
         return ("assistants", "entity_ids", "should_expose", "type")
 
 
+class LabelRegistryEntryConfigurationStrategy(ConfigurationStrategy):
+    """One closed label create or update for one exact label (HAMCP-165).
+
+    The plan records the full final entry plus its bindings; the single
+    command sent is rebuilt from the plan's own recorded current state.
+    ``config/label_registry/delete`` is never constructed.
+    """
+
+    resource_type = label_registry.LABEL_RESOURCE_TYPE
+    provider = label_registry.LABEL_PROVIDER
+    provider_contract = label_registry.LABEL_PROVIDER_CONTRACT
+    validation_contract = "label_registry_entry_validation_v1"
+    requires_configuration_check = False
+
+    @property
+    def transport(self) -> str:
+        return "home_assistant_websocket"
+
+    @property
+    def allowed_argument_names(self) -> tuple[str, ...]:
+        names = {"type", *label_registry.LABEL_FIELDS}
+        if self.action == "update":
+            names.add("label_id")
+        return tuple(sorted(names))
+
+    def provider_operation(self, target_id: str) -> str:
+        del target_id
+        return label_registry.PROVIDER_OPERATIONS[self.action]
+
+    def _command(
+        self,
+        target_id: str,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return label_registry.write_command(
+            self.action, target_id, current_config, proposed_config
+        )
+
+    def provider_descriptor(
+        self,
+        target_id: str,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
+    ) -> ConfigurationProviderDescriptor:
+        command = self._command(target_id, proposed_config, current_config)
+        return ConfigurationProviderDescriptor(
+            provider=self.provider,
+            contract_model=self.provider_contract,
+            transport=self.transport,
+            operation=self.provider_operation(target_id),
+            argument_names=tuple(
+                sorted(command, key=lambda item: item.encode("utf-8"))
+            ),
+            arguments_hash=stable_hash(command),
+        )
+
+    def provider_payload(
+        self, target_id: str, proposed_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        raise NotImplementedError(
+            "label registry payloads require the planned current state"
+        )
+
+    def argument_names(
+        self, proposed_config: dict[str, Any]
+    ) -> tuple[str, ...]:
+        raise NotImplementedError(
+            "label registry argument names require the planned current state"
+        )
+
+    def dispatch_config(
+        self,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        target_id = proposed_config.get("label_id")
+        return self._command(target_id, proposed_config, current_config)
+
+    def already_reached(
+        self,
+        observed: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> bool:
+        # Exactly the planned final entry is present, so nothing is sent.
+        if observed is None:
+            return False
+        try:
+            return label_registry.normalize_entry(
+                observed
+            ) == label_registry.normalize_entry(
+                label_registry.without_bindings(proposed_config)
+            )
+        except (TypeError, ValueError):
+            return False
+
+    async def preflight_evidence(
+        self,
+        gateway: Any,
+        target_id: str,
+        current_config: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> tuple[str, ...]:
+        check = getattr(gateway, "label_preflight_evidence", None)
+        if check is None or (current_config is None) != (self.action == "create"):
+            return ("dependency_evidence_unavailable",)
+        try:
+            return tuple(
+                await check(target_id, current_config, proposed_config)
+            )
+        except AuthorizationError:
+            return ("permission_failure",)
+        except Exception:
+            return ("dependency_evidence_unavailable",)
+
+    def read_error_code(self, exc: BaseException) -> str:
+        if isinstance(exc, AuthorizationError):
+            return "permission_failure"
+        return "resource_read_unavailable"
+
+    def observe_error_code(self, exc: BaseException) -> str:
+        if isinstance(exc, AuthorizationError):
+            return "readback_permission_failure"
+        return "readback_unavailable"
+
+    def dispatch_error_codes(self, exc: BaseException) -> tuple[str, ...]:
+        details = getattr(exc, "details", None)
+        if (
+            isinstance(details, dict)
+            and details.get("reason") == label_registry.UNAUTHORIZED_REASON
+        ):
+            return ("provider_permission_denied",)
+        return ()
+
+
 _STRATEGIES = {
     "automation": AutomationConfigurationStrategy,
     "script": ScriptConfigurationStrategy,
@@ -676,6 +816,7 @@ _STRATEGIES = {
     availability_exposure.EXPOSURE_RESOURCE_TYPE: (
         EntityAssistantExposureConfigurationStrategy
     ),
+    label_registry.LABEL_RESOURCE_TYPE: LabelRegistryEntryConfigurationStrategy,
 }
 
 

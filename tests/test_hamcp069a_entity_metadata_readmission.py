@@ -222,9 +222,9 @@ class DormantProfileTests(unittest.TestCase):
         self.assertIn(ENTITY_METADATA, ids(CORE_RUNTIME_CAPABILITY_PROFILES))
         self.assertNotIn(ENTITY_METADATA, ids(CORE_CAPABILITY_PROFILES))
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
-        # 22 through 069A, plus the two dormant 069B profiles and the
-        # dormant HAMCP-155 deletion profile.
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 25)
+        # 22 through 069A, plus the two dormant 069B profiles, the dormant
+        # 165 label profile and the dormant HAMCP-155 deletion profile.
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 26)
         (profile,) = CORE_ENTITY_METADATA_PROFILES
         mapping = profile.to_mapping()
         self.assertEqual(
@@ -555,8 +555,10 @@ class StaticToolCompletenessTests(unittest.TestCase):
             targeted,
             {
                 "create_entity_metadata_plan",
-                # HAMCP-069B binds its own exact target (its tests cover it).
+                # HAMCP-069B and HAMCP-165 bind their own exact targets
+                # (their tests cover them).
                 "create_entity_availability_exposure_plan",
+                "create_label_plan",
                 # HAMCP-155 binds its own exact deletion targets (its tests cover it).
                 "create_configuration_delete_plan",
             },
@@ -575,6 +577,7 @@ class StaticToolCompletenessTests(unittest.TestCase):
             if name not in {
                 "create_entity_metadata_plan",
                 "create_entity_availability_exposure_plan",
+                "create_label_plan",
                 "create_configuration_delete_plan",
             }:
                 for arguments in shapes:
@@ -663,6 +666,7 @@ class OtherToolGatewayCallShapeTests(unittest.IsolatedAsyncioTestCase):
             if name in {
                 "create_entity_metadata_plan",
                 "create_entity_availability_exposure_plan",
+                "create_label_plan",
                 "create_configuration_delete_plan",
             }:
                 continue

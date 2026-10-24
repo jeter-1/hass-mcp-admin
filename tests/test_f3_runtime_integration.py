@@ -28,6 +28,7 @@ from ha_mcp_engineering.f3_runtime.registry import (  # noqa: E402
     DASHBOARD_REGISTRATION,
     ENTITY_METADATA_REGISTRATION,
     HELPER_STATE_REGISTRATION,
+    LABEL_REGISTRATIONS,
     OPERATIONAL_REGISTRATIONS,
 )
 from ha_mcp_engineering.f3_runtime.repository import (  # noqa: E402
@@ -1036,6 +1037,7 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
                     HELPER_STATE_REGISTRATION,
                     ENTITY_METADATA_REGISTRATION,
                     *AVAILABILITY_EXPOSURE_REGISTRATIONS,
+                    *LABEL_REGISTRATIONS,
                     *CONFIGURATION_DELETE_REGISTRATIONS,
                     DASHBOARD_REGISTRATION,
                 )
@@ -1043,7 +1045,7 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
         )
         # HAMCP-155: the two delete identities are registered but each adapter
         # refuses until a signed registry admits the delete profile.
-        self.assertEqual(len(identities), 19)
+        self.assertEqual(len(identities), 21)  # +2 HAMCP-165 label identities
         self.assertEqual(
             [item for item in identities if "dashboard" in item],
             ["update_existing_dashboard"],
@@ -1053,7 +1055,7 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
         health = self.runtime.health()
         self.assertEqual(health["status"], "ready")
         self.assertTrue(health["execution_ready"])
-        self.assertEqual(health["activated_capability_count"], 19)
+        self.assertEqual(health["activated_capability_count"], 21)  # +2 HAMCP-165, +2 HAMCP-155
         self.assertEqual(health["dashboard_capability_count"], 1)
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(health["recovery_cadence_seconds"], 30)

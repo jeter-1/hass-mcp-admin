@@ -25,6 +25,7 @@ import alarmo_inspection_contract_acceptance as alarmo  # noqa: E402
 from alarmo_inspection_contract_acceptance import slot_binding  # noqa: E402
 from entity_metadata_contract_acceptance import load_receipt, receipt_bytes  # noqa: E402
 import real_ha_contract_tests as harness  # noqa: E402
+import seq13_contract_acceptance as seq13  # noqa: E402
 from test_alarmo_interval_observer import CORE, SLOT_VERSIONS  # noqa: E402
 from tests.hamcp155_fixtures import ConfigurationDeleteServiceTestCase  # noqa: E402
 
@@ -431,16 +432,24 @@ class WiringTests(unittest.TestCase):
             posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[block], decorator_list=[])
         return ast.fix_missing_locations(ast.Module(body=[wrapper], type_ignores=[]))
 
-    def run_hook(self, flag, lane_result):
+    def run_hook(self, flag, lane_result, seq13_result=None):
         """Returns (retained receipt, lane mock); raises what the hook raises."""
+        seq13_result = {"result": "PASS"} if seq13_result is None else seq13_result
         modules = {}
         for name in ("alarmo_inspection_contract_acceptance", "automation_baseline_contract_acceptance",
                      "entity_metadata_contract_acceptance", "configuration_delete_contract_acceptance"):
             modules[name] = ModuleType(name)
             modules[name].run_disposable = AsyncMock(return_value={"result": "PASS"})
         modules["entity_metadata_contract_acceptance"].load_receipt = load_receipt
+        # HAMCP-165/069B share the gate: their lanes run first, each must pass.
+        order = []
+        modules["seq13_contract_acceptance"] = ModuleType("seq13_contract_acceptance")
+        modules["seq13_contract_acceptance"].LANES = dict.fromkeys(seq13.LANES)
+        modules["seq13_contract_acceptance"].run_disposable = AsyncMock(
+            side_effect=lambda key, *_, **__: order.append(key) or seq13_result)
         delete_lane = modules["configuration_delete_contract_acceptance"].run_disposable
-        delete_lane.return_value = lane_result
+        delete_lane.side_effect = lambda *_, **__: order.append("configuration_delete") or lane_result
+        self.order = order
         configured = object()
         context = dict(EXPECTED_HA_VERSION=CORE, configured=configured, core_runtime=object(),
                        _alarmo_slot_required=lambda version: True,
@@ -466,6 +475,7 @@ class WiringTests(unittest.TestCase):
             with self.subTest(flag=flag):
                 retained, delete_lane = self.run_hook(flag, {"result": "PASS"})
                 delete_lane.assert_not_called()
+                self.assertEqual(self.order, [])
                 self.assertNotIn("seq13_configuration_delete", retained)
                 self.assertEqual(retained["entity_metadata"], {"result": "PASS"})
 
@@ -473,12 +483,22 @@ class WiringTests(unittest.TestCase):
         receipt = {"result": "PASS", "lane": "configuration_delete"}
         retained, delete_lane = self.run_hook("enabled", receipt)
         self.assertEqual(delete_lane.await_count, 1)
+        self.assertEqual(self.order, [*seq13.LANES, "configuration_delete"])
         self.assertEqual(retained["seq13_configuration_delete"], receipt)
+        for key in seq13.LANES:
+            self.assertEqual(retained["seq13_" + key], {"result": "PASS"})
         self.assertEqual(retained["entity_metadata"], {"result": "PASS"})
         for result in ({"result": "FAIL"}, {"result": "NOT_RUN"}, {}):
             with self.subTest(result=result), self.assertRaises(RuntimeError):
                 self.run_hook("enabled", result)
             # A failed lane retains nothing; the required receipt is untouched.
+            self.assertEqual(self.retained, {"result": "PASS"})
+
+    def test_failed_seq13_lane_stops_before_the_delete_lane(self):
+        for result in ({"result": "FAIL"}, {"result": "NOT_RUN"}, {}):
+            with self.subTest(result=result), self.assertRaises(RuntimeError):
+                self.run_hook("enabled", {"result": "PASS"}, seq13_result=result)
+            self.assertEqual(self.order, [next(iter(seq13.LANES))])
             self.assertEqual(self.retained, {"result": "PASS"})
 
     def test_harness_runs_the_lane_after_the_existing_scenarios(self):

@@ -844,6 +844,21 @@ Until signed sequence 13 exists, every supported Core fails closed. Note that
 the compiled `SUPPORTED_CORE_RELEASES` covers only 2026.7.2-2026.9.1; 2026.10.x
 is admitted only through the signed registry.
 
+HAMCP-165 review1 H1 audit: before that review, an F3 runtime composed
+without a Core runtime ran a retained, approved 069B plan in the legacy no-Core
+mode, with no dispatch-time admission check. The dormant-profile F3 gate now
+covers both 069B resource types. It applies on first apply, on a retained plan,
+and before every recovery, readback or private read-only reconciliation
+observation (a held observation's verification stays held). With no Core the child
+refuses `core_authority_unavailable`; with an unadmitted profile it refuses
+`pending_signed_registry_admission`; either way no Home Assistant command is
+sent. Generic `create_configuration_plan` routing refuses these types first
+too, before any read or store. An unadmitted first apply refuses earlier
+still, at apply entry, before any plan, task, child, manifest or lock record
+is written and before any Home Assistant request; without an F3 runtime the
+service refuses the same way instead of reading the registry and storing a
+task (HAMCP-165, following the HAMCP-155 review finding).
+
 Consequence: **the release acceptance's live canaries cannot run until a
 separate signed-registry PR lands** (OD-2). The implementation PR body carries
 the evidence package for that PR, as 069A did under D2.

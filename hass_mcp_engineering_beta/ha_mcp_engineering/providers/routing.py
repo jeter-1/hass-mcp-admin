@@ -44,6 +44,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.RECORDER_SETTINGS,
     ProviderCapability.HISTORY_SLICES,
     ProviderCapability.UNREGISTERED_ENTITIES,
+    ProviderCapability.CONFIGURATION_DEFINITIONS,
     ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     ProviderCapability.TYPED_FAN_EXECUTION,
@@ -131,6 +132,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_backup_inventory": ProviderCapability.BACKUP_INVENTORY,
     "get_recorder_settings": ProviderCapability.RECORDER_SETTINGS,
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
+    "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     "dashboard_integrity_analysis": ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
@@ -181,6 +183,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "create_entity_availability_exposure_plan": (
         ProviderCapability.OPERATIONAL_ADMINISTRATION
     ),
+    "create_label_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
     "create_configuration_delete_plan": (
         ProviderCapability.OPERATIONAL_ADMINISTRATION
     ),
@@ -256,6 +259,11 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "get_unregistered_entities": {
         "policy_id": "unregistered_entities_read_v1", "access": "read", "orchestrator": "engineering",
         "scope": "GET /api/states, config/entity_registry/list, entity/source and up to 500 search/related; bounded projection",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_configuration_definitions": {
+        "policy_id": "configuration_definitions_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "admitted YAML reader at fixed definition paths, GET /api/states and /api/config, entity registry, entity/source, config_entries/get for closed domains and manifest/get ha_mcp_tools; db_url and secrets withheld",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "automation_reliability_analysis": {
