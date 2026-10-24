@@ -153,13 +153,17 @@ No test reaches a live system. Every fixture is synthetic.
   gating, order, paths and pinned upload action.
 - Count and catalog pins in the existing suites are updated from 65 to 66
   static tools.
-- Mutations: `docs/evidence/hamcp155-mutations/`. 35 of 35 mutants are
-  killed over the four suites above (baseline 78 tests OK), covering the
-  four HAMCP-165 lessons (admission at every layer, drift at dispatch,
-  every claimed read asserted, removed-effect classification including
-  "not create/update means no effect"), rollback, adapter expected
-  effects, executor refusal storage and the closed gateway.
-  `results.json` records each mutant and the tests that killed it.
+- Mutations: `docs/evidence/hamcp155-mutations/`. 55 of 55 mutants are
+  killed over six suites: the four suites above, the review 1 probes and
+  `tests/test_hamcp069b_review1_corrections.py` (baseline 137 tests OK).
+  They cover the four HAMCP-165 lessons (admission at every layer, drift at
+  dispatch, every claimed read asserted, removed-effect classification
+  including "not create/update means no effect"), rollback, adapter expected
+  effects, executor refusal storage and the closed gateway. Review 1 added
+  the F3 entry refusal before persistence, absence bound to the captured
+  entity identity, the bounded config-check allowlist, and the dormant
+  harness and cleanup wiring. `results.json` records each mutant and the
+  tests that killed it.
 
 ## 2. Release CI and publication
 
