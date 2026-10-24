@@ -110,9 +110,10 @@ runtime surface: the new `f3_configuration/delete.py`,
 `governance/configuration_delete.py` and
 `governance/configuration_delete_planning.py`, and changes to the F3
 executor, runtime and registry, the configuration adapter and gateway,
-governance policy, physical effects, resources, service and runtime, the Core
-readmission profiles, models, routes and source, routing, the MCP server and
-the governance tool registry.
+governance policy, physical effects, semantic projection, resources, service
+and runtime, the Core readmission profiles, models, routes and source, the
+capability catalog, routing and provider routing, the MCP server, the
+governance tools and tool registry, and the version.
 
 No workflow, add-on permission, Supervisor route, add-on configuration,
 signed registry entry, HOLD, support window, dependency or stable-v1 file
