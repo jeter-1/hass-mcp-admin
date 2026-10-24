@@ -108,8 +108,10 @@ No test reaches a live system. Every fixture is synthetic.
   targets, a 400 rejection, an uncertain send, partial plans, partial
   runtime absence (registry entry only, state only, both), a still-present
   config, and storage of every pre-intent refusal code.
-- `tests/test_hamcp155_configuration_delete_admission.py` (30 tests): the
-  profile is runtime-only and referenced by no signed envelope; refusal
+- `tests/test_hamcp155_configuration_delete_admission.py` (31 tests): the
+  profile is runtime-only and referenced by no signed envelope, and its
+  contract fingerprint (and the unchanged governed configuration
+  fingerprint) is pinned; refusal
   while unadmitted with zero reads and nothing stored, through the tool and
   the generic and internal builders; admission re-checked at preflight,
   immediately before the DELETE, at observation, after restart, on resume

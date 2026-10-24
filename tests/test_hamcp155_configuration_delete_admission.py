@@ -166,6 +166,24 @@ class DormantProfileTests(unittest.TestCase):
             "compiled-core-configuration-delete-operation-v1",
         )
 
+    def test_contract_fingerprints_for_the_sequence_13_signing(self):
+        # Signed sequence 13 must reference exactly this value; the signed
+        # create/update contract it sits beside is unchanged.
+        (profile,) = CORE_CONFIGURATION_DELETE_PROFILES
+        self.assertEqual(
+            profile.contract_fingerprint,
+            "sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d",
+        )
+        (configuration,) = [
+            item
+            for item in CORE_CAPABILITY_PROFILES
+            if item.capability_id == "core.governed_configuration_operation"
+        ]
+        self.assertEqual(
+            configuration.contract_fingerprint,
+            "sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441",
+        )
+
     def test_no_signed_envelope_has_ever_referenced_it(self):
         registry = json.loads(
             (ROOT / "upstream-trust/ha-core-release-registry.json").read_text()
