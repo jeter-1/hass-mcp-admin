@@ -380,6 +380,10 @@ class ConfigurationDeleteAdapter(ConfigurationOperationAdapter):
         )
         return result
 
+    # The drift re-read below runs in the runtime's own short Core-authority
+    # window, never under the not-yet-committed dispatch authority.
+    PREDISPATCH_READS_HOME_ASSISTANT = True
+
     async def _predispatch_refusal(
         self, operation: PreparedConfigurationOperation
     ) -> tuple[str, ...]:

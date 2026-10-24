@@ -204,7 +204,7 @@ class SyntheticExposureWebSocket(SyntheticRegistryWebSocket):
             "reason": None,
         }
 
-    async def command(self, message: dict[str, Any]) -> Any:
+    async def _answer(self, message: dict[str, Any]) -> Any:
         kind = message.get("type")
         if kind in NEVER_SENT_COMMANDS:
             raise AssertionError(f"never-sent command was sent: {kind}")
@@ -262,7 +262,7 @@ class SyntheticExposureWebSocket(SyntheticRegistryWebSocket):
             if kind in self.failures:
                 raise self.failures[kind]
             return {"expose_new": self.expose_new_settings[message["assistant"]]}
-        return await super().command(message)
+        return await super()._answer(message)
 
 
 PROFILES_069B = frozenset({AVAILABILITY_PROFILE, EXPOSURE_PROFILE})
