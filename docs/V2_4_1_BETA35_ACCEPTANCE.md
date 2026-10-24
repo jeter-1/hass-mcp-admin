@@ -150,22 +150,35 @@ No test reaches a live system. Every fixture is synthetic.
 - `tests/test_hamcp069b_review1_corrections.py`: an unadmitted 069B first
   apply refuses before storing anything, and the plan files stay
   byte-identical across restart.
+- `tests/test_hamcp155_merge_seams.py` (16 tests): the beta.34 merge seams.
+  Every mix of the four planning families (entity metadata,
+  availability/exposure, deletion, label) is refused before anything is
+  stored, and so is a label or delete rollback. Each family alone selects
+  its own diff and risk branch, and the generic route refuses every other
+  family's type. The entry check and the dispatch-time check refuse each
+  dormant profile (deletion, label and both HAMCP-069B profiles) when it is
+  unadmitted; admitted profiles still apply.
 - `tests/test_alarmo_interval_observer.py`: the dormant workflow steps, their
   gating, order, paths and pinned upload action.
 - Count and catalog pins in the existing suites are raised once more over
   beta.34: 67 to 68 static tools, 95 to 96 advertised (96 to 97 with the
   YAML reader), and 25 to 26 runtime Core profiles.
-- Mutations: `docs/evidence/hamcp155-mutations/`. 55 of 55 mutants are
-  killed over six suites: the four suites above, the review 1 probes and
-  `tests/test_hamcp069b_review1_corrections.py` (baseline 137 tests OK).
+- Mutations: `docs/evidence/hamcp155-mutations/`. 62 of 63 mutants are
+  killed over seven suites: the four suites above, the review 1 probes,
+  `tests/test_hamcp069b_review1_corrections.py` and the merge seams
+  (baseline 154 tests OK). The one survivor, `sm_delete_rollback_allowed`,
+  is equivalent: the deletion builder refuses a rollback on its own, so the
+  duplicate clause in the family check cannot change behavior.
   They cover the four HAMCP-165 lessons (admission at every layer, drift at
   dispatch, every claimed read asserted, removed-effect classification
   including "not create/update means no effect"), rollback, adapter expected
   effects, executor refusal storage and the closed gateway. Review 1 added
   the F3 entry refusal before persistence, absence bound to the captured
   entity identity, the bounded config-check allowlist, and the dormant
-  harness and cleanup wiring. `results.json` records each mutant and the
-  tests that killed it.
+  harness and cleanup wiring. The beta.34 merge added the `sm_` seam
+  mutants: the family count, each family's diff branch, both rollback
+  refusals and entry admission for labels and contract-v2 plans.
+  `results.json` records each mutant and the tests that killed it.
 
 ## 2. Release CI and publication
 

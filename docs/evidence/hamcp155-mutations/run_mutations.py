@@ -4,7 +4,9 @@ Groups follow the four HAMCP-165 review lessons (admission at every layer,
 drift at dispatch, evidence/readback, protected effects) plus rollback,
 the no-default expected effect and the executor pre-intent refusal.
 Review 1 adds M3 (entry admission before persistence), M1 (captured entity
-identity), M2 (bounded config-check allowlist) and the dormant wiring. A path
+identity), M2 (bounded config-check allowlist) and the dormant wiring. The
+fff324b merge adds the sm_ seam mutants (planning-family exclusivity, one
+diff branch per family, entry admission over every dormant profile). A path
 starting with "/" is repository-relative; every other path is under RT.
 """
 import concurrent.futures, json, re, shutil, subprocess, sys, tempfile
@@ -14,7 +16,7 @@ SRC = Path('/home/josh/repos/hass-mcp-admin-HAMCP-155')
 RT = 'hass_mcp_engineering_beta/ha_mcp_engineering/'
 BASE = Path(__file__).resolve().parent
 TMP = '/var/tmp/hamcp155-tmp/mut'
-PY = '/home/josh/hamcp069b-work/venv-r1/bin/python'
+PY = '/home/josh/repos/hass-mcp-admin-HAMCP-155/venv-r1/bin/python'
 ALL = [
     'tests.test_hamcp155_configuration_delete_execution',
     'tests.test_hamcp155_configuration_delete_admission',
@@ -22,6 +24,7 @@ ALL = [
     'tests.test_hamcp155_configuration_delete_lane',
     'tests.test_hamcp155_review1_probes',
     'tests.test_hamcp069b_review1_corrections',
+    'tests.test_hamcp155_merge_seams',
 ]
 S = 'governance/service.py'
 D = 'f3_configuration/delete.py'
@@ -146,14 +149,14 @@ M = [
   [(RU, '        if existing is None:\n            self._refuse_unadmitted_entry(plan)\n',
         '        if existing is None:\n')]),
  ('m3_entry_delete_profile_dropped',
-  [(RO, '    {AVAILABILITY_PROFILE, EXPOSURE_PROFILE, CONFIGURATION_DELETE_PROFILE}\n)',
-        '    {AVAILABILITY_PROFILE, EXPOSURE_PROFILE}\n)')]),
+  [(RO, '        CONFIGURATION_DELETE_PROFILE,\n        LABEL_PROFILE,\n    }\n)',
+        '        LABEL_PROFILE,\n    }\n)')]),
  ('m3_entry_availability_profile_dropped',
-  [(RO, '    {AVAILABILITY_PROFILE, EXPOSURE_PROFILE, CONFIGURATION_DELETE_PROFILE}\n)',
-        '    {EXPOSURE_PROFILE, CONFIGURATION_DELETE_PROFILE}\n)')]),
+  [(RO, '        AVAILABILITY_PROFILE,\n        EXPOSURE_PROFILE,\n        CONFIGURATION_DELETE_PROFILE,\n',
+        '        EXPOSURE_PROFILE,\n        CONFIGURATION_DELETE_PROFILE,\n')]),
  ('m3_entry_status_ignored',
-  [(RU, '                    core is not None\n                    and core.route_status((profile,)).get("available") is True',
-        '                    True')]),
+  [(RU, '        try:\n            return core.route_status((profile,)).get("available") is True',
+        '        try:\n            return True')]),
  # Review 1 M1: absence is proven at the entity identity captured before the delete.
  ('m1_absent_ignores_entity_identity',
   [(LN, '            and type(readback["entity_id"]) is str\n            and entity_of(readback["entity_id"].split(".", 1)[0], readback["entity_id"]))',
@@ -184,8 +187,8 @@ M = [
         '        assert value["write_routes_bound"] is True\n')]),
  # Review 1 wiring: dormant never runs; enabled must pass and be retained.
  ('wr_harness_runs_while_dormant',
-  [(HN, '            if os.environ.get("REAL_HA_SEQ13_LANES") == "enabled":\n                import configuration_delete_contract_acceptance',
-        '            if True:\n                import configuration_delete_contract_acceptance')]),
+  [(HN, '            if os.environ.get("REAL_HA_SEQ13_LANES") == "enabled":\n                import seq13_contract_acceptance as seq13',
+        '            if True:\n                import seq13_contract_acceptance as seq13')]),
  ('wr_harness_failure_tolerated',
   [(HN, '                if seq13_results["seq13_configuration_delete"].get("result") != "PASS":',
         '                if False:')]),
@@ -199,6 +202,28 @@ M = [
  ('wr_cleanup_dormant_receipt_accepted',
   [(AL, '        if key in value:\n            raise ValueError("Seq-13 configuration delete receipt retained while dormant")',
         '        if False:\n            raise ValueError("Seq-13 configuration delete receipt retained while dormant")')]),
+ # Merge seams (fff324b union): four exclusive planning families, one diff
+ # branch each, and entry admission over every dormant profile.
+ ('sm_family_count_two_allowed',
+  [(S, '            )\n            > 1\n', '            )\n            > 2\n')]),
+ ('sm_family_count_drops_delete',
+  [(S, '                    _label_context,\n                    _configuration_delete_context,\n                )\n            )\n            > 1',
+       '                    _label_context,\n                )\n            )\n            > 1')]),
+ ('sm_label_rollback_allowed',
+  [(S, '            or (_label_context is not None and _rollback_context is not None)\n', '')]),
+ ('sm_delete_rollback_allowed',
+  [(S, '            or (\n                _configuration_delete_context is not None\n                and _rollback_context is not None\n            )\n', '')]),
+ ('sm_delete_diff_branch_skipped',
+  [(S, '                if _configuration_delete_context is not None:\n                    item = _configuration_delete_context.item(operation_id)\n                    diff = {',
+       '                if False:\n                    item = _configuration_delete_context.item(operation_id)\n                    diff = {')]),
+ ('sm_availability_diff_branch_skipped',
+  [(S, '                elif _availability_exposure_context is not None:\n                    item = _availability_exposure_context.item(operation_id)\n                    diff = {',
+       '                elif False:\n                    item = _availability_exposure_context.item(operation_id)\n                    diff = {')]),
+ ('sm_entry_drops_label',
+  [(RO, '        CONFIGURATION_DELETE_PROFILE,\n        LABEL_PROFILE,\n    }', '        CONFIGURATION_DELETE_PROFILE,\n    }')]),
+ ('sm_entry_skips_contract_v2',
+  [(RU, '        if plan.contract_version == 2:\n            for profile in f3_entry_admission_profiles(',
+        '        if False:\n            for profile in f3_entry_admission_profiles(')]),
 ]
 only = set(sys.argv[1:])
 if only:
@@ -210,7 +235,7 @@ def run(case):
     name, edits = case
     with tempfile.TemporaryDirectory(prefix='155-mut-', dir=TMP) as td:
         dest = Path(td) / 'source'
-        shutil.copytree(SRC, dest, ignore=shutil.ignore_patterns('.git', '__pycache__', '.artifacts', 'core', 'logs'))
+        shutil.copytree(SRC, dest, ignore=shutil.ignore_patterns('.git', '__pycache__', '.artifacts', 'core', 'logs', 'venv-r1'))
         # The lane receipt binds the source revision: commit the unmutated
         # copy to a throwaway repository so HEAD resolves as in a checkout.
         git = ['git', '-c', 'user.name=mutation', '-c', 'user.email=mutation@invalid',

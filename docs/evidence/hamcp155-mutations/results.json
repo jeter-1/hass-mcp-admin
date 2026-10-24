@@ -1,15 +1,18 @@
 {
-  "source_commit": "81cf9e7 (worktree copy committed to a throwaway repository)",
-  "modules": 6,
-  "baseline_tests": 137,
-  "mutants": 55,
-  "killed": 55,
+  "source_commit": "f527452 (worktree copy committed to a throwaway repository)",
+  "modules": 7,
+  "baseline_tests": 154,
+  "mutants": 63,
+  "killed": 62,
+  "equivalent_survivors": [
+    "sm_delete_rollback_allowed"
+  ],
   "results": [
     {
       "name": "baseline",
       "exit": 0,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "OK"
@@ -22,7 +25,7 @@
       "name": "l1_service_first_check_removed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=4)"
@@ -37,7 +40,7 @@
       "name": "l1_service_core_always_available",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=11)"
@@ -56,7 +59,7 @@
       "name": "l1_delete_builder_check_removed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -71,7 +74,7 @@
       "name": "l1_generic_builder_check_removed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -86,7 +89,7 @@
       "name": "l1_runtime_admission_always_true",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=5)"
@@ -104,7 +107,7 @@
       "name": "l1_adapter_preflight_admission_removed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -119,7 +122,7 @@
       "name": "l1_predispatch_admission_removed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -134,7 +137,7 @@
       "name": "l1_observe_admission_removed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -149,7 +152,7 @@
       "name": "l1_admission_callback_ignored",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=5)"
@@ -167,7 +170,7 @@
       "name": "l2_predispatch_drift_removed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -183,7 +186,7 @@
       "name": "l2_stale_pre_image_accepted",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -199,7 +202,7 @@
       "name": "l2_registry_entry_change_ignored",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -214,7 +217,7 @@
       "name": "l2_consumer_evidence_change_ignored",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -229,7 +232,7 @@
       "name": "l3_absence_ignores_state",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -244,7 +247,7 @@
       "name": "l3_absence_ignores_registry",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -259,7 +262,7 @@
       "name": "l3_readback_skipped",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=6)"
@@ -279,7 +282,7 @@
       "name": "l3_config_presence_ignored",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -295,7 +298,7 @@
       "name": "l4_unsupported_action_is_no_effect",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=3)"
@@ -310,7 +313,7 @@
       "name": "l4_delete_after_side_kept",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -325,7 +328,7 @@
       "name": "l4_policy_delete_branch_removed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=13)"
@@ -343,7 +346,7 @@
       "name": "l4_protected_basis_dropped",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=4)"
@@ -361,7 +364,7 @@
       "name": "l4_dependency_basis_dropped",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -377,7 +380,7 @@
       "name": "l4_planner_never_elevated",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=7)"
@@ -398,16 +401,17 @@
       "name": "l4_ordinary_delete_low_risk",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
-        "FAILED (failures=2, errors=37)"
+        "FAILED (failures=2, errors=40)"
       ],
       "import_error": false,
       "failing": [
         "test_adapter_refuses_at_preflight_while_the_lease_holds",
         "test_adapter_refuses_immediately_before_the_delete",
         "test_admission_withdrawn_after_approval",
+        "test_admitted_profiles_still_apply",
         "test_already_absent_is_stale_never_verified",
         "test_an_ordinary_delete_is_standard_but_still_destructive",
         "test_changed_pre_image_is_stale",
@@ -416,7 +420,9 @@
         "test_delete_answered_ok_but_still_present_is_a_mismatch",
         "test_delete_automation_then_recreate_exactly",
         "test_delete_script_then_recreate_exactly",
+        "test_dispatch_refuses_every_unadmitted_profile_without_a_write",
         "test_drift_immediately_before_delete_refuses_as_stale",
+        "test_entry_refuses_every_unadmitted_profile_before_persistence",
         "test_every_dispatch_refusal_code_is_stored",
         "test_f3_composed_without_core_never_deletes",
         "test_final_read_retirement_prevents_delete",
@@ -447,7 +453,7 @@
       "name": "l4_removed_effect_statement_dropped",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -462,7 +468,7 @@
       "name": "l4_policy_marker_basis_unchecked",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -477,7 +483,7 @@
       "name": "l4_mixed_delete_plan_allowed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -492,7 +498,7 @@
       "name": "rb_recreate_from_intent",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (errors=7)"
@@ -512,7 +518,7 @@
       "name": "rb_live_target_overwritten",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -527,7 +533,7 @@
       "name": "rb_unverified_child_restored",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -543,7 +549,7 @@
       "name": "fx_base_adapter_defaults_update",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -558,7 +564,7 @@
       "name": "fx_delete_adapter_defaults_delete",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -573,7 +579,7 @@
       "name": "ex_pre_intent_refusal_ignored",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=3)"
@@ -590,7 +596,7 @@
       "name": "ex_pre_intent_codes_dropped",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -605,7 +611,7 @@
       "name": "gw_generic_write_deletes",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -620,15 +626,17 @@
       "name": "m3_entry_refusal_removed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
-        "FAILED (failures=7)"
+        "FAILED (failures=11)"
       ],
       "import_error": false,
       "failing": [
         "test_adapter_refuses_at_preflight_while_the_lease_holds",
         "test_admission_withdrawn_after_approval",
+        "test_entry_refuses_every_unadmitted_profile_before_persistence",
+        "test_entry_refuses_the_unadmitted_label_profile_before_persistence",
         "test_existing_plan_after_withdrawal_never_writes_across_restart",
         "test_f3_composed_without_core_never_deletes",
         "test_retained_approved_plan_after_restart_never_deletes",
@@ -641,14 +649,16 @@
       "name": "m3_entry_delete_profile_dropped",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
-        "FAILED (failures=5)"
+        "FAILED (failures=7)"
       ],
       "import_error": false,
       "failing": [
         "test_admission_withdrawn_after_approval",
+        "test_entry_admission_covers_every_dormant_profile",
+        "test_entry_refuses_every_unadmitted_profile_before_persistence",
         "test_f3_composed_without_core_never_deletes",
         "test_f3_entry_admission_covers_exactly_the_dormant_profiles",
         "test_retained_approved_plan_after_restart_never_deletes",
@@ -660,16 +670,15 @@
       "name": "m3_entry_availability_profile_dropped",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
-        "FAILED (failures=3)"
+        "FAILED (failures=2)"
       ],
       "import_error": false,
       "failing": [
-        "test_existing_plan_after_withdrawal_never_writes_across_restart",
-        "test_f3_entry_admission_covers_exactly_the_dormant_profiles",
-        "test_unadmitted_f3_apply_and_recovery_never_write"
+        "test_entry_admission_covers_every_dormant_profile",
+        "test_f3_entry_admission_covers_exactly_the_dormant_profiles"
       ],
       "killed": true
     },
@@ -677,18 +686,16 @@
       "name": "m3_entry_status_ignored",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
-        "FAILED (failures=6)"
+        "FAILED (failures=4)"
       ],
       "import_error": false,
       "failing": [
         "test_admission_withdrawn_after_approval",
-        "test_existing_plan_after_withdrawal_never_writes_across_restart",
-        "test_f3_composed_without_core_never_deletes",
+        "test_entry_refuses_every_unadmitted_profile_before_persistence",
         "test_retained_approved_plan_after_restart_never_deletes",
-        "test_unadmitted_f3_apply_and_recovery_never_write",
         "test_unadmitted_retained_plan_does_not_persist_execution_state"
       ],
       "killed": true
@@ -697,7 +704,7 @@
       "name": "m1_absent_ignores_entity_identity",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -712,7 +719,7 @@
       "name": "m1_absent_ignores_registry_identity",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -727,7 +734,7 @@
       "name": "m1_state_route_guesses",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=4)"
@@ -745,7 +752,7 @@
       "name": "m1_readback_guesses_without_capture",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -760,7 +767,7 @@
       "name": "m1_readback_identity_unbound",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -775,7 +782,7 @@
       "name": "m1_recreate_identity_unbound",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -790,7 +797,7 @@
       "name": "m2_config_check_counted_as_write",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=4)"
@@ -807,7 +814,7 @@
       "name": "m2_any_post_allowlisted",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=5)"
@@ -825,7 +832,7 @@
       "name": "m2_recreate_checks_unbounded",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=8)"
@@ -840,7 +847,7 @@
       "name": "m2_delete_checks_unbounded",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=4)"
@@ -855,7 +862,7 @@
       "name": "wr_harness_runs_while_dormant",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=7, errors=1)"
@@ -871,7 +878,7 @@
       "name": "wr_harness_failure_tolerated",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=2)"
@@ -886,7 +893,7 @@
       "name": "wr_harness_receipt_not_retained",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (errors=2)"
@@ -902,7 +909,7 @@
       "name": "wr_cleanup_enabled_check_bypassed",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1, errors=1)"
@@ -917,7 +924,7 @@
       "name": "wr_cleanup_byte_identity_unchecked",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=1)"
@@ -932,7 +939,7 @@
       "name": "wr_cleanup_dormant_receipt_accepted",
       "exit": 1,
       "tests": [
-        "137"
+        "154"
       ],
       "result": [
         "FAILED (failures=3)"
@@ -940,6 +947,199 @@
       "import_error": false,
       "failing": [
         "test_cleanup_verification_requires_the_receipt_when_enabled"
+      ],
+      "killed": true
+    },
+    {
+      "name": "sm_family_count_two_allowed",
+      "exit": 1,
+      "tests": [
+        "154"
+      ],
+      "result": [
+        "FAILED (errors=12)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_mix_is_refused_with_real_admission_too",
+        "test_every_mix_of_families_is_refused_before_anything_is_stored"
+      ],
+      "killed": true
+    },
+    {
+      "name": "sm_family_count_drops_delete",
+      "exit": 1,
+      "tests": [
+        "154"
+      ],
+      "result": [
+        "FAILED (errors=6)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_mix_is_refused_with_real_admission_too",
+        "test_every_mix_of_families_is_refused_before_anything_is_stored"
+      ],
+      "killed": true
+    },
+    {
+      "name": "sm_label_rollback_allowed",
+      "exit": 1,
+      "tests": [
+        "154"
+      ],
+      "result": [
+        "FAILED (errors=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_label_plan_is_never_a_rollback"
+      ],
+      "killed": true
+    },
+    {
+      "name": "sm_delete_rollback_allowed",
+      "exit": 0,
+      "tests": [
+        "154"
+      ],
+      "result": [
+        "OK"
+      ],
+      "import_error": false,
+      "failing": [],
+      "killed": false,
+      "equivalent": "Equivalent: the deletion builder block independently refuses `_before_persist is None or _rollback_context is not None` before any persistence, so removing the duplicate clause from the family check cannot change behavior; the delete-rollback refusal test still passes against that check."
+    },
+    {
+      "name": "sm_delete_diff_branch_skipped",
+      "exit": 1,
+      "tests": [
+        "154"
+      ],
+      "result": [
+        "FAILED (failures=10, errors=40)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_delete_is_never_classified_as_no_effect",
+        "test_a_protected_effect_relabelled_standard_is_prohibited",
+        "test_adapter_refuses_at_preflight_while_the_lease_holds",
+        "test_adapter_refuses_immediately_before_the_delete",
+        "test_admission_withdrawn_after_approval",
+        "test_admitted_profiles_still_apply",
+        "test_already_absent_is_stale_never_verified",
+        "test_an_ordinary_delete_is_standard_but_still_destructive",
+        "test_an_unlock_is_held_at_the_floor",
+        "test_called_scripts_always_elevate",
+        "test_changed_pre_image_is_stale",
+        "test_consumer_evidence_changed_is_stale",
+        "test_consumers_are_disclosed_and_unresolved_ones_elevate",
+        "test_delete_and_recreate_requests_are_observed_exactly",
+        "test_delete_answered_ok_but_still_present_is_a_mismatch",
+        "test_delete_automation_then_recreate_exactly",
+        "test_delete_script_then_recreate_exactly",
+        "test_deletion_selects_its_own_branch",
+        "test_dispatch_refuses_every_unadmitted_profile_without_a_write",
+        "test_drift_immediately_before_delete_refuses_as_stale",
+        "test_entry_refuses_every_unadmitted_profile_before_persistence",
+        "test_every_dispatch_refusal_code_is_stored",
+        "test_f3_composed_without_core_never_deletes",
+        "test_final_read_retirement_prevents_delete",
+        "test_fresh_composition_without_core_refuses_before_any_ha_read",
+        "test_incomplete_consumer_evidence_is_treated_as_protected",
+        "test_lane_recreate_write_receipt_matches_actual_requests",
+        "test_legacy_apply_routes_never_delete",
+        "test_legacy_spelling_recreates_exactly",
+        "test_lingering_registry_entry_alone_is_manual_review",
+        "test_lingering_state_alone_is_manual_review",
+        "test_observation_refuses_when_admission_is_withdrawn_mid_delete",
+        "test_ordered_multi_delete",
+        "test_partial_plan_stops_on_first_failure",
+        "test_recovery_after_an_uncertain_delete_never_redispatches",
+        "test_registry_entry_changed_is_stale",
+        "test_rejected_delete_is_reported_rejected",
+        "test_removing_a_lock_action_is_elevated_with_acknowledgement",
+        "test_resume_and_recovery_mid_plan_never_delete_without_admission",
+        "test_retained_approved_plan_after_restart_never_deletes",
+        "test_rollback_skips_a_target_that_was_recreated",
+        "test_runtime_removal_not_observed_is_manual_review",
+        "test_tampered_marker_or_basis_is_prohibited",
+        "test_unadmitted_retained_plan_does_not_persist_execution_state",
+        "test_uncertain_delete_not_applied_is_a_mismatch",
+        "test_uncertain_delete_that_applied_is_verified_by_readback"
+      ],
+      "killed": true
+    },
+    {
+      "name": "sm_availability_diff_branch_skipped",
+      "exit": 1,
+      "tests": [
+        "154"
+      ],
+      "result": [
+        "FAILED (failures=18, errors=17)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_feeding_profile_still_escalates_with_complete_evidence",
+        "test_admitted_inverse_still_plans",
+        "test_admitted_profiles_still_apply",
+        "test_availability_and_exposure_select_their_own_branch",
+        "test_complete_evidence_for_an_unprotected_entity_is_standard",
+        "test_disable_with_out_of_bounds_dependency_evidence_requires_elevated",
+        "test_dispatch_refuses_every_unadmitted_profile_without_a_write",
+        "test_each_incompleteness_cause_is_elevated",
+        "test_enable_default_exposure_follows_owner_stored_setting_rule",
+        "test_entry_refuses_every_unadmitted_profile_before_persistence",
+        "test_evidence_becoming_complete_after_approval_is_refused",
+        "test_evidence_becoming_incomplete_after_approval_is_refused",
+        "test_existing_plan_after_withdrawal_never_writes_across_restart",
+        "test_incomplete_evidence_disable_still_executes_once_when_approved",
+        "test_inverse_refuses_when_admission_is_withdrawn",
+        "test_inverse_without_core_refuses_before_reads",
+        "test_overflow_without_read_failures_is_elevated",
+        "test_script_consumers_are_disclosed",
+        "test_signed_fixture_core_and_real_f3_execute_once",
+        "test_the_approval_for_an_incomplete_evidence_disable_is_elevated",
+        "test_the_rollback_disable_uses_the_same_predicate",
+        "test_unadmitted_f3_apply_and_recovery_never_write",
+        "test_valve_exposure_requires_elevated"
+      ],
+      "killed": true
+    },
+    {
+      "name": "sm_entry_drops_label",
+      "exit": 1,
+      "tests": [
+        "154"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_entry_admission_covers_every_dormant_profile",
+        "test_f3_entry_admission_covers_exactly_the_dormant_profiles"
+      ],
+      "killed": true
+    },
+    {
+      "name": "sm_entry_skips_contract_v2",
+      "exit": 1,
+      "tests": [
+        "154"
+      ],
+      "result": [
+        "FAILED (failures=5)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_admission_withdrawn_after_approval",
+        "test_entry_refuses_every_unadmitted_profile_before_persistence",
+        "test_f3_composed_without_core_never_deletes",
+        "test_retained_approved_plan_after_restart_never_deletes",
+        "test_unadmitted_retained_plan_does_not_persist_execution_state"
       ],
       "killed": true
     }
