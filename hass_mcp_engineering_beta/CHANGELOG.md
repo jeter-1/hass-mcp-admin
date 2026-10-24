@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.4.1-beta.36 - Governed delete drift read in its own Core window, inactive (HAMCP-155)
+
+Builds on 2.4.1-beta.35. Activates nothing new.
+
+- The delete adapter's dispatch-time drift read ran before the dispatch
+  authority was committed, so the real REST client refused it and every
+  admitted delete failed pre-dispatch (`resource_read_unavailable`, zero
+  writes). It now runs in its own short Core-authority window (acquire,
+  consume, revalidate, finish; the preflight pattern), entered inside the
+  dispatch window, single use, and refused once dispatch authority is
+  committed. Missing or withdrawn authority is
+  `dispatch_authority_unavailable`; drift is still `stale_target_state`;
+  the dispatch commit is unchanged and still sends exactly one DELETE.
+- Only the delete adapter (`PREDISPATCH_READS_HOME_ASSISTANT`) uses the
+  window; every other adapter's pre-intent check is unchanged.
+- Test fakes for the governance and F3 suites now enforce the real clients'
+  Core-authority check (`tests/core_authority_fakes.py`).
+- No tool, schema, profile, fingerprint, signed registry, workflow,
+  permission, dependency or stable-v1 change; static tools 68, catalog 96
+  (97).
+
 ## 2.4.1-beta.35 - Governed deletion of automations and scripts, inactive (HAMCP-155)
 
 Builds on 2.4.1-beta.34. Activates nothing new.
