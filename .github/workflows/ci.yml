@@ -362,7 +362,7 @@ jobs:
       HA_CONTRACT_NETWORK: beta-rc2-contract-${{ matrix.lane }}
       # HAMCP-165/069B/155: the seq-13 contract lanes run only when the batch
       # evidence run sets this to "enabled"; any other value keeps them dormant.
-      REAL_HA_SEQ13_LANES: dormant
+      REAL_HA_SEQ13_LANES: enabled
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0

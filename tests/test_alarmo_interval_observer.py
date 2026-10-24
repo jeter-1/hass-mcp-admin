@@ -2272,7 +2272,7 @@ class WorkflowBindingTests(unittest.TestCase):
         # the batch evidence run flips this one value. Nothing else reads the flag.
         workflow = yaml.safe_load(CI.read_text(encoding="utf-8"))
         job = workflow["jobs"]["real-ha-contract-tests"]
-        self.assertEqual(job["env"]["REAL_HA_SEQ13_LANES"], "dormant")
+        self.assertEqual(job["env"]["REAL_HA_SEQ13_LANES"], "enabled")  # HAMCP-222 evidence run only
         self.assertEqual(CI.read_text(encoding="utf-8").count("REAL_HA_SEQ13_LANES: "), 1)
         users = [step["name"] for step in self.steps if "REAL_HA_SEQ13_LANES" in json.dumps(step)]
         self.assertEqual(users, [SEQ13_STAGE, SEQ13_UPLOAD, SEQ13_DELETE_UPLOAD])

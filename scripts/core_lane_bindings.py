@@ -52,6 +52,10 @@ REVIEWED_CORE_BINDINGS = {
                              CHILD_DEVICE_NAME_PARTS, True, "8.5.0"),
     "2026.10.1": CoreBinding("sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0",
                              CHILD_DEVICE_NAME_PARTS, True, "8.5.0"),
+    # HAMCP-222: device registry, entity registry and every other Core file the
+    # contracts read are byte-identical to 2026.10.1 (exact-source review).
+    "2026.10.3": CoreBinding("sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
+                             CHILD_DEVICE_NAME_PARTS, True, "8.5.0"),
 }
 
 
