@@ -39,10 +39,20 @@ COMMANDS = frozenset({"manifest/get", "config_entries/get", "config/entity_regis
     "alarmo/config", "alarmo/areas", "alarmo/sensors", "alarmo/entities", "alarmo/sensor_groups"})
 CONTROL_COMMANDS = frozenset({DOMAIN + "/ready", DOMAIN + "/start", DOMAIN + "/finish"})
 STORE_KEYS = frozenset({"alarmo.storage", "core.config_entries", "core.entity_registry",
-                        "core.device_registry", "auth", "core.restore_state"})
+                        "core.device_registry", "auth", "core.restore_state", "repairs.issue_registry"})
 # Background bookkeeping on Core's own timers that intervals report, not refuse.
 TOLERATED_KEYS = frozenset({"auth", "core.restore_state"})
-HASH_KEYS = tuple(sorted(STORE_KEYS - TOLERATED_KEYS))
+# Named, never tolerated and never hashed (HAMCP-219 review 1). Core's issue
+# registry Store (helpers/issue_registry.py:26, :100-128, identical at the
+# current-slot commit abe1fdd7 and the rollback-slot commit 6a811d33) schedules
+# ``async_delay_save`` on a 10 s timer (helpers/registry.py:14, :84-89) whenever
+# an issue is created or deleted. A window holding only its delayed-save
+# scheduling may be discarded and rerun once by the client; the rerun must be
+# clean. Readiness still waits for its pending save, so a rerun opens only after
+# the flush. Origin is not trusted: Core's executor and thread-safe callbacks
+# drop the request context.
+RETRY_KEYS = frozenset({"repairs.issue_registry"})
+HASH_KEYS = tuple(sorted(STORE_KEYS - TOLERATED_KEYS - RETRY_KEYS))
 QUIET_SECONDS = 2
 MAX_STORE_CLASSES = 16
 # The fixed store-class vocabulary (HAMCP-180). Names are the ``core.<name>``

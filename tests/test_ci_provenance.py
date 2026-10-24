@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -49,15 +50,26 @@ def fixture(base="b" * 40, head="4deb1d30edc7ccb8ced7c8438930ca1310c3775b"):
 
 
 # Existing workflow-shell tests use the same API fixture through a fake gh.
-# The actual protected helper still runs; this substitutes only GitHub I/O.
+# The actual protected helper still runs; this substitutes only GitHub I/O,
+# answering ``gh api --include`` as gh does (status line, headers, body).
 MOCK_API_SHELL = '''elif [[ -n "${MOCK_PROVENANCE_JSON:-}" ]]; then
-  python3 - "$2" <<'MOCK_API'
+  python3 - "$@" <<'MOCK_API'
 import json, os, sys
 data = json.loads(os.environ["MOCK_PROVENANCE_JSON"])
-if sys.argv[1] not in data:
-    raise SystemExit(2)
-print(json.dumps(data[sys.argv[1]]))
+include = "--include" in sys.argv
+if sys.argv[2] not in data:
+    if include:
+        sys.stdout.write("HTTP/2.0 404 Not Found\\r\\n\\r\\n{}")
+    raise SystemExit(1 if include else 2)
+if include:
+    sys.stdout.write("HTTP/2.0 200 OK\\r\\nContent-Type: application/json\\r\\n\\r\\n")
+print(json.dumps(data[sys.argv[2]]))
 MOCK_API
+'''
+# The same status line and blank header line for other fake gh branches.
+MOCK_INCLUDE_SHELL = '''include_header() {
+  if [[ " $* " == *" --include "* ]]; then printf 'HTTP/2.0 200 OK\\r\\n\\r\\n'; fi
+}
 '''
 
 
@@ -213,33 +225,67 @@ class CIProvenanceTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_api_get_is_bounded_readonly_and_refusals_do_not_echo_text(self):
-        for raw, code in ((b'{"safe":true}', 0), (b'private malformed response', 0),
-                          (b'{}', 1), (b'{"a":1,"a":2}', 0), (b'x' * 33, 0)):
+        ok = b"HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n"
+        missing = b"HTTP/2.0 404 Not Found\r\n\r\n"
+        for raw, code in ((ok + b'{"safe":true}', 0), (ok + b'private malformed response', 0),
+                          (missing + b'{"message":"private"}', 1), (ok + b'{"a":1,"a":2}', 0),
+                          (ok + b'x' * 33, 0)):
             with self.subTest(raw=raw):
+                calls = []
                 def run(args, **kwargs):
+                    calls.append(args)
                     self.assertIn("GET", args)
+                    self.assertIn("--include", args)
                     self.assertEqual(kwargs["timeout"], 30)
-                    self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+                    # gh diagnostics go to a private file for classification
+                    # only; they never reach the job log.
+                    self.assertNotIn(kwargs["stderr"], (None, subprocess.PIPE))
+                    self.assertTrue(hasattr(kwargs["stderr"], "read"))
                     kwargs["stdout"].write(raw)
                     return subprocess.CompletedProcess(args, code)
-                with patch.object(validator.subprocess, "run", run), patch.object(validator, "MAX_RESPONSE_BYTES", 32):
-                    if raw == b'{"safe":true}':
+                with patch.object(validator.subprocess, "run", run), \
+                        patch.object(validator, "MAX_RESPONSE_BYTES", 32), \
+                        patch.object(validator.time, "sleep") as sleep, \
+                        patch("sys.stderr", new_callable=io.StringIO):
+                    if raw.endswith(b'{"safe":true}'):
                         self.assertEqual(validator.github_get("fixture"), {"safe": True})
                     else:
                         with self.assertRaises(validator.Refusal) as result:
                             validator.github_get("fixture")
                         self.assertNotIn("private", str(result.exception))
+                # A 404, malformed or oversized response is never retried.
+                self.assertEqual(len(calls), 1)
+                sleep.assert_not_called()
 
-    def test_api_timeout_refuses_and_closes_output(self):
+    def test_api_timeout_retries_within_the_bound_then_refuses_and_closes_output(self):
         outputs = []
         def run(args, **kwargs):
             outputs.append(kwargs["stdout"])
             raise subprocess.TimeoutExpired(args, 30)
-        with patch.object(validator.subprocess, "run", run):
+        with patch.object(validator.subprocess, "run", run), \
+                patch.object(validator.time, "sleep") as sleep, \
+                patch("sys.stderr", new_callable=io.StringIO) as stderr:
             with self.assertRaisesRegex(validator.Refusal, "github_read_unavailable"):
                 validator.github_get("fixture")
-        self.assertTrue(outputs[0].closed)
+        self.assertEqual(len(outputs), validator.MAX_ATTEMPTS)
+        self.assertEqual(sleep.call_count, validator.MAX_ATTEMPTS - 1)
+        self.assertTrue(all(output.closed for output in outputs))
+        self.assertIn("host api.github.com, last status timeout", stderr.getvalue())
 
+    def test_api_rate_limit_is_retried_then_succeeds(self):
+        responses = [(b"HTTP/2.0 429 Too Many Requests\r\nRetry-After: 3\r\n\r\n{}", 1),
+                     (b"HTTP/2.0 503 Service Unavailable\r\n\r\n{}", 1),
+                     (b"HTTP/2.0 200 OK\r\n\r\n{\"safe\":true}", 0)]
+        def run(args, **kwargs):
+            raw, code = responses.pop(0)
+            kwargs["stdout"].write(raw)
+            return subprocess.CompletedProcess(args, code)
+        with patch.object(validator.subprocess, "run", run), \
+                patch.object(validator.time, "sleep") as sleep:
+            self.assertEqual(validator.github_get("fixture"), {"safe": True})
+        self.assertEqual(responses, [])
+        self.assertEqual(sleep.call_count, 2)
+        self.assertGreaterEqual(sleep.call_args_list[0].args[0], 3)
 
 if __name__ == "__main__":
     unittest.main()

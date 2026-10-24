@@ -11,7 +11,6 @@ import socket
 import sys
 import tempfile
 import threading
-import time
 import unittest
 from unittest.mock import patch
 
@@ -154,19 +153,31 @@ def fake_http_endpoint(
     body: bytes = b"",
     body_factory=None,
     content_type: str = "application/json",
-    delay_seconds: float = 0,
+    hold: threading.Event | None = None,
+    held: threading.Event | None = None,
 ):
+    """A loopback upstream; with ``hold``, every POST is held unanswered.
+
+    A held request sets ``held`` and is never answered: the endpoint releases
+    ``hold`` on exit and the handler then returns without a response, so the
+    client's own timeout always wins regardless of host load (HAMCP-208).
+    """
+
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
             request_length = int(self.headers.get("Content-Length", "0"))
             request_body = self.rfile.read(request_length)
+            if hold is not None:
+                if held is not None:
+                    held.set()
+                hold.wait(60)  # hang guard only; released on exit
+                self.close_connection = True
+                return
             response_body = (
                 body_factory(request_body)
                 if body_factory is not None
                 else body
             )
-            if delay_seconds:
-                time.sleep(delay_seconds)
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(response_body)))
@@ -200,6 +211,8 @@ def fake_http_endpoint(
             "?credential=synthetic-query-secret"
         )
     finally:
+        if hold is not None:
+            hold.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
@@ -706,15 +719,30 @@ class McpTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(SECRET_URL, repr(caught.exception))
 
     async def test_delayed_response_is_timeout(self):
+        # The upstream holds the request unanswered until the endpoint exits,
+        # so only the transport's own clamped timeout can end the discovery.
+        self.assertEqual(
+            repr(McpDashboardTransport(
+                "http://127.0.0.1:1/mcp",
+                timeout_seconds=1,
+                client_version=SERVER_VERSION,
+            )),
+            "McpDashboardTransport(configured=True, timeout_seconds=1.0)",
+        )
+        hold, held = threading.Event(), threading.Event()
         with fake_http_endpoint(
             status=200,
             body=b"{}",
-            delay_seconds=1.5,
+            hold=hold,
+            held=held,
         ) as url:
             self.assertEqual(
                 await self._discover_failure(url, timeout_seconds=1),
                 "timeout",
             )
+            # The upstream had the request and never answered it.
+            self.assertTrue(held.is_set())
+            self.assertFalse(hold.is_set())
 
     async def test_malformed_mcp_response_is_invalid_response(self):
         def malformed_initialize(request_body):

@@ -56,6 +56,7 @@ from tests.test_readonly_upstream_gateway import (  # noqa: E402
     settings,
 )
 from ha_mcp_engineering.clients.mcp import DashboardTransportError  # noqa: E402
+from ha_mcp_engineering.clients import upstream_read  # noqa: E402
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
     McpReadGatewayTransport,
 )
@@ -1149,6 +1150,39 @@ class _HeldCanaryNetwork:
         return types.CallToolResult.model_validate(self.result)
 
 
+class GatedSubmitWait:
+    """Stand in for ``upstream_read``'s ``asyncio`` in retained-session tests.
+
+    ``_submit``'s bounded ``asyncio.wait`` keeps its real production budget,
+    which is recorded. It expires only after the synthetic peer has entered
+    the gated network step, so a loaded host cannot turn the case into an
+    earlier timeout. Every other attribute is the real ``asyncio``.
+    """
+
+    def __init__(self, entered):
+        self.entered = entered
+        self.budgets = []
+        self.expired_after_entry = []
+
+    def __getattr__(self, name):
+        return getattr(asyncio, name)
+
+    async def wait(self, fs, *, timeout=None, return_when=asyncio.ALL_COMPLETED):
+        self.budgets.append(timeout)
+        fs = set(fs)
+        entered = asyncio.ensure_future(self.entered.wait())
+        try:
+            async with asyncio.timeout(10):  # hang guard only
+                await asyncio.wait(fs | {entered}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            entered.cancel()
+            await asyncio.gather(entered, return_exceptions=True)
+        self.expired_after_entry.append(
+            self.entered.is_set() and not any(item.done() for item in fs)
+        )
+        return await asyncio.wait(fs, timeout=0, return_when=return_when)
+
+
 class HeldReadCanaryAuthorityTests(unittest.IsolatedAsyncioTestCase):
     async def harness(self, *, retained=False):
         runtime = CoreRuntime()
@@ -1380,11 +1414,19 @@ class HeldReadCanaryAuthorityTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(after_commit=after_commit):
                 h = await self.harness(retained=True)
                 gate = h.network.call_gate if after_commit else h.network.catalog_gate
+                entered = h.network.call_entered if after_commit else h.network.catalog_entered
                 gate.clear()
-                # Shorten only the synthetic deadline; exercise _submit's real
-                # timeout and the worker that survives cancellation of its future.
-                with patch.object(h.transport, "_operation_budget_seconds", return_value=0.05):
+                # Keep the production budget; expire _submit's real bounded
+                # wait only once the gated step is entered, and exercise the
+                # worker that survives cancellation of its future.
+                waiter = GatedSubmitWait(entered)
+                with patch.object(upstream_read, "asyncio", waiter):
                     result = await self.canary(h)
+                self.assertEqual(waiter.expired_after_entry, [True])
+                self.assertEqual(
+                    waiter.budgets,
+                    [max(1.0, float(h.callbacks[-1]["timeout_seconds"]))],
+                )
                 self.assertEqual(result["details"]["failure_category"], "timeout")
                 self.assert_authority(h, consumed=int(after_commit),
                                       released=int(not after_commit),

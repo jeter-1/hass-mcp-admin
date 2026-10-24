@@ -360,6 +360,9 @@ jobs:
       HA_WRITER_CONTAINER: beta25-real-ha-writer-${{ matrix.lane }}
       HA_CONTRACT_CONTAINER: beta25-real-ha-${{ matrix.lane }}
       HA_CONTRACT_NETWORK: beta-rc2-contract-${{ matrix.lane }}
+      # HAMCP-165/069B/155: the seq-13 contract lanes run only when the batch
+      # evidence run sets this to "enabled"; any other value keeps them dormant.
+      REAL_HA_SEQ13_LANES: dormant
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -447,6 +450,8 @@ jobs:
         if: matrix.alarmo
         shell: bash
         env:
+          # Read-only job token: authenticated codeload reads (HAMCP-221).
+          GH_TOKEN: ${{ github.token }}
           REAL_HA_CORE_SOURCE_COMMIT: ${{ matrix.core_source_commit }}
           REAL_HA_CORE_SOURCE_SHA256: ${{ matrix.core_source_sha256 }}
         run: |
@@ -461,8 +466,9 @@ jobs:
             printf 'REAL_HA_ENTITY_METADATA_RESULT=%s\n' "$RUNNER_TEMP/entity-metadata-$HA_CONTRACT_LANE.json"
             printf 'REAL_HA_CORE_ARCHIVE=%s\n' "$core_archive"
           } >> "$GITHUB_ENV"
-          curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
-            'https://codeload.github.com/nielsfaber/alarmo/tar.gz/169e134f4b70d87aae36ba54a72a398ecc960afd' --output "$archive"
+          # Bounded retry on 429/5xx/network only; prepare-archive checks the pinned digest.
+          python3 -I -S scripts/github_retry.py download \
+            --url 'https://codeload.github.com/nielsfaber/alarmo/tar.gz/169e134f4b70d87aae36ba54a72a398ecc960afd' --output "$archive"
           python scripts/alarmo_inspection_contract_acceptance.py --prepare-archive "$archive" --destination "$overlay"
           cp -R "$overlay/custom_components/alarmo" "$REAL_HA_CONTRACT_DIR/custom_components/"
           # Only this owned synthetic store needs the migration writer directory permissions.
@@ -475,11 +481,13 @@ jobs:
           printf 'REAL_HA_ALARMO_FIXTURE_RECEIPT=%s\n' "$overlay/alarmo-inspection-fixture.json" >> "$GITHUB_ENV"
           # Committed lane provenance pins the archive digest; older records hash
           # GitHub's legacy.tar.gz form and newer ones its tar.gz form. Only these
-          # two fixed forms are tried, and only the exact digest is accepted.
+          # two fixed forms are tried, and only the exact digest is accepted. A
+          # digest mismatch is never retried; each form is re-verified below.
           matched=""
           for form in legacy.tar.gz tar.gz; do
-            if curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
-                 "https://codeload.github.com/home-assistant/core/$form/$REAL_HA_CORE_SOURCE_COMMIT" --output "$core_archive" \
+            if python3 -I -S scripts/github_retry.py download \
+                 --url "https://codeload.github.com/home-assistant/core/$form/$REAL_HA_CORE_SOURCE_COMMIT" --output "$core_archive" \
+                 --sha256 "$REAL_HA_CORE_SOURCE_SHA256" \
                && printf '%s  %s\n' "$REAL_HA_CORE_SOURCE_SHA256" "$core_archive" | sha256sum --check --strict --status; then
               matched="$form"
               break
@@ -522,6 +530,16 @@ jobs:
           docker cp \
             "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-disposable-ha.json" \
             "$RUNNER_TEMP/ha-mcp-$REAL_HA_UPSTREAM_VERSION-disposable-$HA_CONTRACT_LANE.json"
+      - name: Stage seq-13 contract evidence paths
+        if: matrix.alarmo && env.REAL_HA_SEQ13_LANES == 'enabled'
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            printf 'REAL_HA_LABEL_REGISTRY_RESULT=%s\n' "$RUNNER_TEMP/seq13-label-registry-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_AVAILABILITY_EXPOSURE_RESULT=%s\n' "$RUNNER_TEMP/seq13-availability-exposure-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_CONFIGURATION_DELETE_RESULT=%s\n' "$RUNNER_TEMP/seq13-configuration-delete-$HA_CONTRACT_LANE.json"
+          } >> "$GITHUB_ENV"
       - name: Run real Home Assistant contracts
         env:
           REAL_HA_URL: http://127.0.0.1:8123
@@ -567,6 +585,26 @@ jobs:
           name: entity-metadata-core-${{ matrix.ha_version }}-${{ matrix.support_slot }}-amd64
           path: |
             ${{ runner.temp }}/entity-metadata-${{ matrix.lane }}.json
+            ${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload bounded seq-13 label and availability/exposure contract evidence
+        if: always() && matrix.alarmo && env.REAL_HA_SEQ13_LANES == 'enabled'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: seq13-contracts-core-${{ matrix.ha_version }}-${{ matrix.support_slot }}-amd64
+          path: |
+            ${{ runner.temp }}/seq13-label-registry-${{ matrix.lane }}.json
+            ${{ runner.temp }}/seq13-availability-exposure-${{ matrix.lane }}.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload bounded seq-13 configuration delete contract evidence
+        if: always() && matrix.alarmo && env.REAL_HA_SEQ13_LANES == 'enabled'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: seq13-configuration-delete-core-${{ matrix.ha_version }}-${{ matrix.support_slot }}-${{ matrix.lane }}
+          path: |
+            ${{ runner.temp }}/seq13-configuration-delete-${{ matrix.lane }}.json
             ${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json
           if-no-files-found: error
           retention-days: 14

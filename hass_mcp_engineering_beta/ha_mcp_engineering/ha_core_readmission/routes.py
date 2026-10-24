@@ -101,6 +101,37 @@ AVAILABILITY_EXPOSURE_OPERATIONS = MappingProxyType(
 AVAILABILITY_EXPOSURE_TOOL = "create_entity_availability_exposure_plan"
 AVAILABILITY_EXPOSURE_MAX_ENTITIES = 8
 
+# HAMCP-155: deletion binds only its own dormant runtime profile.  The signed
+# governed_configuration_operation contract never authorizes a DELETE, and the
+# create/update identities never map here.
+CONFIGURATION_DELETE_PROFILE = "core.configuration_delete_operation"
+CONFIGURATION_DELETE_TOOL = "create_configuration_delete_plan"
+CONFIGURATION_DELETE_TARGET_TYPE = "configuration_deletion"
+_F3_CONFIGURATION_DELETE_OPERATIONS = frozenset(
+    {
+        ("delete_automation_configuration", "delete_automation_configuration"),
+        ("delete_script_configuration", "delete_script_configuration"),
+    }
+)
+
+# HAMCP-165: label create and edit bind only their own dormant profile;
+# entity assignment children keep the signed 069A profile.
+LABEL_PROFILE = "core.label_registry_operation"
+LABEL_TOOL = "create_label_plan"
+LABEL_RESOURCE_TYPE = "label_registry_entry"
+_F3_LABEL_OPERATIONS = frozenset(
+    {
+        (
+            "create_label_registry_entry_configuration",
+            "create_label_registry_entry_configuration",
+        ),
+        (
+            "update_label_registry_entry_configuration",
+            "update_label_registry_entry_configuration",
+        ),
+    }
+)
+
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
     "ha_config_get_calendar_events": ("core.basic_websocket_read",),
@@ -158,6 +189,9 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_unregistered_entities": (
         "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",
     ),
+    "get_configuration_definitions": (
+        "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",
+    ),
     "render_template": ("core.template_semantics",),
     "list_automation_traces": ("core.automation_trace_read",),
     "get_automation_trace": ("core.automation_trace_read",),
@@ -191,6 +225,16 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
         "core.dependency_helper_planning",
         AVAILABILITY_PROFILE,
         EXPOSURE_PROFILE,
+    ),
+    CONFIGURATION_DELETE_TOOL: (
+        "core.dependency_helper_planning",
+        CONFIGURATION_DELETE_PROFILE,
+    ),
+    # Narrowed per call to LABEL_PROFILE when no entity is assigned.
+    LABEL_TOOL: (
+        "core.dependency_helper_planning",
+        "core.entity_registry_metadata_operation",
+        LABEL_PROFILE,
     ),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
@@ -479,7 +523,25 @@ def static_tool_requirements(
                 value for value in requirements if value not in unselected
             )
 
+    elif tool_name == LABEL_TOOL and _label_plan_assigns_nothing(arguments):
+        # Only entity assignment children read the dependency snapshot and
+        # use the 069A profile; an invalid request keeps the full set and
+        # its target is refused.
+        requirements = (LABEL_PROFILE,)
+
     return tuple(sorted(set(requirements)))
+
+
+def _label_plan_assigns_nothing(arguments: Any) -> bool:
+    operations = arguments.get("operations") if isinstance(arguments, dict) else None
+    return (
+        isinstance(operations, list)
+        and bool(operations)
+        and all(
+            isinstance(item, dict) and item.get("entity_ids", []) == []
+            for item in operations
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -539,6 +601,10 @@ def static_tool_target(
 
     if tool_name == AVAILABILITY_EXPOSURE_TOOL:
         return availability_exposure_target(arguments)
+    if tool_name == CONFIGURATION_DELETE_TOOL:
+        return configuration_delete_target(arguments)
+    if tool_name == LABEL_TOOL:
+        return label_plan_target(arguments)
     if tool_name != "create_entity_metadata_plan":
         return None
     entity_id = arguments.get("entity_id") if isinstance(arguments, dict) else None
@@ -586,6 +652,62 @@ def availability_exposure_target(arguments: Any) -> dict[str, str]:
     return {"target_type": selected[0], "target_id": ",".join(sorted(entity_ids))}
 
 
+def configuration_delete_target(arguments: Any) -> dict[str, str]:
+    """Bind the 155 planner lease to its exact, bounded deletion set.
+
+    The target identity is the sorted, comma-joined ``resource_type:target_id``
+    pairs (neither a comma nor a colon can occur in a validated id).  The
+    planner's own closed validator runs first, so every shape it would refuse
+    is refused here with its reason.
+    """
+
+    # Imported at call time: governance composes this package at load.
+    from ..governance.configuration_delete_planning import (
+        ConfigurationDeleteRefusal,
+        validate_request,
+    )
+
+    try:
+        request = validate_request(arguments)
+    except ConfigurationDeleteRefusal as refusal:
+        field = refusal.details.get("field")
+        raise StaticToolTargetRefused(
+            refusal.reason_code,
+            field if isinstance(field, str) else "deletions",
+        ) from None
+    return {
+        "target_type": CONFIGURATION_DELETE_TARGET_TYPE,
+        "target_id": request.lease_target_id,
+    }
+
+
+def label_plan_target(arguments: Any) -> dict[str, str]:
+    """Bind the 165 planner lease to its exact, bounded label set.
+
+    The target identity is the sorted, comma-joined label ids: the exact
+    predicted Core slug for a create and the named id for an update (a comma
+    never occurs in a label id).  The planner's own closed validator runs
+    first, so every shape it would refuse is refused here with its reason.
+    """
+
+    # Imported at call time: governance composes this package at load.
+    from ..governance.entity_metadata_planning import EntityMetadataRefusal
+    from ..governance.label_registry_planning import validate_request
+
+    try:
+        request = validate_request(arguments)
+    except EntityMetadataRefusal as refusal:
+        field = refusal.details.get("field")
+        raise StaticToolTargetRefused(
+            refusal.reason_code,
+            field if isinstance(field, str) else "operations",
+        ) from None
+    return {
+        "target_type": LABEL_RESOURCE_TYPE,
+        "target_id": ",".join(sorted(request.label_ids)),
+    }
+
+
 def f3_requirements(prepared: Any) -> tuple[str, ...]:
     """Map an existing typed F3 operation to its complete Core authority set."""
 
@@ -613,6 +735,12 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         values.add("core.governed_configuration_operation")
     elif identity in _F3_ENTITY_AVAILABILITY_EXPOSURE_OPERATIONS:
         values.add(_F3_ENTITY_AVAILABILITY_EXPOSURE_OPERATIONS[identity])
+    elif identity in _F3_CONFIGURATION_DELETE_OPERATIONS:
+        # Never governed_configuration_operation: that signed evidence did not
+        # cover DELETE.
+        values.add(CONFIGURATION_DELETE_PROFILE)
+    elif identity in _F3_LABEL_OPERATIONS:
+        values.add(LABEL_PROFILE)
     elif identity in _F3_ENTITY_METADATA_OPERATIONS:
         # Never the signed governed_configuration_operation contract: that
         # evidence did not cover the entity registry write adapter.
@@ -622,6 +750,38 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         # conflicting identities therefore cannot acquire a Core route lease.
         values.add("core.unsupported_f3_operation")
     return tuple(sorted(values))
+
+
+# HAMCP-155 M3 / HAMCP-165: runtime-only profiles that only an owner-signed
+# registry admits.  An initial F3 apply whose plan needs one of these refuses
+# before any execution-state persistence or Home Assistant request when Core
+# does not currently admit it; the dispatch-time guard still applies afterwards.
+F3_ENTRY_ADMISSION_PROFILES = frozenset(
+    {
+        AVAILABILITY_PROFILE,
+        EXPOSURE_PROFILE,
+        CONFIGURATION_DELETE_PROFILE,
+        LABEL_PROFILE,
+    }
+)
+
+
+@dataclass(frozen=True)
+class _F3Identity:
+    capability_id: str
+    operation: str
+
+
+def f3_entry_admission_profiles(identities: Any) -> tuple[str, ...]:
+    """Entry-admission profiles that these F3 capability identities need."""
+
+    profiles: set[str] = set()
+    for identity in identities:
+        requirements = f3_requirements(
+            _F3Identity(capability_id=identity, operation=identity)
+        )
+        profiles.update(set(requirements) & F3_ENTRY_ADMISSION_PROFILES)
+    return tuple(sorted(profiles))
 
 
 __all__ = [
@@ -642,12 +802,22 @@ __all__ = [
     "delegated_requirements",
     "delegated_provider_compatibility",
     "f3_requirements",
+    "F3_ENTRY_ADMISSION_PROFILES",
+    "f3_entry_admission_profiles",
     "AVAILABILITY_EXPOSURE_OPERATIONS",
     "AVAILABILITY_EXPOSURE_TOOL",
     "STATIC_TARGET_INVALID_ENTITY_ID",
     "STATIC_TARGET_INVALID_ENTITY_IDS",
     "STATIC_TARGET_INVALID_OPERATION",
     "availability_exposure_target",
+    "CONFIGURATION_DELETE_PROFILE",
+    "CONFIGURATION_DELETE_TARGET_TYPE",
+    "CONFIGURATION_DELETE_TOOL",
+    "configuration_delete_target",
+    "LABEL_PROFILE",
+    "LABEL_RESOURCE_TYPE",
+    "LABEL_TOOL",
+    "label_plan_target",
     "StaticCoreRoute",
     "StaticToolTargetRefused",
     "static_tool_core_route",

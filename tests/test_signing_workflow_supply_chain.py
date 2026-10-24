@@ -2248,9 +2248,11 @@ class PublishingPythonInterpreterTests(unittest.TestCase):
 # Inlined helper copies in self-contained allowlisted scripts, and their source.
 COPIED_DEFINITIONS = {
     "publication_handoff.py": (
-        "validate_ci_provenance.py", "validate_ready_authorization.py",
+        "validate_ci_provenance.py", "validate_ready_authorization.py", "github_retry.py",
     ),
     "publication_claim.py": ("publication_handoff.py",),
+    # HAMCP-221: the shared bounded GitHub read, inlined for -I -S callers.
+    "validate_ci_provenance.py": ("github_retry.py",),
 }
 
 

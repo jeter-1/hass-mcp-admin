@@ -522,14 +522,30 @@ class RedactionAndAuditTests(unittest.TestCase):
 
 class OperationLatencyMetricTests(unittest.TestCase):
     def test_long_lived_transport_does_not_inflate_operation_latency(self):
-        with tempfile.TemporaryDirectory() as directory:
+        from ha_mcp_engineering import routing as routing_module
+
+        # The gateway measures operation latency with its module's
+        # time.perf_counter. Substitute a clock that only the synthetic app
+        # advances, so the recorded latencies are exact rather than bounded
+        # by host scheduling: the long-lived GET transport holds 150 ms and
+        # each JSON-RPC operation holds 2 ms.
+        clock_ms = [1_000_000]
+
+        class RoutingClock:
+            def __getattr__(self, name):
+                return getattr(time, name)
+
+            @staticmethod
+            def perf_counter():
+                return clock_ms[0] / 1000
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(routing_module, "time", RoutingClock()):
             configured = settings(str(Path(directory) / "audit.jsonl"))
 
             async def app(scope, receive, send):
-                if scope["method"] == "GET":
-                    await asyncio.sleep(0.15)
-                else:
-                    await asyncio.sleep(0.002)
+                clock_ms[0] += 150 if scope["method"] == "GET" else 2
+                await asyncio.sleep(0)
                 await send({"type": "http.response.start", "status": 200, "headers": []})
                 await send({"type": "http.response.body", "body": b"{}"})
 
@@ -584,8 +600,17 @@ class OperationLatencyMetricTests(unittest.TestCase):
                     final["mcp_operation_methods"],
                     {"initialize": 1, "tools/list": 1, "tools/call": 1},
                 )
-                self.assertEqual(final["tool_latency"]["count"], 1)
-                self.assertLess(final["mcp_operation_latency"]["maximum_ms"], 100)
+                self.assertEqual(
+                    final["tool_latency"],
+                    {"count": 1, "average_ms": 2.0, "maximum_ms": 2.0},
+                )
+                # Exactly the 2 ms each operation held; the GET's 150 ms of
+                # transport lifetime contributes to none of them.
+                self.assertEqual(
+                    final["mcp_operation_latency"],
+                    {"count": 3, "average_ms": 2.0, "maximum_ms": 2.0},
+                )
+                self.assertEqual(clock_ms[0], 1_000_000 + 150 + 3 * 2)
             finally:
                 METRICS.reset()
 
@@ -730,7 +755,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 65)
+        self.assertEqual(health["registered_tool_count"], 68)
         helper_provider = health["governance"][
             "operational_administration"
         ]["helper_state_provider"]

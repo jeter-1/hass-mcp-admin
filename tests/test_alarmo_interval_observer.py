@@ -5,6 +5,7 @@ Slot-driven tests iterate the committed window; single-slot tests name the
 rollback slot explicitly. Rotations use a temporary repository root.
 """
 import asyncio
+import concurrent.futures
 from contextlib import contextmanager, nullcontext
 import copy
 import dataclasses
@@ -141,6 +142,7 @@ def cleanup_value(core_version):
     denial = receipt((), core_version); denial["kind"] = "control"
     return dict(result="PASS", scenario="alarmo_inspection", core=core_version, support_slot=binding["slot"],
                 core_image=binding["image"], runtime_monitor_closed=True, interval_observation=observation,
+                discarded_observations=[],
                 missing_authority_observation=denial, negative_control_observation=control,
                 automation_baseline={"synthetic_receipt": True},
                 entity_metadata=synthetic_entity_metadata_receipt(core_version),
@@ -2204,6 +2206,13 @@ class BaselineFixtureGuardTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotRegex((BETA23 / name).read_text(encoding="utf-8"), r"20[0-9]{2}\.[0-9]{1,2}\.[0-9]")
 
 
+SEQ13_STAGE_IF = "matrix.alarmo && env.REAL_HA_SEQ13_LANES == 'enabled'"
+SEQ13_UPLOAD_IF = "always() && " + SEQ13_STAGE_IF
+SEQ13_STAGE = "Stage seq-13 contract evidence paths"
+SEQ13_UPLOAD = "Upload bounded seq-13 label and availability/exposure contract evidence"
+SEQ13_DELETE_UPLOAD = "Upload bounded seq-13 configuration delete contract evidence"
+
+
 class WorkflowBindingTests(unittest.TestCase):
     """ci.yml runs Alarmo on every ``matrix.alarmo`` row with no literal Core."""
 
@@ -2224,12 +2233,19 @@ class WorkflowBindingTests(unittest.TestCase):
             "Verify owned cleanup and required Alarmo interval": "always() && matrix.alarmo",
             "Upload bounded Alarmo interval and image evidence": "always() && matrix.alarmo",
             "Upload bounded entity metadata contract evidence": "always() && matrix.alarmo",
+            # HAMCP-165/069B/155: the dormant seq-13 lanes add only these three
+            # steps (one shared stage, one upload per lane family), each also
+            # gated on the job-level enable flag.
+            SEQ13_STAGE: SEQ13_STAGE_IF,
+            SEQ13_UPLOAD: SEQ13_UPLOAD_IF,
+            SEQ13_DELETE_UPLOAD: SEQ13_UPLOAD_IF,
         })
         for step in self.steps:
             text = json.dumps(step)
             if "alarmo" in text.lower():
                 with self.subTest(step=step.get("name")):
-                    self.assertIn(step.get("if"), ("matrix.alarmo", "always() && matrix.alarmo"))
+                    self.assertIn(step.get("if"), ("matrix.alarmo", "always() && matrix.alarmo",
+                                                   SEQ13_STAGE_IF, SEQ13_UPLOAD_IF))
                     self.assertNotIn("2026.9.4", text)
                     self.assertNotIn("2026-9-4", text)
                     self.assertNotIn("matrix.ha_version ==", text)
@@ -2244,12 +2260,46 @@ class WorkflowBindingTests(unittest.TestCase):
         self.assertLess(names.index("Persist migration fixture with exact Home Assistant 2026.7.2"), stage)
         self.assertTrue(stage < start < bind < run < sanitize < cleanup)
         self.assertLess(cleanup, names.index("Upload bounded entity metadata contract evidence"))
+        self.assertTrue(bind < names.index(SEQ13_STAGE) < run)
+        self.assertLess(names.index("Upload bounded entity metadata contract evidence"),
+                        names.index(SEQ13_UPLOAD))
+        self.assertLess(names.index(SEQ13_UPLOAD), names.index(SEQ13_DELETE_UPLOAD))
         self.assertIn("--verify-publication", self.steps[bind]["run"])
         self.assertIn("--verify-cleanup", self.steps[cleanup]["run"])
 
+    def test_seq13_lanes_are_defined_but_dormant(self):
+        # HAMCP-165/069B/155: the committed workflow keeps the seq-13 lanes off;
+        # the batch evidence run flips this one value. Nothing else reads the flag.
+        workflow = yaml.safe_load(CI.read_text(encoding="utf-8"))
+        job = workflow["jobs"]["real-ha-contract-tests"]
+        self.assertEqual(job["env"]["REAL_HA_SEQ13_LANES"], "dormant")
+        self.assertEqual(CI.read_text(encoding="utf-8").count("REAL_HA_SEQ13_LANES: "), 1)
+        users = [step["name"] for step in self.steps if "REAL_HA_SEQ13_LANES" in json.dumps(step)]
+        self.assertEqual(users, [SEQ13_STAGE, SEQ13_UPLOAD, SEQ13_DELETE_UPLOAD])
+        stage = self.step(SEQ13_STAGE)
+        self.assertEqual(re.findall(r"printf '([A-Z_]+)=", stage["run"]),
+                         ["REAL_HA_LABEL_REGISTRY_RESULT", "REAL_HA_AVAILABILITY_EXPOSURE_RESULT",
+                          "REAL_HA_CONFIGURATION_DELETE_RESULT"])
+        self.assertIn('"$RUNNER_TEMP/seq13-configuration-delete-$HA_CONTRACT_LANE.json"', stage["run"])
+        upload = self.step(SEQ13_UPLOAD)
+        self.assertEqual(upload["uses"], self.step("Upload bounded entity metadata contract evidence")["uses"])
+        self.assertEqual(upload["with"]["if-no-files-found"], "error")
+        self.assertEqual(upload["with"]["retention-days"], 14)
+        delete_upload = self.step(SEQ13_DELETE_UPLOAD)
+        self.assertEqual(delete_upload["uses"], upload["uses"])
+        self.assertEqual(delete_upload["with"]["name"], "seq13-configuration-delete-core-${{ matrix.ha_version }}"
+                         "-${{ matrix.support_slot }}-${{ matrix.lane }}")
+        self.assertEqual(delete_upload["with"]["path"].splitlines(), [
+            "${{ runner.temp }}/seq13-configuration-delete-${{ matrix.lane }}.json",
+            "${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json"])
+        self.assertEqual(delete_upload["with"]["if-no-files-found"], "error")
+        self.assertEqual(delete_upload["with"]["retention-days"], 14)
+
     def test_core_archive_uses_only_fixed_codeload_forms_and_exact_digest(self):
         step = self.step("Stage exact Alarmo and independent interval observer for the Core slot")
-        self.assertEqual(step["env"], {"REAL_HA_CORE_SOURCE_COMMIT": "${{ matrix.core_source_commit }}",
+        # HAMCP-221: the read-only job token authenticates the codeload reads.
+        self.assertEqual(step["env"], {"GH_TOKEN": "${{ github.token }}",
+                                       "REAL_HA_CORE_SOURCE_COMMIT": "${{ matrix.core_source_commit }}",
                                        "REAL_HA_CORE_SOURCE_SHA256": "${{ matrix.core_source_sha256 }}"})
         script = step["run"]
         self.assertTrue(script.startswith("set -euo pipefail\n"))
@@ -2261,7 +2311,14 @@ class WorkflowBindingTests(unittest.TestCase):
         self.assertEqual(script.count("sha256sum --check --strict"), 1)
         self.assertIn('printf \'%s  %s\\n\' "$REAL_HA_CORE_SOURCE_SHA256" "$core_archive" | sha256sum --check --strict', script)
         self.assertIn('test -n "$matched"', script)
-        self.assertIn("--proto '=https' --tlsv1.2", script)
+        # Both reads use the bounded retry helper (HTTPS, TLS 1.2+, no
+        # redirects); the Core form also checks its digest in the helper,
+        # where a mismatch is never retried, before the strict shell check.
+        self.assertNotIn("curl", script)
+        self.assertEqual(script.count("python3 -I -S scripts/github_retry.py download"), 2)
+        self.assertEqual(script.count('--sha256 "$REAL_HA_CORE_SOURCE_SHA256"'), 1)
+        self.assertIn('--sha256 "$REAL_HA_CORE_SOURCE_SHA256" \\\n'
+                      '     && printf \'%s  %s\\n\' "$REAL_HA_CORE_SOURCE_SHA256"', script)
         # No pinned Core commit or digest survives in the workflow step itself.
         self.assertEqual(re.findall(r"\b[0-9a-f]{40}\b", script), [acceptance.COMMIT])
         self.assertEqual(re.findall(r"\b[0-9a-f]{64}\b", script), [])
@@ -2277,3 +2334,311 @@ class WorkflowBindingTests(unittest.TestCase):
             "${{ runner.temp }}/alarmo-image-${{ matrix.lane }}*.json",
             "${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json"])
         self.assertEqual(step["with"]["if-no-files-found"], "error")
+
+
+class RetryOnceCleanTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-219 review 1: a repairs delayed save reruns a window once; it is never tolerated.
+
+    The beta.32 publish run failed ``baseline_export`` on one background
+    ``storage_delay_save`` of Core's ``repairs.issue_registry``. Origin cannot
+    prove that save was independent: Core's executor (core.py:875) and
+    thread-safe callback (util/async_.py:72) drop the request context, so a
+    command-caused save is labelled background. The window is discarded and
+    rerun once instead; the rerun must verify strictly.
+    """
+
+    REPAIRS = "repairs.issue_registry"
+    DELAYED = {"kind": "storage_delay_save", "origin": "background", "store": "repairs.issue_registry"}
+
+    def window(self, saves=(), *, commands=(), kind="control"):
+        """One window through the real observer ledger with the given repairs events."""
+        ledger = observer.Ledger(lambda: 1)
+        hashes = {name: None for name in acceptance.STORE_HASH_KEYS}
+        identity = ledger.start(kind, hashes)
+        for command in commands:
+            ledger.record("command", command=command)
+        for event_kind in saves:
+            ledger.record(event_kind, store=FakeStore(self.REPAIRS, data={"private": "DO_NOT_RECORD"},
+                                                      delay_handle=object()))
+        value = ledger.finish(identity, dict(hashes), {name: True for name in acceptance.OBSERVER_HOOKS})
+        value.update(core_version=CORE, observer_sha256=sha256(acceptance.OBSERVER.read_bytes()))
+        self.assertNotIn("DO_NOT_RECORD", json.dumps(value))
+        return value
+
+    def verify(self, value, retry_allowed=False, expected=()):
+        return acceptance.verify_interval(value, value["interval_id"], list(expected), kind="control",
+                                          core_version=CORE, window="baseline_export", window_index=1,
+                                          retry_allowed=retry_allowed)
+
+    async def run_windows(self, windows, *, helper=None, expected=()):
+        """The real retry helper over a scripted sequence of windows; returns runs and discards."""
+        runs, discarded = [], []
+        async def run():
+            value = windows[len(runs)]()
+            runs.append(value)
+            return value["interval_id"], value
+        result = await (helper or acceptance.observe_retry_once_clean)(
+            run, lambda _identity, value, retry: self.verify(value, retry, expected), on_discard=discarded.append)
+        return result, runs, discarded
+
+    async def command_caused_window(self, *, flush_inside):
+        """The reviewer's attribution-loss path: a command schedules a repairs save via Core's executor.
+
+        Same primitives as Core abe1fdd7: ``loop.run_in_executor`` (core.py:875)
+        then ``call_soon_threadsafe`` (issue_registry.py:394, util/async_.py:72).
+        ``flush_inside`` lets the write land in the window (the reviewer's 10 ms
+        timer); otherwise it lands after, like Core's 10 s ``SAVE_DELAY``.
+        """
+        loop = asyncio.get_running_loop()
+        ledger = observer.Ledger()
+        hashes = {name: None for name in acceptance.STORE_HASH_KEYS}
+        identity = ledger.start("control", hashes)
+        store = FakeStore(self.REPAIRS, data={}, delay_handle=None)
+        written = asyncio.Event()
+        async def write(_obj):
+            written.set()
+        observed_write = observer.observe_async(ledger, "storage_write", write)
+        flushes = []
+        def delayed_save(obj):
+            flushes.append(lambda: asyncio.ensure_future(observed_write(obj)))
+        observed_schedule = observer.observe_sync(ledger, "storage_delay_save", delayed_save)
+        def worker():
+            done = concurrent.futures.Future()
+            def callback():
+                observed_schedule(store)
+                done.set_result(None)
+            loop.call_soon_threadsafe(callback)
+            done.result(timeout=5)
+        async def handler():
+            self.assertIsNotNone(observer.REQUEST.get())
+            await loop.run_in_executor(None, worker)
+        observed_dispatch = observer.observe_sync(ledger, "command", lambda _c, _m: asyncio.ensure_future(handler()))
+        await observed_dispatch(None, {"type": "config/entity_registry/list"})
+        if flush_inside:
+            flushes.pop()()
+            await asyncio.wait_for(written.wait(), 5)
+        value = ledger.finish(identity, dict(hashes), {name: True for name in acceptance.OBSERVER_HOOKS})
+        if not flush_inside:
+            await flushes.pop()()
+            self.assertTrue(written.is_set())
+        value.update(core_version=CORE, observer_sha256=sha256(acceptance.OBSERVER.read_bytes()))
+        # The context loss itself: the command-caused save carries no command origin.
+        self.assertIn(self.DELAYED, value["events"])
+        return value
+
+    async def reproduce(self, *, flush_inside, helper=None):
+        values = []
+        async def run():
+            value = await self.command_caused_window(flush_inside=flush_inside)
+            values.append(value)
+            return value["interval_id"], value
+        discarded = []
+        result = await (helper or acceptance.observe_retry_once_clean)(
+            run, lambda _identity, value, retry: self.verify(value, retry, ["config/entity_registry/list"]),
+            on_discard=discarded.append)
+        return result, values, discarded
+
+    async def test_reviewer_attribution_loss_recurs_on_the_rerun_and_fails(self):
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await self.reproduce(flush_inside=False)
+        diagnostic = found.exception.diagnostic
+        assert_bounded(self, diagnostic)
+        self.assertNotIsInstance(found.exception, acceptance.RetryableObservation)
+        self.assertEqual((diagnostic["condition"], diagnostic["event"], diagnostic["rerun_after_discard"]),
+                         ("untolerated_store", self.DELAYED, True))
+
+    async def test_reviewer_attribution_loss_with_its_flush_inside_fails_without_a_rerun(self):
+        runs = []
+        async def run():
+            runs.append(await self.command_caused_window(flush_inside=True))
+            return runs[-1]["interval_id"], runs[-1]
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.observe_retry_once_clean(run, lambda _i, value, retry: self.verify(
+                value, retry, ["config/entity_registry/list"]))
+        self.assertEqual(len(runs), 1)
+        self.assertEqual((found.exception.diagnostic["condition"], found.exception.diagnostic["event"]),
+                         ("untolerated_store", {**self.DELAYED, "kind": "storage_write"}))
+        self.assertNotIn("rerun_after_discard", found.exception.diagnostic)
+
+    async def test_one_off_background_save_passes_on_the_clean_rerun_and_both_windows_are_kept(self):
+        first, clean = self.window(["storage_delay_save"]), self.window()
+        (_identity, observation, proof, discarded), runs, recorded = await self.run_windows(
+            [lambda: first, lambda: clean])
+        self.assertEqual(len(runs), 2)
+        self.assertIs(observation, clean)
+        self.assertEqual((proof["result"], proof["background_bookkeeping"]), ("PASS", []))
+        self.assertEqual(recorded, [discarded])
+        self.assertIs(discarded["observation"], first)
+        diagnostic = discarded["diagnostic"]
+        assert_bounded(self, diagnostic)
+        self.assertEqual((diagnostic["condition"], diagnostic["window"], diagnostic["window_index"],
+                          diagnostic["event"], diagnostic["retryable_event_count"]),
+                         ("retryable_delayed_save", "baseline_export", 1, self.DELAYED, 1))
+        # The discarded window is still refused strictly; it is evidence, not a pass.
+        with self.assertRaises(acceptance.ObservationError) as found:
+            self.verify(first)
+        self.assertEqual(found.exception.diagnostic["condition"], "untolerated_store")
+
+    async def test_second_background_save_on_the_rerun_fails(self):
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await self.run_windows([lambda: self.window(["storage_delay_save"]),
+                                    lambda: self.window(["storage_delay_save"]),
+                                    lambda: self.fail("a third window ran")])
+        self.assertEqual((found.exception.diagnostic["condition"], found.exception.diagnostic["rerun_after_discard"]),
+                         ("untolerated_store", True))
+
+    async def test_rerun_must_be_completely_clean(self):
+        for name, second in (("other_store", lambda: self.window_with({"kind": "storage_save", "origin": "background",
+                                                                         "store": "other", "store_class": "core"})),
+                             ("extra_command", lambda: self.window(commands=["ping"])),
+                             ("hash_changed", lambda: self.hash_changed(self.window()))):
+            with self.subTest(rerun=name), self.assertRaises(acceptance.ObservationError) as found:
+                await self.run_windows([lambda: self.window(["storage_delay_save"]), second])
+            self.assertIs(found.exception.diagnostic["rerun_after_discard"], True)
+            self.assertNotIsInstance(found.exception, acceptance.RetryableObservation)
+
+    def window_with(self, event):
+        value = self.window()
+        value["events"].append(event)
+        return value
+
+    def hash_changed(self, value):
+        value["final_store_hashes"]["core.device_registry"] = "1" * 64
+        return value
+
+    async def test_immediate_repairs_save_or_write_fails_with_no_rerun(self):
+        for kind in ("storage_save", "storage_write"):
+            with self.subTest(kind=kind), self.assertRaises(acceptance.ObservationError) as found:
+                await self.run_windows([lambda: self.window([kind]), lambda: self.fail("rerun")])
+            self.assertEqual((found.exception.diagnostic["condition"], found.exception.diagnostic["event"]),
+                             ("untolerated_store", {**self.DELAYED, "kind": kind}))
+            self.assertNotIn("rerun_after_discard", found.exception.diagnostic)
+        with self.subTest(kind="delayed_with_write"), self.assertRaises(acceptance.ObservationError) as found:
+            await self.run_windows([lambda: self.window(["storage_delay_save", "storage_write"]),
+                                    lambda: self.fail("rerun")])
+        self.assertEqual(found.exception.diagnostic["event_index"], 1)
+
+    async def test_command_origin_and_other_failures_never_rerun(self):
+        def command_origin():
+            token = observer.REQUEST.set("synthetic-request")
+            try:
+                return self.window(["storage_delay_save"])
+            finally:
+                observer.REQUEST.reset(token)
+        for name, first, condition in (
+                ("command_origin", command_origin, "command_origin_storage"),
+                ("commands_mismatch", lambda: self.window(["storage_delay_save"], commands=["ping"]), "commands_mismatch"),
+                ("hash_changed", lambda: self.hash_changed(self.window(["storage_delay_save"])), "store_hash_changed"),
+                ("other_repairs", lambda: self.window_with({**self.DELAYED, "store": "other", "store_class": "repairs"}),
+                 "untolerated_store")):
+            with self.subTest(first=name), self.assertRaises(acceptance.ObservationError) as found:
+                await self.run_windows([first, lambda: self.fail("rerun")])
+            self.assertEqual(found.exception.diagnostic["condition"], condition)
+            self.assertNotIsInstance(found.exception, acceptance.RetryableObservation)
+
+    def test_strict_verification_still_refuses_every_repairs_save(self):
+        for kind in ("storage_save", "storage_delay_save", "storage_write"):
+            with self.subTest(kind=kind), self.assertRaises(acceptance.ObservationError) as found:
+                self.verify(self.window([kind]))
+            self.assertEqual(found.exception.diagnostic["condition"], "untolerated_store")
+            self.assertNotIsInstance(found.exception, acceptance.RetryableObservation)
+        with self.assertRaises(acceptance.ObservationError):
+            self.verify(self.window(["storage_delay_save"]), retry_allowed=1)
+
+    async def test_mutation_tolerate_without_rerun_passes_the_reproduction(self):
+        # Killed by test_reviewer_attribution_loss_recurs_on_the_rerun_and_fails.
+        # The replaced a81b837 design: the store tolerated by name, no retry route.
+        with patch.object(acceptance, "TOLERATED_STORES", (*acceptance.TOLERATED_STORES, self.REPAIRS)), \
+                patch.object(acceptance, "RETRY_STORE", None):
+            (_identity, _value, proof, discarded), values, _ = await self.reproduce(flush_inside=False)
+        self.assertEqual((proof["result"], discarded, len(values)), ("PASS", None, 1))
+
+    async def test_mutation_accepting_a_nonclean_rerun_passes_the_reproduction(self):
+        # Killed by test_reviewer_attribution_loss_recurs_on_the_rerun_and_fails.
+        async def lenient(run, verify, *, on_discard=None):
+            for _ in range(2):
+                outcome, observation = await run()
+                try:
+                    return outcome, observation, verify(outcome, observation, True), None
+                except acceptance.RetryableObservation:
+                    continue
+            return outcome, observation, {"result": "PASS"}, None
+        (_identity, _value, proof, _), values, _ = await self.reproduce(flush_inside=False, helper=lenient)
+        self.assertEqual((proof["result"], len(values)), ("PASS", 2))
+
+    def test_retry_store_is_named_mirrored_never_tolerated_and_never_hashed(self):
+        self.assertEqual(set(acceptance.TOLERATED_STORES), observer.TOLERATED_KEYS)
+        self.assertEqual(set(acceptance.TOLERATED_STORES), {"auth", "core.restore_state"})
+        self.assertEqual({acceptance.RETRY_STORE}, set(observer.RETRY_KEYS))
+        self.assertEqual(acceptance.RETRY_EVENT_KIND, "storage_delay_save")
+        self.assertLessEqual(observer.RETRY_KEYS, observer.STORE_KEYS)
+        self.assertFalse(observer.RETRY_KEYS & (observer.TOLERATED_KEYS | set(observer.HASH_KEYS)))
+        self.assertEqual(set(observer.HASH_KEYS), acceptance.STORE_HASH_KEYS)
+        self.assertEqual(observer.store_class(self.REPAIRS), self.REPAIRS)
+        self.assertIn(self.REPAIRS, acceptance.STORE_CLASSES)
+
+    def test_pending_issue_registry_save_holds_readiness_so_a_rerun_opens_after_its_flush(self):
+        now = [0]
+        ledger = observer.Ledger(lambda: now[0])
+        repairs = FakeStore(self.REPAIRS, data={"x": 1}, delay_handle=object())
+        ledger.record("storage_delay_save", store=repairs)
+        self.assertEqual(ledger.pending_store_classes(), [self.REPAIRS])
+        repairs._data, repairs._delay_handle = None, None
+        self.assertEqual(ledger.pending_store_classes(), [self.REPAIRS])  # quiet period
+        now[0] = observer.QUIET_SECONDS
+        self.assertEqual(ledger.pending_store_classes(), [])
+
+
+class DiscardedWindowEvidenceTests(unittest.TestCase):
+    """HAMCP-219 review 1: discarded windows stay in the retained receipt and are re-verified."""
+
+    def discarded(self, window, saves=("storage_delay_save",)):
+        expected, kind = acceptance.ALARMO_WINDOWS[window]
+        value = receipt(expected, CORE)
+        value["kind"] = kind
+        for event_kind in saves:
+            value["events"].append({"kind": event_kind, "origin": "background", "store": acceptance.RETRY_STORE})
+        with self.assertRaises(acceptance.RetryableObservation) as found:
+            acceptance.verify_window(window, value, value["interval_id"], core_version=CORE, retry_allowed=True)
+        return {"window": window, "observation": value, "diagnostic": found.exception.diagnostic}
+
+    def cleanup(self, value):
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory) / "result.json", Path(directory) / "cleanup.json"
+            source.write_text(json.dumps(value))
+            with patch("subprocess.run", return_value=SimpleNamespace(stdout=b"")), \
+                    patch("automation_baseline_contract_acceptance.verify_result", return_value={"result": "PASS"}):
+                return acceptance.verify_disposable_cleanup(source, output, CORE)
+
+    def test_each_window_may_retain_one_discarded_observation(self):
+        value = cleanup_value(CORE)
+        self.assertEqual(self.cleanup(value)["discarded_windows"], [])
+        value["discarded_observations"] = [self.discarded(window) for window in acceptance.ALARMO_WINDOWS]
+        self.assertEqual(self.cleanup(value)["discarded_windows"], sorted(acceptance.ALARMO_WINDOWS))
+
+    def test_malformed_duplicate_clean_or_nonretryable_discards_refuse(self):
+        def clean(item):
+            item["observation"]["events"] = [e for e in item["observation"]["events"] if e.get("kind") == "command"]
+        for name, mutate in (
+                ("missing", lambda v: v.pop("discarded_observations")),
+                ("not_list", lambda v: v.update(discarded_observations={})),
+                ("duplicate", lambda v: v["discarded_observations"].append(copy.deepcopy(v["discarded_observations"][0]))),
+                ("unknown_window", lambda v: v["discarded_observations"][0].update(window="baseline_export")),
+                ("extra_field", lambda v: v["discarded_observations"][0].update(extra=1)),
+                ("clean", lambda v: clean(v["discarded_observations"][0])),
+                ("write", lambda v: v["discarded_observations"][0]["observation"]["events"].append(
+                    {"kind": "storage_write", "origin": "background", "store": acceptance.RETRY_STORE})),
+                ("diagnostic", lambda v: v["discarded_observations"][0]["diagnostic"].update(retryable_event_count=2)),
+                ("not_dict", lambda v: v["discarded_observations"][0].update(observation=[]))):
+            value = cleanup_value(CORE)
+            value["discarded_observations"] = [self.discarded("inspection")]
+            mutate(value)
+            with self.subTest(mutation=name), self.assertRaises((ValueError, KeyError, acceptance.ObservationError)):
+                self.cleanup(value)
+
+    def test_too_many_discards_refuse(self):
+        value = cleanup_value(CORE)
+        value["discarded_observations"] = [self.discarded(window) for window in acceptance.ALARMO_WINDOWS]
+        value["discarded_observations"].append(self.discarded("inspection"))
+        with self.assertRaises(ValueError):
+            self.cleanup(value)

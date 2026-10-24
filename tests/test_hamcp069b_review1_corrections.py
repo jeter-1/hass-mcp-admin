@@ -204,8 +204,13 @@ class ReviewerReproductions(AvailabilityExposureServiceTestCase):
         self.assertFalse(authority.core.route_status((AVAILABILITY,))["available"])
         self.assertFalse(authority.core.route_status((EXPOSURE,))["available"])
         for created in plans:
-            result = await self.apply(created)
-            self.assertEqual(result["task_state"], "failed_pre_dispatch")
+            # HAMCP-165 / HAMCP-155 M3: the unadmitted first apply refuses at
+            # entry, before any execution-state persistence.
+            with self.assertRaises(GovernanceError) as refused:
+                await self.apply(created)
+            self.assertEqual(refused.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+            self.assertEqual(refused.exception.details["reason_code"], PENDING)
+            self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
             self.assertEqual(self.ws.writes(), [])
             await self.runtime.recover_once("reviewer_restart")
             self.assertEqual(self.ws.writes(), [])
@@ -684,8 +689,29 @@ class ServiceAdmissionGateTests(AvailabilityExposureServiceTestCase):
         created = await self.create(operation="disable", entity_ids=["light.porch"])
         await self.approve(created)
         self.core.withdraw()
-        result = await self.apply(created)
-        self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
+        # HAMCP-165 / HAMCP-155 M3: refused at entry; the refusal leaves every
+        # store byte-identical, persists no task and sends nothing to Home
+        # Assistant.
+        store = self.root / "plans"
+        before = {
+            path.relative_to(store): path.read_bytes()
+            for path in sorted(store.rglob("*"))
+            if path.is_file()
+        }
+        commands = len(self.ws.commands)
+        with self.assertRaises(GovernanceError) as raised:
+            await self.apply(created)
+        self.assertEqual(raised.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+        self.assertEqual(raised.exception.details["reason_code"], PENDING)
+        self.assertEqual(raised.exception.details["core_capability"], AVAILABILITY)
+        after = {
+            path.relative_to(store): path.read_bytes()
+            for path in sorted(store.rglob("*"))
+            if path.is_file()
+        }
+        self.assertEqual(after, before)
+        self.assertEqual(len(self.ws.commands), commands)
+        self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
         await self.restart_runtime()
         await self.runtime.recover_once("synthetic_restart")
         self.assertEqual(self.ws.writes(), [])

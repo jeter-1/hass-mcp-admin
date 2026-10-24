@@ -70,7 +70,7 @@ SUPERVISOR = CORE_INDEPENDENT_SUPERVISOR_ONLY
 MOUNTED = CORE_INDEPENDENT_MOUNTED_SOURCE
 DOWNSTREAM = CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY
 
-# The reviewed HAMCP-164 inventory of all 64 static tools.  A new static tool
+# The reviewed HAMCP-164 inventory of all 67 static tools.  A new static tool
 # fails this test until it is reviewed and added as mapped or allowlisted.
 STATIC_CORE_TABLE = {
     "apply_change_plan": DOWNSTREAM,
@@ -87,9 +87,11 @@ STATIC_CORE_TABLE = {
     "create_addon_restart_plan": MAPPED,
     "create_backup_plan": MAPPED,
     "create_change_plan": MAPPED,
+    "create_configuration_delete_plan": MAPPED,
     "create_configuration_plan": MAPPED,
     "create_dashboard_update_plan": MAPPED,
     "create_entity_availability_exposure_plan": MAPPED,
+    "create_label_plan": MAPPED,
     "create_entity_metadata_plan": MAPPED,
     "create_helper_state_plan": MAPPED,
     "create_home_assistant_restart_plan": MAPPED,
@@ -103,6 +105,7 @@ STATIC_CORE_TABLE = {
     "get_backup_inventory": MAPPED,
     "get_recorder_settings": MAPPED,
     "get_unregistered_entities": MAPPED,
+    "get_configuration_definitions": MAPPED,
     "get_history_slices": MAPPED,
     "get_incident_logs": DOWNSTREAM,
     "get_blueprint": MOUNTED,
@@ -227,7 +230,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 65)
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 68)
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -470,10 +473,13 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_mapped_tools_still_acquire_their_exact_requirements(self):
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
-            # Both entity planners bind an exact target, which {} lacks.
+            # Both entity planners and the deletion planner bind an exact
+            # target, which {} lacks.
             if expected not in {MAPPED, CONDITIONAL} or name in {
                 "create_entity_metadata_plan",
                 "create_entity_availability_exposure_plan",
+                "create_label_plan",
+                "create_configuration_delete_plan",
             }:
                 continue
             with self.subTest(tool=name):

@@ -22,6 +22,7 @@ from tests.test_entity_dependency_analysis import FakeProvider, TARGET, finding,
 from tests.test_governance import GovernanceTestCase
 from tests.test_rc3a_reviewed_contract import ReviewedFakeTransport, settings as dashboard_settings
 
+from ha_mcp_engineering.dependency import runtime as dependency_runtime
 from ha_mcp_engineering.dependency.index import DependencyIndex
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime
 from ha_mcp_engineering.dependency.service import EntityDependencyAnalysisService
@@ -275,6 +276,33 @@ class DependencyFreshnessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot.generation, 1)
 
 
+class GatedSleepRecorder:
+    """Stand in for the prewarm runtime's ``asyncio`` module.
+
+    Each ``sleep(delay)`` records the configured delay and then waits for the
+    test to release it, so prewarm ordering never depends on wall-clock time.
+    Every other attribute is the real ``asyncio``.
+    """
+
+    def __init__(self):
+        self.delays = []
+        self.pending = asyncio.Queue()
+
+    def __getattr__(self, name):
+        return getattr(asyncio, name)
+
+    async def sleep(self, delay, result=None):
+        release = asyncio.Event()
+        self.delays.append(delay)
+        self.pending.put_nowait((delay, release))
+        await release.wait()
+        return result
+
+    async def next_sleep(self):
+        async with asyncio.timeout(10):  # hang guard only
+            return await self.pending.get()
+
+
 class PrewarmRuntimeTests(unittest.IsolatedAsyncioTestCase):
     class CoreAuthority:
         def __init__(self, *, available=True, retire_on_consume=False):
@@ -437,12 +465,22 @@ class PrewarmRuntimeTests(unittest.IsolatedAsyncioTestCase):
             core_fixtures._snapshot("2026.8.1", evidence=core_fixtures._evidence())
         )
         runtime.bind_core_runtime(core_runtime)
-        runtime.start_prewarm(
-            startup_delay_seconds=0.04,
-            retry_delay_seconds=300,
-        )
-        await index.get()
-        await asyncio.sleep(0.08)
+        sleeper = GatedSleepRecorder()
+        with patch.object(dependency_runtime, "asyncio", sleeper):
+            task = runtime.start_prewarm(
+                startup_delay_seconds=45.0,
+                retry_delay_seconds=300,
+            )
+            # The prewarm is parked in its startup delay until released.
+            delay, release = await sleeper.next_sleep()
+            self.assertEqual(delay, 45.0)
+            self.assertFalse(task.done())
+            await index.get()
+            self.assertEqual(provider.scan_count, 1)
+            release.set()
+            async with asyncio.timeout(10):  # hang guard only
+                self.assertTrue(await task)
+        self.assertEqual(sleeper.delays, [45.0])
         self.assertEqual(provider.scan_count, 1)
         self.assertEqual(runtime.health()["prewarm_state"], "complete")
         provider.rest_client.request.assert_not_awaited()
@@ -461,17 +499,30 @@ class PrewarmRuntimeTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         runtime.bind_core_runtime(self.CoreAuthority())
-        task = runtime.start_prewarm(
-            startup_delay_seconds=0.02, retry_delay_seconds=300
-        )
-        self.assertFalse(task.done())
-        self.assertEqual(runtime.health()["prewarm_state"], "scheduled")
-        await asyncio.sleep(0.06)
-        health = runtime.health()
-        self.assertEqual(health["prewarm_attempt_count"], 1)
-        self.assertEqual(health["prewarm_failure_category"], "connectivity_not_ready")
-        self.assertIsNotNone(health["next_prewarm_retry_at"])
-        await runtime.shutdown()
+        sleeper = GatedSleepRecorder()
+        with patch.object(dependency_runtime, "asyncio", sleeper):
+            task = runtime.start_prewarm(
+                startup_delay_seconds=45.0, retry_delay_seconds=300
+            )
+            self.assertFalse(task.done())
+            self.assertEqual(runtime.health()["prewarm_state"], "scheduled")
+            delay, release = await sleeper.next_sleep()
+            self.assertEqual(delay, 45.0)
+            # Still delayed: no attempt is made before the startup delay ends.
+            self.assertEqual(runtime.health()["prewarm_attempt_count"], 0)
+            provider.rest_client.request.assert_not_awaited()
+            release.set()
+            # The failed attempt parks in the bounded retry delay, not a storm.
+            retry_delay, _retry_release = await sleeper.next_sleep()
+            self.assertGreaterEqual(retry_delay, 300.0)
+            self.assertEqual(retry_delay, 300.0)
+            health = runtime.health()
+            self.assertEqual(health["prewarm_attempt_count"], 1)
+            self.assertEqual(health["prewarm_failure_category"], "connectivity_not_ready")
+            self.assertIsNotNone(health["next_prewarm_retry_at"])
+            self.assertFalse(task.done())
+            await runtime.shutdown()
+        self.assertEqual(sleeper.delays, [45.0, 300.0])
         self.assertTrue(task.done())
 
 
