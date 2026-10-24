@@ -183,6 +183,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "create_entity_availability_exposure_plan": (
         ProviderCapability.OPERATIONAL_ADMINISTRATION
     ),
+    "create_label_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
     "get_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "list_change_plans": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "get_execution_task": ProviderCapability.GOVERNANCE_PERSISTENCE,

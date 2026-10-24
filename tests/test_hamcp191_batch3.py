@@ -390,6 +390,14 @@ NON_IDENTIFIER_INPUTS: dict[str, frozenset[str]] = {
     "create_entity_availability_exposure_plan": frozenset(
         {"operation", "assistant", "expiration_minutes"}
     ),
+    # HAMCP-165: operation is a closed enum; name, colour, icon and
+    # description are schema-bounded label metadata.
+    "create_label_plan": frozenset(
+        {
+            "operations[].operation", "operations[].name", "operations[].color",
+            "operations[].icon", "operations[].description", "expiration_minutes",
+        }
+    ),
     "create_addon_restart_plan": frozenset({"expiration_minutes"}),
     "create_home_assistant_restart_plan": frozenset({"expiration_minutes"}),
     "create_change_plan": frozenset(
@@ -431,6 +439,11 @@ ORDINARY_ARGUMENTS: dict[str, dict] = {
     },
     "create_entity_availability_exposure_plan": {
         "operation": "expose", "entity_ids": ["light.porch"], "assistant": "conversation",
+    },
+    "create_label_plan": {
+        "operations": [
+            {"operation": "update", "label_id": "night", "name": "Night", "entity_ids": ["light.porch"]}
+        ],
     },
     "create_addon_restart_plan": {"addon_slug": "core_mosquitto"},
     "create_home_assistant_restart_plan": {},
@@ -502,7 +515,16 @@ class IdentifierBoundaryEnumerationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(identifiers & other)
                 expected = set()
                 for parameter in inspect.signature(tool).parameters:
-                    if parameter in ITEM_TYPES:
+                    if name == "create_label_plan" and parameter == "operations":
+                        # HAMCP-165: the label items are closed by the served
+                        # schema, not by the configuration item type.
+                        expected |= {
+                            f"{parameter}[].{key}"
+                            for key in governance_tools.LABEL_PLAN_INPUT_SCHEMA[
+                                "properties"
+                            ]["operations"]["items"]["properties"]
+                        }
+                    elif parameter in ITEM_TYPES:
                         expected |= {
                             f"{parameter}[].{key}"
                             for key in ITEM_TYPES[parameter].__annotations__
@@ -519,6 +541,10 @@ class IdentifierBoundaryEnumerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(governance_tools.ENTITY_AVAILABILITY_EXPOSURE_INPUT_SCHEMA["properties"]),
             set(inspect.signature(tools["create_entity_availability_exposure_plan"]).parameters),
+        )
+        self.assertEqual(
+            set(governance_tools.LABEL_PLAN_INPUT_SCHEMA["properties"]),
+            set(inspect.signature(tools["create_label_plan"]).parameters),
         )
 
     def service(self, secret):

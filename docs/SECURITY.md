@@ -771,6 +771,34 @@ add-on option, role, fallback or delegated provider.
   non-target `cloud.alexa` options key going from absent to present, which is
   reported.
 
+The `2.4.1-beta.34` slice (HAMCP-165) adds governed label create, edit and
+entity assignment, **unreachable at release**. It activates nothing new and
+switches on with the sequence-13 signing. It adds no permission, add-on
+option, role, fallback or delegated provider.
+
+- **New write paths.** `config/label_registry/create` with exactly `name`,
+  `color`, `icon` and `description`, and `config/label_registry/update` with
+  `label_id` and only the changed fields. Both are reachable only through an
+  externally approved plan dispatched by the F3 runtime, for the Core
+  capability profile `core.label_registry_operation` admitted by a signed
+  registry. The shipped sequence 12 does not reference it. The routing layer
+  refuses every call with `CoreCapabilityUnavailable` /
+  `pending_signed_registry_admission`, and the governance service checks
+  admission first, before any Home Assistant read or storage. A tampered
+  profile fingerprint keeps the profile withheld.
+- **Closed vocabulary.** The label gateway allow-lists
+  `config/label_registry/list`, `create` and `update` and raises on anything
+  else before I/O. `config/label_registry/delete` is never constructed.
+  Entity assignment uses the signed 069A path unchanged.
+- **Approval and verification.** Label children are standard (metadata, no
+  device effect); assignments keep their 069A classification. A tampered
+  plan shape or proposal is `PROHIBITED`. Exact label-registry readback
+  decides every child; a different generated `label_id` is never verified.
+  Stale state and any label namespace change are refused immediately before
+  the write.
+- **HAMCP-069B profiles.** The two unsigned 069B profiles now name every read
+  their gateway sends; no signed profile changes.
+
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.
 

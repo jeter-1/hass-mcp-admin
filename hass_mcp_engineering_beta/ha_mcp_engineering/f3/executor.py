@@ -84,7 +84,13 @@ class DispatchAuthorityRefused(OperationExecutorError):
 # Closed set of refusal codes the executor reports verbatim; anything else
 # collapses to the generic authority code so no free text reaches records.
 _DISPATCH_AUTHORITY_REFUSAL_CODES = frozenset(
-    {"dispatch_authority_unavailable", "core_requirement_unmapped"}
+    {
+        "dispatch_authority_unavailable",
+        "core_requirement_unmapped",
+        # HAMCP-165 review1 H1: a dormant-profile plan without admission.
+        "core_authority_unavailable",
+        "pending_signed_registry_admission",
+    }
 )
 
 

@@ -1290,9 +1290,13 @@ class SourceScanTests(unittest.TestCase):
 
 HARNESS_BINDERS = frozenset({"rest_path", "state_path"})
 # Reviewed raw HTTP sessions in harnesses that are not the guarded client:
-# the disposable-Core onboarding bootstrap and the 850 relay passthrough.
+# the disposable-Core onboarding bootstrap and the 850 relay passthrough, and
+# the seq-13 lane's config-entry setup and cleanup (HAMCP-165 review1 M4),
+# which ``LaneRaw.rest`` closes to ``CONFIG_ENTRY_ROUTE`` on a loopback Core
+# (pinned in tests/test_seq13_contract_acceptance.py ``LaneRawRouteTests``).
 HARNESS_EXEMPTIONS = frozenset({
     ("real_ha_contract_tests.py", "f'{HA_URL}{path}'"),
+    ("seq13_contract_acceptance.py", "self.api_url + path"),
 })
 
 

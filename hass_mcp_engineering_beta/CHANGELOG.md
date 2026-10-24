@@ -1,5 +1,59 @@
 # Changelog
 
+## 2.4.1-beta.34 - Label create, edit and assignment, inactive (HAMCP-165)
+
+Builds on 2.4.1-beta.33.
+
+- Add `create_label_plan`. It proposes 1-8 ordered `create` or `update`
+  operations over a label's `name`, `color` (theme colour or `#RRGGBB`),
+  `icon` and `description`. Each may assign the label to exact registered
+  entities through the signed HAMCP-069A path. Labels are never deleted.
+- Resource type `label_registry_entry`: `config/label_registry/create` or
+  `config/label_registry/update`, each verified by exact
+  `config/label_registry/list` readback. Duplicate names, slug collisions,
+  unknown labels and no-op edits are refused before a plan is stored; stale
+  state and namespace changes are refused before each write. Rollback is
+  refused (a corrective edit is a new plan).
+- New runtime-only Core profile `core.label_registry_operation`
+  (`sha256:b2f0dd11ff243aa2559c27738d962785e37455d37b836cb5a6997aeabb26813c`).
+  The signed registry (sequence 12) does not reference it, so every call is
+  refused with `CoreCapabilityUnavailable` /
+  `pending_signed_registry_admission`, admission checked first at the
+  service layer. Activates nothing new; switches on with the sequence-13
+  signing.
+- Review1 (H1): F3 re-checks Core admission of a dormant profile (labels and
+  both 069B resource types) before every read and write, including a retained
+  approved plan, recovery and private read-only reconciliation. No Core, a
+  Core that cannot report status, or an unadmitted profile refuses with
+  `core_authority_unavailable` or `pending_signed_registry_admission` and
+  sends no Home Assistant command. Before this, an F3 runtime composed
+  without Core would run a retained approved 069B plan in the legacy no-Core
+  mode.
+  The lowest configuration builder, including generic
+  `create_configuration_plan` routing, refuses an unadmitted profile before
+  any read or store (M1); the final pre-dispatch label read refuses any drift
+  of the exact target as `stale_target_state` (M3).
+- Entry admission (HAMCP-155 review finding, same pattern): an unadmitted
+  first apply of a label or 069B plan refuses with `provider_unavailable`
+  (`pending_signed_registry_admission` or `core_authority_unavailable`)
+  before any persistence. The plan, task, child, manifest and lock stores
+  stay byte-identical and no Home Assistant request is made, on every path:
+  F3 with a withdrawn profile, F3 without Core, a Core that cannot report
+  status, and a service with no F3 runtime (which used to read the registry
+  and store a task before failing). The dispatch gate stays as the second
+  barrier.
+- HAMCP-069B: the two dormant profiles name `websocket_entity_registry_list`
+  and `websocket_expose_new_entities_get`, the reads their gateway sends.
+  New fingerprints: availability
+  `sha256:ae292fbc16ad82c8d8347b7e2eb1c3a7e8c7644d95783f5bf2ae9f9cc63a76b2`,
+  exposure
+  `sha256:474c8ccaaae83c12f56a2848995ff089097936568a2ad5dc8d25ce855d51dbbd`.
+- CI: dormant seq-13 evidence lanes for 165 and 069B
+  (`REAL_HA_SEQ13_LANES: dormant`); no existing step changes.
+- Catalog: 67 static tools plus 28 delegated reads, 95 total (96 with the
+  optional YAML reader). No existing descriptor, schema, permission, signed
+  registry entry or signed fingerprint, or stable-v1 file changes.
+
 ## 2.4.1-beta.33 - Configuration definitions (HAMCP-132 slice 2)
 
 Builds on 2.4.1-beta.32.
