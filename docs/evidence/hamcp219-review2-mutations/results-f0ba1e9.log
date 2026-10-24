@@ -1,0 +1,126 @@
+# HAMCP-219 review 2 (M3) source mutations, first run, superseded by results.log.
+# Tree: detached worktree at commit f0ba1e9; same environment and modules.
+# M3-sequence-unchecked SURVIVED: the dropped-receipt case also failed the
+# tail check, so nothing exercised the continuation numbering alone.
+UNMUTATED: rc=0 Ran 151 tests in 8.445s OK 9s
+M3-replay-removed: rc=1 Ran 151 tests in 8.362s FAILED (errors=1) 9s
+    ERROR: test_acceptance_is_written_only_after_the_replay_and_records_it (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_acceptance_is_written_only_after_the_replay_and_records_it)
+  -> KILLED
+M3-replay-body-skipped: rc=1 Ran 151 tests in 8.337s FAILED (failures=33) 9s
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-observation.json')
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-observation.json')
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-wire.json')
+    FAIL: test_altered_retry_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_retry_window_fails) (filename='mixed-observation.json')
+    FAIL: test_altered_retry_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_retry_window_fails) (filename='mixed-wire.json')
+    FAIL: test_altered_retry_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_retry_window_fails) (filename='continuation-1-observation.json')
+  -> KILLED
+M3-declaration-unchecked: rc=1 Ran 151 tests in 8.553s FAILED (errors=1) 9s
+    ERROR: test_acceptance_is_written_only_after_the_replay_and_records_it (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_acceptance_is_written_only_after_the_replay_and_records_it)
+  -> KILLED
+M3-missing-window-tolerated: rc=1 Ran 151 tests in 8.562s FAILED (failures=2, errors=4) 9s
+    ERROR: test_missing_discarded_or_kept_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_missing_discarded_or_kept_window_fails) (filename='mixed-discarded-observation.json')
+    ERROR: test_missing_discarded_or_kept_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_missing_discarded_or_kept_window_fails) (filename='mixed-observation.json')
+    ERROR: test_missing_discarded_or_kept_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_missing_discarded_or_kept_window_fails) (filename='invalid-observation.json')
+    ERROR: test_reviewer_probe_variants_still_reach_receipts_but_fail_the_replay (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_reviewer_probe_variants_still_reach_receipts_but_fail_the_replay) (variant='missing')
+    FAIL: test_missing_discarded_or_kept_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_missing_discarded_or_kept_window_fails) (filename='mixed-discarded-wire.json')
+    FAIL: test_missing_discarded_or_kept_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_missing_discarded_or_kept_window_fails) (filename='mixed-wire.json')
+  -> KILLED
+M3-digest-unchecked: rc=1 Ran 151 tests in 8.510s FAILED (failures=3, errors=11) 9s
+    ERROR: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-observation.json')
+    ERROR: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-observation.json')
+    ERROR: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-wire.json')
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_write', 'origin': 'command', 'store': 'core.entity_registry'})
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_write', 'origin': 'background', 'store': 'repairs.issue_registry'})
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_save', 'origin': 'background', 'store': 'repairs.issue_registry'})
+  -> KILLED
+M3-kept-window-not-replayed: rc=1 Ran 151 tests in 8.518s FAILED (failures=1, errors=1) 9s
+    ERROR: test_undeclared_or_inconsistent_evidence_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_undeclared_or_inconsistent_evidence_fails) [observer drift]
+    FAIL: test_non_clean_retry_window_fails_even_with_a_matching_digest (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_non_clean_retry_window_fails_even_with_a_matching_digest)
+  -> KILLED
+M3-kept-window-replayed-leniently: rc=1 Ran 151 tests in 8.555s FAILED (errors=1) 9s
+    ERROR: test_non_clean_retry_window_fails_even_with_a_matching_digest (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_non_clean_retry_window_fails_even_with_a_matching_digest)
+  -> KILLED
+M3-discarded-not-reverified: rc=1 Ran 151 tests in 8.381s FAILED (failures=8) 9s
+    FAIL: test_discarded_window_must_be_retryable_with_its_recorded_diagnostic (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_must_be_retryable_with_its_recorded_diagnostic)
+    FAIL: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_write', 'origin': 'command', 'store': 'core.entity_registry'})
+    FAIL: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_write', 'origin': 'background', 'store': 'repairs.issue_registry'})
+    FAIL: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_save', 'origin': 'background', 'store': 'repairs.issue_registry'})
+    FAIL: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_delay_save', 'origin': 'command', 'store': 'repairs.issue_registry'})
+    FAIL: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'service', 'origin': 'background', 'store': 'auth'})
+  -> KILLED
+M3-replay-swallows-refusal: rc=1 Ran 151 tests in 8.514s FAILED (errors=8) 9s
+    ERROR: test_clean_control_and_discarded_windows_replay (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_clean_control_and_discarded_windows_replay)
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_write', 'origin': 'command', 'store': 'core.entity_registry'})
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_write', 'origin': 'background', 'store': 'repairs.issue_registry'})
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_save', 'origin': 'background', 'store': 'repairs.issue_registry'})
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_delay_save', 'origin': 'command', 'store': 'repairs.issue_registry'})
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'service', 'origin': 'background', 'store': 'auth'})
+  -> KILLED
+M3-receipt-wire-unchecked: rc=1 Ran 151 tests in 8.502s FAILED (failures=1) 9s
+    FAIL: test_undeclared_or_inconsistent_evidence_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_undeclared_or_inconsistent_evidence_fails) [receipt wire]
+  -> KILLED
+M3-outcome-unchecked: rc=1 Ran 151 tests in 8.404s FAILED (failures=1) 9s
+    FAIL: test_undeclared_or_inconsistent_evidence_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_undeclared_or_inconsistent_evidence_fails) [flipped outcome]
+  -> KILLED
+M3-sequence-unchecked: rc=0 Ran 151 tests in 8.538s OK 9s
+  -> SURVIVED
+M3-interval-reuse-unchecked: rc=1 Ran 151 tests in 8.456s FAILED (failures=1) 9s
+    FAIL: test_undeclared_or_inconsistent_evidence_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_undeclared_or_inconsistent_evidence_fails) [reused interval]
+  -> KILLED
+M3-unreceipted-window-ignored: rc=1 Ran 151 tests in 8.457s FAILED (failures=2) 9s
+    FAIL: test_undeclared_or_inconsistent_evidence_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_undeclared_or_inconsistent_evidence_fails) [unreceipted window]
+    FAIL: test_undeclared_or_inconsistent_evidence_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_undeclared_or_inconsistent_evidence_fails) [unknown window]
+  -> KILLED
+M3-undeclared-discarded-ignored: rc=1 Ran 151 tests in 8.429s FAILED (failures=1) 9s
+    FAIL: test_undeclared_or_inconsistent_evidence_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_undeclared_or_inconsistent_evidence_fails) [stray discarded window]
+  -> KILLED
+M3-discarded-digest-not-recorded: rc=1 Ran 151 tests in 8.403s FAILED (failures=16, errors=3) 9s
+    ERROR: test_clean_control_and_discarded_windows_replay (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_clean_control_and_discarded_windows_replay)
+    ERROR: test_discarded_window_must_be_retryable_with_its_recorded_diagnostic (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_must_be_retryable_with_its_recorded_diagnostic)
+    ERROR: test_discarded_window_with_an_illegal_wire_request_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_an_illegal_wire_request_fails)
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-observation.json')
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-observation.json')
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-wire.json')
+  -> KILLED
+M3-live-call-own-reads: rc=1 Ran 151 tests in 8.439s FAILED (failures=1) 9s
+    FAIL: test_acceptance_is_written_only_after_the_replay_and_records_it (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_acceptance_is_written_only_after_the_replay_and_records_it)
+  -> KILLED
+R1-H1-dashboard-tolerates-repairs-by-name: rc=1 FAILED (failures=3) Ran 151 tests in 8.512s FAILED (failures=9, errors=4) 9s
+    ERROR: test_clean_control_and_discarded_windows_replay (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_clean_control_and_discarded_windows_replay)
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_write', 'origin': 'background', 'store': 'repairs.issue_registry'})
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_save', 'origin': 'background', 'store': 'repairs.issue_registry'})
+    ERROR: test_non_clean_retry_window_fails_even_with_a_matching_digest (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_non_clean_retry_window_fails_even_with_a_matching_digest)
+    FAIL: test_fixture_names_the_retry_store_and_never_hashes_or_tolerates_it (test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_fixture_names_the_retry_store_and_never_hashes_or_tolerates_it)
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun) (event='save')
+  -> KILLED
+R1-H1-dashboard-tolerate-without-retry: rc=1 Ran 151 tests in 8.332s FAILED (failures=35) 9s
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-observation.json')
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-observation.json')
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-wire.json')
+    FAIL: test_altered_retry_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_retry_window_fails) (filename='mixed-observation.json')
+    FAIL: test_altered_retry_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_retry_window_fails) (filename='mixed-wire.json')
+    FAIL: test_altered_retry_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_retry_window_fails) (filename='continuation-1-observation.json')
+  -> KILLED
+R1-H1-dashboard-strict-default-ignored: rc=1 Ran 151 tests in 8.385s FAILED (failures=2, errors=1) 9s
+    ERROR: test_non_clean_retry_window_fails_even_with_a_matching_digest (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_non_clean_retry_window_fails_even_with_a_matching_digest)
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun)
+    FAIL: test_repairs_delayed_save_is_never_tolerated_and_refuses_strictly (test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_repairs_delayed_save_is_never_tolerated_and_refuses_strictly) (kind='storage_delay_save')
+  -> KILLED
+R1-H1-dashboard-never-requests-rerun: rc=1 Ran 151 tests in 8.303s FAILED (failures=35) 9s
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-observation.json')
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-observation.json')
+    FAIL: test_altered_discarded_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_discarded_window_fails) (filename='mixed-discarded-wire.json')
+    FAIL: test_altered_retry_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_retry_window_fails) (filename='mixed-observation.json')
+    FAIL: test_altered_retry_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_retry_window_fails) (filename='mixed-wire.json')
+    FAIL: test_altered_retry_window_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_altered_retry_window_fails) (filename='continuation-1-observation.json')
+  -> KILLED
+R1-M1-dashboard-any-kind-retries: rc=1 Ran 151 tests in 8.497s FAILED (failures=5, errors=2) 9s
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_write', 'origin': 'background', 'store': 'repairs.issue_registry'})
+    ERROR: test_discarded_window_with_a_non_allowlisted_event_fails (test_dashboard_disposable_acceptance.DisposableRetainedWindowReplayTests.test_discarded_window_with_a_non_allowlisted_event_fails) (event={'kind': 'storage_save', 'origin': 'background', 'store': 'repairs.issue_registry'})
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun) (event='save')
+    FAIL: test_only_the_background_delayed_save_may_ask_for_a_rerun (test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_only_the_background_delayed_save_may_ask_for_a_rerun) (event='write')
+    FAIL: test_other_stores_and_non_save_kinds_are_refused (test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_other_stores_and_non_save_kinds_are_refused) (kind='storage_remove')
+    FAIL: test_other_stores_and_non_save_kinds_are_refused (test_dashboard_disposable_acceptance.DisposableRetryOnceCleanTests.test_other_stores_and_non_save_kinds_are_refused) (kind='flow')
+  -> KILLED
+TOTAL killed=21/22
+RESTORED: rc=0 Ran 151 tests in 8.429s OK 9s

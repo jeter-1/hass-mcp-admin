@@ -138,8 +138,16 @@ class ProductionTransportTimingTests(unittest.IsolatedAsyncioTestCase):
             telemetry, token = begin_request("synthetic-no-dispatch-attempt")
             try:
                 if mode == "timeout":
-                    with patch.object(h.transport, "_operation_budget_seconds", return_value=0.05):
+                    # Production budget; the bounded wait expires only once
+                    # the catalog step is entered (see held.GatedSubmitWait).
+                    waiter = held.GatedSubmitWait(h.network.catalog_entered)
+                    with patch.object(held.upstream_read, "asyncio", waiter):
                         response = await self.canary(h)
+                    self.assertEqual(waiter.expired_after_entry, [True])
+                    self.assertEqual(
+                        waiter.budgets,
+                        [max(1.0, float(h.callbacks[-1]["timeout_seconds"]))],
+                    )
                 else:
                     task = asyncio.create_task(self.canary(h))
                     await asyncio.wait_for(h.network.catalog_entered.wait(), 3)

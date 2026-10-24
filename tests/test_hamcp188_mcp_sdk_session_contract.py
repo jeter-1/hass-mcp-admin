@@ -322,12 +322,29 @@ class StatefulSessionReclamationTests(unittest.TestCase):
     def test_idle_session_is_reclaimed_and_its_id_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = _Harness(directory, stateful=True)
-            harness.server.session_manager.session_idle_timeout = 0.2
+            manager = harness.server.session_manager
+            manager.session_idle_timeout = 0.2
             with harness.client() as client:
+                loop = client.loop
+                started = loop.time()
                 opened = _post(client, _initialize(1))
                 session_id = opened.headers["mcp-session-id"]
+                self.assertEqual(manager.session_idle_timeout, 0.2)
                 self.assertEqual(harness.active_sessions(), 1)
-                client.loop.run_until_complete(asyncio.sleep(0.8))
+
+                async def reclaimed():
+                    # Poll under a generous hang guard: the idle deadline
+                    # fires 0.2 s of loop time after the request, but its
+                    # teardown takes further loop turns that a loaded host
+                    # may delay past any fixed sleep (HAMCP-208).
+                    async with asyncio.timeout(30):
+                        while harness.active_sessions():
+                            await asyncio.sleep(0.01)
+                    return loop.time()
+
+                reclaimed_at = loop.run_until_complete(reclaimed())
+                # Reclaimed by the idle timeout, never before it elapsed.
+                self.assertGreaterEqual(reclaimed_at - started, 0.2)
                 self.assertEqual(harness.active_sessions(), 0)
                 expired = _post(client, _call(2, "static_read"), session_id=session_id)
                 self.assertEqual(expired.status_code, 404)
