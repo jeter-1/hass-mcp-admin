@@ -300,6 +300,22 @@ class RemovedEffectComparisonTests(unittest.TestCase):
         )
         self.assertFalse(ordinary.protected)
 
+    def test_a_delete_compares_against_nothing_after(self):
+        # The after side of a delete is empty: every protected row is removed,
+        # never "changed" against a retained copy of the pre-image.
+        config = normalize_resource_config(
+            "automation",
+            automation_config("night_lock", service="lock.lock", target="lock.front_door"),
+        )
+        comparison = compare_physical_effects("automation", "delete", config, config, None)
+        rows = comparison.projection["rows"]
+        self.assertTrue(rows)
+        for row in rows:
+            with self.subTest(row=row.get("object_id")):
+                self.assertEqual(row["verdict"], "removed")
+                self.assertEqual(row["after"], [])
+        self.assertIn("configuration_deleted", comparison.reason_codes)
+
     def test_no_adapter_defaults_an_effect(self):
         for action in ("delete", "frobnicate"):
             with self.subTest(action=action), self.assertRaises(ValueError):

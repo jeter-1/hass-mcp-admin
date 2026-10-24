@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,9 @@ from tests.hamcp069b_fixtures import (  # noqa: E402
     automation_profile,
     exposure_snapshot,
     finding,
+)
+from ha_mcp_engineering.f3_configuration.delete import (  # noqa: E402
+    ConfigurationDeleteAdapter,
 )
 from tests.hamcp155_fixtures import (  # noqa: E402
     ConfigurationDeleteServiceTestCase,
@@ -148,6 +152,25 @@ class StaleStateTests(ConfigurationDeleteServiceTestCase):
             "preflight read, then the dispatch-time drift read",
         )
 
+    async def test_every_dispatch_refusal_code_is_stored(self):
+        # The executor keeps the adapter's whole pre-intent refusal, not only
+        # its first code.
+        self.add("automation", "a")
+        created = await self.approved("automation", "a")
+
+        async def two_codes(adapter, operation):
+            return ("stale_target_state", "delete_target_missing")
+
+        with mock.patch.object(
+            ConfigurationDeleteAdapter, "_predispatch_refusal", two_codes
+        ):
+            result = await self.apply(created)
+        self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
+        codes = self.child_codes(result["task_id"])
+        self.assertIn("stale_target_state", codes)
+        self.assertIn("delete_target_missing", codes)
+        self.assertEqual(self.config_rest.writes(), [])
+
     async def test_changed_pre_image_is_stale(self):
         self.add("automation", "a")
         created = await self.approved("automation", "a")
@@ -247,6 +270,43 @@ class TruthfulOutcomeTests(ConfigurationDeleteServiceTestCase):
         self.assertNotIn("exact_readback_verified", codes)
         # Bounded: six polls, five waits, one DELETE.
         self.assertEqual(len(self.poll_sleeps), 5)
+        self.assertEqual(len(self.config_rest.deletes()), 1)
+
+    async def test_lingering_registry_entry_alone_is_manual_review(self):
+        # The state is gone; only the registry entry stays. Absence needs both.
+        self.add("script", "s")
+        created = await self.approved("script", "s")
+
+        def restore_entry(resource_type, target_id):
+            entry = self.config_rest.deleted_entries.pop((resource_type, target_id))
+            self.config_rest.websocket.entries[entry["entity_id"]] = entry
+
+        self.config_rest.after_delete = restore_entry
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "manual_review_required", result)
+        codes = self.child_codes(result["task_id"])
+        self.assertIn("config_removed_runtime_unverified", codes)
+        (record,) = self.child_records(result["task_id"])
+        self.assertEqual(record.evidence.get("mismatch_fields"), ["registry_entry_present"])
+        self.assertNotIn("exact_readback_verified", codes)
+        self.assertEqual(len(self.config_rest.deletes()), 1)
+
+    async def test_lingering_state_alone_is_manual_review(self):
+        # The registry entry is gone; only the state stays.
+        self.add("script", "s")
+        created = await self.approved("script", "s")
+        self.config_rest.after_delete = (
+            lambda resource_type, target_id: self.config_rest.states.add(
+                f"{resource_type}.{target_id}"
+            )
+        )
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "manual_review_required", result)
+        codes = self.child_codes(result["task_id"])
+        self.assertIn("config_removed_runtime_unverified", codes)
+        (record,) = self.child_records(result["task_id"])
+        self.assertEqual(record.evidence.get("mismatch_fields"), ["entity_state_present"])
+        self.assertNotIn("exact_readback_verified", codes)
         self.assertEqual(len(self.config_rest.deletes()), 1)
 
     async def test_delete_answered_ok_but_still_present_is_a_mismatch(self):

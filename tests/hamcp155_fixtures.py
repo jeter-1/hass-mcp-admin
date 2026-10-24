@@ -98,6 +98,9 @@ class SyntheticConfigurationRest:
         self.ignore_deletes = False
         # Called just before DELETE is answered (drift injection).
         self.before_delete: Any = None
+        # Called with (resource_type, target_id) after a DELETE has removed
+        # the configuration (and, per the hook flag, the entry and state).
+        self.after_delete: Any = None
         # Called with (resource_type, target_id, ordinal) after each config
         # GET is answered: ``ordinal`` counts that target's GETs from 1.
         self.after_config_get: Any = None
@@ -205,6 +208,8 @@ class SyntheticConfigurationRest:
                             self.websocket.entries.pop(key)
                         )
                         self.states.discard(key)
+            if self.after_delete is not None:
+                self.after_delete(resource_type, target_id)
             return {"result": "ok"}
         raise AssertionError(f"unreviewed REST request: {method} {path}")
 

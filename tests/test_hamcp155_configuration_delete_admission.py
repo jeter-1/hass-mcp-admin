@@ -587,10 +587,13 @@ class DispatchAdmissionTests(ConfigurationDeleteServiceTestCase):
         self.core = RouteWithdrawnCore(self.core.admitted)
         await self.restart_runtime()
         created = await self.approved_plan()
+        gets = dict(self.config_rest.config_gets)
         self.core.route_withdrawn = True
         result = await self.apply(created)
         self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
         self.assertIn("core_admission_unavailable", self.child_codes(result["task_id"]))
+        # Preflight refuses before its live-state read, not only at dispatch.
+        self.assertEqual(dict(self.config_rest.config_gets), gets)
         self.assert_not_deleted()
 
     async def test_adapter_refuses_immediately_before_the_delete(self):
@@ -610,6 +613,22 @@ class DispatchAdmissionTests(ConfigurationDeleteServiceTestCase):
         self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
         self.assertIn("core_admission_unavailable", self.child_codes(result["task_id"]))
         self.assert_not_deleted()
+
+    async def test_observation_refuses_when_admission_is_withdrawn_mid_delete(self):
+        # Withdrawn after the dispatch re-check: the one DELETE is sent, but
+        # verification refuses to claim success without admission.
+        self.core = RouteWithdrawnCore(self.core.admitted)
+        await self.restart_runtime()
+        created = await self.approved_plan()
+        self.config_rest.before_delete = lambda: setattr(
+            self.core, "route_withdrawn", True
+        )
+        result = await self.apply(created)
+        self.assertNotEqual(result.get("task_state"), "succeeded_verified", result)
+        codes = self.child_codes(result["task_id"])
+        self.assertIn("core_admission_unavailable", codes)
+        self.assertNotIn("exact_readback_verified", codes)
+        self.assertEqual(len(self.config_rest.deletes()), 1)
 
     async def test_f3_composed_without_core_never_deletes(self):
         created = await self.approved_plan()

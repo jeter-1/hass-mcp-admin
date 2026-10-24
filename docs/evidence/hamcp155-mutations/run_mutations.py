@@ -16,6 +16,7 @@ ALL = [
     'tests.test_hamcp155_configuration_delete_execution',
     'tests.test_hamcp155_configuration_delete_admission',
     'tests.test_hamcp155_configuration_delete_policy',
+    'tests.test_hamcp155_configuration_delete_lane',
 ]
 S = 'governance/service.py'
 D = 'f3_configuration/delete.py'
