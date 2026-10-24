@@ -4,6 +4,8 @@ H1: every F3 path (first apply, retained approved plan across restart,
 recovery) for a dormant seq-13 profile (labels and both 069B resource types)
 re-checks Core admission at dispatch.  No Core, a Core that cannot report
 status, or an unadmitted profile refuses with zero Home Assistant commands.
+The dispatch-gate classes bypass the first-apply entry refusal (tested in
+``test_hamcp165_entry_admission``) so they keep proving the second barrier.
 M1: generic ``create_configuration_plan`` routing refuses an unadmitted
 dormant profile before any read or store.
 M1 also re-checks admission at the lowest builder's own persistence
@@ -21,7 +23,11 @@ import unittest
 from unittest.mock import patch
 
 from tests.hamcp069b_fixtures import AdmittingCore, AvailabilityExposureServiceTestCase
-from tests.hamcp165_fixtures import LABEL_UPDATE, LabelAdmittingCore
+from tests.hamcp165_fixtures import (
+    LABEL_UPDATE,
+    LabelAdmittingCore,
+    bypass_entry_admission,
+)
 from tests.test_hamcp165_label_registry import (
     CREATE_HOLIDAY,
     PENDING_DETAILS,
@@ -118,6 +124,7 @@ class LabelDispatchAdmissionTests(ServiceTestCase):
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
+        bypass_entry_admission(self)
         self.ws.add_label("outdoor", "Outdoor", color="green")
 
     async def apply_refused(self, created: dict, code: str) -> dict:
@@ -391,6 +398,7 @@ class AvailabilityExposureDispatchAdmissionTests(AvailabilityExposureServiceTest
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
+        bypass_entry_admission(self)
         self.add_entity("light.porch")
         self.baseline = deepcopy(self.ws.entries["light.porch"])
 

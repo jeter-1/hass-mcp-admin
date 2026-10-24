@@ -3384,9 +3384,33 @@ class F3RuntimeIntegration:
             # do not turn a rejected plan into a restart-required global outage.
             raise
 
+    def _refuse_unadmitted_entry(self, plan: Any) -> None:
+        """HAMCP-165: refuse an unadmitted first apply before persistence.
+
+        A dormant (unsigned) profile that Core does not currently admit
+        refuses here, before the plan, task, child, manifest or lock stores
+        change and before any Home Assistant request.  The dispatch-time
+        gate (``_UnsignedProfileAdmissionAdapter``) still applies afterwards.
+        """
+
+        for profile in _unsigned_profiles(plan):
+            code = _unsigned_profile_refusal(self.core_runtime, (profile,))
+            if code is not None:
+                raise GovernanceError(
+                    ErrorCode.PROVIDER_UNAVAILABLE,
+                    details={
+                        "reason": code,
+                        "reason_code": code,
+                        "core_capability": profile,
+                        "execution_state_persisted": False,
+                        "provider_dispatch_occurred": False,
+                    },
+                )
+
     async def _apply(self, plan: Any, expected_plan_hash: str) -> dict[str, Any]:
         existing = self.service.task_repository.get_for_plan(plan.plan_id)
         if existing is None:
+            self._refuse_unadmitted_entry(plan)
             try:
                 task, prepared, requests = await self._initialize(
                     plan, expected_plan_hash

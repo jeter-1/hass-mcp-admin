@@ -606,9 +606,15 @@ class ServiceAdmissionGateTests(ServiceTestCase):
         self.core.admitted = set(LabelAdmittingCore.GATED)
         created = await self.approved(CREATE_HOLIDAY)
         self.core.withdraw()
-        result = await self.apply(created)
-        self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
-        self.assertIn("dispatch_authority_unavailable", self.child_codes(result["task_id"]))
+        # Refused at entry, before any execution-state persistence; the
+        # dispatch-time gate is proved in test_hamcp165_review1_corrections.
+        with self.assertRaises(GovernanceError) as refused:
+            await self.apply(created)
+        self.assertEqual(refused.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+        self.assertEqual(
+            refused.exception.details["reason_code"], "pending_signed_registry_admission"
+        )
+        self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
         await self.restart_runtime()
         await self.runtime.recover_once("synthetic_restart")
         self.assertEqual(self.ws.writes(), [])

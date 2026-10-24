@@ -204,8 +204,13 @@ class ReviewerReproductions(AvailabilityExposureServiceTestCase):
         self.assertFalse(authority.core.route_status((AVAILABILITY,))["available"])
         self.assertFalse(authority.core.route_status((EXPOSURE,))["available"])
         for created in plans:
-            result = await self.apply(created)
-            self.assertEqual(result["task_state"], "failed_pre_dispatch")
+            # HAMCP-165: the unadmitted first apply refuses at entry, before
+            # any execution-state persistence.
+            with self.assertRaises(GovernanceError) as refused:
+                await self.apply(created)
+            self.assertEqual(refused.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+            self.assertEqual(refused.exception.details["reason_code"], PENDING)
+            self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
             self.assertEqual(self.ws.writes(), [])
             await self.runtime.recover_once("reviewer_restart")
             self.assertEqual(self.ws.writes(), [])
@@ -684,8 +689,11 @@ class ServiceAdmissionGateTests(AvailabilityExposureServiceTestCase):
         created = await self.create(operation="disable", entity_ids=["light.porch"])
         await self.approve(created)
         self.core.withdraw()
-        result = await self.apply(created)
-        self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
+        # HAMCP-165: refused at entry, before any execution-state persistence.
+        with self.assertRaises(GovernanceError) as refused:
+            await self.apply(created)
+        self.assertEqual(refused.exception.details["reason_code"], PENDING)
+        self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
         await self.restart_runtime()
         await self.runtime.recover_once("synthetic_restart")
         self.assertEqual(self.ws.writes(), [])

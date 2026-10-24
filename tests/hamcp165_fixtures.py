@@ -23,6 +23,7 @@ import tempfile
 from types import SimpleNamespace
 import unicodedata
 from typing import Any
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -224,6 +225,21 @@ class SyntheticLabelWebSocket(SyntheticRegistryWebSocket):
                 raise self.failures[kind]
             return self._create(message) if kind == LABEL_CREATE else self._update(message)
         return await super().command(message)
+
+
+def bypass_entry_admission(case: Any) -> None:
+    """Skip the first-apply entry refusal so a test reaches the dispatch gate.
+
+    The entry check (``F3RuntimeIntegration._refuse_unadmitted_entry``) is the
+    first barrier; the dispatch-time ``_UnsignedProfileAdmissionAdapter`` is
+    the independent second one.  Tests of the second barrier bypass the first.
+    """
+
+    patcher = patch.object(
+        F3RuntimeIntegration, "_refuse_unadmitted_entry", lambda self, plan: None
+    )
+    patcher.start()
+    case.addCleanup(patcher.stop)
 
 
 class LabelAdmittingCore:

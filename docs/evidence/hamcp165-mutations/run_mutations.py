@@ -11,6 +11,7 @@ PY = '/var/tmp/hamcp165-env/bin/python'
 # reads git HEAD, which the .git-free copy lacks; it runs in the suites instead.
 PROBES = 'tests.test_hamcp165_review1_reviewer_probes.ReviewerProbes.'
 MODULES = ['tests.test_hamcp165_label_registry', 'tests.test_hamcp165_review1_corrections',
+           'tests.test_hamcp165_entry_admission',
            *(PROBES + name for name in (
                'test_admitted_production_client_control',
                'test_generic_internal_builder_requires_admission',
@@ -128,6 +129,26 @@ M = [
  ('final_read_target_comparison_removed',
   [(RS, '        if target_changed:\n            return ("stale_target_state",)',
         '        if False:\n            return ("stale_target_state",)')]),
+ # Entry admission: an unadmitted first apply refuses before any persistence.
+ ('entry_check_after_persistence',
+  [(RT3, '            self._refuse_unadmitted_entry(plan)\n            try:\n'
+         '                task, prepared, requests = await self._initialize(\n'
+         '                    plan, expected_plan_hash\n                )\n',
+         '            try:\n                task, prepared, requests = await self._initialize(\n'
+         '                    plan, expected_plan_hash\n                )\n'
+         '                self._refuse_unadmitted_entry(plan)\n')]),
+ ('entry_check_removed',
+  [(RT3, '            self._refuse_unadmitted_entry(plan)\n            try:\n',
+         '            try:\n')]),
+ ('legacy_entry_check_after_persistence',
+  [(S, '            self._refuse_dormant_profile_without_f3(plan)\n            if any(retry_proof_markers(op)',
+       '            if any(retry_proof_markers(op)'),
+   (S, '            task, reused = self._resolve_task_for_apply(\n                plan, expected_plan_hash\n            )\n',
+       '            task, reused = self._resolve_task_for_apply(\n                plan, expected_plan_hash\n            )\n'
+       '            self._refuse_dormant_profile_without_f3(plan)\n')]),
+ ('legacy_entry_check_removed',
+  [(S, '            self._refuse_dormant_profile_without_f3(plan)\n            if any(retry_proof_markers(op)',
+       '            if any(retry_proof_markers(op)')]),
 ]
 only = set(sys.argv[1:])
 if only:

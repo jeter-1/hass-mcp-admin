@@ -145,9 +145,16 @@ No test reaches a live system. Every fixture is synthetic.
   fingerprints are pinned.
 - Count and catalog pins in the existing suites are updated from 65 to 66
   static tools.
+- `tests/test_hamcp165_entry_admission.py` (7 tests): an unadmitted first
+  apply of a label (create, edit, create then assign) or 069B (disable,
+  expose) plan refuses before any persistence on every path (withdrawn
+  profile, F3 without Core, a Core that cannot report status, no F3
+  runtime): the plan, task, child, manifest and lock stores stay
+  byte-identical and Home Assistant receives no request; the refused plan
+  applies once admission returns.
 - Mutations: `docs/evidence/hamcp165-mutations/` (`run_mutations.py`,
-  `results.json`). The baseline passes and all 17 mutants are killed by
-  the label suite:
+  `results.json`). The baseline (98 tests) passes and all 30 mutants are
+  killed by the label, review1 and entry-admission suites:
   - the service-layer gate removed, not checked first, or not rechecked at
     the persist boundary; the internal builder accepting no persist lease;
   - readback skipped; a different generated `label_id` accepted;
@@ -156,7 +163,13 @@ No test reaches a live system. Every fixture is synthetic.
   - stale state ignored at dispatch (targeted), and a constant fingerprint;
     a namespace change ignored; the dispatch preflight evidence skipped;
   - the gateway send allowlist dropped; the 8-operation cap raised to 9; the
-    policy execution contract always complete.
+    policy execution contract always complete;
+  - review1: the dispatch admission removed, no Core or a status failure
+    treated as admitted, the dispatch-boundary and recovery rechecks removed,
+    a held verification delegated, the builder admission removed, the final
+    read's target comparison removed;
+  - entry admission: the F3 entry check moved after persistence or removed,
+    and the no-F3 service refusal moved after task resolution or removed.
 
 ## 2. Release CI and publication
 

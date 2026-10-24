@@ -28,8 +28,12 @@ signing, or a release.
   `core_authority_unavailable`, and with a Core that does not admit the
   profile it refuses `pending_signed_registry_admission`, with zero Home
   Assistant commands (review1 H1; the same gate covers 069B's two resource
-  types). There is no unsigned local admission and no registry is created or
-  signed.
+  types). Before that gate, an unadmitted first apply refuses at entry
+  (`F3RuntimeIntegration._refuse_unadmitted_entry`, and
+  `_refuse_dormant_profile_without_f3` when the service has no F3 route), so
+  the plan, task, child, manifest and lock stores stay byte-identical and no
+  Home Assistant request is made (the HAMCP-155 review pattern, as in #304).
+  There is no unsigned local admission and no registry is created or signed.
 - **069B fix (separate commit):** 069B's two unsigned profiles now name
   `websocket_entity_registry_list` and `websocket_expose_new_entities_get`,
   the reads their gateway sends (HAMCP-222 OD-5).

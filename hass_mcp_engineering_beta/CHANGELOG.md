@@ -33,6 +33,15 @@ Builds on 2.4.1-beta.32.
   `create_configuration_plan` routing, refuses an unadmitted profile before
   any read or store (M1); the final pre-dispatch label read refuses any drift
   of the exact target as `stale_target_state` (M3).
+- Entry admission (HAMCP-155 review finding, same pattern): an unadmitted
+  first apply of a label or 069B plan refuses with `provider_unavailable`
+  (`pending_signed_registry_admission` or `core_authority_unavailable`)
+  before any persistence. The plan, task, child, manifest and lock stores
+  stay byte-identical and no Home Assistant request is made, on every path:
+  F3 with a withdrawn profile, F3 without Core, a Core that cannot report
+  status, and a service with no F3 runtime (which used to read the registry
+  and store a task before failing). The dispatch gate stays as the second
+  barrier.
 - HAMCP-069B: the two dormant profiles name `websocket_entity_registry_list`
   and `websocket_expose_new_entities_get`, the reads their gateway sends.
   New fingerprints: availability

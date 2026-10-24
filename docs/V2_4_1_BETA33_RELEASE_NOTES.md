@@ -124,6 +124,13 @@ Approval and execution:
   This also closes a gap in the beta.32 069B family: an F3 runtime composed
   without Core would run a retained approved 069B plan in the legacy no-Core
   mode.
+- An unadmitted first apply of a label or 069B plan refuses before any
+  persistence: the plan, task, child, manifest and lock stores stay
+  byte-identical and no Home Assistant request is made. This covers F3 with
+  a withdrawn profile, F3 without Core, a Core that cannot report status, and
+  a service with no F3 runtime. Before this, the first apply stored a
+  `failed_pre_dispatch` task and its child, manifest and lock records (and
+  without F3, read the registry) before refusing.
 - Generic `create_configuration_plan` routing refuses an unadmitted dormant
   profile before any read or store, and the lowest builder re-checks
   admission at its own persistence boundary.

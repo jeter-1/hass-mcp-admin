@@ -853,7 +853,11 @@ observation (a held observation's verification stays held). With no Core the chi
 refuses `core_authority_unavailable`; with an unadmitted profile it refuses
 `pending_signed_registry_admission`; either way no Home Assistant command is
 sent. Generic `create_configuration_plan` routing refuses these types first
-too, before any read or store.
+too, before any read or store. An unadmitted first apply refuses earlier
+still, at apply entry, before any plan, task, child, manifest or lock record
+is written and before any Home Assistant request; without an F3 runtime the
+service refuses the same way instead of reading the registry and storing a
+task (HAMCP-165, following the HAMCP-155 review finding).
 
 Consequence: **the release acceptance's live canaries cannot run until a
 separate signed-registry PR lands** (OD-2). The implementation PR body carries

@@ -221,6 +221,13 @@ from .semantic_projection import (
 )
 
 
+# HAMCP-165: resource types admitted only by an unsigned (dormant) Core
+# profile; see ``f3_runtime.runtime.UNSIGNED_PROFILE_REQUIREMENTS``.
+DORMANT_PROFILE_RESOURCE_TYPES = frozenset(
+    {label_registry.LABEL_RESOURCE_TYPE, *entity_availability_exposure.RESOURCE_TYPES}
+)
+
+
 APPROVAL_AUTHORITY_VERSION = 3
 APPROVAL_CHANNEL = "home_assistant_ingress"
 APPROVAL_CHALLENGE_TTL = timedelta(minutes=60)
@@ -9105,6 +9112,7 @@ class ChangeGovernanceService:
                 return self.f3_runtime.handle_legacy_apply(
                     plan, expected_plan_hash
                 )
+            self._refuse_dormant_profile_without_f3(plan)
             if any(retry_proof_markers(op) or inverse_eligibility.markers(op) for op in plan.operations):
                 # This eligibility class requires F3's whole-bundle checks.
                 # Never consume approval or create a legacy execution task
@@ -13333,6 +13341,34 @@ class ChangeGovernanceService:
             "hash_validation": hash_validation,
             "plan": self._public(plan, include_configs=False),
         }
+
+    def _refuse_dormant_profile_without_f3(self, plan: ChangePlan) -> None:
+        """HAMCP-165: a dormant-profile plan never applies outside F3.
+
+        Label and HAMCP-069B availability/exposure plans need current Core
+        admission that only the F3 runtime checks.  Without that route the
+        apply refuses before any plan event, task, or Home Assistant request.
+        """
+
+        dormant = sorted(
+            {
+                operation.resource_type
+                for operation in plan.operations
+                if operation.resource_type in DORMANT_PROFILE_RESOURCE_TYPES
+            }
+        )
+        if dormant:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": "core_authority_unavailable",
+                    "reason_code": "core_authority_unavailable",
+                    "resource_types": dormant,
+                    "required_action": "active_f3_execution_required",
+                    "execution_state_persisted": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
 
     def _reject_apply(
         self,

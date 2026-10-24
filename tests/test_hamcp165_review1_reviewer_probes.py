@@ -78,7 +78,12 @@ class ReviewerProbes(ServiceTestCase):
         created = await self.approved(CREATE_HOLIDAY)
         self.core.withdraw()
         self.ws.commands.clear()
-        result = await self.apply(created)
+        # Adapted (HAMCP-165 entry admission): the first apply now refuses
+        # before persistence instead of returning a failed_pre_dispatch task.
+        try:
+            result = await self.apply(created)
+        except GovernanceError as exc:
+            result = {'task_state': exc.code.value}
         await self.restart_runtime()
         await self.runtime.recover_once('reviewer_restart')
         print('WITHDRAWN_CORE',json.dumps({'task_state':result['task_state'],'ha_commands':self.ws.commands}))
