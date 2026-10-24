@@ -1,0 +1,609 @@
+{
+  "source_commit": "ac99afd (worktree copy committed to a throwaway repository)",
+  "modules": 4,
+  "baseline_tests": 78,
+  "mutants": 35,
+  "killed": 35,
+  "results": [
+    {
+      "name": "baseline",
+      "exit": 0,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "OK"
+      ],
+      "import_error": false,
+      "failing": [],
+      "killed": true
+    },
+    {
+      "name": "l1_service_first_check_removed",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=4)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_unadmitted_core_refuses_before_validation_and_reads"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l1_service_core_always_available",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=11)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_core_that_cannot_report_status_fails_closed",
+        "test_internal_builders_refuse_without_admission_or_lease",
+        "test_missing_core_or_runtime_fails_closed",
+        "test_tool_refuses_pending_admission_without_reads",
+        "test_unadmitted_core_refuses_before_validation_and_reads"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l1_delete_builder_check_removed",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_internal_builders_refuse_without_admission_or_lease"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l1_generic_builder_check_removed",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_internal_builders_refuse_without_admission_or_lease"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l1_runtime_admission_always_true",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=5)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_adapter_refuses_at_preflight_while_the_lease_holds",
+        "test_adapter_refuses_immediately_before_the_delete",
+        "test_observation_refuses_when_admission_is_withdrawn_mid_delete",
+        "test_resume_and_recovery_mid_plan_never_delete_without_admission"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l1_adapter_preflight_admission_removed",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_adapter_refuses_at_preflight_while_the_lease_holds"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l1_predispatch_admission_removed",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_adapter_refuses_immediately_before_the_delete"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l1_observe_admission_removed",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_observation_refuses_when_admission_is_withdrawn_mid_delete"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l1_admission_callback_ignored",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=6)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_adapter_refuses_at_preflight_while_the_lease_holds",
+        "test_adapter_refuses_immediately_before_the_delete",
+        "test_f3_composed_without_core_never_deletes",
+        "test_observation_refuses_when_admission_is_withdrawn_mid_delete",
+        "test_resume_and_recovery_mid_plan_never_delete_without_admission"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l2_predispatch_drift_removed",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_drift_immediately_before_delete_refuses_as_stale"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l2_stale_pre_image_accepted",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_changed_pre_image_is_stale",
+        "test_drift_immediately_before_delete_refuses_as_stale"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l2_registry_entry_change_ignored",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_registry_entry_changed_is_stale"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l2_consumer_evidence_change_ignored",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_consumer_evidence_changed_is_stale"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l3_absence_ignores_state",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_lingering_state_alone_is_manual_review"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l3_absence_ignores_registry",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_lingering_registry_entry_alone_is_manual_review"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l3_readback_skipped",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=6)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_delete_answered_ok_but_still_present_is_a_mismatch",
+        "test_lingering_registry_entry_alone_is_manual_review",
+        "test_lingering_state_alone_is_manual_review",
+        "test_recovery_after_an_uncertain_delete_never_redispatches",
+        "test_runtime_removal_not_observed_is_manual_review",
+        "test_uncertain_delete_not_applied_is_a_mismatch"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l3_config_presence_ignored",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_delete_answered_ok_but_still_present_is_a_mismatch",
+        "test_uncertain_delete_not_applied_is_a_mismatch"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l4_unsupported_action_is_no_effect",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=3)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_an_unmodelled_action_is_unresolved_never_no_effect"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l4_delete_after_side_kept",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_delete_compares_against_nothing_after"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l4_policy_delete_branch_removed",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=13)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_delete_is_never_classified_as_no_effect",
+        "test_a_protected_effect_relabelled_standard_is_prohibited",
+        "test_hash_or_pre_image_mismatch_is_prohibited",
+        "test_tampered_marker_or_basis_is_prohibited"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l4_protected_basis_dropped",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=3)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_delete_is_never_classified_as_no_effect",
+        "test_a_protected_effect_relabelled_standard_is_prohibited",
+        "test_removing_a_lock_action_is_elevated_with_acknowledgement"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l4_dependency_basis_dropped",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_consumers_are_disclosed_and_unresolved_ones_elevate",
+        "test_incomplete_consumer_evidence_is_treated_as_protected"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l4_planner_never_elevated",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=6)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_a_delete_is_never_classified_as_no_effect",
+        "test_a_protected_effect_relabelled_standard_is_prohibited",
+        "test_an_unlock_is_held_at_the_floor",
+        "test_consumers_are_disclosed_and_unresolved_ones_elevate",
+        "test_incomplete_consumer_evidence_is_treated_as_protected",
+        "test_removing_a_lock_action_is_elevated_with_acknowledgement"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l4_ordinary_delete_low_risk",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=2, errors=30)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_adapter_refuses_at_preflight_while_the_lease_holds",
+        "test_adapter_refuses_immediately_before_the_delete",
+        "test_admission_withdrawn_after_approval",
+        "test_already_absent_is_stale_never_verified",
+        "test_an_ordinary_delete_is_standard_but_still_destructive",
+        "test_changed_pre_image_is_stale",
+        "test_consumer_evidence_changed_is_stale",
+        "test_delete_answered_ok_but_still_present_is_a_mismatch",
+        "test_delete_automation_then_recreate_exactly",
+        "test_delete_script_then_recreate_exactly",
+        "test_drift_immediately_before_delete_refuses_as_stale",
+        "test_every_dispatch_refusal_code_is_stored",
+        "test_f3_composed_without_core_never_deletes",
+        "test_legacy_apply_routes_never_delete",
+        "test_lingering_registry_entry_alone_is_manual_review",
+        "test_lingering_state_alone_is_manual_review",
+        "test_observation_refuses_when_admission_is_withdrawn_mid_delete",
+        "test_ordered_multi_delete",
+        "test_partial_plan_stops_on_first_failure",
+        "test_recovery_after_an_uncertain_delete_never_redispatches",
+        "test_registry_entry_changed_is_stale",
+        "test_rejected_delete_is_reported_rejected",
+        "test_resume_and_recovery_mid_plan_never_delete_without_admission",
+        "test_retained_approved_plan_after_restart_never_deletes",
+        "test_rollback_skips_a_target_that_was_recreated",
+        "test_runtime_removal_not_observed_is_manual_review",
+        "test_tampered_marker_or_basis_is_prohibited",
+        "test_uncertain_delete_not_applied_is_a_mismatch",
+        "test_uncertain_delete_that_applied_is_verified_by_readback"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l4_removed_effect_statement_dropped",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_removing_a_lock_action_is_elevated_with_acknowledgement"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l4_policy_marker_basis_unchecked",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_tampered_marker_or_basis_is_prohibited"
+      ],
+      "killed": true
+    },
+    {
+      "name": "l4_mixed_delete_plan_allowed",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_mixed_duplicate_dependent_and_oversize_plans_are_prohibited"
+      ],
+      "killed": true
+    },
+    {
+      "name": "rb_recreate_from_intent",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (errors=3)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_delete_automation_then_recreate_exactly",
+        "test_delete_script_then_recreate_exactly",
+        "test_partial_plan_stops_on_first_failure"
+      ],
+      "killed": true
+    },
+    {
+      "name": "rb_live_target_overwritten",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_rollback_skips_a_target_that_was_recreated"
+      ],
+      "killed": true
+    },
+    {
+      "name": "rb_unverified_child_restored",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_partial_plan_stops_on_first_failure",
+        "test_rejected_delete_is_reported_rejected"
+      ],
+      "killed": true
+    },
+    {
+      "name": "fx_base_adapter_defaults_update",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_no_adapter_defaults_an_effect"
+      ],
+      "killed": true
+    },
+    {
+      "name": "fx_delete_adapter_defaults_delete",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=2)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_no_adapter_defaults_an_effect"
+      ],
+      "killed": true
+    },
+    {
+      "name": "ex_pre_intent_refusal_ignored",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=3)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_adapter_refuses_immediately_before_the_delete",
+        "test_drift_immediately_before_delete_refuses_as_stale",
+        "test_every_dispatch_refusal_code_is_stored"
+      ],
+      "killed": true
+    },
+    {
+      "name": "ex_pre_intent_codes_dropped",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_every_dispatch_refusal_code_is_stored"
+      ],
+      "killed": true
+    },
+    {
+      "name": "gw_generic_write_deletes",
+      "exit": 1,
+      "tests": [
+        "78"
+      ],
+      "result": [
+        "FAILED (failures=1)"
+      ],
+      "import_error": false,
+      "failing": [
+        "test_generic_write_never_deletes"
+      ],
+      "killed": true
+    }
+  ]
+}

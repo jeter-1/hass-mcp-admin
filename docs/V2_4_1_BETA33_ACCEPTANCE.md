@@ -130,8 +130,13 @@ No test reaches a live system. Every fixture is synthetic.
   unwired, and the shipped lanes exclude the inactive profile.
 - Count and catalog pins in the existing suites are updated from 65 to 66
   static tools.
-- Mutations: `docs/evidence/hamcp155-mutations/`. `results.json` records
-  each mutant and the tests that killed it.
+- Mutations: `docs/evidence/hamcp155-mutations/`. 35 of 35 mutants are
+  killed over the four suites above (baseline 78 tests OK), covering the
+  four HAMCP-165 lessons (admission at every layer, drift at dispatch,
+  every claimed read asserted, removed-effect classification including
+  "not create/update means no effect"), rollback, adapter expected
+  effects, executor refusal storage and the closed gateway.
+  `results.json` records each mutant and the tests that killed it.
 
 ## 2. Release CI and publication
 
