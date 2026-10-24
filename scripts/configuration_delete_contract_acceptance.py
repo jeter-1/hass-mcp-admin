@@ -83,6 +83,34 @@ def enabled():
     return os.environ.get(ENABLE_FLAG) == ENABLED
 
 
+class ForwardRefusal(AssertionError):
+    """A governed forward delete that did not verify; carries only bounded codes."""
+
+    def __init__(self, diagnostic):
+        super().__init__("Governed configuration delete did not verify")
+        self.diagnostic = diagnostic
+
+
+def _code_shaped(value):
+    return (isinstance(value, str) and 0 < len(value) <= 64
+            and all(char.islower() or char.isdigit() or char == "_" for char in value))
+
+
+def require_forward_verified(applied, counts, codes):
+    """Fail at the delete itself, with the child's refusal codes, unless it verified.
+
+    Without this a refused delete surfaced only later, as the rollback's
+    ``rollback_not_available``, and the refusal codes were lost (HAMCP-222).
+    """
+    state = applied.get("task_state") if isinstance(applied, dict) else None
+    if state == "succeeded_verified" and counts == [1]:
+        return
+    raise ForwardRefusal({
+        "task_state": state if _code_shaped(state) else "unrecognized",
+        "dispatch_counts": [count for count in counts[:4] if isinstance(count, int)],
+        "codes": [code for code in codes if _code_shaped(code)][:16]})
+
+
 def source_profile():
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
     (profile,) = [p for p in CORE_RUNTIME_CAPABILITY_PROFILES if p.capability_id == CAPABILITY]
@@ -372,6 +400,8 @@ async def run_disposable(configured, *, expected_image, core_version):
                                    "configuration_delete_stage": stage[0]}
         if isinstance(exc, RawRefusal):
             exc.contract_diagnostic["raw_refusal"] = exc.diagnostic
+        if isinstance(exc, ForwardRefusal):
+            exc.contract_diagnostic["forward_refusal"] = exc.diagnostic
         raise
 
 
@@ -600,6 +630,7 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
             shown = disclosure(created)
             applied = await approve_apply(service, created)
             counts, codes = children(service, applied["task_id"])
+            require_forward_verified(applied, counts, codes)
             readback, _config = await independent_readback(rest, raw, resource_type, target_id, entity_id)
             value = {"result": "PASS", "task_state": applied["task_state"], "dispatch_counts": counts,
                      **scenario_writes(writes, checks, resource_type, target_id), "entity_id": entity_id,
