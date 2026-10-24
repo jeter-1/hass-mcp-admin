@@ -401,6 +401,96 @@ class ObservedRestExecutionTests(ConfigurationDeleteServiceTestCase):
                 self.assertEqual(len(checks), lane.RECREATE_CONFIG_CHECKS)
 
 
+class ForwardRefusalTests(unittest.TestCase):
+    """HAMCP-222: a refused forward delete fails at the delete, with its codes."""
+
+    def test_only_a_single_verified_dispatch_passes(self):
+        self.assertIsNone(lane.require_forward_verified(
+            {"task_state": "succeeded_verified"}, [1], ["exact_readback_verified"]))
+        for applied, counts in (({"task_state": "succeeded_verified"}, [0]),
+                                ({"task_state": "succeeded_verified"}, [2]),
+                                ({"task_state": "succeeded_verified"}, [1, 1]),
+                                ({"task_state": "succeeded_verified"}, []),
+                                ({"task_state": "failed_pre_dispatch"}, [1]),
+                                ({"task_state": "failed_pre_dispatch"}, [0]),
+                                ({}, [1]), (None, [1])):
+            with self.subTest(applied=applied, counts=counts), \
+                    self.assertRaises(lane.ForwardRefusal) as raised:
+                lane.require_forward_verified(applied, counts, [])
+            self.assertIsInstance(raised.exception, AssertionError)
+
+    def test_refusal_carries_bounded_code_shaped_diagnostics_only(self):
+        codes = ["dependency_evidence_changed", "Secret Value", "x" * 65, "", 7,
+                 "stale_target_state"] + ["code_%02d" % index for index in range(30)]
+        with self.assertRaises(lane.ForwardRefusal) as raised:
+            lane.require_forward_verified({"task_state": "failed_pre_dispatch"},
+                                          [0, "x", 3, 4, 5, 6], codes)
+        diagnostic = raised.exception.diagnostic
+        self.assertEqual(diagnostic["task_state"], "failed_pre_dispatch")
+        self.assertEqual(diagnostic["dispatch_counts"], [0, 3, 4])
+        self.assertEqual(len(diagnostic["codes"]), 16)
+        self.assertEqual(diagnostic["codes"][:2], ["dependency_evidence_changed", "stale_target_state"])
+        self.assertNotIn("Secret Value", json.dumps(diagnostic))
+        with self.assertRaises(lane.ForwardRefusal) as raised:
+            lane.require_forward_verified({"task_state": "Leaked: detail"}, [0], [])
+        self.assertEqual(raised.exception.diagnostic["task_state"], "unrecognized")
+
+    def test_run_disposable_reports_the_refusal_and_the_delete_stage(self):
+        refusal = lane.ForwardRefusal({"task_state": "failed_pre_dispatch", "dispatch_counts": [0],
+                                       "codes": ["stale_target_state"]})
+
+        async def refuse(configured, *, expected_image, core_version, stage):
+            stage[0] = "delete_automation"
+            raise refusal
+
+        with patch.dict(os.environ, {lane.ENABLE_FLAG: lane.ENABLED}), \
+                patch.object(lane, "_run_disposable", refuse), \
+                self.assertRaises(lane.ForwardRefusal) as raised:
+            asyncio.run(lane.run_disposable(object(), expected_image="x", core_version=CORE))
+        diagnostic = raised.exception.contract_diagnostic
+        self.assertEqual(raised.exception.contract_missing_key, "seq13_configuration_delete")
+        self.assertEqual(diagnostic["configuration_delete_stage"], "delete_automation")
+        self.assertEqual(diagnostic["forward_refusal"], refusal.diagnostic)
+        self.assertNotIn("raw_refusal", diagnostic)
+
+    def test_governed_delete_checks_before_it_returns(self):
+        tree = ast.parse(Path(lane.__file__).read_text())
+        (delete,) = [node for node in ast.walk(tree) if isinstance(node, ast.AsyncFunctionDef)
+                     and node.name == "governed_delete"]
+        calls = [ast.unparse(statement) for statement in delete.body]
+        children = next(i for i, text in enumerate(calls) if "children(service" in text)
+        check = calls.index("require_forward_verified(applied, counts, codes)")
+        self.assertEqual(check, children + 1)
+        self.assertIsInstance(delete.body[-1], ast.Return)
+
+
+class ForwardRefusalServiceTests(ConfigurationDeleteServiceTestCase):
+    """The check reads the real executor's shapes: verified passes, stale refuses."""
+
+    def lane_children(self, task_id):
+        records = self.child_records(task_id)
+        return ([0 if record is None else record.dispatch_count for record in records],
+                sorted(self.child_codes(task_id)))
+
+    async def test_verified_delete_passes_and_stale_delete_refuses_with_its_code(self):
+        self.add("automation", "verified")
+        created = await self.approved("automation", "verified")
+        applied = await self.apply(created)
+        counts, codes = self.lane_children(applied["task_id"])
+        lane.require_forward_verified(applied, counts, codes)
+
+        self.add("automation", "stale")
+        created = await self.approved("automation", "stale")
+        self.config_rest.configs["automation"]["stale"]["mode"] = "queued"
+        applied = await self.apply(created)
+        counts, codes = self.lane_children(applied["task_id"])
+        with self.assertRaises(lane.ForwardRefusal) as raised:
+            lane.require_forward_verified(applied, counts, codes)
+        self.assertEqual(raised.exception.diagnostic["task_state"], "failed_pre_dispatch")
+        self.assertEqual(raised.exception.diagnostic["dispatch_counts"], [0])
+        self.assertIn("stale_target_state", raised.exception.diagnostic["codes"])
+
+
 class WiringTests(unittest.TestCase):
     def test_lane_refuses_unless_exactly_enabled(self):
         for flag in (None, "", "Enabled", "true", "1", "dormant", " enabled"):
