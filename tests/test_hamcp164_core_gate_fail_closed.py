@@ -87,6 +87,7 @@ STATIC_CORE_TABLE = {
     "create_addon_restart_plan": MAPPED,
     "create_backup_plan": MAPPED,
     "create_change_plan": MAPPED,
+    "create_configuration_delete_plan": MAPPED,
     "create_configuration_plan": MAPPED,
     "create_dashboard_update_plan": MAPPED,
     "create_entity_availability_exposure_plan": MAPPED,
@@ -227,7 +228,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 65)
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 66)
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -470,10 +471,12 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_mapped_tools_still_acquire_their_exact_requirements(self):
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
-            # Both entity planners bind an exact target, which {} lacks.
+            # Both entity planners and the deletion planner bind an exact
+            # target, which {} lacks.
             if expected not in {MAPPED, CONDITIONAL} or name in {
                 "create_entity_metadata_plan",
                 "create_entity_availability_exposure_plan",
+                "create_configuration_delete_plan",
             }:
                 continue
             with self.subTest(tool=name):

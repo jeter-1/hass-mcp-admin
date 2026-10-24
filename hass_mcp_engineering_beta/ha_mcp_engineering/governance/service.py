@@ -5522,6 +5522,7 @@ class ChangeGovernanceService:
                 details={
                     "reason": configuration_delete.PENDING_ADMISSION_REASON,
                     "reason_code": configuration_delete.PENDING_ADMISSION_REASON,
+                    "resource_type": "configuration_deletion",
                     "core_capability": configuration_delete.PROFILE,
                     "plan_created": False,
                     "provider_dispatch_occurred": False,
@@ -9088,6 +9089,7 @@ class ChangeGovernanceService:
                     details={
                         "reason": configuration_delete.PENDING_ADMISSION_REASON,
                         "reason_code": configuration_delete.PENDING_ADMISSION_REASON,
+                        "resource_type": "configuration_deletion",
                         "core_capability": configuration_delete.PROFILE,
                         "provider_dispatch_occurred": False,
                     },
@@ -12079,6 +12081,7 @@ class ChangeGovernanceService:
                 details={
                     "reason": configuration_delete.PENDING_ADMISSION_REASON,
                     "reason_code": configuration_delete.PENDING_ADMISSION_REASON,
+                    "resource_type": "configuration_deletion",
                     "core_capability": configuration_delete.PROFILE,
                     "provider_dispatch_occurred": False,
                 },
@@ -14607,6 +14610,9 @@ class ChangeGovernanceService:
         operational["entity_metadata_provider"] = (
             self._entity_metadata_provider_health_snapshot()
         )
+        operational["configuration_delete_provider"] = (
+            self._configuration_delete_provider_health_snapshot()
+        )
         operational["entity_availability_exposure_provider"] = (
             self._entity_availability_exposure_provider_health_snapshot()
         )
@@ -14817,6 +14823,32 @@ class ChangeGovernanceService:
             ],
             "core_admission": "pending_signed_registry_admission",
             "writable_assistants": ["cloud.google_assistant", "conversation"],
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _configuration_delete_provider_health_snapshot(self) -> dict[str, Any]:
+        """Report the dormant HAMCP-155 provider without a Core call.
+
+        Deletion stays refused until a signed registry sequence admits its
+        profile; this snapshot shows that state, it does not decide it.
+        """
+
+        configured = self.configuration_delete_gateway is not None
+        return {
+            "provider": "direct_home_assistant_configuration",
+            "provider_contracts": {
+                "automation": configuration_delete.PROVIDER_CONTRACT,
+                "script": configuration_delete.PROVIDER_CONTRACT,
+            },
+            "provider_contract_status": "code_owned_exact",
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capabilities": [configuration_delete.PROFILE],
+            "core_admission": configuration_delete.PENDING_ADMISSION_REASON,
             "fallback": "none",
             "fallback_count": 0,
             "fallback_policy": "none",

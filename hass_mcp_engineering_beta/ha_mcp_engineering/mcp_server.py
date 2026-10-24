@@ -14,7 +14,9 @@ INSTRUCTIONS = """Operating procedure for this Home Assistant admin server:
    governed apply, and exact read-back verification.
 5. Multi-operation plans are non-atomic, stop on the first failure, and never
    roll back automatically. Inspect every per-step result and remaining risk.
-6. Legacy execution, deletion, reload, and ungoverned upsert tools fail closed;
+6. Automation and script deletion uses only create_configuration_delete_plan
+   (pre-image captured, consumers disclosed, rollback recreates); legacy
+   execution, deletion, reload, and ungoverned upsert tools fail closed;
    generated evidence or recommendations are never authorization.
 7. Prefer narrow queries over broad dumps."""
 
