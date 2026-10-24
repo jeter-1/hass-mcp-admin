@@ -613,6 +613,132 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.33` configuration-definition slice (HAMCP-132 slice 2) adds
+the read-only `get_configuration_definitions` tool. It adds no permission,
+add-on option, HTTP client, Supervisor call, route template, batch-allowlist
+shape, fallback or write path.
+
+- **Reads.** The tool issues:
+  - REST `GET /api/states` (only whether each state exists and is
+    `unavailable` or `unknown`) and `GET /api/config` (`components` only);
+  - WebSocket `config/entity_registry/list` and `entity/source`;
+  - `config_entries/get` with one domain from a closed set;
+  - Core's `manifest/get` for `ha_mcp_tools`.
+
+  Core's `config_entries/get` never includes an entry's `data` or `options`.
+  So a UI-defined SQL entry's `db_url` is never fetched, and UI definitions
+  are reported as not readable without a flow.
+- **No component commands.** The `ha_mcp_tools` custom component exposes
+  admin-only WebSocket commands, including writes and a backup preparation
+  that returns a password. Josh decided on 2026-10-21 that it is not used.
+  No `ha_mcp_tools/*` command is reachable; an AST test pins the package's
+  exact command literals and dispatch.
+- **YAML reader purpose.** The admitted ha-mcp YAML reader is used through a
+  second fixed gateway purpose, `configuration_definitions`:
+  - eight fixed `configuration.yaml` paths and its own audit event;
+  - Engineering builds the only argument;
+  - each purpose's path set is closed, so neither purpose can read the
+    other's paths, and an unknown purpose returns no reader;
+  - L1–L4, the Core gate, the response seal and the before-and-after
+    authority rechecks are unchanged.
+- **Withholding.** The projection is a positive per-integration allowlist
+  from Core 2026.10.1's schemas. The following are withheld:
+  - `db_url`, in every position;
+  - `!secret` and `!env_var` references, with their names;
+  - nested user-defined keys that look like credential or connection keys;
+  - any credential-bearing URI inside an allowlisted text field such as a
+    SQL query. The shared sanitizer redacts userinfo only for `http(s)`.
+
+  Unrecognized keys are counted, never copied. Config-entry `reason` text is
+  withheld. State values are never copied.
+- **One screened and sanitized exit point.** The complete envelope (report,
+  omissions, coverage and every identifier) is first screened in every key
+  and string for credential text: a URI with userinfo, a database or broker
+  connection URI by scheme, a user and password before a host without a scheme, a password field, a known
+  secret, or text the reader's canonicalization refuses. Such a string is
+  replaced with `[withheld:credential_text]` and the report is partial
+  (`credential_text_withheld`). This covers Core text the projection never
+  sees, such as config entry titles (independent review H1). The checks
+  read the canonical text through a bounded confusable fold (a fixed table
+  of look-alikes of `/`, `:` and Latin letters, not general confusable
+  coverage; delta review H2). The envelope
+  is then sanitized once with the access secret and the Home Assistant
+  token as known secrets. A redaction makes the report partial. Budget trimming rebuilds the envelope and sanitizes it
+  again. Tests plant a known secret in every identifier-bearing field, prove
+  with a control run that it reaches each one, and check through the
+  authenticated gateway that the protected response never contains it.
+- **Free text by allowlist (delta review H1, H2).** A config entry title,
+  the only Core free text the report echoes, is checked whole before any
+  truncation and shown verbatim only when it is printable ASCII without a
+  control character, within 255 characters, and has no `@`, no `://`, no
+  password-like `key=value` or `key: value`, no known secret in any letter
+  case and no credential text. Anything else is replaced whole with
+  `[withheld:credential_text]` or `[withheld:unverifiable_text]` and the
+  report is partial (`unverifiable_text_withheld`). An ordinary non-ASCII
+  title is withheld by design.
+- **Invisible text withheld whole (second delta review R2-H1).** A
+  YAML-projected string or key containing an invisible, format or control
+  character (Cc except tab, line feed and carriage return; Cf, Cs, Co, Cn,
+  Zl, Zp; every Default_Ignorable_Code_Point), in the original text or after
+  a bounded percent-decode, is replaced whole with
+  `[withheld:unverifiable_text]` (a key: dropped) before any credential
+  screening, in the projection and again at the exit point. It is never
+  screened and shown: a zero-width character inside `password=` previously
+  hid the credential word.
+- **Whitespace inside a credential is screened (correction batch 4).**
+  Every YAML-projected string, and every string at the exit point, is
+  screened in two forms: the canonical form (bounded percent-decode, NFKC,
+  casefold, confusable fold) and its squashed form, the same text with every
+  character `str.isspace` accepts removed (space, tab, line feed, carriage
+  return and Unicode whitespace). If either form matches the credential or
+  known-secret checks, the original value is withheld whole as credential
+  text and the report is partial: `pass<tab>word=`, a line feed inside a URI's user-info and
+  their percent-encoded and double-encoded forms no longer reach the caller.
+  Tab, line feed and carriage return stay displayable in ordinary text, so a
+  multi-line template without credential text is shown and complete. Form
+  feed, vertical tab and other Cc characters stay withheld outright as
+  unverifiable text. **By design, text with a colon followed later by `@`
+  and no `/` between (for example `Alert: motion` then `@ {{ ... }}` on the
+  next line) squashes to a URI user-info shape and is withheld** (fail
+  closed; the report is partial).
+- **Any withholding is partial (second delta review R2-M1).** One scan of
+  the final envelope at the exit point finds every withheld form and names
+  each affected item in a bounded omission list (at most 20, then a count);
+  any such item makes the report partial.
+- **A fixed policy redaction is not missing evidence (owner decision, Josh,
+  2026-10-22).** A SQL definition's own `db_url` (the `sql:` key or a legacy
+  `platform: sql` sensor) is always replaced with
+  `{"redacted_by_policy": "database_url"}`, never read out. The final-envelope
+  scan still runs over it; an explicit allowlist inside that scan
+  (`credentials.POLICY_REDACTIONS`, exactly one entry: integration `sql`,
+  field `db_url`, kind `database_url`, at `definitions[<n>].fields.db_url`)
+  is the only form it does not count. A `db_url` in any other integration or
+  nested position, a credential in any other SQL field, invisible text,
+  unverifiable titles, confusables, and a `redacted_by_policy`-shaped value
+  that came from configuration are all still withheld and partial. The
+  sanitizer's own `redacted_by_policy` omission (HAMCP-191) is unrelated and
+  still makes the report partial.
+- **Nothing is derived from a withheld input (owner decision, Josh,
+  2026-10-22).** Before deriving an entity ID, a unique ID, dependencies, a
+  definition-ID key or a legacy candidate, the projection checks every input
+  with its own withholding and with `credentials.withheld_at_exit` (the exit
+  point's credential, known-secret and sanitizer checks). A withheld input
+  yields no derived value (`derived_entity_id_withheld`,
+  `unique_id_withheld`, `dependencies_withheld`, a positional definition ID)
+  and a path in the definition's `withheld`, so the report is partial. A
+  slug of a credential is therefore never derived, though the exit point
+  would not recognize it.
+- **The Core-observed entity ID is not withheld (owner decision, Josh,
+  2026-10-22).** An exact registry match reports Core's own `entity_id`,
+  which every state read already exposes. An entity that Home Assistant
+  itself named from a credential-bearing string shows that entity ID; the
+  exit point would not recognize the slug. This is a disclosed limitation:
+  rename the entity in Home Assistant.
+
+Arguments are validated before SDK coercion and rejected without echoing
+them. The audit records counts and source outcomes only. Stable v1.1.2 is
+unchanged.
+
 The `2.4.1-beta.31` slice (HAMCP-069B) adds governed entity enable/disable and
 voice assistant exposure, **unreachable at release**. It adds no permission,
 add-on option, role, fallback or delegated provider.

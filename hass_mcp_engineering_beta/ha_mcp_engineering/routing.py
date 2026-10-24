@@ -830,10 +830,15 @@ class AuthenticatedMcpGateway:
                         send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
                     )
                     return
-            if tool_name == "get_recorder_settings" or tool_name == "get_unregistered_entities":
+            # Equality, not set membership: tool_name is not yet known to be
+            # hashable here (HAMCP-189 non-string names).
+            if tool_name == "get_recorder_settings" or tool_name == "get_unregistered_entities" or tool_name == "get_configuration_definitions":
                 if tool_name == "get_recorder_settings":
                     from .recorder_settings.contracts import validate_arguments as validate_hamcp132
                     error, message = "InvalidRecorderSettingsRequest", "Invalid recorder settings arguments."
+                elif tool_name == "get_configuration_definitions":
+                    from .configuration_definitions.contracts import validate_arguments as validate_hamcp132
+                    error, message = "InvalidConfigurationDefinitionsRequest", "Invalid configuration definition arguments."
                 else:
                     from .entity_reconciliation.contracts import validate_arguments as validate_hamcp132
                     error, message = "InvalidUnregisteredEntitiesRequest", "Invalid unregistered entity arguments."
@@ -1144,7 +1149,7 @@ class AuthenticatedMcpGateway:
                         "upstream_attempted": False,
                     }
                     resource_ids = {}
-                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_incident_logs", "get_history_slices", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
+                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -1359,6 +1364,18 @@ class AuthenticatedMcpGateway:
                         "provider": "engineering", "fallback": "none",
                     }
                     resource_ids = {}
+                elif tool_name == "get_configuration_definitions":
+                    # Only bounded counts are retained; entity IDs, integration
+                    # names and rejected values are never copied into the audit.
+                    entity_ids = parameters.get("entity_ids", [])
+                    integrations = parameters.get("integrations", [])
+                    audit_parameters = {
+                        "profile": "configuration-definitions-read-v1",
+                        "entity_count": len(entity_ids) if type(entity_ids) is list and len(entity_ids) <= 50 else None,
+                        "integration_count": len(integrations) if type(integrations) is list and len(integrations) <= 12 else None,
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
                 elif tool_name == "get_incident_logs":
                     # HAMCP-131: only validated source keys and bounded values;
                     # the text filter, times and cursor are never copied.
@@ -1485,6 +1502,7 @@ class AuthenticatedMcpGateway:
                             "get_backup_inventory",
                             "get_recorder_settings",
                             "get_unregistered_entities",
+                            "get_configuration_definitions",
                             "capture_automation_baseline",
                             "dashboard_integrity_analysis",
                         }

@@ -158,6 +158,9 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_unregistered_entities": (
         "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",
     ),
+    "get_configuration_definitions": (
+        "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",
+    ),
     "render_template": ("core.template_semantics",),
     "list_automation_traces": ("core.automation_trace_read",),
     "get_automation_trace": ("core.automation_trace_read",),

@@ -130,6 +130,13 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "fallback": "none", "policy": "unregistered_entities_read_v1", "direct_write_allowed": False,
     },
     {
+        "tool": "get_configuration_definitions", "category": "evidence",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native",
+        "provider": "engineering", "data_providers": ["direct_ha_api", "upstream_read_gateway"],
+        "fallback": "none", "policy": "configuration_definitions_read_v1", "direct_write_allowed": False,
+    },
+    {
         "tool": "get_core_log_history", "category": "evidence",
         "status": "beta_native", "risk": "read", "additive": True,
         "operation_class": "read", "routing": "engineering_native",
@@ -565,6 +572,15 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "completeness": "partial_with_reasons_when_any_source_unreadable_or_limit_reached",
         "security_justification": "Fixed non-admin reads: GET /api/states, config/entity_registry/list, entity/source and batched search/related; no registry change or fallback.",
         "trust_mode": "reviewed_native_read", "trust_profile": "unregistered-entities-read-v1",
+    },
+    {
+        "tool": "get_configuration_definitions", "capability": "configuration_definitions",
+        "required_semantics": "Allowlisted YAML definitions of template, SQL and helper entities with the match method and confidence; UI entries reported as not readable without a flow; per-entity unavailability diagnosis; partial when any source is unreadable.",
+        "standard_ha_mcp_coverage": "semantically_unsuitable", "direct_ha_coverage": "reviewed_fixed_reads",
+        "selected_provider": "engineering", "fallback_policy": "none",
+        "completeness": "partial_with_reasons_when_any_source_unreadable_or_definition_unaddressable",
+        "security_justification": "Fixed reads: the admitted YAML reader at fixed definition paths, GET /api/states (availability only), GET /api/config (components), config/entity_registry/list, entity/source, config_entries/get for a closed domain set and manifest/get ha_mcp_tools; allowlist projection; db_url, credentials and secret references never returned; no component command, flow, reload or fallback.",
+        "trust_mode": "reviewed_native_read", "trust_profile": "configuration-definitions-read-v1",
     },
     {
         "tool": "get_core_log_history", "capability": "core_log_history",

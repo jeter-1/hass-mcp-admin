@@ -10,6 +10,7 @@ import json
 import re
 import threading
 import time
+from types import MappingProxyType
 from typing import Any, Awaitable, Callable
 
 from jsonschema import Draft202012Validator, SchemaError
@@ -709,6 +710,23 @@ class ScriptDependencyReader:
 # may request. ``homeassistant`` is read solely to classify whether packages
 # are present when ``homeassistant.packages`` is not found.
 YAML_CONFIG_PATHS = frozenset({"recorder", "homeassistant.packages", "homeassistant"})
+
+# HAMCP-132 slice 2: the only configuration.yaml paths the
+# configuration-definition reader may request. Each is a top-level key that
+# holds a definition of the supported integrations (``template:``, ``sql:``,
+# ``group:``, ``utility_meter:`` and the ``sensor:``/``binary_sensor:``
+# platform lists); the two ``homeassistant`` paths only classify packages.
+DEFINITION_YAML_PATHS = frozenset({
+    "template", "sql", "group", "utility_meter", "sensor", "binary_sensor",
+    "homeassistant.packages", "homeassistant",
+})
+
+# Each reader purpose fixes its own path set and audit event, so one purpose
+# can never read another's paths.
+YAML_READER_PURPOSES = MappingProxyType({
+    "recorder_settings": (YAML_CONFIG_PATHS, "recorder_settings_yaml_read"),
+    "configuration_definitions": (DEFINITION_YAML_PATHS, "configuration_definitions_yaml_read"),
+})
 
 
 @dataclass(frozen=True)
@@ -3755,15 +3773,18 @@ class UpstreamReadGateway:
                         "identity inventory direct_ha_api; diagnostic only; no fallback"),
         ) if current() else None
 
-    def yaml_config_reader(self, *, audit=None) -> YamlConfigReader | None:
-        """Capture the reviewed YAML reader route for fixed recorder paths.
+    def yaml_config_reader(self, *, audit=None, purpose: str = "recorder_settings") -> YamlConfigReader | None:
+        """Capture the reviewed YAML reader route for one purpose's fixed paths.
 
-        HAMCP-132: Engineering builds the only argument (one of
-        ``YAML_CONFIG_PATHS``); the reader's own L1-L4 pipeline, Core gate
-        and response seal apply unchanged. No caller-selected path, no
-        fallback and no other upstream tool.
+        HAMCP-132: Engineering builds the only argument (one of the paths
+        ``YAML_READER_PURPOSES`` fixes for ``purpose``); the reader's own
+        L1-L4 pipeline, Core gate and response seal apply unchanged. No
+        caller-selected path, no fallback and no other upstream tool.
         """
 
+        if type(purpose) is not str or purpose not in YAML_READER_PURPOSES:
+            return None
+        allowed_paths, event = YAML_READER_PURPOSES[purpose]
         with self._lock:
             routes = [
                 (name, route) for name, route in self._exposed.items()
@@ -3778,13 +3799,13 @@ class UpstreamReadGateway:
         current = self._bounded_route_current(name, route, core_epoch)
 
         async def read(yaml_path: str) -> dict[str, Any]:
-            if yaml_path not in YAML_CONFIG_PATHS:
+            if yaml_path not in allowed_paths:
                 return {"success": False, "details": {"failure_category": "argument_validation"}}
             if not current():
                 return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
             parent = current_telemetry()
             telemetry, token = begin_request()
-            telemetry.tool_name = "recorder_settings_yaml_read"
+            telemetry.tool_name = event
             if parent is not None:
                 telemetry.caller_id = parent.caller_id
                 telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
@@ -3806,7 +3827,7 @@ class UpstreamReadGateway:
                 try:
                     if audit is not None:
                         audit.write({
-                            "event": "recorder_settings_yaml_read", "request_id": telemetry.request_id,
+                            "event": event, "request_id": telemetry.request_id,
                             "parent_request_id": parent.request_id if parent else None,
                             "provider": PROVIDER_ID, "upstream_tool": yaml_reader.TOOL_NAME,
                             "yaml_path": yaml_path,

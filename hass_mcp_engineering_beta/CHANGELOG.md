@@ -1,5 +1,77 @@
 # Changelog
 
+## 2.4.1-beta.33 - Configuration definitions (HAMCP-132 slice 2)
+
+Builds on 2.4.1-beta.32.
+
+- Add the read-only `get_configuration_definitions` tool for up to 50
+  `entity_ids` and/or whole `integrations` from template, sql, filter,
+  derivative, statistics, group, integration, min_max, history_stats,
+  threshold, trend and utility_meter.
+- Project each `configuration.yaml` definition through a positive
+  per-integration allowlist. The admitted YAML reader is used through a new
+  fixed gateway purpose, `configuration_definitions`, with eight paths.
+  `db_url`, credential keys, credential URIs in text and `!secret`/`!env_var`
+  names are withheld in every position. Unrecognized keys are counted only.
+- Match entities to definitions:
+  - `exact_config_entry` (UI-defined: `definition_not_readable_without_flow`);
+  - `exact_unique_id`;
+  - `heuristic`, with `high`, `medium` or `low` confidence;
+  - `ambiguous` (never resolved);
+  - `unmatched` or `not_applicable`.
+- Diagnose unavailability from Core's signals: disabled, config entry, or
+  platform or integration not loaded, dependency unavailable, transient,
+  entity level, not found or undetermined. Report the `ha_mcp_tools`
+  component from Core's own reads only; its commands are not used (owner
+  decision, 2026-10-21).
+- Disclose `!include`, packages and labelled keys without following them. Any
+  unreadable source, trim or redaction makes the report partial. The complete
+  envelope is sanitized once with the known secrets.
+- Corrections from the independent review: credential text is withheld from
+  every string of the final report, config entry titles included (H1);
+  ambiguity rules are identical from both sides (M1); a unique ID YAML 1.1
+  could read differently is never exact (M2); a YAML source gap or an
+  unchecked UI or template definition is `undetermined` (M3); a malformed
+  source value invalidates only its item (M4).
+- Corrections from the delta review: a config entry title is checked whole
+  before any truncation and shown only through a printable-ASCII allowlist,
+  so an ordinary non-ASCII title is withheld as `[withheld:unverifiable_text]`
+  by design (H1, H2); YAML-projected text is screened through a bounded
+  confusable fold (H2); an unexpanded template blueprint is a definition gap
+  (M3); a malformed registry identity is `invalid_response` and never
+  matched, while `null` stays a legitimate absence (M4).
+- Corrections from the second delta review: a YAML-projected string or key
+  with an invisible, format or control character, literal or
+  percent-encoded, is withheld whole as `[withheld:unverifiable_text]`, never
+  screened and shown (R2-H1); any withheld form anywhere in the final report
+  makes it partial, naming each affected item (`withheld:definitions[3]`)
+  (R2-M1).
+- Correction from the final32 review (correction batch 4): every
+  YAML-projected string is also screened with all whitespace and line-control
+  characters removed, so a tab, line feed, carriage return or space inside a
+  credential, literal or percent-encoded, withholds the whole value (partial).
+  Ordinary multi-line templates stay shown and complete; text with a colon
+  then `@` and no `/` between is withheld by design.
+- Owner decision (Josh, 2026-10-22): a SQL definition's own `db_url` is a
+  fixed policy redaction, not missing evidence. It is reported as
+  `{"redacted_by_policy": "database_url"}` and, through an explicit
+  allowlist inside the same final-envelope scan (SQL `fields.db_url` only),
+  leaves the report complete. Every other withholding is still partial.
+- Owner decision (Josh, 2026-10-22): nothing is derived from a withheld
+  input. A withheld name, default-name input or key derives no entity ID
+  (`derived_entity_id_withheld`); a withheld unique_id input generates no
+  unique ID (`unique_id_withheld`); a withheld dependency value is not read
+  (`dependencies_withheld`, diagnosis `undetermined`); a withheld key is not
+  in the definition ID; a withheld legacy name is never a candidate. Each is
+  listed as withheld, so the report is partial.
+- Owner decision (Josh, 2026-10-22): the Core-observed entity ID of an exact
+  registry match is Core's data and is not withheld. An entity that Home
+  Assistant itself named from a credential-bearing string shows that entity
+  ID (disclosed limitation; rename the entity in Home Assistant).
+- Catalog: 66 static tools, 94 advertised (95 with the optional YAML reader).
+  No existing descriptor, schema, stored format, dependency or workflow
+  changes.
+
 ## 2.4.1-beta.32 - Incident-log entry times (HAMCP-220)
 
 Builds on 2.4.1-beta.31.
