@@ -508,6 +508,10 @@ class ServiceAdmissionFirstTests(ConfigurationDeleteServiceTestCase):
                 prepared, _before_persist=lambda: None
             )
         self.assert_pending(raised)
+        # Admission is the delete builder's first check, before the lease.
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service._create_configuration_delete_plan(prepared)
+        self.assert_pending(raised)
         # The lowest builder checks first too, before anything is written.
         with self.assertRaises(GovernanceError) as raised:
             await self.service._create_configuration_plan(

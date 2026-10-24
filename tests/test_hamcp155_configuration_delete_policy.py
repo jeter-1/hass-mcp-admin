@@ -25,7 +25,20 @@ from ha_mcp_engineering.errors import GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance import (  # noqa: E402
     configuration_delete_planning as planning,
 )
+from ha_mcp_engineering.f3_configuration.adapter import (  # noqa: E402
+    ConfigurationOperationAdapter,
+)
+from ha_mcp_engineering.f3_configuration.delete import (  # noqa: E402
+    ConfigurationDeleteAdapter,
+)
 from ha_mcp_engineering.governance.models import RiskLevel  # noqa: E402
+from ha_mcp_engineering.governance.physical_effects import (  # noqa: E402
+    NONE_COMPARISON,
+    compare_physical_effects,
+)
+from ha_mcp_engineering.governance.resources import (  # noqa: E402
+    normalize_resource_config,
+)
 from ha_mcp_engineering.governance.policy import (  # noqa: E402
     ApprovalPolicyClass,
     CONFIGURATION_DELETE_INCOMPLETE,
@@ -256,6 +269,48 @@ class PolicyBoundaryTests(ConfigurationDeleteServiceTestCase):
         self.assertEqual(decision.policy_class, ApprovalPolicyClass.ELEVATED_ADMIN)
         self.assertIn("configuration_delete_elevated_policy", decision.reason_codes)
         self.assertTrue(decision.safety_critical_acknowledgement)
+
+
+class RemovedEffectComparisonTests(unittest.TestCase):
+    """Lesson 4: "not a create or update" never means "no effect"."""
+
+    def test_an_unmodelled_action_is_unresolved_never_no_effect(self):
+        config = normalize_resource_config(
+            "automation",
+            automation_config("night_lock", service="lock.lock", target="lock.front_door"),
+        )
+        for action in ("frobnicate", "replace", ""):
+            with self.subTest(action=action):
+                comparison = compare_physical_effects("automation", action, config, None, None)
+                self.assertIsNot(comparison, NONE_COMPARISON)
+                self.assertTrue(comparison.bounds_exceeded)
+                self.assertTrue(comparison.unlock_or_disarm)
+                self.assertIn("comparison_action_unsupported", comparison.reason_codes)
+
+    def test_a_delete_removes_every_protected_effect_of_the_pre_image(self):
+        config = normalize_resource_config(
+            "automation",
+            automation_config("night_lock", service="lock.lock", target="lock.front_door"),
+        )
+        comparison = planning.compare_removed_effects("automation", config)
+        self.assertTrue(comparison.protected)
+        self.assertIn("configuration_deleted", comparison.reason_codes)
+        ordinary = planning.compare_removed_effects(
+            "automation", normalize_resource_config("automation", automation_config("a"))
+        )
+        self.assertFalse(ordinary.protected)
+
+    def test_no_adapter_defaults_an_effect(self):
+        for action in ("delete", "frobnicate"):
+            with self.subTest(action=action), self.assertRaises(ValueError):
+                ConfigurationOperationAdapter._expected_effect(action)
+        self.assertEqual(
+            ConfigurationDeleteAdapter._expected_effect("delete"),
+            "configuration_resource_deleted",
+        )
+        for action in ("create", "update"):
+            with self.subTest(action=action), self.assertRaises(ValueError):
+                ConfigurationDeleteAdapter._expected_effect(action)
 
 
 class PlannerRefusalTests(ConfigurationDeleteServiceTestCase):

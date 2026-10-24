@@ -5657,9 +5657,8 @@ class ChangeGovernanceService:
         ):
             raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
         if _configuration_delete_context is not None:
-            # HAMCP-155: admission is re-checked inside the builder itself,
-            # so no path reaches persistence of a delete on unadmitted Core.
-            self._configuration_delete_core()
+            # Admission was checked above; a delete also needs the caller's
+            # current lease and is never a rollback.
             if _before_persist is None or _rollback_context is not None:
                 raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
             if [
