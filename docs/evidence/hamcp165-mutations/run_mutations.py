@@ -7,13 +7,24 @@ RT = 'hass_mcp_engineering_beta/ha_mcp_engineering/'
 BASE = Path(__file__).resolve().parent
 TMP = '/var/tmp/hamcp165-tmp'
 PY = '/var/tmp/hamcp165-env/bin/python'
-MODULES = ['tests.test_hamcp165_label_registry']
+# The reviewer probes that exercise the runtime.  The seq-13 receipt probe
+# reads git HEAD, which the .git-free copy lacks; it runs in the suites instead.
+PROBES = 'tests.test_hamcp165_review1_reviewer_probes.ReviewerProbes.'
+MODULES = ['tests.test_hamcp165_label_registry', 'tests.test_hamcp165_review1_corrections',
+           *(PROBES + name for name in (
+               'test_admitted_production_client_control',
+               'test_generic_internal_builder_requires_admission',
+               'test_apply_without_core_cannot_write',
+               'test_withdrawn_core_apply_and_restart_read_nothing',
+               'test_target_drift_observed_by_final_namespace_read_is_refused',
+               'test_seq13_invalid_values_produce_refusal_receipt'))]
 G = 'governance/label_registry.py'
 P = 'governance/label_registry_planning.py'
 S = 'governance/service.py'
 RS = 'governance/resources.py'
 ST = 'f3_configuration/strategies.py'
 AD = 'f3_configuration/adapter.py'
+RT3 = 'f3_runtime/runtime.py'
 M = [
  ('baseline', []),
  # Task: the service-layer gate removed.
@@ -25,12 +36,22 @@ M = [
  ('gate_not_checked_first',
   [(S, '        self._label_core()\n        try:\n            request = label_registry_planning.validate_request(arguments)',
        '        try:\n            request = label_registry_planning.validate_request(arguments)')]),
+ # Persistence: two independent layers (the label builder's own entry check
+ # and the lowest builder's post-policy recheck) each refuse; a mutant that
+ # removes only the label-level layer is equivalent, so both are removed.
  ('gate_not_rechecked_at_persist',
   [(S, '        self._label_core()\n        if _before_persist is None:\n            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)',
-       '        if _before_persist is None:\n            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)')]),
+       '        if _before_persist is None:\n            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)'),
+   (S, '        if dormant_profiles:\n            # The final persistence boundary re-checks admission itself.\n',
+       '        if False:\n            # The final persistence boundary re-checks admission itself.\n')]),
+ ('config_persist_recheck_removed',
+  [(S, '        if dormant_profiles:\n            # The final persistence boundary re-checks admission itself.\n',
+       '        if False:\n            # The final persistence boundary re-checks admission itself.\n')]),
  ('builder_accepts_no_persist_lease',
   [(S, '        self._label_core()\n        if _before_persist is None:\n            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)',
-       '        self._label_core()\n        if False:\n            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)')]),
+       '        self._label_core()\n        if False:\n            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)'),
+   (S, '        if dormant_profiles and _before_persist is None:\n',
+       '        if False:\n')]),
  # Task: readback skipped.
  ('readback_skipped',
   [(RS, '            normalized_observed = (\n                normalize_resource_config(resource_type, observed)\n                if observed_available\n                else None\n            )',
@@ -58,11 +79,15 @@ M = [
         '    validation_contract = "label_registry_entry_validation_v1"\n\n'
         '    def fingerprint(self, config):\n        return "sha256:" + "0" * 64\n')]),
  # The targeted mutant: the dispatch-time stale comparison skipped for labels.
+ # Stale target: the adapter's generic comparison and the review1 M3 final
+ # namespace read both judge the exact target; both are removed together.
  ('stale_target_state_ignored',
   [(AD, '            if self.strategy.fingerprint(current) != (\n',
-        '            if operation.resource_type != "label_registry_entry" and self.strategy.fingerprint(current) != (\n')]),
+        '            if operation.resource_type != "label_registry_entry" and self.strategy.fingerprint(current) != (\n'),
+   (RS, '        if target_changed:\n            return ("stale_target_state",)',
+        '        if False:\n            return ("stale_target_state",)')]),
  ('namespace_change_ignored',
-  [(RS, '        if observed != bindings["namespace_fingerprint"]:\n            return (label_registry.NAMESPACE_CHANGED,)',
+  [(RS, '        if snapshot.fingerprint != bindings["namespace_fingerprint"]:\n            return (label_registry.NAMESPACE_CHANGED,)',
         '        if False:\n            return (label_registry.NAMESPACE_CHANGED,)')]),
  ('preflight_evidence_skipped',
   [(ST, '        check = getattr(gateway, "label_preflight_evidence", None)\n',
@@ -76,6 +101,33 @@ M = [
  ('policy_contract_always_complete',
   [('governance/policy.py', '    if not 1 <= len(operations) <= LABEL_MAX_CHILDREN:\n        return False\n    kinds',
     '    return True\n    if not 1 <= len(operations) <= LABEL_MAX_CHILDREN:\n        return False\n    kinds')]),
+ # Review1 H1: the F3 dispatch admission gate for dormant profiles.
+ ('dispatch_admission_removed',
+  [(RT3, '        adapter = self._unsigned_profile_admission(plan, adapter)\n        dispatch_guard',
+         '        dispatch_guard')]),
+ ('no_core_treated_as_admitted',
+  [(RT3, '    if core_runtime is None:\n        return UNSIGNED_PROFILE_CORE_AUTHORITY_UNAVAILABLE',
+         '    if core_runtime is None:\n        return None')]),
+ ('status_failure_treated_as_admitted',
+  [(RT3, '    except Exception:\n        admitted = False\n    return None if admitted',
+         '    except Exception:\n        admitted = True\n    return None if admitted')]),
+ ('dispatch_boundary_recheck_removed',
+  [(RT3, '        async def admitted_before_dispatch() -> None:\n            self._require()\n',
+         '        async def admitted_before_dispatch() -> None:\n')]),
+ ('recovery_admission_removed',
+  [(RT3, '        adapter = _ReadbackOnlyRecoveryAdapter(\n            self._unsigned_profile_admission(plan, adapter)\n        )',
+         '        adapter = _ReadbackOnlyRecoveryAdapter(adapter)')]),
+ ('held_verification_delegated',
+  [(RT3, '        code = self._refusal()\n        if code is None and not (\n',
+         '        code = self._refusal()\n        return await self._adapter.verify(prepared, observation)\n        if code is None and not (\n')]),
+ # Review1 M1: admission first in the lowest configuration builder.
+ ('configuration_builder_admission_removed',
+  [(S, '        if label:\n            self._label_core()\n        for resource_type in sorted(availability_exposure):\n            self._availability_exposure_core(resource_type)\n',
+       '')]),
+ # Review1 M3: the final read judges the exact target.
+ ('final_read_target_comparison_removed',
+  [(RS, '        if target_changed:\n            return ("stale_target_state",)',
+        '        if False:\n            return ("stale_target_state",)')]),
 ]
 only = set(sys.argv[1:])
 if only:

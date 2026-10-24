@@ -3,7 +3,7 @@
     "name": "baseline",
     "exit": 0,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "OK"
@@ -16,14 +16,17 @@
     "name": "gate_check_removed",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
-      "FAILED (failures=15)"
+      "FAILED (failures=21)"
     ],
     "import_error": false,
     "failing": [
+      "test_generic_configuration_plan_refuses_unadmitted_label_operations",
+      "test_generic_internal_builder_requires_admission",
       "test_internal_builder_refuses_without_admission_or_lease",
+      "test_lowest_builder_rechecks_admission_at_its_own_persist_boundary",
       "test_missing_or_broken_core_fails_closed",
       "test_only_the_label_profile_gates_label_plans",
       "test_the_real_core_without_a_signed_reference_refuses",
@@ -36,7 +39,7 @@
     "name": "gate_not_checked_first",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "FAILED (failures=3)"
@@ -51,14 +54,29 @@
     "name": "gate_not_rechecked_at_persist",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
-      "FAILED (failures=1)"
+      "FAILED (failures=3)"
     ],
     "import_error": false,
     "failing": [
-      "test_internal_builder_refuses_without_admission_or_lease"
+      "test_lowest_builder_rechecks_admission_at_its_own_persist_boundary"
+    ],
+    "killed": true
+  },
+  {
+    "name": "config_persist_recheck_removed",
+    "exit": 1,
+    "tests": [
+      "91"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_lowest_builder_rechecks_admission_at_its_own_persist_boundary"
     ],
     "killed": true
   },
@@ -66,14 +84,15 @@
     "name": "builder_accepts_no_persist_lease",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
-      "FAILED (failures=1)"
+      "FAILED (failures=2)"
     ],
     "import_error": false,
     "failing": [
-      "test_internal_builder_refuses_without_admission_or_lease"
+      "test_internal_builder_refuses_without_admission_or_lease",
+      "test_lowest_builder_requires_a_persist_lease"
     ],
     "killed": true
   },
@@ -81,7 +100,7 @@
     "name": "readback_skipped",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -97,7 +116,7 @@
     "name": "generated_id_mismatch_ignored",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -112,7 +131,7 @@
     "name": "duplicate_name_accepted_on_create",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "FAILED (failures=5)"
@@ -128,7 +147,7 @@
     "name": "duplicate_name_accepted_on_rename",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -143,7 +162,7 @@
     "name": "name_compare_case_sensitive",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "FAILED (failures=8)"
@@ -160,7 +179,7 @@
     "name": "in_plan_duplicate_create_accepted",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "FAILED (failures=4)"
@@ -175,19 +194,28 @@
     "name": "stale_fingerprint_constant",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
-      "FAILED (errors=18)"
+      "FAILED (errors=38)"
     ],
     "import_error": false,
     "failing": [
+      "test_admission_withdrawn_at_the_dispatch_boundary_writes_nothing",
+      "test_admitted_core_reconciliation_reads_back_and_verifies",
+      "test_admitted_core_still_applies",
+      "test_admitted_production_client_control",
+      "test_apply_without_core_cannot_write",
       "test_audit_records_plan_approval_apply_and_verification",
       "test_case_only_rename_of_the_same_label_is_allowed",
+      "test_core_that_cannot_report_status_refuses_with_zero_commands",
       "test_create_target_appearing_before_dispatch_is_refused",
+      "test_create_target_that_appears_refuses_stale",
       "test_create_then_assign_runs_in_order",
       "test_create_with_every_field",
+      "test_deleted_target_refuses_stale",
       "test_different_generated_id_is_never_verified",
+      "test_each_target_field_drift_refuses_stale",
       "test_edit_and_create_then_assign_both",
       "test_edit_sends_only_the_changed_fields",
       "test_error_after_send_is_indeterminate_not_verified",
@@ -197,8 +225,16 @@
       "test_partial_result_is_truthful_and_the_label_persists",
       "test_readback_mismatch_is_never_verified",
       "test_refused_write_stops_the_plan",
+      "test_retained_approved_create_without_core_refuses_with_zero_commands",
+      "test_retained_approved_update_without_core_refuses_with_zero_commands",
       "test_rollback_is_refused_without_reads_or_plans",
-      "test_signed_test_registry_end_to_end"
+      "test_signed_test_registry_end_to_end",
+      "test_target_drift_observed_by_final_namespace_read_is_refused",
+      "test_unchanged_target_applies",
+      "test_unrelated_namespace_change_still_refuses_namespace_changed",
+      "test_withdrawn_core_apply_and_restart_read_nothing",
+      "test_withdrawn_profile_refuses_with_zero_commands_across_restart",
+      "test_without_core_reconciliation_reads_nothing_and_holds"
     ],
     "killed": true
   },
@@ -206,14 +242,18 @@
     "name": "stale_target_state_ignored",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
-      "FAILED (failures=1)"
+      "FAILED (failures=5, errors=3)"
     ],
     "import_error": false,
     "failing": [
-      "test_external_edit_before_dispatch_is_refused"
+      "test_create_target_that_appears_refuses_stale",
+      "test_deleted_target_refuses_stale",
+      "test_each_target_field_drift_refuses_stale",
+      "test_external_edit_before_dispatch_is_refused",
+      "test_target_drift_observed_by_final_namespace_read_is_refused"
     ],
     "killed": true
   },
@@ -221,14 +261,15 @@
     "name": "namespace_change_ignored",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
-      "FAILED (failures=1)"
+      "FAILED (failures=2)"
     ],
     "import_error": false,
     "failing": [
-      "test_namespace_change_before_dispatch_is_refused"
+      "test_namespace_change_before_dispatch_is_refused",
+      "test_unrelated_namespace_change_still_refuses_namespace_changed"
     ],
     "killed": true
   },
@@ -236,14 +277,19 @@
     "name": "preflight_evidence_skipped",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
-      "FAILED (failures=1)"
+      "FAILED (failures=6, errors=3)"
     ],
     "import_error": false,
     "failing": [
-      "test_namespace_change_before_dispatch_is_refused"
+      "test_create_target_that_appears_refuses_stale",
+      "test_deleted_target_refuses_stale",
+      "test_each_target_field_drift_refuses_stale",
+      "test_namespace_change_before_dispatch_is_refused",
+      "test_target_drift_observed_by_final_namespace_read_is_refused",
+      "test_unrelated_namespace_change_still_refuses_namespace_changed"
     ],
     "killed": true
   },
@@ -251,7 +297,7 @@
     "name": "send_allowlist_dropped",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "FAILED (failures=7)"
@@ -266,7 +312,7 @@
     "name": "cap_8_to_9",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "FAILED (failures=33)"
@@ -283,7 +329,7 @@
     "name": "policy_contract_always_complete",
     "exit": 1,
     "tests": [
-      "62"
+      "91"
     ],
     "result": [
       "FAILED (failures=7)"
@@ -291,6 +337,145 @@
     "import_error": false,
     "failing": [
       "test_tampered_plan_shapes_are_prohibited"
+    ],
+    "killed": true
+  },
+  {
+    "name": "dispatch_admission_removed",
+    "exit": 1,
+    "tests": [
+      "91"
+    ],
+    "result": [
+      "FAILED (failures=9)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admission_withdrawn_at_the_dispatch_boundary_writes_nothing",
+      "test_apply_without_core_cannot_write",
+      "test_core_that_cannot_report_status_refuses_with_zero_commands",
+      "test_retained_approved_create_without_core_refuses_with_zero_commands",
+      "test_retained_approved_plan_without_core_refuses_with_zero_commands",
+      "test_retained_approved_update_without_core_refuses_with_zero_commands"
+    ],
+    "killed": true
+  },
+  {
+    "name": "no_core_treated_as_admitted",
+    "exit": 1,
+    "tests": [
+      "91"
+    ],
+    "result": [
+      "FAILED (failures=8)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_apply_without_core_cannot_write",
+      "test_reconciliation_without_core_reads_nothing_and_holds",
+      "test_retained_approved_create_without_core_refuses_with_zero_commands",
+      "test_retained_approved_plan_without_core_refuses_with_zero_commands",
+      "test_retained_approved_update_without_core_refuses_with_zero_commands",
+      "test_without_core_reconciliation_reads_nothing_and_holds"
+    ],
+    "killed": true
+  },
+  {
+    "name": "status_failure_treated_as_admitted",
+    "exit": 1,
+    "tests": [
+      "91"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_core_that_cannot_report_status_refuses_with_zero_commands",
+      "test_without_core_reconciliation_reads_nothing_and_holds"
+    ],
+    "killed": true
+  },
+  {
+    "name": "dispatch_boundary_recheck_removed",
+    "exit": 1,
+    "tests": [
+      "91"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admission_withdrawn_at_the_dispatch_boundary_writes_nothing"
+    ],
+    "killed": true
+  },
+  {
+    "name": "recovery_admission_removed",
+    "exit": 1,
+    "tests": [
+      "91"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_reconciliation_without_core_reads_nothing_and_holds",
+      "test_without_core_reconciliation_reads_nothing_and_holds"
+    ],
+    "killed": true
+  },
+  {
+    "name": "held_verification_delegated",
+    "exit": 1,
+    "tests": [
+      "91"
+    ],
+    "result": [
+      "FAILED (errors=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_reconciliation_without_core_reads_nothing_and_holds",
+      "test_without_core_reconciliation_reads_nothing_and_holds"
+    ],
+    "killed": true
+  },
+  {
+    "name": "configuration_builder_admission_removed",
+    "exit": 1,
+    "tests": [
+      "91"
+    ],
+    "result": [
+      "FAILED (failures=10)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_generic_configuration_plan_refuses_unadmitted_069b_types",
+      "test_generic_configuration_plan_refuses_unadmitted_label_operations",
+      "test_generic_internal_builder_requires_admission",
+      "test_lowest_builder_rechecks_admission_at_its_own_persist_boundary"
+    ],
+    "killed": true
+  },
+  {
+    "name": "final_read_target_comparison_removed",
+    "exit": 1,
+    "tests": [
+      "91"
+    ],
+    "result": [
+      "FAILED (failures=4, errors=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_create_target_that_appears_refuses_stale",
+      "test_deleted_target_refuses_stale",
+      "test_each_target_field_drift_refuses_stale",
+      "test_target_drift_observed_by_final_namespace_read_is_refused"
     ],
     "killed": true
   }
