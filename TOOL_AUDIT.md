@@ -2,6 +2,29 @@
 
 Date: 2026-07-10
 
+## Automation and script deletion, inactive (2.4.1-beta.33, HAMCP-155)
+
+`create_configuration_delete_plan` is a native governed planning tool:
+`engineering_native` routing, governed configuration, no delegated provider,
+no fallback. It only creates a plan; dispatch is the existing external
+approval plus `apply_change_plan`. 1-8 `{resource_type: automation|script,
+target_id}` deletions, ordered and non-atomic, stopping on the first
+failure; no free-text target field.
+
+Each deletion requires the runtime-only Core profile
+`core.configuration_delete_operation`, which the signed registry (sequence
+12) does not reference. Every call is refused with
+`CoreCapabilityUnavailable` / `pending_signed_registry_admission` before any
+Home Assistant read, with no plan stored; capabilities and health show the
+same status. Once admitted, the only write is one no-body config `DELETE`
+per child, sent by the dedicated gateway method; the generic configuration
+write and `create_configuration_plan` still refuse `delete`, legacy
+`delete_automation` stays prohibited and upstream `ha_config_remove_*` stays
+unrouted. Verification is proof of absence; rollback recreates the exact
+pre-image under a new approved plan. The catalog is 66 static + 28
+delegated = 94 (95 with the optional YAML reader). See
+[HAMCP_155_GOVERNED_DELETION_DESIGN.md](docs/HAMCP_155_GOVERNED_DELETION_DESIGN.md).
+
 ## Entity enable/disable and voice exposure, inactive (2.4.1-beta.31, HAMCP-069B)
 
 `create_entity_availability_exposure_plan` is a native governed planning tool:

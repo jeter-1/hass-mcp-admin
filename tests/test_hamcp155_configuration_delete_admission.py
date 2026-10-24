@@ -560,6 +560,10 @@ class RouteWithdrawnCore(AdmittingDeleteCore):
         return super().route_status(capability_ids, **kwargs)
 
 
+class _SimulatedCrash(Exception):
+    pass
+
+
 class DispatchAdmissionTests(ConfigurationDeleteServiceTestCase):
     """Admission is re-checked at dispatch in every F3 path; 0 DELETEs."""
 
@@ -629,6 +633,51 @@ class DispatchAdmissionTests(ConfigurationDeleteServiceTestCase):
         self.assertIn("core_admission_unavailable", codes)
         self.assertNotIn("exact_readback_verified", codes)
         self.assertEqual(len(self.config_rest.deletes()), 1)
+
+    async def test_resume_and_recovery_mid_plan_never_delete_without_admission(self):
+        # One child deleted, then a process stop; admission is withdrawn
+        # before the plan is resumed or recovered.
+        for mode in ("resume", "recovery"):
+            for withdrawal in ("lease", "route"):
+                with self.subTest(mode=mode, withdrawal=withdrawal):
+                    self.core = RouteWithdrawnCore(self.core.admitted | set(PROFILES_155))
+                    await self.restart_runtime()
+                    first, second = f"{mode}_{withdrawal}_a", f"{mode}_{withdrawal}_b"
+                    self.add("automation", first)
+                    self.add("automation", second)
+                    created = await self.create(
+                        deletions=[
+                            {"resource_type": "automation", "target_id": target_id}
+                            for target_id in (first, second)
+                        ]
+                    )
+                    await self.approve(created)
+                    original = self.runtime._execute_child
+
+                    async def crash_after_first(*args, **kwargs):
+                        result = await original(*args, **kwargs)
+                        self.runtime._execute_child = original
+                        raise _SimulatedCrash()
+
+                    self.runtime._execute_child = crash_after_first
+                    deletes = len(self.config_rest.deletes())
+                    with self.assertRaises(_SimulatedCrash):
+                        await self.service.apply(created["plan_id"], created["plan_hash"])
+                    self.assertEqual(len(self.config_rest.deletes()), deletes + 1)
+                    if withdrawal == "lease":
+                        self.core.withdraw()
+                    else:
+                        self.core.route_withdrawn = True
+                    if mode == "resume":
+                        result = await self.apply(created)
+                        self.assertNotEqual(
+                            result.get("task_state"), "succeeded_verified", result
+                        )
+                    else:
+                        await self.runtime.recover_once("startup")
+                    self.assertEqual(len(self.config_rest.deletes()), deletes + 1)
+                    self.assertIn(second, self.config_rest.configs["automation"])
+                    self.assertIn(f"automation.{second}", self.ws.entries)
 
     async def test_f3_composed_without_core_never_deletes(self):
         created = await self.approved_plan()

@@ -144,6 +144,12 @@ def run(case):
     with tempfile.TemporaryDirectory(prefix='155-mut-', dir=TMP) as td:
         dest = Path(td) / 'source'
         shutil.copytree(SRC, dest, ignore=shutil.ignore_patterns('.git', '__pycache__', '.artifacts', 'core', 'logs'))
+        # The lane receipt binds the source revision: commit the unmutated
+        # copy to a throwaway repository so HEAD resolves as in a checkout.
+        git = ['git', '-c', 'user.name=mutation', '-c', 'user.email=mutation@invalid',
+               '-c', 'commit.gpgsign=false']
+        for args in (['init', '-q'], ['add', '-A'], ['commit', '-q', '-m', 'unmutated']):
+            subprocess.run([*git, *args], cwd=dest, check=True, stdout=subprocess.DEVNULL)
         for f, old, new in edits:
             p = dest / RT / f
             s = p.read_text()

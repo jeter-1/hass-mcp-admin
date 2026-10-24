@@ -1,5 +1,21 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.33** ships governed deletion of UI-managed
+automations and scripts **inactive** (HAMCP-155). The new tool
+`create_configuration_delete_plan` proposes one to eight deletions. Its
+runtime-only Core profile `core.configuration_delete_operation` is not
+referenced by the signed registry (sequence 12), so the tool refuses with
+`pending_signed_registry_admission` before any Home Assistant read; the
+release activates nothing new. Once signed, a delete is checked for drift
+immediately before its single no-body `DELETE`, is verified by proof of
+absence (config 404, registry entry gone, state gone), is classified by the
+protected effects it removes, and can be recreated exactly from its
+pre-image by a separately approved `rollback_change` plan. Catalog 94 (95).
+Read the [2.4.1-beta.33 release notes](docs/V2_4_1_BETA33_RELEASE_NOTES.md)
+and [2.4.1-beta.33 acceptance contract](docs/V2_4_1_BETA33_ACCEPTANCE.md).
+
+It builds on beta.32 below.
+
 Engineering **2.4.1-beta.32** corrects `get_incident_logs` entry times
 (HAMCP-220). Supervisor 2026.10.3 writes log times in Home Assistant's local
 time without an offset, and earlier betas read them as UTC. Each call now
