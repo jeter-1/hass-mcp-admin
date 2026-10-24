@@ -24,7 +24,7 @@ import types
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-for path in (ROOT / "tests", ROOT / "hass_mcp_engineering_beta"):
+for path in (ROOT, ROOT / "tests", ROOT / "hass_mcp_engineering_beta"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
@@ -367,6 +367,134 @@ class DeepRestoreTests(GuardHarness, unittest.TestCase):
         self.assertEqual(guard.modules_checked, 2)
 
 
+
+CORE_CAPABILITY = ("core.basic_rest_read",)
+CORE_RUNTIME_MODULE = "hamcp219_synthetic_core_runtime"
+
+
+def _boot_core(runtime):
+    """Configure ``runtime`` and boot it once, as ToolRefusalTests.setUpClass does."""
+
+    import asyncio
+    from tests import test_ha_core_2026_9_integration as core_tests
+
+    runtime.configure(object(), source=core_tests._MutableSource(core_tests._core_2026_9_snapshot()))
+    asyncio.run(runtime.reconcile_once("startup"))
+    return runtime.acquire(CORE_CAPABILITY) is not None
+
+
+class CoreBootLatchTests(GuardHarness, unittest.TestCase):
+    """HAMCP-219: the Core runtime's one-shot boot exception is guarded by name.
+
+    ``CORE_READMISSION`` admits once per process without the restoration gate.
+    A class that boots it spends that exception, and every later configure()
+    then inherits the gate, so a later class that boots Core once is refused:
+    ``tests.test_beta_v2.BetaApplicationTests`` followed by
+    ``tests.test_hamcp200_path_safety.ToolRefusalTests`` failed 106 subtests
+    with CoreCapabilityUnavailable. The guard's probe for the real runtime is
+    exercised here on a separate ``CoreRuntime`` so the process-wide one is
+    never configured with a synthetic source.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from ha_mcp_engineering.ha_core_readmission import CoreRuntime
+
+        self.names.append(CORE_RUNTIME_MODULE)
+        self.runtime_module = types.ModuleType(CORE_RUNTIME_MODULE)
+        self.runtime_module.RUNTIME = self.runtime = CoreRuntime()
+        sys.modules[CORE_RUNTIME_MODULE] = self.runtime_module
+        self.probe = process_isolation.CarriedStateProbe(
+            CORE_RUNTIME_MODULE, "RUNTIME", process_isolation.CORE_LATCH,
+            process_isolation.CORE_CARRIED)
+
+    def spender_and_consumer(self, prefix):
+        runtime, admitted = self.runtime, []
+        spender = self.module(
+            f"{prefix}_spender",
+            setUpClass=classmethod(lambda cls: _boot_core(runtime)),
+            test_runs=lambda case: None)
+        consumer = self.module(
+            f"{prefix}_consumer",
+            test_boots=lambda case: admitted.append(_boot_core(runtime)))
+        return spender, consumer, admitted
+
+    def test_spent_boot_exception_fails_the_module_and_the_next_module_boots(self):
+        spender, consumer, admitted = self.spender_and_consumer("hamcp219_synthetic_core")
+        guard, result = self.run_guarded(spender, consumer, probes=(self.probe,))
+        self.assertEqual(result.failures, [])
+        self.assertEqual([str(holder) for holder, _ in result.errors],
+                         ["tearDownModule (hamcp219_synthetic_core_spender)"])
+        trace = result.errors[0][1]
+        self.assertIn("ProcessStateLeak", trace)
+        self.assertIn(f"{CORE_RUNTIME_MODULE}.RUNTIME: _boot_exception_spent False -> True", trace)
+        self.assertIn("carried into the next configure(): _admitted", trace)
+        self.assertEqual([module for module, _ in guard.leaks], ["hamcp219_synthetic_core_spender"])
+        self.assertEqual(admitted, [True])
+
+    def test_mutation_without_the_core_probe_reproduces_core_capability_unavailable(self):
+        spender, consumer, admitted = self.spender_and_consumer("hamcp219_synthetic_unprobed")
+        guard, result = self.run_guarded(spender, consumer, probes=())
+        self.assertTrue(result.wasSuccessful(), result.errors)
+        self.assertEqual(guard.leaks, [])
+        # The consumer's single boot is refused: the router answers that as
+        # CoreCapabilityUnavailable (routing.py ``acquire`` returned None).
+        self.assertEqual(admitted, [False])
+        self.assertTrue(self.runtime._boot_exception_spent)
+
+    def test_spend_inside_a_test_is_reset_before_the_next_test(self):
+        runtime, admitted = self.runtime, []
+        module = self.module(
+            "hamcp219_synthetic_core_body",
+            test_a_spends=lambda case: admitted.append(_boot_core(runtime)),
+            test_b_boots=lambda case: admitted.append(_boot_core(runtime)))
+        guard, result = self.run_guarded(module, probes=(self.probe,))
+        self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+        # Each boot spends the exception; each is reset before the next test.
+        self.assertEqual(admitted, [True, True])
+        self.assertEqual((guard.tests_reset, guard.leaks), (2, []))
+
+    def test_unspent_state_that_configure_resets_is_not_reported(self):
+        saved = self.probe.capture()
+        self.runtime._admitted, self.runtime._flap_count = True, 3
+        self.assertEqual(self.probe.changes(saved), [])
+        self.runtime._boot_exception_spent = True
+        spent = self.probe.capture()
+        self.runtime._flap_count = 4
+        self.assertEqual(self.probe.changes(spent), [
+            f"{CORE_RUNTIME_MODULE}.RUNTIME: _boot_exception_spent True -> True; "
+            "carried into the next configure(): _flap_count"])
+        self.probe.restore(spent)
+        self.assertEqual(self.runtime._flap_count, 3)
+        self.probe.restore(saved)
+        self.assertIs(self.runtime._boot_exception_spent, False)
+
+    def test_probe_guards_the_real_runtime_with_exactly_what_configure_carries(self):
+        import ast
+        import inspect
+        from ha_mcp_engineering.ha_core_readmission import runtime as core_runtime
+
+        probes = [probe for probe in process_isolation.PROBES
+                  if isinstance(probe, process_isolation.CarriedStateProbe)]
+        self.assertEqual([(probe.module, probe.owner, probe.latch, probe.carried) for probe in probes],
+                         [(core_runtime.__name__, "CORE_READMISSION", "_boot_exception_spent",
+                           process_isolation.CORE_CARRIED)])
+        self.assertIsInstance(core_runtime.CORE_READMISSION, core_runtime.CoreRuntime)
+        configure = ast.parse(inspect.getsource(core_runtime.CoreRuntime.configure).strip())
+        carried, latch_tests, admitted_reads = None, [], []
+        for node in ast.walk(configure):
+            if isinstance(node, ast.Assign) and [getattr(t, "id", None) for t in node.targets] == ["carried"]:
+                carried = tuple(item.attr for item in node.value.elts)
+            if isinstance(node, ast.If) and isinstance(node.test, ast.Attribute):
+                latch_tests.append(node.test.attr)
+            if (isinstance(node, ast.Assign) and [getattr(t, "id", None) for t in node.targets]
+                    == ["was_admitted"]):
+                admitted_reads.append(node.value.attr)
+        self.assertIn("_boot_exception_spent", latch_tests)
+        self.assertEqual(admitted_reads, ["_admitted"])
+        self.assertEqual(("_admitted", *carried), process_isolation.CORE_CARRIED)
+
+
 INSTALLER = """
 import sys, unittest
 from support import process_isolation
@@ -387,6 +515,16 @@ class Leaker(unittest.TestCase):
     def test_runs(self):
         pass
 """
+# HAMCP-219: imports the guard but never calls install() itself.
+CONSUMER = f"""
+import os, unittest
+from support import process_isolation
+
+class Consumer(unittest.TestCase):
+    def test_baseline_restored(self):
+        self.assertNotIn({SYNTHETIC_ENV!r}, os.environ)
+"""
+INSTALL_ON_IMPORT = "\ninstall()\n"
 CLEAN = f"""
 import os, unittest
 
@@ -464,6 +602,83 @@ class RunnerParityTests(unittest.TestCase):
             cwd=str(root), env=env, capture_output=True, text=True, timeout=120)
         self.assertEqual(aggregate.returncode, 1, aggregate.stdout + aggregate.stderr)
         self.assertIn("refused: shard_fixture_error", aggregate.stderr)
+
+    def named_run_root(self, name, *, install_on_import=True):
+        """A copy of the synthetic tree plus a module that only imports the guard."""
+        root = Path(self.temp.name) / name
+        shutil.copytree(self.root, root)
+        (root / "tests/test_d_consumer.py").write_text(CONSUMER.lstrip())
+        guard = root / "tests/support/process_isolation.py"
+        source = guard.read_text()
+        self.assertTrue(source.endswith(INSTALL_ON_IMPORT))
+        if not install_on_import:
+            guard.write_text(source[:-len(INSTALL_ON_IMPORT)] + "\n")
+        return root
+
+    def run_named(self, root):
+        return subprocess.run([sys.executable, "-m", "unittest", "-v", "test_b_leaker", "test_d_consumer"],
+                              cwd=str(root / "tests"), env=self.env, capture_output=True, text=True,
+                              timeout=120)
+
+    def test_named_module_run_is_guarded_by_importing_the_guard(self):
+        # HAMCP-219: test_beta_v2 after test_hamcp131/132 run by name had no guard.
+        result = self.run_named(self.named_run_root("named"))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("ERROR: tearDownModule (test_b_leaker)", result.stderr)
+        self.assertIn(SYNTHETIC_ENV, result.stderr)
+        self.assertNotIn(SYNTHETIC_VALUE, result.stderr)
+        self.assertIn("test_baseline_restored (test_d_consumer.Consumer.test_baseline_restored) ... ok",
+                      result.stderr)
+        self.assertIn("FAILED (errors=1)", result.stderr)
+
+    def test_mutation_without_install_on_import_leaks_into_the_named_consumer(self):
+        result = self.run_named(self.named_run_root("named-mutant", install_on_import=False))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertNotIn("tearDownModule", result.stderr)
+        self.assertIn("FAIL: test_baseline_restored (test_d_consumer.Consumer", result.stderr)
+        self.assertIn("FAILED (failures=1)", result.stderr)
+
+
+class RecordedOrderRegressionTests(unittest.TestCase):
+    """HAMCP-219: the recorded minimal failing orders for both leaks pass.
+
+    Core latch: before the Core probe, ``BetaApplicationTests`` spent the
+    process-wide boot exception and ``ToolRefusalTests`` (which boots Core
+    once) then failed 106 subtests with CoreCapabilityUnavailable.
+
+    Session manager: in an unguarded named run, ``ProductionCompositionTests``
+    left ``_SERVER._session_manager`` built; the first ``ToolRefusalTests``
+    started it and ``restore_after_class`` restored the same (now started)
+    object by reference, so the next lifespan raised "StreamableHTTPSessionManager
+    .run() can only be called once" in setUpClass. Installing the guard on
+    import resets the attribute after the leaking test.
+    """
+
+    PAIR = ("tests.test_beta_v2.BetaApplicationTests", "tests.test_hamcp200_path_safety.ToolRefusalTests")
+    SESSION_MANAGER_ORDER = (
+        "tests.test_hamcp164_core_gate_fail_closed.ProductionCompositionTests",
+        "tests.test_hamcp200_path_safety.ToolRefusalTests",
+        "tests.test_hamcp200_path_safety.SourceScanTests",
+        "tests.test_hamcp200_path_safety.ToolRefusalTests",
+    )
+
+    def run_order(self, names):
+        env = {key: value for key, value in os.environ.items() if key != SYNTHETIC_ENV}
+        env["PYTHONPATH"] = os.pathsep.join(str(path) for path in (ROOT / "tests", ROOT / "hass_mcp_engineering_beta"))
+        result = subprocess.run([sys.executable, "-m", "unittest", *names], cwd=str(ROOT), env=env,
+                                capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, result.stderr[-4000:])
+        self.assertNotIn("ProcessStateLeak", result.stderr)
+        self.assertRegex(result.stderr, r"\nOK\n")
+        return result
+
+    def test_session_manager_order_passes_in_one_process(self):
+        result = self.run_order(self.SESSION_MANAGER_ORDER)
+        self.assertNotIn("can only be called once", result.stderr)
+
+    def test_core_latch_pair_passes_in_one_process(self):
+        result = self.run_order(self.PAIR)
+        self.assertNotIn("CoreCapabilityUnavailable", result.stderr)
 
 
 if __name__ == "__main__":

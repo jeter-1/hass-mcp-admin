@@ -1082,9 +1082,13 @@ class ZoneReaderTests(unittest.IsolatedAsyncioTestCase):
         self.payload: object = {"time_zone": CHICAGO, "version": "2026.10.3"}
         self.status = 200
         self.delay = 0.0
+        # When set, Core holds every response until the event is released.
+        self.hold: asyncio.Event | None = None
 
         async def config(request: web.Request) -> web.StreamResponse:
             self.requests.append((request.method, request.path, request.headers.get("Authorization")))
+            if self.hold is not None:
+                await self.hold.wait()
             if self.delay:
                 await asyncio.sleep(self.delay)
             if self.status != 200:
@@ -1154,12 +1158,51 @@ class ZoneReaderCases(ZoneReaderTests):
                 self.assertEqual(core.names()[-1], "finish")
 
     async def test_timeout_is_bounded_and_none(self):
-        self.delay = 1.0
+        # Core holds the response until cleanup. The deadline is the zone
+        # reader's own asyncio.timeout: its requested delay is recorded, but
+        # it is armed unscheduled and made to expire only once Core has the
+        # request, so no wall-clock budget can lapse first on either side of
+        # a loaded host (HAMCP-208).
+        from dataclasses import replace
+        from unittest.mock import patch
+
+        from ha_mcp_engineering.incident_logs import zone as zone_module
+
+        self.hold = asyncio.Event()
+        self.addAsyncCleanup(self.hold.set)  # runs before the runner cleanup
+        deadlines = []
+        real_asyncio = asyncio
+
+        class DeadlineRecorder:
+            def __getattr__(self, name):
+                return getattr(real_asyncio, name)
+
+            def timeout(self, delay):
+                deadline = real_asyncio.timeout(None)
+                deadlines.append((delay, deadline))
+                return deadline
+
+        # A large transport timeout, so only the zone deadline can end the read.
+        client = HomeAssistantRestClient(replace(self.client.settings, ha_timeout_seconds=60.0))
         core = RecordingCore()
         loop = asyncio.get_running_loop()
-        started = loop.time()
-        self.assertIsNone(await HomeAssistantZoneReader(self.client, core)(0.2))
-        self.assertLess(loop.time() - started, 0.9)
+        with patch.object(zone_module, "asyncio", DeadlineRecorder()):
+            read = asyncio.create_task(HomeAssistantZoneReader(client, core)(0.2))
+            async with asyncio.timeout(30):  # hang guard only
+                while not self.requests:
+                    await asyncio.sleep(0.005)
+            self.assertEqual(len(deadlines), 1)
+            self.assertFalse(read.done())
+            deadlines[0][1].reschedule(loop.time())
+            async with asyncio.timeout(30):  # hang guard only
+                result = await read
+        self.assertIsNone(result)
+        # The caller's bound, not the larger module ceiling, was armed.
+        self.assertGreater(c.ZONE_READ_DEADLINE_SECONDS, 0.2)
+        self.assertEqual([delay for delay, _ in deadlines], [0.2])
+        self.assertTrue(deadlines[0][1].expired())
+        self.assertFalse(self.hold.is_set())  # Core never answered
+        self.assertEqual(len(self.requests), 1)
         self.assertEqual(core.names()[-1], "finish")
 
     async def test_authorizer_is_chained_and_restored(self):

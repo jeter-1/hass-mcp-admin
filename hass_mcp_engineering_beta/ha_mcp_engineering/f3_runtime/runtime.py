@@ -12,6 +12,7 @@ import json
 import threading
 import time
 import uuid
+from types import MappingProxyType
 from typing import Any, Awaitable, Callable
 
 from ..errors import ErrorCode, GovernanceError
@@ -24,6 +25,7 @@ from ..f3.executor import (
 )
 from ..ha_core_readmission.routes import (
     CORE_REQUIREMENT_UNMAPPED,
+    f3_entry_admission_profiles,
     f3_requirements,
 )
 from ..f3.contracts import (
@@ -32,6 +34,7 @@ from ..f3.contracts import (
     LockScope,
     NormalizedOperationOutcome,
     ObservationResult,
+    VerificationResult,
 )
 from ..f3.locks import (
     DurableLockStore,
@@ -77,6 +80,7 @@ from ..f3.operational_models import (
     OperationalPreparationRequest,
 )
 from ..f3_configuration.adapter import ConfigurationOperationAdapter
+from ..f3_configuration.delete import ConfigurationDeleteAdapter
 from ..f3_configuration.gateway import ExistingConfigurationGatewayBridge
 from ..f3_configuration.locks import lock_set_hash, resource_lock_key
 from ..f3_configuration.migration import (
@@ -117,11 +121,24 @@ from ..governance.entity_metadata import (
 )
 from ..governance import entity_metadata_planning
 from ..governance import entity_availability_exposure_planning
+from ..governance import configuration_delete_planning
 from ..governance.entity_availability_exposure import (
     BINDINGS_KEY as AVAILABILITY_EXPOSURE_BINDINGS_KEY,
     CAPABILITY_IDENTITIES as AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES,
     RESOURCE_TYPES as AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
     entry_errors as availability_exposure_entry_errors,
+)
+from ..governance.configuration_delete import (
+    ACTION as CONFIGURATION_DELETE_ACTION,
+    CAPABILITY_IDENTITIES as CONFIGURATION_DELETE_CAPABILITY_IDENTITIES,
+    PROFILE as CONFIGURATION_DELETE_PROFILE,
+    intent as configuration_delete_intent,
+)
+from ..governance import label_registry_planning
+from ..governance.label_registry import (
+    CAPABILITY_IDENTITIES as LABEL_CAPABILITY_IDENTITIES,
+    CORE_CAPABILITY as LABEL_CORE_CAPABILITY,
+    LABEL_RESOURCE_TYPE,
 )
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
@@ -270,6 +287,13 @@ def _operator_cancelled(record: Any) -> bool:
             for event in record.events
         )
     )
+
+
+def _configuration_capability(operation: Any) -> str:
+    """The contract-v2 F3 capability identity of one plan operation."""
+
+    resource = operation.helper_type or operation.resource_type
+    return f"{operation.action}_{resource}_configuration"
 
 
 def _refuse_unmapped_f3_operation(prepared: object) -> None:
@@ -708,6 +732,145 @@ ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS = {
 }
 
 
+# HAMCP-165 review1 H1: resource types admitted only by an unsigned (dormant)
+# Core profile.  A plan containing one never reads or writes through F3
+# without current Core authority that admits every such profile; a runtime
+# composed without Core is refused, not treated as the legacy no-Core mode.
+UNSIGNED_PROFILE_CORE_AUTHORITY_UNAVAILABLE = "core_authority_unavailable"
+UNSIGNED_PROFILE_PENDING_ADMISSION = "pending_signed_registry_admission"
+_UNSIGNED_PROFILE_HOLD_CODES = frozenset(
+    {UNSIGNED_PROFILE_CORE_AUTHORITY_UNAVAILABLE, UNSIGNED_PROFILE_PENDING_ADMISSION}
+)
+UNSIGNED_PROFILE_REQUIREMENTS = MappingProxyType(
+    {
+        LABEL_RESOURCE_TYPE: LABEL_CORE_CAPABILITY,
+        **{
+            resource_type: requirements[-1]
+            for resource_type, requirements in (
+                ROLLBACK_AVAILABILITY_EXPOSURE_REQUIREMENTS.items()
+            )
+        },
+    }
+)
+
+
+def _unsigned_profiles(plan: Any) -> tuple[str, ...]:
+    """Return the dormant Core profiles any child of ``plan`` depends on."""
+
+    return tuple(
+        sorted(
+            {
+                UNSIGNED_PROFILE_REQUIREMENTS[operation.resource_type]
+                for operation in plan.operations
+                if operation.resource_type in UNSIGNED_PROFILE_REQUIREMENTS
+            }
+        )
+    )
+
+
+def _unsigned_profile_refusal(
+    core_runtime: Any, profiles: tuple[str, ...]
+) -> str | None:
+    """Return the refusal code unless Core currently admits ``profiles``."""
+
+    if not profiles:
+        return None
+    if core_runtime is None:
+        return UNSIGNED_PROFILE_CORE_AUTHORITY_UNAVAILABLE
+    try:
+        admitted = core_runtime.route_status(profiles).get("available") is True
+    except Exception:
+        admitted = False
+    return None if admitted else UNSIGNED_PROFILE_PENDING_ADMISSION
+
+
+class _UnsignedProfileAdmissionAdapter:
+    """No provider read or write unless the plan's dormant profiles are admitted.
+
+    Checked at preflight (before the first read), again inside the
+    irreversible boundary before approval consumption, and before every
+    recovery or readback observation.  A refused observation is held for
+    manual review without a read, and its verification stays held.
+    """
+
+    def __init__(self, adapter: Any, refusal: Callable[[], str | None]):
+        self._adapter = adapter
+        self._refusal = refusal
+        self.capabilities = adapter.capabilities
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._adapter, name)
+
+    def _require(self) -> None:
+        code = self._refusal()
+        if code is not None:
+            raise DispatchAuthorityRefused(code)
+
+    @staticmethod
+    def _held_observation(code: str) -> ObservationResult:
+        return ObservationResult(
+            outcome=NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED,
+            attempt_count=1,
+            observation_complete=False,
+            provider_reachable=None,
+            target_reachable=None,
+            readback_state_fingerprint=None,
+            intended_result_observed=None,
+            evidence_hash=stable_hash({"category": code}),
+            diagnostic_codes=(code,),
+        )
+
+    async def preflight(self, prepared: Any, *, acquired_locks: Any):
+        self._require()
+        return await self._adapter.preflight(
+            prepared, acquired_locks=acquired_locks
+        )
+
+    async def dispatch(
+        self, prepared: Any, preflight: Any, *, before_dispatch: Any
+    ):
+        async def admitted_before_dispatch() -> None:
+            self._require()
+            await before_dispatch()
+
+        return await self._adapter.dispatch(
+            prepared, preflight, before_dispatch=admitted_before_dispatch
+        )
+
+    async def recover(self, prepared: Any, *, context: Any):
+        code = self._refusal()
+        if code is not None:
+            return self._held_observation(code)
+        return await self._adapter.recover(prepared, context=context)
+
+    async def observe(self, prepared: Any, dispatch: Any):
+        code = self._refusal()
+        if code is not None:
+            return self._held_observation(code)
+        return await self._adapter.observe(prepared, dispatch)
+
+    async def verify(self, prepared: Any, observation: Any):
+        # A held observation never reaches the provider's verifier, which
+        # expects its own readback evidence; it stays held for review.
+        code = self._refusal()
+        if code is None and not (
+            type(observation) is ObservationResult
+            and observation.outcome
+            == NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED
+            and set(observation.diagnostic_codes) & _UNSIGNED_PROFILE_HOLD_CODES
+        ):
+            return await self._adapter.verify(prepared, observation)
+        code = code or observation.diagnostic_codes[0]
+        return VerificationResult(
+            outcome=NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED,
+            attempt_count=getattr(observation, "attempt_count", 1),
+            verified=False,
+            resulting_state_fingerprint=None,
+            evidence_hash=stable_hash({"category": code}),
+            manual_review_reason_code=code,
+        )
+
+
 def _rollback_core_refusal(*, acquired: bool) -> GovernanceError:
     return GovernanceError(
         ErrorCode.PROVIDER_UNAVAILABLE,
@@ -1069,12 +1232,42 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
+    async def delete_read_config(self, resource_type, target_id):
+        return await self.delegate.delete_read_config(resource_type, target_id)
+
+    async def delete_registry_entry(self, resource_type, target_id):
+        return await self.delegate.delete_registry_entry(
+            resource_type, target_id
+        )
+
+    async def delete_state_exists(self, entity_id):
+        return await self.delegate.delete_state_exists(entity_id)
+
+    async def delete_consumer_fingerprint(self, entity_id):
+        return await self.delegate.delete_consumer_fingerprint(entity_id)
+
+    async def label_preflight_evidence(self, target_id, current, proposed):
+        return await self.delegate.label_preflight_evidence(
+            target_id, current, proposed
+        )
+
     async def write(self, action, resource_type, target_id, proposed_config):
-        self.auditor("provider_invocation_started")
-        try:
-            result = await self.delegate.write(
+        return await self._audited(
+            self.delegate.write(
                 action, resource_type, target_id, proposed_config
             )
+        )
+
+    async def delete_configuration(self, resource_type, target_id):
+        # HAMCP-155: audited exactly like a write.
+        return await self._audited(
+            self.delegate.delete_configuration(resource_type, target_id)
+        )
+
+    async def _audited(self, call):
+        self.auditor("provider_invocation_started")
+        try:
+            result = await call
         except Exception as exc:
             # HAMCP-181 design section 5.1 (PR1 gateway-audit rule): label a
             # received response only when the exception proves one.
@@ -1324,6 +1517,11 @@ class F3RuntimeIntegration:
             for resource in ("automation", "script", "input_boolean", "input_number")
             for action in ("create", "update")
         }
+        # HAMCP-165: label registry entries are created and updated.
+        for action, identity in LABEL_CAPABILITY_IDENTITIES.items():
+            configuration_adapters[identity] = ConfigurationOperationAdapter(
+                LABEL_RESOURCE_TYPE, action, config_gateway, now=service.now
+            )
         # HAMCP-069A-1 / 069B: entity registry writes are update-only.
         for resource, identity in AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES.items():
             configuration_adapters[identity] = ConfigurationOperationAdapter(
@@ -1337,6 +1535,17 @@ class F3RuntimeIntegration:
             config_gateway,
             now=service.now,
         )
+        # HAMCP-155: governed deletion is a separate adapter class that checks
+        # its own sibling-profile admission at preflight and again before
+        # durable intent, so it refuses with zero writes even when no Core
+        # runtime (and so no Core dispatch guard) is composed.
+        for resource, identity in CONFIGURATION_DELETE_CAPABILITY_IDENTITIES.items():
+            configuration_adapters[identity] = ConfigurationDeleteAdapter(
+                resource,
+                config_gateway,
+                admission=self._configuration_delete_admitted,
+                now=service.now,
+            )
         self.evidence_reader = _OperationalEvidenceReader(self)
         captured_backup = (
             None
@@ -1728,6 +1937,18 @@ class F3RuntimeIntegration:
             "fallback": "none",
         }
 
+    def _configuration_delete_admitted(self) -> bool:
+        """Whether a signed registry admits the HAMCP-155 delete profile."""
+
+        core = self.core_runtime
+        if core is None:
+            return False
+        try:
+            status = core.route_status((CONFIGURATION_DELETE_PROFILE,))
+        except Exception:
+            return False
+        return isinstance(status, dict) and status.get("available") is True
+
     def _emit_lock_cleanup_audit_event(self, event: dict[str, object]) -> bool:
         # This sole repository callback is emitted after its transaction exits.
         # Other repository events keep the existing durable replay path.
@@ -1941,8 +2162,7 @@ class F3RuntimeIntegration:
         if plan.contract_version == 2:
             prepared = []
             for operation in sorted(plan.operations, key=lambda item: item.order):
-                resource = operation.helper_type or operation.resource_type
-                capability = f"{operation.action}_{resource}_configuration"
+                capability = _configuration_capability(operation)
                 adapter = self.registry.adapter(capability)
                 proposal = proposal_from_configuration_operation(
                     plan,
@@ -2663,6 +2883,17 @@ class F3RuntimeIntegration:
                 return "retry_bundle_read_unavailable"
         return None
 
+    def _unsigned_profile_admission(self, plan: Any, adapter: Any) -> Any:
+        """HAMCP-165 review1 H1: gate every child of a dormant-profile plan."""
+
+        profiles = _unsigned_profiles(plan)
+        if not profiles:
+            return adapter
+        return _UnsignedProfileAdmissionAdapter(
+            adapter,
+            lambda: _unsigned_profile_refusal(self.core_runtime, profiles),
+        )
+
     async def _execute_child(
         self,
         plan: Any,
@@ -2759,6 +2990,7 @@ class F3RuntimeIntegration:
         adapter = _LegacyConflictAdapter(
             adapter, self._has_active_legacy_conflict
         )
+        adapter = self._unsigned_profile_admission(plan, adapter)
         dispatch_guard = (
             _CoreDispatchAuthorityGuard(self.core_runtime, plan.created_at)
             if self.core_runtime is not None and not readback_only
@@ -3215,9 +3447,62 @@ class F3RuntimeIntegration:
             # do not turn a rejected plan into a restart-required global outage.
             raise
 
+    def _refuse_unadmitted_entry(self, plan: Any) -> None:
+        """HAMCP-155 M3 / HAMCP-165: refuse an unadmitted first apply.
+
+        The union of both entry checks.  Every dormant (unsigned) profile the
+        plan needs, keyed by resource type (labels and both HAMCP-069B types)
+        or, for a contract-v2 plan, by F3 capability identity (deletion and
+        both HAMCP-069B types), must be currently admitted by Core.  A refusal
+        happens before the plan, task, child, manifest or lock stores change
+        and before any Home Assistant request.  The dispatch-time gates
+        (``_UnsignedProfileAdmissionAdapter`` and the delete adapter's own
+        admission) still apply afterwards.
+        """
+
+        codes = {
+            profile: _unsigned_profile_refusal(self.core_runtime, (profile,))
+            for profile in _unsigned_profiles(plan)
+        }
+        if plan.contract_version == 2:
+            for profile in f3_entry_admission_profiles(
+                _configuration_capability(operation)
+                for operation in plan.operations
+            ):
+                if profile not in codes:
+                    codes[profile] = (
+                        None
+                        if self._core_admits_profile(profile)
+                        else UNSIGNED_PROFILE_PENDING_ADMISSION
+                    )
+        for profile, code in sorted(codes.items()):
+            if code is not None:
+                raise GovernanceError(
+                    ErrorCode.PROVIDER_UNAVAILABLE,
+                    details={
+                        "reason": code,
+                        "reason_code": code,
+                        "core_capability": profile,
+                        "execution_state_persisted": False,
+                        "provider_dispatch_occurred": False,
+                    },
+                )
+
+    def _core_admits_profile(self, profile: str) -> bool:
+        """Whether Core currently admits ``profile``; any doubt is refusal."""
+
+        core = self.core_runtime
+        if core is None:
+            return False
+        try:
+            return core.route_status((profile,)).get("available") is True
+        except Exception:
+            return False
+
     async def _apply(self, plan: Any, expected_plan_hash: str) -> dict[str, Any]:
         existing = self.service.task_repository.get_for_plan(plan.plan_id)
         if existing is None:
+            self._refuse_unadmitted_entry(plan)
             try:
                 task, prepared, requests = await self._initialize(
                     plan, expected_plan_hash
@@ -3872,6 +4157,21 @@ class F3RuntimeIntegration:
             raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
         if source_plan.contract_version == 3:
             raise GovernanceError(ErrorCode.ROLLBACK_NOT_AVAILABLE)
+        if any(
+            operation.resource_type == LABEL_RESOURCE_TYPE
+            for operation in source_plan.operations
+        ):
+            # HAMCP-165: undoing a label create needs deletion (HAMCP-155);
+            # a corrective edit is a new plan.  Refused locally: no read.
+            raise GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": label_registry_planning.ROLLBACK_NOT_SUPPORTED,
+                    "reason_code": label_registry_planning.ROLLBACK_NOT_SUPPORTED,
+                    "provider_dispatch_occurred": False,
+                },
+            )
         if source_plan.rollback.request_id:
             existing = self.service.repository.get(source_plan.rollback.request_id)
             if existing is not None:
@@ -3899,6 +4199,10 @@ class F3RuntimeIntegration:
             ),
             None,
         ) if source_plan.contract_version == 2 else None
+        configuration_delete = source_plan.contract_version == 2 and any(
+            operation.action == CONFIGURATION_DELETE_ACTION
+            for operation in source_plan.operations
+        )
         # HAMCP-189 R1: every return above is local.  Fresh planning reads
         # current state, so it runs inside its own Core lease.
         async with _rollback_planning_lease(
@@ -3931,6 +4235,10 @@ class F3RuntimeIntegration:
         ) as lease:
             if availability_exposure is not None:
                 return await self._create_availability_exposure_rollback(
+                    source_plan, task, lease
+                )
+            if configuration_delete:
+                return await self._create_configuration_delete_rollback(
                     source_plan, task, lease
                 )
             if entity_metadata:
@@ -4066,6 +4374,127 @@ class F3RuntimeIntegration:
             "source_plan_id": source_plan.plan_id,
             "rollback_plan_id": rollback_plan.plan_id,
             "approval_required": not prohibited,
+            "plan_hash": self.service.plan_hash(rollback_plan),
+            "operations_to_restore": [item["operation_id"] for item in operations],
+            "operations_excluded": excluded,
+            "provider_dispatch_occurred": False,
+        }
+
+    async def _create_configuration_delete_rollback(
+        self, source_plan: Any, task: Any, lease: Any
+    ) -> dict[str, Any]:
+        """HAMCP-155 §2.4: plan a governed recreate of verified deletions.
+
+        Each child that dispatched once, was verified absent, captured a
+        reviewable pre-image and is still absent becomes one governed
+        ``create`` of the exact captured configuration under the existing
+        create identities.  Every other child is excluded and listed.  The
+        plan is separately approved; nothing is dispatched here.
+        """
+
+        if task is None or task.state not in {
+            ExecutionTaskState.SUCCEEDED_VERIFIED,
+            ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
+            ExecutionTaskState.FAILED_POST_DISPATCH,
+        }:
+            raise GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": "forward_not_verified",
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        records = {
+            item["operation_id"]: self.children.get(item["child_id"])
+            for item in self.children.declarations_for_task(task.task_id)
+        }
+        operations: list[dict[str, Any]] = []
+        excluded: list[str] = []
+        for operation in reversed(source_plan.operations):
+            record = records.get(operation.operation_id)
+            pre_image = operation.current_config
+            try:
+                eligible = configuration_delete_intent(
+                    operation.proposed_config
+                ).get("recreate_eligible") is True
+            except (TypeError, KeyError, AttributeError):
+                eligible = False
+            if (
+                operation.action != CONFIGURATION_DELETE_ACTION
+                or record is None
+                or not record.terminal
+                or record.normalized_outcome != "succeeded_verified"
+                or record.dispatch_intent is None
+                or record.dispatch_count != 1
+                or not eligible
+                or not isinstance(pre_image, dict)
+                or resource_fingerprint(operation.resource_type, pre_image)
+                != operation.current_state_fingerprint
+            ):
+                excluded.append(operation.operation_id)
+                continue
+            current = await self.service._read_configuration_resource(
+                operation.resource_type, operation.target_id
+            )
+            if current is not None:
+                # Recreated or replaced since: never overwrite it.
+                excluded.append(operation.operation_id)
+                continue
+            suffix = stable_hash(
+                {"source_operation_id": operation.operation_id}
+            )[:12]
+            operation_id = f"recreate_{operation.operation_id[:42]}_{suffix}"
+            operations.append(
+                {
+                    "operation_id": operation_id,
+                    "resource_type": operation.resource_type,
+                    "action": "create",
+                    "target_id": operation.target_id,
+                    "proposed_config": deepcopy(pre_image),
+                    "depends_on": (
+                        [operations[-1]["operation_id"]] if operations else []
+                    ),
+                }
+            )
+        if not operations:
+            raise GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": "no_verified_absent_deletion",
+                    "operations_excluded": excluded[:8],
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        lease.require_current()
+        created = await self.service._create_configuration_plan(
+            title=f"Rollback governed change {source_plan.plan_id}"[:160],
+            description=configuration_delete_planning.ROLLBACK_DISCLOSURE,
+            operations=operations,
+            caller_context={
+                "rollback_source_plan_id": source_plan.plan_id,
+                "rollback_model": "hamcp155-configuration-delete-recreate-v1",
+                "excluded_operation_ids": excluded[:8],
+            },
+            _before_persist=lease.require_current,
+        )
+        rollback_plan = self.service._load(created["plan_id"])
+        partial = bool(excluded)
+        source_plan.rollback.available = True
+        source_plan.rollback.status = (
+            "partial_governed_plan_created" if partial else "governed_plan_created"
+        )
+        source_plan.rollback.requested_at = self.service._timestamp()
+        source_plan.rollback.request_id = rollback_plan.plan_id
+        self.service._record(source_plan, "rollback_plan_created", "success")
+        return {
+            "status": (
+                "rollback_partial_plan_created" if partial else "rollback_plan_created"
+            ),
+            "source_plan_id": source_plan.plan_id,
+            "rollback_plan_id": rollback_plan.plan_id,
+            "approval_required": True,
             "plan_hash": self.service.plan_hash(rollback_plan),
             "operations_to_restore": [item["operation_id"] for item in operations],
             "operations_excluded": excluded,
@@ -4606,7 +5035,9 @@ class F3RuntimeIntegration:
         )
         operation = prepared[declaration["operation_ordinal"]]
         adapter = self.registry.adapter(declaration["capability_id"])
-        adapter = _ReadbackOnlyRecoveryAdapter(adapter)
+        adapter = _ReadbackOnlyRecoveryAdapter(
+            self._unsigned_profile_admission(plan, adapter)
+        )
         token = _ACTIVE_F3_CHILD.set(declaration["child_id"])
         try:
             observation = await adapter.observe(operation, None)

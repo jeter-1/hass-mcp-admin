@@ -84,7 +84,13 @@ class DispatchAuthorityRefused(OperationExecutorError):
 # Closed set of refusal codes the executor reports verbatim; anything else
 # collapses to the generic authority code so no free text reaches records.
 _DISPATCH_AUTHORITY_REFUSAL_CODES = frozenset(
-    {"dispatch_authority_unavailable", "core_requirement_unmapped"}
+    {
+        "dispatch_authority_unavailable",
+        "core_requirement_unmapped",
+        # HAMCP-165 review1 H1: a dormant-profile plan without admission.
+        "core_authority_unavailable",
+        "pending_signed_registry_admission",
+    }
 )
 
 
@@ -674,6 +680,30 @@ class SharedOperationExecutor:
             dispatch = await getattr(adapter, "dispatch")(
                 prepared, preflight, before_dispatch=before_dispatch
             )
+            refusal = (
+                None
+                if irreversible_boundary_invoked
+                else self._pre_intent_refusal_codes(dispatch)
+            )
+            if refusal is not None:
+                # The adapter's final pre-intent check refused (for example,
+                # drift at dispatch): nothing was consumed or sent, so the
+                # refusal is stored with the adapter's own codes.
+                persisted = self.execution_repository.get(identity.task_id)
+                if (
+                    persisted is not None
+                    and persisted.dispatch_intent is None
+                    and not persisted.terminal
+                ):
+                    record = self._terminal_pre_dispatch(
+                        claim,
+                        identity,
+                        outcome="failed_pre_dispatch",
+                        code=refusal[0],
+                        codes=refusal,
+                    )
+                    self._release_safely(handle)
+                    return self._result(record)
             self._validate_dispatch(dispatch)
             persisted = self.execution_repository.get(identity.task_id)
             if persisted is None or persisted.dispatch_intent is None:
@@ -875,6 +905,26 @@ class SharedOperationExecutor:
                 "eligible preflight evidence is invalid"
             ) from exc
         return None
+
+    def _pre_intent_refusal_codes(
+        self, dispatch: object
+    ) -> tuple[str, ...] | None:
+        """Codes of a dispatch refused before intent, else ``None``."""
+
+        try:
+            outcome = enum_value(getattr(dispatch, "outcome"))
+            if (
+                outcome != "failed_pre_dispatch"
+                or getattr(dispatch, "dispatch_intent_recorded") is not False
+                or getattr(dispatch, "mutating_invocation_count") != 0
+                or getattr(dispatch, "may_have_dispatched") is not False
+                or getattr(dispatch, "provider_response_received") is not False
+            ):
+                return None
+            codes = self._diagnostic_codes(dispatch)
+        except (AttributeError, TypeError, ValueError):
+            return None
+        return codes or None
 
     @staticmethod
     def _validate_dispatch(dispatch: object) -> None:
@@ -1369,13 +1419,14 @@ class SharedOperationExecutor:
         *,
         outcome: str,
         code: str,
+        codes: tuple[str, ...] = (),
     ) -> ExecutionRecord:
         return self.execution_repository.terminalize_pre_dispatch(
             identity.task_id,
             owner_id=identity.owner_id,
             claim_generation=claim.claim_generation,
             outcome=outcome,
-            diagnostic_codes=(code,),
+            diagnostic_codes=codes or (code,),
             now=self.now(),
         )
 

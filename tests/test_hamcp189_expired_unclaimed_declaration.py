@@ -232,12 +232,23 @@ class OperationalUnclaimedTests(_UnclaimedExpiry, unittest.IsolatedAsyncioTestCa
         pending = asyncio.create_task(
             self.runtime.recover_once("reviewer-slow-identity")
         )
+        identity_entered = asyncio.create_task(entered.wait())
+        # Ordering, not wall-clock time: the sweep must finish while the
+        # identity reader is still unentered (and so unreleased). The timeout
+        # is a hang guard only.
         try:
-            await asyncio.wait_for(asyncio.shield(pending), timeout=0.25)
-        except TimeoutError:
-            self.fail("local expiry waited for provider identity")
+            async with asyncio.timeout(10):
+                done, _ = await asyncio.wait(
+                    {pending, identity_entered},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            self.assertIn(pending, done, "local expiry waited for provider identity")
+            self.assertNotIn(identity_entered, done)
+            self.assertFalse(entered.is_set())
         finally:
             release.set()
+            identity_entered.cancel()
+            await asyncio.gather(identity_entered, return_exceptions=True)
             await pending
         self.assertFalse(entered.is_set())
         self.assert_unclaimed_rejected(approved, task, declaration, operation)

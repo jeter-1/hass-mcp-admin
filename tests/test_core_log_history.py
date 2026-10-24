@@ -179,17 +179,52 @@ class CoreLogHistoryTests(unittest.IsolatedAsyncioTestCase):
                          "core_log_representation_invalid")
 
     async def test_timeout_during_body_and_no_retry(self):
+        # The production deadline stays large; the provider's own
+        # asyncio.timeout is captured and expired only after the peer has sent
+        # a partial body, so no wall-clock budget can lapse early or late on a
+        # loaded host (HAMCP-208/219).
+        deadlines = []
+        real_asyncio = asyncio
+
+        class DeadlineRecorder:
+            def __getattr__(self, name):
+                return getattr(real_asyncio, name)
+
+            def timeout(self, delay):
+                deadline = real_asyncio.timeout(delay)
+                deadlines.append((delay, deadline))
+                return deadline
+
+        entered = asyncio.Event()
+        release = asyncio.Event()
         async def slow(request):
             response = web.StreamResponse(headers={"Content-Type": "text/plain"})
             await response.prepare(request)
             await response.write(b"private-synthetic-incomplete")
-            await asyncio.sleep(0.06)
+            entered.set()
+            await release.wait()
             return response
         self.handler = slow
-        self.reader = CoreLogReader(replace(self.settings, ha_timeout_seconds=0.01))
-        result = await self.result()
+        self.reader = CoreLogReader(replace(self.settings, ha_timeout_seconds=30.0))
+        with patch.object(provider_module, "asyncio", DeadlineRecorder()):
+            pending = asyncio.create_task(self.result())
+            try:
+                async with asyncio.timeout(10):
+                    await entered.wait()
+                self.assertEqual(len(deadlines), 1)
+                self.assertFalse(pending.done())
+                deadlines[0][1].reschedule(asyncio.get_running_loop().time())
+                async with asyncio.timeout(10):
+                    result = await pending
+            finally:
+                release.set()
+                pending.cancel()
+        self.assertEqual([delay for delay, _ in deadlines],
+                         [min(provider_module.DEADLINE_SECONDS, 30.0)])
+        self.assertEqual(deadlines[0][0], provider_module.DEADLINE_SECONDS)
         self.assertFalse(result["success"])
         self.assertEqual(result["error_code"], "home_assistant_timeout")
+        self.assertEqual(result["details"]["reason"], "core_log_deadline")
         self.assertNotIn("private-synthetic", json.dumps(result))
         self.assertEqual(len(self.calls), 1)
 

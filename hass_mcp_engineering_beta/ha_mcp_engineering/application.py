@@ -187,6 +187,7 @@ def create_application(
     from .backup_inventory.service import BACKUP_INVENTORY
     from .recorder_settings.service import RECORDER_SETTINGS
     from .entity_reconciliation.service import ENTITY_RECONCILIATION
+    from .configuration_definitions.service import CONFIGURATION_DEFINITIONS
     from .incident_logs.service import INCIDENT_LOGS
     from .history_slices.service import HISTORY_SLICES
     server = get_registered_server()
@@ -211,6 +212,11 @@ def create_application(
     )
     ENTITY_RECONCILIATION.configure(HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings),
                                     CORE_READMISSION, settings)
+    CONFIGURATION_DEFINITIONS.configure(
+        HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings,
+        yaml_reader_factory=lambda: UPSTREAM_READ_GATEWAY.yaml_config_reader(
+            audit=audit, purpose="configuration_definitions"),
+    )
     AUTOMATION_BASELINE_CAPTURE.configure(settings, CORE_READMISSION)
     # HAMCP-131: no I/O here; the add-on credential is read per request.
     # HAMCP-220: Home Assistant's time zone is read per call from Core
