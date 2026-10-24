@@ -326,8 +326,8 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
         registered = set(gateway._registered_tool_registry.snapshot())
         self.assertEqual(registered, EXACT_8_4_1_READS)
         self.assertEqual(snapshot["dynamically_exposed_count"], 25)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 67)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 92)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 68)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 93)
         for unreachable in (
             "ha_get_operation_status",
             "ha_get_app",

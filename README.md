@@ -1,5 +1,22 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.35** ships governed deletion of UI-managed
+automations and scripts **inactive** (HAMCP-155). The new tool
+`create_configuration_delete_plan` proposes one to eight deletions. Its
+runtime-only Core profile `core.configuration_delete_operation` is not
+referenced by the signed registry (sequence 12), so the tool refuses with
+`pending_signed_registry_admission` before any Home Assistant read; the
+release activates nothing new. Once signed, a delete is checked for drift
+immediately before its single no-body `DELETE`, is verified by proof of
+absence (config 404, registry entry gone, state gone), is classified by the
+protected effects it removes, and can be recreated exactly from its
+pre-image by a separately approved `rollback_change` plan. Static tools 68,
+advertised catalog 96 (97 with the optional YAML reader).
+Read the [2.4.1-beta.35 release notes](docs/V2_4_1_BETA35_RELEASE_NOTES.md)
+and [2.4.1-beta.35 acceptance contract](docs/V2_4_1_BETA35_ACCEPTANCE.md).
+
+It builds on beta.34 below.
+
 Engineering **2.4.1-beta.34** ships governed label create, edit and entity
 assignment **inactive** (HAMCP-165). The new tool `create_label_plan` proposes
 1-8 ordered label operations: create or edit a label's name, colour, icon and

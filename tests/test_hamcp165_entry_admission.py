@@ -164,7 +164,11 @@ class LabelEntryAdmissionTests(EntryRefusalMixin, ServiceTestCase):
         )
         plan = SimpleNamespace(
             contract_version=2,
-            operations=[SimpleNamespace(resource_type="automation")],
+            operations=[
+                SimpleNamespace(
+                    action="update", resource_type="automation", helper_type=None
+                )
+            ],
         )
         self.runtime._refuse_unadmitted_entry(plan)
         self.service._refuse_dormant_profile_without_f3(plan)

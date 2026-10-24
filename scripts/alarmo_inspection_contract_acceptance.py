@@ -796,11 +796,12 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
     evidence = b"Synthetic disposable Core nineteen-capability predecessor"
     refs = [{k: p.to_mapping()[k] for k in ("capability_id", "profile_id", "profile_version", "adapter_id", "contract_fingerprint")}
             for p in CORE_RUNTIME_CAPABILITY_PROFILES
-            # HAMCP-069A/069B/165: the dormant entity and label profiles are not signed here.
+            # HAMCP-069A/069B/155/165: the dormant entity, delete and label profiles are not signed here.
             if p.capability_id not in {"core.automation_baseline_metadata_read",
                                        "core.entity_registry_metadata_operation",
                                        "core.entity_registry_availability_operation",
                                        "core.entity_assistant_exposure_operation",
+                                       "core.configuration_delete_operation",
                                        "core.label_registry_operation"}]
     added = [r for r in refs if r["capability_id"] == "core.integration_inspection_metadata_read"]
     old = [r for r in refs if r not in added]
@@ -1034,11 +1035,14 @@ def verify_disposable_publication(image, container, source_archive, output, core
     return receipt
 
 
-def verify_disposable_cleanup(result_path, output, core_version, entity_metadata_receipt=None):
+def verify_disposable_cleanup(result_path, output, core_version, entity_metadata_receipt=None,
+                              configuration_delete_receipt=None):
     """After outer cleanup, fail on Docker errors, missing run or owned residue.
 
     The standalone entity-metadata artifact (HAMCP-179), when given, must be the
-    byte-identical canonical form of the retained, verified receipt.
+    byte-identical canonical form of the retained, verified receipt. While the
+    seq-13 lanes are enabled the HAMCP-155 deletion receipt is required in both
+    forms on the same terms; while they are dormant it must be absent.
     """
     import subprocess
     binding = slot_binding(core_version)
@@ -1081,14 +1085,42 @@ def verify_disposable_cleanup(result_path, output, core_version, entity_metadata
     if entity_metadata_receipt is not None and Path(entity_metadata_receipt).read_bytes() != canonical:
         raise ValueError("Standalone entity metadata receipt differs from the retained receipt")
     entity_metadata["receipt_sha256"] = hashlib.sha256(canonical).hexdigest()
+    seq13 = verify_seq13_configuration_delete(value, configuration_delete_receipt,
+                                              core_version=core_version, support_slot=binding["slot"])
     receipt = {"result": "PASS", "core": core_version, "support_slot": binding["slot"],
                "owned_containers_remaining": 0, "owned_network_remaining": False,
                "required_alarmo_interval": "PASS", "discarded_windows": discarded_windows,
                "required_automation_baseline": baseline,
                "required_entity_metadata": entity_metadata,
-               "integration_receipt_sha256": hashlib.sha256(Path(result_path).read_bytes()).hexdigest()}
+               "integration_receipt_sha256": hashlib.sha256(Path(result_path).read_bytes()).hexdigest(),
+               **seq13}
     Path(output).write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
     return receipt
+
+
+def verify_seq13_configuration_delete(value, standalone, *, core_version, support_slot):
+    """HAMCP-155: strictly re-verify the retained deletion receipt when enabled.
+
+    Enabled, a missing, FAIL or partial receipt, or a standalone artifact that
+    is not its byte-identical canonical form, refuses. Dormant, a retained
+    receipt refuses: nothing may run, so nothing may be claimed.
+    """
+    import configuration_delete_contract_acceptance as configuration_delete
+    from entity_metadata_contract_acceptance import receipt_bytes
+    key = "seq13_configuration_delete"
+    if not configuration_delete.enabled():
+        if key in value:
+            raise ValueError("Seq-13 configuration delete receipt retained while dormant")
+        return {}
+    if key not in value or standalone is None or not Path(standalone).is_file():
+        raise ValueError("Required seq-13 configuration delete receipt missing")
+    summary = configuration_delete.verify_result(value[key], core_version=core_version,
+                                                 support_slot=support_slot)
+    canonical = receipt_bytes(value[key])
+    if Path(standalone).read_bytes() != canonical:
+        raise ValueError("Standalone configuration delete receipt differs from the retained receipt")
+    summary["receipt_sha256"] = hashlib.sha256(canonical).hexdigest()
+    return {"required_seq13_configuration_delete": summary}
 
 
 def main():
@@ -1109,7 +1141,8 @@ def main():
     if arguments.verify_cleanup:
         print(json.dumps(verify_disposable_cleanup(os.environ["REAL_HA_ALARMO_RESULT"],
             os.environ["REAL_HA_ALARMO_CLEANUP_RESULT"], os.environ["HA_CONTRACT_VERSION"],
-            os.environ["REAL_HA_ENTITY_METADATA_RESULT"]), sort_keys=True))
+            os.environ["REAL_HA_ENTITY_METADATA_RESULT"],
+            os.environ.get("REAL_HA_CONFIGURATION_DELETE_RESULT")), sort_keys=True))
         return
     if arguments.prepare_archive and arguments.destination:
         print(json.dumps(prepare_disposable_fixture(arguments.prepare_archive, arguments.destination), sort_keys=True))

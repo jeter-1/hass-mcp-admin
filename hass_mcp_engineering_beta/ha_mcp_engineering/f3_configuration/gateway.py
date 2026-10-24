@@ -87,6 +87,38 @@ class ExistingConfigurationGatewayBridge:
             target_id, current, proposed
         )
 
+    # HAMCP-155: the closed delete reads and the one DELETE, routed only to
+    # the dedicated delete gateway.
+
+    async def delete_read_config(
+        self, resource_type: str, target_id: str
+    ) -> dict[str, Any] | None:
+        return await self._gateway.configuration_delete.read_config(
+            resource_type, target_id
+        )
+
+    async def delete_registry_entry(
+        self, resource_type: str, target_id: str
+    ) -> dict[str, Any] | None:
+        return await self._gateway.configuration_delete.registry_entry(
+            resource_type, target_id
+        )
+
+    async def delete_state_exists(self, entity_id: str) -> bool:
+        return await self._gateway.configuration_delete.state_exists(entity_id)
+
+    async def delete_consumer_fingerprint(self, entity_id: str) -> str | None:
+        return await self._gateway.configuration_delete.consumer_fingerprint(
+            entity_id
+        )
+
+    async def delete_configuration(
+        self, resource_type: str, target_id: str
+    ) -> Any:
+        return await self._gateway.configuration_delete.delete(
+            resource_type, target_id
+        )
+
     async def write(
         self,
         action: str,

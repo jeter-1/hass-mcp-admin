@@ -222,9 +222,9 @@ class DormantProfileTests(unittest.TestCase):
         self.assertIn(ENTITY_METADATA, ids(CORE_RUNTIME_CAPABILITY_PROFILES))
         self.assertNotIn(ENTITY_METADATA, ids(CORE_CAPABILITY_PROFILES))
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
-        # 22 through 069A, plus the two dormant 069B profiles and the
-        # dormant 165 label profile.
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 25)
+        # 22 through 069A, plus the two dormant 069B profiles, the dormant
+        # 165 label profile and the dormant HAMCP-155 deletion profile.
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 26)
         (profile,) = CORE_ENTITY_METADATA_PROFILES
         mapping = profile.to_mapping()
         self.assertEqual(
@@ -559,6 +559,8 @@ class StaticToolCompletenessTests(unittest.TestCase):
                 # (their tests cover them).
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
+                # HAMCP-155 binds its own exact deletion targets (its tests cover it).
+                "create_configuration_delete_plan",
             },
         )
         self.assertEqual(static_tool_target("create_entity_metadata_plan", ARGUMENTS), TARGET)
@@ -576,6 +578,7 @@ class StaticToolCompletenessTests(unittest.TestCase):
                 "create_entity_metadata_plan",
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
+                "create_configuration_delete_plan",
             }:
                 for arguments in shapes:
                     with self.subTest(tool=name, arguments=repr(arguments)[:40]):
@@ -664,6 +667,7 @@ class OtherToolGatewayCallShapeTests(unittest.IsolatedAsyncioTestCase):
                 "create_entity_metadata_plan",
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
+                "create_configuration_delete_plan",
             }:
                 continue
             for arguments in ({}, {"entity_id": "LIGHT.PORCH"}, {"entity_id": "light.porch"}):

@@ -268,6 +268,16 @@ def build_semantic_projection(
         raise SemanticProjectionError("projection_create_state_present")
     if not isinstance(after, dict):
         raise SemanticProjectionError("projection_after_state_malformed")
+    if operation.action == "delete":
+        # HAMCP-155: the proposal is the closed delete intent, not a
+        # configuration. The reviewed change is the whole pre-image removed.
+        from .configuration_delete import intent_errors
+
+        if not isinstance(before, dict):
+            raise SemanticProjectionError("projection_before_state_missing")
+        if intent_errors(operation.resource_type, operation.target_id, after):
+            raise SemanticProjectionError("projection_after_state_malformed")
+        after = _ABSENT
 
     changes: list[dict[str, Any]] = []
     _append_changes(

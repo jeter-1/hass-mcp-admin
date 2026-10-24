@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.4.1-beta.35 - Governed deletion of automations and scripts, inactive (HAMCP-155)
+
+Builds on 2.4.1-beta.34. Activates nothing new.
+
+- New tool `create_configuration_delete_plan` (1-8 automation or script
+  deletions) and runtime-only Core profile
+  `core.configuration_delete_operation`
+  (`compiled-core-configuration-delete-operation-v1`, contract fingerprint
+  `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d`).
+  - Signed sequence 12 does not reference it: `pending_signed_registry_admission`.
+  - The governance service refuses first, with zero reads and nothing
+    stored; dispatch re-checks admission on every F3 path.
+- Once admitted:
+  - one no-body `DELETE /api/config/<automation|script>/config/<id>`, sent
+    only by the new gateway method under `delete_automation_configuration`
+    or `delete_script_configuration`;
+  - drift against the bound pre-image immediately before the DELETE is
+    `stale_target_state`;
+  - verification proves absence (config 404, registry entry gone, state
+    gone); partial absence is `manual_review_required`;
+  - policy follows the removed protected effects (elevated with a
+    consequence statement); a delete is never "no effect";
+  - `rollback_change` recreates a verified deletion from its exact
+    pre-image under a separately approved plan.
+- The F3 executor stores every code of a pre-intent dispatch refusal; the
+  outcome is unchanged for every adapter.
+- Dormant seq-13 delete acceptance lane
+  `scripts/configuration_delete_contract_acceptance.py`, not wired.
+- Delete-lane dormant steps join the existing `REAL_HA_SEQ13_LANES` gate in
+  `ci.yml`; no signed profile, signed registry, permission, add-on
+  configuration, dependency or stable-v1 file changes; static tools 68,
+  catalog 96 (97).
+
 ## 2.4.1-beta.34 - Label create, edit and assignment, inactive (HAMCP-165)
 
 Builds on 2.4.1-beta.33.

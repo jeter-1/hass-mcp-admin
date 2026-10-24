@@ -133,7 +133,8 @@ class DormantProfileTests(unittest.TestCase):
     def test_profiles_are_runtime_only_and_outside_compiled_authority(self):
         self.assertEqual(ids(CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES), {AVAILABILITY, EXPOSURE})
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 25)
+        # HAMCP-165 and HAMCP-155 add the dormant label and configuration delete profiles.
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 26)
         for capability_id in (AVAILABILITY, EXPOSURE):
             with self.subTest(capability_id=capability_id):
                 self.assertIn(capability_id, ids(CORE_RUNTIME_CAPABILITY_PROFILES))

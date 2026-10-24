@@ -629,6 +629,11 @@ class ConfigurationResourceGateway:
         # HAMCP-165: closed-vocabulary label registry gateway (list, one
         # create or update per child; delete is never sent).
         self.label_registry = LabelRegistryGateway(websocket_client)
+        # HAMCP-155: the only DELETE sender; the generic ``write`` keeps
+        # refusing every action other than create or update.
+        from .configuration_delete import ConfigurationDeleteGateway
+
+        self.configuration_delete = ConfigurationDeleteGateway(self)
 
     async def get(
         self, resource_type: str, resource_id: str

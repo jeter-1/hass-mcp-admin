@@ -149,7 +149,7 @@ class DormantProfileTests(unittest.TestCase):
         (profile,) = CORE_LABEL_REGISTRY_PROFILES
         self.assertEqual(profile.capability_id, LABEL_PROFILE)
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 25)
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 26)  # + HAMCP-155 delete
         self.assertIn(LABEL_PROFILE, {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES})
         self.assertNotIn(LABEL_PROFILE, {p.capability_id for p in CORE_CAPABILITY_PROFILES})
         for version, _commit, _digest in SUPPORTED_CORE_RELEASES:

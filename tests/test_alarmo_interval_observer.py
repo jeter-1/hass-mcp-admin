@@ -2208,6 +2208,9 @@ class BaselineFixtureGuardTests(unittest.IsolatedAsyncioTestCase):
 
 SEQ13_STAGE_IF = "matrix.alarmo && env.REAL_HA_SEQ13_LANES == 'enabled'"
 SEQ13_UPLOAD_IF = "always() && " + SEQ13_STAGE_IF
+SEQ13_STAGE = "Stage seq-13 contract evidence paths"
+SEQ13_UPLOAD = "Upload bounded seq-13 label and availability/exposure contract evidence"
+SEQ13_DELETE_UPLOAD = "Upload bounded seq-13 configuration delete contract evidence"
 
 
 class WorkflowBindingTests(unittest.TestCase):
@@ -2230,10 +2233,12 @@ class WorkflowBindingTests(unittest.TestCase):
             "Verify owned cleanup and required Alarmo interval": "always() && matrix.alarmo",
             "Upload bounded Alarmo interval and image evidence": "always() && matrix.alarmo",
             "Upload bounded entity metadata contract evidence": "always() && matrix.alarmo",
-            # HAMCP-165/069B: the dormant seq-13 lanes add only these two
-            # steps, each also gated on the job-level enable flag.
-            "Stage seq-13 contract evidence paths": SEQ13_STAGE_IF,
-            "Upload bounded seq-13 label and availability/exposure contract evidence": SEQ13_UPLOAD_IF,
+            # HAMCP-165/069B/155: the dormant seq-13 lanes add only these three
+            # steps (one shared stage, one upload per lane family), each also
+            # gated on the job-level enable flag.
+            SEQ13_STAGE: SEQ13_STAGE_IF,
+            SEQ13_UPLOAD: SEQ13_UPLOAD_IF,
+            SEQ13_DELETE_UPLOAD: SEQ13_UPLOAD_IF,
         })
         for step in self.steps:
             text = json.dumps(step)
@@ -2255,29 +2260,40 @@ class WorkflowBindingTests(unittest.TestCase):
         self.assertLess(names.index("Persist migration fixture with exact Home Assistant 2026.7.2"), stage)
         self.assertTrue(stage < start < bind < run < sanitize < cleanup)
         self.assertLess(cleanup, names.index("Upload bounded entity metadata contract evidence"))
-        seq13_stage = names.index("Stage seq-13 contract evidence paths")
-        self.assertTrue(bind < seq13_stage < run)
+        self.assertTrue(bind < names.index(SEQ13_STAGE) < run)
         self.assertLess(names.index("Upload bounded entity metadata contract evidence"),
-                        names.index("Upload bounded seq-13 label and availability/exposure contract evidence"))
+                        names.index(SEQ13_UPLOAD))
+        self.assertLess(names.index(SEQ13_UPLOAD), names.index(SEQ13_DELETE_UPLOAD))
         self.assertIn("--verify-publication", self.steps[bind]["run"])
         self.assertIn("--verify-cleanup", self.steps[cleanup]["run"])
 
     def test_seq13_lanes_are_defined_but_dormant(self):
-        # HAMCP-165/069B: the committed workflow keeps the seq-13 lanes off; the
-        # batch evidence run flips this one value. Nothing else reads the flag.
+        # HAMCP-165/069B/155: the committed workflow keeps the seq-13 lanes off;
+        # the batch evidence run flips this one value. Nothing else reads the flag.
         workflow = yaml.safe_load(CI.read_text(encoding="utf-8"))
         job = workflow["jobs"]["real-ha-contract-tests"]
         self.assertEqual(job["env"]["REAL_HA_SEQ13_LANES"], "dormant")
+        self.assertEqual(CI.read_text(encoding="utf-8").count("REAL_HA_SEQ13_LANES: "), 1)
         users = [step["name"] for step in self.steps if "REAL_HA_SEQ13_LANES" in json.dumps(step)]
-        self.assertEqual(users, ["Stage seq-13 contract evidence paths",
-                                 "Upload bounded seq-13 label and availability/exposure contract evidence"])
-        stage = self.step("Stage seq-13 contract evidence paths")
+        self.assertEqual(users, [SEQ13_STAGE, SEQ13_UPLOAD, SEQ13_DELETE_UPLOAD])
+        stage = self.step(SEQ13_STAGE)
         self.assertEqual(re.findall(r"printf '([A-Z_]+)=", stage["run"]),
-                         ["REAL_HA_LABEL_REGISTRY_RESULT", "REAL_HA_AVAILABILITY_EXPOSURE_RESULT"])
-        upload = self.step("Upload bounded seq-13 label and availability/exposure contract evidence")
+                         ["REAL_HA_LABEL_REGISTRY_RESULT", "REAL_HA_AVAILABILITY_EXPOSURE_RESULT",
+                          "REAL_HA_CONFIGURATION_DELETE_RESULT"])
+        self.assertIn('"$RUNNER_TEMP/seq13-configuration-delete-$HA_CONTRACT_LANE.json"', stage["run"])
+        upload = self.step(SEQ13_UPLOAD)
         self.assertEqual(upload["uses"], self.step("Upload bounded entity metadata contract evidence")["uses"])
         self.assertEqual(upload["with"]["if-no-files-found"], "error")
         self.assertEqual(upload["with"]["retention-days"], 14)
+        delete_upload = self.step(SEQ13_DELETE_UPLOAD)
+        self.assertEqual(delete_upload["uses"], upload["uses"])
+        self.assertEqual(delete_upload["with"]["name"], "seq13-configuration-delete-core-${{ matrix.ha_version }}"
+                         "-${{ matrix.support_slot }}-${{ matrix.lane }}")
+        self.assertEqual(delete_upload["with"]["path"].splitlines(), [
+            "${{ runner.temp }}/seq13-configuration-delete-${{ matrix.lane }}.json",
+            "${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json"])
+        self.assertEqual(delete_upload["with"]["if-no-files-found"], "error")
+        self.assertEqual(delete_upload["with"]["retention-days"], 14)
 
     def test_core_archive_uses_only_fixed_codeload_forms_and_exact_digest(self):
         step = self.step("Stage exact Alarmo and independent interval observer for the Core slot")

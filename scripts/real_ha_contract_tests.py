@@ -3654,7 +3654,7 @@ async def _run_core_2026_9_child_contract(
                 expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
             if entity_metadata_result.get("result") != "PASS":
                 raise RuntimeError("Required entity metadata disposable scenario did not pass")
-            # HAMCP-165/069B: the seq-13 lanes are defined here and run only when the
+            # HAMCP-165/069B/155: the seq-13 lanes are defined here and run only when the
             # batch evidence run sets REAL_HA_SEQ13_LANES=enabled; otherwise nothing runs.
             seq13_results = {}
             if os.environ.get("REAL_HA_SEQ13_LANES") == "enabled":
@@ -3665,6 +3665,12 @@ async def _run_core_2026_9_child_contract(
                         core_version=EXPECTED_HA_VERSION)
                     if seq13_results["seq13_" + lane_key].get("result") != "PASS":
                         raise RuntimeError("Required seq-13 disposable scenario did not pass")
+                import configuration_delete_contract_acceptance as configuration_delete
+                seq13_results["seq13_configuration_delete"] = await configuration_delete.run_disposable(
+                    configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+                    core_version=EXPECTED_HA_VERSION)
+                if seq13_results["seq13_configuration_delete"].get("result") != "PASS":
+                    raise RuntimeError("Required seq-13 disposable scenario did not pass")
             # The existing required artifact carries every clearly named proof.
             receipt = Path(os.environ["REAL_HA_ALARMO_RESULT"])
             # HAMCP-180: the shared strict loader refuses a repeated key before the rewrite.

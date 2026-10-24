@@ -39,8 +39,10 @@ LABEL = "core.label_registry_operation"
 AVAILABILITY = "core.entity_registry_availability_operation"
 EXPOSURE = "core.entity_assistant_exposure_operation"
 METADATA = "core.entity_registry_metadata_operation"
+DELETE = "core.configuration_delete_operation"
 # Every seq-13 profile this source compiles; none is in the shipped signed set.
-SEQ13_DORMANT = frozenset({LABEL, AVAILABILITY, EXPOSURE})
+# The HAMCP-155 delete profile has its own lane and stays unsigned in these.
+SEQ13_DORMANT = frozenset({LABEL, AVAILABILITY, EXPOSURE, DELETE})
 SHIPPED_SIGNED_COUNT = 22
 ENTITY_GET, ENTITY_UPDATE = "config/entity_registry/get", "config/entity_registry/update"
 LABEL_LIST = "config/label_registry/list"
