@@ -60,6 +60,18 @@ JOB_LOG = f"realha-{JOB['job_id']}.log"
 HA_MCP = {"ha_mcp_source": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44", "ha_mcp_version": "8.5.0"}
 FIXTURE = "tests/fixtures/core_2026_10_3_lane_provenance.json"
 JOURNAL = "upstream-trust/ha-core-release-registry.json"
+GITATTRIBUTES_BLOB = "dc379f22c1217c06b8ea1bf40a0e4cafbdb4eeb0"  # package ffafdabe (PR #310)
+PUBLISHED_JOURNAL_SHA256 = "80d91919ebbd57e4ca1b7a49bc2bb6a9b2996b3b14bef3070916263e82c53817"
+PUBLICATION_PATHS = {
+    JOURNAL,
+    "upstream-trust/evidence/ha-core-2026.10.3-"
+    "e245e6347b5327f746aa15085aa690d7a14add3f1fa35d0980ba86d8837a9f01.json",
+    "tests/test_hamcp069a_entity_metadata_readmission.py",
+    "tests/test_hamcp069b_entity_availability_exposure_admission.py",
+    "tests/test_hamcp129_platform_reads.py",
+    "tests/test_hamcp155_configuration_delete_admission.py",
+    "tests/test_hamcp165_label_registry.py",
+}
 REFERENCE_KEYS = entity_acceptance.REFERENCE_KEYS
 # Public artifacts copied into the repository (archives, compare and commit API dumps and
 # HTTP headers stay in the retained collection, bound by hash in review_artifacts_sha256).
@@ -138,9 +150,17 @@ for rev in ("HEAD", RELEASE_TAG, MERGE_SHA):
 assert assessment["engineering_checkout"]["runtime_package_tree"] == RUNTIME_TREE
 assert assessment["engineering_checkout"]["hass_mcp_engineering_beta_tree"] == ENGINEERING_TREE
 assert assessment["engineering_checkout"]["config_version"] == "2.4.1-beta.36"
-# Outside docs/, the CI merge ref differs from this package only by the lane switch.
-assert git("diff", "--name-only", MERGE_SHA, "HEAD", "--", ".", ":!docs").splitlines() \
-    == [".github/workflows/ci.yml", "tests/test_alarmo_interval_observer.py"]
+# Outside docs/, the CI merge ref differs from this package only by the lane switch and
+# the reviewed .gitattributes rule (exact blob of package ffafdabe) that keeps the bound
+# upstream diff byte-exact. After publication (HAMCP-222) it also differs by exactly the
+# owner-signed journal, the 2026.10.3 add evidence and the registry-coupled tests.
+outside_docs = {".gitattributes", ".github/workflows/ci.yml", "tests/test_alarmo_interval_observer.py"}
+assert git("rev-parse", "HEAD:.gitattributes") == GITATTRIBUTES_BLOB
+if git("rev-parse", f"HEAD:{JOURNAL}") != git("rev-parse", f"{MERGE_SHA}:{JOURNAL}"):
+    assert sha((REPO / JOURNAL).read_bytes()) == PUBLISHED_JOURNAL_SHA256
+    outside_docs |= PUBLICATION_PATHS
+assert sorted(git("diff", "--name-only", MERGE_SHA, "HEAD", "--", ".", ":!docs").splitlines()) \
+    == sorted(outside_docs)
 assert git("status", "--porcelain", "--", "hass_mcp_engineering_beta", "scripts", "tests",
            ".github", JOURNAL) == ""
 compiled = [ref(p) for p in CORE_RUNTIME_CAPABILITY_PROFILES]
