@@ -41,6 +41,13 @@ def absent(resource_type):
             "entity_id": ENTITY[resource_type], "state_status": 404}
 
 
+def elevated(*basis, verdict=lane.VERDICT_NONE):
+    """The lane's protection record: incomplete script evidence is the one gap."""
+    return {"protected": True, "basis": list(basis), "dependency_reasons": [lane.INCOMPLETE_SCRIPT_EVIDENCE],
+            "removed_effect_verdict": verdict, "unlock_or_disarm": False, "evidence_complete": False,
+            "evidence_gaps": [lane.SCRIPT_EVIDENCE_GAP], "risk_level": "high", "operation_risk_level": "high"}
+
+
 def synthetic_receipt(core_version=CORE):
     binding = slot_binding(core_version)
     reference = lane.source_profile()
@@ -48,7 +55,7 @@ def synthetic_receipt(core_version=CORE):
     def deleted(resource_type):
         return {"result": "PASS", "task_state": "succeeded_verified", "dispatch_counts": [1],
                 "write_methods": ["DELETE"], "ha_writes": 1, "write_routes_bound": True, "config_checks": 0,
-                "entity_id": ENTITY[resource_type], "protected": False, "risk_level": "medium",
+                "entity_id": ENTITY[resource_type], **elevated(lane.BASIS_PROTECTED_DEPENDENCY),
                 "preflight_present": True, "readback": absent(resource_type),
                 "codes": ["exact_readback_verified"]}
 
@@ -74,8 +81,9 @@ def synthetic_receipt(core_version=CORE):
         "scenarios": {
             "delete_automation": deleted("automation"), "delete_script": deleted("script"),
             "recreate_automation": recreated("automation"), "recreate_script": recreated("script"),
-            "protected_effect": {"result": "PASS", "plan_created": True, "protected": True,
-                                 "basis": [lane.BASIS_PROTECTED_EFFECT], "risk_level": "high",
+            "protected_effect": {"result": "PASS", "plan_created": True,
+                                 **elevated(lane.BASIS_PROTECTED_EFFECT, lane.BASIS_PROTECTED_DEPENDENCY,
+                                            verdict=lane.VERDICT_REMOVED),
                                  "removes_statement": True, "ha_writes": 0},
             "not_found": {"result": "PASS", "preflight_config_status": 404, "reason_code": lane.NOT_FOUND,
                           "plan_created": False, "provider_dispatch_occurred": False, "ha_writes": 0},
@@ -237,15 +245,11 @@ class ReceiptTests(unittest.TestCase):
             "delete_twice": scenario("delete_script", dispatch_counts=[2], ha_writes=2),
             "delete_wrong_method": scenario("delete_automation", write_methods=["POST"]),
             "delete_not_present_first": scenario("delete_automation", preflight_present=False),
-            "ordinary_elevated": scenario("delete_automation", protected=True),
             "recreate_drifted": scenario("recreate_automation", config_matches_pre_image=False),
             "recreate_new_registry_id": scenario("recreate_script", registry_entry_id_restored=False),
             "recreate_self_dispatched": scenario("recreate_automation", rollback_dispatched_on_create=True),
             "recreate_excluded": scenario("recreate_script", operations_excluded=["0"]),
-            "protected_standard": scenario("protected_effect", protected=False),
-            "protected_no_basis": scenario("protected_effect", basis=["delete_protected_dependency"]),
             "protected_no_statement": scenario("protected_effect", removes_statement=False),
-            "protected_medium": scenario("protected_effect", risk_level="medium"),
             "scenario_failed": scenario("stale_state", result="FAIL"),
             "scenario_missing": lambda value: value["scenarios"].pop("recreate_script"),
             "cleanup_incomplete": top(fixture_absence={**dict.fromkeys(lane.FIXTURE_ABSENCE, True),
@@ -260,6 +264,88 @@ class ReceiptTests(unittest.TestCase):
             mutate(value)
             with self.subTest(name), self.assertRaises(REFUSED):
                 self.verify(value)
+
+
+class ClassificationReasonTests(unittest.TestCase):
+    """Each delete is elevated for its asserted reason only (HAMCP-222, OD-4)."""
+
+    def verify(self, value):
+        return lane.verify_result(value, core_version=CORE, support_slot=CORE_SLOT)
+
+    def test_plain_deletes_are_elevated_only_for_incomplete_script_evidence(self):
+        for name in ("delete_automation", "delete_script"):
+            cases = {
+                "standard": dict(protected=False, basis=[], dependency_reasons=[], evidence_complete=True,
+                                 evidence_gaps=[], risk_level="medium", operation_risk_level="medium"),
+                "not_protected": dict(protected=False),
+                "plan_medium": dict(risk_level="medium"),
+                "child_medium": dict(operation_risk_level="medium"),
+                "risk_unread": dict(risk_level=""),
+                "child_risk_unread": dict(operation_risk_level=""),
+                "effect_basis": dict(basis=[lane.BASIS_PROTECTED_EFFECT, lane.BASIS_PROTECTED_DEPENDENCY]),
+                "unlock_basis": dict(basis=["delete_unlock_or_disarm_floor", lane.BASIS_PROTECTED_DEPENDENCY]),
+                "no_basis": dict(basis=[]),
+                "effect_removed": dict(removed_effect_verdict=lane.VERDICT_REMOVED),
+                "effect_unresolved": dict(removed_effect_verdict="unresolved"),
+                "unlock": dict(unlock_or_disarm=True),
+                "evidence_complete": dict(evidence_complete=True),
+                "other_gap": dict(evidence_gaps=["automation_inventory_incomplete"],
+                                  dependency_reasons=["dependency_evidence_incomplete:automation_inventory_incomplete"]),
+                "extra_gap": dict(evidence_gaps=["automation_inventory_incomplete", lane.SCRIPT_EVIDENCE_GAP]),
+                "no_reason": dict(dependency_reasons=[]),
+                "feeds_protected": dict(dependency_reasons=["feeds_protected_automation:night_lock",
+                                                            lane.INCOMPLETE_SCRIPT_EVIDENCE]),
+                "unresolved_consumer": dict(dependency_reasons=["unresolved_automation_consequence:x",
+                                                                lane.INCOMPLETE_SCRIPT_EVIDENCE]),
+                "reasons_unrecorded": dict(dependency_reasons=None),
+            }
+            for case, changes in cases.items():
+                value = synthetic_receipt()
+                scenario(name, **changes)(value)
+                with self.subTest(name=name, case=case), self.assertRaises(REFUSED):
+                    self.verify(value)
+            for key in elevated():
+                value = synthetic_receipt()
+                del value["scenarios"][name][key]
+                with self.subTest(name=name, missing=key), self.assertRaises(REFUSED):
+                    self.verify(value)
+
+    def test_protected_effect_is_elevated_for_the_removed_effect(self):
+        cases = {
+            "standard": dict(protected=False),
+            "dependency_only": dict(basis=[lane.BASIS_PROTECTED_DEPENDENCY]),
+            "effect_only": dict(basis=[lane.BASIS_PROTECTED_EFFECT]),
+            "reordered": dict(basis=[lane.BASIS_PROTECTED_DEPENDENCY, lane.BASIS_PROTECTED_EFFECT]),
+            "nothing_removed": dict(removed_effect_verdict=lane.VERDICT_NONE),
+            "plan_medium": dict(risk_level="medium"),
+            "child_medium": dict(operation_risk_level="medium"),
+            "risk_unread": dict(risk_level=""),
+            "other_gap": dict(evidence_gaps=["automation_read_failures"]),
+            "feeds_protected": dict(dependency_reasons=["feeds_protected_automation:x"]),
+        }
+        for case, changes in cases.items():
+            value = synthetic_receipt()
+            scenario("protected_effect", **changes)(value)
+            with self.subTest(case=case), self.assertRaises(REFUSED):
+                self.verify(value)
+
+    def test_risk_is_read_from_the_plan_and_its_child_never_a_top_level_key(self):
+        created = {"risk_level": "medium", "risk": {"level": "high"}, "operations": [{"risk": {"level": "high"}}]}
+        self.assertEqual(lane.plan_risk(created), {"risk_level": "high", "operation_risk_level": "high"})
+        for broken in ({"risk_level": "high"}, {"risk": {"level": "HIGH"}, "operations": []},
+                       {"risk": None, "operations": [{"risk": {"level": 3}}, {"risk": {"level": "high"}}]}):
+            with self.subTest(broken=broken):
+                self.assertEqual(lane.plan_risk(broken), {"risk_level": "", "operation_risk_level": ""})
+
+    def test_protection_record_keeps_bounded_codes_only(self):
+        shown = {"protection": {"protected": True, "basis": [lane.BASIS_PROTECTED_DEPENDENCY, "Not A Code"],
+                                "dependency_reasons": [lane.INCOMPLETE_SCRIPT_EVIDENCE, "x" * 129],
+                                "removed_effect_verdict": "Changed!", "unlock_or_disarm": False},
+                 "consumers": {"evidence_complete": False, "evidence_gaps": "script_evidence_unavailable"}}
+        self.assertEqual(lane.protection_record(shown), {
+            "protected": True, "basis": [lane.BASIS_PROTECTED_DEPENDENCY],
+            "dependency_reasons": [lane.INCOMPLETE_SCRIPT_EVIDENCE], "removed_effect_verdict": "unrecognized",
+            "unlock_or_disarm": False, "evidence_complete": False, "evidence_gaps": None})
 
 
 class ReadbackIdentityTests(unittest.IsolatedAsyncioTestCase):
@@ -489,6 +575,49 @@ class ForwardRefusalServiceTests(ConfigurationDeleteServiceTestCase):
         self.assertEqual(raised.exception.diagnostic["task_state"], "failed_pre_dispatch")
         self.assertEqual(raised.exception.diagnostic["dispatch_counts"], [0])
         self.assertIn("stale_target_state", raised.exception.diagnostic["codes"])
+
+
+class ClassificationServiceTests(ConfigurationDeleteServiceTestCase):
+    """The lane reads the real service's plan response, as Core's lane does (HAMCP-222).
+
+    Run 40145843517 showed the synthetic receipts above never met the real
+    shape: risk lives under ``risk`` and each operation's ``risk``.
+    """
+
+    NOOP = {"event": "hamcp155_noop", "event_data": {}}
+
+    def scenario_value(self, created, name):
+        receipt = synthetic_receipt()["scenarios"][name]
+        return {**receipt, **lane.protection_record(lane.delete_disclosure(created)), **lane.plan_risk(created)}
+
+    async def test_without_script_evidence_a_plain_delete_passes_the_lane_checks(self):
+        self.snapshot.script_diagnostics = None  # as the lane's own dependency index
+        self.add("automation", "plain", lane.automation_config("plain", self.NOOP))
+        self.add("script", "plain_script", lane.script_config("plain_script"))
+        for resource_type, target_id in (("automation", "plain"), ("script", "plain_script")):
+            created = await self.create_one(resource_type, target_id)
+            self.assertNotIn("risk_level", created)
+            self.assertEqual(created["risk"]["level"], "high")
+            value = self.scenario_value(created, "delete_" + resource_type)
+            with self.subTest(resource_type=resource_type):
+                lane._scenario_checks("delete_" + resource_type, value)
+
+    async def test_without_script_evidence_a_protected_effect_passes_the_lane_checks(self):
+        self.snapshot.script_diagnostics = None
+        self.add("automation", "lock", lane.automation_config(
+            "lock", {"action": "lock.lock", "target": {"entity_id": "lock.front_door"}}))
+        created = await self.create_one("automation", "lock")
+        lane._scenario_checks("protected_effect", self.scenario_value(created, "protected_effect"))
+
+    async def test_with_complete_evidence_a_plain_delete_is_standard_and_the_lane_check_refuses(self):
+        """The check discriminates: the standard path is a different, refused receipt."""
+        self.add("automation", "plain", lane.automation_config("plain", self.NOOP))
+        created = await self.create_one("automation", "plain")
+        value = self.scenario_value(created, "delete_automation")
+        self.assertEqual((value["protected"], value["basis"], value["risk_level"], value["operation_risk_level"]),
+                         (False, [], "medium", "medium"))
+        with self.assertRaises(AssertionError):
+            lane._scenario_checks("delete_automation", value)
 
 
 class WiringTests(unittest.TestCase):
