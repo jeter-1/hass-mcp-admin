@@ -1232,6 +1232,21 @@ def _verification_checked_at(record: Any) -> str | None:
     return times[-1] if times else None
 
 
+def _desired_state_fingerprint(operation: Any) -> str:
+    """HAMCP-214: the fingerprint of the state the operation should leave.
+
+    A delete child's ``proposed_config_hash`` hashes its closed delete
+    intent, not a state, so its desired state is absence, fingerprinted the
+    way the delete readback fingerprints it.
+    """
+
+    if operation.action == "delete":
+        from ..governance.resources import resource_fingerprint
+
+        return resource_fingerprint(operation.resource_type, None)
+    return operation.proposed_config_hash
+
+
 def _recreate_eligible(operation: Any) -> bool:
     try:
         return configuration_delete_intent(
@@ -3636,7 +3651,7 @@ class F3RuntimeIntegration:
                     operation.verification = ChangeVerification(
                         status="verified",
                         checked_at=checked_at,
-                        desired_fingerprint=operation.proposed_config_hash,
+                        desired_fingerprint=_desired_state_fingerprint(operation),
                         actual_fingerprint=operation.post_apply_fingerprint,
                     )
                     if checked_at is not None:
@@ -3650,7 +3665,8 @@ class F3RuntimeIntegration:
             ):
                 # HAMCP-214: a succeeded_verified task shows the plan
                 # verified.  A single fingerprint exists only for one
-                # operation; a multi-operation plan keeps it per operation.
+                # operation; a multi-operation plan keeps both fingerprints
+                # per operation and none at plan level.
                 single = plan.operations[0] if len(plan.operations) == 1 else None
                 plan.post_apply_fingerprint = (
                     single.post_apply_fingerprint if single is not None else None
@@ -3659,9 +3675,9 @@ class F3RuntimeIntegration:
                     status="verified",
                     checked_at=max(verified_at) if verified_at else None,
                     desired_fingerprint=(
-                        single.proposed_config_hash
+                        single.verification.desired_fingerprint
                         if single is not None
-                        else plan.proposed_config_hash
+                        else None
                     ),
                     actual_fingerprint=plan.post_apply_fingerprint,
                 )
