@@ -33,20 +33,16 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 
 from tests import test_hamcp177_dashboard_write_admission as dashboard  # noqa: E402
 from tests.core_authority_fakes import require_core_authority  # noqa: E402
-from tests.test_beta37_exact_helper_state import (  # noqa: E402
-    ExactHelperStateRuntimeTests,
-    FakeHelperStateGateway,
-)
+# TestCase bases are imported through their modules so the loader does not
+# collect (and rerun) the base classes' own tests from this module.
+from tests import test_beta37_exact_helper_state as helper_state_tests  # noqa: E402
+from tests import test_f3_runtime_integration as f3_integration  # noqa: E402
+from tests.test_beta37_exact_helper_state import FakeHelperStateGateway  # noqa: E402
 from tests.test_dev14_resource_adapters import (  # noqa: E402
     AUTOMATION,
     INPUT_BOOLEAN,
     FakeRestClient,
     FakeWebSocketClient,
-)
-from tests.test_f3_runtime_integration import (  # noqa: E402
-    F3BackupActivationTests,
-    F3ConfigurationActivationTests,
-    F3OperationalActivationTests,
 )
 from tests.test_hamcp181_fan_power_dispatched_at import FanKind, PowerKind  # noqa: E402
 from tests.test_hamcp183_entity_registry_error_truth import (  # noqa: E402
@@ -464,7 +460,7 @@ class WebSocketClientProofTests(unittest.IsolatedAsyncioTestCase):
 # -- chain: configuration adapter through the real resource gateway --------------
 
 
-class ConfigurationChainTests(_ProofAssertions, F3ConfigurationActivationTests):
+class ConfigurationChainTests(_ProofAssertions, f3_integration.F3ConfigurationActivationTests):
     """The F3 configuration path with the shipped gateway's own refusal sites."""
 
     async def asyncSetUp(self):
@@ -677,7 +673,7 @@ class _RealSendingHelper(FakeHelperStateGateway):
         return await self.real.set_state(entity_id, desired_state, before_dispatch=before_dispatch)
 
 
-class HelperStateCallbackFailureTests(_ProofAssertions, ExactHelperStateRuntimeTests):
+class HelperStateCallbackFailureTests(_ProofAssertions, helper_state_tests.ExactHelperStateRuntimeTests):
     async def asyncSetUp(self):
         with patch("tests.test_beta37_exact_helper_state.FakeHelperStateGateway",
                    _RealSendingHelper):
@@ -729,14 +725,14 @@ class _ExclusionCases(_ProofAssertions):
         self.assertEqual(sends(), 0)
 
 
-class BackupExclusionTests(_ExclusionCases, F3BackupActivationTests):
+class BackupExclusionTests(_ExclusionCases, f3_integration.F3BackupActivationTests):
     async def test_backup_callback_failure_is_never_proven_not_sent(self):
         await self.assert_excluded(
             await self.service.create_backup_plan(backup_name="F3 disposable"),
             lambda: self.gateway.dispatch_count)
 
 
-class LifecycleExclusionTests(_ExclusionCases, F3OperationalActivationTests):
+class LifecycleExclusionTests(_ExclusionCases, f3_integration.F3OperationalActivationTests):
     async def test_addon_restart_callback_failure_is_never_proven_not_sent(self):
         await self.assert_excluded(
             await self.service.create_addon_restart_plan(addon_slug="local_test_addon"),
