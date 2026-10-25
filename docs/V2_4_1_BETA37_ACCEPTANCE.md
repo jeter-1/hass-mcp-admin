@@ -3,9 +3,12 @@
 This contract covers truthful stored execution outcomes (HAMCP-181 PR2),
 plan-level verification and rollback availability (HAMCP-214), and the
 HAMCP-193 dashboard governed-path tests. It follows 2.4.1-beta.36 and
-includes it. The release activates no new capability: the signed registry
-stays at sequence 12 and every dormant profile stays
-`pending_signed_registry_admission`.
+includes it. The release activates no new capability and changes no signed
+registry. Its base carries the owner-signed Core registry at sequence 14
+(HAMCP-222, #312), published as data on `main` independently of any
+Engineering release. That sequence admits the four signed-registry profiles
+on Core 2026.10.1 and 2026.10.3 (see
+[`evidence/hamcp222/core-registry-hamcp222.md`](evidence/hamcp222/core-registry-hamcp222.md)).
 
 See also:
 - Release notes:
@@ -78,7 +81,8 @@ Preserve the following:
 - every descriptor and input schema; the catalog is **96 tools, 97 with
   the optional YAML reader admitted**;
 - probe fingerprints, the 17 signed Core capability profiles, the
-  owner-signed Core registry (sequence 12), the signed ha-mcp registry and
+  owner-signed Core registry (sequence 14 at base, unchanged), the signed
+  ha-mcp registry and
   the delete profile's contract fingerprint
   `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d`,
   recomputed at base and head;
@@ -186,9 +190,12 @@ Separately authorize installation. Checks 1 to 3 are read-only; checks 4 and
    image index digest, the release tag and the protected `main` merge commit.
 2. **Catalog.** `tools/list` shows 96 tools (97 with the YAML reader
    admitted).
-3. **Inactive.** `list_capabilities` and server health still show the four
-   dormant providers' `core_admission` as their pending reasons under
-   sequence 12.
+3. **Health `core_admission`.** For the four signed-registry providers,
+   server health reports `core_admission: admitted` exactly when the
+   locally admitted signed generation admits every listed profile for the
+   running Core. Under sequence 14 that is Core 2026.10.1 or 2026.10.3 after
+   the add-on has fetched the journal. Otherwise it reports the pending
+   reason. This check is read-only and makes no Core call.
 4. **Power and fan canary surface consistency.** With Josh's approval, run
    one ordinary `control_power` and one `control_fan` action on the usual
    canary entities. For each, `get_execution_task`, `list_execution_tasks`,
@@ -206,5 +213,5 @@ Separately authorize installation. Checks 1 to 3 are read-only; checks 4 and
 
 ## 4. Out of scope
 
-Signing sequence 13, the HAMCP-155 deletion canary and any downgrade are not
-authorized by this document.
+Any further registry signing, the HAMCP-155 deletion canary and any
+downgrade are not authorized by this document.

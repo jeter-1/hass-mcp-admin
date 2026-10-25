@@ -118,7 +118,8 @@ terminal plan reuses its terminal authority and refuses.
 - No tool, descriptor or input schema change. The catalog is still **96
   tools, 97 with the optional YAML reader admitted**; static tools 68.
 - The 17 signed Core capability profiles, the probe fingerprints, the
-  owner-signed Core registry (sequence 12), the signed ha-mcp registry and
+  owner-signed Core registry (sequence 14 at base, published by HAMCP-222
+  #312 and unchanged here), the signed ha-mcp registry and
   the delete profile's contract fingerprint
   `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d`
   are unchanged (recomputed, base and head; see the PR).
