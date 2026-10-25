@@ -1,5 +1,32 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.37** stores truthful execution outcomes (HAMCP-181
+PR2, HAMCP-214, HAMCP-193). A call stopped after its dispatch intent, with
+positive proof that it was never sent, now reads
+`failed_after_intent_not_dispatched`, `provider_dispatch_occurred: false` and
+`dispatched_at: null` on every surface. A sent call's `dispatched_at` is the
+exact provider-call start time. A no-mutation claim needs a proven Core
+rejection. A verified plan shows plan-level `verification.status: verified`
+with its post-apply fingerprint, and its rollback availability is truthful.
+An intent is never discarded and an operation is never redispatched. No tool,
+schema, profile, fingerprint, signed registry or F3 persisted-format change;
+static tools 68, advertised catalog 96 (97 with the optional YAML reader).
+Downgrade to beta.8 is not supported while governed change plans exist (a
+pre-existing HAMCP-213 limitation). Read the
+[2.4.1-beta.37 release notes](docs/V2_4_1_BETA37_RELEASE_NOTES.md) and
+[2.4.1-beta.37 acceptance contract](docs/V2_4_1_BETA37_ACCEPTANCE.md).
+
+It builds on beta.36 below.
+
+Engineering **2.4.1-beta.36** corrects the governed delete's dispatch-time
+drift read (HAMCP-155), which now runs in its own short Core-authority window,
+and makes the governance and F3 test fakes enforce the real clients'
+Core-authority check. It activates nothing new. Read the
+[2.4.1-beta.36 release notes](docs/V2_4_1_BETA36_RELEASE_NOTES.md) and
+[2.4.1-beta.36 acceptance contract](docs/V2_4_1_BETA36_ACCEPTANCE.md).
+
+It builds on beta.35 below.
+
 Engineering **2.4.1-beta.35** ships governed deletion of UI-managed
 automations and scripts **inactive** (HAMCP-155). The new tool
 `create_configuration_delete_plan` proposes one to eight deletions. Its

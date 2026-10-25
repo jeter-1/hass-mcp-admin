@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.4.1-beta.37 - Truthful stored outcomes (HAMCP-181 PR2, HAMCP-214, HAMCP-193)
+
+Builds on 2.4.1-beta.36. Activates nothing new.
+
+- Proven not sent (b): a call stopped after its dispatch intent, with
+  positive proof that the provider call was never sent, stores
+  `terminal_outcome: failed_after_intent_not_dispatched` and reads
+  `intent_recorded_not_sent`, `provider_dispatch_occurred: false` and
+  `dispatched_at: null` on every surface. Proofs: the shared F3 executor's
+  no-send declaration (configuration, dashboard, fan and helper-state
+  adapters), `call_not_sent` at the reviewed pre-write raise sites and a
+  pre-frame WebSocket authorization failure, and the upstream fan
+  second-authority refusal. `HomeAssistantUnavailableError`, a lost
+  response, a registry error and the backup/lifecycle gateways are never
+  proof.
+- Already present (a) stores `desired_state_already_present_not_dispatched`.
+- `dispatched_at` is the exact provider-call start time (basis
+  `provider_call_start_time`), kept in the task `verification_summary`;
+  `null` until a send is proven.
+- No-mutation claims only on a proven Core rejection (P1 config REST 4xx,
+  P3 WebSocket `unauthorized`/`forbidden`).
+- HAMCP-214: a `succeeded_verified` plan shows `verification.status:
+  verified` and its `post_apply_fingerprint`, copied from the task summary;
+  rollback availability is projected truthfully per family once the task is
+  final (display only).
+- OD-11: `rollback_change` of a legacy forward whose every child is proven
+  unchanged refuses with `forward_unchanged`.
+- Health `core_admission` reports `admitted` from the local admitted signed
+  generation (no Core call).
+- HAMCP-193 dashboard governed-path tests; beta.8 downgrade test over
+  PR2-candidate fixtures. Downgrade to beta.8 is not supported while
+  governed change plans exist (pre-existing since beta.29, HAMCP-213).
+- No intent is discarded and nothing is redispatched.
+- No tool, schema, profile, fingerprint, signed registry, F3 persisted
+  format, workflow, permission, dependency or stable-v1 change; static tools
+  68, catalog 96 (97).
+
 ## 2.4.1-beta.36 - Governed delete drift read in its own Core window, inactive (HAMCP-155)
 
 Builds on 2.4.1-beta.35. Activates nothing new.
