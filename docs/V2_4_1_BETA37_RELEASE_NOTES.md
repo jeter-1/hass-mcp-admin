@@ -100,14 +100,18 @@ terminal plan reuses its terminal authority and refuses.
 - **OD-10.** Pre-PR2 records are not rewritten. There is no backfill of
   `terminal_outcome`; old (b) records are projected from their existing
   proof codes, and old (a) records from their verified-no-dispatch class.
-- **Downgrade (design section 4.3).** Fan, power and execution-task records
-  written by beta.37 load under the exact beta.8 reader with zero provider
-  calls. Governed change plans do not: beta.8 quarantines **every** plan
-  written since HAMCP-213 (2.4.1-beta.29), because its `ChangePlan` reader
-  rejects the `called_scripts` operation field and policy version `f2-v3`.
-  This predates beta.37 and beta.37 does not change it. **Downgrade to
-  beta.8 is not supported while any governed change plan exists**, pending
-  Josh's decision on the floor.
+- **Downgrade (design section 4.3, owner decision 2026-10-25).** The
+  supported governed-plan rollback target is **2.4.1-beta.36**.
+  `tests/test_hamcp181_beta36_downgrade.py` runs the exact beta.36 reader
+  over beta.37-written records. Plans, tasks, `verification_summary` and
+  terminal outcomes are all read without quarantine, rewrite or loss, with
+  zero provider calls. Beta.36 shows its own display: `dispatched_at` is the
+  intent commit time for a sent task, and the HAMCP-214 projections revert.
+  2.4.1-beta.8 is a **fan/power/task-only floor**: those records load with
+  zero provider calls, but beta.8 hides **every** governed plan written
+  since HAMCP-213 (2.4.1-beta.29), because its `ChangePlan` reader rejects
+  the `called_scripts` operation field and policy version `f2-v3`. That
+  limitation predates beta.37 and was accepted as is. It is not fixed here.
 
 ## Compatibility
 
@@ -125,15 +129,14 @@ terminal plan reuses its terminal authority and refuses.
   change.
 
 **Protected runtime files.** Josh authorized the HAMCP-181 PR2 file scope
-(design section 6). The changed files are listed in the PR, including
-`f3/contracts.py`, which holds the shared not-sent constants and is
-disclosed as outside the literal section 6 list.
+(design section 6). The changed files are listed in the PR. They include
+`f3/contracts.py`, which holds the shared not-sent constants and which Josh
+confirmed as an addition to the section 6 list (2026-10-25).
 
 ## Rollback
 
-Reinstall the 2.4.1-beta.36 artifact. No stored format changes. Beta.36's
-readers take `terminal_outcome` and the plan rollback status as free strings
-(`governance/task_models.py`, `governance/models.py`), so it loads the new
-values and shows its own legacy phrasing. That is a source reading, not an
-executed beta.36 reader test; the executed downgrade test covers beta.8
-only (see Disclosures).
+Reinstall the 2.4.1-beta.36 artifact. No stored format changes. The
+executed beta.36 reader test (see Disclosures) loads every beta.37 record
+with zero quarantine, rewrite or provider call. Beta.36 then shows its own
+legacy phrasing and timestamps, and keeps the new stored values for a later
+re-upgrade.

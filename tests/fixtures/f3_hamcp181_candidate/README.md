@@ -3,12 +3,18 @@
 These synthetic records were written by the HAMCP-181 PR2 candidate writer at
 commit `82510f78b6a40c6e21fbc0c48a371131bbed6f66`, following AGENTS.md
 "Persisted Compatibility Fixtures" and design section 4.3 items 3 and 4.
-`tests/test_hamcp181_beta8_downgrade.py` reads them in two ways:
+Two tests read them, each in two ways.
 
-- under the shipped 2.4.1-beta.8 reader (`7370ad25eb98e03347d73e152f38881895477d74`,
-  tag `v2.4.1-beta.8`), to test section 4.3 item 3, the downgrade;
-- under the current reader, to test the T2 projections and that nothing is
-  rewritten.
+- `tests/test_hamcp181_beta36_downgrade.py` reads them under the shipped
+  2.4.1-beta.36 reader (`16b724ec0b1d0fa8aae9705df569704f27ad783e`, tag
+  `v2.4.1-beta.36`). This is the governed-plan rollback target.
+- `tests/test_hamcp181_beta8_downgrade.py` reads them under the shipped
+  2.4.1-beta.8 reader (`7370ad25eb98e03347d73e152f38881895477d74`, tag
+  `v2.4.1-beta.8`). This is the fan/power/task-only floor.
+- Both tests also read them under the current reader. That run checks the T2
+  projections and that nothing is rewritten.
+
+Both downgrade tests apply section 4.3 item 3.
 
 `generate.py` drives the unmodified candidate runtime through the shipped test
 harnesses with synthetic fakes. Before it writes anything, it requires clean
@@ -68,24 +74,27 @@ Each regeneration produces new identifiers and timestamps. It therefore never
 replaces `pr2/` in place, and the tests do not depend on identifier or
 timestamp values. Do not edit committed records or hashes.
 
-## beta.8 reader driver
+## Shipped reader driver
 
-`beta8_reader.py` is not a fixture. The test runs it in a separate `-I`
-interpreter over a `git archive` extraction of the beta.8 commit and a copy of
-`pr2/`.
+`shipped_reader.py` is not a fixture. Each downgrade test runs it in a separate
+`-I` interpreter over a copy of `pr2/` and one of two sources: a `git archive`
+extraction of the shipped commit, or the current source.
 
-For each shape, the driver builds beta.8's own service and runtime with beta.8's
-own test fakes. It then runs:
+For each shape, the driver builds the reader's own service and runtime with
+that source's own test fakes. It then runs:
 
-- the beta.8 startup recovery pass;
+- the startup recovery pass;
 - the reads;
 - a duplicate apply or duplicate control;
 - a restart with a second recovery pass.
 
-It counts every gateway and transport method call and prints its observations
-as JSON. It does not assert anything; the test does.
+It counts every gateway and transport method call. It records each file the
+reader adds or modifies and, for each modified task file, the events it appends.
+It prints its observations as JSON. It does not assert anything; the test does.
 
-beta.8 pins `mcp==1.28.1`. If the interpreter has a different `mcp`, the driver
-replaces only beta.8's pinned-SDK import gate and records that it did. To run
-without the shim, set `HAMCP181_BETA8_PYTHON` to an interpreter that has
-beta.8's exact `requirements.txt` installed.
+If the interpreter's `mcp` differs from the reader's pin, the driver replaces
+only the reader's pinned-SDK import gate and records that it did. beta.8 pins
+`mcp==1.28.1`. To run beta.8 without the shim, set `HAMCP181_BETA8_PYTHON` to
+an interpreter that has beta.8's exact `requirements.txt` installed. beta.36
+pins `mcp==1.30.0`, the current pin, so it normally needs no shim.
+`HAMCP181_BETA36_PYTHON` selects its interpreter in the same way.

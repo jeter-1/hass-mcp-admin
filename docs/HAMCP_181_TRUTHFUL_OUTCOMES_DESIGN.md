@@ -1338,6 +1338,7 @@ own §5.3 row, files and tests.
 | `R/f3_runtime/runtime.py` | `_project_locked`: T2 strings and keys; configuration gateway label (`:702-721`) and helper-state gateway label (`_AuditedHelperStateGateway` `:765-769`) for in-scope producers only; backup (`_EvidenceCapturingBackupGateway` `:801-805`) and lifecycle (`_EvidenceCapturingLifecycleGateway` `:839-843`) labels unchanged and not authorized for edit; legacy rollback refusal (`:3423-3436`) |
 | `R/f3_runtime/dispatch_facts.py` | Read the T2 strings |
 | `R/governance/service.py` | `terminal_outcome` filter (`:1966-1970`) accepts the T2 strings |
+| `R/f3/contracts.py` | **Owner-confirmed addition (Josh, 2026-10-25).** The shared not-sent constants `CALLBACK_FAILED_NOT_SENT_DECLARATION` and `PROVIDER_CALL_NOT_SENT`, used by the executor and the in-scope adapters. Constants only; no behavior. |
 
 **Excluded from PR2 (OD-7 aligned).** No files for b6
 (`R/clients/upstream_read.py:442-447`), b7 (`R/clients/rest.py:77-84`,
@@ -1588,9 +1589,23 @@ are unchanged.
   rather than as a duplicate. Execution tasks still load.
 
   PR2 did not cause this and does not change it. Three `expectedFailure`
-  tests keep the item 3 plan requirements visible. Until Josh decides, a
-  downgrade to beta.8 is **not supported** while any governed change plan
-  exists. The options are:
-  - accept beta.8 as a fan/power-and-task-only floor;
-  - choose a newer floor;
-  - scope a compatibility change.
+  tests keep the item 3 plan requirements visible.
+- **Owner decision on the downgrade floor (Josh, 2026-10-25), options (i)
+  and (ii).** This supersedes §4.3 item 1 for governed plans.
+  - (i) beta.8 is documented as a **fan/power/task-only floor**. Its hiding
+    of governed plans written since beta.29 is an accepted pre-existing
+    limitation and is not fixed here.
+  - (ii) The supported **governed-plan rollback target is exactly
+    2.4.1-beta.36** (tag `v2.4.1-beta.36`, tag object
+    `a4ffc66ddf60095427a1f9f68f0d2c2121b94c3d`, commit
+    `16b724ec0b1d0fa8aae9705df569704f27ad783e`).
+    `tests/test_hamcp181_beta36_downgrade.py` runs that commit's reader,
+    from `git archive`, over the same PR2-candidate fixtures, under the
+    item 2 quiescence. It applies the item 3 checks, adds no-rewrite and
+    no-loss checks for plans, tasks, `verification_summary` and terminal
+    outcomes, and passes for all thirteen shapes. Beta.36 shows its own
+    display, for example `dispatched_at` at the intent commit time, which is
+    a §4.3 "not guaranteed" behavioral difference.
+- **`f3/contracts.py` (owner-confirmed, 2026-10-25).** It holds the shared
+  not-sent constants and is recorded in the §6 PR2 file table as an
+  owner-confirmed addition.

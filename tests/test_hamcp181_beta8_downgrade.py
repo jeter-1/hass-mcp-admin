@@ -7,7 +7,7 @@ written by the HAMCP-181 PR2 candidate writer (see that directory's
 * verifies every committed record against its recorded SHA-256;
 * extracts the exact beta.8 source (commit ``7370ad2``, tag
   ``v2.4.1-beta.8``) with ``git archive`` and checks the archive's commit id;
-* runs ``beta8_reader.py`` under that source in a separate ``-I``
+* runs ``shipped_reader.py`` under that source in a separate ``-I``
   interpreter over a copy of every store, and asserts what section 4.3 item 3
   requires of the old reader; and
 * opens the same records with the current reader and checks the T2
@@ -22,6 +22,11 @@ fields with HAMCP-213 (commits ``c74fe735`` and ``7d536dab``), before PR2
 branched. ``Beta8KnownContradictionTests`` pins this exact behaviour, and the
 section 4.3 expectations it breaks are kept as explicit expected failures,
 so the gap stays visible instead of being asserted away.
+
+Owner decision (Josh, 2026-10-25): beta.8 is documented as a fan/power/task-only
+floor, and the hidden governed plans are an accepted pre-existing limitation.
+The supported governed-plan rollback target is 2.4.1-beta.36, tested in
+``tests/test_hamcp181_beta36_downgrade.py``. The expected failures stay.
 
 Set ``HAMCP181_BETA8_PYTHON`` to an interpreter with beta.8's exact
 requirements (``mcp==1.28.1``) to run the reader without the SDK version shim.
@@ -48,7 +53,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 CANDIDATE = ROOT / "tests" / "fixtures" / "f3_hamcp181_candidate"
 FIXTURES = CANDIDATE / "pr2"
-DRIVER = CANDIDATE / "beta8_reader.py"
+DRIVER = CANDIDATE / "shipped_reader.py"
 GENERATOR = CANDIDATE / "generate.py"
 
 BETA8_COMMIT = "7370ad25eb98e03347d73e152f38881895477d74"
@@ -254,7 +259,7 @@ class Beta8ReaderIdentityTests(unittest.TestCase):
     def test_reader_is_the_exact_beta8_commit(self):
         self.assertEqual(RUN["archive_commit"], BETA8_COMMIT)
         result = RUN["result"]
-        self.assertTrue(result["reader_is_beta8"], result["reader_package"])
+        self.assertTrue(result["reader_is_source"], result["reader_package"])
         if RUN["tag_object_type"] is not None:
             self.assertEqual(RUN["tag_object_type"], "tag")
             self.assertIn(f"object {BETA8_COMMIT}", RUN["tag_object"])
@@ -262,7 +267,7 @@ class Beta8ReaderIdentityTests(unittest.TestCase):
 
     def test_sdk_version_gate_shim_is_disclosed(self):
         sdk = RUN["result"]["mcp_sdk"]
-        self.assertEqual(sdk["beta8_pin"], BETA8_MCP_PIN)
+        self.assertEqual(sdk["reader_pin"], BETA8_MCP_PIN)
         self.assertIs(sdk["version_gate_shimmed"], sdk["installed"] != BETA8_MCP_PIN)
 
 

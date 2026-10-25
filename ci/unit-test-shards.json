@@ -181,6 +181,7 @@
   "test_hamcp135_configuration_execution": 289,
   "test_hamcp135_governed_rollback": 1293,
   "test_hamcp181_architecture_guard": 13,
+  "test_hamcp181_beta36_downgrade": 11,
   "test_hamcp181_beta8_downgrade": 7,
   "test_hamcp181_entity_registry_error_unproven": 16,
   "test_hamcp181_proven_no_call_producers": 17,

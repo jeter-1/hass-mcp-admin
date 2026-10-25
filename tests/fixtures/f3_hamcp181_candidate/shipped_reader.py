@@ -1,16 +1,18 @@
-"""HAMCP-181 §4.3 item 3: drive the exact beta.8 reader over candidate records.
+"""HAMCP-181 §4.3 item 3: drive an exact shipped reader over candidate records.
 
-Run only by ``tests/test_hamcp181_beta8_downgrade.py``, in a separate
-interpreter started with ``-I`` so the beta.8 ``ha_mcp_engineering`` package
-never meets the current one::
+Run only by ``tests/test_hamcp181_beta8_downgrade.py`` and
+``tests/test_hamcp181_beta36_downgrade.py``, in a separate interpreter started
+with ``-I`` so the shipped ``ha_mcp_engineering`` package never meets the
+current one::
 
-    python -I beta8_reader.py BETA8_SOURCE FIXTURE_DIRECTORY WORK_DIRECTORY
+    python -I shipped_reader.py READER_SOURCE FIXTURE_DIRECTORY WORK_DIRECTORY
 
-``BETA8_SOURCE`` is a ``git archive`` extraction of commit 7370ad2 (tag
-v2.4.1-beta.8). Each shape's store is copied into ``WORK_DIRECTORY`` and
-opened by beta.8 code with synthetic fakes only. Every gateway and transport
-method call is counted. The driver prints one JSON object of observations and
-asserts nothing itself; the test module asserts.
+``READER_SOURCE`` is a ``git archive`` extraction of a shipped commit (beta.8
+7370ad2, or the beta.36 rollback target 16b724e). Each shape's store is copied
+into ``WORK_DIRECTORY`` and opened by that commit's code with its own synthetic
+test fakes only. Every gateway and transport method call is counted. The
+driver prints one JSON object of observations and asserts nothing itself; the
+test module asserts.
 """
 
 from __future__ import annotations
@@ -115,6 +117,33 @@ def diff(before: dict[str, str], after: dict[str, str]) -> dict[str, list[str]]:
     }
 
 
+def task_changes(before_root: Path, store: Path, modified: list[str]) -> dict[str, Any]:
+    """For each modified task record, what changed relative to the committed record.
+
+    Reports whether every committed event survives as an exact prefix, the
+    event types appended after it, and which other top-level keys differ.
+    """
+
+    result: dict[str, Any] = {}
+    for relative in modified:
+        if not relative.startswith("execution-tasks-v1/"):
+            continue
+        before = json.loads((before_root / relative).read_text(encoding="utf-8"))
+        after = json.loads((store / relative).read_text(encoding="utf-8"))
+        old_events, new_events = before.get("events", []), after.get("events", [])
+        result[relative] = {
+            "events_prefix_preserved": new_events[:len(old_events)] == old_events,
+            "appended_events": [
+                {"event_type": event.get("event_type"), "state_before": event.get("state_before"),
+                 "state_after": event.get("state_after"), "changes": event.get("changes")}
+                for event in new_events[len(old_events):]],
+            "other_changed_keys": sorted(
+                key for key in set(before) | set(after)
+                if key != "events" and before.get(key) != after.get(key)),
+        }
+    return result
+
+
 def quarantined(store: Path) -> list[str]:
     return sorted(
         path.relative_to(store).as_posix()
@@ -147,7 +176,7 @@ async def attempt(coroutine_or_callable):
 
 
 class Stack:
-    """One beta.8 process: governance service, F3 runtime and counted fakes."""
+    """One shipped-reader process: governance service, F3 runtime and counted fakes."""
 
     def __init__(self, kind: str, store: Path, audit: Path, now: datetime):
         from ha_mcp_engineering.audit import AuditLogger
@@ -248,7 +277,7 @@ class Stack:
             raise AssertionError(kind)
         self.service = ChangeGovernanceService(
             ChangePlanRepository(store), legacy,
-            AuditLogger(str(audit), "synthetic-hamcp181-beta8-downgrade"),
+            AuditLogger(str(audit), "synthetic-hamcp181-shipped-reader"),
             now=clock, **service_kwargs)
         self.runtime = F3RuntimeIntegration(
             service=self.service, storage_root=str(store),
@@ -256,7 +285,7 @@ class Stack:
         self.service.f3_runtime = self.runtime
 
     async def recovery_pass(self, trigger: str) -> None:
-        # beta.8 application._run_f3_recovery_pass(trigger, strict=True), less
+        # application._run_f3_recovery_pass(trigger, strict=True), less
         # the fan/power services that this governed process does not own.
         await self.runtime.recover_once(trigger)
         await self.service.reconcile_execution_tasks(trigger=trigger)
@@ -282,11 +311,11 @@ class Stack:
 
 
 def plan_decode(store: Path) -> dict[str, Any]:
-    """beta.8's own decode of each stored plan, before anything else runs.
+    """The shipped reader's own decode of each stored plan, before anything else runs.
 
     ``ChangePlanRepository._load`` quarantines a plan on ValueError,
     TypeError or KeyError from ``ChangePlan.from_dict``; this records that
-    exception, so a quarantine is explained by beta.8 code rather than
+    exception, so a quarantine is explained by the shipped code rather than
     inferred.
     """
 
@@ -326,8 +355,8 @@ async def governed(shape: str, source: Path, work: Path) -> dict[str, Any]:
                            "plan_id": stored["plan_id"], "stored_state": stored["state"],
                            "stored_terminal_outcome": stored["terminal_outcome"],
                            "plan_decode": plan_decode(store)}
-    telemetry, context = begin_request("synthetic-hamcp181-beta8-downgrade")
-    telemetry.caller_id = "synthetic-beta8-downgrade-reader"
+    telemetry, context = begin_request("synthetic-hamcp181-shipped-reader")
+    telemetry.caller_id = "synthetic-shipped-downgrade-reader"
     try:
         built = await attempt(lambda: Stack(kind, store, work / shape / "audit.jsonl", now))
         if not built["ok"]:
@@ -366,6 +395,9 @@ async def governed(shape: str, source: Path, work: Path) -> dict[str, Any]:
                                           "status": plan.get("status")}
                 else:
                     out["reads"][name] = surface(value)
+                    out["task_verification_summary"] = value.get("verification_summary")
+                    out["task_dispatch_time"] = {
+                        key: value.get(key) for key in ("dispatched_at", "dispatched_at_basis")}
             out["after_reads_calls"] = list(stack.calls)
             duplicate = await attempt(lambda: service.apply(plan_id, stored["plan_hash"]))
             out["duplicate_apply"] = (
@@ -383,6 +415,12 @@ async def governed(shape: str, source: Path, work: Path) -> dict[str, Any]:
             out["restart_error"] = next((r["error"] for r in (first, second) if not r["ok"]), None)
             out["restart"] = stack.snapshot(store)
         out["final_files"] = diff(original, file_hashes(store))
+        out["final_task_changes"] = task_changes(source / shape / "store", store,
+                                                 out["final_files"]["modified"])
+        out["final_stored_task"] = {
+            key: value for key, value in json.loads(
+                task_path.read_text(encoding="utf-8")).items()
+            if key in ("state", "terminal_outcome", "verification_summary")}
         return out
     finally:
         end_request(context)
@@ -436,7 +474,7 @@ async def typed(shape: str, source: Path, work: Path, provenance: dict) -> dict[
                 "transport_calls": [list(map(str, c[:1])) for c in transport.calls],
                 "transport_writes": transport.writes, "method_calls": list(calls)}
 
-    telemetry, context = begin_request("synthetic-hamcp181-beta8-downgrade")
+    telemetry, context = begin_request("synthetic-hamcp181-shipped-reader")
     try:
         service, transport, calls = build()
         started = await attempt(service.recover_once)
@@ -475,14 +513,14 @@ async def typed(shape: str, source: Path, work: Path, provenance: dict) -> dict[
         end_request(context)
 
 
-async def main_async(beta8: Path, fixtures: Path, work: Path) -> dict[str, Any]:
+async def main_async(reader: Path, fixtures: Path, work: Path) -> dict[str, Any]:
     provenance = json.loads((fixtures / "provenance.json").read_text(encoding="utf-8"))
     import ha_mcp_engineering
 
     package = Path(ha_mcp_engineering.__file__).resolve()
     results: dict[str, Any] = {
         "reader_package": str(package),
-        "reader_is_beta8": package.is_relative_to(beta8.resolve()),
+        "reader_is_source": package.is_relative_to(reader.resolve()),
         "shapes": {},
     }
     for shape in sorted(provenance["shapes"]):
@@ -496,13 +534,13 @@ async def main_async(beta8: Path, fixtures: Path, work: Path) -> dict[str, Any]:
 
 
 def sdk_gate(results: dict[str, Any]) -> None:
-    """Admit the installed MCP SDK when it differs from beta.8's exact pin.
+    """Admit the installed MCP SDK when it differs from the reader's exact pin.
 
-    beta.8 refuses to import its tool layer unless the installed ``mcp``
-    distribution is exactly its pin (1.28.1). The storage reader does not use
-    the SDK, so only that one version gate is replaced, and only when the
-    versions differ; the observation records which SDK ran. Run with an
-    interpreter that has beta.8's exact requirements to avoid the shim.
+    A shipped reader refuses to import its tool layer unless the installed
+    ``mcp`` distribution is exactly its pin (beta.8: 1.28.1). The storage reader
+    does not use the SDK, so only that one version gate is replaced, and only
+    when the versions differ; the observation records which SDK ran. Run with
+    an interpreter that has the reader's exact requirements to avoid the shim.
     """
 
     from importlib.metadata import version
@@ -511,18 +549,18 @@ def sdk_gate(results: dict[str, Any]) -> None:
 
     installed = version("mcp")
     results["mcp_sdk"] = {"installed": installed,
-                          "beta8_pin": compatibility.PINNED_MCP_SDK_VERSION,
+                          "reader_pin": compatibility.PINNED_MCP_SDK_VERSION,
                           "version_gate_shimmed": installed != compatibility.PINNED_MCP_SDK_VERSION}
     if results["mcp_sdk"]["version_gate_shimmed"]:
         compatibility._require_pinned_sdk_version = lambda: None
 
 
 def main() -> None:
-    beta8, fixtures, work = (Path(item) for item in sys.argv[1:4])
-    sys.path[:0] = [str(beta8 / "hass_mcp_engineering_beta"), str(beta8 / "tests"), str(beta8)]
+    reader, fixtures, work = (Path(item) for item in sys.argv[1:4])
+    sys.path[:0] = [str(reader / "hass_mcp_engineering_beta"), str(reader / "tests"), str(reader)]
     gate: dict[str, Any] = {}
     sdk_gate(gate)
-    results = asyncio.run(main_async(beta8, fixtures, work))
+    results = asyncio.run(main_async(reader, fixtures, work))
     results.update(gate)
     print(json.dumps(results, sort_keys=True, default=str))
 

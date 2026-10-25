@@ -29,9 +29,12 @@ Builds on 2.4.1-beta.36. Activates nothing new.
   unchanged refuses with `forward_unchanged`.
 - Health `core_admission` reports `admitted` from the local admitted signed
   generation (no Core call).
-- HAMCP-193 dashboard governed-path tests; beta.8 downgrade test over
-  PR2-candidate fixtures. Downgrade to beta.8 is not supported while
-  governed change plans exist (pre-existing since beta.29, HAMCP-213).
+- HAMCP-193 dashboard governed-path tests; beta.36 and beta.8 downgrade
+  tests over PR2-candidate fixtures. 2.4.1-beta.36 is the governed-plan
+  rollback target (plans, tasks, `verification_summary` and outcomes read
+  without quarantine, rewrite or loss). beta.8 is a fan/power/task-only
+  floor: it hides governed plans written since beta.29 (HAMCP-213, accepted
+  pre-existing limitation).
 - No intent is discarded and nothing is redispatched.
 - No tool, schema, profile, fingerprint, signed registry, F3 persisted
   format, workflow, permission, dependency or stable-v1 change; static tools

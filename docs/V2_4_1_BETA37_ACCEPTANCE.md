@@ -109,25 +109,57 @@ enforces the real clients' Core-authority check
   excerpts and one record written by the exact beta.8 writer.
 - `tests/test_hamcp181_beta8_downgrade.py`: the exact beta.8 reader
   (`7370ad25`, tag object `4913bfd6`) over thirteen shapes written by the
-  PR2 candidate writer. Three `expectedFailure` tests keep the governed-plan
-  limitation below visible.
+  PR2 candidate writer, as the fan/power/task-only floor. Three
+  `expectedFailure` tests keep its accepted governed-plan limitation below
+  visible.
+- `tests/test_hamcp181_beta36_downgrade.py`: the exact beta.36 reader
+  (`16b724ec`, tag object `a4ffc66d`) over the same thirteen shapes, as the
+  governed-plan rollback target. Every plan, task, `verification_summary`
+  and terminal outcome is read without quarantine, rewrite or loss.
 - `tests/test_hamcp181_architecture_guard.py` and
   `tests/test_dashboard_update_mvp.py` (HAMCP-193).
 - Mutations: `docs/evidence/hamcp181-pr2-mutations/`. `results.json` records
   each mutant and the tests that killed it.
 
-### Downgrade rule (design section 4.3)
+### Downgrade rule (design section 4.3, owner decision 2026-10-25)
 
-- **Supported:** downgrade to exactly 2.4.1-beta.8 for fan, power and
-  execution-task records, under terminal-only quiescence (every task, F3
-  child, fan and power record terminal; no unexpired claim). Beta.8 loads
-  them with zero quarantine and zero provider calls.
-- **Not supported:** downgrade to beta.8 while any governed change plan
-  exists. Beta.8 quarantines every plan written since HAMCP-213
-  (2.4.1-beta.29): its reader rejects the `called_scripts` operation field
-  and policy version `f2-v3`, so `get_change_plan` answers
-  `change_plan_not_found`. This is pre-existing and needs Josh's decision
-  (a fan/power/task-only floor, a newer floor, or a compatibility change).
+Every supported downgrade requires terminal-only quiescence: every task, F3
+child, fan and power record is terminal, and no claim is unexpired.
+
+- **Governed-plan rollback target: exactly 2.4.1-beta.36** (tag
+  `v2.4.1-beta.36`, tag object `a4ffc66ddf60095427a1f9f68f0d2c2121b94c3d`,
+  commit `16b724ec0b1d0fa8aae9705df569704f27ad783e`). The executed test
+  covers all thirteen shapes:
+  - startup, the reads, a duplicate apply or control, and a restart give
+    zero quarantine, zero corruption and zero provider calls;
+  - `get_change_plan` decodes every plan;
+  - `get_execution_task` returns each stored state and `terminal_outcome`;
+  - every stored `verification_summary` key and value is read, including
+    `provider_call_started_at`, `provider_call_not_sent` and
+    `setter_call_not_sent`;
+  - a duplicate apply is refused (or reuses the terminal task) without a
+    redispatch.
+
+  The only file changes are beta.36's own recovery cursor and the
+  append-only `duplicate_apply_prevented` event (with `updated_at`) on the
+  duplicate-applied task. Every earlier event and field is kept, and the
+  current reader makes the same changes.
+- **Display under beta.36.** Beta.36 shows its own semantics. For a sent
+  shape, `dispatched_at` is the intent commit time (basis
+  `dispatch_intent_commit_time`). The stored `provider_call_started_at` is
+  kept but not shown as `dispatched_at`. HAMCP-214 plan verification and
+  the other PR2 projections revert to the beta.36 display. A (b) shape still
+  reads `provider_dispatch_occurred: false`. Nothing is rewritten, so the
+  stored beta.37 values remain for a re-upgrade. Re-upgrade itself is not
+  tested.
+- **Fan/power/task-only floor: exactly 2.4.1-beta.8** (`7370ad25`). Fan,
+  power and execution-task records load with zero quarantine and zero
+  provider calls. Governed change plans are hidden. Beta.8 quarantines every
+  plan written since HAMCP-213 (2.4.1-beta.29), because its reader rejects
+  the `called_scripts` operation field and policy version `f2-v3`, so
+  `get_change_plan` answers `change_plan_not_found`. Josh accepted this
+  pre-existing limitation. It is not fixed here. Downgrade below beta.36 is
+  not a governed-plan rollback.
 - Never clear F3 journals, task files or locks. No migration rewrites a
   historical record (OD-10).
 
@@ -142,7 +174,8 @@ images, provenance and SBOM with the shipped verifiers. Never invent future
 image identities. Retain the beta.36 artifacts and the known-good earlier
 artifacts for recovery.
 
-No stored format changes. Rollback is reinstalling the beta.36 artifact.
+No stored format changes. Rollback is reinstalling the beta.36 artifact,
+the executed governed-plan rollback target above.
 
 ## 3. Installed Engineering
 
