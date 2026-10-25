@@ -1,0 +1,10 @@
+{
+  "ref": "refs/tags/2026.10.2",
+  "node_id": "MDM6UmVmMTI4ODg5OTM6cmVmcy90YWdzLzIwMjYuMTAuMg==",
+  "url": "https://api.github.com/repos/home-assistant/core/git/refs/tags/2026.10.2",
+  "object": {
+    "sha": "8d7fd8b68677c2585be36ec86043308f403875b8",
+    "type": "commit",
+    "url": "https://api.github.com/repos/home-assistant/core/git/commits/8d7fd8b68677c2585be36ec86043308f403875b8"
+  }
+}
