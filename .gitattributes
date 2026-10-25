@@ -10,3 +10,7 @@ docs/evidence/home-assistant-template-source-blobs.json -text
 # or binary.
 docs/evidence/hamcp162/** -text
 docs/evidence/hamcp162/fixtures/variants/crlf.yaml.fixture -whitespace
+# HAMCP-222: verbatim upstream Core diff, hash-bound by diff_artifacts_sha256 in
+# docs/evidence/hamcp222/inputs/evidence-add-2026.10.3.json; its blank context
+# lines are a single space and must stay byte-exact.
+docs/evidence/hamcp222/artifacts-2026.10.3/diff/flagged-diffs.patch -text -whitespace
