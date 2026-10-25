@@ -1,9 +1,11 @@
 # HAMCP-222: four capabilities on Core 2026.10.1 (sequence 13) and Core 2026.10.3 (sequence 14)
 
-**Status: prepared for signing, STOPPED for the independent pre-signing review.**
-Nothing is signed. The agent never read, requested or handled a private key.
-This pull request publishes nothing: `upstream-trust/ha-core-release-registry.json`
-is unchanged (sequence 12). Publication is a separate, later pull request (§7).
+**Status: signed by Josh on 2026-10-25 (both steps); published by the HAMCP-222
+publication pull request, whose merge is the publication (§10).** The agent
+never read, requested or handled a private key. Sections 1–9 are the
+pre-signing record the independent review checked; their "nothing is signed"
+statements describe that point in time. §10 records the signing and the
+publication.
 
 The owner signs with the reviewed runbook only:
 [`OWNER-SIGNING-RUNBOOK.md`](OWNER-SIGNING-RUNBOOK.md).
@@ -253,6 +255,8 @@ nothing. That later pull request must also:
 - re-run the reviewed checker and the runtime check on the real signed files;
 - follow PR #305 (2026.10.3 as support-window candidate), which merges first.
 
+Done in the publication pull request (§10).
+
 How the signed registry reaches the running add-on (beta.36 source,
 unchanged from HAMCP-182 §7):
 
@@ -309,3 +313,123 @@ Engineering to beta.34 is covered in §5.2.
 - The live Core version and the deployed add-on options were not observed.
 - No household physical effects, Supervisor lifecycle, add-on continuity,
   all-custom-integration coverage or ha-mcp claim.
+
+## 10. Signing and publication (2026-10-25)
+
+### Signing
+
+- Josh signed both steps himself, in his own terminal, under the runbook. He
+  worked from reviewed package head `ffafdabe` (PR #310) with Python 3.12.14 in
+  an environment installed from `tests/requirements.lock` with hashes.
+- The scriptbox administrator ran the runbook's public steps:
+  - matched all ten pinned hashes and the public-key fingerprint `7793e80f…3dac`;
+  - got `OK` from candidate 1, signed 1, candidate 2 and signed 2;
+  - prepared candidate 2 from the signed journal 1 with the runbook's `add`
+    command;
+  - ran `runtime_check.py` on the real journals: beta.36 PASS and beta.35 PASS,
+    both with `failures` empty.
+- The agent never read the private key or passphrase and never ran the signer.
+- Ceremony deviation: the first step-1 attempt was refused before anything was
+  signed, because `KEY_PEM` was unset. An empty `--key-pem` becomes a
+  directory, which hits the fixed refusal. The expected output was verified
+  absent. Step 1 was retried with the same inputs after Josh authorized it.
+- The administrator's receipt is not committed. Its record:
+  - receipt: `hamcp222-owner-signing-20261025.txt`, SHA256 `57ae284c8e64c00ec1cd4be740b9631b4d93deaf02546d75cae2303f1a8afcf5`;
+  - ceremony runtime reports: beta.36 `6a04e4ea…6362`, beta.35 `f297a297…b9f1`.
+- The ceremony ran no separate independent verifier. That verifier is run below.
+
+| Owner file (in `signed/`, byte-identical) | SHA256 | Sequence | Content digest | Generated / expires |
+|---|---|---|---|---|
+| `journal-1.json` | `bdd10c0d3c2ddeb763f5a1598e0346b05112b96abd79230bae5b1ac107a77045` | 13 | `sha256:55311b896557ba43435d44b34f62df018afd1b784c382aa01536f49153a9ac8a` | 2026-10-25T03:00:00Z / 2027-01-23T03:00:00Z |
+| `candidate-2-add-2026.10.3.json` (unsigned) | `0fe9cbd8ed17d06a21657b1098b95e105289ba0cbfff89ca5d4e44044277f695` | 14 | — | — |
+| `journal-2.json` | `80d91919ebbd57e4ca1b7a49bc2bb6a9b2996b3b14bef3070916263e82c53817` | 13, 14 | `sha256:734210cf33344c62886377e6abea5d4df776585d5ba687f22087778fa3e93199` | 2026-10-25T10:29:39Z / 2027-01-23T10:29:39Z |
+
+### Publication
+
+- `upstream-trust/ha-core-release-registry.json` is now `journal-2.json`,
+  byte-identical (`80d91919…3817`). It holds envelopes 1–14, and envelopes
+  1–12 are unchanged from main `2338a416`.
+- `upstream-trust/evidence/ha-core-2026.10.3-e245e634….json` is
+  `inputs/evidence-add-2026.10.3.json`, byte-identical.
+  - This goes beyond the runbook's text. It follows the precedent for adds
+    (2026.10.0 and 2026.10.1).
+  - Extend evidence is recorded only under `docs/evidence/`, as in HAMCP-182.
+    That covers the sequence-13 evidence `367a9303…`.
+  - The runtime does not read `upstream-trust/evidence/`.
+- No runtime source, schema, workflow, version, release or stable-v1 change.
+  Merging the publication pull request is the publication (§7). No release is
+  needed.
+
+### Verification
+
+Run at head `9490d38f` with explicit `--now 2026-10-25T11:02:51Z`, using the
+public key only. Logs and the provenance manifest are in
+[`publication/reports/`](publication/reports/manifest.json).
+
+- `check_step.py`: signed 1, candidate 2 and signed 2 each print `OK`.
+  - The predecessor for step 1 is main `2338a416`'s sequence-12 registry,
+    because the published path now holds sequence 14.
+- `harness/verify_signed_chain.py` is independent of `check_step.py` and
+  prints `OK`. It verifies:
+  - 42 raw Ed25519 signatures, chain 1..14 linked, envelopes 1–12 unchanged;
+  - sequence 13 = sequence 12 plus exactly the four references appended to
+    2026.10.1, with `evidence_sha256` bound to the extend evidence;
+  - sequence 14 = sequence 13 plus the 2026.10.3 entry only, with the same
+    capabilities, probe and server as 2026.10.1;
+  - revocations unchanged; the installed file is byte-identical to journal 2.
+
+  It then drives beta.36's `CoreReleaseRegistry` (runtime tree `70479fa2`):
+  - stepwise 12 → 13 → 14 is accepted, and replaying 12 or 13 afterwards is
+    refused;
+  - the jump 12 → 14 is accepted, and replaying 13 afterwards is refused.
+
+| Admitted capabilities (`selections`) | 2026.10.0 | 2026.10.1 | 2026.10.3 | 2026.9.2 / 9.3 / 9.4 | 2026.10.2, 2026.11.0 |
+|---|---|---|---|---|---|
+| sequence 12 (main today) | 22 | 22 | 0 | 0 (revoked) | 0 |
+| sequence 13 | 22 | 26 | 0 | 0 (revoked) | 0 |
+| sequence 14 (published) | 22 | 26 | 26 | 0 (revoked) | 0 |
+
+The 2026.10.3 set equals the 2026.10.1 set (`20dcdf7e…9a73`). Sequence 13 adds
+exactly these four capabilities to 2026.10.1:
+- `core.entity_registry_availability_operation`
+- `core.entity_assistant_exposure_operation`
+- `core.label_registry_operation`
+- `core.configuration_delete_operation`
+
+- `harness/verify_signed_chain_controls.py`: 21 of 21 controls behave as
+  expected. In the 9 transition mutations, the real content is re-linked and
+  re-signed with an in-memory key, so the content check alone has to refuse
+  them.
+- `harness/runtime_check.py` on the real journals: beta.36 (`16b724ec`) PASS
+  and beta.35 (`90495027`) PASS, both with `failures` empty. The results equal
+  the ceremony reports except for `now` and `source`.
+
+### Registry-coupled tests (every changed assertion)
+
+| Test | Before (sequence 12) | After (sequence 14) |
+|---|---|---|
+| `test_hamcp165_label_registry` `test_no_signed_envelope_has_ever_referenced_it` → `test_signed_sequences_13_and_14_reference_it_exactly` | tip 12; no carrier | tip 14; carriers exactly {(13, 10.1), (14, 10.1), (14, 10.3)}; each reference equals the compiled profile mapping |
+| `test_hamcp155_configuration_delete_admission` (same rename) | tip 12; no carrier | same as 165, for `core.configuration_delete_operation` |
+| `test_hamcp069b_…` `…referenced_them` → `test_signed_sequences_13_and_14_reference_them_exactly` | tip 12; no carrier | tip 14; carriers exactly {13: 10.1; 14: 10.1, 10.3} × {availability, exposure}; each reference equals its compiled profile |
+| `test_hamcp069a_…` `test_signed_probe_fingerprints_are_unchanged` | tip 12; tip versions [10.0, 10.1]; carriers through (12, 10.1) | tip 14; tip versions [10.0, 10.1, 10.3]; carriers also (13, 10.0), (13, 10.1), (14, 10.0), (14, 10.1), (14, 10.3) |
+| `test_hamcp129_platform_reads` `test_signed_core_registry_is_read_only_and_covers_supported_cores` | tip 12; versions [10.0, 10.1] | tip 14; versions [10.0, 10.1, 10.3], each with the two basic reads; revocations unchanged |
+
+- The module docstrings of 165, 155 and 069B now name the signed carriers.
+- With the sequence-12 file swapped back in, all five tests fail. With the
+  published file they pass.
+
+### Pre-signing review Lows
+
+- **L1:** `harness/make_add_inputs.py` now pins the reviewed `.gitattributes`
+  blob (`dc379f22`).
+  - After publication, the script requires the published journal's SHA256 and
+    exactly the publication paths.
+  - Rebuilt at head `3037d9c0` into a new directory, the entry (`98cdad10…`),
+    the evidence (`e245e634…`) and `artifacts-2026.10.3/` are byte-identical to
+    the committed ones.
+  - The pre-fix script fails at line 142 at that head.
+- **L2:** the checker-control count in §4 now says 42, matching
+  `rehearsal/check-step-controls.json`.
+- Not changed: `harness/make_inputs.py` (the sequence-13 inputs) reads the
+  published path as its sequence-12 predecessor. It therefore reproduces only
+  at a sequence-12 checkout, for example `1620a045` on this branch.

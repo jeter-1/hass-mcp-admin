@@ -8,7 +8,10 @@ This runbook does two things, in this order:
 What each step means in plain English, with every fingerprint, run ID and
 receipt hash: [record, "What you are signing"](core-registry-hamcp222.md#what-you-are-signing-in-plain-english).
 
-**Status:** not executed. Nothing is signed.
+**Status:** executed on 2026-10-25. Josh signed both steps from reviewed head
+`ffafdabe`. Do not run it again: both sequences are signed, and the signer and
+the runtime refuse a stale predecessor. Signing and publication record:
+[record §10](core-registry-hamcp222.md#10-signing-and-publication-2026-10-25).
 
 **Precondition:** run this only after the independent PRE-SIGNING review of
 this pull request's exact head says **SAFE TO SIGN**. Run it from a checkout of

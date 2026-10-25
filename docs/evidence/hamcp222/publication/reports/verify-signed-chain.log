@@ -1,0 +1,15 @@
+Public key fingerprint 7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac; files 5 and inputs 3 SHA256 match
+Raw Ed25519: 42 signatures verified; chain 1..14 linked; envelopes 1-12 unchanged
+seq 12 sha256:9d14f06ab0a0870404540ea8cfa70cefe05cc243bebb9fab0b090121081be5fc references {'2026.10.0': 22, '2026.10.1': 22} revoked ['2026.9.2', '2026.9.3', '2026.9.4'] expires_at 2027-01-13T13:40:21Z
+seq 13 sha256:55311b896557ba43435d44b34f62df018afd1b784c382aa01536f49153a9ac8a references {'2026.10.0': 22, '2026.10.1': 26} revoked ['2026.9.2', '2026.9.3', '2026.9.4'] expires_at 2027-01-23T03:00:00Z
+seq 14 sha256:734210cf33344c62886377e6abea5d4df776585d5ba687f22087778fa3e93199 references {'2026.10.0': 22, '2026.10.1': 26, '2026.10.3': 26} revoked ['2026.9.2', '2026.9.3', '2026.9.4'] expires_at 2027-01-23T10:29:39Z
+Runtime stepwise [(True, 12), (True, 13), (True, 14), (False, 14), (False, 14)]; jump [(True, 12), (True, 14), (False, 14)]
+Runtime admitted at seq 12: 2026.10.0 22, 2026.10.1 22, 2026.10.3 0, 2026.9.2 0, 2026.9.3 0, 2026.9.4 0, 2026.10.2 0, 2026.11.0 0
+Runtime admitted at seq 13: 2026.10.0 22, 2026.10.1 26, 2026.10.3 0, 2026.9.2 0, 2026.9.3 0, 2026.9.4 0, 2026.10.2 0, 2026.11.0 0
+Runtime admitted at seq 14: 2026.10.0 22, 2026.10.1 26, 2026.10.3 26, 2026.9.2 0, 2026.9.3 0, 2026.9.4 0, 2026.10.2 0, 2026.11.0 0
+seq 13 adds to 2026.10.1: ['core.configuration_delete_operation', 'core.entity_assistant_exposure_operation', 'core.entity_registry_availability_operation', 'core.label_registry_operation']
+seq 14 2026.10.3 admitted sha256 20dcdf7e20f0f0b50f253fba0173dadaf54f408c3d7f8c53fee1166718f89a73 (equal to 2026.10.1: True)
+Installed upstream-trust/ha-core-release-registry.json is byte-identical to journal 2
+Registry code: CORE_IDENTITY='home-assistant-core'; runtime tree 70479fa2958aafd36d0e74e3082f98c50b11053c (v2.4.1-beta.36)
+OK
+exit 0
