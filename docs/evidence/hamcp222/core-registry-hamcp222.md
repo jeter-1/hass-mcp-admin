@@ -159,7 +159,8 @@ Owner decisions applied here:
   public key and uses the shipped loader and transition validator. Candidate 1
   against the production journal prints sequence 13, references
   `{'2026.10.0': 22, '2026.10.1': 26}`, `Candidate SHA256: 923bd135…2458`, `OK`.
-- 44/44 checker mutations are refused (`rehearsal/check-step-controls.json`).
+- 42/42 checker mutations are refused (`rehearsal/check-step-controls.json`; corrected
+  from 44 after the pre-signing review, L2).
 - The rehearsal (`rehearsal/manifest.json`) signs the full sequence with an
   in-memory ephemeral key (`b8d6a566…`) over a seq-12 twin
   (`journal-twin-seq12.json`, `3eed9e94…`). The rehearsed candidate 1 equals
