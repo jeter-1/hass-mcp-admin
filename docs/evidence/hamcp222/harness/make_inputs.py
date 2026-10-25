@@ -60,21 +60,27 @@ from ha_mcp_engineering.signed_registry import canonical_json  # noqa: E402
 # The clean evidence run: PR #306 (seq-13 lanes enabled for this run only).
 RUN = {"run_id": 40148395528, "run_attempt": 2, "event": "pull_request", "pull_request": 306,
        "head_sha": "902690a55074e4a6d25e757d542dd954126a6408",
-       "merge_sha": "__MERGE_SHA__",
+       "merge_sha": "8c9b44e845a0a9404e0f817fb7616b005c7a923a",
        "workflow": ".github/workflows/ci.yml", "conclusion": "success"}
 RUNTIME_TREE = "70479fa2958aafd36d0e74e3082f98c50b11053c"  # v2.4.1-beta.36 ha_mcp_engineering
 RELEASE_TAG = "v2.4.1-beta.36"
 # zip SHA256 = the GitHub artifact digest, recorded when downloaded.
 ARTIFACTS = {
     "2026.10.1": {"slot": "current", "lane": "ha-2026-10-1", "zips": {
-        "seq13-contracts-core-2026.10.1-current-amd64": "__",
-        "seq13-configuration-delete-core-2026.10.1-current-ha-2026-10-1": "__",
-        "entity-metadata-core-2026.10.1-current-amd64": "__",
+        "seq13-contracts-core-2026.10.1-current-amd64":
+            "3963cd5ddcec4df7d2ee5cf2f4d7a5f2cc2de7cab7f61e68c764029cf5807277",
+        "seq13-configuration-delete-core-2026.10.1-current-ha-2026-10-1":
+            "7ccdc1f24f4ba464db3e15a27eeeb197f741e2cbac36e230a8f89a28aac8f483",
+        "entity-metadata-core-2026.10.1-current-amd64":
+            "8c754583423ce4834cd5d5ea762a7336e0d90497e05969595f1a516c09fce0dd",
     }},
     "2026.10.3": {"slot": "candidate", "lane": "ha-2026-10-3", "zips": {
-        "seq13-contracts-core-2026.10.3-candidate-amd64": "__",
-        "seq13-configuration-delete-core-2026.10.3-candidate-ha-2026-10-3": "__",
-        "entity-metadata-core-2026.10.3-candidate-amd64": "__",
+        "seq13-contracts-core-2026.10.3-candidate-amd64":
+            "739ce27df99089671863b7b95697efa207dff383e6e9dfbe8b3390e2e7e0447b",
+        "seq13-configuration-delete-core-2026.10.3-candidate-ha-2026-10-3":
+            "3477ecddd8058ac586ef6e8b0abb00a282016e1b4bba1ac0782426593e5e4792",
+        "entity-metadata-core-2026.10.3-candidate-amd64":
+            "f2d790abdb78d46268f48245f292a2020f3a29e6aa2d5a74d1fc4838fa2151a2",
     }},
 }
 JOURNAL = "upstream-trust/ha-core-release-registry.json"
@@ -82,7 +88,8 @@ JOURNAL_SHA256 = "089247cafa29b3ab0c1687a63419d999ae9c894fa0a94248f73008eabf6785
 PUBLIC_KEY = REPO / "docs/evidence/hamcp182/core-public-key.txt"
 PUBLIC_KEY_SHA256 = "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac"
 PREDECESSOR_SHA256 = "1fdf85c48b6d"  # prefix; the full value is recomputed from the journal
-GENERATED_AT = datetime(2026, 10, 25, 2, 0, tzinfo=timezone.utc)
+# After attempt 2 completed (02:27:42Z) and before signing; expires_at = +90 days.
+GENERATED_AT = datetime(2026, 10, 25, 3, 0, tzinfo=timezone.utc)
 EXTENDED = "2026.10.1"
 SEQ13 = ("core.entity_registry_availability_operation", "core.entity_assistant_exposure_operation",
          "core.label_registry_operation", "core.configuration_delete_operation")
