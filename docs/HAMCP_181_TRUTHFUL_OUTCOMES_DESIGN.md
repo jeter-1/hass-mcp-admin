@@ -1570,3 +1570,27 @@ are unchanged.
   `dispatched_at` then publishes it with basis `provider_call_start_time`.
   (b) stays null. Records without the key keep their stored basis. There is
   no F3 persisted-format change (OD-2).
+- **§4.3 item 3 is not attainable for governed change plans (pre-existing,
+  owner decision needed).** `tests/test_hamcp181_beta8_downgrade.py` ran the
+  exact beta.8 reader over thirteen PR2-candidate shapes.
+
+  Fan and power records meet item 3 fully. Every reader action makes zero
+  provider calls and changes no task or child file.
+
+  The governed plans do not. beta.8 quarantines every change plan written
+  since HAMCP-213 (first shipped in 2.4.1-beta.29). Its `ChangePlan.from_dict`
+  rejects two things:
+  - the `ConfigurationOperation` field `called_scripts`;
+  - policy version `f2-v3`.
+
+  The plan file then moves to `quarantine/`, `get_change_plan` answers
+  `change_plan_not_found`, and a duplicate apply is refused as not found
+  rather than as a duplicate. Execution tasks still load.
+
+  PR2 did not cause this and does not change it. Three `expectedFailure`
+  tests keep the item 3 plan requirements visible. Until Josh decides, a
+  downgrade to beta.8 is **not supported** while any governed change plan
+  exists. The options are:
+  - accept beta.8 as a fan/power-and-task-only floor;
+  - choose a newer floor;
+  - scope a compatibility change.
