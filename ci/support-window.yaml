@@ -47,7 +47,8 @@
 # (it writes the persisted fixture), not a window slot.
 #
 # Current slots (HAMCP-173, Josh 2026-10-13): Core 2026.10.1 is current, 2026.10.0
-# is rollback and no Core candidate is under evaluation; 2026.9.4 left the window.
+# is rollback; 2026.9.4 left the window. HAMCP-222 (Josh 2026-10-24): Core 2026.10.3
+# is the candidate under evaluation for the seq-13/14 signing session.
 # The ha-mcp candidate is empty: 8.6.0 is on production HOLD (upstream defect
 # #2695) and will not be adopted. 8.6.0 is unchanged in the compiled registry and
 # the runtime; it only stops running CI candidate lanes.
@@ -57,7 +58,9 @@ core:
   current:
     version: "2026.10.1"
     image_index_digest: sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0
-  candidate: null
+  candidate:
+    version: "2026.10.3"
+    image_index_digest: sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f
   rollback:
     version: "2026.10.0"
     image_index_digest: sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4
