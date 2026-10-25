@@ -1366,9 +1366,13 @@ class _AuditedConfigurationGateway:
                 isinstance(details, dict)
                 and details.get("provider_response_received") is True
             )
+            # PR2 (design section 5.1): a producer that owns the send
+            # boundary passes positive not-sent proof on the exception.
             self.auditor(
                 "provider_response_received"
                 if response_received
+                else "provider_call_not_sent"
+                if getattr(exc, "call_not_sent", False) is True
                 else "provider_result_uncertain"
             )
             raise
@@ -1420,6 +1424,8 @@ class _AuditedHelperStateGateway:
             self.auditor(
                 "provider_response_lost"
                 if getattr(exc, "dispatched", False)
+                else "provider_call_not_sent"
+                if getattr(exc, "call_not_sent", False) is True
                 else "provider_invocation_refused"
             )
             raise

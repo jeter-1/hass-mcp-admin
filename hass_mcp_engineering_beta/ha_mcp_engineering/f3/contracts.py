@@ -19,6 +19,13 @@ F3_MAX_MUTATING_PROVIDER_INVOCATIONS_PER_OPERATION = 1
 # Exact installed add-on slugs remain separate lock evidence; this key ensures
 # every adapter contends with a governed restart of that selected provider.
 HA_MCP_PROVIDER_LOCK_KEY = "addon:ha_mcp"
+# HAMCP-181 PR2 (design section 5.2, b3/b4/b5).  An in-scope adapter whose
+# ``before_dispatch`` callback raised declares it with this code on a
+# ``failed_pre_dispatch`` result, before any send-capable call.  The executor
+# honours the declaration only when its own callback committed the durable
+# intent and then raised, and records PROVIDER_CALL_NOT_SENT with a stage reason.
+CALLBACK_FAILED_NOT_SENT_DECLARATION = "dispatch_callback_failed_not_sent"
+PROVIDER_CALL_NOT_SENT = "provider_call_not_sent"
 
 
 class OperationAdapterPhase(str, Enum):

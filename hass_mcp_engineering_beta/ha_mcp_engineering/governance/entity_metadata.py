@@ -591,7 +591,8 @@ class EntityRegistryMetadataGateway:
                     "operation": ENTITY_METADATA_PROVIDER_OPERATION,
                     "resource_id": entity_id,
                     "reason": "closed_payload_violation",
-                }
+                },
+                call_not_sent=True,
             )
         try:
             result = await self.websocket_client.command(dict(command))
@@ -609,7 +610,14 @@ class EntityRegistryMetadataGateway:
                     "provider_response_received": (
                         details.get("provider_response_received") is True
                     ),
-                }
+                },
+                # b2-A: only the client's pre-command authorization failure
+                # carries the not-sent attribute; an ``unauthorized`` result
+                # was answered after the command was sent (P3).
+                call_not_sent=(
+                    getattr(exc, "call_not_sent", False) is True
+                    and details.get("provider_response_received") is not True
+                ),
             ) from exc
         except HomeAssistantApiError as exc:
             details = exc.details if isinstance(exc.details, dict) else {}

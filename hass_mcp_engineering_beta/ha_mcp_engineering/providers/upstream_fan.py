@@ -96,7 +96,11 @@ class FanProvider:
                 raise self.refusal("fan_provider_authority_retired")
             await before()
             if self._authority(token[0]) != token[2]:
-                raise self.refusal("fan_provider_authority_retired")
+                # HAMCP-181 b8: retired after the intent callback and strictly
+                # before tools/call, so this refusal alone proves no send.
+                retired = self.refusal("fan_provider_authority_retired")
+                retired.call_not_sent = True
+                raise retired
         if tool not in REQUIRED_TOOLS:
             raise self.refusal("fan_provider_tool_unreviewed")
         telemetry = current_telemetry()
