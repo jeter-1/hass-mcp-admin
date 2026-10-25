@@ -1,0 +1,658 @@
+{
+ "archives_sha256": {
+  "2026.10.1": "a4305046e34fb6bad4669915c64dfaec0f2b22ff56b6baefca9e8890cabd81c4",
+  "2026.10.3": "57a15d2dcabb8703c9b9d08e8c243e8a7130db8cb8618e1c799ae46e1c75e4e9"
+ },
+ "changed_homeassistant_paths": 94,
+ "changed_paths": 193,
+ "changed_status_counts": {
+  "A": 5,
+  "D": 0,
+  "M": 188
+ },
+ "cited": [
+  {
+   "blob": "4e682a48bbeb39432fbd4279e9b0c8d721868bd2",
+   "cite": "core 2026.10.1:homeassistant/helpers/config_validation.py@4e682a48bbeb",
+   "lines": {
+    "1542": "def STATE_CONDITION_SCHEMA(value: Any) -> dict[str, Any]:",
+    "1554": "if CONF_FOR in validated:",
+    "1558": "if CONF_ATTRIBUTE in validated:",
+    "1559": "raise probatio.Invalid(\"Cannot use 'for' with an attribute\")",
+    "1563": "if isinstance(state, list):",
+    "1564": "if len(state) != 1:",
+    "1565": "raise probatio.Invalid(\"Cannot use 'for' with a list of states\")",
+    "1567": "if INPUT_ENTITY_ID.match(state):",
+    "1569": "\"Cannot use 'for' with a state referencing an entity\"",
+    "1755": "\"state\": STATE_CONDITION_SCHEMA,"
+   },
+   "path": "homeassistant/helpers/config_validation.py",
+   "version": "2026.10.1"
+  },
+  {
+   "blob": "5d4e047a409ad13390f6285d8a839bb46b9f149c",
+   "cite": "core 2026.10.3:homeassistant/helpers/config_validation.py@5d4e047a409a",
+   "lines": {
+    "1542": "def STATE_CONDITION_SCHEMA(value: Any) -> dict[str, Any]:",
+    "1554": "if CONF_FOR in validated:",
+    "1557": "# states, the entity must stay in one of them for the whole duration.",
+    "1558": "if CONF_ATTRIBUTE in validated:",
+    "1559": "raise probatio.Invalid(\"Cannot use 'for' with an attribute\")",
+    "1560": "states = validated[CONF_STATE]",
+    "1561": "if not isinstance(states, list):",
+    "1562": "states = [states]",
+    "1563": "if any(INPUT_ENTITY_ID.match(state) for state in states):",
+    "1565": "\"Cannot use 'for' with a state referencing an entity\"",
+    "1751": "\"state\": STATE_CONDITION_SCHEMA,"
+   },
+   "path": "homeassistant/helpers/config_validation.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "8ab6972f1f3dff185096efea2a16032da853156b",
+   "cite": "core 2026.10.3:homeassistant/helpers/condition.py@8ab6972f1f3d",
+   "lines": {
+    "1870": "def state(",
+    "1874": "for_period: timedelta | None = None,",
+    "1907": "if not isinstance(req_state, list):",
+    "1923": "is_state = value == state_value",
+    "1927": "if for_period is None or not is_state:",
+    "1938": "duration = dt_util.utcnow() - for_period",
+    "1939": "duration_ok = duration > entity.last_changed"
+   },
+   "path": "homeassistant/helpers/condition.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "5c61815b3eb7ba821f0654f1a8ea78c02ee6cdc0",
+   "cite": "core 2026.10.3:homeassistant/components/config/core.py@5c61815b3eb7",
+   "lines": {
+    "29": "url = \"/api/config/core/check_config\"",
+    "32": "@require_admin",
+    "36": "res = await check_config.async_check_ha_config_file(request.app[KEY_HASS])",
+    "38": "state = \"invalid\" if res.errors else \"valid\"",
+    "42": "\"result\": state,",
+    "43": "\"errors\": res.error_str or None,",
+    "44": "\"warnings\": res.warning_str or None,"
+   },
+   "path": "homeassistant/components/config/core.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "50d69047ff24d168f155a4adf9bc56b59beb55c1",
+   "cite": "core 2026.10.3:homeassistant/components/config/view.py@50d69047ff24",
+   "lines": {
+    "117": "await self.data_validator(hass, config_key, data)",
+    "121": "except (probatio.Invalid, HomeAssistantError) as err:",
+    "123": "f\"Message malformed: {err}\", HTTPStatus.BAD_REQUEST",
+    "142": "async def delete(self, request: web.Request, config_key: str) -> web.Response:"
+   },
+   "path": "homeassistant/components/config/view.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "e453c74618fe8274dc884b0b448a2116bf16514c",
+   "cite": "core 2026.10.3:homeassistant/components/config/automation.py@e453c74618fe",
+   "lines": {
+    "49": "data_validator=async_validate_config_item,"
+   },
+   "path": "homeassistant/components/config/automation.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "77a76f1e26aa80d4fd5cce478b66d3ce23a3d2c6",
+   "cite": "core 2026.10.3:homeassistant/components/automation/config.py@77a76f1e26aa",
+   "lines": {
+    "237": "automation_config[CONF_CONDITIONS] = await async_validate_conditions_config("
+   },
+   "path": "homeassistant/components/automation/config.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "a58509781e20ebff5282d249d40b04271188c4d0",
+   "cite": "core 2026.10.1:homeassistant/auth/__init__.py@a58509781e20",
+   "lines": {
+    "345": "async def async_remove_user(self, user: models.User) -> None:",
+    "354": "if tasks:",
+    "357": "await self._store.async_remove_user(user)"
+   },
+   "path": "homeassistant/auth/__init__.py",
+   "version": "2026.10.1"
+  },
+  {
+   "blob": "0314c4b749e7722cbc97ae9e6b7a46d3a151f576",
+   "cite": "core 2026.10.3:homeassistant/auth/__init__.py@0314c4b749e7",
+   "lines": {
+    "345": "async def async_remove_user(self, user: models.User) -> None:",
+    "347": "if user.is_owner:",
+    "357": "# Revoking runs the callbacks, which close connections using the tokens.",
+    "358": "for refresh_token in list(user.refresh_tokens.values()):",
+    "359": "self.async_remove_refresh_token(refresh_token)",
+    "361": "await self._store.async_remove_user(user)",
+    "536": "def async_remove_refresh_token(self, refresh_token: models.RefreshToken) -> None:",
+    "540": "callbacks = self._revoke_callbacks.pop(refresh_token.id, ())",
+    "542": "revoke_callback()"
+   },
+   "path": "homeassistant/auth/__init__.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "a4b73688a506d046f98d916a33450f3f6c630f52",
+   "cite": "core 2026.10.3:homeassistant/components/websocket_api/auth.py@a4b73688a506",
+   "lines": {
+    "116": "self._hass.auth.async_register_revoke_token_callback(",
+    "117": "refresh_token.id, self._cancel_ws"
+   },
+   "path": "homeassistant/components/websocket_api/auth.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "e8b5396c73c696523967ad84f3fcc1f71ecba963",
+   "cite": "core 2026.10.1:homeassistant/components/config/auth_provider_homeassistant.py@e8b5396c73c6",
+   "lines": {
+    "54": "await provider.async_add_auth(msg[\"username\"], msg[\"password\"])"
+   },
+   "path": "homeassistant/components/config/auth_provider_homeassistant.py",
+   "version": "2026.10.1"
+  },
+  {
+   "blob": "05a97ed516479955db08c59097a22fe7f3f43de0",
+   "cite": "core 2026.10.3:homeassistant/components/config/auth_provider_homeassistant.py@05a97ed51647",
+   "lines": {
+    "14": "CREATE_LOCK: HassKey[asyncio.Lock] = HassKey(",
+    "61": "if user.is_owner and not connection.user.is_owner:",
+    "62": "raise Unauthorized(context=connection.context(msg))",
+    "66": "async with hass.data[CREATE_LOCK]:",
+    "70": "credential.auth_provider_type == provider.type",
+    "75": "\"credentials_exist\",",
+    "80": "await provider.async_add_auth(msg[\"username\"], msg[\"password\"])"
+   },
+   "path": "homeassistant/components/config/auth_provider_homeassistant.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "4768d7e9f2b486f06ac4242c7e16262ea69effc4",
+   "cite": "core 2026.10.1:homeassistant/components/cloud/alexa_config.py@4768d7e9f2b4",
+   "lines": {
+    "562": "with suppress(alexa_errors.NoTokenAvailable):"
+   },
+   "path": "homeassistant/components/cloud/alexa_config.py",
+   "version": "2026.10.1"
+  },
+  {
+   "blob": "d9c5cc69a194ec1d6b340653f252ad17e41d637e",
+   "cite": "core 2026.10.3:homeassistant/components/cloud/alexa_config.py@d9c5cc69a194",
+   "lines": {
+    "320": "return async_should_expose(self.hass, CLOUD_ALEXA, entity_id)",
+    "536": "async def _handle_entity_registry_updated(",
+    "545": "if not self.should_expose(entity_id):",
+    "562": "with suppress(alexa_errors.NoTokenAvailable, alexa_errors.RequireRelink):"
+   },
+   "path": "homeassistant/components/cloud/alexa_config.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "bfd653d63df6eb87bb0c0c9fca6f30074b93bab8",
+   "cite": "core 2026.10.1:homeassistant/components/group/sensor.py@bfd653d63df6",
+   "lines": {
+    "367": "self._attr_name = name",
+    "368": "if name == DEFAULT_NAME:",
+    "369": "self._attr_name = f\"{DEFAULT_NAME} {sensor_type}\".capitalize()",
+    "478": "if not valid_state or not valid_state_numeric:"
+   },
+   "path": "homeassistant/components/group/sensor.py",
+   "version": "2026.10.1"
+  },
+  {
+   "blob": "4baf4d519ebc6943529eb53f666303ebf4530224",
+   "cite": "core 2026.10.3:homeassistant/components/group/sensor.py@4baf4d519ebc",
+   "lines": {
+    "367": "self._attr_name = name",
+    "368": "if name == DEFAULT_NAME:",
+    "369": "self._attr_name = f\"{DEFAULT_NAME} {sensor_type}\".capitalize()",
+    "478": "if not sensor_values or not valid_state or not valid_state_numeric:"
+   },
+   "path": "homeassistant/components/group/sensor.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "bd6b29a28f58720ed2ea0368ba4ada076613456b",
+   "cite": "core 2026.10.3:homeassistant/const.py@bd6b29a28f58",
+   "lines": {
+    "26": "PATCH_VERSION: Final = \"3\"",
+    "49": "DEVICE_DEFAULT_NAME: Final = \"Unnamed Device\""
+   },
+   "path": "homeassistant/const.py",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "15550e2590feb48b27b7c2df0ea4a53413207936",
+   "cite": "core 2026.10.1:homeassistant/const.py@15550e2590fe",
+   "lines": {
+    "26": "PATCH_VERSION: Final = \"1\"",
+    "49": "DEVICE_DEFAULT_NAME: Final = \"Unnamed Device\""
+   },
+   "path": "homeassistant/const.py",
+   "version": "2026.10.1"
+  },
+  {
+   "blob": "c217ab3fd4f48b25540bd2214bab0e7682c13888",
+   "cite": "core 2026.10.3:homeassistant/package_constraints.txt@c217ab3fd4f4",
+   "lines": {
+    "43": "home-assistant-frontend==20260930.5",
+    "63": "python-slugify==9.1.2",
+    "9": "aiohttp==3.14.5"
+   },
+   "path": "homeassistant/package_constraints.txt",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "2c44ba8fcffe9a29b9b46b24e05c760cbbac320b",
+   "cite": "core 2026.10.1:homeassistant/package_constraints.txt@2c44ba8fcffe",
+   "lines": {
+    "43": "home-assistant-frontend==20260930.3",
+    "63": "python-slugify==9.1.2",
+    "9": "aiohttp==3.14.4"
+   },
+   "path": "homeassistant/package_constraints.txt",
+   "version": "2026.10.1"
+  },
+  {
+   "blob": "78f6a237d035cde4f52558c56a9d6e7e09316224",
+   "cite": "core 2026.10.3:.github/workflows/builder.yml@78f6a237d035",
+   "lines": {
+    "18": "BASE_IMAGE_VERSION: \"2026.10.1\""
+   },
+   "path": ".github/workflows/builder.yml",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "dcae3586e7a0139718dbc59c1ba8552e7bd31fc8",
+   "cite": "core 2026.10.1:.github/workflows/builder.yml@dcae3586e7a0",
+   "lines": {
+    "17": "BASE_IMAGE_VERSION: \"2026.07.0\""
+   },
+   "path": ".github/workflows/builder.yml",
+   "version": "2026.10.1"
+  },
+  {
+   "blob": "4270bc455990ccd573916dabb0fae483650b573f",
+   "cite": "core 2026.10.3:pyproject.toml@4270bc455990",
+   "lines": {
+    "81": "\"probatio==0.13.0\","
+   },
+   "path": "pyproject.toml",
+   "version": "2026.10.3"
+  },
+  {
+   "blob": "f530c7d4333bb609bd6ca984d580587762e91f34",
+   "cite": "core 2026.10.1:pyproject.toml@f530c7d4333b",
+   "lines": {
+    "81": "\"probatio==0.13.0\","
+   },
+   "path": "pyproject.toml",
+   "version": "2026.10.1"
+  }
+ ],
+ "config_validation_hunks_10_1_lines": [
+  [
+   "replace",
+   1555,
+   1557,
+   1555,
+   1557
+  ],
+  [
+   "replace",
+   1560,
+   1567,
+   1560,
+   1563
+  ]
+ ],
+ "engineering_cited": [
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
+   "lines": {
+    "147": "\"core.basic_rest_read\",",
+    "158": "\"core.basic_websocket_read\",",
+    "173": "\"core.state_service_discovery\",",
+    "184": "\"core.non_device_registry_read\",",
+    "202": "\"core.direct_device_registry_read\",",
+    "219": "\"core.delegated_device_effective_area\",",
+    "236": "\"core.direct_entity_state_read\",",
+    "248": "\"core.automation_configuration_read\",",
+    "260": "\"core.automation_trace_read\",",
+    "282": "\"core.dashboard_configuration_read\",",
+    "297": "\"core.template_semantics\",",
+    "312": "\"core.configuration_validation\",",
+    "318": "\"probatio_semantics_exact\",",
+    "324": "\"core.dependency_helper_planning\",",
+    "336": "\"core.typed_helper_operation\",",
+    "377": "\"core.governed_configuration_operation\",",
+    "399": "\"core.governance_observability\",",
+    "403": "\"persisted_evidence_no_core_call\",",
+    "448": "\"core.integration_inspection_metadata_read\",",
+    "460": "\"core.automation_baseline_metadata_read\",",
+    "474": "\"core.entity_registry_metadata_operation\",",
+    "509": "\"core.entity_registry_availability_operation\",",
+    "532": "\"core.entity_assistant_exposure_operation\",",
+    "559": "\"core.label_registry_operation\",",
+    "589": "\"core.configuration_delete_operation\",",
+    "594": "\"rest_config_automation_script_delete_no_body\","
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/source.py",
+   "lines": {
+    "239": "add(\"core.governance_observability\", True)",
+    "255": "\"core.configuration_validation\",",
+    "277": "\"core.governed_configuration_operation\",",
+    "435": "request_url(self._settings.api_url, rest_path(\"/config/core/check_config\")),",
+    "78": "def _configuration_validation_response(value: Any) -> bool:",
+    "81": "or set(value) != {\"result\", \"errors\", \"warnings\"}",
+    "88": "if result not in {\"valid\", \"invalid\"}:"
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/source.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+   "lines": {
+    "107": "CONFIGURATION_DELETE_PROFILE = \"core.configuration_delete_operation\"",
+    "198": "\"check_config\": (\"core.configuration_validation\",),",
+    "217": "\"create_change_plan\": (\"core.dependency_helper_planning\",),",
+    "218": "\"create_configuration_plan\": (\"core.dependency_helper_planning\",),",
+    "241": "\"create_reload_plan\": (",
+    "242": "\"core.configuration_validation\",",
+    "246": "\"create_home_assistant_restart_plan\": (",
+    "248": "\"core.configuration_validation\",",
+    "735": "values.add(\"core.governed_configuration_operation\")"
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/governance/configuration_eligibility.py",
+   "lines": {
+    "208": "def native_policy(conditions: list) -> None:",
+    "215": "require(set(condition) <= {\"condition\", \"entity_id\", \"state\", \"for\"})",
+    "217": "require(condition[\"state\"] in (\"on\", \"off\", \"open\", \"not_home\", [\"off\"]))"
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/configuration_eligibility.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/reliability/lifecycle.py",
+   "lines": {
+    "231": "# Other conditions need runtime inputs or semantics outside this slice.",
+    "232": "self.gap(\"condition_unresolved\", path)"
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/reliability/lifecycle.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/projection.py",
+   "lines": {
+    "666": "# group/sensor.py:367-369 replaces the default name."
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/projection.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
+   "lines": {
+    "117": "# group/sensor.py:367-369 replaces this default with \"Sensor group <type>\"."
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/entity_filter.py",
+   "lines": {
+    "8": "``abe1fdd7cd6b4de1715c87b6fd87d92699514ef9``."
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/entity_filter.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/naming.py",
+   "lines": {
+    "18": "SLUGIFY_PIN = \"python-slugify 9.1.2 legacy pipeline (Core 2026.10.1 package_constraints.txt)\""
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/naming.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/dependency/extraction.py",
+   "lines": {
+    "39": "ENTITY_BEARING_KEYS = frozenset({\"entity_id\"})"
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/extraction.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/approval_identity.py",
+   "lines": {
+    "42": "AUTH_LIST_COMMAND = MappingProxyType({\"type\": \"config/auth/list\"})"
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/approval_identity.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+   "lines": {
+    "20": "\"principal\": {\"type\": \"auth/current_user\"},"
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/governance/entity_availability_exposure.py",
+   "lines": {
+    "363": "Core's Alexa registry-update handler persists a computed default the first",
+    "66": "# Only Alexa's handler writes a computed default as a side effect.",
+    "67": "TOLERATED_NEW_KEY_ASSISTANTS = (\"cloud.alexa\",)",
+    "83": "WRITABLE_ASSISTANTS = (\"cloud.google_assistant\", \"conversation\")"
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/entity_availability_exposure.py"
+  },
+  {
+   "cite": "engineering hass_mcp_engineering_beta/ha_mcp_engineering/dashboard_analysis/rules.py",
+   "lines": {
+    "11": "FRONTEND_COMMIT = \"380e9b5a81ada29a1d187b4123c54fb3d6fbcc89\"",
+    "12": "CORE_VERSION = \"2026.9.4\"",
+    "44": "self.defaults = core_version == CORE_VERSION"
+   },
+   "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dashboard_analysis/rules.py"
+  }
+ ],
+ "engineering_negative_grep": {
+  "async_remove_user": "absent",
+  "auth_provider": "absent",
+  "cloud/alexa/sync": "absent",
+  "config/auth/create": "absent",
+  "config/auth/delete": "absent"
+ },
+ "failures": [],
+ "same_blob": {
+  "homeassistant/auth/auth_store.py": "13ecdfc657a2c6ad97e9e59601932df50648c111",
+  "homeassistant/auth/models.py": "7342e9d4b8e9aee392cf112f59f1b718db3feb83",
+  "homeassistant/components/api/__init__.py": "a66f75403c21c1dd64771713d60704502de0ee81",
+  "homeassistant/components/auth/__init__.py": "a314a64adf0cde1a11ae56fdbba7846b644a99ad",
+  "homeassistant/components/automation/config.py": "77a76f1e26aa80d4fd5cce478b66d3ce23a3d2c6",
+  "homeassistant/components/cloud/google_config.py": "be998208877f3b2fb56f986a59800bc67cffb266",
+  "homeassistant/components/config/area_registry.py": "f92279d132aae8004cf0b3fb651200ac701848e3",
+  "homeassistant/components/config/auth.py": "75b0c88b916dbc8970afbf4041e1e463690029a8",
+  "homeassistant/components/config/automation.py": "e453c74618fe8274dc884b0b448a2116bf16514c",
+  "homeassistant/components/config/config_entries.py": "98cf7c51fb5b00d6b009eb0167408ee4bd78b882",
+  "homeassistant/components/config/core.py": "5c61815b3eb7ba821f0654f1a8ea78c02ee6cdc0",
+  "homeassistant/components/config/device_registry.py": "5f79bd3cdcf974ba15d6bb022bdf6b0b13e4241a",
+  "homeassistant/components/config/entity_registry.py": "2b23cd2b2ef9b1391102be07cfa7820dab27079c",
+  "homeassistant/components/config/floor_registry.py": "bfa91dd47678f32caf5aed3b15ebda810be7bb2b",
+  "homeassistant/components/config/label_registry.py": "c7e4f87b741473604e2ae522316dc2003b20d3d7",
+  "homeassistant/components/config/script.py": "9d4f73fd32f6a2955de47600f576407fc654fe4d",
+  "homeassistant/components/config/view.py": "50d69047ff24d168f155a4adf9bc56b59beb55c1",
+  "homeassistant/components/homeassistant/exposed_entities.py": "4a76eaa707141e10d7ce114f5c84159d1d611529",
+  "homeassistant/components/script/config.py": "f54fbead9ef5532fc4e7a55ad0582c482b258329",
+  "homeassistant/components/websocket_api/auth.py": "a4b73688a506d046f98d916a33450f3f6c630f52",
+  "homeassistant/components/websocket_api/commands.py": "d769c7535ba0e1431f880227873a343502399493",
+  "homeassistant/components/websocket_api/connection.py": "cd6e0426973039db3b7d86af0a3c1c92649f74b4",
+  "homeassistant/components/websocket_api/http.py": "9cfca0685c0e48c6f71000beb465b2c7fd57a771",
+  "homeassistant/config.py": "a71c97e0b2b81ae84364e4054a7c5dae04e57723",
+  "homeassistant/config_entries.py": "a1848f3dceab65aa07198deb72232af4d3271434",
+  "homeassistant/core.py": "4887d7003281b3c7447484acd32efbe2db8d45fb",
+  "homeassistant/helpers/area_registry.py": "6da7608fcf3628ba98ae9d026fab7df889bb982b",
+  "homeassistant/helpers/check_config.py": "fecbf8424d785f79c1b10188b86dfefbc9cc6bf3",
+  "homeassistant/helpers/collection.py": "4e985f6349cc9b8586659fa2a4383b893453bc90",
+  "homeassistant/helpers/condition.py": "8ab6972f1f3dff185096efea2a16032da853156b",
+  "homeassistant/helpers/device_registry.py": "52ab4273c2ddcb5447df4192ef0dda55739b7d86",
+  "homeassistant/helpers/entity_registry.py": "1f30e6cf629b021966f440c9017441ae833e7110",
+  "homeassistant/helpers/floor_registry.py": "aa54f89770539d9015bac96edbd16496990a23e5",
+  "homeassistant/helpers/label_registry.py": "e11c8080cfe416f4759936c451937370d9988b49",
+  "homeassistant/helpers/service.py": "47ab34d1c063449e27725fdf284097cab0cd896b",
+  "homeassistant/loader.py": "9891109dd043e1fecfd8db7640d3472e793135b8"
+ },
+ "unchanged_directories": {
+  "homeassistant/auth/": {
+   "changed": [
+    "homeassistant/auth/__init__.py"
+   ],
+   "files": 23
+  },
+  "homeassistant/components/api/": {
+   "changed": [],
+   "files": 3
+  },
+  "homeassistant/components/auth/": {
+   "changed": [],
+   "files": 6
+  },
+  "homeassistant/components/automation/": {
+   "changed": [],
+   "files": 13
+  },
+  "homeassistant/components/backup/": {
+   "changed": [],
+   "files": 23
+  },
+  "homeassistant/components/blueprint/": {
+   "changed": [],
+   "files": 8
+  },
+  "homeassistant/components/cloud/": {
+   "changed": [
+    "homeassistant/components/cloud/alexa_config.py"
+   ],
+   "files": 27
+  },
+  "homeassistant/components/config/": {
+   "changed": [
+    "homeassistant/components/config/auth_provider_homeassistant.py"
+   ],
+   "files": 18
+  },
+  "homeassistant/components/conversation/": {
+   "changed": [],
+   "files": 17
+  },
+  "homeassistant/components/device_automation/": {
+   "changed": [],
+   "files": 10
+  },
+  "homeassistant/components/fan/": {
+   "changed": [],
+   "files": 18
+  },
+  "homeassistant/components/frontend/": {
+   "changed": [
+    "homeassistant/components/frontend/manifest.json"
+   ],
+   "files": 7
+  },
+  "homeassistant/components/google_assistant/": {
+   "changed": [],
+   "files": 18
+  },
+  "homeassistant/components/hassio/": {
+   "changed": [],
+   "files": 31
+  },
+  "homeassistant/components/history/": {
+   "changed": [],
+   "files": 5
+  },
+  "homeassistant/components/homeassistant/": {
+   "changed": [],
+   "files": 20
+  },
+  "homeassistant/components/http/": {
+   "changed": [],
+   "files": 20
+  },
+  "homeassistant/components/input_boolean/": {
+   "changed": [],
+   "files": 7
+  },
+  "homeassistant/components/input_number/": {
+   "changed": [],
+   "files": 7
+  },
+  "homeassistant/components/light/": {
+   "changed": [],
+   "files": 20
+  },
+  "homeassistant/components/logbook/": {
+   "changed": [],
+   "files": 17
+  },
+  "homeassistant/components/lovelace/": {
+   "changed": [],
+   "files": 11
+  },
+  "homeassistant/components/onboarding/": {
+   "changed": [],
+   "files": 5
+  },
+  "homeassistant/components/person/": {
+   "changed": [],
+   "files": 7
+  },
+  "homeassistant/components/recorder/": {
+   "changed": [],
+   "files": 55
+  },
+  "homeassistant/components/script/": {
+   "changed": [],
+   "files": 12
+  },
+  "homeassistant/components/search/": {
+   "changed": [],
+   "files": 2
+  },
+  "homeassistant/components/switch/": {
+   "changed": [],
+   "files": 17
+  },
+  "homeassistant/components/system_health/": {
+   "changed": [],
+   "files": 3
+  },
+  "homeassistant/components/template/": {
+   "changed": [],
+   "files": 36
+  },
+  "homeassistant/components/trace/": {
+   "changed": [],
+   "files": 6
+  },
+  "homeassistant/components/websocket_api/": {
+   "changed": [],
+   "files": 15
+  },
+  "homeassistant/components/zone/": {
+   "changed": [],
+   "files": 12
+  },
+  "homeassistant/helpers/": {
+   "changed": [
+    "homeassistant/helpers/config_validation.py"
+   ],
+   "files": 112
+  },
+  "homeassistant/util/": {
+   "changed": [],
+   "files": 46
+  }
+ }
+}

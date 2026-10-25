@@ -1,0 +1,179 @@
+{
+ "candidate_1": {
+  "expires_at": "2027-01-23T03:00:00Z",
+  "generated_at": "2026-10-25T03:00:00Z",
+  "sequence": 13,
+  "sha256": "923bd135b02618046552786261036d53dced703be05da93f27c1f80510072458"
+ },
+ "cores": {
+  "2026.10.1": {
+   "files_sha256": {
+    "alarmo-cleanup-ha-2026-10-1.json": "56fd7e1ffe6d5ac3e35d4c7601e97a7f25156d334bf7c5272c45289bc9d64d2c",
+    "entity-metadata-ha-2026-10-1.json": "49893efb932272ede74582eb8502bc102bc99be359f779ae8aae6ef5cee6ef91",
+    "seq13-availability-exposure-ha-2026-10-1.json": "4fea89b68cbf88149dc2733f0a6f88dcacad95a548cf0330d6fb00b11077fc12",
+    "seq13-configuration-delete-ha-2026-10-1.json": "1baa7b28e9f1ba16b69576963e89c1414c7ea0e3263285d052fbc7b88aee4202",
+    "seq13-label-registry-ha-2026-10-1.json": "537d4bf672b9d7842db321a7762ddfb70822048042bfa6070c3cb11ab1cd3dbb"
+   },
+   "lane": "ha-2026-10-1",
+   "slot": "current",
+   "verifier_summaries": {
+    "availability_exposure": {
+     "authority_transition": [
+      22,
+      24
+     ],
+     "contract_fingerprints": [
+      "sha256:ae292fbc16ad82c8d8347b7e2eb1c3a7e8c7644d95783f5bf2ae9f9cc63a76b2",
+      "sha256:474c8ccaaae83c12f56a2848995ff089097936568a2ad5dc8d25ce855d51dbbd"
+     ],
+     "core": "2026.10.1",
+     "fixture_cleanup": true,
+     "lane": "availability_exposure",
+     "result": "PASS",
+     "scenarios": 8,
+     "support_slot": "current"
+    },
+    "configuration_delete": {
+     "authority_transition": [
+      22,
+      23
+     ],
+     "contract_fingerprint": "sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d",
+     "core": "2026.10.1",
+     "fixture_cleanup": true,
+     "lane": "configuration_delete",
+     "result": "PASS",
+     "scenarios": 7,
+     "support_slot": "current"
+    },
+    "entity_metadata": {
+     "authority_transition": [
+      21,
+      22
+     ],
+     "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+     "core": "2026.10.1",
+     "fixture_cleanup": true,
+     "receipt_sha256": "49893efb932272ede74582eb8502bc102bc99be359f779ae8aae6ef5cee6ef91",
+     "result": "PASS",
+     "scenarios": 9,
+     "support_slot": "current"
+    },
+    "label_registry": {
+     "authority_transition": [
+      22,
+      23
+     ],
+     "contract_fingerprints": [
+      "sha256:b2f0dd11ff243aa2559c27738d962785e37455d37b836cb5a6997aeabb26813c"
+     ],
+     "core": "2026.10.1",
+     "fixture_cleanup": true,
+     "lane": "label_registry",
+     "result": "PASS",
+     "scenarios": 7,
+     "support_slot": "current"
+    }
+   },
+   "zip_sha256": {
+    "entity-metadata-core-2026.10.1-current-amd64": "8c754583423ce4834cd5d5ea762a7336e0d90497e05969595f1a516c09fce0dd",
+    "seq13-configuration-delete-core-2026.10.1-current-ha-2026-10-1": "7ccdc1f24f4ba464db3e15a27eeeb197f741e2cbac36e230a8f89a28aac8f483",
+    "seq13-contracts-core-2026.10.1-current-amd64": "3963cd5ddcec4df7d2ee5cf2f4d7a5f2cc2de7cab7f61e68c764029cf5807277"
+   }
+  },
+  "2026.10.3": {
+   "files_sha256": {
+    "alarmo-cleanup-ha-2026-10-3.json": "a6022faf0467cbd233cd8a234483cf91d657e8f288f10fa0ecccb14ad58df918",
+    "entity-metadata-ha-2026-10-3.json": "e0f65ad65e7c549071aba66670f3d061968eb23ff987778f8095fa1c1cbbd24b",
+    "seq13-availability-exposure-ha-2026-10-3.json": "0eb0737a200527cdbb993718880138f0574320f863e960b41b60806ec22cb017",
+    "seq13-configuration-delete-ha-2026-10-3.json": "d552760824ae69e5d91963ee148a4acb8d0ee82b946be404d3ba45b998fe5250",
+    "seq13-label-registry-ha-2026-10-3.json": "d2276c1bbd0a1270e4ffa9dad76e8eab97ca5d8883b0754b2c93349362b84eb6"
+   },
+   "lane": "ha-2026-10-3",
+   "slot": "candidate",
+   "verifier_summaries": {
+    "availability_exposure": {
+     "authority_transition": [
+      22,
+      24
+     ],
+     "contract_fingerprints": [
+      "sha256:ae292fbc16ad82c8d8347b7e2eb1c3a7e8c7644d95783f5bf2ae9f9cc63a76b2",
+      "sha256:474c8ccaaae83c12f56a2848995ff089097936568a2ad5dc8d25ce855d51dbbd"
+     ],
+     "core": "2026.10.3",
+     "fixture_cleanup": true,
+     "lane": "availability_exposure",
+     "result": "PASS",
+     "scenarios": 8,
+     "support_slot": "candidate"
+    },
+    "configuration_delete": {
+     "authority_transition": [
+      22,
+      23
+     ],
+     "contract_fingerprint": "sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d",
+     "core": "2026.10.3",
+     "fixture_cleanup": true,
+     "lane": "configuration_delete",
+     "result": "PASS",
+     "scenarios": 7,
+     "support_slot": "candidate"
+    },
+    "entity_metadata": {
+     "authority_transition": [
+      21,
+      22
+     ],
+     "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+     "core": "2026.10.3",
+     "fixture_cleanup": true,
+     "receipt_sha256": "e0f65ad65e7c549071aba66670f3d061968eb23ff987778f8095fa1c1cbbd24b",
+     "result": "PASS",
+     "scenarios": 9,
+     "support_slot": "candidate"
+    },
+    "label_registry": {
+     "authority_transition": [
+      22,
+      23
+     ],
+     "contract_fingerprints": [
+      "sha256:b2f0dd11ff243aa2559c27738d962785e37455d37b836cb5a6997aeabb26813c"
+     ],
+     "core": "2026.10.3",
+     "fixture_cleanup": true,
+     "lane": "label_registry",
+     "result": "PASS",
+     "scenarios": 7,
+     "support_slot": "candidate"
+    }
+   },
+   "zip_sha256": {
+    "entity-metadata-core-2026.10.3-candidate-amd64": "f2d790abdb78d46268f48245f292a2020f3a29e6aa2d5a74d1fc4838fa2151a2",
+    "seq13-configuration-delete-core-2026.10.3-candidate-ha-2026-10-3": "3477ecddd8058ac586ef6e8b0abb00a282016e1b4bba1ac0782426593e5e4792",
+    "seq13-contracts-core-2026.10.3-candidate-amd64": "739ce27df99089671863b7b95697efa207dff383e6e9dfbe8b3390e2e7e0447b"
+   }
+  }
+ },
+ "inputs_sha256": {
+  "entry-extend-2026.10.1.json": "db8e9c77ae99b43596ae416da8e88ab0543902567a5bdf3b286198783da84de9",
+  "evidence-extend-2026.10.1.json": "367a9303e10463029ceaaa1620769412e526a5a8cbf1cc803c074f87f1009cf4"
+ },
+ "model": "hamcp222-receipt-manifest-v1",
+ "predecessor_capabilities_sha256": "1fdf85c48b6d50a4e788fea8744b9c6d82963e3aeb4b3a4bef76698686506d35",
+ "release_tag": "v2.4.1-beta.36",
+ "run": {
+  "conclusion": "success",
+  "event": "pull_request",
+  "head_sha": "902690a55074e4a6d25e757d542dd954126a6408",
+  "merge_sha": "8c9b44e845a0a9404e0f817fb7616b005c7a923a",
+  "pull_request": 306,
+  "run_attempt": 2,
+  "run_id": 40148395528,
+  "workflow": ".github/workflows/ci.yml"
+ },
+ "runtime_tree": "70479fa2958aafd36d0e74e3082f98c50b11053c",
+ "verified_at_commit": "4604ad1c3842b0339c7b312cedb7816fc8969897"
+}

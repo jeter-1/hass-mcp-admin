@@ -1,0 +1,283 @@
+{
+ "planned": [
+  {
+   "step": 1,
+   "mode": "candidate",
+   "exit": 0,
+   "last": "OK"
+  },
+  {
+   "step": 1,
+   "mode": "signed",
+   "exit": 0,
+   "last": "OK"
+  },
+  {
+   "step": 2,
+   "mode": "candidate",
+   "exit": 0,
+   "last": "OK"
+  },
+  {
+   "step": 2,
+   "mode": "signed",
+   "exit": 0,
+   "last": "OK"
+  }
+ ],
+ "controls": [
+  {
+   "control": "step 1 candidate checked as step 2",
+   "exit": 1,
+   "last": "FAILED: candidate fields differ",
+   "refused": true
+  },
+  {
+   "control": "step 2 candidate checked as step 1",
+   "exit": 1,
+   "last": "FAILED: candidate fields differ",
+   "refused": true
+  },
+  {
+   "control": "step 2 candidate against sequence 12",
+   "exit": 1,
+   "last": "FAILED: previous journal sequence 12 is not the step's predecessor",
+   "refused": true
+  },
+  {
+   "control": "step 1 signed output offered for step 2",
+   "exit": 1,
+   "last": "FAILED: signed tip sequence differs",
+   "refused": true
+  },
+  {
+   "control": "step 2 signed output offered for step 1",
+   "exit": 1,
+   "last": "FAILED: signed tip sequence differs",
+   "refused": true
+  },
+  {
+   "control": "signed mode without --signed",
+   "exit": 1,
+   "last": "FAILED: --signed is required",
+   "refused": true
+  },
+  {
+   "control": "reviewed fingerprint with another public key",
+   "exit": 1,
+   "last": "FAILED: public key fingerprint is not the reviewed Core key",
+   "refused": true
+  },
+  {
+   "control": "production fingerprint with the rehearsal key",
+   "exit": 1,
+   "last": "FAILED: public key fingerprint is not the reviewed Core key",
+   "refused": true
+  },
+  {
+   "control": "non-canonical candidate bytes",
+   "exit": 1,
+   "last": "FAILED: candidate is not canonical",
+   "refused": true
+  },
+  {
+   "control": "duplicate JSON member",
+   "exit": 1,
+   "last": "FAILED: candidate is not strict JSON (duplicate JSON member)",
+   "refused": true
+  },
+  {
+   "control": "extension relabeled add",
+   "exit": 1,
+   "last": "FAILED: candidate operation differs",
+   "refused": true
+  },
+  {
+   "control": "extension model swapped",
+   "exit": 1,
+   "last": "FAILED: candidate operation differs",
+   "refused": true
+  },
+  {
+   "control": "extension_review removed",
+   "exit": 1,
+   "last": "FAILED: candidate fields differ",
+   "refused": true
+  },
+  {
+   "control": "extension_review altered",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (extension review hash mismatch)",
+   "refused": true
+  },
+  {
+   "control": "fifth reference appended to 2026.10.1",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (registry_entry_evidence_invalid)",
+   "refused": true
+  },
+  {
+   "control": "only three of the four references",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (extension review does not bind the exact transition)",
+   "refused": true
+  },
+  {
+   "control": "sequence-13 references reordered",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (extension review does not bind the exact transition)",
+   "refused": true
+  },
+  {
+   "control": "sibling 2026.10.0 altered",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (positive transition must preserve all sibling entries)",
+   "refused": true
+  },
+  {
+   "control": "2026.10.1 image digest altered",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (extension cannot change release or probe identity)",
+   "refused": true
+  },
+  {
+   "control": "revocations altered on extension",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (positive transition cannot alter retained denials)",
+   "refused": true
+  },
+  {
+   "control": "revocation repeated on extension",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a revocation",
+   "refused": true
+  },
+  {
+   "control": "expiry beyond 90 days",
+   "exit": 1,
+   "last": "FAILED: expiry is not generated_at + 90 days",
+   "refused": true
+  },
+  {
+   "control": "sequence skipped",
+   "exit": 1,
+   "last": "FAILED: candidate is not the direct successor",
+   "refused": true
+  },
+  {
+   "control": "identical release entry appended",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a release version",
+   "refused": true
+  },
+  {
+   "control": "conflicting 2026.10.1 entry after the reviewed one",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a release version",
+   "refused": true
+  },
+  {
+   "control": "conflicting 2026.10.1 entry before the reviewed one",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a release version",
+   "refused": true
+  },
+  {
+   "control": "add relabeled extension",
+   "exit": 1,
+   "last": "FAILED: candidate fields differ",
+   "refused": true
+  },
+  {
+   "control": "add model swapped",
+   "exit": 1,
+   "last": "FAILED: candidate operation differs",
+   "refused": true
+  },
+  {
+   "control": "2026.10.3 with 25 references",
+   "exit": 1,
+   "last": "FAILED: entries are not previous with only the reviewed change",
+   "refused": true
+  },
+  {
+   "control": "2026.10.3 with 27 references",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (registry_entry_evidence_invalid)",
+   "refused": true
+  },
+  {
+   "control": "2026.10.3 references reordered",
+   "exit": 1,
+   "last": "FAILED: entries are not previous with only the reviewed change",
+   "refused": true
+  },
+  {
+   "control": "2026.10.3 image digest altered",
+   "exit": 1,
+   "last": "FAILED: entries are not previous with only the reviewed change",
+   "refused": true
+  },
+  {
+   "control": "2026.10.3 source commit altered",
+   "exit": 1,
+   "last": "FAILED: entries are not previous with only the reviewed change",
+   "refused": true
+  },
+  {
+   "control": "2026.10.3 entry_id altered",
+   "exit": 1,
+   "last": "FAILED: entries are not previous with only the reviewed change",
+   "refused": true
+  },
+  {
+   "control": "2026.10.3 evidence hash altered",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (review evidence is not bound to an entry)",
+   "refused": true
+  },
+  {
+   "control": "sibling 2026.10.1 altered on add",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (positive transition must preserve all sibling entries)",
+   "refused": true
+  },
+  {
+   "control": "2026.10.0 dropped on add",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (positive transition must preserve all sibling entries)",
+   "refused": true
+  },
+  {
+   "control": "revocations altered on add",
+   "exit": 1,
+   "last": "FAILED: shipped transition validation refused (positive transition cannot alter retained denials)",
+   "refused": true
+  },
+  {
+   "control": "revocation repeated on add",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a revocation",
+   "refused": true
+  },
+  {
+   "control": "identical 2026.10.3 entry appended",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a release version",
+   "refused": true
+  },
+  {
+   "control": "conflicting 2026.10.3 entry before the reviewed one",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a release version",
+   "refused": true
+  },
+  {
+   "control": "step 2 expiry beyond 90 days",
+   "exit": 1,
+   "last": "FAILED: expiry is not generated_at + 90 days",
+   "refused": true
+  }
+ ],
+ "ok": true
+}
