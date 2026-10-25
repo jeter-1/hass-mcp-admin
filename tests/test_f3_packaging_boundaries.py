@@ -43,6 +43,9 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_f3_lock_manager.py",
     "tests/test_hamcp135_governed_rollback.py",
     "tests/test_hamcp069a_entity_metadata_adapter.py",
+    # HAMCP-181 PR2: shared-executor no-send declaration and T2 outcomes.
+    "tests/test_hamcp181_proven_no_call_producers.py",
+    "tests/test_hamcp181_terminal_outcome_t2.py",
     "tests/test_hamcp183_entity_registry_error_truth.py",
     "tests/test_hamcp189_authority_cancel.py",
     "tests/test_hamcp189_expired_pre_intent_deadline.py",
