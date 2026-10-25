@@ -1,0 +1,1740 @@
+{
+  "task": "HAMCP-181 PR2 (+HAMCP-214, +HAMCP-193)",
+  "campaign_mutant_base": "4624c8947d4c378b246d139859645f01704c75f3",
+  "note": "Mutants applied to disposable git-archive copies; runtime files are unchanged between the campaign base and the PR head. Survivors were closed by new tests verified against the same mutant in a fresh copy.",
+  "baseline": "16 modules, 289 tests, 0 failures (test_hamcp181_beta8_downgrade skips in archive copies: no git history)",
+  "log_directory": "/var/tmp/hamcp181pr2-tmp/logs",
+  "total": 53,
+  "campaign_killed": 46,
+  "campaign_survived": 7,
+  "final_killed": 53,
+  "mutants": [
+    {
+      "id": "M1a",
+      "concept": "aggregate provider_dispatch_occurred ignores (b)",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:539"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "provider_dispatch_occurred = not all(item in NOT_SENT_PHASES for item in phases)",
+          "new": "provider_dispatch_occurred = not all(item in NO_INTENT_PHASES for item in phases)"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast (first attempt)",
+      "killing_tests": [
+        "test_hamcp181_dispatch_facts.Beta8HistoricalRecordTests.test_every_beta8_shape_projects_and_is_never_rewritten",
+        "test_hamcp181_dispatch_facts.ParentTruthTableTests.test_every_truth_table_row_in_both_orders",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+      ],
+      "logs": [
+        "mut-M1a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M1b",
+      "concept": "runtime never stores the (b) terminal outcome",
+      "sites": [
+        "f3_runtime/runtime.py:3584"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "not_sent = facts.not_sent and (",
+          "new": "not_sent = False and ("
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_terminal_outcome_t2",
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.ConfigurationChainTests.test_helper_appearing_after_intent_is_proven_not_sent",
+        "test_hamcp181_proven_no_call_producers.EntityMetadataChainTests.test_authentication_refused_after_intent_is_proven_not_sent",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+      ],
+      "logs": [
+        "mut-M1b.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M1c",
+      "concept": "outcome_code drops the not-sent outcome",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:240"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "        if self.not_sent:\n            return NOT_SENT_OUTCOME\n",
+          "new": ""
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+      ],
+      "logs": [
+        "mut-M1c.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M1d",
+      "concept": "executor honoured branch drops PROVIDER_CALL_NOT_SENT",
+      "sites": [
+        "f3/executor.py:749"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3/executor.py",
+          "old": "                            PROVIDER_CALL_NOT_SENT,\n                            callback_failed_after_intent,",
+          "new": "                            \"provider_result_uncertain\",\n                            callback_failed_after_intent,"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.ConfigurationChainTests.test_callback_failure_after_intent_is_proven_not_sent",
+        "test_hamcp181_proven_no_call_producers.DashboardCallbackFailureTests.test_callback_failure_after_intent_is_proven_not_sent",
+        "test_hamcp181_proven_no_call_producers.FanProofTests.test_b5_callback_failure_is_proven_not_sent",
+        "test_hamcp181_proven_no_call_producers.HelperStateCallbackFailureTests.test_callback_failure_after_intent_is_proven_not_sent",
+        "test_hamcp181_proven_no_call_producers.PowerProofTests.test_b5_callback_failure_is_proven_not_sent",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+      ],
+      "logs": [
+        "mut-M1d.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M2a",
+      "concept": "list_execution_tasks uses legacy facts",
+      "sites": [
+        "governance/service.py:2461"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+          "old": "            facts = self._dispatch_facts(task)\n            summary = self._public_task(task, include_events=False)",
+          "new": "            facts = legacy_dispatch_facts(task)\n            summary = self._public_task(task, include_events=False)"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_surface_consistency",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+        "test_hamcp181_terminal_outcome_t2.RejectedDeleteTests.test_rejected_delete_is_sent_and_proven_unchanged",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+      ],
+      "logs": [
+        "mut-M2a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M2b",
+      "concept": "apply nested execution_task bypasses public_task_facts",
+      "sites": [
+        "f3_runtime/runtime.py:3958"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "            \"execution_task\": self.public_task_facts(\n                self.service._public_task(task), task, facts\n            ),",
+          "new": "            \"execution_task\": self.service._public_task(task),"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_surface_consistency",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_surface_consistency.ConfigurationReceiptTests.test_one_child_receipts",
+        "test_hamcp181_surface_consistency.ConfigurationReceiptTests.test_three_child_receipts",
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+        "test_hamcp181_surface_consistency.OperationalSurfaceTests.test_f03_duplicate_after_pre_dispatch_refusal_claims_no_dispatch",
+        "test_hamcp181_surface_consistency.OperationalSurfaceTests.test_lost_reload_response_is_uncertain_on_every_reader_and_reconciliation",
+        "test_hamcp181_surface_consistency.OperationalSurfaceTests.test_verified_reload_keeps_every_existing_value",
+        "test_hamcp181_surface_consistency.V9ValueIdentityTests.test_v9_values_are_identical_and_facts_are_additive",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+        "test_hamcp181_terminal_outcome_t2.RejectedDeleteTests.test_rejected_delete_is_sent_and_proven_unchanged",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+      ],
+      "logs": [
+        "mut-M2b.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M2c",
+      "concept": "get_change_plan nested execution_task uses legacy facts",
+      "sites": [
+        "governance/service.py:2328"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+          "old": "        facts = facts if facts is not None else self._dispatch_facts(task)\n        value = {",
+          "new": "        facts = legacy_dispatch_facts(task)\n        value = {"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_surface_consistency",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_facts_are_identical_after_a_restart",
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+        "test_hamcp181_surface_consistency.OperationalSurfaceTests.test_verified_reload_keeps_every_existing_value",
+        "test_hamcp181_surface_consistency.S16OperationalBlockTests.test_verified_reload_operational_dispatch_is_not_stale",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+        "test_hamcp181_terminal_outcome_t2.RejectedDeleteTests.test_rejected_delete_is_sent_and_proven_unchanged",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+      ],
+      "logs": [
+        "mut-M2c.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M2d",
+      "concept": "compact receipt drops copied dispatch facts",
+      "sites": [
+        "models/responses.py:331"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/models/responses.py",
+          "old": "        for source in (body, task):",
+          "new": "        for source in ():"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_surface_consistency",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_surface_consistency.AllB1ParentReceiptTests.test_basis_is_kept_at_one_and_three_children_at_every_budget",
+        "test_hamcp181_surface_consistency.ConfigurationReceiptTests.test_one_child_receipts",
+        "test_hamcp181_surface_consistency.ConfigurationReceiptTests.test_three_child_receipts",
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+        "test_hamcp181_surface_consistency.MixedParentReceiptTests.test_sent_r_proven_r_unproven_b_and_c_children",
+        "test_hamcp181_surface_consistency.V9ValueIdentityTests.test_v9_values_are_identical_and_facts_are_additive",
+        "test_hamcp181_surface_consistency.ZeroChildReceiptTests.test_unestablished_manifest_is_uncertain_at_every_budget",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+      ],
+      "logs": [
+        "mut-M2d.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M2e",
+      "concept": "receipt sheds outcome_code even when it differs",
+      "sites": [
+        "models/responses.py:229"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/models/responses.py",
+          "old": "        \"outcome_code\" in facts\n        and facts.get(\"terminal_outcome\") == facts[\"outcome_code\"]",
+          "new": "        \"outcome_code\" in facts"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_surface_consistency",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "SURVIVED",
+      "logs": [
+        "mut-M2e.log",
+        "mut-M2e-full-test_hamcp181_architecture_guard.log",
+        "mut-M2e-full-test_hamcp181_audit_labels.log",
+        "mut-M2e-full-test_hamcp181_beta8_downgrade.log",
+        "mut-M2e-full-test_hamcp181_dispatch_facts.log",
+        "mut-M2e-full-test_hamcp181_entity_registry_error_unproven.log",
+        "mut-M2e-full-test_hamcp181_fan_power_dispatched_at.log",
+        "mut-M2e-full-test_hamcp181_health_core_admission.log",
+        "mut-M2e-full-test_hamcp181_proven_no_call_producers.log",
+        "mut-M2e-full-test_hamcp181_rollback_unchanged_forward.log",
+        "mut-M2e-full-test_hamcp181_surface_consistency.log",
+        "mut-M2e-full-test_hamcp181_terminal_outcome_t2.log",
+        "mut-M2e-full-test_hamcp183_entity_registry_error_truth.log",
+        "mut-M2e-full-test_hamcp214_plan_verification_rollback_projection.log",
+        "mut-M2e-full-test_f3_runtime_integration.log",
+        "mut-M2e-full-test_hamcp135_governed_rollback.log",
+        "mut-M2e-full-test_hamcp069a_entity_metadata_execution.log"
+      ],
+      "gap_closed_by": [
+        "test_hamcp181_terminal_outcome_t2.RejectedDeleteTests.test_compact_receipt_never_sheds_a_distinct_outcome_code"
+      ],
+      "gap_closure": {
+        "head": "gap-M2e-head.log",
+        "mutant": "gap-M2e-mutant.log",
+        "mutant_result": "FAILED (failures=19)"
+      },
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M2f",
+      "concept": "lifecycle audit uses legacy facts",
+      "sites": [
+        "governance/service.py:2150"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+          "old": "        facts = self._dispatch_facts(task)\n        safe[\"provider_dispatch_occurred\"] = facts.provider_dispatch_occurred",
+          "new": "        facts = legacy_dispatch_facts(task)\n        safe[\"provider_dispatch_occurred\"] = facts.provider_dispatch_occurred"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_terminal_outcome_t2",
+        "test_hamcp181_surface_consistency"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+      ],
+      "logs": [
+        "mut-M2f.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M2g",
+      "concept": "apply nested plan uses legacy facts",
+      "sites": [
+        "f3_runtime/runtime.py:3962"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "                plan, include_configs=False, dispatch_facts=facts\n",
+          "new": "                plan, include_configs=False, dispatch_facts=legacy_dispatch_facts(task)\n"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_surface_consistency",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+        "test_hamcp181_surface_consistency.OperationalSurfaceTests.test_verified_reload_keeps_every_existing_value",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+      ],
+      "logs": [
+        "mut-M2g.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M3a",
+      "concept": "plan verification block never runs",
+      "sites": [
+        "f3_runtime/runtime.py:3661"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "            if plan.operations and all(\n                by_id[operation.operation_id][\"normalized_outcome\"]",
+          "new": "            if False and plan.operations and all(\n                by_id[operation.operation_id][\"normalized_outcome\"]"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp214_plan_verification_rollback_projection"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp214_plan_verification_rollback_projection.AvailabilityExposureProjectionTests.test_verified_disable_is_available",
+        "test_hamcp214_plan_verification_rollback_projection.ConfigurationDeleteProjectionTests.test_verified_delete_without_recreate_eligibility_is_not_available",
+        "test_hamcp214_plan_verification_rollback_projection.ConfigurationDeleteProjectionTests.test_verified_recreate_eligible_delete_is_available",
+        "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_all_create_plan_is_unavailable_for_create",
+        "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_multi_operation_plan_keeps_fingerprints_per_operation",
+        "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_single_update_projects_plan_verification_and_rollback",
+        "test_hamcp214_plan_verification_rollback_projection.EntityMetadataProjectionTests.test_verified_single_update_is_available",
+        "test_hamcp214_plan_verification_rollback_projection.LabelProjectionTests.test_label_edit_and_assignment_rollback_is_not_supported",
+        "test_hamcp214_plan_verification_rollback_projection.LabelProjectionTests.test_label_plan_rollback_is_not_supported"
+      ],
+      "logs": [
+        "mut-M3a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M3b",
+      "concept": "operation verification loses actual fingerprint",
+      "sites": [
+        "f3_runtime/runtime.py:3655"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "                        actual_fingerprint=operation.post_apply_fingerprint,\n                    )\n                    if checked_at is not None:",
+          "new": "                        actual_fingerprint=None,\n                    )\n                    if checked_at is not None:"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp214_plan_verification_rollback_projection"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_mixed_plan_is_available_but_not_verified",
+        "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_multi_operation_plan_keeps_fingerprints_per_operation",
+        "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_single_update_projects_plan_verification_and_rollback",
+        "test_hamcp214_plan_verification_rollback_projection.ConfigurationRejectionTests.test_verified_then_rejected_update_is_available_not_verified"
+      ],
+      "logs": [
+        "mut-M3b.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M3c",
+      "concept": "delete desired fingerprint uses proposed hash",
+      "sites": [
+        "f3_runtime/runtime.py:1243"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "    if operation.action == \"delete\":\n        from ..governance.resources import resource_fingerprint",
+          "new": "    if False and operation.action == \"delete\":\n        from ..governance.resources import resource_fingerprint"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp214_plan_verification_rollback_projection"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "full:test_hamcp181_terminal_outcome_t2",
+      "killing_tests": [
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete"
+      ],
+      "logs": [
+        "mut-M3c.log",
+        "mut-M3c-full-test_hamcp181_terminal_outcome_t2.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M3d",
+      "concept": "label plans project rollback available",
+      "sites": [
+        "f3_runtime/runtime.py:3741"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "            available, status = False, label_registry_planning.ROLLBACK_NOT_SUPPORTED",
+          "new": "            available, status = True, None"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp214_plan_verification_rollback_projection"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp214_plan_verification_rollback_projection.LabelProjectionTests.test_label_edit_and_assignment_rollback_is_not_supported",
+        "test_hamcp214_plan_verification_rollback_projection.LabelProjectionTests.test_label_plan_rollback_is_not_supported"
+      ],
+      "logs": [
+        "mut-M3d.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M3e",
+      "concept": "exposure plans always project rollback available",
+      "sites": [
+        "f3_runtime/runtime.py:3746"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "            available = any(dispatched_once(record) for _, record in operations)",
+          "new": "            available = True"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp214_plan_verification_rollback_projection"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp214_plan_verification_rollback_projection.AvailabilityExposureProjectionTests.test_refused_expose_is_not_available"
+      ],
+      "logs": [
+        "mut-M3e.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M4a",
+      "concept": "every confirmed-with-response failure is r-proven",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:429"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "        proven = (\n            PROVIDER_REJECTED_MUTATION in codes",
+          "new": "        proven = True or (\n            PROVIDER_REJECTED_MUTATION in codes"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_entity_registry_error_unproven"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_dispatch_facts.Beta8HistoricalRecordTests.test_every_beta8_shape_projects_and_is_never_rewritten",
+        "test_hamcp181_dispatch_facts.ChildPhaseTests.test_every_child_phase",
+        "test_hamcp181_dispatch_facts.FieldSetTests.test_r_proven_and_r_unproven_fields",
+        "test_hamcp181_dispatch_facts.LegacyAndRecordTests.test_outcome_counts_one_per_parent",
+        "test_hamcp181_dispatch_facts.ParentTruthTableTests.test_every_truth_table_row_in_both_orders",
+        "test_hamcp181_dispatch_facts.RProvenTests.test_negatives_are_unproven",
+        "test_hamcp181_entity_registry_error_unproven.Beta8EntityRegistryErrorRecordTests.test_beta8_registry_error_record_projects_r_unproven_and_is_not_rewritten",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryProjectionControlTests.test_confirmed_failure_without_permission_denied_is_r_unproven",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryProjectionControlTests.test_only_permission_denied_proves_the_rejection"
+      ],
+      "logs": [
+        "mut-M4a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M4b",
+      "concept": "r-unproven child claims changed_by_engineering False",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:187"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "        if self.phase in NOT_SENT_PHASES or self.phase == PHASE_SENT_REJECTED_NO_MUTATION:",
+          "new": "        if self.phase in NOT_SENT_PHASES or self.phase in (PHASE_SENT_REJECTED_NO_MUTATION, PHASE_SENT_FAILED_MUTATION_UNPROVEN):"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_rollback_unchanged_forward"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_dispatch_facts.RProvenTests.test_negatives_are_unproven"
+      ],
+      "logs": [
+        "mut-M4b.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M4c",
+      "concept": "aggregate treats r-unproven as unchanged",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:541"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "        child.phase in {PHASE_SEND_UNCERTAIN, PHASE_SENT_FAILED_MUTATION_UNPROVEN}",
+          "new": "        child.phase in {PHASE_SEND_UNCERTAIN}"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_surface_consistency"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_dispatch_facts.Beta8HistoricalRecordTests.test_every_beta8_shape_projects_and_is_never_rewritten",
+        "test_hamcp181_dispatch_facts.FieldSetTests.test_r_proven_and_r_unproven_fields",
+        "test_hamcp181_dispatch_facts.ParentTruthTableTests.test_every_truth_table_row_in_both_orders"
+      ],
+      "logs": [
+        "mut-M4c.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M4d",
+      "concept": "aggregate treats unverified sent child as unchanged",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:542"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "        or (child.phase == PHASE_SENT_RESPONSE_RECEIVED and not child.verified)\n",
+          "new": ""
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_surface_consistency"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_dispatch_facts.ParentTruthTableTests.test_every_truth_table_row_in_both_orders"
+      ],
+      "logs": [
+        "mut-M4d.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M5a",
+      "concept": "OD-11 legacy refusal removed",
+      "sites": [
+        "f3_runtime/runtime.py:4695"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "            if self.dispatch_facts_for_task(task).changed_by_engineering is False:",
+          "new": "            if False:"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_rollback_unchanged_forward"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_rollback_unchanged_forward.LegacyAutomationRollbackTests.test_proven_not_sent_forward_refuses_rollback",
+        "test_hamcp181_rollback_unchanged_forward.LegacyAutomationRollbackTests.test_proven_rejected_forward_refuses_rollback",
+        "test_hamcp181_rollback_unchanged_forward.LegacyAutomationRollbackTests.test_refusal_is_repeatable_and_never_redispatches"
+      ],
+      "logs": [
+        "mut-M5a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M5b",
+      "concept": "OD-11 refusal widened to (c)/(r-unproven)",
+      "sites": [
+        "f3_runtime/runtime.py:4695"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "            if self.dispatch_facts_for_task(task).changed_by_engineering is False:",
+          "new": "            if self.dispatch_facts_for_task(task).changed_by_engineering is not True:"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_rollback_unchanged_forward"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_rollback_unchanged_forward.LegacyAutomationRollbackTests.test_unproven_forward_keeps_rollback_admission"
+      ],
+      "logs": [
+        "mut-M5b.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M5c",
+      "concept": "contract-v2 rollback includes unverified forward children",
+      "sites": [
+        "f3_runtime/runtime.py:4656"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "                    or not previously_verified\n",
+          "new": ""
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_rollback_unchanged_forward",
+        "test_hamcp214_plan_verification_rollback_projection"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "full:test_f3_runtime_integration",
+      "killing_tests": [
+        "test_f3_runtime_integration.F3ConfigurationActivationTests.test_partial_sequence_rollback_includes_only_verified_updates"
+      ],
+      "logs": [
+        "mut-M5c.log",
+        "mut-M5c-full-test_f3_runtime_integration.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M5d",
+      "concept": "stored-intent dispatch predicate ignores provider attempts",
+      "sites": [
+        "governance/service.py:2267"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+          "old": "        return bool(task.dispatched_at or task.provider_attempts)",
+          "new": "        return bool(task.dispatched_at)"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_architecture_guard",
+        "test_hamcp181_terminal_outcome_t2",
+        "test_hamcp181_rollback_unchanged_forward"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_architecture_guard.ProjectionConsumerTests.test_stored_intent_predicate_is_unchanged"
+      ],
+      "logs": [
+        "mut-M5d.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M6a",
+      "concept": "websocket answered unauthorized carries call_not_sent",
+      "sites": [
+        "clients/websocket.py:318"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py",
+          "old": "                            raise AuthorizationError(\n                                details=self._error_details(\n                                    category,\n                                    provider_response_received=True,\n                                )\n                            )",
+          "new": "                            raise AuthorizationError(\n                                details=self._error_details(\n                                    category,\n                                    provider_response_received=True,\n                                ),\n                                call_not_sent=True,\n                            )"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.WebSocketClientProofTests.test_answered_or_lost_commands_carry_no_proof"
+      ],
+      "logs": [
+        "mut-M6a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M6b",
+      "concept": "helper_state declares not-sent in a catch-all after the command",
+      "sites": [
+        "governance/helper_state.py:168",
+        "governance/helper_state.py:179"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_state.py",
+          "old": "        try:\n            await before_dispatch()\n        except Exception as exc:\n            # HAMCP-181 b5: the callback raised, so the command was never\n            # sent.  Declare that before any send-capable call.\n            raise HelperStateGatewayError(\n                \"before_dispatch_failed\", call_not_sent=True\n            ) from exc\n        try:\n            await self.websocket_client.command(payload)\n",
+          "new": "        try:\n            await before_dispatch()\n            await self.websocket_client.command(payload)\n"
+        },
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_state.py",
+          "old": "            raise HelperStateGatewayError(\n                \"dispatch_indeterminate\", dispatched=True\n            ) from None\n        return HelperStateDispatchResult(",
+          "new": "            raise HelperStateGatewayError(\n                \"dispatch_indeterminate\", dispatched=True\n            ) from None\n        except Exception as exc:\n            raise HelperStateGatewayError(\n                \"before_dispatch_failed\", call_not_sent=True\n            ) from exc\n        return HelperStateDispatchResult("
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers",
+        "test_hamcp181_audit_labels"
+      ],
+      "campaign_verdict": "SURVIVED",
+      "logs": [
+        "mut-M6b.log",
+        "mut-M6b-full-test_hamcp181_architecture_guard.log",
+        "mut-M6b-full-test_hamcp181_audit_labels.log",
+        "mut-M6b-full-test_hamcp181_beta8_downgrade.log",
+        "mut-M6b-full-test_hamcp181_dispatch_facts.log",
+        "mut-M6b-full-test_hamcp181_entity_registry_error_unproven.log",
+        "mut-M6b-full-test_hamcp181_fan_power_dispatched_at.log",
+        "mut-M6b-full-test_hamcp181_health_core_admission.log",
+        "mut-M6b-full-test_hamcp181_proven_no_call_producers.log",
+        "mut-M6b-full-test_hamcp181_rollback_unchanged_forward.log",
+        "mut-M6b-full-test_hamcp181_surface_consistency.log",
+        "mut-M6b-full-test_hamcp181_terminal_outcome_t2.log",
+        "mut-M6b-full-test_hamcp183_entity_registry_error_truth.log",
+        "mut-M6b-full-test_hamcp214_plan_verification_rollback_projection.log",
+        "mut-M6b-full-test_f3_runtime_integration.log",
+        "mut-M6b-full-test_hamcp135_governed_rollback.log",
+        "mut-M6b-full-test_hamcp069a_entity_metadata_execution.log"
+      ],
+      "gap_closed_by": [
+        "test_hamcp181_proven_no_call_producers.HelperStateGatewaySiteTests.test_unclassified_failure_after_the_command_carries_no_proof"
+      ],
+      "gap_closure": {
+        "head": "gap-M6b-head.log",
+        "mutant": "gap-M6b-mutant.log",
+        "mutant_result": "FAILED (failures=2)"
+      },
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M6c",
+      "concept": "helper_state answered rejection declared not-sent",
+      "sites": [
+        "governance/helper_state.py:182"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_state.py",
+          "old": "                \"provider_rejected\" if confirmed else \"dispatch_indeterminate\",\n                dispatched=True,",
+          "new": "                \"provider_rejected\" if confirmed else \"dispatch_indeterminate\",\n                call_not_sent=True,"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers",
+        "test_hamcp181_audit_labels"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.HelperStateGatewaySiteTests.test_sent_command_failures_carry_no_proof"
+      ],
+      "logs": [
+        "mut-M6c.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M6d",
+      "concept": "fan post-call authority refusal declared not-sent",
+      "sites": [
+        "providers/upstream_fan.py:130"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_fan.py",
+          "old": "        if token is None or self._authority(token[0]) != token[2]:\n            raise self.refusal(\"fan_provider_authority_retired\")\n        if telemetry:",
+          "new": "        if token is None or self._authority(token[0]) != token[2]:\n            retired = self.refusal(\"fan_provider_authority_retired\")\n            retired.call_not_sent = True\n            raise retired\n        if telemetry:"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers",
+        "test_hamcp181_fan_power_dispatched_at"
+      ],
+      "campaign_verdict": "SURVIVED",
+      "logs": [
+        "mut-M6d.log",
+        "mut-M6d-full-test_hamcp181_architecture_guard.log",
+        "mut-M6d-full-test_hamcp181_audit_labels.log",
+        "mut-M6d-full-test_hamcp181_beta8_downgrade.log",
+        "mut-M6d-full-test_hamcp181_dispatch_facts.log",
+        "mut-M6d-full-test_hamcp181_entity_registry_error_unproven.log",
+        "mut-M6d-full-test_hamcp181_fan_power_dispatched_at.log",
+        "mut-M6d-full-test_hamcp181_health_core_admission.log",
+        "mut-M6d-full-test_hamcp181_proven_no_call_producers.log",
+        "mut-M6d-full-test_hamcp181_rollback_unchanged_forward.log",
+        "mut-M6d-full-test_hamcp181_surface_consistency.log",
+        "mut-M6d-full-test_hamcp181_terminal_outcome_t2.log",
+        "mut-M6d-full-test_hamcp183_entity_registry_error_truth.log",
+        "mut-M6d-full-test_hamcp214_plan_verification_rollback_projection.log",
+        "mut-M6d-full-test_f3_runtime_integration.log",
+        "mut-M6d-full-test_hamcp135_governed_rollback.log",
+        "mut-M6d-full-test_hamcp069a_entity_metadata_execution.log"
+      ],
+      "gap_closed_by": [
+        "test_hamcp181_proven_no_call_producers.FanProofTests.test_authority_retired_after_the_call_is_never_proven_not_sent",
+        "test_hamcp181_proven_no_call_producers.PowerProofTests.test_authority_retired_after_the_call_is_never_proven_not_sent"
+      ],
+      "gap_closure": {
+        "head": "gap-M6d-head.log",
+        "mutant": "gap-M6d-mutant.log",
+        "mutant_result": "FAILED (failures=2)"
+      },
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M7a",
+      "concept": "config adapter adds PROVIDER_CALL_NOT_SENT to answered rejections",
+      "sites": [
+        "f3_configuration/adapter.py:567"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+          "old": "                        if not response_received\n                        and getattr(exc, \"call_not_sent\", False) is True",
+          "new": "                        if response_received\n                        or getattr(exc, \"call_not_sent\", False) is True"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers",
+        "test_hamcp181_dispatch_facts"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.ConfigurationChainTests.test_p1_rejection_stays_sent_rejected_without_proof",
+        "test_hamcp181_proven_no_call_producers.EntityMetadataChainTests.test_unauthorized_result_stays_r_proven_without_proof"
+      ],
+      "logs": [
+        "mut-M7a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M7b",
+      "concept": "child_facts: proof code with response reads as (b)",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:415"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "        # A proof code with a received response is a contradiction.\n        return ChildFacts(phase=PHASE_SEND_UNCERTAIN, evidence_conflict=True, **base)",
+          "new": "        # A proof code with a received response is a contradiction.\n        return ChildFacts(phase=PHASE_INTENT_RECORDED_NOT_SENT, setter_proof=setter_code, **base)"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_dispatch_facts.SingleBPredicateTests.test_response_received_with_proof_code_is_contradiction"
+      ],
+      "logs": [
+        "mut-M7b.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M7c",
+      "concept": "entity_metadata carries call_not_sent on an answered unauthorized",
+      "sites": [
+        "governance/entity_metadata.py:618"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/entity_metadata.py",
+          "old": "                    getattr(exc, \"call_not_sent\", False) is True\n                    and details.get(\"provider_response_received\") is not True\n",
+          "new": "                    getattr(exc, \"call_not_sent\", False) is True\n"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.EntityMetadataGatewaySiteTests.test_only_the_clients_pre_command_refusal_is_carried"
+      ],
+      "logs": [
+        "mut-M7c.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M8a",
+      "concept": "executor records (b) for any callback failure that raises",
+      "sites": [
+        "f3/executor.py:832"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3/executor.py",
+          "old": "            if not persisted.terminal:\n                persisted = self.execution_repository.record_dispatch_result(\n                    identity.task_id,\n                    owner_id=identity.owner_id,\n                    claim_generation=claim.claim_generation,\n                    outcome=\"dispatch_indeterminate\",",
+          "new": "            if not persisted.terminal and callback_failed_after_intent is not None:\n                record = self.execution_repository.record_dispatch_result(\n                    identity.task_id,\n                    owner_id=identity.owner_id,\n                    claim_generation=claim.claim_generation,\n                    outcome=\"dispatch_failed_confirmed\",\n                    provider_response_received=False,\n                    diagnostic_codes=(PROVIDER_CALL_NOT_SENT, callback_failed_after_intent),\n                    now=self.now(),\n                )\n                self._release_safely(handle)\n                return self._result(record)\n            if not persisted.terminal:\n                persisted = self.execution_repository.record_dispatch_result(\n                    identity.task_id,\n                    owner_id=identity.owner_id,\n                    claim_generation=claim.claim_generation,\n                    outcome=\"dispatch_indeterminate\","
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.BackupExclusionTests.test_backup_callback_failure_is_never_proven_not_sent",
+        "test_hamcp181_proven_no_call_producers.LifecycleExclusionTests.test_addon_restart_callback_failure_is_never_proven_not_sent"
+      ],
+      "logs": [
+        "mut-M8a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M8b",
+      "concept": "backup strategy declares call_not_sent; helper-only guard removed",
+      "sites": [
+        "f3/operational_strategies.py:248",
+        "f3/operational_adapter.py:729"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_strategies.py",
+          "old": "        except OperationalGatewayError as exc:\n            if not exc.dispatched:\n                raise\n            confirmed = exc.category in {\n                \"permission_failure\",\n                \"backup_rejected\",",
+          "new": "        except OperationalGatewayError as exc:\n            if not exc.dispatched:\n                return StrategyDispatch(\n                    response_received=False,\n                    response_evidence_hash=None,\n                    diagnostic_code=\"before_dispatch_failed\",\n                    call_not_sent=True,\n                )\n            confirmed = exc.category in {\n                \"permission_failure\",\n                \"backup_rejected\","
+        },
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_adapter.py",
+          "old": "        if result.call_not_sent and operation.operation == SET_INPUT_BOOLEAN_STATE:",
+          "new": "        if result.call_not_sent:"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "SURVIVED",
+      "logs": [
+        "mut-M8b.log",
+        "mut-M8b-full-test_hamcp181_architecture_guard.log",
+        "mut-M8b-full-test_hamcp181_audit_labels.log",
+        "mut-M8b-full-test_hamcp181_beta8_downgrade.log",
+        "mut-M8b-full-test_hamcp181_dispatch_facts.log",
+        "mut-M8b-full-test_hamcp181_entity_registry_error_unproven.log",
+        "mut-M8b-full-test_hamcp181_fan_power_dispatched_at.log",
+        "mut-M8b-full-test_hamcp181_health_core_admission.log",
+        "mut-M8b-full-test_hamcp181_proven_no_call_producers.log",
+        "mut-M8b-full-test_hamcp181_rollback_unchanged_forward.log",
+        "mut-M8b-full-test_hamcp181_surface_consistency.log",
+        "mut-M8b-full-test_hamcp181_terminal_outcome_t2.log",
+        "mut-M8b-full-test_hamcp183_entity_registry_error_truth.log",
+        "mut-M8b-full-test_hamcp214_plan_verification_rollback_projection.log",
+        "mut-M8b-full-test_f3_runtime_integration.log",
+        "mut-M8b-full-test_hamcp135_governed_rollback.log",
+        "mut-M8b-full-test_hamcp069a_entity_metadata_execution.log"
+      ],
+      "gap_closed_by": [
+        "test_hamcp181_proven_no_call_producers.BackupExclusionTests.test_real_provider_not_dispatched_error_after_intent_is_never_proven_not_sent"
+      ],
+      "gap_closure": {
+        "head": "gap-M8b-head.log",
+        "mutant": "gap-M8b-mutant.log",
+        "mutant_result": "FAILED (failures=1)"
+      },
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M8c",
+      "concept": "backup gateway audit label says provider_call_not_sent",
+      "sites": [
+        "f3_runtime/runtime.py:1509"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "                if getattr(exc, \"dispatched\", False)\n                else \"provider_invocation_refused\"\n            )\n            raise\n        self.auditor(\"provider_response_received\")\n        self.recorder(",
+          "new": "                if getattr(exc, \"dispatched\", False)\n                else \"provider_call_not_sent\"\n            )\n            raise\n        self.auditor(\"provider_response_received\")\n        self.recorder("
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers",
+        "test_hamcp181_audit_labels"
+      ],
+      "campaign_verdict": "SURVIVED",
+      "logs": [
+        "mut-M8c.log",
+        "mut-M8c-full-test_hamcp181_architecture_guard.log",
+        "mut-M8c-full-test_hamcp181_audit_labels.log",
+        "mut-M8c-full-test_hamcp181_beta8_downgrade.log",
+        "mut-M8c-full-test_hamcp181_dispatch_facts.log",
+        "mut-M8c-full-test_hamcp181_entity_registry_error_unproven.log",
+        "mut-M8c-full-test_hamcp181_fan_power_dispatched_at.log",
+        "mut-M8c-full-test_hamcp181_health_core_admission.log",
+        "mut-M8c-full-test_hamcp181_proven_no_call_producers.log",
+        "mut-M8c-full-test_hamcp181_rollback_unchanged_forward.log",
+        "mut-M8c-full-test_hamcp181_surface_consistency.log",
+        "mut-M8c-full-test_hamcp181_terminal_outcome_t2.log",
+        "mut-M8c-full-test_hamcp183_entity_registry_error_truth.log",
+        "mut-M8c-full-test_hamcp214_plan_verification_rollback_projection.log",
+        "mut-M8c-full-test_f3_runtime_integration.log",
+        "mut-M8c-full-test_hamcp135_governed_rollback.log",
+        "mut-M8c-full-test_hamcp069a_entity_metadata_execution.log"
+      ],
+      "gap_closed_by": [
+        "test_hamcp181_proven_no_call_producers.BackupExclusionTests.test_backup_pre_send_refusal_is_labelled_refused"
+      ],
+      "gap_closure": {
+        "head": "gap-M8c-head.log",
+        "mutant": "gap-M8c-mutant.log",
+        "mutant_result": "FAILED (failures=1)"
+      },
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M9a",
+      "concept": "child_facts: final no-response fallthrough reads as (b)",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:459"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "\n    return ChildFacts(phase=PHASE_SEND_UNCERTAIN, **base)",
+          "new": "\n    return ChildFacts(phase=PHASE_INTENT_RECORDED_NOT_SENT, **base)"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_dispatch_facts.ChildPhaseTests.test_every_child_phase",
+        "test_hamcp181_dispatch_facts.LegacyAndRecordTests.test_fan_power_record_never_publishes_a_send_time",
+        "test_hamcp181_dispatch_facts.SingleBPredicateTests.test_wrong_outcome_with_proof_code_is_never_b"
+      ],
+      "logs": [
+        "mut-M9a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M9b",
+      "concept": "fan adapter: any post-boundary failure is proven not sent",
+      "sites": [
+        "fan/adapter.py:145"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/fan/adapter.py",
+          "old": "            if isinstance(exc, self.refusal) and getattr(exc, \"call_not_sent\", False) is True:",
+          "new": "            if True:"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers",
+        "test_hamcp181_fan_power_dispatched_at"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_fan_power_dispatched_at.FanDispatchedAtTests.test_2_response_lost_has_no_response_time",
+        "test_hamcp181_fan_power_dispatched_at.PowerDispatchedAtTests.test_2_response_lost_has_no_response_time",
+        "test_hamcp181_proven_no_call_producers.FanProofTests.test_lost_response_stays_uncertain_without_proof",
+        "test_hamcp181_proven_no_call_producers.PowerProofTests.test_lost_response_stays_uncertain_without_proof"
+      ],
+      "logs": [
+        "mut-M9b.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M9c",
+      "concept": "helper_state: a dispatched error keeps call_not_sent",
+      "sites": [
+        "governance/helper_state.py:42"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_state.py",
+          "old": "        self.call_not_sent = call_not_sent is True and not dispatched",
+          "new": "        self.call_not_sent = call_not_sent is True or dispatched"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.HelperStateGatewaySiteTests.test_sent_command_failures_carry_no_proof"
+      ],
+      "logs": [
+        "mut-M9c.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M10a",
+      "concept": "resources P1 REST 4xx declares call_not_sent",
+      "sites": [
+        "governance/resources.py:1134"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
+          "old": "                        \"provider_status\": status,\n                        \"provider_response_received\": True,\n                    }\n                ) from exc",
+          "new": "                        \"provider_status\": status,\n                        \"provider_response_received\": True,\n                    },\n                    call_not_sent=True,\n                ) from exc"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.ConfigurationGatewaySiteTests.test_p1_rejection_is_answered_not_declared_not_sent"
+      ],
+      "logs": [
+        "mut-M10a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M10b",
+      "concept": "entity_metadata AuthorizationError always call_not_sent",
+      "sites": [
+        "governance/entity_metadata.py:617"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/entity_metadata.py",
+          "old": "                call_not_sent=(\n                    getattr(exc, \"call_not_sent\", False) is True\n                    and details.get(\"provider_response_received\") is not True\n                ),",
+          "new": "                call_not_sent=True,"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.EntityMetadataGatewaySiteTests.test_only_the_clients_pre_command_refusal_is_carried"
+      ],
+      "logs": [
+        "mut-M10b.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M11a",
+      "concept": "config adapter: Unavailable is confirmed and not sent",
+      "sites": [
+        "f3_configuration/adapter.py:619",
+        "f3_configuration/adapter.py:640"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+          "old": "            confirmed_no_mutation = bool(\n                getattr(exc, \"mutation_dispatched\", None) is False\n            )",
+          "new": "            unavailable = type(exc).__name__ == \"HomeAssistantUnavailableError\"\n            confirmed_no_mutation = bool(\n                getattr(exc, \"mutation_dispatched\", None) is False or unavailable\n            )"
+        },
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+          "old": "                    else \"provider_response_indeterminate\",\n                ),\n                provider_mutation_count=(0 if confirmed_no_mutation else None),",
+          "new": "                    else \"provider_response_indeterminate\",\n                    *((PROVIDER_CALL_NOT_SENT,) if unavailable else ()),\n                ),\n                provider_mutation_count=(0 if confirmed_no_mutation else None),"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.ConfigurationChainTests.test_lost_response_and_unavailable_stay_uncertain"
+      ],
+      "logs": [
+        "mut-M11a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M11b",
+      "concept": "helper_state: Unavailable declared not sent",
+      "sites": [
+        "governance/helper_state.py:185"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_state.py",
+          "old": "        except (HomeAssistantTimeoutError, HomeAssistantUnavailableError):\n            raise HelperStateGatewayError(\n                \"dispatch_indeterminate\", dispatched=True\n            ) from None",
+          "new": "        except HomeAssistantUnavailableError:\n            raise HelperStateGatewayError(\n                \"dispatch_indeterminate\", call_not_sent=True\n            ) from None\n        except HomeAssistantTimeoutError:\n            raise HelperStateGatewayError(\n                \"dispatch_indeterminate\", dispatched=True\n            ) from None"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_proven_no_call_producers.HelperStateGatewaySiteTests.test_sent_command_failures_carry_no_proof"
+      ],
+      "logs": [
+        "mut-M11b.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M11c",
+      "concept": "websocket: connection error after send carries call_not_sent",
+      "sites": [
+        "clients/websocket.py:356"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py",
+          "old": "            raise HomeAssistantUnavailableError(\n                details=self._error_details(category)\n            ) from exc\n        finally:\n            # Scoped transport refusals/cancellation may exit before a response.",
+          "new": "            unavailable = HomeAssistantUnavailableError(\n                details=self._error_details(category)\n            )\n            unavailable.call_not_sent = True\n            raise unavailable from exc\n        finally:\n            # Scoped transport refusals/cancellation may exit before a response."
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "SURVIVED",
+      "logs": [
+        "mut-M11c.log",
+        "mut-M11c-full-test_hamcp181_architecture_guard.log",
+        "mut-M11c-full-test_hamcp181_audit_labels.log",
+        "mut-M11c-full-test_hamcp181_beta8_downgrade.log",
+        "mut-M11c-full-test_hamcp181_dispatch_facts.log",
+        "mut-M11c-full-test_hamcp181_entity_registry_error_unproven.log",
+        "mut-M11c-full-test_hamcp181_fan_power_dispatched_at.log",
+        "mut-M11c-full-test_hamcp181_health_core_admission.log",
+        "mut-M11c-full-test_hamcp181_proven_no_call_producers.log",
+        "mut-M11c-full-test_hamcp181_rollback_unchanged_forward.log",
+        "mut-M11c-full-test_hamcp181_surface_consistency.log",
+        "mut-M11c-full-test_hamcp181_terminal_outcome_t2.log",
+        "mut-M11c-full-test_hamcp183_entity_registry_error_truth.log",
+        "mut-M11c-full-test_hamcp214_plan_verification_rollback_projection.log",
+        "mut-M11c-full-test_f3_runtime_integration.log",
+        "mut-M11c-full-test_hamcp135_governed_rollback.log",
+        "mut-M11c-full-test_hamcp069a_entity_metadata_execution.log"
+      ],
+      "gap_closed_by": [
+        "test_hamcp181_proven_no_call_producers.WebSocketClientProofTests.test_connection_failure_after_the_command_carries_no_proof"
+      ],
+      "gap_closure": {
+        "head": "gap-M11c-head.log",
+        "mutant": "gap-M11c-mutant.log",
+        "mutant_result": "FAILED (failures=2)"
+      },
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M12a",
+      "concept": "config adapter: registry error result is confirmed P3",
+      "sites": [
+        "f3_configuration/adapter.py:601"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+          "old": "                NormalizedOperationOutcome.DISPATCH_INDETERMINATE,\n                intent=True,\n                invocation_count=1,\n                may_have_dispatched=True,\n                response_received=True,\n                codes=(\n                    ERROR_RESULT_AFTER_SEND,\n                    \"provider_response_indeterminate\",\n                ),\n                provider_mutation_count=None,",
+          "new": "                NormalizedOperationOutcome.DISPATCH_FAILED_CONFIRMED,\n                intent=True,\n                invocation_count=1,\n                may_have_dispatched=True,\n                response_received=True,\n                codes=(\n                    \"provider_rejected_mutation\",\n                    \"provider_permission_denied\",\n                ),\n                provider_mutation_count=0,"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_entity_registry_error_unproven",
+        "test_hamcp183_entity_registry_error_truth"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_error_without_change_is_still_not_read_as_no_mutation",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_every_post_assignment_fault_is_not_disproven_on_every_surface",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_generic_unknown_error_after_assignment_is_not_disproven",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_readback_follows_the_error_result",
+        "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_change_then_unknown_error_is_verified_applied_never_unchanged",
+        "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_every_non_p3_core_error_code_is_uncertain_then_readback",
+        "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_rollback_is_offered_exactly_as_for_a_normal_success",
+        "test_hamcp183_entity_registry_error_truth.ErrorWithoutChangeTests.test_error_without_change_is_verified_not_applied",
+        "test_hamcp183_entity_registry_error_truth.ErrorWithoutChangeTests.test_third_state_after_error_requires_manual_review",
+        "test_hamcp183_entity_registry_error_truth.ReadbackUnavailableTests.test_readback_unavailable_stays_uncertain_and_never_redispatches",
+        "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_lost_response_third_state_mapping_is_unchanged",
+        "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_planned_state_is_verified",
+        "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_prior_state_is_verified_not_applied",
+        "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_third_state_requires_manual_review"
+      ],
+      "logs": [
+        "mut-M12a.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M12b",
+      "concept": "P3 widened: permission_denied not required",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:435"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "                    target_type in _P3_TARGET_TYPES\n                    and PROVIDER_PERMISSION_DENIED in codes\n",
+          "new": "                    target_type in _P3_TARGET_TYPES\n"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_entity_registry_error_unproven"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_dispatch_facts.RProvenTests.test_negatives_are_unproven",
+        "test_hamcp181_entity_registry_error_unproven.Beta8EntityRegistryErrorRecordTests.test_beta8_registry_error_record_projects_r_unproven_and_is_not_rewritten",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryProjectionControlTests.test_confirmed_failure_without_permission_denied_is_r_unproven"
+      ],
+      "logs": [
+        "mut-M12b.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M12c",
+      "concept": "entity_metadata: error result raised as not-dispatched",
+      "sites": [
+        "governance/entity_metadata.py:634"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/entity_metadata.py",
+          "old": "                raise EntityMetadataUpdateErrorResult(\n                    details={",
+          "new": "                raise ConfigurationMutationNotDispatchedError(\n                    details={"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp183_entity_registry_error_truth",
+        "test_hamcp181_entity_registry_error_unproven",
+        "test_hamcp181_proven_no_call_producers"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_error_without_change_is_still_not_read_as_no_mutation",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_every_post_assignment_fault_is_not_disproven_on_every_surface",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_generic_unknown_error_after_assignment_is_not_disproven",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_readback_follows_the_error_result",
+        "test_hamcp181_proven_no_call_producers.EntityMetadataChainTests.test_registry_error_result_stays_unproven_without_proof",
+        "test_hamcp181_proven_no_call_producers.EntityMetadataGatewaySiteTests.test_error_result_and_transport_failures_carry_no_proof",
+        "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_change_then_unknown_error_is_verified_applied_never_unchanged",
+        "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_every_non_p3_core_error_code_is_uncertain_then_readback",
+        "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_rollback_is_offered_exactly_as_for_a_normal_success",
+        "test_hamcp183_entity_registry_error_truth.ErrorWithoutChangeTests.test_error_without_change_is_verified_not_applied",
+        "test_hamcp183_entity_registry_error_truth.ErrorWithoutChangeTests.test_third_state_after_error_requires_manual_review",
+        "test_hamcp183_entity_registry_error_truth.GatewayClassificationTests.test_error_result_is_mutation_unknown_not_not_dispatched",
+        "test_hamcp183_entity_registry_error_truth.ReadbackUnavailableTests.test_readback_unavailable_stays_uncertain_and_never_redispatches",
+        "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_lost_response_third_state_mapping_is_unchanged",
+        "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_planned_state_is_verified",
+        "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_prior_state_is_verified_not_applied",
+        "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_third_state_requires_manual_review"
+      ],
+      "logs": [
+        "mut-M12c.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "M12d",
+      "concept": "child_facts: (c) uncertainty codes no longer pin send-uncertain",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:448"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "    if codes & _C_UNCERTAINTY_CODES:",
+          "new": "    if False:"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_entity_registry_error_unproven"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_dispatch_facts.ChildPhaseTests.test_uncertainty_code_with_a_response_stays_send_uncertain",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_error_without_change_is_still_not_read_as_no_mutation",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_every_post_assignment_fault_is_not_disproven_on_every_surface",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_generic_unknown_error_after_assignment_is_not_disproven",
+        "test_hamcp181_entity_registry_error_unproven.EntityRegistryProjectionControlTests.test_od15_error_result_codes_stay_uncertain_whatever_the_readback"
+      ],
+      "logs": [
+        "mut-M12d.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "HEALTH1",
+      "concept": "health admits a non-boolean truthy answer",
+      "sites": [
+        "governance/service.py:15066"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+          "old": "                and core.route_status(capabilities).get(\"available\") is True\n            )\n        except Exception:\n            admitted = False",
+          "new": "                and bool(core.route_status(capabilities).get(\"available\"))\n            )\n        except Exception:\n            admitted = False"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_health_core_admission"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_health_core_admission.HealthCoreAdmissionTests.test_only_a_boolean_true_reads_as_admitted"
+      ],
+      "logs": [
+        "mut-HEALTH1.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "HEALTH2",
+      "concept": "health admits on a failing read",
+      "sites": [
+        "governance/service.py:15068"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+          "old": "        except Exception:\n            admitted = False\n        return \"admitted\" if admitted else pending",
+          "new": "        except Exception:\n            admitted = True\n        return \"admitted\" if admitted else pending"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_health_core_admission"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_health_core_admission.HealthCoreAdmissionTests.test_a_failing_read_reports_pending_and_health_still_answers"
+      ],
+      "logs": [
+        "mut-HEALTH2.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "HEALTH3",
+      "concept": "health admits a partial pair (first capability only)",
+      "sites": [
+        "governance/service.py:15066"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+          "old": "                and core.route_status(capabilities).get(\"available\") is True\n            )\n        except Exception:\n            admitted = False",
+          "new": "                and core.route_status(tuple(capabilities)[:1]).get(\"available\") is True\n            )\n        except Exception:\n            admitted = False"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_health_core_admission"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_health_core_admission.HealthCoreAdmissionTests.test_a_partially_admitted_pair_stays_pending",
+        "test_hamcp181_health_core_admission.HealthCoreAdmissionTests.test_an_admitted_generation_reports_admitted"
+      ],
+      "logs": [
+        "mut-HEALTH3.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "SEND1",
+      "concept": "summary send-time map stores a captured time for (b)",
+      "sites": [
+        "f3_runtime/runtime.py:3334"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+          "old": "            times[child_id] = (\n                None\n                if phase == dispatch_projection.PHASE_INTENT_RECORDED_NOT_SENT\n                else self._provider_call_started_at.get(child_id)\n            )",
+          "new": "            times[child_id] = self._provider_call_started_at.get(child_id)"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_terminal_outcome_t2",
+        "test_hamcp181_fan_power_dispatched_at"
+      ],
+      "campaign_verdict": "SURVIVED",
+      "logs": [
+        "mut-SEND1.log",
+        "mut-SEND1-full-test_hamcp181_architecture_guard.log",
+        "mut-SEND1-full-test_hamcp181_audit_labels.log",
+        "mut-SEND1-full-test_hamcp181_beta8_downgrade.log",
+        "mut-SEND1-full-test_hamcp181_dispatch_facts.log",
+        "mut-SEND1-full-test_hamcp181_entity_registry_error_unproven.log",
+        "mut-SEND1-full-test_hamcp181_fan_power_dispatched_at.log",
+        "mut-SEND1-full-test_hamcp181_health_core_admission.log",
+        "mut-SEND1-full-test_hamcp181_proven_no_call_producers.log",
+        "mut-SEND1-full-test_hamcp181_rollback_unchanged_forward.log",
+        "mut-SEND1-full-test_hamcp181_surface_consistency.log",
+        "mut-SEND1-full-test_hamcp181_terminal_outcome_t2.log",
+        "mut-SEND1-full-test_hamcp183_entity_registry_error_truth.log",
+        "mut-SEND1-full-test_hamcp214_plan_verification_rollback_projection.log",
+        "mut-SEND1-full-test_f3_runtime_integration.log",
+        "mut-SEND1-full-test_hamcp135_governed_rollback.log",
+        "mut-SEND1-full-test_hamcp069a_entity_metadata_execution.log"
+      ],
+      "gap_closed_by": [
+        "test_hamcp181_proven_no_call_producers.ConfigurationChainTests.test_helper_appearing_after_intent_stores_no_send_time",
+        "test_hamcp181_proven_no_call_producers.EntityMetadataChainTests.test_authentication_refused_after_intent_stores_no_send_time"
+      ],
+      "gap_closure": {
+        "head": "gap-SEND1-head.log",
+        "mutant": "gap-SEND1-mutant.log",
+        "mutant_result": "FAILED (failures=2)"
+      },
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "SEND2",
+      "concept": "(b) parent publishes the stored time as a provider call start",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:628"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "        dispatched_at = None\n        basis = DISPATCHED_AT_CALL_NOT_SENT",
+          "new": "        dispatched_at = stored_dispatched_at\n        basis = DISPATCHED_AT_PROVIDER_CALL_START"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_fan_power_dispatched_at",
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_dispatch_facts.Beta8HistoricalRecordTests.test_beta8_dashboard_b_keeps_stored_intent_but_publishes_null",
+        "test_hamcp181_dispatch_facts.FieldSetTests.test_not_sent_fields_and_governed_dispatched_at_null",
+        "test_hamcp181_fan_power_dispatched_at.GovernedDispatchedAtTests.test_b_publishes_null_with_call_not_sent",
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+      ],
+      "logs": [
+        "mut-SEND2.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "SEND3",
+      "concept": "(b) child basis reads a captured time as a provider call start",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:508"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "    if child.phase == PHASE_INTENT_RECORDED_NOT_SENT:\n        return DISPATCHED_AT_CALL_NOT_SENT\n    if child.send_time_captured:\n        return (\n            DISPATCHED_AT_PROVIDER_CALL_START\n            if child.phase in SENT_PHASES\n            and child.provider_call_started_at is not None",
+          "new": "    if child.send_time_captured:\n        return (\n            DISPATCHED_AT_PROVIDER_CALL_START\n            if child.provider_call_started_at is not None"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_surface_consistency",
+        "test_hamcp181_terminal_outcome_t2"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+        "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts"
+      ],
+      "logs": [
+        "mut-SEND3.log"
+      ],
+      "final_verdict": "KILLED"
+    },
+    {
+      "id": "SEND4",
+      "concept": "send_times include (b) children; (b) branch publishes them",
+      "sites": [
+        "f3_runtime/dispatch_facts.py:622",
+        "f3_runtime/dispatch_facts.py:628"
+      ],
+      "edits": [
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "        if child.phase in SENT_PHASES and child.provider_call_started_at is not None\n    ]",
+          "new": "        if child.provider_call_started_at is not None\n    ]"
+        },
+        {
+          "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+          "old": "        dispatched_at = None\n        basis = DISPATCHED_AT_CALL_NOT_SENT",
+          "new": "        dispatched_at = _earliest(send_times) if send_times else None\n        basis = DISPATCHED_AT_PROVIDER_CALL_START if send_times else DISPATCHED_AT_CALL_NOT_SENT"
+        }
+      ],
+      "fast_modules": [
+        "test_hamcp181_dispatch_facts",
+        "test_hamcp181_terminal_outcome_t2",
+        "test_hamcp181_fan_power_dispatched_at"
+      ],
+      "campaign_verdict": "KILLED",
+      "killed_by_stage": "fast",
+      "killing_tests": [
+        "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+        "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+      ],
+      "logs": [
+        "mut-SEND4.log"
+      ],
+      "final_verdict": "KILLED"
+    }
+  ]
+}

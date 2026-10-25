@@ -465,6 +465,33 @@ class RejectedDeleteTests(T2Harness):
         self.assertNotIn("may have been sent", str(duplicate.exception))
         self.assertEqual(len(self.config_rest.deletes()), 1)
 
+    async def test_compact_receipt_never_sheds_a_distinct_outcome_code(self):
+        # The rejected delete's outcome_code differs from its terminal outcome,
+        # so it is not a duplicate: a compact receipt keeps it or refuses to
+        # render, and never renders the rejection without it.
+        created = await self.planned("delete")
+        self.config_rest.before_delete = lambda: self.config_rest.configs[
+            "automation"
+        ].pop(self.target)
+        result = await self.apply(created)
+        self.assertEqual(result["outcome_code"], "provider_rejected_mutation")
+        view = self.service.get_execution_task(result["task_id"])
+        self.assertNotEqual(view["terminal_outcome"], result["outcome_code"])
+        rendered = 0
+        for length in range(0, 300, 5):
+            data = dict(result)
+            data["reason"] = "r" * length
+            with self.subTest(reason_length=length):
+                try:
+                    body = receipt(data, 1024, "apply_change_plan")
+                except ValueError:
+                    continue
+                rendered += 1
+                self.assertEqual(body.get("outcome_code"), "provider_rejected_mutation")
+        # Some lengths render, so the sweep is not vacuous.
+        self.assertGreater(rendered, 0)
+        self.assertEqual(len(self.config_rest.deletes()), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

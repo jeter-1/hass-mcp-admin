@@ -20,12 +20,14 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import copy
+import json
 from pathlib import Path
 import sys
 from typing import Any
 import unittest
 from unittest.mock import patch
 
+import aiohttp
 from aiohttp import web
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +40,7 @@ from tests.core_authority_fakes import require_core_authority  # noqa: E402
 from tests import test_beta37_exact_helper_state as helper_state_tests  # noqa: E402
 from tests import test_f3_runtime_integration as f3_integration  # noqa: E402
 from tests.test_beta37_exact_helper_state import FakeHelperStateGateway  # noqa: E402
+from tests.test_2_1a_operational_backup import exact_catalog  # noqa: E402
 from tests.test_dev14_resource_adapters import (  # noqa: E402
     AUTOMATION,
     INPUT_BOOLEAN,
@@ -70,6 +73,10 @@ from ha_mcp_engineering.governance.entity_metadata import (  # noqa: E402
     EntityMetadataUpdateErrorResult,
     EntityRegistryMetadataGateway,
 )
+from ha_mcp_engineering.governance.operational import (  # noqa: E402
+    BackupAdministrationGateway,
+    OperationalGatewayError,
+)
 from ha_mcp_engineering.governance.helper_state import (  # noqa: E402
     HelperStateGateway,
     HelperStateGatewayError,
@@ -78,6 +85,10 @@ from ha_mcp_engineering.governance.resources import (  # noqa: E402
     ENTITY_METADATA_RESOURCE_TYPE,
     ConfigurationMutationNotDispatchedError,
     ConfigurationResourceGateway,
+)
+from ha_mcp_engineering.f3_runtime.runtime import F3RuntimeIntegration  # noqa: E402
+from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
+    ReviewedOperationalBackupProvider,
 )
 
 
@@ -357,6 +368,23 @@ class HelperStateGatewaySiteTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(HelperStateGatewayError(
             "x", dispatched=True, call_not_sent=True).call_not_sent)
 
+    async def test_unclassified_failure_after_the_command_carries_no_proof(self):
+        # The callback succeeded and the command was handed to the transport:
+        # an unclassified failure there is never the callback's not-sent row.
+        async def before_dispatch():
+            return None
+        for error in (RuntimeError("synthetic failure after the command"),
+                      OSError("synthetic connection reset after the command")):
+            with self.subTest(error=type(error).__name__):
+                websocket = self._WebSocket(error)
+                with self.assertRaises(Exception) as raised:
+                    await HelperStateGateway(None, websocket).set_state(
+                        "input_boolean.exact_target", "on", before_dispatch=before_dispatch)
+                self.assertFalse(_not_sent_attribute(raised.exception))
+                self.assertNotEqual(getattr(raised.exception, "category", None),
+                                    "before_dispatch_failed")
+                self.assertEqual(len(websocket.payloads), 1)
+
 
 # -- site level: the real WebSocket client against a loopback peer ---------------
 
@@ -442,6 +470,31 @@ class WebSocketClientProofTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotEqual(exc.details.get("provider_response_received"), True)
                 self.assertEqual(peer.commands(), [])
 
+    async def test_connection_failure_after_the_command_carries_no_proof(self):
+        # The command frame is written; the read that follows it fails at the
+        # connection level.  That is unavailable/uncertain, never not sent.
+        original = aiohttp.ClientWebSocketResponse.receive_json
+        for error_type in (aiohttp.ClientConnectionError, ConnectionResetError):
+            with self.subTest(error=error_type.__name__):
+                reads = 0
+
+                async def receive_json(websocket, *args, **kwargs):
+                    nonlocal reads
+                    reads += 1
+                    # auth_required and auth_ok precede the command frame.
+                    if reads <= 2:
+                        return await original(websocket, *args, **kwargs)
+                    raise error_type("synthetic connection failure after the command")
+
+                with patch.object(aiohttp.ClientWebSocketResponse, "receive_json",
+                                  receive_json):
+                    peer, exc = await self.run_mode("drop_after_command")
+                self.assertEqual(reads, 3)
+                self.assertIsInstance(exc, HomeAssistantUnavailableError)
+                self.assertFalse(_not_sent_attribute(exc))
+                self.assertEqual([frame["type"] for frame in peer.commands()],
+                                 [self.COMMAND["type"]])
+
     async def test_answered_or_lost_commands_carry_no_proof(self):
         # A dropped connection surfaces whatever the transport raised; it must
         # only never be declared not sent.
@@ -500,6 +553,42 @@ class ConfigurationChainTests(_ProofAssertions, f3_integration.F3ConfigurationAc
         # Stop on first failure: no later operation was written.
         self.assertEqual([call[2] for call in self.gateway.calls if call[0] == "write"],
                          ["input_number"])
+
+    def send_times(self, task_id):
+        task = self.service.task_repository.get(task_id)
+        return task.verification_summary.get(df.SEND_TIME_SUMMARY_KEY)
+
+    async def test_helper_appearing_after_intent_stores_no_send_time(self):
+        # OD-6(ii): the gateway observed a provider-call start for this child
+        # (its boundary ran before the preflight refused), but a proven
+        # no-call stores null, after apply and after a restart.
+        self.routed.add(("input_number", "input_number.hvac_target"))
+        self.websocket.responses["input_number/list"] = [{"id": "hvac_target", "name": "x"}]
+        created = await self.create_hvac_plan()
+        times = self.runtime._provider_call_started_at = _RecordingSendTimes()
+        result, view, _events = await self.applied(created)
+        self.assertEqual(view["dispatch_phase"], NOT_SENT)
+        child_id = self.runtime.children.declarations_for_task(result["task_id"])[0]["child_id"]
+        self.assertIsInstance(times.captured.get(child_id), str)
+        self.assertEqual(self.send_times(result["task_id"]), {child_id: None})
+        self.assertIsNone(view["verification_summary"][df.SEND_TIME_SUMMARY_KEY][child_id])
+        self.assertIsNone(view["dispatched_at"])
+        self.runtime = F3RuntimeIntegration(
+            service=self.service,
+            storage_root=str(self.root / "plans"),
+            configuration_gateway=f3_integration._ExactFakeConfigurationGateway(self.gateway),
+            backup_gateway=None,
+            lifecycle_gateway=None,
+            provider_identity_reader=f3_integration._provider_identity,
+            retention_days=90,
+        )
+        self.service.f3_runtime = self.runtime
+        await self.runtime.recover_once("restart")
+        self.assertEqual(self.send_times(result["task_id"]), {child_id: None})
+        after = self.service.get_execution_task(result["task_id"])
+        self.assertIsNone(after["verification_summary"][df.SEND_TIME_SUMMARY_KEY][child_id])
+        self.assertEqual(after["dispatch_phase"], NOT_SENT)
+        self.assertEqual(_sends(self.rest, self.websocket), [])
 
     async def test_p1_rejection_stays_sent_rejected_without_proof(self):
         self.routed.add(("automation", "apply_hvac_comfort"))
@@ -574,6 +663,30 @@ class EntityMetadataChainTests(_ProofAssertions, LoopbackRegistryTestCase):
         self.assertEqual(len(self.ws.updates()), updates)
         await self.assert_replay_refused(created, result["task_id"])
 
+    async def test_authentication_refused_after_intent_stores_no_send_time(self):
+        created = await self.approved()
+        times = self.runtime._provider_call_started_at = _RecordingSendTimes()
+        with at_intent(lambda: setattr(self.peer, "refuse_auth", True)):
+            result = await self.apply(created)
+        view = self.service.get_execution_task(result["task_id"])
+        self.assertEqual(view["dispatch_phase"], NOT_SENT)
+        (declaration,) = self.runtime.children.declarations_for_task(result["task_id"])
+        child_id = declaration["child_id"]
+        # The provider boundary was entered before the client's refusal.
+        self.assertIsInstance(times.captured.get(child_id), str)
+
+        def stored():
+            task = self.service.task_repository.get(result["task_id"])
+            return task.verification_summary.get(df.SEND_TIME_SUMMARY_KEY)
+
+        self.assertEqual(stored(), {child_id: None})
+        await self.restart_runtime()
+        await self.runtime.recover_once("restart")
+        self.assertEqual(stored(), {child_id: None})
+        after = self.service.get_execution_task(result["task_id"])
+        self.assertIsNone(after["verification_summary"][df.SEND_TIME_SUMMARY_KEY][child_id])
+        self.assertIsNone(after["dispatched_at"])
+
     async def test_unauthorized_result_stays_r_proven_without_proof(self):
         created = await self.approved()
         self.fail_without_change("unauthorized")
@@ -632,6 +745,31 @@ class _FanPowerProofCases(_ProofAssertions):
         result, events = await self.run_at_intent(retire)
         self.assert_proven_not_sent(result, events)
         self.assertEqual(self.transport.writes, 0)
+
+    async def test_authority_retired_after_the_call_is_never_proven_not_sent(self):
+        # The authority check after the transport returned runs strictly after
+        # tools/call: a refusal there is never the b8 not-sent row.
+        self.kind = self.kind_type(self)
+        await self.kind.build()
+        original = self.transport.execute_read
+
+        async def execute_read(tool, args, **kwargs):
+            writes = self.transport.writes
+            value = await original(tool, args, **kwargs)
+            if self.transport.writes > writes:
+                self.transport.authority = "retired"
+            return value
+
+        self.transport.execute_read = execute_read
+        request = self.kind.request(self)
+        self.kind.bind(self, request)
+        result = await self.service.control(request)
+        events = self.service.executions.get(result["task_id"]).events
+        self.assertEqual(self.transport.writes, 1)
+        self.assertIs(result["provider_dispatch_occurred"], True)
+        self.assertIn(result["dispatch_phase"], {df.PHASE_SEND_UNCERTAIN,
+                                                 df.PHASE_SENT_RESPONSE_RECEIVED})
+        self.assert_no_proof(result, events)
 
     async def test_lost_response_stays_uncertain_without_proof(self):
         self.kind = self.kind_type(self)
@@ -710,7 +848,55 @@ for _cls in (ConfigurationChainTests, EntityMetadataChainTests,
 # -- exclusions: backup and add-on lifecycle stay uncertain ----------------------
 
 
+class _UnwrappedBackupTransport:
+    """Reviewed catalog; a callback failure reaches the provider unwrapped."""
+
+    def __init__(self) -> None:
+        self.catalog = exact_catalog("8.0.0")
+        self.sends = 0
+
+    async def execute_read(self, tool, arguments, *, catalog_validator, before_dispatch,
+                           **kwargs):
+        catalog_validator(self.catalog)
+        await before_dispatch()
+        self.sends += 1
+        raise AssertionError("tools/call must remain unreachable")
+
+
+class _RecordingSendTimes(dict):
+    """The runtime's send-time map, remembering every captured start.
+
+    The runtime drops its in-process entries once the terminal summary is
+    stored, so a test proving a captured time was withheld records it here.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.captured: dict[str, str] = {}
+
+    def setdefault(self, key, default=None):
+        self.captured.setdefault(key, default)
+        return super().setdefault(key, default)
+
+
 class _ExclusionCases(_ProofAssertions):
+    def boundary_labels(self):
+        rows = [json.loads(line) for line in
+                (Path(self.temp.name) / "audit.jsonl").read_text().splitlines()]
+        return [row["event"] for row in rows
+                if row.get("event", "").startswith("f3_provider_")
+                and "readback" not in row["event"]]
+
+    async def assert_refused_label(self, created):
+        plan = await self._grant(created)
+        with at_intent(_raise_callback_failure):
+            await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        labels = self.boundary_labels()
+        # A pre-send refusal on these gateways is labelled refused, never
+        # not sent: the exclusion holds on the audit surface too.
+        self.assertEqual(labels, ["f3_provider_invocation_refused"])
+        self.assertNotIn("f3_" + df.PROVIDER_CALL_NOT_SENT, labels)
+
     async def assert_excluded(self, created, sends):
         plan = await self._grant(created)
         with at_intent(_raise_callback_failure):
@@ -731,12 +917,47 @@ class BackupExclusionTests(_ExclusionCases, f3_integration.F3BackupActivationTes
             await self.service.create_backup_plan(backup_name="F3 disposable"),
             lambda: self.gateway.dispatch_count)
 
+    async def test_backup_pre_send_refusal_is_labelled_refused(self):
+        await self.assert_refused_label(
+            await self.service.create_backup_plan(backup_name="F3 disposable"))
+        self.assertEqual(self.gateway.dispatch_count, 0)
+
+    async def test_real_provider_not_dispatched_error_after_intent_is_never_proven_not_sent(self):
+        # The shipped provider and gateway turn the failed callback into
+        # OperationalGatewayError(dispatched=False) after the intent committed.
+        provider = ReviewedOperationalBackupProvider()
+        transport = _UnwrappedBackupTransport()
+        provider._transport = transport
+        provider._state.configured = True
+        real = BackupAdministrationGateway(provider, None)
+        raised: list[BaseException] = []
+
+        async def create_full_backup(name, *, before_dispatch):
+            try:
+                return await real.create_full_backup(name, before_dispatch=before_dispatch)
+            except BaseException as exc:
+                raised.append(exc)
+                raise
+
+        self.enterContext(patch.object(self.gateway, "create_full_backup", create_full_backup))
+        await self.assert_excluded(
+            await self.service.create_backup_plan(backup_name="F3 disposable"),
+            lambda: transport.sends)
+        self.assertIsInstance(raised[0], OperationalGatewayError)
+        self.assertIs(raised[0].dispatched, False)
+        self.assertEqual(provider.health_snapshot()["dispatch_count"], 0)
+
 
 class LifecycleExclusionTests(_ExclusionCases, f3_integration.F3OperationalActivationTests):
     async def test_addon_restart_callback_failure_is_never_proven_not_sent(self):
         await self.assert_excluded(
             await self.service.create_addon_restart_plan(addon_slug="local_test_addon"),
             lambda: self.lifecycle.dispatch_count)
+
+    async def test_lifecycle_pre_send_refusal_is_labelled_refused(self):
+        await self.assert_refused_label(
+            await self.service.create_addon_restart_plan(addon_slug="local_test_addon"))
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
 
 
 for _cls in (BackupExclusionTests, LifecycleExclusionTests):
