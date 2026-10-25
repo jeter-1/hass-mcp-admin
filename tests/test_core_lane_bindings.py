@@ -52,10 +52,10 @@ contract = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(contract)
 
 COMMITTED = support_window.load(ROOT)
-# A synthetic brand-new Core: 2026.10.2 while that release has no reviewed
-# binding, otherwise the next patch release without one, so a later real
-# binding never turns this control into a reviewed Core (HAMCP-159 R2).
-NEW_VERSION = core_bindings.unreviewed_version("2026.10.2")
+# A synthetic brand-new Core: the next patch release after the newest reviewed
+# binding, so a later real binding never turns this control into a reviewed
+# Core (HAMCP-159 R2) or leaves it in a gap below the newest one (HAMCP-222).
+NEW_VERSION = core_bindings.unreviewed_versions()[0]
 NEW_DIGEST = "sha256:" + "c" * 64
 # Synthetic, offline, same exact shape as a committed lane provenance fixture.
 NEW_PROVENANCE = {"entry_id": "disposable-core-" + NEW_VERSION + "-cccccccc", "server_name": "home-assistant-core",
