@@ -222,6 +222,27 @@ def _shed_duplicate_verification(value, facts, reads) -> bool:
     return False
 
 
+def _shed_duplicate_outcome_code(value, facts, reads) -> bool:
+    # HAMCP-181 PR2 (T2): a stored (a)/(b) terminal outcome and its summary
+    # outcome_code are one string; drop only the identical repeat.
+    if (
+        "outcome_code" in facts
+        and facts.get("terminal_outcome") == facts["outcome_code"]
+    ):
+        del facts["outcome_code"]
+        return True
+    return False
+
+
+def _shed_duplicate_task_verification(value, facts, reads) -> bool:
+    # The task summary status repeats the task state for a terminal failure.
+    state = facts.get("task_state", facts.get("state"))
+    if state is not None and facts.get("task_verification_status") == state:
+        del facts["task_verification_status"]
+        return True
+    return False
+
+
 def _shed_self_retrieval(value, facts, reads) -> bool:
     # A hint to re-run the operation that produced this receipt is navigation
     # back to the same truncated response, not disclosure data.
@@ -258,6 +279,10 @@ _MINIMAL_SHEDDING = (
     _shed_dispatched_at_basis,
     _shed_dispatch_phase,
     _shed_counter_group,
+    # HAMCP-181 PR2: last, so a receipt that fits under the PR1 rules keeps
+    # every value it had (V9 value identity).
+    _shed_duplicate_outcome_code,
+    _shed_duplicate_task_verification,
 )
 
 

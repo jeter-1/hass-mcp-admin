@@ -85,6 +85,12 @@ EXPECTED_CONSUMERS = {
         # HAMCP-069B: reads only the static ALREADY_PRESENT_CAPABILITY_IDENTITIES
         # constant (the V9 identity set), never a projected dispatch fact.
         "F3RuntimeIntegration._entity_metadata_not_dispatched",
+        # HAMCP-181 PR2 producers: the T2 terminal outcome and summary keys
+        # (design section 6), the send-time entry for an intent-bearing child
+        # (OD-6(ii)), and the OD-11 refusal-only gate.
+        "F3RuntimeIntegration._project_locked",
+        "F3RuntimeIntegration._summary_send_times",
+        "F3RuntimeIntegration._plan_fresh_rollback",
     },
     "governance/service.py": {
         "ChangeGovernanceService._build_health_summary",
@@ -245,7 +251,18 @@ def _on_refusal_path(node: ast.AST, function: ast.AST, parents) -> bool:
     current = node
     while current is not function:
         parent = parents[current]
-        # A branch condition is the decision itself, never a refusal detail.
+        # A branch condition is the decision itself, never a refusal detail,
+        # except a refusal-only gate (design section 5, "except the stricter
+        # refusal"; HAMCP-181 PR2 OD-11): an ``if`` with no ``else`` whose
+        # body ends by raising can only refuse, never admit.
+        if (
+            isinstance(parent, ast.If)
+            and current is parent.test
+            and not parent.orelse
+            and parent.body
+            and isinstance(parent.body[-1], ast.Raise)
+        ):
+            return True
         if (
             isinstance(parent, (ast.If, ast.While, ast.IfExp, ast.Assert))
             and current is parent.test
@@ -262,6 +279,29 @@ def _on_refusal_path(node: ast.AST, function: ast.AST, parents) -> bool:
                     return True
         current = parent
     return False
+
+
+def _decision_references(tree: ast.Module):
+    """Count projection references in decision functions; list those not on a refusal path."""
+
+    imported = _imports_projection(tree)
+    parents = _parents(tree)
+    checked = 0
+    outside = []
+    for qualified, function in _decision_functions(tree).items():
+        tainted = _tainted_names(function, imported)
+        for node in _own_nodes(function):
+            reference = _is_fact_reference(node, imported) or (
+                isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id in tainted
+            )
+            if not reference:
+                continue
+            checked += 1
+            if not _on_refusal_path(node, function, parents):
+                outside.append((qualified, node.lineno))
+    return checked, outside
 
 
 def _decision_functions(tree: ast.Module) -> dict[str, ast.AST]:
@@ -459,28 +499,46 @@ class ProjectionConsumerTests(unittest.TestCase):
     def test_decision_functions_consult_the_projection_only_to_word_a_refusal(self):
         checked = 0
         for relative in sorted(PROJECTION_HOSTS):
-            tree = _tree(relative)
-            imported = _imports_projection(tree)
-            parents = _parents(tree)
-            for qualified, function in _decision_functions(tree).items():
-                tainted = _tainted_names(function, imported)
-                for node in _own_nodes(function):
-                    reference = _is_fact_reference(node, imported) or (
-                        isinstance(node, ast.Name)
-                        and isinstance(node.ctx, ast.Load)
-                        and node.id in tainted
+            references, outside = _decision_references(_tree(relative))
+            checked += references
+            for qualified, line in outside:
+                with self.subTest(function=qualified, line=line):
+                    self.fail(
+                        f"{relative}:{line} {qualified} consults the "
+                        "dispatch-facts projection outside a refusal"
                     )
-                    if not reference:
-                        continue
-                    checked += 1
-                    with self.subTest(function=qualified, line=node.lineno):
-                        self.assertTrue(
-                            _on_refusal_path(node, function, parents),
-                            f"{relative}:{node.lineno} {qualified} consults the "
-                            "dispatch-facts projection outside a refusal",
-                        )
         # The cancel refusals really are covered (not vacuous).
         self.assertGreater(checked, 0)
+
+    def test_refusal_only_gate_cannot_be_widened_into_an_admission(self):
+        """HAMCP-181 PR2 OD-11: only an ``if`` that can solely refuse passes."""
+
+        source = (RUNTIME / "f3_runtime/runtime.py").read_text(encoding="utf-8")
+        gate = "            if self.dispatch_facts_for_task(task).changed_by_engineering is False:\n"
+        self.assertEqual(source.count(gate), 1)
+        start = source.index(gate)
+        raise_at = source.index("                raise GovernanceError(\n", start)
+        end = source.index("                )\n", raise_at) + len("                )\n")
+        block = source[start:end]
+        self.assertEqual(_decision_references(ast.parse(source))[1], [])
+        mutants = {
+            # An else branch makes the condition decide an admission.
+            "else_admits": block + "            else:\n                pass\n",
+            # Returning instead of raising admits a different path.
+            "return_not_raise": block.replace(
+                "                raise GovernanceError(", "                return GovernanceError(", 1),
+            # A trailing statement after the raise-bearing body admits.
+            "body_does_not_end_by_raising": block.replace(
+                "                raise GovernanceError(",
+                "                _unused = GovernanceError(", 1),
+        }
+        for name, mutated_block in mutants.items():
+            with self.subTest(mutant=name):
+                mutated = source[:start] + mutated_block + source[end:]
+                self.assertIn(
+                    "F3RuntimeIntegration._plan_fresh_rollback",
+                    {qualified for qualified, _ in _decision_references(ast.parse(mutated))[1]},
+                )
 
     def test_stored_intent_predicate_is_unchanged(self):
         tree = _tree("governance/service.py")

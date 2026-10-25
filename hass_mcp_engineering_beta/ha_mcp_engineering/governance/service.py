@@ -15050,6 +15050,25 @@ class ChangeGovernanceService:
                 "fallback_policy": "none",
             }
 
+    def _health_core_admission(
+        self, capabilities: tuple[str, ...], pending: str
+    ) -> str:
+        """The current Core admission of a provider's profiles, for display.
+
+        Reads the local admitted generation only (no Core call) and never
+        decides admission; any failure reports the pending reason.
+        """
+
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            admitted = (
+                core is not None
+                and core.route_status(capabilities).get("available") is True
+            )
+        except Exception:
+            admitted = False
+        return "admitted" if admitted else pending
+
     def _entity_metadata_provider_health_snapshot(self) -> dict[str, Any]:
         """Report the code-owned entity metadata provider without a Core call."""
 
@@ -15065,7 +15084,10 @@ class ChangeGovernanceService:
                 "configured_unprobed" if configured else "unavailable"
             ),
             "core_capability": "core.entity_registry_metadata_operation",
-            "core_admission": "owner_signed_reference_required",
+            "core_admission": self._health_core_admission(
+                ("core.entity_registry_metadata_operation",),
+                "owner_signed_reference_required",
+            ),
             "label_creation": False,
             "fallback": "none",
             "fallback_count": 0,
@@ -15102,7 +15124,13 @@ class ChangeGovernanceService:
                 "core.entity_registry_availability_operation",
                 "core.entity_assistant_exposure_operation",
             ],
-            "core_admission": "pending_signed_registry_admission",
+            "core_admission": self._health_core_admission(
+                (
+                    "core.entity_registry_availability_operation",
+                    "core.entity_assistant_exposure_operation",
+                ),
+                "pending_signed_registry_admission",
+            ),
             "writable_assistants": ["cloud.google_assistant", "conversation"],
             "fallback": "none",
             "fallback_count": 0,
@@ -15131,7 +15159,10 @@ class ChangeGovernanceService:
                 "configured_unprobed" if configured else "unavailable"
             ),
             "core_capabilities": [label_registry.CORE_CAPABILITY],
-            "core_admission": label_registry.PENDING_ADMISSION_REASON,
+            "core_admission": self._health_core_admission(
+                (label_registry.CORE_CAPABILITY,),
+                label_registry.PENDING_ADMISSION_REASON,
+            ),
             "label_deletion": False,
             "fallback": "none",
             "fallback_count": 0,
@@ -15158,7 +15189,10 @@ class ChangeGovernanceService:
                 "configured_unprobed" if configured else "unavailable"
             ),
             "core_capabilities": [configuration_delete.PROFILE],
-            "core_admission": configuration_delete.PENDING_ADMISSION_REASON,
+            "core_admission": self._health_core_admission(
+                (configuration_delete.PROFILE,),
+                configuration_delete.PENDING_ADMISSION_REASON,
+            ),
             "fallback": "none",
             "fallback_count": 0,
             "fallback_policy": "none",
