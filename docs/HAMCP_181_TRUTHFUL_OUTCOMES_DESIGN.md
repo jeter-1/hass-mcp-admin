@@ -1533,3 +1533,40 @@ confirmation** and are not decisions until he confirms them.
 No runtime, test, release, workflow, registry, schema or stable-v1 change. No
 live Home Assistant or deployed MCP access. No dispatch. No reviewer session.
 No Ready, merge, tag, publish or deploy. PR #254 / HAMCP-180 was not touched.
+
+## 10. PR2 implementation note (2.4.1-beta.37)
+
+This note records where PR2 source differs from revision 4. The decisions
+are unchanged.
+
+- **§7 item 11 and OD-15 were overtaken by HAMCP-183** (`494defc1`, on main
+  before PR2). An entity-registry error result other than P3 now raises
+  `EntityMetadataUpdateErrorResult`. The configuration adapter records it as
+  `dispatch_indeterminate` with codes `provider_error_after_send` and
+  `provider_response_indeterminate`, and `provider_mutation_count` null.
+  Registry readback then decides.
+
+  As a result, a live error result projects
+  `intent_recorded_send_uncertain` (c), not the (r-unproven) phase the §6
+  test row expected. (c) is stricter than (r-unproven): it never claims
+  non-mutation and never publishes `changed_by_engineering:false`.
+  `tests/test_hamcp181_entity_registry_error_unproven.py` pins that phase.
+  It also checks that the phase is never less uncertain than (r-unproven)
+  and that no surface claims non-mutation.
+
+  The design's (r-unproven) expectation still applies to historical records.
+  The test proves it on a record written by the shipped beta.8 writer, with
+  provenance. PR2 does not change this producer.
+- **Residual (c) sites outside the §6 file scope** keep today's
+  send-uncertain classification. The safe direction is to overstate that a
+  send may have happened. These sites are reported in the PR:
+  - the pre-request raises in `governance/configuration_delete.py`, in
+    `entity_availability_exposure.py` and in `label_registry.py`;
+  - `service.py:633` and `:655`;
+  - the backup and lifecycle gateways.
+- **OD-6(ii) send time.** The send time is captured in memory at the runtime
+  provider-boundary audit (`provider_invocation_started`). It is persisted in
+  the task's `verification_summary` child entry as `provider_call_started_at`.
+  `dispatched_at` then publishes it with basis `provider_call_start_time`.
+  (b) stays null. Records without the key keep their stored basis. There is
+  no F3 persisted-format change (OD-2).
