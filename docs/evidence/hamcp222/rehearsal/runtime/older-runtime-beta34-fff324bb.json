@@ -1,0 +1,100 @@
+{
+ "compiled_count": 25,
+ "engineering_version": "2.4.1-beta.34",
+ "journals": {
+  "journal-step1.json": {
+   "2026.10.0": {
+    "admitted_count": 22,
+    "entry_reference_count": 22,
+    "recovery_state": "stable",
+    "referenced_not_admitted": [],
+    "referenced_not_compiled": [],
+    "sequence": 13
+   },
+   "2026.10.1": {
+    "admitted_count": 25,
+    "entry_reference_count": 26,
+    "recovery_state": "stable",
+    "referenced_not_admitted": [
+     "core.configuration_delete_operation"
+    ],
+    "referenced_not_compiled": [
+     "core.configuration_delete_operation"
+    ],
+    "sequence": 13
+   },
+   "2026.10.3": {
+    "admitted_count": 0,
+    "entry_reference_count": 0,
+    "recovery_state": "incompatible",
+    "referenced_not_admitted": [],
+    "referenced_not_compiled": [],
+    "sequence": 13
+   },
+   "sha256": "46650bbcebb975cbaf8b5293a18132b73cd1eef4d7da680e509b32eeccc9a7a6"
+  },
+  "journal-step2.json": {
+   "2026.10.0": {
+    "admitted_count": 22,
+    "entry_reference_count": 22,
+    "recovery_state": "stable",
+    "referenced_not_admitted": [],
+    "referenced_not_compiled": [],
+    "sequence": 14
+   },
+   "2026.10.1": {
+    "admitted_count": 25,
+    "entry_reference_count": 26,
+    "recovery_state": "stable",
+    "referenced_not_admitted": [
+     "core.configuration_delete_operation"
+    ],
+    "referenced_not_compiled": [
+     "core.configuration_delete_operation"
+    ],
+    "sequence": 14
+   },
+   "2026.10.3": {
+    "admitted_count": 25,
+    "entry_reference_count": 26,
+    "recovery_state": "stable",
+    "referenced_not_admitted": [
+     "core.configuration_delete_operation"
+    ],
+    "referenced_not_compiled": [
+     "core.configuration_delete_operation"
+    ],
+    "sequence": 14
+   },
+   "sha256": "111fdec61fce82d2da155c3f83f162c88b44c043b58c32bd47ab3acd3e1fbbbe"
+  },
+  "journal-twin-seq12.json": {
+   "2026.10.0": {
+    "admitted_count": 22,
+    "entry_reference_count": 22,
+    "recovery_state": "stable",
+    "referenced_not_admitted": [],
+    "referenced_not_compiled": [],
+    "sequence": 12
+   },
+   "2026.10.1": {
+    "admitted_count": 22,
+    "entry_reference_count": 22,
+    "recovery_state": "stable",
+    "referenced_not_admitted": [],
+    "referenced_not_compiled": [],
+    "sequence": 12
+   },
+   "2026.10.3": {
+    "admitted_count": 0,
+    "entry_reference_count": 0,
+    "recovery_state": "incompatible",
+    "referenced_not_admitted": [],
+    "referenced_not_compiled": [],
+    "sequence": 12
+   },
+   "sha256": "3eed9e94131ed7e0b5fa517730165650135cf31984a192a66a5588c6241a286b"
+  }
+ },
+ "source": "/var/tmp/hamcp222-seq13/runtime/b34"
+}
