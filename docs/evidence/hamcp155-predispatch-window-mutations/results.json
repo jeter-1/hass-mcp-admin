@@ -1,0 +1,388 @@
+[
+  {
+    "name": "baseline",
+    "exit": 0,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": true
+  },
+  {
+    "name": "pw_reread_outside_window",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=29)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admitted_profiles_still_apply",
+      "test_authority_withdrawn_during_the_read_is_refused",
+      "test_consumers_are_disclosed_and_unresolved_ones_elevate",
+      "test_delete_and_recreate_requests_are_observed_exactly",
+      "test_delete_answered_ok_but_still_present_is_a_mismatch",
+      "test_delete_automation_then_recreate_exactly",
+      "test_delete_script_then_recreate_exactly",
+      "test_delete_verifies_with_one_dispatch_under_enforcing_client",
+      "test_drift_immediately_before_delete_refuses_as_stale",
+      "test_drift_in_the_window_is_stale_target_state",
+      "test_lane_recreate_write_receipt_matches_actual_requests",
+      "test_legacy_spelling_recreates_exactly",
+      "test_lingering_registry_entry_alone_is_manual_review",
+      "test_lingering_state_alone_is_manual_review",
+      "test_observation_refuses_when_admission_is_withdrawn_mid_delete",
+      "test_ordered_multi_delete",
+      "test_partial_plan_stops_on_first_failure",
+      "test_recovery_after_an_uncertain_delete_never_redispatches",
+      "test_rejected_delete_is_reported_rejected",
+      "test_resume_and_recovery_mid_plan_never_delete_without_admission",
+      "test_rollback_skips_a_target_that_was_recreated",
+      "test_runtime_removal_not_observed_is_manual_review",
+      "test_signed_core_delete_verifies_once",
+      "test_uncertain_delete_not_applied_is_a_mismatch",
+      "test_uncertain_delete_that_applied_is_verified_by_readback"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_adapter_ignores_window",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=29)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admitted_profiles_still_apply",
+      "test_authority_withdrawn_during_the_read_is_refused",
+      "test_consumers_are_disclosed_and_unresolved_ones_elevate",
+      "test_delete_and_recreate_requests_are_observed_exactly",
+      "test_delete_answered_ok_but_still_present_is_a_mismatch",
+      "test_delete_automation_then_recreate_exactly",
+      "test_delete_script_then_recreate_exactly",
+      "test_delete_verifies_with_one_dispatch_under_enforcing_client",
+      "test_drift_immediately_before_delete_refuses_as_stale",
+      "test_drift_in_the_window_is_stale_target_state",
+      "test_lane_recreate_write_receipt_matches_actual_requests",
+      "test_legacy_spelling_recreates_exactly",
+      "test_lingering_registry_entry_alone_is_manual_review",
+      "test_lingering_state_alone_is_manual_review",
+      "test_observation_refuses_when_admission_is_withdrawn_mid_delete",
+      "test_ordered_multi_delete",
+      "test_partial_plan_stops_on_first_failure",
+      "test_recovery_after_an_uncertain_delete_never_redispatches",
+      "test_rejected_delete_is_reported_rejected",
+      "test_resume_and_recovery_mid_plan_never_delete_without_admission",
+      "test_rollback_skips_a_target_that_was_recreated",
+      "test_runtime_removal_not_observed_is_manual_review",
+      "test_signed_core_delete_verifies_once",
+      "test_uncertain_delete_not_applied_is_a_mismatch",
+      "test_uncertain_delete_that_applied_is_verified_by_readback"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_runtime_never_binds_window",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=29)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admitted_profiles_still_apply",
+      "test_authority_withdrawn_during_the_read_is_refused",
+      "test_consumers_are_disclosed_and_unresolved_ones_elevate",
+      "test_delete_and_recreate_requests_are_observed_exactly",
+      "test_delete_answered_ok_but_still_present_is_a_mismatch",
+      "test_delete_automation_then_recreate_exactly",
+      "test_delete_script_then_recreate_exactly",
+      "test_delete_verifies_with_one_dispatch_under_enforcing_client",
+      "test_drift_immediately_before_delete_refuses_as_stale",
+      "test_drift_in_the_window_is_stale_target_state",
+      "test_lane_recreate_write_receipt_matches_actual_requests",
+      "test_legacy_spelling_recreates_exactly",
+      "test_lingering_registry_entry_alone_is_manual_review",
+      "test_lingering_state_alone_is_manual_review",
+      "test_observation_refuses_when_admission_is_withdrawn_mid_delete",
+      "test_ordered_multi_delete",
+      "test_partial_plan_stops_on_first_failure",
+      "test_recovery_after_an_uncertain_delete_never_redispatches",
+      "test_rejected_delete_is_reported_rejected",
+      "test_resume_and_recovery_mid_plan_never_delete_without_admission",
+      "test_rollback_skips_a_target_that_was_recreated",
+      "test_runtime_removal_not_observed_is_manual_review",
+      "test_signed_core_delete_verifies_once",
+      "test_uncertain_delete_not_applied_is_a_mismatch",
+      "test_uncertain_delete_that_applied_is_verified_by_readback"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_refusal_swallowed",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_authority_withdrawn_during_the_read_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_refusal_code_changed",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_authority_withdrawn_during_the_read_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_guard_none_allowed",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_no_guard_or_committed_guard_refuses_before_core"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_reuse_allowed",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_single_use"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_after_commit_allowed",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_no_guard_or_committed_guard_refuses_before_core"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_missing_lease_allowed",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_missing_lease_refuses_without_consuming"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_unconsumed_lease_not_released",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unconsumable_lease_is_released"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_unconsumed_lease_admitted",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unconsumable_lease_is_released"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_authorizer_ignores_lease",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admits_calls_only_inside_while_current"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_authorizer_ignores_outer",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_outer_authorizer_still_binds"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_authorizer_not_installed",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=30)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admits_calls_only_inside_while_current",
+      "test_admitted_profiles_still_apply",
+      "test_authority_withdrawn_during_the_read_is_refused",
+      "test_consumers_are_disclosed_and_unresolved_ones_elevate",
+      "test_delete_and_recreate_requests_are_observed_exactly",
+      "test_delete_answered_ok_but_still_present_is_a_mismatch",
+      "test_delete_automation_then_recreate_exactly",
+      "test_delete_script_then_recreate_exactly",
+      "test_delete_verifies_with_one_dispatch_under_enforcing_client",
+      "test_drift_immediately_before_delete_refuses_as_stale",
+      "test_drift_in_the_window_is_stale_target_state",
+      "test_lane_recreate_write_receipt_matches_actual_requests",
+      "test_legacy_spelling_recreates_exactly",
+      "test_lingering_registry_entry_alone_is_manual_review",
+      "test_lingering_state_alone_is_manual_review",
+      "test_observation_refuses_when_admission_is_withdrawn_mid_delete",
+      "test_ordered_multi_delete",
+      "test_partial_plan_stops_on_first_failure",
+      "test_recovery_after_an_uncertain_delete_never_redispatches",
+      "test_rejected_delete_is_reported_rejected",
+      "test_resume_and_recovery_mid_plan_never_delete_without_admission",
+      "test_rollback_skips_a_target_that_was_recreated",
+      "test_runtime_removal_not_observed_is_manual_review",
+      "test_signed_core_delete_verifies_once",
+      "test_uncertain_delete_not_applied_is_a_mismatch",
+      "test_uncertain_delete_that_applied_is_verified_by_readback"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_dispatch_authorizer_not_restored",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admits_calls_only_inside_while_current",
+      "test_lease_lost_during_the_read_is_refused_and_finished",
+      "test_read_failure_propagates_and_finishes",
+      "test_signed_core_delete_verifies_once"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_exit_recheck_removed",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_authority_withdrawn_during_the_read_is_refused",
+      "test_lease_lost_during_the_read_is_refused_and_finished"
+    ],
+    "killed": true
+  },
+  {
+    "name": "pw_finish_skipped",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admits_calls_only_inside_while_current",
+      "test_lease_lost_during_the_read_is_refused_and_finished",
+      "test_read_failure_propagates_and_finishes"
+    ],
+    "killed": true
+  },
+  {
+    "name": "fk_enforcement_removed",
+    "exit": 1,
+    "tests": [
+      "133"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_read_outside_any_window_fails_closed"
+    ],
+    "killed": true
+  }
+]
