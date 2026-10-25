@@ -1,0 +1,17 @@
+$ check_step.py signed 1 (previous: seq-12 registry of main 2338a416)
+Step 1 extend-capabilities 2026.10.1: sequence 13, references {'2026.10.0': 22, '2026.10.1': 26}, revoked ['2026.9.2', '2026.9.3', '2026.9.4']
+Candidate SHA256: 923bd135b02618046552786261036d53dced703be05da93f27c1f80510072458
+Signed journal verified with the public key: sequence 13, digest sha256:55311b896557ba43435d44b34f62df018afd1b784c382aa01536f49153a9ac8a, SHA256 bdd10c0d3c2ddeb763f5a1598e0346b05112b96abd79230bae5b1ac107a77045
+OK
+exit 0
+$ check_step.py candidate 2
+Step 2 add 2026.10.3: sequence 14, references {'2026.10.0': 22, '2026.10.1': 26, '2026.10.3': 26}, revoked ['2026.9.2', '2026.9.3', '2026.9.4']
+Candidate SHA256: 0fe9cbd8ed17d06a21657b1098b95e105289ba0cbfff89ca5d4e44044277f695
+OK
+exit 0
+$ check_step.py signed 2
+Step 2 add 2026.10.3: sequence 14, references {'2026.10.0': 22, '2026.10.1': 26, '2026.10.3': 26}, revoked ['2026.9.2', '2026.9.3', '2026.9.4']
+Candidate SHA256: 0fe9cbd8ed17d06a21657b1098b95e105289ba0cbfff89ca5d4e44044277f695
+Signed journal verified with the public key: sequence 14, digest sha256:734210cf33344c62886377e6abea5d4df776585d5ba687f22087778fa3e93199, SHA256 80d91919ebbd57e4ca1b7a49bc2bb6a9b2996b3b14bef3070916263e82c53817
+OK
+exit 0

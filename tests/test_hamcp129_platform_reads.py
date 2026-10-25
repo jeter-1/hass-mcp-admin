@@ -1349,10 +1349,10 @@ class CatalogMetadataTests(unittest.TestCase):
     def test_signed_core_registry_is_read_only_and_covers_supported_cores(self):
         registry = json.loads((ROOT / "upstream-trust/ha-core-release-registry.json").read_text())
         tip = registry["envelopes"][-1]
-        self.assertEqual(tip["sequence"], 12)
+        self.assertEqual(tip["sequence"], 14)
         entries = {entry["version"]: entry for entry in tip["entries"]}
-        self.assertEqual(sorted(entries), ["2026.10.0", "2026.10.1"])
-        for version in ("2026.10.0", "2026.10.1"):
+        self.assertEqual(sorted(entries), ["2026.10.0", "2026.10.1", "2026.10.3"])
+        for version in ("2026.10.0", "2026.10.1", "2026.10.3"):
             with self.subTest(version=version):
                 capabilities = {item["capability_id"] for item in entries[version]["capabilities"]}
                 self.assertTrue({"core.basic_websocket_read", "core.basic_rest_read"} <= capabilities)

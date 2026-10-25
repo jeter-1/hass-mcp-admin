@@ -1,0 +1,113 @@
+{
+ "committed_candidate_1_equal_apart_from_key_and_predecessor_file": true,
+ "ephemeral_public_key_sha256": "b8d6a5665f65c2d6d5a38272a34c38856beb6e9306e306cbef0c6fc49f534fb5",
+ "inputs_sha256": {
+  "entry-add-2026.10.3.json": "98cdad1001cc9312a5bf82ac1d6ced3e22da4ae8369c2b15772fd6a2172ae31d",
+  "entry-extend-2026.10.1.json": "db8e9c77ae99b43596ae416da8e88ab0543902567a5bdf3b286198783da84de9",
+  "evidence-add-2026.10.3.json": "e245e6347b5327f746aa15085aa690d7a14add3f1fa35d0980ba86d8837a9f01",
+  "evidence-extend-2026.10.1.json": "367a9303e10463029ceaaa1620769412e526a5a8cbf1cc803c074f87f1009cf4"
+ },
+ "negative_controls": [
+  {
+   "control": "stale: step 2 candidate signed against sequence 12",
+   "error": "ValueError: current journal changed after review",
+   "refused": true
+  },
+  {
+   "control": "stale: step 2 prepared from sequence 12 then signed on sequence 13",
+   "error": "ValueError: current journal changed after review",
+   "refused": true
+  },
+  {
+   "control": "relabel: extension candidate relabeled as add",
+   "error": "ValueError: candidate fields invalid",
+   "refused": true
+  },
+  {
+   "control": "relabel: add candidate relabeled as extension",
+   "error": "ValueError: candidate fields invalid",
+   "refused": true
+  },
+  {
+   "control": "wrongkey: journal read with another public key",
+   "error": "ReleaseRegistryOperationalError: registry_invalid_signature",
+   "refused": true
+  },
+  {
+   "control": "wrongkey: reviewed candidate signed with another private key",
+   "error": "ValueError: reviewed Core key mismatch",
+   "refused": true
+  },
+  {
+   "control": "expected-sha: wrong expected candidate sha",
+   "error": "ValueError: reviewed candidate hash mismatch",
+   "refused": true
+  },
+  {
+   "control": "expired: step 1 prepared after the sequence-12 tip expired",
+   "error": "ValueError: extension requires a current authenticated predecessor",
+   "refused": true
+  },
+  {
+   "control": "replay: re-extend 2026.10.1 on the final journal",
+   "error": "ValueError: extension requires exactly one existing changed entry",
+   "refused": true
+  },
+  {
+   "control": "renewal: re-add 2026.10.3 with 22 references on the final journal",
+   "error": "ValueError: renewal cannot replace release identity or contracts",
+   "refused": true
+  },
+  {
+   "control": "unknown: add 2026.10.3 with an unknown contract fingerprint",
+   "error": "ValueError: review requires existing exact capability contracts",
+   "refused": true
+  },
+  {
+   "control": "re-add: add revoked 2026.9.4",
+   "error": "ValueError: revoked release cannot be re-added",
+   "refused": true
+  }
+ ],
+ "planned": [
+  {
+   "candidate_sha256": "72bd3f841cf8197521d8eb692ee04614418489f34a691144a5a18379c303d967",
+   "entries": {
+    "2026.10.0": 22,
+    "2026.10.1": 26
+   },
+   "expires_at": "2027-01-23T03:00:00Z",
+   "generated_at": "2026-10-25T03:00:00Z",
+   "journal_sha256": "46650bbcebb975cbaf8b5293a18132b73cd1eef4d7da680e509b32eeccc9a7a6",
+   "operation": "extend 2026.10.1",
+   "revoked": [
+    "2026.9.2",
+    "2026.9.3",
+    "2026.9.4"
+   ],
+   "sequence": 13,
+   "step": 1
+  },
+  {
+   "candidate_sha256": "51ce436aa995de62a5780002140443f292b1532b313791c7804e0d6bd1f22f29",
+   "entries": {
+    "2026.10.0": 22,
+    "2026.10.1": 26,
+    "2026.10.3": 26
+   },
+   "expires_at": "2027-01-23T04:00:00Z",
+   "generated_at": "2026-10-25T04:00:00Z",
+   "journal_sha256": "111fdec61fce82d2da155c3f83f162c88b44c043b58c32bd47ab3acd3e1fbbbe",
+   "operation": "add 2026.10.3",
+   "revoked": [
+    "2026.9.2",
+    "2026.9.3",
+    "2026.9.4"
+   ],
+   "sequence": 14,
+   "step": 2
+  }
+ ],
+ "production_journal_sha256": "089247cafa29b3ab0c1687a63419d999ae9c894fa0a94248f73008eabf6785e6",
+ "production_tip_digest": "sha256:9d14f06ab0a0870404540ea8cfa70cefe05cc243bebb9fab0b090121081be5fc"
+}

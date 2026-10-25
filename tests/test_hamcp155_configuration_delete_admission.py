@@ -1,8 +1,9 @@
 """HAMCP-155 Core admission at every layer (lesson 1 of the HAMCP-165 review).
 
-``core.configuration_delete_operation`` is runtime-only.  No owner-signed
-registry sequence (through 12) references it, so deletion is refused with
-``pending_signed_registry_admission``:
+``core.configuration_delete_operation`` is runtime-only.  The published
+owner-signed registry references it from sequence 13 (HAMCP-222) on 2026.10.1
+and from sequence 14 on 2026.10.1 and 2026.10.3 only.  Without such a
+reference deletion is refused with ``pending_signed_registry_admission``:
 
 * first at the service, for every entry point (public, internal builder,
   generic configuration plan), before input validation, any Home Assistant
@@ -167,7 +168,7 @@ class DormantProfileTests(unittest.TestCase):
         )
 
     def test_contract_fingerprints_for_the_sequence_13_signing(self):
-        # Signed sequence 13 must reference exactly this value; the signed
+        # Signed sequences 13 and 14 reference exactly this value; the signed
         # create/update contract it sits beside is unchanged.
         (profile,) = CORE_CONFIGURATION_DELETE_PROFILES
         self.assertEqual(
@@ -184,19 +185,26 @@ class DormantProfileTests(unittest.TestCase):
             "sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441",
         )
 
-    def test_no_signed_envelope_has_ever_referenced_it(self):
+    def test_signed_sequences_13_and_14_reference_it_exactly(self):
+        # HAMCP-222: sequence 13 extends 2026.10.1, sequence 14 adds
+        # 2026.10.3; no earlier envelope and no other entry carries it.
         registry = json.loads(
             (ROOT / "upstream-trust/ha-core-release-registry.json").read_text()
         )
-        self.assertEqual(registry["envelopes"][-1]["sequence"], 12)
-        carriers = {
-            (envelope["sequence"], entry["version"])
-            for envelope in registry["envelopes"]
-            for entry in envelope["entries"]
-            for item in entry["capabilities"]
-            if item["capability_id"] == DELETE
-        }
-        self.assertEqual(carriers, set())
+        self.assertEqual(registry["envelopes"][-1]["sequence"], 14)
+        (profile,) = CORE_CONFIGURATION_DELETE_PROFILES
+        carriers = set()
+        for envelope in registry["envelopes"]:
+            for entry in envelope["entries"]:
+                for item in entry["capabilities"]:
+                    if item["capability_id"] == DELETE:
+                        carriers.add((envelope["sequence"], entry["version"]))
+                        self.assertEqual(
+                            item, {key: profile.to_mapping()[key] for key in item}
+                        )
+        self.assertEqual(
+            carriers, {(13, "2026.10.1"), (14, "2026.10.1"), (14, "2026.10.3")}
+        )
 
     def test_static_requirements_and_exact_target(self):
         self.assertEqual(

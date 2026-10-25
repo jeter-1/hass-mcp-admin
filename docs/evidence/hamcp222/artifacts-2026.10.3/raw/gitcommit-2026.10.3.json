@@ -1,0 +1,40 @@
+{
+  "sha": "1f214b8461dd1fbbd66e10765c6905f49d3c1d86",
+  "node_id": "C_kwDOAMSrodoAKDFmMjE0Yjg0NjFkZDFmYmJkNjZlMTA3NjVjNjkwNWY0OWQzYzFkODY",
+  "url": "https://api.github.com/repos/home-assistant/core/git/commits/1f214b8461dd1fbbd66e10765c6905f49d3c1d86",
+  "html_url": "https://github.com/home-assistant/core/commit/1f214b8461dd1fbbd66e10765c6905f49d3c1d86",
+  "author": {
+    "name": "Franck Nijhof",
+    "email": "git@frenck.dev",
+    "date": "2026-10-23T18:49:07Z"
+  },
+  "committer": {
+    "name": "GitHub",
+    "email": "noreply@github.com",
+    "date": "2026-10-23T18:49:07Z"
+  },
+  "tree": {
+    "sha": "7c592b097111f15031bbfbc37edbbb42f8235320",
+    "url": "https://api.github.com/repos/home-assistant/core/git/trees/7c592b097111f15031bbfbc37edbbb42f8235320"
+  },
+  "message": "2026.10.3 (#188248)",
+  "parents": [
+    {
+      "sha": "8d7fd8b68677c2585be36ec86043308f403875b8",
+      "url": "https://api.github.com/repos/home-assistant/core/git/commits/8d7fd8b68677c2585be36ec86043308f403875b8",
+      "html_url": "https://github.com/home-assistant/core/commit/8d7fd8b68677c2585be36ec86043308f403875b8"
+    },
+    {
+      "sha": "0ae3fd87efea197fa158c99d646d4e1ec0475941",
+      "url": "https://api.github.com/repos/home-assistant/core/git/commits/0ae3fd87efea197fa158c99d646d4e1ec0475941",
+      "html_url": "https://github.com/home-assistant/core/commit/0ae3fd87efea197fa158c99d646d4e1ec0475941"
+    }
+  ],
+  "verification": {
+    "verified": true,
+    "reason": "valid",
+    "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJq26wjCRC1aQ7uu5UhlAAAo/wQAFbomRY6WI/XOZOzKgl5Udav\nCRMNoa+yBmGKUHMLXx/rkmheNyJspN4E/D3mJs33fmdNOTNTqpoUpdC9i5GwTFnI\nmwOKiZzasm0ESD/EVm8YsFMOcwswjANyh/bEgPFutAmnuFXtdFbmJ/B0yo2Cu4L2\nJFdMsEB5uDP+DTQyHNouey1ZmRgeWlXfziIoEyEsYQ7FUbW7cNUFvHmXUe6b6OAW\nx+dp4+w4A4uIm0Yhb3V2RJ/MD3VLN2JUM3e1+GZT5BlzNaOQnlkHKWwuuY+0giA5\njT3ywX2aGFe+nIoZE5zDPwlKpAlXZvk7Jo37f7gSX15EqeJHN4pSKYE2fs1ykwTI\nEglcob7x+ixO2RZS3/jSKVUx+O6IoUcsuVwfLhIojhLFtBtJjrHnEspMyjXYOmpH\nys9LDDTdT1lb+fAiyPiiQQIFufsRzDnbx+96hAlGqa/UECrjJzvFvHZ6bnHO7ogo\nvv0bAwBJ559jgPL54P/itHave5zQ+kXNiqJfDotdLCSa5lDBYy8yn1t5OHpUkYf1\n60JkxAVcOJVE70S7vk29sHrmb6Fd7AtdMGqmOZPD7RLT45kqLSjWiATansE04kHS\nykVydy9uoC5amDrbBIv4PvUi/29HEPx5qI6OrhW7g+fECYK3sNgjajVPpiOR/B2u\nU4F+JZkfDlxPza63+F0/\n=xAVo\n-----END PGP SIGNATURE-----\n",
+    "payload": "tree 7c592b097111f15031bbfbc37edbbb42f8235320\nparent 8d7fd8b68677c2585be36ec86043308f403875b8\nparent 0ae3fd87efea197fa158c99d646d4e1ec0475941\nauthor Franck Nijhof <git@frenck.dev> 1792781347 +0200\ncommitter GitHub <noreply@github.com> 1792781347 +0200\n\n2026.10.3 (#188248)",
+    "verified_at": "2026-10-23T18:49:08Z"
+  }
+}

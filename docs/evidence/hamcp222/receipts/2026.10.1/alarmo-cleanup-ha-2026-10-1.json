@@ -1,0 +1,57 @@
+{
+  "core": "2026.10.1",
+  "discarded_windows": [],
+  "integration_receipt_sha256": "90e1371661a0dcc54d54eeaa91a5923fff832d08e45785f314b3ab95d504003b",
+  "owned_containers_remaining": 0,
+  "owned_network_remaining": false,
+  "required_alarmo_interval": "PASS",
+  "required_automation_baseline": {
+    "background_bookkeeping": [
+      [],
+      []
+    ],
+    "comparison_counts": {
+      "ADDED": 1,
+      "CHANGED": 1,
+      "REMOVED": 1,
+      "TOTAL": 124,
+      "UNCHANGED": 120,
+      "UNKNOWN": 1
+    },
+    "continuation_reads": 0,
+    "discarded_windows": [],
+    "fixture_cleanup": true,
+    "records_after": 123,
+    "records_before": 123,
+    "result": "PASS"
+  },
+  "required_entity_metadata": {
+    "authority_transition": [
+      21,
+      22
+    ],
+    "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+    "core": "2026.10.1",
+    "fixture_cleanup": true,
+    "receipt_sha256": "49893efb932272ede74582eb8502bc102bc99be359f779ae8aae6ef5cee6ef91",
+    "result": "PASS",
+    "scenarios": 9,
+    "support_slot": "current"
+  },
+  "required_seq13_configuration_delete": {
+    "authority_transition": [
+      22,
+      23
+    ],
+    "contract_fingerprint": "sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d",
+    "core": "2026.10.1",
+    "fixture_cleanup": true,
+    "lane": "configuration_delete",
+    "receipt_sha256": "1baa7b28e9f1ba16b69576963e89c1414c7ea0e3263285d052fbc7b88aee4202",
+    "result": "PASS",
+    "scenarios": 7,
+    "support_slot": "current"
+  },
+  "result": "PASS",
+  "support_slot": "current"
+}

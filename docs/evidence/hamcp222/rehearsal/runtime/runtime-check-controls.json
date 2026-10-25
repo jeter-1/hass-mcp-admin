@@ -1,0 +1,45 @@
+{
+ "runtime": "beta36",
+ "controls": [
+  {
+   "control": "step 1 replaced by the seq-12 twin (no extension)",
+   "refused": true,
+   "failure_count": 17,
+   "first_failures": [
+    "sequence is not 12 -> 13 -> 14",
+    "2026.10.1 references 22->22",
+    "2026.10.1 admitted is not baseline + the four"
+   ]
+  },
+  {
+   "control": "steps applied out of order (seq 14 before seq 13)",
+   "refused": true,
+   "failure_count": 20,
+   "first_failures": [
+    "a step was not accepted",
+    "sequence is not 12 -> 13 -> 14",
+    "stepwise and jump differ"
+   ]
+  },
+  {
+   "control": "rehearsal journals read with the production public key",
+   "refused": true,
+   "failure": "registry refresh refused (harness assertion: journal not accepted)"
+  },
+  {
+   "control": "final journal is seq 13 (no 2026.10.3 add)",
+   "refused": true,
+   "failure_count": 12,
+   "first_failures": [
+    "sequence is not 12 -> 13 -> 14",
+    "rollback accepted",
+    "stepwise seq 14 differs from the jump"
+   ]
+  },
+  {
+   "control": "checked after the seq-13/14 expiry (2027-01-24)",
+   "refused": true,
+   "failure": "registry refresh refused (harness assertion: journal not accepted)"
+  }
+ ]
+}

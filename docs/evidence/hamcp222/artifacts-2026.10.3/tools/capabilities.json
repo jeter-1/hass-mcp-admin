@@ -1,0 +1,158 @@
+[
+ {
+  "capability_id": "core.basic_rest_read",
+  "profile_id": "core_basic_rest_read_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:3c76c2789952f16340ec51c83122e43cceb1de9581b4dfdf15821d9fc8282cc8"
+ },
+ {
+  "capability_id": "core.basic_websocket_read",
+  "profile_id": "core_basic_websocket_read_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:e1c15f0d838c44f40c2bcf7ae9df408c9cd186cea7874ab7976945be405294cc"
+ },
+ {
+  "capability_id": "core.state_service_discovery",
+  "profile_id": "core_state_service_discovery_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:f6647dfe70a6b477b97c7866d7b2f91f4ba00452547c9d16a8b8298a147c7225"
+ },
+ {
+  "capability_id": "core.non_device_registry_read",
+  "profile_id": "core_non_device_registry_read_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:4e29009423e7f2438a6b5e0a9cccfcc6add46de73fc05a1edd9fdde9be639615"
+ },
+ {
+  "capability_id": "core.direct_device_registry_read",
+  "profile_id": "core_direct_device_registry_read_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:df4afeeea54fa4c59dbe5f8f5b63e63fab516ae69808d7d6ba4d0821b6818ee9"
+ },
+ {
+  "capability_id": "core.delegated_device_effective_area",
+  "profile_id": "core_delegated_device_effective_area_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:b1c2352fe0e87b59a4f9451113d650ac474a56d9135f715d17d2ca31d25645ad"
+ },
+ {
+  "capability_id": "core.direct_entity_state_read",
+  "profile_id": "core_direct_entity_state_read_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:a42cec05d830e66ce830d07e413b8875dfcfd8d985ba2111b94419ef847cf9d1"
+ },
+ {
+  "capability_id": "core.automation_configuration_read",
+  "profile_id": "core_automation_configuration_read_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:ec4344e7dc0a0f4b1a84a2dfbbeae1b412432cf787bcdf41d58ea21a6edb45ad"
+ },
+ {
+  "capability_id": "core.automation_trace_read",
+  "profile_id": "core_automation_trace_read_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:7f45584511fb1069561ba4ef7a43c4cd6e9a5f41cb9b2f2aac5bdadcd6511c9c"
+ },
+ {
+  "capability_id": "core.dashboard_configuration_read",
+  "profile_id": "core_dashboard_configuration_read_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:134fa8fa48bdd085a491d2f311ee69c48f53c844a651c334974899e8b79f6424"
+ },
+ {
+  "capability_id": "core.template_semantics",
+  "profile_id": "core_template_semantics_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:0f6d682f1b4d02be622173bc56699ef6de208b5c45b52454cd6fc7a5a083cbe7"
+ },
+ {
+  "capability_id": "core.configuration_validation",
+  "profile_id": "core_configuration_validation_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:f998f871e47ded521c5ff713fd738b48c813b0363385237b19c472a1ab540b9a"
+ },
+ {
+  "capability_id": "core.dependency_helper_planning",
+  "profile_id": "core_dependency_helper_planning_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:4e981b75c8bf81ef24c3fa123827786ca57762db0d2e09108e499a5e8312efe9"
+ },
+ {
+  "capability_id": "core.typed_helper_operation",
+  "profile_id": "core_typed_helper_operation_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:7ae55a050860e86089756ef8d9104977c630e7c6e593bee2dbd46c6bd2535936"
+ },
+ {
+  "capability_id": "core.f3_mutation_verification",
+  "profile_id": "core_f3_mutation_verification_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:274c9beef6b4f6137715b7ab60a25cfcb93fbd1d1b2737ad776004dd3e47c873"
+ },
+ {
+  "capability_id": "core.governed_configuration_operation",
+  "profile_id": "core_governed_configuration_operation_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441"
+ },
+ {
+  "capability_id": "core.governance_observability",
+  "profile_id": "core_governance_observability_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:b4fa34c413a21ea643de830de00477c7c4953efb43916a1d83fa1e3cbd9eb3e2"
+ },
+ {
+  "capability_id": "core.typed_fan_operation",
+  "profile_id": "core_typed_fan_operation_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:25b3b6fdd25ca9c5ba8a7811d850f801fc7d3deefadd4a6bafbf1e9f6a6c042b"
+ },
+ {
+  "capability_id": "core.typed_power_operation",
+  "profile_id": "core_typed_power_operation_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:9242b795a2d5ed3deeb3b8ea46fba13fc299c14fb274e3b29ed97a30b607001a"
+ },
+ {
+  "capability_id": "core.integration_inspection_metadata_read",
+  "profile_id": "core_integration_inspection_metadata_read_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:d10cb88811c65b4b45bed1941f1b8f920ac3eb217d05285f117d5ac23f09c36a"
+ },
+ {
+  "capability_id": "core.automation_baseline_metadata_read",
+  "profile_id": "core_automation_baseline_metadata_read_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:42ea1b1731aa0d73e01717aabfa99639c29af2755d8d341c39b4789256a3c540"
+ },
+ {
+  "capability_id": "core.entity_registry_metadata_operation",
+  "profile_id": "core_entity_registry_metadata_operation_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767"
+ },
+ {
+  "capability_id": "core.entity_registry_availability_operation",
+  "profile_id": "core_entity_registry_availability_operation_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:ae292fbc16ad82c8d8347b7e2eb1c3a7e8c7644d95783f5bf2ae9f9cc63a76b2"
+ },
+ {
+  "capability_id": "core.entity_assistant_exposure_operation",
+  "profile_id": "core_entity_assistant_exposure_operation_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:474c8ccaaae83c12f56a2848995ff089097936568a2ad5dc8d25ce855d51dbbd"
+ },
+ {
+  "capability_id": "core.label_registry_operation",
+  "profile_id": "core_label_registry_operation_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:b2f0dd11ff243aa2559c27738d962785e37455d37b836cb5a6997aeabb26813c"
+ },
+ {
+  "capability_id": "core.configuration_delete_operation",
+  "profile_id": "core_configuration_delete_operation_v1",
+  "profile_version": 1,
+  "contract_fingerprint": "sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d"
+ }
+]

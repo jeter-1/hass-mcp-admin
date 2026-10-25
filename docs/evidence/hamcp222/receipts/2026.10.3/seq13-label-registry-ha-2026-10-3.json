@@ -1,0 +1,183 @@
+{
+  "added_capabilities": [
+    {
+      "adapter_id": "compiled-core-label-registry-operation-v1",
+      "capability_id": "core.label_registry_operation",
+      "contract_fingerprint": "sha256:b2f0dd11ff243aa2559c27738d962785e37455d37b836cb5a6997aeabb26813c",
+      "profile_id": "core_label_registry_operation_v1",
+      "profile_version": 1
+    }
+  ],
+  "authority_instances": "separate_ephemeral_registries",
+  "authority_transition": [
+    22,
+    23
+  ],
+  "core": "2026.10.3",
+  "core_image": "ghcr.io/home-assistant/home-assistant:2026.10.3@sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
+  "engineering_command_types": [
+    "config/entity_registry/get",
+    "config/entity_registry/update",
+    "config/label_registry/create",
+    "config/label_registry/list",
+    "config/label_registry/update"
+  ],
+  "engineering_source": {
+    "commit": "8c9b44e845a0a9404e0f817fb7616b005c7a923a",
+    "runtime_tree": "70479fa2958aafd36d0e74e3082f98c50b11053c"
+  },
+  "fixture_absence": {
+    "config_entry": true,
+    "helper_config": true,
+    "helper_entity": true,
+    "labels": true
+  },
+  "fixture_cleanup": true,
+  "image_index_digest": "sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
+  "image_receipt_sha256": "1cabbf7320a44a49d64db115d4345748b9a8ccd0728a6ded0f74b1f62577431c",
+  "lane": "label_registry",
+  "predecessor_admission": {
+    "control_capability_acquired": true,
+    "ha_requests": 0,
+    "ha_writes": 0,
+    "route_acquired": false,
+    "service_reason_code": "pending_signed_registry_admission"
+  },
+  "predecessor_capabilities_sha256": "1fdf85c48b6d50a4e788fea8744b9c6d82963e3aeb4b3a4bef76698686506d35",
+  "production_authority": false,
+  "provider_identity": "synthetic_disposable_lane",
+  "result": "PASS",
+  "scenarios": {
+    "create": {
+      "core_label_id": "hamcp165_canary",
+      "dispatch_counts": [
+        1
+      ],
+      "expected": {
+        "color": "indigo",
+        "description": "HAMCP-165 synthetic disposable label",
+        "icon": "mdi:tag",
+        "label_id": "hamcp165_canary",
+        "name": "HAMCP165 Canary"
+      },
+      "ha_writes": 1,
+      "predicted_label_id": "hamcp165_canary",
+      "readback": {
+        "color": "indigo",
+        "description": "HAMCP-165 synthetic disposable label",
+        "icon": "mdi:tag",
+        "label_id": "hamcp165_canary",
+        "name": "HAMCP165 Canary"
+      },
+      "result": "PASS",
+      "task_state": "succeeded_verified",
+      "write_types": [
+        "config/label_registry/create"
+      ]
+    },
+    "create_then_assign": {
+      "core_label_id": "hamcp165_assign",
+      "dispatch_counts": [
+        1,
+        1
+      ],
+      "expected": {
+        "color": null,
+        "description": null,
+        "entity_labels": [
+          "hamcp165_assign"
+        ],
+        "icon": null,
+        "label_id": "hamcp165_assign",
+        "name": "HAMCP165 Assign"
+      },
+      "ha_writes": 2,
+      "predicted_label_id": "hamcp165_assign",
+      "readback": {
+        "color": null,
+        "description": null,
+        "entity_labels": [
+          "hamcp165_assign"
+        ],
+        "icon": null,
+        "label_id": "hamcp165_assign",
+        "name": "HAMCP165 Assign"
+      },
+      "result": "PASS",
+      "task_state": "succeeded_verified",
+      "write_types": [
+        "config/label_registry/create",
+        "config/entity_registry/update"
+      ]
+    },
+    "duplicate_name": {
+      "error_code": "invalid_request",
+      "ha_commands": 1,
+      "ha_writes": 0,
+      "plan_created": false,
+      "reason_code": "label_already_exists",
+      "result": "PASS"
+    },
+    "edit": {
+      "dispatch_counts": [
+        1
+      ],
+      "expected": {
+        "color": "#3366ff",
+        "description": null,
+        "icon": "mdi:tag-outline",
+        "label_id": "hamcp165_canary",
+        "name": "HAMCP165 Canary Edited"
+      },
+      "ha_writes": 1,
+      "readback": {
+        "color": "#3366ff",
+        "description": null,
+        "icon": "mdi:tag-outline",
+        "label_id": "hamcp165_canary",
+        "name": "HAMCP165 Canary Edited"
+      },
+      "result": "PASS",
+      "sent_fields": [
+        "color",
+        "description",
+        "icon",
+        "label_id",
+        "name"
+      ],
+      "task_state": "succeeded_verified",
+      "write_types": [
+        "config/label_registry/update"
+      ]
+    },
+    "invalid_values": {
+      "ha_commands": 0,
+      "ha_writes": 0,
+      "plan_created": false,
+      "reason_codes": {
+        "color": "invalid_label_color",
+        "icon": "invalid_label_icon"
+      },
+      "result": "PASS"
+    },
+    "rename_in_use": {
+      "error_code": "invalid_request",
+      "ha_commands": 1,
+      "ha_writes": 0,
+      "plan_created": false,
+      "reason_code": "label_name_in_use",
+      "result": "PASS"
+    },
+    "stale_state": {
+      "dispatch_counts": [
+        0
+      ],
+      "drift_retained": true,
+      "ha_writes": 0,
+      "result": "PASS",
+      "task_state": "failed_pre_dispatch",
+      "write_types": []
+    }
+  },
+  "support_slot": "candidate"
+}
