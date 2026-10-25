@@ -1,0 +1,57 @@
+    @callback
+    def async_handle(self, msg: JsonValueType) -> None:
+        """Handle a single incoming message."""
+        if (
+            # Not using isinstance as we don't care about children
+            # as these are always coming from JSON
+            type(msg) is not dict
+            or (
+                not (cur_id := msg.get("id"))
+                or type(cur_id) is not int
+                or cur_id < 0
+                or not (type_ := msg.get("type"))
+                or type(type_) is not str
+            )
+        ):
+            msg = async_redact_data(msg, REDACT_KEYS)
+            self.logger.error("Received invalid command: %s", msg)
+            id_ = msg.get("id") if isinstance(msg, dict) else 0
+            self.send_message(
+                messages.error_message(
+                    id_,  # type: ignore[arg-type]
+                    const.ERR_INVALID_FORMAT,
+                    "Message incorrectly formatted.",
+                )
+            )
+            return
+
+        if cur_id <= self.last_id:
+            self.send_message(
+                messages.error_message(
+                    cur_id, const.ERR_ID_REUSE, "Identifier values have to increase."
+                )
+            )
+            return
+
+        if not (handler_schema := self.handlers.get(type_)):
+            self.logger.info("Received unknown command: %s", type_)
+            self.send_message(
+                messages.error_message(
+                    cur_id, const.ERR_UNKNOWN_COMMAND, "Unknown command."
+                )
+            )
+            return
+
+        handler, schema = handler_schema
+
+        try:
+            if schema is False:
+                if len(msg) > 2:
+                    raise probatio.Invalid("extra keys not allowed")  # noqa: TRY301
+                handler(self.hass, self, msg)
+            else:
+                handler(self.hass, self, schema(msg))
+        except Exception as err:  # noqa: BLE001
+            self.async_handle_exception(msg, err)
+
+        self.last_id = cur_id
