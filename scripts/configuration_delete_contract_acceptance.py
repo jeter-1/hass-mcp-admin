@@ -65,6 +65,16 @@ SCENARIOS = ("delete_automation", "recreate_automation", "delete_script", "recre
 NOT_FOUND = "configuration_delete_target_not_found"
 STALE = "stale_target_state"
 BASIS_PROTECTED_EFFECT = "delete_removes_protected_effect"
+BASIS_PROTECTED_DEPENDENCY = "delete_protected_dependency"
+# The lane's own dependency index has no script reader (production wires the
+# reviewed ha-mcp one in application.py), so script consumer evidence is
+# unavailable by construction. OD-4 treats every evidence gap as protected:
+# each delete here is elevated for exactly this reason, which the lane asserts
+# by its code rather than accepting any elevation (HAMCP-222).
+SCRIPT_EVIDENCE_GAP = "script_evidence_unavailable"
+INCOMPLETE_SCRIPT_EVIDENCE = "dependency_evidence_incomplete:" + SCRIPT_EVIDENCE_GAP
+VERDICT_NONE = "none"
+VERDICT_REMOVED = "changed"
 ABSENT_ID = "hamcp155_absent"
 FIXTURE_ABSENCE = ("automation_config", "script_config", "registry_entries", "states")
 # The one non-mutating POST Engineering's configuration writer sends: a config
@@ -81,6 +91,78 @@ SYNTHETIC_PROVIDER_IDENTITY = {"slug": "hamcp155_disposable_lane",
 def enabled():
     """The single wiring switch; anything but the exact value keeps the lane off."""
     return os.environ.get(ENABLE_FLAG) == ENABLED
+
+
+class ForwardRefusal(AssertionError):
+    """A governed forward delete that did not verify; carries only bounded codes."""
+
+    def __init__(self, diagnostic):
+        super().__init__("Governed configuration delete did not verify")
+        self.diagnostic = diagnostic
+
+
+def _code_shaped(value):
+    return (isinstance(value, str) and 0 < len(value) <= 64
+            and all(char.islower() or char.isdigit() or char == "_" for char in value))
+
+
+def require_forward_verified(applied, counts, codes):
+    """Fail at the delete itself, with the child's refusal codes, unless it verified.
+
+    Without this a refused delete surfaced only later, as the rollback's
+    ``rollback_not_available``, and the refusal codes were lost (HAMCP-222).
+    """
+    state = applied.get("task_state") if isinstance(applied, dict) else None
+    if state == "succeeded_verified" and counts == [1]:
+        return
+    raise ForwardRefusal({
+        "task_state": state if _code_shaped(state) else "unrecognized",
+        "dispatch_counts": [count for count in counts[:4] if isinstance(count, int)],
+        "codes": [code for code in codes if _code_shaped(code)][:16]})
+
+
+def delete_disclosure(created):
+    """The single child's delete disclosure from a real plan creation response."""
+    (operation,) = created["dry_run_results"]["operations"]
+    return operation["dry_run_results"]["configuration_delete"]
+
+
+def _level(risk):
+    level = risk.get("level") if isinstance(risk, dict) else None
+    return level if _code_shaped(level) else ""
+
+
+def plan_risk(created):
+    """Plan and child risk levels where the response carries them.
+
+    A plan response has no top-level ``risk_level``: reading it yielded ``""``
+    on real Core (HAMCP-222). Absent or malformed levels stay ``""`` so the
+    verifier refuses them.
+    """
+    operations = created.get("operations")
+    operation = operations[0] if isinstance(operations, list) and len(operations) == 1 else None
+    return {"risk_level": _level(created.get("risk")),
+            "operation_risk_level": _level(operation.get("risk") if isinstance(operation, dict) else None)}
+
+
+def _reason_shaped(value):
+    return (isinstance(value, str) and 0 < len(value) <= 128
+            and all(char.islower() or char.isdigit() or char in "_:." for char in value))
+
+
+def protection_record(shown):
+    """Why the runtime classified the delete as it did, in bounded codes."""
+    protection, consumers = shown["protection"], shown["consumers"]
+
+    def codes(values):
+        return [item for item in values if _reason_shaped(item)][:16] if isinstance(values, list) else None
+    verdict = protection["removed_effect_verdict"]
+    return {"protected": protection["protected"], "basis": codes(protection["basis"]),
+            "dependency_reasons": codes(protection["dependency_reasons"]),
+            "removed_effect_verdict": verdict if _code_shaped(verdict) else "unrecognized",
+            "unlock_or_disarm": protection["unlock_or_disarm"],
+            "evidence_complete": consumers["evidence_complete"],
+            "evidence_gaps": codes(consumers["evidence_gaps"])}
 
 
 def source_profile():
@@ -135,13 +217,24 @@ def _scenario_type(name):
     return name.split("_", 1)[1]
 
 
+def _elevated_for_incomplete_evidence(value):
+    """Elevated with high risk on plan and child, and incomplete script evidence the only gap."""
+    assert value["protected"] is True and value["unlock_or_disarm"] is False
+    assert value["risk_level"] == "high" and value["operation_risk_level"] == "high"
+    assert value["evidence_complete"] is False and value["evidence_gaps"] == [SCRIPT_EVIDENCE_GAP]
+    assert value["dependency_reasons"] == [INCOMPLETE_SCRIPT_EVIDENCE]
+
+
 def _scenario_checks(name, value):
     """Exact per-scenario expectations; never relaxed to match an observation."""
     if name in {"delete_automation", "delete_script"}:
         assert value["task_state"] == "succeeded_verified" and value["dispatch_counts"] == [1]
         assert value["write_methods"] == ["DELETE"] and value["ha_writes"] == 1
         assert value["write_routes_bound"] is True and value["config_checks"] == 0
-        assert value["protected"] is False and value["risk_level"] == "medium"
+        # Nothing protected is removed: the elevation is the evidence gap alone.
+        _elevated_for_incomplete_evidence(value)
+        assert value["basis"] == [BASIS_PROTECTED_DEPENDENCY]
+        assert value["removed_effect_verdict"] == VERDICT_NONE
         assert entity_of(_scenario_type(name), value["entity_id"])
         assert value["preflight_present"] is True and _absent(value["readback"])
         assert value["readback"]["entity_id"] == value["entity_id"]
@@ -157,8 +250,11 @@ def _scenario_checks(name, value):
         assert value["registry_entry_id_restored"] is True and value["entity_id_restored"] is True
         assert value["state_present"] is True
     if name == "protected_effect":
-        assert value["plan_created"] is True and value["protected"] is True
-        assert BASIS_PROTECTED_EFFECT in value["basis"] and value["risk_level"] == "high"
+        assert value["plan_created"] is True
+        # The removed lock effect is its own basis, first, beside the same gap.
+        _elevated_for_incomplete_evidence(value)
+        assert value["basis"] == [BASIS_PROTECTED_EFFECT, BASIS_PROTECTED_DEPENDENCY]
+        assert value["removed_effect_verdict"] == VERDICT_REMOVED
         assert value["removes_statement"] is True and value["ha_writes"] == 0
     if name == "not_found":
         assert value["preflight_config_status"] == 404
@@ -372,6 +468,8 @@ async def run_disposable(configured, *, expected_image, core_version):
                                    "configuration_delete_stage": stage[0]}
         if isinstance(exc, RawRefusal):
             exc.contract_diagnostic["raw_refusal"] = exc.diagnostic
+        if isinstance(exc, ForwardRefusal):
+            exc.contract_diagnostic["forward_refusal"] = exc.diagnostic
         raise
 
 
@@ -549,10 +647,6 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                             for event in record.events for code in event["diagnostic_codes"]})
             return [0 if record is None else record.dispatch_count for record in records], codes
 
-        def disclosure(created):
-            (operation,) = created["dry_run_results"]["operations"]
-            return operation["dry_run_results"]["configuration_delete"]
-
         async def create_fixture(resource_type, target_id, config):
             """Create one fixture and capture Core's registered entity identity."""
             fixture = {"resource_type": resource_type, "target_id": target_id, "entity_id": None}
@@ -597,14 +691,14 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                 "deletions": [{"resource_type": resource_type, "target_id": target_id}],
                 "reason": "HAMCP-155 disposable lane"})
             assert created is not None and created.get("plan_id")
-            shown = disclosure(created)
+            shown = delete_disclosure(created)
             applied = await approve_apply(service, created)
             counts, codes = children(service, applied["task_id"])
+            require_forward_verified(applied, counts, codes)
             readback, _config = await independent_readback(rest, raw, resource_type, target_id, entity_id)
             value = {"result": "PASS", "task_state": applied["task_state"], "dispatch_counts": counts,
                      **scenario_writes(writes, checks, resource_type, target_id), "entity_id": entity_id,
-                     "protected": shown["protection"]["protected"],
-                     "risk_level": str(created.get("risk_level", "")).lower(),
+                     **protection_record(shown), **plan_risk(created),
                      "preflight_present": before["config_status"] == 200 and before["registry_entry"] is not None
                      and before["state_status"] == 200, "readback": readback, "codes": codes}
             return value, created, pre_image, before
@@ -699,11 +793,10 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                 created, _ = await plan(runtime, service, {
                     "deletions": [{"resource_type": "automation", "target_id": protected_id}],
                     "reason": "HAMCP-155 protected effect"})
-                shown = disclosure(created)
+                shown = delete_disclosure(created)
                 scenarios["protected_effect"] = {
                     "result": "PASS", "plan_created": bool(created.get("plan_id")),
-                    "protected": shown["protection"]["protected"], "basis": shown["protection"]["basis"],
-                    "risk_level": str(created.get("risk_level", "")).lower(),
+                    **protection_record(shown), **plan_risk(created),
                     "removes_statement": any("removes these protected effects" in item
                                              for item in shown["consequence_statements"]),
                     "ha_writes": len(engineering_rest.writes) - writes}
