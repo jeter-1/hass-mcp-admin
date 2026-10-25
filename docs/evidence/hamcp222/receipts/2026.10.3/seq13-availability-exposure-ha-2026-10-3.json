@@ -1,0 +1,184 @@
+{
+  "added_capabilities": [
+    {
+      "adapter_id": "compiled-core-entity-registry-availability-operation-v1",
+      "capability_id": "core.entity_registry_availability_operation",
+      "contract_fingerprint": "sha256:ae292fbc16ad82c8d8347b7e2eb1c3a7e8c7644d95783f5bf2ae9f9cc63a76b2",
+      "profile_id": "core_entity_registry_availability_operation_v1",
+      "profile_version": 1
+    },
+    {
+      "adapter_id": "compiled-core-entity-assistant-exposure-operation-v1",
+      "capability_id": "core.entity_assistant_exposure_operation",
+      "contract_fingerprint": "sha256:474c8ccaaae83c12f56a2848995ff089097936568a2ad5dc8d25ce855d51dbbd",
+      "profile_id": "core_entity_assistant_exposure_operation_v1",
+      "profile_version": 1
+    }
+  ],
+  "authority_instances": "separate_ephemeral_registries",
+  "authority_transition": [
+    22,
+    24
+  ],
+  "core": "2026.10.3",
+  "core_image": "ghcr.io/home-assistant/home-assistant:2026.10.3@sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
+  "engineering_command_types": [
+    "config/entity_registry/get",
+    "config/entity_registry/list",
+    "config/entity_registry/update",
+    "config_entries/get_single",
+    "homeassistant/expose_entity",
+    "homeassistant/expose_new_entities/get"
+  ],
+  "engineering_source": {
+    "commit": "8c9b44e845a0a9404e0f817fb7616b005c7a923a",
+    "runtime_tree": "70479fa2958aafd36d0e74e3082f98c50b11053c"
+  },
+  "fixture_absence": {
+    "config_entry": true,
+    "helper_config": true,
+    "helper_entity": true,
+    "labels": true
+  },
+  "fixture_cleanup": true,
+  "image_index_digest": "sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
+  "image_receipt_sha256": "1cabbf7320a44a49d64db115d4345748b9a8ccd0728a6ded0f74b1f62577431c",
+  "lane": "availability_exposure",
+  "predecessor_admission": {
+    "control_capability_acquired": true,
+    "ha_requests": 0,
+    "ha_writes": 0,
+    "route_acquired": false,
+    "service_reason_code": "pending_signed_registry_admission"
+  },
+  "predecessor_capabilities_sha256": "1fdf85c48b6d50a4e788fea8744b9c6d82963e3aeb4b3a4bef76698686506d35",
+  "production_authority": false,
+  "provider_identity": "synthetic_disposable_lane",
+  "result": "PASS",
+  "scenarios": {
+    "already_disabled": {
+      "error_code": "invalid_request",
+      "ha_commands": 1,
+      "ha_writes": 0,
+      "plan_created": false,
+      "reason_code": "entity_already_disabled",
+      "result": "PASS"
+    },
+    "disable": {
+      "dispatch_counts": [
+        1
+      ],
+      "expected": {
+        "disabled_by": "user"
+      },
+      "ha_writes": 1,
+      "readback": {
+        "disabled_by": "user"
+      },
+      "result": "PASS",
+      "task_state": "succeeded_verified",
+      "write_types": [
+        "config/entity_registry/update"
+      ]
+    },
+    "enable": {
+      "dispatch_counts": [
+        1
+      ],
+      "expected": {
+        "disabled_by": null
+      },
+      "ha_writes": 1,
+      "readback": {
+        "disabled_by": null
+      },
+      "result": "PASS",
+      "task_state": "succeeded_verified",
+      "write_types": [
+        "config/entity_registry/update"
+      ]
+    },
+    "enable_config_entry": {
+      "config_entry": {
+        "disabled_by": null,
+        "domain": "tod",
+        "status": "read",
+        "supports_unload": true
+      },
+      "config_entry_reads": [
+        "config/entity_registry/list",
+        "config_entries/get_single"
+      ],
+      "dispatch_counts": [
+        1
+      ],
+      "expected": {
+        "disabled_by": null
+      },
+      "ha_writes": 1,
+      "other_entities_in_entry": 0,
+      "readback": {
+        "disabled_by": null
+      },
+      "reload": "config_entry_reload_after_30s",
+      "result": "PASS",
+      "task_state": "succeeded_verified",
+      "write_types": [
+        "config/entity_registry/update"
+      ]
+    },
+    "expose": {
+      "dispatch_counts": [
+        1
+      ],
+      "expected": {
+        "should_expose": true
+      },
+      "ha_writes": 1,
+      "readback": {
+        "should_expose": true
+      },
+      "result": "PASS",
+      "task_state": "succeeded_verified",
+      "write_types": [
+        "homeassistant/expose_entity"
+      ]
+    },
+    "not_in_registry": {
+      "error_code": "entity_not_found",
+      "ha_commands": 1,
+      "ha_writes": 0,
+      "plan_created": false,
+      "reason_code": "entity_not_in_registry",
+      "result": "PASS"
+    },
+    "stale_state": {
+      "dispatch_counts": [
+        0
+      ],
+      "drift_retained": true,
+      "ha_writes": 0,
+      "result": "PASS",
+      "task_state": "failed_pre_dispatch",
+      "write_types": []
+    },
+    "unexpose": {
+      "dispatch_counts": [
+        1
+      ],
+      "expected": {
+        "should_expose": false
+      },
+      "ha_writes": 1,
+      "readback": {
+        "should_expose": false
+      },
+      "result": "PASS",
+      "task_state": "succeeded_verified",
+      "write_types": [
+        "homeassistant/expose_entity"
+      ]
+    }
+  },
+  "support_slot": "candidate"
+}
