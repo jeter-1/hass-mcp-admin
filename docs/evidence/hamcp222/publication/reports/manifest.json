@@ -1,0 +1,112 @@
+{
+ "add_inputs_rebuild": {
+  "artifacts-2026.10.3": "diff -r identical",
+  "byte_identical": true,
+  "entry-add-2026.10.3.json": "98cdad1001cc9312a5bf82ac1d6ced3e22da4ae8369c2b15772fd6a2172ae31d",
+  "evidence-add-2026.10.3.json": "e245e6347b5327f746aa15085aa690d7a14add3f1fa35d0980ba86d8837a9f01",
+  "head": "3037d9c0783bc1f45a823d73162622b7b3ac3862",
+  "prefix_script_at_same_head": "ffafdabe make_add_inputs.py: AssertionError at line 142 (L1)"
+ },
+ "admitted_2026_10_3_sha256": "20dcdf7e20f0f0b50f253fba0173dadaf54f408c3d7f8c53fee1166718f89a73",
+ "admitted_capabilities_at_seq_14": {
+  "2026.10.0": 22,
+  "2026.10.1": 26,
+  "2026.10.2": 0,
+  "2026.10.3": 26,
+  "2026.11.0": 0,
+  "2026.9.2": 0,
+  "2026.9.3": 0,
+  "2026.9.4": 0
+ },
+ "base": "2338a4167211c3647d5db2b27737d7e1aa0d388c",
+ "baseline_journal": {
+  "content_digest": "sha256:9d14f06ab0a0870404540ea8cfa70cefe05cc243bebb9fab0b090121081be5fc",
+  "sequence": 12,
+  "sha256": "089247cafa29b3ab0c1687a63419d999ae9c894fa0a94248f73008eabf6785e6",
+  "source": "origin/main 2338a416 upstream-trust/ha-core-release-registry.json"
+ },
+ "content_digests": {
+  "13": "sha256:55311b896557ba43435d44b34f62df018afd1b784c382aa01536f49153a9ac8a",
+  "14": "sha256:734210cf33344c62886377e6abea5d4df776585d5ba687f22087778fa3e93199"
+ },
+ "generated_by": "Claude Code (publication session)",
+ "harness": {
+  "check_step.py": "54f38c6afab7eca663870c0fb991f66c99363a8356ff30caafa4fa10d2dc007a",
+  "harness/make_add_inputs.py": "cf4bb5a3ecc866323872bb664e065bef771c4ac5d600f72ecab9438318846c82",
+  "harness/runtime_check.py": "2bf35d7f6a610a5888f000e387d0dcce39acec0a4be551bbbabc572836f23a5f",
+  "harness/verify_signed_chain.py": "232d120253593d7f688ce0698ce68de9a4de81570eda2cfc6f6c62306b68c7c3",
+  "harness/verify_signed_chain_controls.py": "028566670f63ebac8d653eb6cbefa9ab20c6c2758d2dabdbdcac67fa2383be6d"
+ },
+ "installed_evidence": {
+  "byte_identical_to": "docs/evidence/hamcp222/inputs/evidence-add-2026.10.3.json",
+  "path": "upstream-trust/evidence/ha-core-2026.10.3-e245e6347b5327f746aa15085aa690d7a14add3f1fa35d0980ba86d8837a9f01.json"
+ },
+ "installed_registry": {
+  "byte_identical_to": "owner journal-2.json",
+  "path": "upstream-trust/ha-core-release-registry.json",
+  "sha256": "80d91919ebbd57e4ca1b7a49bc2bb6a9b2996b3b14bef3070916263e82c53817"
+ },
+ "interpreter": "/home/josh/hamcp155-work/venv-r1/bin/python -I (locked env, tests/requirements.lock)",
+ "now": "2026-10-25T11:02:51Z",
+ "python": "3.12.14",
+ "reports": {
+  "check-step-signed.log": "6b2d1960fc5340db77ad18ab3e313e6d7b84891486b5e91f6a594b2aa43d10c9",
+  "rebuild-add-inputs-3037d9c0-prefix-script.log": "342f8c440652c6d7f39957022fdd3a3fa9e678f4453615e7b82a825274483d1a",
+  "rebuild-add-inputs-3037d9c0.log": "1129bffefbedefcde128b5656f47c706a15e6d460b4873684142cba5c38ecc60",
+  "runtime-beta35-90495027-signed.json": "4dc1e77b812b79799ec4862ce17c1b5f66917ee8ce7472733fd8a01d2440d26b",
+  "runtime-beta36-16b724ec-signed.json": "3766a97a3227587effbd846ca6413a62478e11fa06f83c3470a018be9496a13a",
+  "verify-signed-chain-controls.json": "f553e35edf9d53789536292eb632b23435ad3608315e5050aa53b9eb1842b953",
+  "verify-signed-chain-controls.log": "f915748eb8a5ff30246b048b05eb958bdfcd9693f5a5b9d68e0cb72c3ecade60",
+  "verify-signed-chain.log": "d433c29dc625fed56ae3000bc987a837644c3bf7cbe0955637ba646ae6c5ef0f"
+ },
+ "runtime": {
+  "beta35": {
+   "baseline_sha256": "089247cafa29b3ab0c1687a63419d999ae9c894fa0a94248f73008eabf6785e6",
+   "engineering_version": "2.4.1-beta.35",
+   "failures": [],
+   "now": "2026-10-25T11:02:51Z",
+   "passed": true,
+   "public_key_sha256": "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac",
+   "runtime_tree": "a9017d756227a4530f6a41b7144cc98f3053ea2d",
+   "source": "/var/tmp/hamcp222-pub/src-90495027 (git archive 904950279ea7656c84d7c7971f9a0378fcaccf4d)",
+   "source_commit": "904950279ea7656c84d7c7971f9a0378fcaccf4d",
+   "steps_sha256": [
+    "bdd10c0d3c2ddeb763f5a1598e0346b05112b96abd79230bae5b1ac107a77045"
+   ]
+  },
+  "beta36": {
+   "baseline_sha256": "089247cafa29b3ab0c1687a63419d999ae9c894fa0a94248f73008eabf6785e6",
+   "engineering_version": "2.4.1-beta.36",
+   "failures": [],
+   "now": "2026-10-25T11:02:51Z",
+   "passed": true,
+   "public_key_sha256": "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac",
+   "runtime_tree": "70479fa2958aafd36d0e74e3082f98c50b11053c",
+   "source": "/var/tmp/hamcp222-pub/src-16b724ec (git archive 16b724ec0b1d0fa8aae9705df569704f27ad783e)",
+   "source_commit": "16b724ec0b1d0fa8aae9705df569704f27ad783e",
+   "steps_sha256": [
+    "bdd10c0d3c2ddeb763f5a1598e0346b05112b96abd79230bae5b1ac107a77045"
+   ]
+  }
+ },
+ "signed_files": {
+  "candidate-2-add-2026.10.3.json": "0fe9cbd8ed17d06a21657b1098b95e105289ba0cbfff89ca5d4e44044277f695",
+  "journal-1.json": "bdd10c0d3c2ddeb763f5a1598e0346b05112b96abd79230bae5b1ac107a77045",
+  "journal-2.json": "80d91919ebbd57e4ca1b7a49bc2bb6a9b2996b3b14bef3070916263e82c53817"
+ },
+ "signing": {
+  "agent_handled_private_key": false,
+  "attested_by": "scriptbox administrator receipt hamcp222-owner-signing-20261025.txt (not committed)",
+  "ceremony_runtime_reports_sha256": {
+   "beta35": "f297a29752deb62dd619ef806dbff6b9a2af097c9fade3969d9ddd8fda50b9f1",
+   "beta36": "6a04e4ea3e3a0e79779e822bcd84f2c4e5e75870d4117623945287fc91306362"
+  },
+  "public_key_sha256": "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac",
+  "receipt_sha256": "57ae284c8e64c00ec1cd4be740b9631b4d93deaf02546d75cae2303f1a8afcf5",
+  "signed_by": "Josh (owner), in his own terminal, both steps",
+  "signing_head": "ffafdabe63804992d8f14c7268a858bc2429cb31",
+  "signing_python": "3.12.14"
+ },
+ "task": "HAMCP-222 publication",
+ "verified_at_head": "9490d38fa30b5ebbb92722cf37487e87d06b383c"
+}

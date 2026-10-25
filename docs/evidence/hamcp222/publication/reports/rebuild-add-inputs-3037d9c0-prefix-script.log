@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/var/tmp/hamcp222-pub/oldscript/make_add_inputs.py", line 142, in <module>
+    assert git("diff", "--name-only", MERGE_SHA, "HEAD", "--", ".", ":!docs").splitlines() \
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

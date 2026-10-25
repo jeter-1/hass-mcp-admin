@@ -1,0 +1,23 @@
+PASS  pinned: real files pass: exit 0 OK
+PASS  pinned: one byte appended to journal-2: exit 1 FAILED: journal_2 SHA256 92dbcca51538612bd70258f936dae049dbff4660149a347655d6021d4a115ebc is not the recorded output
+PASS  pinned: journal-1 bytes in place of journal-2: exit 1 FAILED: journal_2 SHA256 bdd10c0d3c2ddeb763f5a1598e0346b05112b96abd79230bae5b1ac107a77045 is not the recorded output
+PASS  pinned: installed registry differs from journal-2: exit 1 FAILED: installed registry is not journal 2 bytes
+PASS  unpinned: seq-14 envelope signature flipped: exit 1 FAILED: journal_2 journal signature does not verify
+PASS  unpinned: journal-2 outer signature flipped: exit 1 FAILED: journal_2 journal signature does not verify
+PASS  unpinned: seq-13 envelope dropped from journal-2: exit 1 FAILED: journal_2 journal signature does not verify
+PASS  unpinned: journal-1 non-canonical whitespace: exit 1 FAILED: journal_1 is not canonical JSON
+PASS  unpinned: candidate-2 envelope differs from seq 14: exit 1 FAILED: seq 14 is not candidate_2
+PASS  unpinned: --now after seq-14 expiry: exit 1 FAILED: seq 13 is not current at --now
+PASS  unpinned: --now before seq-14 generated_at: exit 1 FAILED: seq 14 is not current at --now
+PASS  resigned: unchanged content passes: exit 0 OK
+PASS  resigned: seq 13/14 also extend 2026.10.0: exit 1 FAILED: seq 13 is not seq 12 plus the 2026.10.1 extension only
+PASS  resigned: seq 14 2026.10.3 without the delete reference: exit 1 FAILED: seq 14 is not seq 13 plus the 2026.10.3 entry only
+PASS  resigned: seq 13/14 2026.10.1 without the delete reference: exit 1 FAILED: seq 13 is not seq 12 plus the 2026.10.1 extension only
+PASS  resigned: seq 13/14 2026.10.1 new references reordered: exit 1 FAILED: seq 13 is not seq 12 plus the 2026.10.1 extension only
+PASS  resigned: seq 14 also adds 2026.10.2: exit 1 FAILED: seq 14 is not seq 13 plus the 2026.10.3 entry only
+PASS  resigned: seq 14 drops the 2026.9.4 revocation: exit 1 FAILED: revocations changed
+PASS  resigned: seq 14 2026.10.3 other probe digest: exit 1 FAILED: seq 14 is not seq 13 plus the 2026.10.3 entry only
+PASS  resigned: seq 14 2026.10.3 delete contract fingerprint differs: exit 1 FAILED: seq 14 is not seq 13 plus the 2026.10.3 entry only
+PASS  resigned: seq 13/14 2026.10.1 other evidence binding: exit 1 FAILED: seq 13 is not seq 12 plus the 2026.10.1 extension only
+21/21 controls as expected
+exit 0

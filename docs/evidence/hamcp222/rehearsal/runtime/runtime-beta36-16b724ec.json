@@ -1,0 +1,2122 @@
+{
+ "baseline_sha256": "3eed9e94131ed7e0b5fa517730165650135cf31984a192a66a5588c6241a286b",
+ "engineering_version": "2.4.1-beta.36",
+ "failures": [],
+ "now": "2026-10-25T05:00:00Z",
+ "passed": true,
+ "public_key_sha256": "b8d6a5665f65c2d6d5a38272a34c38856beb6e9306e306cbef0c6fc49f534fb5",
+ "result": {
+  "after_rollback_sequence": 14,
+  "baseline": {
+   "content_digest": "sha256:9d14f06ab0a0870404540ea8cfa70cefe05cc243bebb9fab0b090121081be5fc",
+   "positive_current": true,
+   "revoked": [
+    "2026.9.2",
+    "2026.9.3",
+    "2026.9.4"
+   ],
+   "sequence": 12,
+   "snapshot": {
+    "cache_status": "valid",
+    "failure_reason_counts": [],
+    "freshness_status": "current",
+    "last_failure_reason": null,
+    "refresh_status": "accepted",
+    "retained_revocation_count": 3,
+    "sequence": 12
+   },
+   "surface_denied": false,
+   "versions": {
+    "2026.10.0": {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "compatible_count": 22,
+     "compiled_authority": 0,
+     "config_acquire": true,
+     "deny_only": 0,
+     "entity_metadata_acquire": true,
+     "entry_present": true,
+     "entry_reference_count": 22,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "probe_profile": "core-probes-child-device-name-parts-v1",
+     "revoked": false,
+     "selection_token": "sha256:97589207f09cc8fd9e808f23dfb6109f24a63ae251cbbb6a03a60810f8bdc4a4"
+    },
+    "2026.10.1": {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "compatible_count": 22,
+     "compiled_authority": 0,
+     "config_acquire": true,
+     "deny_only": 0,
+     "entity_metadata_acquire": true,
+     "entry_present": true,
+     "entry_reference_count": 22,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "probe_profile": "core-probes-child-device-name-parts-v1",
+     "revoked": false,
+     "selection_token": "sha256:d4b2a9009154b8862ecf4a7a3829adb4481de4a6d974242eb679693b2f30dccd"
+    },
+    "2026.10.2": {
+     "admitted": [],
+     "compatible_count": 0,
+     "compiled_authority": 0,
+     "config_acquire": false,
+     "deny_only": 0,
+     "entity_metadata_acquire": false,
+     "entry_present": false,
+     "entry_reference_count": null,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [],
+     "probe_profile": null,
+     "revoked": false,
+     "selection_token": "sha256:6aaa921eeda16a48214b4813f999af944c94bedbcc9e2537d38eca274120628a"
+    },
+    "2026.10.3": {
+     "admitted": [],
+     "compatible_count": 0,
+     "compiled_authority": 0,
+     "config_acquire": false,
+     "deny_only": 0,
+     "entity_metadata_acquire": false,
+     "entry_present": false,
+     "entry_reference_count": null,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [],
+     "probe_profile": null,
+     "revoked": false,
+     "selection_token": "sha256:6aaa921eeda16a48214b4813f999af944c94bedbcc9e2537d38eca274120628a"
+    },
+    "2026.9.2": {
+     "admitted": [],
+     "compatible_count": 0,
+     "compiled_authority": 0,
+     "config_acquire": false,
+     "deny_only": 26,
+     "entity_metadata_acquire": false,
+     "entry_present": false,
+     "entry_reference_count": null,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [],
+     "probe_profile": null,
+     "revoked": true,
+     "selection_token": "sha256:59b19651f43c80b5a0a0aa364af30b757585c59f8eb188849e0411d9805f7368"
+    },
+    "2026.9.3": {
+     "admitted": [],
+     "compatible_count": 0,
+     "compiled_authority": 0,
+     "config_acquire": false,
+     "deny_only": 26,
+     "entity_metadata_acquire": false,
+     "entry_present": false,
+     "entry_reference_count": null,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [],
+     "probe_profile": null,
+     "revoked": true,
+     "selection_token": "sha256:327d59b31e40f9025d45a6af59b127c2e311239d32ad1c6c423087bdcd297a16"
+    },
+    "2026.9.4": {
+     "admitted": [],
+     "compatible_count": 0,
+     "compiled_authority": 0,
+     "config_acquire": false,
+     "deny_only": 26,
+     "entity_metadata_acquire": false,
+     "entry_present": false,
+     "entry_reference_count": null,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [],
+     "probe_profile": null,
+     "revoked": true,
+     "selection_token": "sha256:6fed4a163be74959e5dbe2a4ab92eb00ad6d48b2878b4dc890e422495480237d"
+    }
+   }
+  },
+  "final": {
+   "content_digest": "sha256:cb1e39bc46cb1128ac04a2aaf1c78194dda8fc17adf6dfe1cde021b34db57b22",
+   "positive_current": true,
+   "revoked": [
+    "2026.9.2",
+    "2026.9.3",
+    "2026.9.4"
+   ],
+   "sequence": 14,
+   "snapshot": {
+    "cache_status": "valid",
+    "failure_reason_counts": [],
+    "freshness_status": "current",
+    "last_failure_reason": null,
+    "refresh_status": "accepted",
+    "retained_revocation_count": 3,
+    "sequence": 14
+   },
+   "surface_denied": false,
+   "versions": {
+    "2026.10.0": {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "compatible_count": 22,
+     "compiled_authority": 0,
+     "config_acquire": true,
+     "deny_only": 0,
+     "entity_metadata_acquire": true,
+     "entry_present": true,
+     "entry_reference_count": 22,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "probe_profile": "core-probes-child-device-name-parts-v1",
+     "revoked": false,
+     "selection_token": "sha256:97589207f09cc8fd9e808f23dfb6109f24a63ae251cbbb6a03a60810f8bdc4a4"
+    },
+    "2026.10.1": {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_delete_operation",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_assistant_exposure_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.label_registry_operation",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "compatible_count": 26,
+     "compiled_authority": 0,
+     "config_acquire": true,
+     "deny_only": 0,
+     "entity_metadata_acquire": true,
+     "entry_present": true,
+     "entry_reference_count": 26,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": true,
+       "planner_acquire": true,
+       "route_available": true
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": true,
+       "planner_acquire": true,
+       "route_available": true
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": true,
+       "planner_acquire": true,
+       "route_available": true
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": true,
+       "planner_acquire": true,
+       "route_available": true
+      }
+     },
+     "positive": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_delete_operation",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_assistant_exposure_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.label_registry_operation",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "probe_profile": "core-probes-child-device-name-parts-v1",
+     "revoked": false,
+     "selection_token": "sha256:c091a9c55fac4d49a945a65516e14566affb8dd36a4a5a202e5b7c8d4a66632b"
+    },
+    "2026.10.2": {
+     "admitted": [],
+     "compatible_count": 0,
+     "compiled_authority": 0,
+     "config_acquire": false,
+     "deny_only": 0,
+     "entity_metadata_acquire": false,
+     "entry_present": false,
+     "entry_reference_count": null,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [],
+     "probe_profile": null,
+     "revoked": false,
+     "selection_token": "sha256:6aaa921eeda16a48214b4813f999af944c94bedbcc9e2537d38eca274120628a"
+    },
+    "2026.10.3": {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_delete_operation",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_assistant_exposure_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.label_registry_operation",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "compatible_count": 26,
+     "compiled_authority": 0,
+     "config_acquire": true,
+     "deny_only": 0,
+     "entity_metadata_acquire": true,
+     "entry_present": true,
+     "entry_reference_count": 26,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": true,
+       "planner_acquire": true,
+       "route_available": true
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": true,
+       "planner_acquire": true,
+       "route_available": true
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": true,
+       "planner_acquire": true,
+       "route_available": true
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": true,
+       "planner_acquire": true,
+       "route_available": true
+      }
+     },
+     "positive": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_delete_operation",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_assistant_exposure_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.label_registry_operation",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "probe_profile": "core-probes-child-device-name-parts-v1",
+     "revoked": false,
+     "selection_token": "sha256:b021f6b832ee9978a7dcf4b4d6f8bb050114fedf3acae7e79681a6bec76d91e1"
+    },
+    "2026.9.2": {
+     "admitted": [],
+     "compatible_count": 0,
+     "compiled_authority": 0,
+     "config_acquire": false,
+     "deny_only": 26,
+     "entity_metadata_acquire": false,
+     "entry_present": false,
+     "entry_reference_count": null,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [],
+     "probe_profile": null,
+     "revoked": true,
+     "selection_token": "sha256:59b19651f43c80b5a0a0aa364af30b757585c59f8eb188849e0411d9805f7368"
+    },
+    "2026.9.3": {
+     "admitted": [],
+     "compatible_count": 0,
+     "compiled_authority": 0,
+     "config_acquire": false,
+     "deny_only": 26,
+     "entity_metadata_acquire": false,
+     "entry_present": false,
+     "entry_reference_count": null,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [],
+     "probe_profile": null,
+     "revoked": true,
+     "selection_token": "sha256:327d59b31e40f9025d45a6af59b127c2e311239d32ad1c6c423087bdcd297a16"
+    },
+    "2026.9.4": {
+     "admitted": [],
+     "compatible_count": 0,
+     "compiled_authority": 0,
+     "config_acquire": false,
+     "deny_only": 26,
+     "entity_metadata_acquire": false,
+     "entry_present": false,
+     "entry_reference_count": null,
+     "fallback_count": 0,
+     "legacy_fan_power_2026_9_2_pin": false,
+     "new_profiles": {
+      "core.configuration_delete_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_assistant_exposure_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.entity_registry_availability_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      },
+      "core.label_registry_operation": {
+       "f3_acquire_exact_target": false,
+       "planner_acquire": false,
+       "route_available": false
+      }
+     },
+     "positive": [],
+     "probe_profile": null,
+     "revoked": true,
+     "selection_token": "sha256:6fed4a163be74959e5dbe2a4ab92eb00ad6d48b2878b4dc890e422495480237d"
+    }
+   }
+  },
+  "final_sha256": "111fdec61fce82d2da155c3f83f162c88b44c043b58c32bd47ab3acd3e1fbbbe",
+  "jump_refreshed": true,
+  "lease_control_2026_10_3": {
+   "acquired": false,
+   "finished": null,
+   "in_flight_revalidated": null,
+   "new_lease_after_refresh": true,
+   "recovery_state_after_refresh": "restored",
+   "refreshed": true,
+   "verifications_after_refresh": 2
+  },
+  "leases": {
+   "2026.10.0 configuration seq12->seq14": {
+    "acquired": true,
+    "finished": true,
+    "in_flight_revalidated": true,
+    "new_lease_after_refresh": true,
+    "recovery_state_after_refresh": "stable",
+    "refreshed": true,
+    "verifications_after_refresh": 1
+   },
+   "2026.10.1 configuration seq12->seq14": {
+    "acquired": true,
+    "finished": true,
+    "in_flight_revalidated": false,
+    "new_lease_after_refresh": true,
+    "recovery_state_after_refresh": "restored",
+    "refreshed": true,
+    "verifications_after_refresh": 2
+   },
+   "2026.10.1 core.configuration_delete_operation seq13->seq14": {
+    "acquired": true,
+    "finished": true,
+    "in_flight_revalidated": true,
+    "new_lease_after_refresh": true,
+    "recovery_state_after_refresh": "stable",
+    "refreshed": true,
+    "verifications_after_refresh": 1
+   },
+   "2026.10.1 core.entity_assistant_exposure_operation seq13->seq14": {
+    "acquired": true,
+    "finished": true,
+    "in_flight_revalidated": true,
+    "new_lease_after_refresh": true,
+    "recovery_state_after_refresh": "stable",
+    "refreshed": true,
+    "verifications_after_refresh": 1
+   },
+   "2026.10.1 core.entity_registry_availability_operation seq13->seq14": {
+    "acquired": true,
+    "finished": true,
+    "in_flight_revalidated": true,
+    "new_lease_after_refresh": true,
+    "recovery_state_after_refresh": "stable",
+    "refreshed": true,
+    "verifications_after_refresh": 1
+   },
+   "2026.10.1 core.label_registry_operation seq13->seq14": {
+    "acquired": true,
+    "finished": true,
+    "in_flight_revalidated": true,
+    "new_lease_after_refresh": true,
+    "recovery_state_after_refresh": "stable",
+    "refreshed": true,
+    "verifications_after_refresh": 1
+   }
+  },
+  "live_advance": {
+   "2026.10.0": [
+    {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "recovery_state": "stable",
+     "sequence": 12,
+     "trigger": "startup"
+    },
+    {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "first_verification": {
+      "admitted": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "recovery_state": "stable"
+     },
+     "new_profiles_routable": {
+      "core.configuration_delete_operation": false,
+      "core.entity_assistant_exposure_operation": false,
+      "core.entity_registry_availability_operation": false,
+      "core.label_registry_operation": false
+     },
+     "recovery_state": "stable",
+     "refreshed": true,
+     "sequence": 13,
+     "verifications_to_settle": 2
+    },
+    {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "first_verification": {
+      "admitted": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "recovery_state": "stable"
+     },
+     "new_profiles_routable": {
+      "core.configuration_delete_operation": false,
+      "core.entity_assistant_exposure_operation": false,
+      "core.entity_registry_availability_operation": false,
+      "core.label_registry_operation": false
+     },
+     "recovery_state": "stable",
+     "refreshed": true,
+     "sequence": 14,
+     "verifications_to_settle": 2
+    }
+   ],
+   "2026.10.1": [
+    {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "recovery_state": "stable",
+     "sequence": 12,
+     "trigger": "startup"
+    },
+    {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_delete_operation",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_assistant_exposure_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.label_registry_operation",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "first_verification": {
+      "admitted": [],
+      "recovery_state": "confirming"
+     },
+     "new_profiles_routable": {
+      "core.configuration_delete_operation": true,
+      "core.entity_assistant_exposure_operation": true,
+      "core.entity_registry_availability_operation": true,
+      "core.label_registry_operation": true
+     },
+     "recovery_state": "restored",
+     "refreshed": true,
+     "sequence": 13,
+     "verifications_to_settle": 2
+    },
+    {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_delete_operation",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_assistant_exposure_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.label_registry_operation",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "first_verification": {
+      "admitted": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_delete_operation",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_assistant_exposure_operation",
+       "core.entity_registry_availability_operation",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.label_registry_operation",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "recovery_state": "restored"
+     },
+     "new_profiles_routable": {
+      "core.configuration_delete_operation": true,
+      "core.entity_assistant_exposure_operation": true,
+      "core.entity_registry_availability_operation": true,
+      "core.label_registry_operation": true
+     },
+     "recovery_state": "restored",
+     "refreshed": true,
+     "sequence": 14,
+     "verifications_to_settle": 2
+    }
+   ],
+   "2026.10.3": [
+    {
+     "admitted": [],
+     "recovery_state": "incompatible",
+     "sequence": 12,
+     "trigger": "startup"
+    },
+    {
+     "admitted": [],
+     "first_verification": {
+      "admitted": [],
+      "recovery_state": "incompatible"
+     },
+     "new_profiles_routable": {
+      "core.configuration_delete_operation": false,
+      "core.entity_assistant_exposure_operation": false,
+      "core.entity_registry_availability_operation": false,
+      "core.label_registry_operation": false
+     },
+     "recovery_state": "incompatible",
+     "refreshed": true,
+     "sequence": 13,
+     "verifications_to_settle": 2
+    },
+    {
+     "admitted": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.configuration_delete_operation",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_assistant_exposure_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.label_registry_operation",
+      "core.non_device_registry_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_power_operation"
+     ],
+     "first_verification": {
+      "admitted": [],
+      "recovery_state": "confirming"
+     },
+     "new_profiles_routable": {
+      "core.configuration_delete_operation": true,
+      "core.entity_assistant_exposure_operation": true,
+      "core.entity_registry_availability_operation": true,
+      "core.label_registry_operation": true
+     },
+     "recovery_state": "restored",
+     "refreshed": true,
+     "sequence": 14,
+     "verifications_to_settle": 2
+    }
+   ]
+  },
+  "restart_cache": {
+   "content_digest": "sha256:cb1e39bc46cb1128ac04a2aaf1c78194dda8fc17adf6dfe1cde021b34db57b22",
+   "sequence": 14
+  },
+  "rollback_refresh_result": {
+   "to_baseline": false,
+   "to_step1": false
+  },
+  "stepwise": [
+   {
+    "content_digest": "sha256:55311b896557ba43435d44b34f62df018afd1b784c382aa01536f49153a9ac8a",
+    "positive_current": true,
+    "refreshed": true,
+    "revoked": [
+     "2026.9.2",
+     "2026.9.3",
+     "2026.9.4"
+    ],
+    "sequence": 13,
+    "snapshot": {
+     "cache_status": "valid",
+     "failure_reason_counts": [],
+     "freshness_status": "current",
+     "last_failure_reason": null,
+     "refresh_status": "accepted",
+     "retained_revocation_count": 3,
+     "sequence": 13
+    },
+    "surface_denied": false,
+    "versions": {
+     "2026.10.0": {
+      "admitted": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "compatible_count": 22,
+      "compiled_authority": 0,
+      "config_acquire": true,
+      "deny_only": 0,
+      "entity_metadata_acquire": true,
+      "entry_present": true,
+      "entry_reference_count": 22,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "probe_profile": "core-probes-child-device-name-parts-v1",
+      "revoked": false,
+      "selection_token": "sha256:97589207f09cc8fd9e808f23dfb6109f24a63ae251cbbb6a03a60810f8bdc4a4"
+     },
+     "2026.10.1": {
+      "admitted": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_delete_operation",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_assistant_exposure_operation",
+       "core.entity_registry_availability_operation",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.label_registry_operation",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "compatible_count": 26,
+      "compiled_authority": 0,
+      "config_acquire": true,
+      "deny_only": 0,
+      "entity_metadata_acquire": true,
+      "entry_present": true,
+      "entry_reference_count": 26,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       }
+      },
+      "positive": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_delete_operation",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_assistant_exposure_operation",
+       "core.entity_registry_availability_operation",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.label_registry_operation",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "probe_profile": "core-probes-child-device-name-parts-v1",
+      "revoked": false,
+      "selection_token": "sha256:c091a9c55fac4d49a945a65516e14566affb8dd36a4a5a202e5b7c8d4a66632b"
+     },
+     "2026.10.2": {
+      "admitted": [],
+      "compatible_count": 0,
+      "compiled_authority": 0,
+      "config_acquire": false,
+      "deny_only": 0,
+      "entity_metadata_acquire": false,
+      "entry_present": false,
+      "entry_reference_count": null,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [],
+      "probe_profile": null,
+      "revoked": false,
+      "selection_token": "sha256:6aaa921eeda16a48214b4813f999af944c94bedbcc9e2537d38eca274120628a"
+     },
+     "2026.10.3": {
+      "admitted": [],
+      "compatible_count": 0,
+      "compiled_authority": 0,
+      "config_acquire": false,
+      "deny_only": 0,
+      "entity_metadata_acquire": false,
+      "entry_present": false,
+      "entry_reference_count": null,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [],
+      "probe_profile": null,
+      "revoked": false,
+      "selection_token": "sha256:6aaa921eeda16a48214b4813f999af944c94bedbcc9e2537d38eca274120628a"
+     },
+     "2026.9.2": {
+      "admitted": [],
+      "compatible_count": 0,
+      "compiled_authority": 0,
+      "config_acquire": false,
+      "deny_only": 26,
+      "entity_metadata_acquire": false,
+      "entry_present": false,
+      "entry_reference_count": null,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [],
+      "probe_profile": null,
+      "revoked": true,
+      "selection_token": "sha256:59b19651f43c80b5a0a0aa364af30b757585c59f8eb188849e0411d9805f7368"
+     },
+     "2026.9.3": {
+      "admitted": [],
+      "compatible_count": 0,
+      "compiled_authority": 0,
+      "config_acquire": false,
+      "deny_only": 26,
+      "entity_metadata_acquire": false,
+      "entry_present": false,
+      "entry_reference_count": null,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [],
+      "probe_profile": null,
+      "revoked": true,
+      "selection_token": "sha256:327d59b31e40f9025d45a6af59b127c2e311239d32ad1c6c423087bdcd297a16"
+     },
+     "2026.9.4": {
+      "admitted": [],
+      "compatible_count": 0,
+      "compiled_authority": 0,
+      "config_acquire": false,
+      "deny_only": 26,
+      "entity_metadata_acquire": false,
+      "entry_present": false,
+      "entry_reference_count": null,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [],
+      "probe_profile": null,
+      "revoked": true,
+      "selection_token": "sha256:6fed4a163be74959e5dbe2a4ab92eb00ad6d48b2878b4dc890e422495480237d"
+     }
+    }
+   },
+   {
+    "content_digest": "sha256:cb1e39bc46cb1128ac04a2aaf1c78194dda8fc17adf6dfe1cde021b34db57b22",
+    "positive_current": true,
+    "refreshed": true,
+    "revoked": [
+     "2026.9.2",
+     "2026.9.3",
+     "2026.9.4"
+    ],
+    "sequence": 14,
+    "snapshot": {
+     "cache_status": "valid",
+     "failure_reason_counts": [],
+     "freshness_status": "current",
+     "last_failure_reason": null,
+     "refresh_status": "accepted",
+     "retained_revocation_count": 3,
+     "sequence": 14
+    },
+    "surface_denied": false,
+    "versions": {
+     "2026.10.0": {
+      "admitted": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "compatible_count": 22,
+      "compiled_authority": 0,
+      "config_acquire": true,
+      "deny_only": 0,
+      "entity_metadata_acquire": true,
+      "entry_present": true,
+      "entry_reference_count": 22,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "probe_profile": "core-probes-child-device-name-parts-v1",
+      "revoked": false,
+      "selection_token": "sha256:97589207f09cc8fd9e808f23dfb6109f24a63ae251cbbb6a03a60810f8bdc4a4"
+     },
+     "2026.10.1": {
+      "admitted": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_delete_operation",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_assistant_exposure_operation",
+       "core.entity_registry_availability_operation",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.label_registry_operation",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "compatible_count": 26,
+      "compiled_authority": 0,
+      "config_acquire": true,
+      "deny_only": 0,
+      "entity_metadata_acquire": true,
+      "entry_present": true,
+      "entry_reference_count": 26,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       }
+      },
+      "positive": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_delete_operation",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_assistant_exposure_operation",
+       "core.entity_registry_availability_operation",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.label_registry_operation",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "probe_profile": "core-probes-child-device-name-parts-v1",
+      "revoked": false,
+      "selection_token": "sha256:c091a9c55fac4d49a945a65516e14566affb8dd36a4a5a202e5b7c8d4a66632b"
+     },
+     "2026.10.2": {
+      "admitted": [],
+      "compatible_count": 0,
+      "compiled_authority": 0,
+      "config_acquire": false,
+      "deny_only": 0,
+      "entity_metadata_acquire": false,
+      "entry_present": false,
+      "entry_reference_count": null,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [],
+      "probe_profile": null,
+      "revoked": false,
+      "selection_token": "sha256:6aaa921eeda16a48214b4813f999af944c94bedbcc9e2537d38eca274120628a"
+     },
+     "2026.10.3": {
+      "admitted": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_delete_operation",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_assistant_exposure_operation",
+       "core.entity_registry_availability_operation",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.label_registry_operation",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "compatible_count": 26,
+      "compiled_authority": 0,
+      "config_acquire": true,
+      "deny_only": 0,
+      "entity_metadata_acquire": true,
+      "entry_present": true,
+      "entry_reference_count": 26,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": true,
+        "planner_acquire": true,
+        "route_available": true
+       }
+      },
+      "positive": [
+       "core.automation_baseline_metadata_read",
+       "core.automation_configuration_read",
+       "core.automation_trace_read",
+       "core.basic_rest_read",
+       "core.basic_websocket_read",
+       "core.configuration_delete_operation",
+       "core.configuration_validation",
+       "core.dashboard_configuration_read",
+       "core.delegated_device_effective_area",
+       "core.dependency_helper_planning",
+       "core.direct_device_registry_read",
+       "core.direct_entity_state_read",
+       "core.entity_assistant_exposure_operation",
+       "core.entity_registry_availability_operation",
+       "core.entity_registry_metadata_operation",
+       "core.f3_mutation_verification",
+       "core.governance_observability",
+       "core.governed_configuration_operation",
+       "core.integration_inspection_metadata_read",
+       "core.label_registry_operation",
+       "core.non_device_registry_read",
+       "core.state_service_discovery",
+       "core.template_semantics",
+       "core.typed_fan_operation",
+       "core.typed_helper_operation",
+       "core.typed_power_operation"
+      ],
+      "probe_profile": "core-probes-child-device-name-parts-v1",
+      "revoked": false,
+      "selection_token": "sha256:b021f6b832ee9978a7dcf4b4d6f8bb050114fedf3acae7e79681a6bec76d91e1"
+     },
+     "2026.9.2": {
+      "admitted": [],
+      "compatible_count": 0,
+      "compiled_authority": 0,
+      "config_acquire": false,
+      "deny_only": 26,
+      "entity_metadata_acquire": false,
+      "entry_present": false,
+      "entry_reference_count": null,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [],
+      "probe_profile": null,
+      "revoked": true,
+      "selection_token": "sha256:59b19651f43c80b5a0a0aa364af30b757585c59f8eb188849e0411d9805f7368"
+     },
+     "2026.9.3": {
+      "admitted": [],
+      "compatible_count": 0,
+      "compiled_authority": 0,
+      "config_acquire": false,
+      "deny_only": 26,
+      "entity_metadata_acquire": false,
+      "entry_present": false,
+      "entry_reference_count": null,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [],
+      "probe_profile": null,
+      "revoked": true,
+      "selection_token": "sha256:327d59b31e40f9025d45a6af59b127c2e311239d32ad1c6c423087bdcd297a16"
+     },
+     "2026.9.4": {
+      "admitted": [],
+      "compatible_count": 0,
+      "compiled_authority": 0,
+      "config_acquire": false,
+      "deny_only": 26,
+      "entity_metadata_acquire": false,
+      "entry_present": false,
+      "entry_reference_count": null,
+      "fallback_count": 0,
+      "legacy_fan_power_2026_9_2_pin": false,
+      "new_profiles": {
+       "core.configuration_delete_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_assistant_exposure_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.entity_registry_availability_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       },
+       "core.label_registry_operation": {
+        "f3_acquire_exact_target": false,
+        "planner_acquire": false,
+        "route_available": false
+       }
+      },
+      "positive": [],
+      "probe_profile": null,
+      "revoked": true,
+      "selection_token": "sha256:6fed4a163be74959e5dbe2a4ab92eb00ad6d48b2878b4dc890e422495480237d"
+     }
+    }
+   }
+  ],
+  "stepwise_final_matches_jump": true
+ },
+ "runtime": "beta36",
+ "source": "/var/tmp/hamcp222-seq13/runtime/b36",
+ "steps_sha256": [
+  "46650bbcebb975cbaf8b5293a18132b73cd1eef4d7da680e509b32eeccc9a7a6"
+ ]
+}

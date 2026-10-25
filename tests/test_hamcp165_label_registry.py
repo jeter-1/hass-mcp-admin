@@ -1,10 +1,12 @@
 """HAMCP-165 governed label create, edit and entity assignment (INACTIVE).
 
-``core.label_registry_operation`` is a runtime-only sibling profile.  No
-owner-signed registry sequence (through 12) references it, so every entry
-point refuses with ``pending_signed_registry_admission`` before any Home
-Assistant read and before anything is stored.  Only a TEST-signed registry
-entry carrying the exact reference, or the admission double, admits it here.
+``core.label_registry_operation`` is a runtime-only sibling profile.  The
+published owner-signed registry references it from sequence 13 (HAMCP-222) on
+2026.10.1 and from sequence 14 on 2026.10.1 and 2026.10.3 only.  Without such
+a reference every entry point refuses with ``pending_signed_registry_admission``
+before any Home Assistant read and before anything is stored.  Only a
+TEST-signed registry entry carrying the exact reference, or the admission
+double, admits it here.
 
 Every provider is synthetic; nothing here reaches a live system.
 """
@@ -182,19 +184,26 @@ class DormantProfileTests(unittest.TestCase):
         self.assertEqual(set(boundary.WRITE_COMMANDS.values()), {LABEL_CREATE, LABEL_UPDATE})
         self.assertNotIn("delete", json.dumps(profile.required_checks))
 
-    def test_no_signed_envelope_has_ever_referenced_it(self):
+    def test_signed_sequences_13_and_14_reference_it_exactly(self):
+        # HAMCP-222: sequence 13 extends 2026.10.1, sequence 14 adds
+        # 2026.10.3; no earlier envelope and no other entry carries it.
         registry = json.loads(
             (ROOT / "upstream-trust/ha-core-release-registry.json").read_text()
         )
-        self.assertEqual(registry["envelopes"][-1]["sequence"], 12)
-        carriers = {
-            (envelope["sequence"], entry["version"])
-            for envelope in registry["envelopes"]
-            for entry in envelope["entries"]
-            for item in entry["capabilities"]
-            if item["capability_id"] == LABEL_PROFILE
-        }
-        self.assertEqual(carriers, set())
+        self.assertEqual(registry["envelopes"][-1]["sequence"], 14)
+        (profile,) = CORE_LABEL_REGISTRY_PROFILES
+        carriers = set()
+        for envelope in registry["envelopes"]:
+            for entry in envelope["entries"]:
+                for item in entry["capabilities"]:
+                    if item["capability_id"] == LABEL_PROFILE:
+                        carriers.add((envelope["sequence"], entry["version"]))
+                        self.assertEqual(
+                            item, {key: profile.to_mapping()[key] for key in item}
+                        )
+        self.assertEqual(
+            carriers, {(13, "2026.10.1"), (14, "2026.10.1"), (14, "2026.10.3")}
+        )
 
     def test_signed_sibling_fingerprints_are_unchanged(self):
         (profile,) = CORE_ENTITY_METADATA_PROFILES

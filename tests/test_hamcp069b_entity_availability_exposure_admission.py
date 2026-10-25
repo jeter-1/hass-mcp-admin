@@ -1,9 +1,10 @@
 """HAMCP-069B Core admission, routing, catalog and never-sent boundary tests.
 
-Both 069B profiles are runtime-only.  No owner-signed registry sequence
-(through 12) references them, so both resource types are refused with
-``pending_signed_registry_admission``; only a TEST-signed registry entry that
-carries the exact references admits them here.
+Both 069B profiles are runtime-only.  The published owner-signed registry
+references them from sequence 13 (HAMCP-222) on 2026.10.1 and from sequence 14
+on 2026.10.1 and 2026.10.3 only.  Without such references both resource types
+are refused with ``pending_signed_registry_admission``; only a TEST-signed
+registry entry that carries the exact references admits them here.
 """
 
 from __future__ import annotations
@@ -212,19 +213,37 @@ class DormantProfileTests(unittest.TestCase):
             },
         )
 
-    def test_no_signed_envelope_has_ever_referenced_them(self):
+    def test_signed_sequences_13_and_14_reference_them_exactly(self):
+        # HAMCP-222: sequence 13 extends 2026.10.1, sequence 14 adds
+        # 2026.10.3; no earlier envelope and no other entry carries them.
         registry = json.loads(
             (ROOT / "upstream-trust/ha-core-release-registry.json").read_text()
         )
-        self.assertEqual(registry["envelopes"][-1]["sequence"], 12)
-        carriers = {
-            (envelope["sequence"], entry["version"], item["capability_id"])
-            for envelope in registry["envelopes"]
-            for entry in envelope["entries"]
-            for item in entry["capabilities"]
-            if item["capability_id"] in {AVAILABILITY, EXPOSURE}
+        self.assertEqual(registry["envelopes"][-1]["sequence"], 14)
+        profiles = {
+            profile.capability_id: profile.to_mapping()
+            for profile in CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
         }
-        self.assertEqual(carriers, set())
+        carriers = set()
+        for envelope in registry["envelopes"]:
+            for entry in envelope["entries"]:
+                for item in entry["capabilities"]:
+                    if item["capability_id"] in {AVAILABILITY, EXPOSURE}:
+                        carriers.add(
+                            (envelope["sequence"], entry["version"], item["capability_id"])
+                        )
+                        mapping = profiles[item["capability_id"]]
+                        self.assertEqual(item, {key: mapping[key] for key in item})
+        self.assertEqual(
+            carriers,
+            {
+                (sequence, version, capability)
+                for sequence, version in (
+                    (13, "2026.10.1"), (14, "2026.10.1"), (14, "2026.10.3"),
+                )
+                for capability in (AVAILABILITY, EXPOSURE)
+            },
+        )
 
     def test_069a_contract_fingerprint_is_unchanged(self):
         (profile,) = CORE_ENTITY_METADATA_PROFILES

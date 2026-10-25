@@ -1,0 +1,4 @@
+M	homeassistant/auth/__init__.py
+M	homeassistant/components/cloud/alexa_config.py
+M	homeassistant/components/config/auth_provider_homeassistant.py
+M	homeassistant/helpers/config_validation.py
