@@ -79,7 +79,11 @@ from ..f3.operational_models import (
     OperationalEvidenceProjection,
     OperationalPreparationRequest,
 )
-from ..f3_configuration.adapter import ConfigurationOperationAdapter
+from ..f3_configuration.adapter import (
+    PREDISPATCH_READ_WINDOW,
+    ConfigurationOperationAdapter,
+    PredispatchAuthorityRefused,
+)
 from ..f3_configuration.delete import ConfigurationDeleteAdapter
 from ..f3_configuration.gateway import ExistingConfigurationGatewayBridge
 from ..f3_configuration.locks import lock_set_hash, resource_lock_key
@@ -713,6 +717,80 @@ class _core_call_window:
             telemetry.core_dispatch_authorizer = self._prior
 
 
+class _predispatch_read_window:
+    """HAMCP-155: one short Core-authority window for a final pre-intent read.
+
+    It is entered inside the dispatch window, whose authorizer admits client
+    calls only once ``before_dispatch`` has consumed the guard's authority.
+    Like the preflight step it acquires and consumes its own authority for the
+    bound operation, admits client calls only while that stays current (and
+    while the authorizer outside the dispatch window still admits them),
+    re-checks it after the read and finishes it.  It never touches the guard's
+    authority, so the dispatch still commits that in ``before_dispatch``.  It
+    is single use and refused once the guard's authority has been committed.
+    """
+
+    def __init__(
+        self,
+        core_runtime: Any,
+        guard: _CoreDispatchAuthorityGuard | None,
+        prepared: Any,
+        dispatch_window: _core_call_window,
+    ):
+        self._core = core_runtime
+        self._guard = guard
+        self._prepared = prepared
+        self._dispatch_window = dispatch_window
+        self._used = False
+        self._authority: Any = None
+        self._commits: Any = None
+        self._dispatch_authorizer: Any = None
+
+    def _current(self) -> bool:
+        return self._core.revalidate(self._authority, self._commits) is True
+
+    async def __aenter__(self) -> None:
+        guard = self._guard
+        if guard is None or self._used or guard.commits is not None:
+            raise PredispatchAuthorityRefused()
+        self._used = True
+        # The guard re-ran Core reconciliation immediately before this
+        # dispatch began; the lease is bound to that same plan and target.
+        authority = self._core.acquire_f3(
+            self._prepared, plan_created_at=guard.plan_created_at
+        )
+        if authority is None:
+            raise PredispatchAuthorityRefused()
+        commits = self._core.consume(authority)
+        if commits is None:
+            self._core.release(authority)
+            raise PredispatchAuthorityRefused()
+        self._authority, self._commits = authority, commits
+        telemetry = self._dispatch_window._telemetry
+        outer = self._dispatch_window._prior
+        self._dispatch_authorizer = telemetry.core_dispatch_authorizer
+        current = self._current
+
+        def authorize_core_dispatch() -> bool:
+            if outer is not None and outer() is not True:
+                return False
+            return current()
+
+        telemetry.core_dispatch_authorizer = authorize_core_dispatch
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        try:
+            self._dispatch_window._telemetry.core_dispatch_authorizer = (
+                self._dispatch_authorizer
+            )
+            current = self._current()
+        finally:
+            self._core.finish(self._commits)
+        if exc_type is None and not current:
+            raise PredispatchAuthorityRefused()
+        return False
+
+
 ROLLBACK_PLANNING_REQUIREMENTS = ("core.dependency_helper_planning",)
 # The same pair the gateway maps for create_entity_metadata_plan.
 ROLLBACK_ENTITY_METADATA_REQUIREMENTS = (
@@ -1105,10 +1183,20 @@ class _CoreVerificationAdapter:
             guard.authorizes_current_call if guard is not None
             else (lambda: False)
         )
-        async with _core_call_window(authorize):
-            return await self._adapter.dispatch(
-                prepared, preflight, before_dispatch=before_dispatch
+        window = _core_call_window(authorize)
+        async with window:
+            # HAMCP-155: a final pre-intent read gets its own short window.
+            token = PREDISPATCH_READ_WINDOW.set(
+                lambda: _predispatch_read_window(
+                    self._core_runtime, guard, prepared, window
+                )
             )
+            try:
+                return await self._adapter.dispatch(
+                    prepared, preflight, before_dispatch=before_dispatch
+                )
+            finally:
+                PREDISPATCH_READ_WINDOW.reset(token)
 
     async def recover(self, prepared: Any, *, context: Any):
         return await self._observe_with_authority(

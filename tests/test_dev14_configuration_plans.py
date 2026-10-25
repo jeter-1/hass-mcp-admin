@@ -46,6 +46,7 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
     end_request,
 )
 from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
+from tests.core_authority_fakes import require_core_authority  # noqa: E402
 from ha_mcp_engineering.tools.governance import (  # noqa: E402
     create_configuration_plan as create_configuration_plan_tool,
 )
@@ -188,6 +189,9 @@ class FakeConfigurationGateway:
         self.validation_result = {"result": "valid", "errors": None}
 
     async def read(self, resource_type, resource_id):
+        # HAMCP-155: every call is refused, as the real client refuses it,
+        # outside a Core-authority window.
+        require_core_authority(self, "GET", f"config/{resource_type}")
         self.calls.append(("read", resource_type, resource_id))
         target = (resource_type, resource_id)
         self.read_counts[target] = self.read_counts.get(target, 0) + 1
@@ -201,6 +205,7 @@ class FakeConfigurationGateway:
     async def write(
         self, action, resource_type, resource_id, approved_config
     ):
+        require_core_authority(self, "POST", f"config/{resource_type}")
         self.calls.append(
             ("write", action, resource_type, resource_id)
         )
@@ -245,10 +250,12 @@ class FakeConfigurationGateway:
         return {"result": "ok"}
 
     async def validate(self):
+        require_core_authority(self, "POST", "config/core/check_config")
         self.calls.append(("validate",))
         return copy.deepcopy(self.validation_result)
 
     async def validate_all(self):
+        require_core_authority(self, "POST", "config/core/check_config")
         self.calls.append(("validate_all",))
         return copy.deepcopy(self.validation_result)
 

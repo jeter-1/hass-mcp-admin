@@ -214,7 +214,7 @@ class SyntheticLabelWebSocket(SyntheticRegistryWebSocket):
             **changed,
         }
 
-    async def command(self, message: dict[str, Any]) -> Any:
+    async def _answer(self, message: dict[str, Any]) -> Any:
         kind = message.get("type")
         if kind in NEVER_SENT_COMMANDS or kind == LABEL_DELETE:
             raise AssertionError(f"never-sent command was sent: {kind}")
@@ -224,7 +224,7 @@ class SyntheticLabelWebSocket(SyntheticRegistryWebSocket):
             if kind in self.failures:
                 raise self.failures[kind]
             return self._create(message) if kind == LABEL_CREATE else self._update(message)
-        return await super().command(message)
+        return await super()._answer(message)
 
 
 def bypass_entry_admission(case: Any) -> None:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
@@ -59,6 +61,23 @@ from .strategies import ConfigurationStrategy, strategy_for
 ERROR_RESULT_AFTER_SEND = "provider_error_after_send"
 PRIOR_STATE_OBSERVED = "prior_state_observed"
 ERROR_RESULT_READBACK_UNEXPLAINED = "readback_matches_neither_plan_nor_prior"
+
+# HAMCP-155: the Core-composed F3 runtime binds this, for one dispatch, to a
+# factory of one short Core-authority window for the adapter's final
+# pre-intent Home Assistant read.  The dispatch window itself admits client
+# calls only after ``before_dispatch`` has consumed dispatch authority, so a
+# drift read there is refused.  Unbound (no Core runtime), the read runs
+# exactly as before.  Entering or leaving the window raises
+# ``PredispatchAuthorityRefused`` when the authority is unavailable or did not
+# stay current across the read.
+PREDISPATCH_READ_WINDOW: ContextVar[
+    Callable[[], AbstractAsyncContextManager[None]] | None
+] = ContextVar("f3_configuration_predispatch_read_window", default=None)
+PREDISPATCH_AUTHORITY_UNAVAILABLE = "dispatch_authority_unavailable"
+
+
+class PredispatchAuthorityRefused(Exception):
+    """The pre-intent read window had no current Core authority."""
 
 
 class ConfigurationGateway(Protocol):
@@ -469,7 +488,7 @@ class ConfigurationOperationAdapter:
                 provider_mutation_count=0,
             )
 
-        refusal = await self._predispatch_refusal(operation)
+        refusal = await self._windowed_predispatch_refusal(operation)
         if refusal:
             if any(
                 code in {"stale_target_state", "delete_target_missing"}
@@ -1281,6 +1300,29 @@ class ConfigurationOperationAdapter:
         if action == "update":
             return "configuration_resource_updated"
         raise ValueError("configuration action has no reviewed effect")
+
+    # HAMCP-155: True only for an adapter whose ``_predispatch_refusal``
+    # reads Home Assistant; only that read is given its own authority window.
+    PREDISPATCH_READS_HOME_ASSISTANT = False
+
+    async def _windowed_predispatch_refusal(
+        self, operation: PreparedConfigurationOperation
+    ) -> tuple[str, ...]:
+        window = (
+            PREDISPATCH_READ_WINDOW.get()
+            if self.PREDISPATCH_READS_HOME_ASSISTANT
+            else None
+        )
+        if window is None:
+            return await self._predispatch_refusal(operation)
+        try:
+            async with window():
+                refusal = await self._predispatch_refusal(operation)
+        except PredispatchAuthorityRefused:
+            # Authority missing, withdrawn, or retired during the read: the
+            # read result is not evidence and nothing is sent.
+            return (PREDISPATCH_AUTHORITY_UNAVAILABLE,)
+        return refusal
 
     async def _predispatch_refusal(
         self, operation: PreparedConfigurationOperation

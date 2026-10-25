@@ -40,6 +40,8 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 from ha_mcp_engineering.governance.storage import ChangePlanRepository  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 
+from tests.core_authority_fakes import require_core_authority  # noqa: E402
+
 
 UPDATE = "config/entity_registry/update"
 CHECK_CONFIG = ("POST", "/config/core/check_config")
@@ -96,6 +98,12 @@ class SyntheticRegistryWebSocket:
         entry["modified_at"] = float(entry["modified_at"]) + 1
 
     async def command(self, message: dict[str, Any]) -> Any:
+        # HAMCP-155: refused, before Home Assistant sees it, exactly as the
+        # real client refuses a call outside a Core-authority window.
+        require_core_authority(self, "WS", str(message.get("type")))
+        return await self._answer(message)
+
+    async def _answer(self, message: dict[str, Any]) -> Any:
         message = deepcopy(message)
         self.commands.append(message)
         kind = message.get("type")
@@ -142,6 +150,7 @@ class SyntheticRegistryRest:
         self.requests: list[tuple[str, str]] = []
 
     async def request(self, method: str, path: str, **_kwargs: Any) -> Any:
+        require_core_authority(self, method, str(path))
         self.requests.append((method, path))
         if method == "GET" and path.startswith("/states/"):
             entity_id = path.removeprefix("/states/")
