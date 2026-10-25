@@ -1029,6 +1029,8 @@ for _cls in (EntityRegistryErrorEndToEndTests, Beta8EntityRegistryErrorRecordTes
         for _name in vars(_base):
             if _name.startswith("test_") and _name not in vars(_cls):
                 setattr(_cls, _name, None)
+# A class still bound to a module-level name would be collected twice.
+del _cls, _base, _name
 
 
 if __name__ == "__main__":
