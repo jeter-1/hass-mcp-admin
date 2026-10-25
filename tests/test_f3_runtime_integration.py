@@ -73,6 +73,7 @@ from ha_mcp_engineering.governance.task_models import (  # noqa: E402
     ExecutionTaskState,
     TASK_SCHEMA_VERSION,
 )
+from tests.core_authority_fakes import require_core_authority  # noqa: E402
 from tests.test_dev14_configuration_plans import (  # noqa: E402
     ConfigurationPlanTestCase,
     PROPOSED_AUTOMATION,
@@ -98,7 +99,8 @@ async def _provider_identity():
 
 
 class _AbsentStateReader:
-    async def request(self, *_args, **_kwargs):
+    async def request(self, method="GET", path="", *_args, **_kwargs):
+        require_core_authority(self, str(method), str(path))
         return ExpectedHttpStatus(404)
 
 

@@ -27,6 +27,7 @@ from ha_mcp_engineering.governance.configuration_delete import (  # noqa: E402
     PROFILE as DELETE_PROFILE,
 )
 
+from tests.core_authority_fakes import require_core_authority  # noqa: E402
 from tests.hamcp069a_entity_fixtures import registry_entry  # noqa: E402
 from tests.hamcp069b_fixtures import (  # noqa: E402
     AdmittingCore,
@@ -136,6 +137,9 @@ class SyntheticConfigurationRest:
 
     async def request(self, method: str, path: Any, **kwargs: Any) -> Any:
         path = str(path)
+        # HAMCP-155: refused, before Home Assistant sees it, exactly as
+        # ``RestClient.request`` refuses a call outside a Core-authority window.
+        require_core_authority(self, method, path)
         self.requests.append((method, path))
         if method == "GET" and path.startswith("/states/"):
             entity_id = path.removeprefix("/states/")
