@@ -50,6 +50,9 @@ from ha_mcp_engineering.f3_dashboard.json_codec import (  # noqa: E402
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3RuntimeIntegration,
 )
+from ha_mcp_engineering.governance.policy import (  # noqa: E402
+    evaluate_change_policy,
+)
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
 )
@@ -92,6 +95,9 @@ class _DashboardGateway:
         self.fail_after_write = False
         self.fail_before_write = False
         self.structured_rejection = False
+        # HAMCP-193: the save succeeds but the stored configuration differs
+        # from what was sent, so the post-save readback mismatches.
+        self.mismatched_write = False
         self.last_write: dict[str, object] | None = None
         self.best_practice_authority_hash: str | None = None
 
@@ -131,6 +137,8 @@ class _DashboardGateway:
         if self.fail_before_write:
             raise RuntimeError("synthetic pre-provider response failure")
         self.configuration = deepcopy(arguments["configuration"])
+        if self.mismatched_write:
+            self.configuration["title"] = "Drifted by another writer"
         if self.fail_after_write:
             raise RuntimeError("synthetic lost provider response")
         return {
@@ -1210,6 +1218,170 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     )
                 self.assertEqual(self.dashboard.write_count, 0)
 
+
+    async def test_post_save_readback_mismatch_fails_post_dispatch_once(self):
+        """HAMCP-193 (1): a mismatched readback is never redispatched."""
+
+        created = await self._plan()
+        await self._approve(created)
+        self.dashboard.mismatched_write = True
+
+        result = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+
+        self.assertEqual(result["task_state"], "failed_post_dispatch")
+        self.assertEqual(self.dashboard.write_count, 1)
+        self.assertEqual(
+            self.dashboard.configuration["title"], "Drifted by another writer"
+        )
+        evidence = self._execution_evidence(result["task_id"])
+        self.assertEqual(len(evidence), 1)
+        child = evidence[0]
+        self.assertEqual(child["dispatch_count"], 1)
+        self.assertEqual(child["normalized_outcome"], "verification_mismatch")
+        diagnostics = {
+            code
+            for event in child["events"]
+            for code in event["diagnostic_codes"]
+        }
+        self.assertIn("exact_readback_mismatch", diagnostics)
+        self.assertNotIn("exact_full_configuration_match", diagnostics)
+        task = self.service.get_execution_task(result["task_id"])
+        self.assertEqual(task["state"], "failed_post_dispatch")
+        self.assertTrue(task["provider_dispatch_occurred"])
+        for _attempt in range(2):
+            with self.assertRaises(GovernanceError):
+                await self.service.apply(
+                    created["plan_id"], created["plan_hash"]
+                )
+            self.assertEqual(self.dashboard.write_count, 1)
+        await self.runtime.recover_once("startup")
+        self.assertEqual(self.dashboard.write_count, 1)
+
+    def _tamper_projection(
+        self, plan_id: str, mode: str, *, rebind: bool = True
+    ) -> None:
+        plan = self.repository.get(plan_id)
+        proposal = plan.proposed_config["dashboard_update"]
+        if mode == "missing":
+            proposal.pop("approval_projection")
+        elif mode == "value":
+            proposal["approval_projection"]["operations"][0]["proposed"][
+                "value"
+            ] = "Tampered"
+        elif mode == "binding":
+            proposal["approval_projection"]["binding"]["resulting_sha256"] = (
+                "0" * 64
+            )
+        elif mode == "projection_hash":
+            proposal["approval_projection"]["binding"]["projection_sha256"] = (
+                "f" * 64
+            )
+        else:  # pragma: no cover - test vocabulary
+            raise AssertionError(mode)
+        if not rebind:
+            self.repository.save(plan)
+            return
+        # A self-consistent record: the policy snapshot is re-evaluated so
+        # the refusal comes from the approval-projection validator itself,
+        # not from the earlier policy-snapshot layer.
+        plan.policy_decision = evaluate_change_policy(plan)
+        plan.approval.policy_decision_hash = (
+            plan.policy_decision.policy_decision_hash
+        )
+        if plan.approval.bound_plan_hash is not None:
+            # A pending challenge is bound to the plan hash; rebind it so
+            # every outer binding is consistent and only the projection
+            # validator's baseline hashes remain to catch the tamper.
+            plan.approval.bound_plan_hash = self.service.plan_hash(plan)
+        self.repository.save(plan)
+
+    def _assert_projection_refusal(self, caught) -> None:
+        self.assertEqual(
+            caught.exception.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED
+        )
+        self.assertEqual(caught.exception.details["resource_id"], self.plan_id)
+        self.assertTrue(caught.exception.details["replan_required"])
+        self.assertTrue(
+            caught.exception.details["reason"].startswith("approval_projection"),
+            caught.exception.details,
+        )
+
+    async def test_missing_or_tampered_projection_is_refused_at_every_approval_step(self):
+        """HAMCP-193 (2): approve, the approval page and the decision refuse."""
+
+        modes = ("missing", "value", "binding", "projection_hash")
+        for step in ("approve", "issue_external_csrf", "decide_external_approval"):
+            for mode in modes:
+                with self.subTest(step=step, mode=mode):
+                    created = await self._plan()
+                    self.plan_id = created["plan_id"]
+                    pending = csrf = None
+                    if step != "approve":
+                        pending = self.service.approve(
+                            created["plan_id"], created["plan_hash"]
+                        )
+                    if step == "decide_external_approval":
+                        _review, csrf = await self.service.issue_external_csrf(
+                            created["plan_id"], pending["challenge_id"]
+                        )
+                    self._tamper_projection(created["plan_id"], mode)
+                    with self.assertRaises(GovernanceError) as caught:
+                        if step == "approve":
+                            self.service.approve(
+                                created["plan_id"], created["plan_hash"]
+                            )
+                        elif step == "issue_external_csrf":
+                            await self.service.issue_external_csrf(
+                                created["plan_id"], pending["challenge_id"]
+                            )
+                        else:
+                            await self.service.decide_external_approval(
+                                plan_id=created["plan_id"],
+                                challenge_id=pending["challenge_id"],
+                                expected_plan_hash=created["plan_hash"],
+                                approval_kind=pending["approval_kind"],
+                                approval_action=pending["approval_action"],
+                                csrf_nonce=csrf,
+                                decision="approve",
+                                approver_principal=(
+                                    "home_assistant_admin_ingress:test-reviewer"
+                                ),
+                            )
+                    self._assert_projection_refusal(caught)
+                    stored = self.repository.get(created["plan_id"])
+                    self.assertNotEqual(stored.approval.state.value, "approved")
+                    with self.assertRaises(GovernanceError):
+                        await self.service.apply(
+                            created["plan_id"], created["plan_hash"]
+                        )
+                    self.assertEqual(self.dashboard.write_count, 0)
+
+    async def test_naive_projection_tamper_is_refused_by_the_policy_snapshot(self):
+        """HAMCP-193 (2): an unrebound tamper fails at the earlier layer."""
+
+        created = await self._plan()
+        self._tamper_projection(created["plan_id"], "value", rebind=False)
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.approve(created["plan_id"], created["plan_hash"])
+        self.assertEqual(
+            caught.exception.code, ErrorCode.POLICY_SNAPSHOT_MISMATCH
+        )
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(self.dashboard.write_count, 0)
+
+    async def test_untampered_projection_still_approves_and_applies(self):
+        """HAMCP-193 (2) control: the same steps succeed without tampering."""
+
+        created = await self._plan()
+        await self._approve(created)
+        result = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        self.assertEqual(self.dashboard.write_count, 1)
 
 if __name__ == "__main__":
     unittest.main()
