@@ -1,0 +1,76 @@
+{
+  "base_image": "python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea",
+  "command": "systemd-journal-remote --compress=<no|yes> --seal=no --output=<stream>-<variant>.journal <stream>.export",
+  "environment": {
+    "SYSTEMD_JOURNAL_COMPACT": "1",
+    "SYSTEMD_JOURNAL_KEYED_HASH": "1"
+  },
+  "generator": "tests/fixtures/hamcp224_journal/generate.py --journals",
+  "headers": {
+    "persistent-uncompressed": [
+      "Compatible flags: TAIL_ENTRY_BOOT_ID",
+      "Incompatible flags: KEYED-HASH COMPACT",
+      "Header size: 272",
+      "Entry objects: 33"
+    ],
+    "persistent-zstd": [
+      "Compatible flags: TAIL_ENTRY_BOOT_ID",
+      "Incompatible flags: COMPRESSED-ZSTD KEYED-HASH COMPACT",
+      "Header size: 272",
+      "Entry objects: 33"
+    ],
+    "runtime-uncompressed": [
+      "Compatible flags: TAIL_ENTRY_BOOT_ID",
+      "Incompatible flags: KEYED-HASH COMPACT",
+      "Header size: 272",
+      "Entry objects: 6"
+    ],
+    "runtime-zstd": [
+      "Compatible flags: TAIL_ENTRY_BOOT_ID",
+      "Incompatible flags: COMPRESSED-ZSTD KEYED-HASH COMPACT",
+      "Header size: 272",
+      "Entry objects: 6"
+    ]
+  },
+  "inputs": {
+    "persistent.export": "39a9219310f3be59981e0d4de004341c8e7f9afce7477f88fd0b648efc9ab156",
+    "runtime.export": "e6dfb8f14e0afb64c195adde08f280257e5b12bfc312838a9991fe8c6359de79"
+  },
+  "machine_id_directory": "5e7e7e7e000000000000000000000224",
+  "outputs": {
+    "persistent-uncompressed.journal": {
+      "bytes": 8388608,
+      "sha256": "d4008c62b0be4a75272a9c127fd069416b9b94f1fc8077193797301eb891b201",
+      "stored_as": "persistent-uncompressed.journal.gz",
+      "stored_sha256": "8197783f7ff0ce5d737b96cb8b242d2208c2e8548203d712d56e93b9faecbf91"
+    },
+    "persistent-zstd.journal": {
+      "bytes": 8388608,
+      "sha256": "a66aed5433d9f2bca630a565c1c6e2f61e5cd48c43ecfa4ec87ddc3060f3b3bc",
+      "stored_as": "persistent-zstd.journal.gz",
+      "stored_sha256": "82649375e464465ca608763a20cf1501ca20502ffb2ad09ac105e52a35b01738"
+    },
+    "runtime-uncompressed.journal": {
+      "bytes": 8388608,
+      "sha256": "d8adcf5f157f08a131011aeab5cd0cf455af4e8d2001d08d1e4899ea5a5ac806",
+      "stored_as": "runtime-uncompressed.journal.gz",
+      "stored_sha256": "93c49f0a31366fabe90149eb50c1972370004261d1cdc249d56c86c3d4b1f8a2"
+    },
+    "runtime-zstd.journal": {
+      "bytes": 8388608,
+      "sha256": "064df3b53b61a676c6abc67c819e6165a7501a08139d19bcf811ae624dfad2c2",
+      "stored_as": "runtime-zstd.journal.gz",
+      "stored_sha256": "b8f76fd20272ed083d6ab1cad5036f5959c8724b5b99ce42c2ff989973b70bce"
+    }
+  },
+  "packages": [
+    "libsystemd-shared 257.13-1~deb13u1",
+    "libsystemd0 257.13-1~deb13u1",
+    "libzstd1 1.5.7+dfsg-1",
+    "systemd-journal-remote 257.13-1~deb13u1"
+  ],
+  "purpose": "Real-format host journal fixtures for the get_incident_logs journal sources (D10).",
+  "reproducibility": "Export streams are byte-reproducible. Journal files are not: journald assigns random file, sequence-number and keyed-hash IDs, so regeneration changes output digests only.",
+  "synthetic": true,
+  "task": "HAMCP-224"
+}
