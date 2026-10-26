@@ -207,6 +207,8 @@ from . import label_registry
 from . import label_registry_planning
 from . import configuration_delete
 from . import configuration_delete_planning
+from . import helper_options as helper_options_contract
+from . import helper_options_planning
 from .entity_metadata_disclosure import read_runtime_dependency_snapshot
 from . import input_select_option as input_select_contract
 from ..ha_core_readmission.routes import SCRIPT_TRACE_PROFILE
@@ -708,6 +710,7 @@ class ChangeGovernanceService:
         label_registry_gateway: Any | None = None,
         configuration_delete_gateway: Any | None = None,
         input_select_gateway: Any | None = None,
+        helper_options_gateway: Any | None = None,
         input_select_dependency_risk_reader: Callable[..., Awaitable[
             dict[str, Any]
         ]] | None = None,
@@ -742,6 +745,9 @@ class ChangeGovernanceService:
         # HAMCP-145: exact input_select option writes, inactive until a
         # signed registry admits core.typed_input_select_option_operation.
         self.input_select_gateway = input_select_gateway
+        # HAMCP-232: options-flow reads and the one submit, inactive until a
+        # signed registry admits core.config_entry_helper_options_operation.
+        self.helper_options_gateway = helper_options_gateway
         self.input_select_dependency_risk_reader = (
             input_select_dependency_risk_reader
             or read_input_select_dependency_risk
@@ -6056,6 +6062,7 @@ class ChangeGovernanceService:
         *,
         label_context: Any | None,
         availability_exposure_context: Any | None,
+        helper_options_context: Any | None = None,
     ) -> bool:
         """HAMCP-165 review1 M1: admission first in the lowest builder.
 
@@ -6082,11 +6089,151 @@ class ChangeGovernanceService:
             availability_exposure.add(
                 availability_exposure_context.request.resource_type
             )
+        # HAMCP-232: the options resource type, prepared or raw.
+        helper_options = (
+            helper_options_context is not None
+            or helper_options_contract.RESOURCE_TYPE in resource_types
+        )
+        if helper_options:
+            self._helper_options_core()
         if label:
             self._label_core()
         for resource_type in sorted(availability_exposure):
             self._availability_exposure_core(resource_type)
-        return label or bool(availability_exposure)
+        return label or bool(availability_exposure) or helper_options
+
+    async def create_helper_options_plan(
+        self,
+        arguments: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Plan governed options edits of 1-8 config-entry helpers (HAMCP-232).
+
+        Admission of the runtime-only
+        ``core.config_entry_helper_options_operation`` profile is enforced
+        first, before input validation, any read and any persistence;
+        unadmitted planning reads nothing and stores nothing.  Planning then
+        opens and aborts each exact entry's options flow (OD-1) inside the
+        Core lease.  Nothing is dispatched.
+        """
+
+        self._helper_options_core()
+        try:
+            request = helper_options_planning.validate_request(arguments)
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self._entity_metadata_refusal_error(exc, {}) from None
+        lease = self._helper_options_planning_lease(request.lease_target_id)
+        async with lease:
+            try:
+                if self.helper_options_gateway is None:
+                    raise helper_options_planning.Refusal(
+                        "helper_options_provider_unavailable",
+                        kind="unavailable",
+                    )
+                prepared = await helper_options_planning.prepare(
+                    self.helper_options_gateway, request
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self._entity_metadata_refusal_error(exc, {}) from None
+            lease.require_current()
+            return await self._create_helper_options_plan(
+                prepared,
+                caller_context=caller_context,
+                _before_persist=lease.require_current,
+            )
+
+    def _helper_options_core(self) -> Any:
+        """Return Core only if a signed registry admits the options profile."""
+
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status((helper_options_contract.PROFILE,)).get(
+                    "available"
+                )
+                is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": helper_options_contract.PENDING_ADMISSION_REASON,
+                    "reason_code": helper_options_contract.PENDING_ADMISSION_REASON,
+                    "resource_type": helper_options_contract.RESOURCE_TYPE,
+                    "core_capability": helper_options_contract.PROFILE,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _helper_options_planning_lease(self, target_id: str) -> Any:
+        """Hold exact-target Core authority across one options planning."""
+
+        from ..f3_runtime.runtime import _rollback_planning_lease
+
+        core = self._helper_options_core()
+        return _rollback_planning_lease(
+            core,
+            ("core.dependency_helper_planning", helper_options_contract.PROFILE),
+            target={
+                "target_type": helper_options_contract.RESOURCE_TYPE,
+                "target_id": target_id,
+            },
+        )
+
+    async def _create_helper_options_plan(
+        self,
+        prepared: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+        _before_persist: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        # Every options persistence path re-checks admission and must hold a
+        # current Core lease; neither ever depends on the caller alone.
+        self._helper_options_core()
+        if _before_persist is None:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        count = len(prepared.items)
+        domain = prepared.items[0].domain if prepared.items else "helper"
+        verb = (
+            "Restore"
+            if isinstance(caller_context, dict)
+            and "rollback_source_plan_id" in caller_context
+            else "Edit"
+        )
+        return await self._create_configuration_plan(
+            title=(
+                f"{verb} options of {count} {domain} helper"
+                + ("" if count == 1 else "s")
+            )[:160],
+            description=(
+                f"{verb} options: "
+                + ", ".join(
+                    f"{item.entity_id} ({', '.join(item.intent[helper_options_contract.INTENT_KEY]['requested'])})"
+                    for item in prepared.items
+                )
+                + f". Reason: {prepared.request.reason}"
+            )[:2000],
+            operations=[
+                {
+                    "operation_id": item.operation_id,
+                    "resource_type": helper_options_contract.RESOURCE_TYPE,
+                    "action": helper_options_contract.ACTION,
+                    "target_id": item.entry_id,
+                    "proposed_config": deepcopy(item.intent),
+                }
+                for item in prepared.items
+            ],
+            expiration_minutes=prepared.request.expiration_minutes,
+            caller_context=caller_context,
+            _helper_options_context=prepared,
+            _before_persist=_before_persist,
+        )
 
     async def create_configuration_delete_plan(
         self,
@@ -6255,6 +6402,7 @@ class ChangeGovernanceService:
         _availability_exposure_context: Any | None = None,
         _label_context: Any | None = None,
         _configuration_delete_context: Any | None = None,
+        _helper_options_context: Any | None = None,
         _before_persist: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         """Internal builder; only F3's inverse route supplies durable context.
@@ -6275,12 +6423,17 @@ class ChangeGovernanceService:
         ``create_configuration_delete_plan`` (HAMCP-155): exactly the
         prepared delete children.  Without it ``delete`` is refused, so no
         generic, rollback or internal caller can build a delete.
+        ``_helper_options_context`` is supplied only by
+        ``create_helper_options_plan`` and its F3 restore route (HAMCP-232):
+        exactly the prepared options children, update-only.  Without it the
+        options resource type is refused, so no generic caller reaches it.
         """
 
         dormant_profiles = self._require_dormant_profile_admission(
             operations,
             label_context=_label_context,
             availability_exposure_context=_availability_exposure_context,
+            helper_options_context=_helper_options_context,
         )
         if dormant_profiles and _before_persist is None:
             # Every dormant-profile persistence holds a current Core lease.
@@ -6297,12 +6450,17 @@ class ChangeGovernanceService:
                     _availability_exposure_context,
                     _label_context,
                     _configuration_delete_context,
+                    _helper_options_context,
                 )
             )
             > 1
             or (_label_context is not None and _rollback_context is not None)
             or (
                 _configuration_delete_context is not None
+                and _rollback_context is not None
+            )
+            or (
+                _helper_options_context is not None
                 and _rollback_context is not None
             )
         ):
@@ -6336,6 +6494,23 @@ class ChangeGovernanceService:
                         ]
                     },
                 )
+        if _helper_options_context is not None and (
+            _before_persist is None
+            or [
+                item.get("operation_id") if isinstance(item, dict) else None
+                for item in (operations if isinstance(operations, list) else [])
+            ]
+            != [item.operation_id for item in _helper_options_context.items]
+        ):
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={
+                    "validation_errors": [
+                        "helper options plans contain exactly the prepared "
+                        "operations"
+                    ]
+                },
+            )
         if _availability_exposure_context is not None and [
             item.get("operation_id") if isinstance(item, dict) else None
             for item in (operations if isinstance(operations, list) else [])
@@ -6494,6 +6669,8 @@ class ChangeGovernanceService:
                 if _availability_exposure_context is not None
                 else set(configuration_delete.RESOURCE_TYPES)
                 if _configuration_delete_context is not None
+                else {helper_options_contract.RESOURCE_TYPE}
+                if _helper_options_context is not None
                 else SUPPORTED_CONFIGURATION_RESOURCES
                 if _entity_metadata_context is None
                 else {ENTITY_METADATA_RESOURCE_TYPE}
@@ -6509,6 +6686,7 @@ class ChangeGovernanceService:
             if (
                 _entity_metadata_context is not None
                 or _availability_exposure_context is not None
+                or _helper_options_context is not None
                 or (
                     _label_context is not None
                     and resource_type == ENTITY_METADATA_RESOURCE_TYPE
@@ -6613,7 +6791,19 @@ class ChangeGovernanceService:
                         ]
                     },
                 )
-            if _configuration_delete_context is not None:
+            if _helper_options_context is not None:
+                options_item = _helper_options_context.item(operation_id)
+                errors = helper_options_contract.intent_errors(
+                    target_id, proposed_config
+                )
+                if (
+                    depends_on
+                    or options_item.entry_id != target_id
+                    or proposed_config != options_item.intent
+                ):
+                    errors.append("options operation does not match its preparation")
+                valid, warnings = not errors, []
+            elif _configuration_delete_context is not None:
                 delete_item = _configuration_delete_context.item(operation_id)
                 errors = configuration_delete.intent_errors(
                     resolved_type, target_id, proposed_config
@@ -6674,6 +6864,11 @@ class ChangeGovernanceService:
                 current = _availability_exposure_context.item(
                     operation_id
                 ).current
+            elif _helper_options_context is not None:
+                # The visible options baseline read inside the planning lease.
+                current = deepcopy(
+                    _helper_options_context.item(operation_id).current
+                )
             elif _configuration_delete_context is not None:
                 # The prepared pre-image is the exact state the removed
                 # effects, intent fingerprint and recreate were bound to.
@@ -6735,7 +6930,18 @@ class ChangeGovernanceService:
                     resolved_type, current
                 )
                 proposed_hash = stable_hash(normalized_proposed)
-                if _configuration_delete_context is not None:
+                if _helper_options_context is not None:
+                    item = _helper_options_context.item(operation_id)
+                    diff = {
+                        "has_changes": True,
+                        "config_entry_helper_options": (
+                            helper_options_planning.projection(item)
+                        ),
+                    }
+                    risk = helper_options_planning.risk_assessment(
+                        operation_id, item.classification
+                    )
+                elif _configuration_delete_context is not None:
                     item = _configuration_delete_context.item(operation_id)
                     diff = {
                         "has_changes": True,
@@ -7005,6 +7211,10 @@ class ChangeGovernanceService:
             plan.dry_run_results["configuration_delete"] = deepcopy(
                 _configuration_delete_context.plan_disclosure
             )
+        if _helper_options_context is not None:
+            plan.dry_run_results["config_entry_helper_options"] = deepcopy(
+                _helper_options_context.plan_disclosure
+            )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
         if dormant_profiles:
@@ -7013,6 +7223,7 @@ class ChangeGovernanceService:
                 operations,
                 label_context=_label_context,
                 availability_exposure_context=_availability_exposure_context,
+                helper_options_context=_helper_options_context,
             )
         if _before_persist is not None:
             _before_persist()  # HAMCP-189 R1: F3 rollback lease, after last read
@@ -15438,6 +15649,9 @@ class ChangeGovernanceService:
         operational["script_trace_provider"] = (
             self._script_trace_provider_health_snapshot(admission)
         )
+        operational["helper_options_provider"] = (
+            self._helper_options_provider_health_snapshot(admission)
+        )
         for operation, operation_health in operational["operations"].items():
             operation_health["active_reconciliations"] = (
                 self._active_lifecycle_reconciliations
@@ -15640,6 +15854,12 @@ class ChangeGovernanceService:
             (SCRIPT_TRACE_PROFILE,),
             "pending_signed_registry_admission",
         ),
+        (
+            "helper_options_provider",
+            "create_helper_options_plan",
+            (helper_options_contract.PROFILE,),
+            helper_options_contract.PENDING_ADMISSION_REASON,
+        ),
     )
     _CORE_ADMISSION_READ_ATTEMPTS = 3
 
@@ -15839,6 +16059,30 @@ class ChangeGovernanceService:
             "core_admission": self._health_core_admission(
                 "configuration_delete_provider", admission
             ),
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _helper_options_provider_health_snapshot(
+        self, admission: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Report the dormant HAMCP-232 provider without a Core call."""
+
+        configured = self.helper_options_gateway is not None
+        return {
+            "provider": helper_options_contract.PROVIDER,
+            "provider_contract": helper_options_contract.PROVIDER_CONTRACT,
+            "provider_contract_status": "code_owned_exact",
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capability": helper_options_contract.PROFILE,
+            "core_admission": self._health_core_admission(
+                "helper_options_provider", admission
+            ),
+            "domains": list(helper_options_contract.DOMAINS),
             "fallback": "none",
             "fallback_count": 0,
             "fallback_policy": "none",

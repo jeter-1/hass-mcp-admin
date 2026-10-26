@@ -278,6 +278,16 @@ def build_semantic_projection(
         if intent_errors(operation.resource_type, operation.target_id, after):
             raise SemanticProjectionError("projection_after_state_malformed")
         after = _ABSENT
+    elif operation.resource_type == "config_entry_helper_options":
+        # HAMCP-232: the proposal is the closed options intent.  The
+        # reviewed change is the visible baseline to the visible proposal.
+        from .helper_options import INTENT_KEY, intent_errors
+
+        if intent_errors(operation.target_id, after):
+            raise SemanticProjectionError("projection_after_state_malformed")
+        if before != after[INTENT_KEY]["baseline"]:
+            raise SemanticProjectionError("projection_before_state_missing")
+        after = after[INTENT_KEY]["proposed"]
 
     changes: list[dict[str, Any]] = []
     _append_changes(

@@ -53,9 +53,15 @@ from .entity_availability_exposure import (
 )
 from . import label_registry
 from .label_registry import LABEL_RESOURCE_TYPE, LabelRegistryGateway
+from . import helper_options
+from .helper_options import RESOURCE_TYPE as HELPER_OPTIONS_RESOURCE_TYPE
 
 
 RESOURCE_NORMALIZATION_VERSION = 2
+_HELPER_OPTIONS_GENERIC_REFUSAL = (
+    "config entry helper options are read and written only through the "
+    "governed options gateway"
+)
 SUPPORTED_RESOURCE_TYPES = frozenset(
     {
         "automation",
@@ -65,6 +71,7 @@ SUPPORTED_RESOURCE_TYPES = frozenset(
         ENTITY_METADATA_RESOURCE_TYPE,
         *AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
         LABEL_RESOURCE_TYPE,
+        HELPER_OPTIONS_RESOURCE_TYPE,
     }
 )
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
@@ -209,6 +216,10 @@ def validate_resource(
         # HAMCP-165: the reviewed label fields plus the closed plan bindings.
         errors = label_registry.proposed_errors(resource_id, proposed_config)
         warnings = []
+    elif resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
+        # HAMCP-232: only the closed options intent built by the planner.
+        errors = helper_options.intent_errors(resource_id, proposed_config)
+        warnings = []
     else:
         errors = _validate_resource_id(resource_type, resource_id)
         warnings: list[str] = []
@@ -297,6 +308,10 @@ def normalize_resource_config(
         return availability_exposure.normalize_entry(config)
     if resource_type == LABEL_RESOURCE_TYPE:
         return label_registry.normalize_entry(config)
+    if resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
+        # A visible options baseline or the closed intent, both compared
+        # exactly as Core stores JSON.
+        return helper_options.canonical_copy(config)
     normalized = {
         key: value
         for key, value in config.items()
@@ -608,6 +623,10 @@ def resource_identity_matches(
         return config.get("entity_id") == resource_id
     if resource_type == LABEL_RESOURCE_TYPE:
         return config.get("label_id") == resource_id
+    if resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
+        # A visible options dict carries no identity; only the options
+        # gateway reads it, bound to the plan's exact entry.
+        return False
     returned_id = config.get("id")
     if resource_type in SUPPORTED_HELPER_TYPES:
         _, object_id = _split_helper_entity_id(resource_type, resource_id)
@@ -647,6 +666,9 @@ class ConfigurationResourceGateway:
         from .configuration_delete import ConfigurationDeleteGateway
 
         self.configuration_delete = ConfigurationDeleteGateway(self)
+        # HAMCP-232: the only options-flow sender (open, abort, one submit);
+        # the generic get/create/update refuse the options resource type.
+        self.helper_options = helper_options.HelperOptionsResourceGateway(self)
 
     async def get(
         self, resource_type: str, resource_id: str
@@ -654,6 +676,8 @@ class ConfigurationResourceGateway:
         """Read one exact supported resource."""
 
         self._require_valid_id(resource_type, resource_id)
+        if resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
+            raise ValueError(_HELPER_OPTIONS_GENERIC_REFUSAL)
         if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
             return await self.entity_metadata.read_entry(resource_id)
         if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
@@ -731,6 +755,8 @@ class ConfigurationResourceGateway:
     ) -> Any:
         """Create one resource using only its fixed Home Assistant operation."""
 
+        if resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
+            raise ValueError(_HELPER_OPTIONS_GENERIC_REFUSAL)
         if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
             raise ValueError("entity registry metadata is update-only")
         if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
@@ -859,6 +885,8 @@ class ConfigurationResourceGateway:
     ) -> Any:
         """Replace one resource with the exact approved configuration."""
 
+        if resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
+            raise ValueError(_HELPER_OPTIONS_GENERIC_REFUSAL)
         if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
             # ``approved_config`` is the closed touched-field body produced by
             # the entity strategy, never a full entry.  The provider re-checks
@@ -1213,6 +1241,12 @@ def _validate_resource_id(
             label_registry.LABEL_ID_PATTERN.fullmatch(resource_id)
         ):
             return ["label_registry_entry resource_id must be a label_id"]
+        return []
+    if resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
+        if not isinstance(resource_id, str) or not (
+            helper_options.ENTRY_ID_PATTERN.fullmatch(resource_id)
+        ):
+            return [f"{resource_type} resource_id must be a config entry id"]
         return []
     if resource_type == "automation":
         valid, errors, _ = validate_automation(

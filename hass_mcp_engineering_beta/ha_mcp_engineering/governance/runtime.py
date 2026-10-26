@@ -198,6 +198,9 @@ class GovernanceRuntime:
                     resource_gateway.configuration_delete
                 ),
                 input_select_gateway=input_select_gateway,
+                # HAMCP-232: refused before any read until a signed registry
+                # admits core.config_entry_helper_options_operation.
+                helper_options_gateway=resource_gateway.helper_options,
             )
             from ..f3_runtime.runtime import F3RuntimeIntegration
 

@@ -54,6 +54,17 @@ from .configuration_delete import (
     RESOURCE_TYPES as CONFIGURATION_DELETE_RESOURCE_TYPES,
     intent_errors as configuration_delete_intent_errors,
 )
+from .helper_options import (
+    ACTION as HELPER_OPTIONS_ACTION,
+    INTENT_KEY as HELPER_OPTIONS_INTENT_KEY,
+    RESOURCE_TYPE as HELPER_OPTIONS_RESOURCE_TYPE,
+    intent_errors as helper_options_intent_errors,
+)
+from .helper_options_planning import (
+    MAX_CHANGES as HELPER_OPTIONS_MAX_ENTRIES,
+    POLICY_TRIGGER as HELPER_OPTIONS_POLICY_TRIGGER,
+    expected_basis as helper_options_expected_basis,
+)
 from .configuration_delete_planning import (
     MAX_DELETIONS as CONFIGURATION_DELETE_MAX_TARGETS,
     POLICY_TRIGGER as CONFIGURATION_DELETE_POLICY_TRIGGER,
@@ -1028,6 +1039,143 @@ def _configuration_delete_operation_policy(
     )
 
 
+HELPER_OPTIONS_INCOMPLETE = "config_entry_helper_options_contract_incomplete"
+
+
+def _exact_helper_options_update(operation: ConfigurationOperation) -> bool:
+    """Recognize an exact governed options edit of one entry (HAMCP-232).
+
+    The bound current state is the visible baseline the intent names, the
+    proposal is the closed options intent and its hash binds it.  The F3
+    adapter re-reads the entry, refuses drift and proves the result by an
+    options-flow readback.
+    """
+
+    from .resources import resource_fingerprint
+
+    proposed = operation.proposed_config
+    if (
+        operation.resource_type != HELPER_OPTIONS_RESOURCE_TYPE
+        or operation.action != HELPER_OPTIONS_ACTION
+        or operation.helper_type is not None
+        or operation.depends_on
+        or helper_options_intent_errors(operation.target_id, proposed)
+        or operation.normalized_proposed_config != proposed
+        or not isinstance(operation.current_config, dict)
+        or operation.current_config
+        != proposed[HELPER_OPTIONS_INTENT_KEY]["baseline"]
+    ):
+        return False
+    try:
+        current = resource_fingerprint(
+            operation.resource_type, operation.current_config
+        )
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return bool(
+        operation.current_state_fingerprint == current
+        and operation.proposed_config_hash == stable_hash(proposed)
+        and operation.normalization_version >= 1
+        and operation.validation_results.get("valid") is True
+        and operation.risk.apply_allowed
+    )
+
+
+def _helper_options_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one options edit from the dependency reasons it binds.
+
+    OD-4: incomplete consumer evidence is a protected dependency, so it is
+    elevated, never standard and never refused on consequence alone.  The
+    planning marker must agree exactly with the basis recomputed here.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (HELPER_OPTIONS_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") == HELPER_OPTIONS_POLICY_TRIGGER
+    ]
+    if not _exact_helper_options_update(operation) or len(markers_found) != 1:
+        return incomplete
+    intent = operation.proposed_config[HELPER_OPTIONS_INTENT_KEY]
+    expected = helper_options_expected_basis(intent["dependency_reasons"])
+    marker = markers_found[0]
+    basis = marker.get("basis")
+    if not isinstance(basis, str):
+        return incomplete
+    if tuple(item for item in basis.split(",") if item) != expected:
+        return incomplete
+    policy = marker.get("policy")
+    consequence = marker.get("physical_consequence")
+    if (
+        not expected
+        and policy == "standard"
+        and consequence == PhysicalConsequence.NONE.value
+        and operation.risk.level is RiskLevel.MEDIUM
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.STANDARD_ADMIN,
+            RiskDelta.MODERATE,
+            PhysicalConsequence.NONE,
+            (
+                "config_entry_helper_options_standard_policy",
+                "supported_configuration_change",
+            ),
+        )
+    if not (
+        expected
+        and policy == "elevated"
+        and consequence == PhysicalConsequence.SAFETY_CRITICAL.value
+        and operation.risk.level is RiskLevel.HIGH
+    ):
+        return incomplete
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.ELEVATED_ADMIN,
+        RiskDelta.HIGH,
+        PhysicalConsequence.SAFETY_CRITICAL,
+        tuple(
+            sorted(
+                {
+                    *expected,
+                    "config_entry_helper_options_elevated_policy",
+                    "supported_configuration_change",
+                }
+            )
+        ),
+    )
+
+
+def _helper_options_plan_complete(operations) -> bool:
+    """OD-5: 1-8 unique entries of one domain, unordered, options only."""
+
+    if not 1 <= len(operations) <= HELPER_OPTIONS_MAX_ENTRIES:
+        return False
+    if any(
+        op.resource_type != HELPER_OPTIONS_RESOURCE_TYPE
+        or op.action != HELPER_OPTIONS_ACTION
+        or op.depends_on
+        or not isinstance(op.proposed_config, dict)
+        or not isinstance(op.proposed_config.get(HELPER_OPTIONS_INTENT_KEY), dict)
+        for op in operations
+    ):
+        return False
+    domains = {
+        op.proposed_config[HELPER_OPTIONS_INTENT_KEY].get("domain")
+        for op in operations
+    }
+    return len(domains) == 1 and len({op.target_id for op in operations}) == len(
+        operations
+    )
+
+
 def _configuration_delete_plan_complete(operations) -> bool:
     """A delete plan holds only governed deletes: 1-8 unique, unordered."""
 
@@ -1093,6 +1241,8 @@ def configuration_operation_policy(
         return _label_operation_policy(operation)
     if operation.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
         return _availability_exposure_operation_policy(operation)
+    if operation.resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
+        return _helper_options_operation_policy(operation)
     if operation.action == CONFIGURATION_DELETE_ACTION:
         return _configuration_delete_operation_policy(operation)
     triggers = _risk_triggers(operation)
@@ -1544,6 +1694,19 @@ def _single_plan_policy(
                     RiskDelta.CRITICAL,
                     PhysicalConsequence.UNKNOWN,
                     (CONFIGURATION_DELETE_INCOMPLETE,),
+                ),
+            )
+        if any(
+            op.resource_type == HELPER_OPTIONS_RESOURCE_TYPE
+            for op in plan.operations
+        ) and not _helper_options_plan_complete(plan.operations):
+            # HAMCP-232 OD-5: options edits are never mixed with others.
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.PROHIBITED,
+                    RiskDelta.CRITICAL,
+                    PhysicalConsequence.UNKNOWN,
+                    (HELPER_OPTIONS_INCOMPLETE,),
                 ),
             )
         if any(inverse_eligibility.markers(op) for op in plan.operations) and inverse_eligibility.bound(plan) is None:

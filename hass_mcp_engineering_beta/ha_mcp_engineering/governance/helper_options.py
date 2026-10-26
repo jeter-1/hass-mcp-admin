@@ -382,6 +382,12 @@ def canonical(value: Any) -> Any:
     return ("opaque", repr(value))
 
 
+def canonical_copy(value: Any) -> Any:
+    """A deep copy for binding; equality is decided by ``canonical``."""
+
+    return copy.deepcopy(value)
+
+
 def values_equal(left: Any, right: Any) -> bool:
     return canonical(left) == canonical(right)
 
@@ -986,6 +992,39 @@ class HelperOptionsGateway:
         return SubmitOutcome(None, "options_submit_uncertain")
 
 
+class HelperOptionsResourceGateway(HelperOptionsGateway):
+    """The options gateway plus the fenced consumer-evidence read.
+
+    Attached to the configuration resource gateway by the runtime; the
+    dependency snapshot reader is set there after construction, so it is
+    resolved at call time.  ``None`` evidence means the reader is not wired,
+    which planning and preflight treat as unavailable.
+    """
+
+    def __init__(self, configuration: Any) -> None:
+        super().__init__(configuration.rest_client, configuration.websocket_client)
+        self._configuration = configuration
+
+    async def consumer_evidence(self, entity_id: str) -> dict[str, Any] | None:
+        from .entity_availability_exposure_planning import read_consumer_evidence
+
+        reader = getattr(self._configuration, "availability_exposure_snapshot_reader", None)
+        if reader is None:
+            return None
+        return await read_consumer_evidence(reader, entity_id, fenced=True)
+
+    async def entry_consumer_evidence(
+        self, entity_ids: list[str]
+    ) -> dict[str, Any] | None:
+        evidence: dict[str, Any] = {}
+        for entity_id in entity_ids:
+            value = await self.consumer_evidence(entity_id)
+            if value is None:
+                return None
+            evidence[entity_id] = value
+        return {"entities": evidence}
+
+
 __all__ = [
     "ACTION",
     "CAPABILITY_IDENTITY",
@@ -999,6 +1038,7 @@ __all__ = [
     "HelperOptionsContractError",
     "HelperOptionsGateway",
     "HelperOptionsProviderError",
+    "HelperOptionsResourceGateway",
     "INTENT_KEY",
     "INTENT_MODEL",
     "NEVER_SENT",
@@ -1017,6 +1057,7 @@ __all__ = [
     "build_intent",
     "build_proposal",
     "canonical",
+    "canonical_copy",
     "coerce_request_value",
     "consumer_fingerprint",
     "field_spec",
