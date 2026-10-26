@@ -1,0 +1,7 @@
+1180 1052 0:120 / / rw,relatime master:365 - overlay overlay rw,lowerdir=/synthetic/lower,upperdir=/synthetic/upper,workdir=/synthetic/work
+1181 1180 0:123 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+1188 1180 8:8 /supervisor/addons/data/synthetic /data rw,relatime - ext4 /dev/sda8 rw,commit=30
+1190 1180 8:8 /supervisor/share /share rw,relatime - ext4 /dev/sda8 rw,commit=30
+1195 1180 8:8 /supervisor/../journal /var/log/journal ro,relatime - ext4 /dev/sda8 rw,commit=30
+1196 1180 0:26 /log/journal /run/log/journal ro,nosuid,nodev - tmpfs tmpfs rw,size=394416k,mode=755
+1197 1196 0:26 /log/journal /run/log/journal rw,nosuid,nodev - tmpfs tmpfs rw,size=394416k,mode=755
