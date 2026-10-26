@@ -81,6 +81,114 @@ class TimestampBoundTests(unittest.TestCase):
         self.assertFalse(contract._number(1_700_000_000.0))
 
 
+class PinnedFieldContractTests(unittest.TestCase):
+    """OD-3: pinned fields are refused by the contract itself, not only by the
+    request vocabulary (which already excludes every pinned name)."""
+
+    def test_every_pinned_field_is_refused_at_coercion(self):
+        pinned = [
+            (domain, step, spec)
+            for (domain, step), fields in contract.STEP_CATALOG.items()
+            for spec in fields
+            if spec.pinned
+        ]
+        self.assertTrue(pinned)
+        for domain, step, spec in pinned:
+            with self.subTest(domain=domain, step=step, field=spec.name):
+                self.assertNotIn(spec.name, contract.EDITABLE_FIELD_NAMES)
+                with self.assertRaises(contract.HelperOptionsContractError) as raised:
+                    contract.coerce_request_value(spec, "sensor.other")
+                self.assertEqual(raised.exception.category, "options_field_pinned")
+
+
+def valid_intent(**set_values) -> dict:
+    proposal = contract.build_proposal(
+        "filter", "lowpass", FILTER_LOWPASS, set_values or {"time_constant": 20}, ()
+    )
+    return contract.build_intent(
+        entity_ids=[FILTERED],
+        entry_id="filterentry01",
+        domain="filter",
+        step_id="lowpass",
+        modified_at=1_761_436_800.0,
+        baseline=deepcopy(FILTER_LOWPASS),
+        proposal=proposal,
+        consumer_evidence_fingerprint="0" * 64,
+        dependency_reasons=[],
+    )
+
+
+def retarget(intent: dict, proposed: dict) -> dict:
+    """Replace ``proposed`` and ``submit`` consistently so only the rule under test fires."""
+
+    intent = deepcopy(intent)
+    body = intent[contract.INTENT_KEY]
+    body["proposed"] = deepcopy(proposed)
+    body["submit"] = deepcopy(proposed)
+    body["proposed_fingerprint"] = contract.fingerprint(contract.INTENT_MODEL, proposed)
+    return intent
+
+
+class IntentContractTests(unittest.TestCase):
+    """The persisted intent is re-validated exactly at apply; a forged intent is refused."""
+
+    def test_the_built_intent_is_valid(self):
+        self.assertEqual(contract.intent_errors("filterentry01", valid_intent()), [])
+
+    def test_an_intent_changing_a_pinned_field_is_refused(self):
+        for name, value in (("entity_id", "sensor.other_power"), ("filter", "outlier")):
+            with self.subTest(field=name):
+                proposed = dict(valid_intent()[contract.INTENT_KEY]["proposed"], **{name: value})
+                errors = contract.intent_errors("filterentry01", retarget(valid_intent(), proposed))
+                self.assertIn("options intent changes a pinned field", errors)
+
+    def test_a_no_op_intent_is_refused(self):
+        errors = contract.intent_errors("filterentry01", retarget(valid_intent(), FILTER_LOWPASS))
+        self.assertEqual(errors, ["options intent is a no-op"])
+
+
+class StubRest:
+    def __init__(self, failure: Exception | None = None):
+        self.failure = failure
+        self.requests: list[tuple] = []
+
+    async def request(self, method, path, body=None, **kwargs):
+        self.requests.append((method, path))
+        if self.failure is not None:
+            raise self.failure
+        return {"type": "create_entry"}
+
+
+class GatewayContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_malformed_flow_ids_never_reach_core(self):
+        rest = StubRest()
+        gateway = contract.HelperOptionsGateway(rest, None)
+        for flow_id in ("", "0" * 31, "0" * 33, "A" * 32, "g" * 32, "../" + "0" * 29,
+                        "0" * 16 + "?x" + "0" * 14, None):
+            with self.subTest(flow_id=flow_id):
+                for call in (gateway.submit(flow_id, {}), gateway.abort_flow(flow_id)):
+                    with self.assertRaises(contract.HelperOptionsContractError) as raised:
+                        await call
+                    self.assertEqual(raised.exception.category, "options_flow_id_malformed")
+        self.assertEqual(rest.requests, [])
+
+    async def test_a_raised_client_error_is_a_confirmed_rejection(self):
+        # 400 and 404 arrive as responses; any other 4xx is raised by the client.
+        for status in (403, 405, 409, 422):
+            with self.subTest(status=status):
+                rest = StubRest(HomeAssistantApiError(details={"status": status}))
+                outcome = await contract.HelperOptionsGateway(rest, None).submit("0" * 32, {})
+                self.assertEqual(
+                    outcome, contract.SubmitOutcome(False, contract.SUBMIT_REJECTED_REASON, status)
+                )
+                self.assertEqual(len(rest.requests), 1)
+
+    async def test_a_server_error_leaves_the_outcome_to_readback(self):
+        rest = StubRest(HomeAssistantApiError(details={"status": 503}))
+        outcome = await contract.HelperOptionsGateway(rest, None).submit("0" * 32, {})
+        self.assertEqual(outcome, contract.SubmitOutcome(None, contract.SUBMIT_UNCERTAIN, 503))
+
+
 class ServiceAdmissionTests(HelperOptionsServiceTestCase):
     """Unadmitted planning reads nothing and stores nothing."""
 
