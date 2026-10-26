@@ -28,6 +28,7 @@ from typing import Any
 
 from ..entity_ids import validate_entity_id
 from ..errors import AuthorizationError, HomeAssistantApiError
+from ..request_context import mark_provider_send
 from .entity_metadata import (
     EntityMetadataProviderError,
     EntityMetadataUpdateErrorResult,
@@ -592,6 +593,7 @@ class EntityAvailabilityExposureGateway:
                 }
             )
         try:
+            mark_provider_send()  # OD-6(ii): the exact send boundary
             result = await self._send(command)
         except AuthorizationError as exc:
             # Raised while authenticating, before the command is sent, or for

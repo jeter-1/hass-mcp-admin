@@ -28,10 +28,18 @@ INPUT_BOOLEAN_ENTITY_PATTERN = re.compile(
 class HelperStateGatewayError(RuntimeError):
     """Bounded error that never includes Home Assistant response content."""
 
-    def __init__(self, category: str, *, dispatched: bool = False) -> None:
+    def __init__(
+        self,
+        category: str,
+        *,
+        dispatched: bool = False,
+        call_not_sent: bool = False,
+    ) -> None:
         super().__init__("The exact helper-state provider rejected the request.")
         self.category = category
         self.dispatched = dispatched
+        # HAMCP-181 b5: the dispatch callback raised before the command.
+        self.call_not_sent = call_not_sent is True and not dispatched
 
 
 @dataclass(frozen=True)
@@ -157,7 +165,14 @@ class HelperStateGateway:
             "service": "turn_on" if desired_state == "on" else "turn_off",
             "target": {"entity_id": entity_id},
         }
-        await before_dispatch()
+        try:
+            await before_dispatch()
+        except Exception as exc:
+            # HAMCP-181 b5: the callback raised, so the command was never
+            # sent.  Declare that before any send-capable call.
+            raise HelperStateGatewayError(
+                "before_dispatch_failed", call_not_sent=True
+            ) from exc
         try:
             await self.websocket_client.command(payload)
         except (AuthorizationError, HomeAssistantApiError) as exc:

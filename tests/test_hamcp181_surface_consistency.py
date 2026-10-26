@@ -435,7 +435,7 @@ class MixedParentReceiptTests(_CounterBasisMixin, unittest.TestCase):
 
 
 class HelperStateNoOpStatusTests(helper_state.ExactHelperStateRuntimeTests):
-    """Section 2.4.3 item 4: a generic (a) keeps ``status`` in PR1."""
+    """Section 2.4.3 item 4: PR2 (T2) reports a generic (a) as ``already_present``."""
 
     async def test_generic_no_op_status_is_unchanged_at_apply_and_replay(self):
         plan = await self.create_and_grant()
@@ -454,15 +454,16 @@ class HelperStateNoOpStatusTests(helper_state.ExactHelperStateRuntimeTests):
             "dispatched_at": None,
             "dispatched_at_basis": df.DISPATCHED_AT_NO_INTENT,
         }
-        for label, result, status in (("apply", applied, "applied"),
-                                      ("replay", replayed, "already_applied")):
+        for label, result in (("apply", applied), ("replay", replayed)):
             with self.subTest(surface=label):
-                # PR1 keeps the generic status; PR2 owns "already_present".
-                self.assertEqual(result["status"], status)
+                # The one PR2 status change (OD-4, OD-10): the stored V9
+                # string selects the existing "already_present" override.
+                self.assertEqual(result["status"], "already_present")
                 self.assertEqual(result["task_state"], "succeeded_verified")
                 task = self.service.get_execution_task(result["task_id"])
                 self.assertEqual(task["state"], "succeeded_verified")
-                self.assertEqual(task["terminal_outcome"], "succeeded_verified")
+                self.assertEqual(task["terminal_outcome"],
+                                 ENTITY_METADATA_NOT_DISPATCHED_OUTCOME)
                 self.assertEqual(subset(result, additive), additive)
                 self.assertEqual(subset(task, additive), additive)
                 self.assertIn("already present", result["result_text"])
@@ -529,8 +530,9 @@ class ConfigurationReceiptTests(_CounterBasisMixin, integration.F3ConfigurationA
                     self.assert_counters_qualified(body)
                     self.assertIs(body["provider_dispatch_occurred"], True)
                     if limit is None:
+                        # HAMCP-181 PR2 (OD-6(ii)): the exact send time.
                         self.assertEqual(body["dispatched_at_basis"],
-                                         df.DISPATCHED_AT_INTENT_COMMIT_TIME)
+                                         df.DISPATCHED_AT_PROVIDER_CALL_START)
                     # The full apply result keeps the counter on its task.
                     counted = body if "provider_attempt_count" in body else body["execution_task"]
                     self.assertEqual(counted["provider_attempt_count"], children)
@@ -632,7 +634,8 @@ class OperationalSurfaceTests(_CounterBasisMixin, integration._OperationalActiva
             self.assertNotIn(detail, result)
             self.assertNotIn(detail, view)
         self.assertEqual(view["dispatched_at"], view["dispatch_intent_recorded_at"])
-        self.assertEqual(view["dispatched_at_basis"], df.DISPATCHED_AT_INTENT_COMMIT_TIME)
+        # HAMCP-181 PR2 (OD-6(ii)): the exact send time.
+        self.assertEqual(view["dispatched_at_basis"], df.DISPATCHED_AT_PROVIDER_CALL_START)
 
     async def test_lost_reload_response_is_uncertain_on_every_reader_and_reconciliation(self):
         self.lifecycle.mode = "ambiguous"

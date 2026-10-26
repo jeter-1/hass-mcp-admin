@@ -33,7 +33,7 @@ from ..clients.mcp import (
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..errors import DashboardProviderError, ErrorCode, GovernanceError
 from ..observability import METRICS
-from ..request_context import current_telemetry
+from ..request_context import current_telemetry, mark_provider_send
 from ..sanitization import (
     RedactionTally,
     sanitize_untrusted_data,
@@ -993,6 +993,10 @@ class UpstreamDashboardProvider:
                 ),
             )
             setter_admitted = True
+            # OD-6(ii): the exact send boundary.  The transport runs only the
+            # synchronous Core authority check between this validator and its
+            # setter tools/call; a Core refusal there proves no send.
+            mark_provider_send()
 
         try:
             exchange = await self._transport.execute_dashboard_write(

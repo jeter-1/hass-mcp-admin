@@ -267,6 +267,23 @@ class RProvenTests(unittest.TestCase):
                                    df.PROVIDER_PERMISSION_DENIED))
         self.assertEqual(df.child_facts(record).phase, df.PHASE_SENT_REJECTED_NO_MUTATION)
 
+    def test_p1_requires_the_rejection_proof_code(self):
+        # PR2 review 1 (L1): a received confirmed failure of an automation or
+        # script without the P1 proof code is never claimed as no mutation.
+        for target_type in ("automation", "script"):
+            with self.subTest(target_type=target_type):
+                record = FakeRecord(target_type=target_type, response=True,
+                                    outcome="dispatch_failed_confirmed", codes=())
+                facts = df.child_facts(record)
+                self.assertEqual(facts.phase, df.PHASE_SENT_FAILED_MUTATION_UNPROVEN)
+                self.assertNotEqual(facts.phase, df.PHASE_SENT_REJECTED_NO_MUTATION)
+                parent = df.dispatch_facts(task=SimpleNamespace(dispatched_at=None),
+                                           children=[facts])
+                self.assertEqual(parent.dispatch_phase,
+                                 df.PHASE_SENT_FAILED_MUTATION_UNPROVEN)
+                self.assertIsNone(parent.outcome_code)
+                self.assertIsNot(parent.changed_by_engineering, False)
+
     def test_negatives_are_unproven(self):
         negatives = {
             "backup_failed": FakeRecord(operation="create_backup", target_type="backup",

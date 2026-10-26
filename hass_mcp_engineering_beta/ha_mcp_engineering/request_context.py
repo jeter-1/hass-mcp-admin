@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 import re
@@ -208,3 +210,32 @@ def current_request_id() -> str:
 def current_caller_id() -> str:
     telemetry = current_telemetry()
     return telemetry.caller_id if telemetry else "anonymous"
+
+
+# HAMCP-181 PR2 (OD-6(ii)): the exact provider send boundary.  A mutation
+# gateway calls ``mark_provider_send`` immediately before its client issues
+# the one mutating request.  The F3 runtime observes the mark only while it
+# awaits that gateway mutation; anywhere else the mark is a no-op.  The mark
+# records a time only: it never sends, admits or authorizes anything.
+_PROVIDER_SEND_OBSERVER: ContextVar[Callable[[], None] | None] = ContextVar(
+    "provider_send_observer", default=None
+)
+
+
+def mark_provider_send() -> None:
+    """Report that the mutating request is being issued now."""
+
+    observer = _PROVIDER_SEND_OBSERVER.get()
+    if observer is not None:
+        observer()
+
+
+@contextmanager
+def observe_provider_send(observer: Callable[[], None]) -> Iterator[None]:
+    """Route ``mark_provider_send`` to ``observer`` within this context."""
+
+    token = _PROVIDER_SEND_OBSERVER.set(observer)
+    try:
+        yield
+    finally:
+        _PROVIDER_SEND_OBSERVER.reset(token)

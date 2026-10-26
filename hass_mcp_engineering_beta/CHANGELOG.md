@@ -1,13 +1,13 @@
 # Changelog
 
-## 2.4.1-beta.37 - Host journal sources for get_incident_logs (HAMCP-224)
+## 2.4.1-beta.38 - Host journal sources for get_incident_logs (HAMCP-224)
 
-Builds on 2.4.1-beta.36.
+Builds on 2.4.1-beta.37.
 
 - `get_incident_logs` reads `supervisor`, `host`, `host:<category>` and
   `addon:<slug>` from the host journal, which the Supervisor mounts
   read-only with the new `journald: true`; `hassio_role` stays
-  `homeassistant` and no `manager` route is called. Through beta.36 these
+  `homeassistant` and no `manager` route is called. Through beta.37 these
   sources were `authority_not_granted`.
 - The reader binds 14 fixed `libsystemd.so.0` symbols (the base image's
   library) and 9 fixed fields, merges the runtime and persistent journals in
@@ -23,6 +23,53 @@ Builds on 2.4.1-beta.36.
 - No input schema, routing, provider, policy, profile, fingerprint, signed
   registry, workflow, Dockerfile, dependency or stable-v1 change; static
   tools 68, catalog 96 (97).
+
+## 2.4.1-beta.37 - Truthful stored outcomes (HAMCP-181 PR2, HAMCP-214, HAMCP-193)
+
+Builds on 2.4.1-beta.36. Activates nothing new.
+
+- Proven not sent (b): a call stopped after its dispatch intent, with
+  positive proof that the provider call was never sent, stores
+  `terminal_outcome: failed_after_intent_not_dispatched` and reads
+  `intent_recorded_not_sent`, `provider_dispatch_occurred: false` and
+  `dispatched_at: null` on every surface. Proofs: the shared F3 executor's
+  no-send declaration (configuration, dashboard, fan and helper-state
+  adapters), `call_not_sent` at the reviewed pre-write raise sites and a
+  pre-frame WebSocket authorization failure, and the upstream fan
+  second-authority refusal. `HomeAssistantUnavailableError`, a lost
+  response, a registry error and the backup/lifecycle gateways are never
+  proof.
+- Already present (a) stores `desired_state_already_present_not_dispatched`.
+- `dispatched_at` is the exact send time, captured at the send boundary
+  inside the gateway, not at gateway entry (basis
+  `provider_call_start_time`), kept per child in the task
+  `verification_summary`; a task publishes its earliest child's send time
+  with `dispatched_at_scope: earliest_child_send_time`; `null` until a send
+  is proven.
+- No-mutation claims only on a proven Core rejection (P1 config REST 4xx,
+  P3 WebSocket `unauthorized`/`forbidden`).
+- HAMCP-214: a `succeeded_verified` plan shows `verification.status:
+  verified` and its `post_apply_fingerprint`, copied from the task summary;
+  rollback availability is projected truthfully per family once the task is
+  final (display only).
+- OD-11: `rollback_change` of a legacy forward whose every child is proven
+  unchanged refuses with `forward_unchanged`.
+- Health `core_admission` reports `admitted` from the local admitted signed
+  generation (no Core call); `list_capabilities` projects the same snapshot
+  from one generation, and its static entries state only the requirement
+  (`not_evaluated` without a current read).
+- HAMCP-193 dashboard governed-path tests; beta.36 and beta.8 downgrade
+  tests over PR2-candidate fixtures. 2.4.1-beta.36 is the governed-plan
+  rollback target (plans, tasks, `verification_summary` and outcomes read
+  without quarantine, rewrite or loss). beta.8 is a fan/power/task-only
+  floor: it hides governed plans written since beta.29 (HAMCP-213, accepted
+  pre-existing limitation).
+- No intent is discarded and nothing is redispatched.
+- No tool, schema, profile, fingerprint, signed registry, F3 persisted
+  format, workflow, permission, dependency or stable-v1 change; static tools
+  68, catalog 96 (97). Response content gains additive fields only
+  (`list_capabilities` `core_admission` and `core_admission_requirement`,
+  health `core_admission_generation`, task `dispatched_at_scope`).
 
 ## 2.4.1-beta.36 - Governed delete drift read in its own Core window, inactive (HAMCP-155)
 

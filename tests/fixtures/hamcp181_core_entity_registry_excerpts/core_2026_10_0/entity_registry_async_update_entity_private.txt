@@ -1,0 +1,188 @@
+    @callback
+    def _async_update_entity(
+        self,
+        entity_id: str,
+        *,
+        aliases: list[AliasEntry] | UndefinedType = UNDEFINED,
+        area_id: str | UndefinedType | None = UNDEFINED,
+        categories: dict[str, str] | UndefinedType = UNDEFINED,
+        capabilities: Mapping[str, Any] | UndefinedType | None = UNDEFINED,
+        config_entry_id: str | UndefinedType | None = UNDEFINED,
+        config_subentry_id: str | UndefinedType | None = UNDEFINED,
+        device_class: str | UndefinedType | None = UNDEFINED,
+        device_id: str | UndefinedType | None = UNDEFINED,
+        disabled_by: RegistryEntryDisabler | UndefinedType | None = UNDEFINED,
+        entity_category: EntityCategory | UndefinedType | None = UNDEFINED,
+        hidden_by: RegistryEntryHider | UndefinedType | None = UNDEFINED,
+        icon: str | UndefinedType | None = UNDEFINED,
+        has_entity_name: bool | UndefinedType = UNDEFINED,
+        labels: set[str] | UndefinedType = UNDEFINED,
+        name: str | UndefinedType | None = UNDEFINED,
+        new_entity_id: str | UndefinedType = UNDEFINED,
+        new_unique_id: str | UndefinedType = UNDEFINED,
+        object_id_base: str | UndefinedType | None = UNDEFINED,
+        options: EntityOptionsType | UndefinedType = UNDEFINED,
+        original_device_class: str | UndefinedType | None = UNDEFINED,
+        original_icon: str | UndefinedType | None = UNDEFINED,
+        original_name: str | UndefinedType | None = UNDEFINED,
+        original_name_unprefixed: str | UndefinedType | None = UNDEFINED,
+        platform: str | UndefinedType | None = UNDEFINED,
+        suggested_object_id: str | UndefinedType | None = UNDEFINED,
+        supported_features: int | UndefinedType = UNDEFINED,
+        translation_key: str | UndefinedType | None = UNDEFINED,
+        unit_of_measurement: str | UndefinedType | None = UNDEFINED,
+    ) -> RegistryEntry:
+        """Private facing update properties method."""
+        old = self.entities[entity_id]
+
+        device_id = self._ignore_composite_device_id(old.platform, device_id)
+
+        new_values: dict[str, Any] = {}  # Dict with new key/value pairs
+        old_values: dict[str, Any] = {}  # Dict with old key/value pairs
+
+        for attr_name, value in (
+            ("aliases", aliases),
+            ("area_id", area_id),
+            ("categories", categories),
+            ("capabilities", capabilities),
+            ("config_entry_id", config_entry_id),
+            ("config_subentry_id", config_subentry_id),
+            ("device_class", device_class),
+            ("device_id", device_id),
+            ("disabled_by", disabled_by),
+            ("entity_category", entity_category),
+            ("hidden_by", hidden_by),
+            ("icon", icon),
+            ("has_entity_name", has_entity_name),
+            ("labels", labels),
+            ("name", name),
+            ("object_id_base", object_id_base),
+            ("options", options),
+            ("original_device_class", original_device_class),
+            ("original_icon", original_icon),
+            ("original_name", original_name),
+            ("original_name_unprefixed", original_name_unprefixed),
+            ("platform", platform),
+            ("suggested_object_id", suggested_object_id),
+            ("supported_features", supported_features),
+            ("translation_key", translation_key),
+            ("unit_of_measurement", unit_of_measurement),
+        ):
+            if value is not UNDEFINED and value != getattr(old, attr_name):
+                new_values[attr_name] = value
+                old_values[attr_name] = getattr(old, attr_name)
+
+        # Only validate if data has changed
+        if new_values or new_unique_id is not UNDEFINED:
+            _validate_item(
+                self.hass,
+                old.domain,
+                old.platform,
+                config_entry_id=config_entry_id,
+                config_subentry_id=config_subentry_id,
+                device_id=device_id,
+                disabled_by=disabled_by,
+                entity_category=entity_category,
+                hidden_by=hidden_by,
+                old_config_subentry_id=old.config_subentry_id,
+                unique_id=new_unique_id,
+            )
+
+        if disabled_by is UNDEFINED and config_entry_id is not UNDEFINED:
+            if config_entry_id:
+                config_entry = self.hass.config_entries.async_get_entry(config_entry_id)
+                if TYPE_CHECKING:
+                    # We've checked the config_entry exists in _validate_item
+                    assert config_entry is not None
+                if config_entry.disabled_by:
+                    if old.disabled_by is None:
+                        new_values["disabled_by"] = RegistryEntryDisabler.CONFIG_ENTRY
+                elif old.disabled_by == RegistryEntryDisabler.CONFIG_ENTRY:
+                    new_values["disabled_by"] = None
+            elif old.disabled_by == RegistryEntryDisabler.CONFIG_ENTRY:
+                new_values["disabled_by"] = None
+
+        if new_entity_id is not UNDEFINED and new_entity_id != old.entity_id:
+            if not self._entity_id_available(new_entity_id):
+                raise ValueError("Entity with this ID is already registered")
+
+            if not valid_entity_id(new_entity_id):
+                raise ValueError("Invalid entity ID")
+
+            if split_entity_id(new_entity_id)[0] != split_entity_id(entity_id)[0]:
+                raise ValueError("New entity ID should be same domain")
+
+            entity_id = new_values["entity_id"] = new_entity_id
+            old_values["entity_id"] = old.entity_id
+
+        if new_unique_id is not UNDEFINED:
+            conflict_entity_id = self.async_get_entity_id(
+                old.domain, old.platform, new_unique_id
+            )
+            if conflict_entity_id:
+                raise ValueError(
+                    f"Unique id '{new_unique_id}' is already in use by "
+                    f"'{conflict_entity_id}'"
+                )
+            new_values["unique_id"] = new_unique_id
+            old_values["unique_id"] = old.unique_id
+            new_values["previous_unique_id"] = old.unique_id
+
+        if not new_values:
+            return old
+
+        new_values["modified_at"] = utcnow()
+
+        self.hass.verify_event_loop_thread("entity_registry.async_update_entity")
+
+        if original_name_unprefixed is UNDEFINED and (
+            original_name is not UNDEFINED
+            or device_id is not UNDEFINED
+            or has_entity_name is not UNDEFINED
+        ):
+            device_id = device_id if device_id is not UNDEFINED else old.device_id
+            has_entity_name = (
+                has_entity_name
+                if has_entity_name is not UNDEFINED
+                else old.has_entity_name
+            )
+            original_name = (
+                original_name if original_name is not UNDEFINED else old.original_name
+            )
+
+            original_name_unprefixed = _unprefix_original_name(
+                self.hass, original_name, has_entity_name, device_id
+            )
+            new_values["original_name_unprefixed"] = original_name_unprefixed
+
+        new = attr.evolve(old, **new_values)
+
+        # Only user edits are rejected, integration updates surface as a repair issue
+        if (
+            "area_id" in new_values or "name" in new_values
+        ) and _has_own_area_without_own_name(self.hass, new):
+            raise ValueError(
+                "An entity without a name of its own cannot have an area of its own, "
+                "set the area on its device instead"
+            )
+
+        if entity_id != old.entity_id:
+            self.entities.pop(old.entity_id)
+        self.entities[entity_id] = new
+
+        self.async_schedule_save()
+
+        old_values.pop("original_name_unprefixed", None)
+
+        data: _EventEntityRegistryUpdatedData_Update = {
+            "action": "update",
+            "entity_id": entity_id,
+            "changes": old_values,
+        }
+
+        if old.entity_id != entity_id:
+            data["old_entity_id"] = old.entity_id
+
+        self.hass.bus.async_fire_internal(EVENT_ENTITY_REGISTRY_UPDATED, data)
+
+        return new

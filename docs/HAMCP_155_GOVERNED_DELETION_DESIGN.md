@@ -54,14 +54,31 @@ prerequisite. The code does not support that dependency.
   maps that confirmed rejection to `sent_rejected_no_mutation`, which is
   correct for DELETE.
 
-Interim disclosures the delete family carries until 181 PR2 lands:
+Interim disclosures the delete family carried until 181 PR2, and their status
+from 2.4.1-beta.37:
 
-- (a) A call refused after intent appears as send-uncertain or
-  `failed_post_dispatch`, even though nothing was sent.
-- (b) HAMCP-214: on success the top-level `verification.status` can read
-  `not_run`. The authoritative result is `execution_task.verification_summary`.
-- (c) Recovery from a failed or partial delete is a new governed plan. The
-  recreate rollback is offered only for children that are `succeeded_verified`.
+- (a) **Resolved where the no-send is proven.** A delete stopped after the
+  intent is committed, with a proven no-send, now reads
+  `failed_after_intent_not_dispatched`. The proof is the shared F3 executor's
+  no-send declaration for a failure after the intent and before the provider
+  call. It shows phase `intent_recorded_not_sent`, `provider_dispatch_occurred:
+  false` and `dispatched_at: null`, the same on every surface. A Core 4xx
+  answer to the DELETE stays P1, `sent_rejected_no_mutation`, and is never
+  shown as "may have been sent". **Residual:** a pre-request raise inside
+  `governance/configuration_delete.py` (outside the PR2 file scope) still
+  stays send-uncertain (c), which is the safe direction for a delete.
+- (b) **Resolved (HAMCP-214).** A `succeeded_verified` delete shows plan
+  `verification.status: verified`. Its desired and actual fingerprints are
+  both the absence fingerprint, and `post_apply_fingerprint` equals the
+  readback. `execution_task.verification_summary` stays the per-task
+  authority, and the plan copies it.
+- (c) **Unchanged.** Recovery from a failed or partial delete is a new governed
+  plan. The recreate rollback is offered only for children that are
+  `succeeded_verified`. An intent is never discarded and a delete is never
+  redispatched.
+
+Tests: `tests/test_hamcp181_terminal_outcome_t2.py` (`DeleteAgreementTests`
+a/b/c and `RejectedDeleteTests`).
 
 ## 2. Gate item 2: Core contract
 

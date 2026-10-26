@@ -799,7 +799,7 @@ option, role, fallback or delegated provider.
 - **HAMCP-069B profiles.** The two unsigned 069B profiles now name every read
   their gateway sends; no signed profile changes.
 
-The `2.4.1-beta.37` slice (HAMCP-224) lets `get_incident_logs` read the
+The `2.4.1-beta.38` slice (HAMCP-224) lets `get_incident_logs` read the
 `supervisor`, `host`, `host:<category>` and `addon:<slug>` sources from the
 host journal. It adds **one read-only permission** and no role, route,
 provider, fallback, write path or tool.

@@ -70,7 +70,7 @@ risk, disclosed: a non-HAOS (Supervised) host with `Storage=none` or
 volatile-only logging could lack `/var/log/journal`. That is not Josh's
 install type, and it is outside what the evidence covers. The acceptance
 document's **first** step is still to confirm the add-on starts after the
-update. Rollback: reinstall `2.4.1-beta.36`, which has no `journald: true`.
+update. Rollback: reinstall `2.4.1-beta.37`, which has no `journald: true`.
 
 **Implementation notes (Part 2, refining §4–§7 without changing a decision):**
 
@@ -124,7 +124,7 @@ update. Rollback: reinstall `2.4.1-beta.36`, which has no `journald: true`.
   says these sources need role `manager`; it describes the journal read.
 
 Base: `main` at `5030982fe681737c47e52a7c01d1808fca52468b` (Engineering
-`2.4.1-beta.36`, 68 static tools, `hassio_role: homeassistant`). Engineering
+`2.4.1-beta.37`, 68 static tools, `hassio_role: homeassistant`). Engineering
 paths are relative to `hass_mcp_engineering_beta/ha_mcp_engineering/` unless
 they start at the repository root.
 
@@ -535,7 +535,7 @@ planted-secret sweep in Part 2 covers every returned field.
   None of these is ever reported as `complete` with no entries.
 - **Rollback:**
   - Remove `journald: true` in a new release, or deploy the previous version
-    (`2.4.1-beta.36` or whichever precedes it). After update and start, the
+    (`2.4.1-beta.37` or whichever precedes it). After update and start, the
     mount is gone.
   - The journal sources then report `journald_not_enabled`, and every other
     source is unchanged.

@@ -1,24 +1,26 @@
 # Engineering 2.4.1-beta.37 acceptance
 
-This contract covers HAMCP-224: `get_incident_logs` reads the `supervisor`,
-`host`, `host:<category>` and `addon:<slug>` sources from the host journal,
-which the Supervisor mounts read-only into Engineering with the new add-on
-option `journald: true`. It follows 2.4.1-beta.36 and includes it.
+This contract covers truthful stored execution outcomes (HAMCP-181 PR2),
+plan-level verification and rollback availability (HAMCP-214), and the
+HAMCP-193 dashboard governed-path tests. It follows 2.4.1-beta.36 and
+includes it. The release activates no new capability and changes no signed
+registry. Its base carries the owner-signed Core registry at sequence 14
+(HAMCP-222, #312), published as data on `main` independently of any
+Engineering release. That sequence admits the four signed-registry profiles
+on Core 2026.10.1 and 2026.10.3 (see
+[`evidence/hamcp222/core-registry-hamcp222.md`](evidence/hamcp222/core-registry-hamcp222.md)).
 
 See also:
 - Release notes:
   [`V2_4_1_BETA37_RELEASE_NOTES.md`](V2_4_1_BETA37_RELEASE_NOTES.md).
-- Design, owner decisions D1-D10 and the start-risk evidence (§0):
-  [`HAMCP_224_HOST_JOURNAL_DESIGN.md`](HAMCP_224_HOST_JOURNAL_DESIGN.md).
-- The incident-log contract this release extends:
-  [`HAMCP_131_INCIDENT_LOGS.md`](HAMCP_131_INCIDENT_LOGS.md) and
-  [`HAMCP_220_INCIDENT_LOG_TIMESTAMPS.md`](HAMCP_220_INCIDENT_LOG_TIMESTAMPS.md).
+- Design: [`HAMCP_181_TRUTHFUL_OUTCOMES_DESIGN.md`](HAMCP_181_TRUTHFUL_OUTCOMES_DESIGN.md)
+  (revision 4; owner decisions section 8; implementation note section 10).
+- The beta.36 contract this release keeps:
+  [`V2_4_1_BETA36_ACCEPTANCE.md`](V2_4_1_BETA36_ACCEPTANCE.md).
 
 **Release target.** `2.4.1-beta.37` is staged by one owner-authorized run of
 `scripts/promote_next_release.py --apply` on a base that carries
-2.4.1-beta.36. The run consumes the declaration. Open draft PR #311 also
-stages `2.4.1-beta.37`; whichever merges second must be restaged to the next
-free beta and its documents renamed.
+2.4.1-beta.36. The run consumes the declaration.
 
 The contract separates four stages:
 1. source and offline acceptance;
@@ -31,9 +33,9 @@ It authorizes none of the later stages.
 ## 1. Source and offline acceptance
 
 Bind the following:
-- Josh's 2026-10-25 decisions D1-D10 (design §0), including D9: the only
-  add-on configuration change is `journald: true`; `hassio_role` stays
-  `homeassistant`;
+- Josh's HAMCP-181 PR2 brief and decisions OD-1 (T2), OD-2 (F-A, no F3
+  persisted-format change), OD-5, OD-6(ii), OD-7, OD-10, OD-11 (as narrowed
+  in revision 4), OD-14 and OD-15;
 - `2.4.1-beta.37` materialized in all three version authorities, with exact
   acceptance and release-note resolution from `scripts/codex-context.py` and
   no staged declaration left over;
@@ -42,98 +44,145 @@ Bind the following:
 - the Evidence tier log named in the PR.
 
 The review needs a security section covering:
-- **One new permission, read-only.** `journald: true` makes the Supervisor
-  bind-mount the host's `/var/log/journal` and `/run/log/journal` read-only
-  (Supervisor 2026.09.1 `docker/app.py:650-665`). No Supervisor role, API
-  route, provider, fallback, write path or tool is added. The Supervisor
-  routes for these sources still need role `manager`; they are never called.
-- **The reader** (`incident_logs/host_journal.py`). It:
-  - binds only the 14 libsystemd symbols in `BOUND_SYMBOLS` through `ctypes`
-    on the base image's own `libsystemd.so.0` (Debian `libsystemd0`
-    257.13-1~deb13u1, pinned against the Dockerfile base digest and
-    `provenance.json`); no field-enumeration, unique-value, descriptor,
-    cursor-seek, inotify or write symbol;
-  - reads only the 9 fields in `READ_FIELDS`, each copied up to 16 KiB, at
-    most 4 MiB per call;
-  - opens the container root `O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC`
-    and passes it with `SD_JOURNAL_OS_ROOT`, so one handle merges the
-    runtime and persistent journals; both journal directories must open
-    without following a symlink;
-  - opens, reads and closes that handle in one worker thread, bounded by the
-    call deadline minus one second and 20,000 scanned entries per source
-    (the resume walk counts);
-  - is the only module that imports `ctypes`, with exactly three `os.open`
-    calls (the mount table, the root, each journal directory).
-- **Matches.** `host` is the Supervisor's pinned default 52-identifier set
-  plus kernel entries; each `host:<category>` is a fixed subset; `supervisor`
-  is `hassio_supervisor`. `addon:<slug>` requires `SYSLOG_IDENTIFIER` equal
-  to `CONTAINER_NAME`, one of `app_<slug>` or `addon_<slug>`, through
-  `_TRANSPORT=journal`. Every yielded entry is rechecked in Python; a failed
-  check is never returned and is counted (`match_rejected`).
-- **Positions.** A continuation carries the entry's realtime and a keyed
-  digest of its libsystemd cursor, never the cursor (it embeds the raw boot
-  ID). A digest not found from that realtime is `journal_continuity_broken`
-  (stale). The reboot marker `boot_ref` is a 12-character keyed digest.
-- **Secrets.** The single `_finish` exit screens each message first: ANSI
-  is stripped; unverifiable text, any known-secret or credential form, the
-  journal key forms (`psk=`, `network_key:`, ...), PEM private keys and the
-  mosquitto `-P`/`--pw` options withhold the **whole** message
-  (`credential_text_withheld`, the result is partial). Then the shared
-  `sanitize_log_lines` and strict `sanitize_untrusted_data` run once, as for
-  every other source.
-- **Unavailability.** Decided from `/proc/self/mountinfo` and the open,
-  never from an empty result: `journald_not_enabled`,
-  `journal_mount_incomplete`, `journal_mount_not_read_only`,
-  `journal_unreadable` (with errno), `journal_reader_unavailable`,
-  `journal_empty_or_unsupported`, `journal_read_failed`. An unavailable
-  source is never `complete` and never an empty success.
-- **Unchanged.** `core` and `addon:self` keep their Supervisor routes and
-  Home Assistant zone handling. Routing, provider (`supervisor_incident_logs`),
-  policy (`incident_window_journal_read_v1`), the Core gate and telemetry are
-  unchanged; the capability matrix's justification text and the tool
-  description are updated to describe the journal sources.
+- **No new reachability.** No new write, read, endpoint, provider, fallback,
+  tool or service call. PR2 changes what is recorded and displayed about a
+  call, never whether a call is made.
+- **No blind redispatch.** An intent is never discarded and an operation is
+  never redispatched. A (b) task keeps its intent; a duplicate apply of a
+  terminal plan reuses its terminal authority and refuses.
+- **Not-sent proofs are positive only.** A (b) outcome requires the shared
+  executor's no-send declaration, a `call_not_sent` attribute at a reviewed
+  pre-write raise site, a WebSocket authorization failure raised before the
+  frame is written, or the upstream fan second-authority refusal. Each proof
+  is set before any send-capable await. `HomeAssistantUnavailableError`, a
+  lost response, a registry error result, and the backup and lifecycle
+  gateways are never proof. The attribute is never set where a send may
+  have happened: not at the helper update command
+  (`governance/resources.py:890` at base `587266d2`), and not at the shared
+  entity-metadata not-applied raise (`governance/entity_metadata.py:605` at
+  base), which also covers a sent `unauthorized` result (P3, r-proven).
+- **No unproven no-mutation claim (OD-14).** `changed_by_engineering: false`
+  and `sent_rejected_no_mutation` only on P1 or P3. A stored no-dispatch
+  outcome that the child authority does not reproduce projects as an
+  evidence conflict (c), never the stronger claim.
+- **One projection.** Every reader (`get_execution_task`,
+  `list_execution_tasks`, `get_change_plan`, `list_change_plans`, audit,
+  compact receipts, fan and power reads) derives dispatch facts from the
+  shared projection.
+- **Health and catalog are display only.** `core_admission` reads the local
+  admitted generation through `core_runtime.route_status`; it makes no Core
+  call and never decides admission. Health and `list_capabilities` project
+  one snapshot read from a single generation, whose `status` is `current`
+  only when an admitted generation was read (otherwise
+  `generation_unsettled` or `no_admitted_generation`); the catalog's static
+  entries state only the requirement (`not_evaluated` without a current
+  read).
+- **Exact send time.** `dispatched_at` is captured at the send boundary
+  inside the gateway, immediately before the client issues the request;
+  a task publishes its earliest child's send time
+  (`dispatched_at_scope: earliest_child_send_time`).
 
 Preserve the following:
 - stable v1.1.2;
-- persisted formats (the signed cursor gains a journal state shape; cursors
-  are process-keyed and expire within an hour, so no stored format exists);
-- every input schema; the catalog is **96 tools, 97 with the optional YAML
-  reader admitted**; only the `get_incident_logs` description changes;
-- probe fingerprints, the signed Core capability profiles and both signed
-  registries; the Core registry is fetched from `main` and this release does
-  not change it;
+- persisted formats (no F3 record change; task JSON gains only new
+  `terminal_outcome` values and the `provider_call_started_at` map inside the
+  existing `verification_summary`);
+- every descriptor and input schema; the catalog is **96 tools, 97 with
+  the optional YAML reader admitted**;
+- probe fingerprints, the 17 signed Core capability profiles, the
+  owner-signed Core registry (sequence 14 at base, unchanged), the signed
+  ha-mcp registry and
+  the delete profile's contract fingerprint
+  `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d`,
+  recomputed at base and head;
 - the HOLD and the support window;
-- every workflow and dependency; `hassio_role: homeassistant`.
+- add-on permissions, dependencies and every workflow.
 
 ### Offline proof
 
-No test reaches a live system or a real host journal. Every value is
-synthetic.
+No test reaches a live system. Every transport is a synthetic fake that
+enforces the real clients' Core-authority check
+(`tests/core_authority_fakes.py`).
 
-- **Real-format fixtures** (D10, `tests/fixtures/hamcp224_journal/`):
-  persistent and runtime journal files, uncompressed and zstd, written by
-  systemd v257.13 `systemd-journal-remote` from committed export streams
-  (`generate.py`, `provenance.json`). They cover Supervisor entries, add-ons
-  under both container-name forms, a near-miss slug, identifier spoofs,
-  kernel USB disconnect and reconnect, storage, network and OS entries, a
-  20 KiB message, a partial Docker line, a missing priority, planted
-  credentials in several forms, fields that must never be read, three
-  entries in one microsecond, a reboot and a clock step backwards. The
-  `mountinfo-*` files cover journald off, on, incomplete, not read-only,
-  remounted read-write and escaped mount points.
-- `tests/test_hamcp224_host_journal.py`: the reader over both variants, the
-  merge, every category, the field and symbol allowlists (a recording
-  library), continuation within one microsecond, stale digests, every bound,
-  every unavailability reason (including a symlinked journal directory and an
-  unreadable root), the screening forms, the service over every journal
-  source with a planted-value and field-allowlist sweep, pagination equality,
-  a mixed `core` and `supervisor` read, and static boundary checks (the only
-  `ctypes` module, the three `os.open` calls, no write API, the
-  `config.yaml` pin, the library pin).
-- The HAMCP-131 and HAMCP-220 incident-log suites pass unchanged in intent;
-  their former "manager role" expectations now expect the journal sources.
-- Mutations: `docs/evidence/hamcp224-mutations/`. `results.json` records
+- `tests/test_hamcp181_terminal_outcome_t2.py`: every public surface agrees
+  with `get_execution_task` for (a), (b), (c) and r-proven, including the
+  delete family.
+- `tests/test_hamcp181_proven_no_call_producers.py`: each proof site, the
+  WebSocket client, end-to-end chains, the b5/b8 declarations and the
+  backup/lifecycle exclusions.
+- `tests/test_hamcp214_plan_verification_rollback_projection.py`: plan
+  verification, `post_apply_fingerprint` and rollback availability per
+  family (configuration, configuration rejection, label, entity metadata,
+  availability/exposure, configuration delete).
+- `tests/test_hamcp181_rollback_unchanged_forward.py`: OD-11.
+- `tests/test_hamcp181_health_core_admission.py`: stub and TEST-signed
+  registry.
+- `tests/test_hamcp181_catalog_core_admission.py`: health and
+  `list_capabilities` evaluated together against the same admitted,
+  refused, partial, withdrawn and unsettled generations, and a TEST-signed
+  registry.
+- `tests/test_hamcp181_send_time_boundary.py`: a delay between gateway
+  entry and the client send (configuration update and delete, a
+  multi-child configuration plan, a multi-child WebSocket plan); the
+  published time is the send time on every surface.
+- `tests/test_hamcp181_entity_registry_error_unproven.py`: a registry error
+  is never no-mutation, with hash-pinned Core 2026.10.0 and 2026.10.1
+  excerpts and one record written by the exact beta.8 writer.
+- `tests/test_hamcp181_beta8_downgrade.py`: the exact beta.8 reader
+  (`7370ad25`, tag object `4913bfd6`) over thirteen shapes written by the
+  PR2 candidate writer, as the fan/power/task-only floor. Three
+  `expectedFailure` tests keep its accepted governed-plan limitation below
+  visible.
+- `tests/test_hamcp181_beta36_downgrade.py`: the exact beta.36 reader
+  (`16b724ec`, tag object `a4ffc66d`) over the same thirteen shapes, as the
+  governed-plan rollback target. Every plan, task, `verification_summary`
+  and terminal outcome is read without quarantine, rewrite or loss.
+- `tests/test_hamcp181_architecture_guard.py` and
+  `tests/test_dashboard_update_mvp.py` (HAMCP-193).
+- Mutations: `docs/evidence/hamcp181-pr2-mutations/`. `results.json` records
   each mutant and the tests that killed it.
+
+### Downgrade rule (design section 4.3, owner decision 2026-10-25)
+
+Every supported downgrade requires terminal-only quiescence: every task, F3
+child, fan and power record is terminal, and no claim is unexpired.
+
+- **Governed-plan rollback target: exactly 2.4.1-beta.36** (tag
+  `v2.4.1-beta.36`, tag object `a4ffc66ddf60095427a1f9f68f0d2c2121b94c3d`,
+  commit `16b724ec0b1d0fa8aae9705df569704f27ad783e`). The executed test
+  covers all thirteen shapes:
+  - startup, the reads, a duplicate apply or control, and a restart give
+    zero quarantine, zero corruption and zero provider calls;
+  - `get_change_plan` decodes every plan;
+  - `get_execution_task` returns each stored state and `terminal_outcome`;
+  - every stored `verification_summary` key and value is read, including
+    `provider_call_started_at`, `provider_call_not_sent` and
+    `setter_call_not_sent`;
+  - a duplicate apply is refused (or reuses the terminal task) without a
+    redispatch.
+
+  The only file changes are beta.36's own recovery cursor and the
+  append-only `duplicate_apply_prevented` event (with `updated_at`) on the
+  duplicate-applied task. Every earlier event and field is kept, and the
+  current reader makes the same changes.
+- **Display under beta.36.** Beta.36 shows its own semantics. For a sent
+  shape, `dispatched_at` is the intent commit time (basis
+  `dispatch_intent_commit_time`). The stored `provider_call_started_at` is
+  kept but not shown as `dispatched_at`. HAMCP-214 plan verification and
+  the other PR2 projections revert to the beta.36 display. A (b) shape still
+  reads `provider_dispatch_occurred: false`. Nothing is rewritten, so the
+  stored beta.37 values remain for a re-upgrade. Re-upgrade itself is not
+  tested.
+- **Fan/power/task-only floor: exactly 2.4.1-beta.8** (`7370ad25`). Fan,
+  power and execution-task records load with zero quarantine and zero
+  provider calls. Governed change plans are hidden. Beta.8 quarantines every
+  plan written since HAMCP-213 (2.4.1-beta.29), because its reader rejects
+  the `called_scripts` operation field and policy version `f2-v3`, so
+  `get_change_plan` answers `change_plan_not_found`. Josh accepted this
+  pre-existing limitation. It is not fixed here. Downgrade below beta.36 is
+  not a governed-plan rollback.
+- Never clear F3 journals, task files or locks. No migration rewrites a
+  historical record (OD-10).
 
 ## 2. Release CI and publication
 
@@ -146,51 +195,41 @@ images, provenance and SBOM with the shipped verifiers. Never invent future
 image identities. Retain the beta.36 artifacts and the known-good earlier
 artifacts for recovery.
 
-No stored format changes. **Rollback is reinstalling the 2.4.1-beta.36
-artifact**, which has no `journald: true`; the Supervisor then removes both
-journal mounts.
+No stored format changes. Rollback is reinstalling the beta.36 artifact,
+the executed governed-plan rollback target above.
 
 ## 3. Installed Engineering
 
-Installation is separately authorized. Every check after step 1 is
-read-only.
+Separately authorize installation. Checks 1 to 3 are read-only; checks 4 and
+5 are owner-approved live canaries.
 
-1. **The add-on starts after the update (first).** After installing
-   beta.37, confirm the Engineering add-on reaches `started` and its MCP
-   endpoint answers, before anything else. `journald: true` makes the
-   Supervisor create the container with two bind mounts it does not check;
-   Docker refuses a missing bind source. Design §0 found no such risk on
-   HAOS, but this step is the proof. If the add-on does not start, stop and
-   reinstall 2.4.1-beta.36.
-2. **Installed-image binding.** Bind the running add-on to the published
+1. **Installed-image binding.** Bind the running add-on to the published
    image index digest, the release tag and the protected `main` merge commit.
-3. **Catalog.** `tools/list` shows 96 tools (97 with the YAML reader
+2. **Catalog.** `tools/list` shows 96 tools (97 with the YAML reader
    admitted).
-4. **Supervisor window.** `get_incident_logs` with `sources: ["supervisor"]`
-   over a recent window returns entries with `reader: host_journal`,
-   `timestamp_basis.basis: journal_realtime_utc`, a `boot_ref` on each entry,
-   and a source status other than `unavailable`.
-5. **One named add-on.** `sources: ["addon:<an installed slug>"]` returns
-   that add-on's lines. `match_rejected` stays 0 for ordinary output. A
-   non-zero count, or no entries while the add-on is logging, means the
-   host's Docker journald driver does not set `CONTAINER_NAME` or
-   `_TRANSPORT=journal` as the fixtures assume (design §9); record it and
-   stop, do not widen the match.
-6. **Host and kernel.** `sources: ["host"]` and `["host:kernel"]` over a
-   recent window return entries; kernel entries carry `kernel_subsystem` or
-   `kernel_device` where the kernel recorded them.
-7. **Withholding.** Any withheld message shows `withheld:
-   credential_text_withheld` and a partial result; no credential text
-   appears.
-8. **journald-off reason (optional).** Only if Josh separately authorizes a
-   temporary reinstall of beta.36: the same `supervisor` read there is the
-   beta.36 `authority_not_granted` refusal. The beta.37 `journald_not_enabled`
-   reason is proven offline (`mountinfo-off`); it cannot be produced on
-   beta.37 without editing add-on metadata.
+3. **Health and catalog `core_admission`.** For the four signed-registry
+   providers, server health and `list_capabilities` report the same
+   `core_admission` and generation, `admitted` exactly when the
+   locally admitted signed generation admits every listed profile for the
+   running Core. Under sequence 14 that is Core 2026.10.1 or 2026.10.3 after
+   the add-on has fetched the journal. Otherwise it reports the pending
+   reason. This check is read-only and makes no Core call.
+4. **Power and fan canary surface consistency.** With Josh's approval, run
+   one ordinary `control_power` and one `control_fan` action on the usual
+   canary entities. For each, `get_execution_task`, `list_execution_tasks`,
+   the fan/power task read and the audit entry must agree on
+   `dispatch_phase`, `provider_dispatch_occurred`, `dispatched_at` (basis
+   `provider_call_start_time`, not the intent commit time) and the terminal
+   outcome.
+5. **Plan-level verification on a configuration apply.** With Josh's
+   approval, apply one single-operation configuration plan on a test
+   automation. After `succeeded_verified`, `get_change_plan` must show
+   `verification.status: verified`, `post_apply_fingerprint` equal to the
+   operation's actual fingerprint, the task's `verification_summary` as its
+   source, and a rollback status of `available_pending_current_state_check`.
+   No rollback is applied by this check.
 
-## 4. Not covered
+## 4. Out of scope
 
-No live canary, write, registry signing or Supervisor role change is part of
-this release. A non-HAOS Supervised host with `Storage=none` or volatile-only
-logging could lack `/var/log/journal` (design §0, residual risk); that host
-type is outside the evidence.
+Any further registry signing, the HAMCP-155 deletion canary and any
+downgrade are not authorized by this document.

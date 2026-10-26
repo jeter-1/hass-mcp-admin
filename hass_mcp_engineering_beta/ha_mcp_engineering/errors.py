@@ -650,6 +650,18 @@ class AuthenticationError(EngineeringServerError):
 class AuthorizationError(EngineeringServerError):
     code = ErrorCode.AUTHORIZATION_FAILURE
 
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        details: dict[str, Any] | None = None,
+        call_not_sent: bool = False,
+    ):
+        super().__init__(message, details=details)
+        # HAMCP-181 b2-A: the WebSocket client sets this only when
+        # authorization failed before the command frame was written.
+        self.call_not_sent = call_not_sent is True
+
 
 class InvalidRequestError(EngineeringServerError):
     code = ErrorCode.INVALID_REQUEST

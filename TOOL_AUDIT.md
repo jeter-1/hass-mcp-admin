@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-## Host journal incident-log sources (2.4.1-beta.37, HAMCP-224)
+## Host journal incident-log sources (2.4.1-beta.38, HAMCP-224)
 
 `get_incident_logs` keeps its routing (`engineering_native`), provider
 (`supervisor_incident_logs`), policy (`incident_window_journal_read_v1`),
