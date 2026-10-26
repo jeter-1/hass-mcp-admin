@@ -87,6 +87,7 @@ from ..f3_configuration.adapter import (
     PredispatchAuthorityRefused,
 )
 from ..f3_configuration.delete import ConfigurationDeleteAdapter
+from ..f3_configuration.helper_options import HelperOptionsAdapter
 from ..f3_configuration.gateway import ExistingConfigurationGatewayBridge
 from ..f3_configuration.locks import lock_set_hash, resource_lock_key
 from ..f3_configuration.migration import (
@@ -108,6 +109,7 @@ from ..governance.models import (
     PlanStatus,
     StepExecutionStatus,
 )
+from ..governance import helper_options as helper_options_contract
 from ..governance import input_select_option as input_select_contract
 from ..governance.helper_state import (
     HELPER_STATE_PROVIDER_SLUG,
@@ -130,6 +132,7 @@ from ..governance.entity_metadata import (
 from ..governance import entity_metadata_planning
 from ..governance import entity_availability_exposure_planning
 from ..governance import configuration_delete_planning
+from ..governance import helper_options_planning
 from ..governance.entity_availability_exposure import (
     BINDINGS_KEY as AVAILABILITY_EXPOSURE_BINDINGS_KEY,
     CAPABILITY_IDENTITIES as AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES,
@@ -826,6 +829,8 @@ _UNSIGNED_PROFILE_HOLD_CODES = frozenset(
 UNSIGNED_PROFILE_REQUIREMENTS = MappingProxyType(
     {
         LABEL_RESOURCE_TYPE: LABEL_CORE_CAPABILITY,
+        # HAMCP-232: options edits are admitted only by their own profile.
+        helper_options_contract.RESOURCE_TYPE: helper_options_contract.PROFILE,
         **{
             resource_type: requirements[-1]
             for resource_type, requirements in (
@@ -1428,6 +1433,33 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
+    # HAMCP-232: options reads, the held flow and its abort pass through;
+    # only the one step submit is the audited send.
+    async def options_entry(self, entry_id):
+        return await self.delegate.options_entry(entry_id)
+
+    async def options_entry_entities(self, entry_id):
+        return await self.delegate.options_entry_entities(entry_id)
+
+    async def options_consumer_fingerprint(self, entity_ids):
+        return await self.delegate.options_consumer_fingerprint(entity_ids)
+
+    async def options_read_visible(self, entry_id, *, domain, expected_step_id):
+        return await self.delegate.options_read_visible(
+            entry_id, domain=domain, expected_step_id=expected_step_id
+        )
+
+    async def options_open_held(self, entry_id, *, domain, expected_step_id):
+        return await self.delegate.options_open_held(
+            entry_id, domain=domain, expected_step_id=expected_step_id
+        )
+
+    async def options_abort(self, flow_id):
+        return await self.delegate.options_abort(flow_id)
+
+    async def options_submit(self, flow_id, submit):
+        return await self._audited(self.delegate.options_submit(flow_id, submit))
+
     async def write(self, action, resource_type, target_id, proposed_config):
         return await self._audited(
             self.delegate.write(
@@ -1811,6 +1843,15 @@ class F3RuntimeIntegration:
                 admission=self._configuration_delete_admitted,
                 now=service.now,
             )
+        # HAMCP-232: the options-flow edit is a separate adapter class with
+        # the same self-checked admission, read again before every readback.
+        configuration_adapters[
+            helper_options_contract.CAPABILITY_IDENTITY
+        ] = HelperOptionsAdapter(
+            config_gateway,
+            admission=self._helper_options_admitted,
+            now=service.now,
+        )
         self.evidence_reader = _OperationalEvidenceReader(self)
         captured_backup = (
             None
@@ -2241,6 +2282,18 @@ class F3RuntimeIntegration:
             return False
         try:
             status = core.route_status((CONFIGURATION_DELETE_PROFILE,))
+        except Exception:
+            return False
+        return isinstance(status, dict) and status.get("available") is True
+
+    def _helper_options_admitted(self) -> bool:
+        """Whether a signed registry admits the HAMCP-232 options profile."""
+
+        core = self.core_runtime
+        if core is None:
+            return False
+        try:
+            status = core.route_status((helper_options_contract.PROFILE,))
         except Exception:
             return False
         return isinstance(status, dict) and status.get("available") is True
@@ -4714,6 +4767,12 @@ class F3RuntimeIntegration:
                     "plan_hash": self.service.plan_hash(existing),
                 }
         task = self.service.task_repository.get_for_plan(source_plan.plan_id)
+        if source_plan.contract_version == 2 and any(
+            operation.resource_type == helper_options_contract.RESOURCE_TYPE
+            for operation in source_plan.operations
+        ):
+            # HAMCP-232 OD-12: admission first, then its own exact lease.
+            return await self._create_helper_options_rollback(source_plan, task)
         entity_metadata = source_plan.contract_version == 2 and any(
             operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE
             for operation in source_plan.operations
@@ -5038,6 +5097,171 @@ class F3RuntimeIntegration:
             "plan_hash": self.service.plan_hash(rollback_plan),
             "operations_to_restore": [item["operation_id"] for item in operations],
             "operations_excluded": excluded,
+            "provider_dispatch_occurred": False,
+        }
+
+    async def _create_helper_options_rollback(
+        self, source_plan: Any, task: Any
+    ) -> dict[str, Any]:
+        """Plan the separately approved restore of verified options (OD-12).
+
+        Admission is checked before any read.  Each child that dispatched once
+        and verified exactly contributes the reverse of its requested fields
+        (in reverse order); defaults Home Assistant injected are disclosed as
+        not restored.  Fresh planning re-reads every entry by opening and
+        aborting its options flow, and the whole rollback is refused unless
+        each entry's live options and ``modified_at`` still equal the
+        verified result.  Nothing is dispatched.
+        """
+
+        self.service._helper_options_core()
+
+        def refuse(reason: str, **extra: Any) -> GovernanceError:
+            return GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": reason,
+                    "reason_code": reason,
+                    **extra,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+
+        if task is None or task.state not in {
+            ExecutionTaskState.SUCCEEDED_VERIFIED,
+            ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
+            ExecutionTaskState.FAILED_POST_DISPATCH,
+        }:
+            raise refuse("forward_not_verified")
+        records = {
+            item["operation_id"]: self.children.get(item["child_id"])
+            for item in self.children.declarations_for_task(task.task_id)
+        }
+        changes: list[dict[str, Any]] = []
+        expected: dict[str, str] = {}
+        excluded: list[str] = []
+        not_restored: list[dict[str, Any]] = []
+        for operation in reversed(source_plan.operations):
+            record = records.get(operation.operation_id)
+            try:
+                intent = helper_options_contract.intent(operation.proposed_config)
+            except (TypeError, KeyError, ValueError, AttributeError):
+                intent = None
+            resulting = (
+                record.evidence.get("resulting_state_fingerprint")
+                if record is not None and isinstance(record.evidence, dict)
+                else None
+            )
+            if (
+                operation.resource_type != helper_options_contract.RESOURCE_TYPE
+                or intent is None
+                or record is None
+                or not record.terminal
+                or record.normalized_outcome != "succeeded_verified"
+                or record.dispatch_intent is None
+                or record.dispatch_count != 1
+                or not isinstance(resulting, str)
+            ):
+                excluded.append(operation.operation_id)
+                continue
+            baseline = intent["baseline"]
+            restore: dict[str, Any] = {}
+            clear: list[str] = []
+            for name in intent["requested"]:
+                if name in baseline:
+                    value = baseline[name]
+                    if (
+                        type(value) is float
+                        and value.is_integer()
+                        and getattr(
+                            helper_options_contract.field_spec(
+                                intent["domain"], intent["step_id"], name
+                            ),
+                            "kind",
+                            None,
+                        )
+                        == helper_options_contract.KIND_INT
+                    ):
+                        value = int(value)
+                    restore[name] = deepcopy(value)
+                else:
+                    clear.append(name)
+            not_restored.extend(
+                {"operation_id": operation.operation_id, "field": item["field"]}
+                for item in intent["normalization_changes"]
+            )
+            entity_id = intent["entity_ids"][0]
+            changes.append(
+                {"entity_id": entity_id, "set": restore, "clear": clear}
+            )
+            expected[entity_id] = resulting
+        if not changes:
+            raise refuse(
+                "no_verified_options_change", operations_excluded=excluded[:8]
+            )
+        lease = self.service._helper_options_planning_lease(
+            ",".join(sorted(expected))
+        )
+        async with lease:
+            try:
+                request = helper_options_planning.validate_request(
+                    {
+                        "changes": changes,
+                        "reason": f"Rollback governed change {source_plan.plan_id}",
+                    }
+                )
+                gateway = self.service.helper_options_gateway
+                if gateway is None:
+                    raise helper_options_planning.Refusal(
+                        "helper_options_provider_unavailable", kind="unavailable"
+                    )
+                prepared = await helper_options_planning.prepare(gateway, request)
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise refuse(
+                    "helper_options_rollback_baseline_drift"
+                    if exc.reason_code == "helper_options_already_desired"
+                    else exc.reason_code
+                ) from None
+            for item in prepared.items:
+                intent = item.intent[helper_options_contract.INTENT_KEY]
+                live = helper_options_contract.applied_state_fingerprint(
+                    intent["baseline"], intent["modified_at"]
+                )
+                if live != expected.get(item.entity_id):
+                    raise refuse("helper_options_rollback_baseline_drift")
+            lease.require_current()
+            created = await self.service._create_helper_options_plan(
+                prepared,
+                caller_context={
+                    "rollback_source_plan_id": source_plan.plan_id,
+                    "rollback_model": "hamcp232-helper-options-restore-v1",
+                    "excluded_operation_ids": excluded[:8],
+                    "defaults_not_restored": not_restored[:16],
+                },
+                _before_persist=lease.require_current,
+            )
+        rollback_plan = self.service._load(created["plan_id"])
+        partial = bool(excluded)
+        source_plan.rollback.available = True
+        source_plan.rollback.status = (
+            "partial_governed_plan_created" if partial else "governed_plan_created"
+        )
+        source_plan.rollback.requested_at = self.service._timestamp()
+        source_plan.rollback.request_id = rollback_plan.plan_id
+        self.service._record(source_plan, "rollback_plan_created", "success")
+        return {
+            "status": (
+                "rollback_partial_plan_created" if partial else "rollback_plan_created"
+            ),
+            "source_plan_id": source_plan.plan_id,
+            "rollback_plan_id": rollback_plan.plan_id,
+            "approval_required": True,
+            "plan_hash": self.service.plan_hash(rollback_plan),
+            "operations_to_restore": [item.operation_id for item in prepared.items],
+            "operations_excluded": excluded,
+            "defaults_not_restored": not_restored[:16],
             "provider_dispatch_occurred": False,
         }
 

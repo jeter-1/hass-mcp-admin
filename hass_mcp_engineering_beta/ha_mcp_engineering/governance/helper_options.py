@@ -87,6 +87,14 @@ RELOAD_POLL_INTERVAL_SECONDS = 1.0
 EXPECTED_EFFECT = "config_entry_helper_options_updated"
 SUBMIT_REJECTED_REASON = "options_flow_submit_rejected"
 ENTRY_UNHEALTHY = "applied_entry_unhealthy"
+SUBMIT_UNCERTAIN = "options_submit_uncertain"
+#: Confirmed non-application categories of a received submit response.
+SUBMIT_REJECTION_CATEGORIES = (
+    "options_flow_aborted",
+    "options_flow_validation_error",
+    SUBMIT_REJECTED_REASON,
+)
+APPLIED_STATE_MODEL = "config_entry_helper_options_applied_state_v1"
 STATE_CLASSES = ("measurement", "measurement_angle", "total", "total_increasing")
 DEVICE_CLASS_PATTERN = re.compile(r"[a-z0-9_]{1,64}\Z")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
@@ -760,6 +768,18 @@ def consumer_fingerprint(evidence: dict[str, Any]) -> str:
     return stable_hash({"model": CONSUMER_EVIDENCE_MODEL, **evidence})
 
 
+def applied_state_fingerprint(visible: dict[str, Any], modified_at: float) -> str:
+    """Bind the visible options to the entry's ``modified_at`` at readback."""
+
+    return stable_hash(
+        {
+            "model": APPLIED_STATE_MODEL,
+            "visible": canonical(visible),
+            "modified_at": modified_at,
+        }
+    )
+
+
 def provider_payload(entry_id: str, submit: dict[str, Any]) -> dict[str, Any]:
     return {
         "method": "POST",
@@ -795,6 +815,29 @@ class SubmitOutcome:
     applied: bool | None
     category: str
     provider_status: int | None = None
+
+
+@dataclass(frozen=True)
+class HeldForm:
+    """An options flow opened for dispatch and not yet submitted or aborted."""
+
+    flow_id: str
+    step_id: str
+    visible: dict[str, Any]
+
+
+class HeldFlowRefused(Exception):
+    """The dispatch-time flow was not the expected form; nothing was sent.
+
+    ``drift`` is True when Home Assistant answered with a different step or
+    schema (the target changed), False for a malformed provider response.
+    """
+
+    def __init__(self, category: str, *, drift: bool, orphaned: bool) -> None:
+        super().__init__(category)
+        self.category = category
+        self.drift = drift
+        self.orphaned = orphaned
 
 
 class HelperOptionsGateway:
@@ -954,6 +997,39 @@ class HelperOptionsGateway:
                     aborted = True
         return step_id, visible, aborted
 
+    async def open_held(
+        self, entry_id: str, *, domain: str, expected_step_id: str
+    ) -> HeldForm:
+        """Open a flow and keep it open for the one submit of a dispatch.
+
+        A response that is not the expected form is aborted here and refused
+        with ``HeldFlowRefused``; ``orphaned`` discloses a failed abort.
+        """
+
+        response = await self.open_flow(entry_id)
+        try:
+            flow_id, step_id, visible = parse_form(
+                response, domain=domain, expected_step_id=expected_step_id
+            )
+        except (HelperOptionsContractError, HelperOptionsProviderError) as exc:
+            orphaned = False
+            flow_id = response.get("flow_id") if isinstance(response, dict) else None
+            if (
+                isinstance(flow_id, str)
+                and FLOW_ID_PATTERN.fullmatch(flow_id)
+                and response.get("type") not in ("abort", "create_entry")
+            ):
+                try:
+                    orphaned = not await self.abort_flow(flow_id)
+                except Exception:  # noqa: BLE001 - an orphan is disclosed
+                    orphaned = True
+            raise HeldFlowRefused(
+                exc.category,
+                drift=isinstance(exc, HelperOptionsContractError),
+                orphaned=orphaned,
+            ) from None
+        return HeldForm(flow_id=flow_id, step_id=step_id, visible=visible)
+
     async def submit(self, flow_id: str, submit: dict[str, Any]) -> SubmitOutcome:
         """Send the one step submit.  This POST is the irreversible dispatch."""
 
@@ -974,14 +1050,14 @@ class HelperOptionsGateway:
             status = details.get("status")
             if type(status) is int and 400 <= status < 500:
                 return SubmitOutcome(False, SUBMIT_REJECTED_REASON, status)
-            return SubmitOutcome(None, "options_submit_uncertain", status if type(status) is int else None)
+            return SubmitOutcome(None, SUBMIT_UNCERTAIN, status if type(status) is int else None)
         except Exception:  # noqa: BLE001 - lost response: readback decides
-            return SubmitOutcome(None, "options_submit_uncertain")
+            return SubmitOutcome(None, SUBMIT_UNCERTAIN)
         status = getattr(response, "status", None)
         if type(status) is int:
             return SubmitOutcome(False, SUBMIT_REJECTED_REASON, status)
         if not isinstance(response, dict):
-            return SubmitOutcome(None, "options_submit_uncertain")
+            return SubmitOutcome(None, SUBMIT_UNCERTAIN)
         kind = response.get("type")
         if kind == "create_entry":
             return SubmitOutcome(True, "options_flow_finished")
@@ -989,7 +1065,44 @@ class HelperOptionsGateway:
             return SubmitOutcome(False, "options_flow_validation_error")
         if kind == "abort":
             return SubmitOutcome(False, "options_flow_aborted")
-        return SubmitOutcome(None, "options_submit_uncertain")
+        return SubmitOutcome(None, SUBMIT_UNCERTAIN)
+
+
+    async def submit_dispatch(
+        self, flow_id: str, submit: dict[str, Any]
+    ) -> SubmitOutcome:
+        """The one submit, with its outcome raised for the F3 dispatch.
+
+        A confirmed non-application raises the not-dispatched error carrying
+        a received response; a lost or unrecognized response raises
+        ``HelperOptionsSubmitUncertain`` so readback decides.
+        """
+
+        from .resources import ConfigurationMutationNotDispatchedError
+
+        outcome = await self.submit(flow_id, submit)
+        if outcome.applied is True:
+            return outcome
+        if outcome.applied is False:
+            raise ConfigurationMutationNotDispatchedError(
+                "options flow submit was not applied",
+                details={
+                    "provider_response_received": True,
+                    "reason": SUBMIT_REJECTED_REASON,
+                    "category": outcome.category,
+                    # A form with errors, or a 400, leaves the flow open.
+                    "flow_open": outcome.category == "options_flow_validation_error"
+                    or outcome.provider_status == 400,
+                },
+            )
+        raise HelperOptionsSubmitUncertain(
+            "options flow submit result is uncertain",
+            details={"reason": SUBMIT_UNCERTAIN},
+        )
+
+
+class HelperOptionsSubmitUncertain(HomeAssistantApiError):
+    """The submit was sent and its outcome is unknown; readback decides."""
 
 
 class HelperOptionsResourceGateway(HelperOptionsGateway):
@@ -1039,6 +1152,12 @@ __all__ = [
     "HelperOptionsGateway",
     "HelperOptionsProviderError",
     "HelperOptionsResourceGateway",
+    "HelperOptionsSubmitUncertain",
+    "SUBMIT_REJECTION_CATEGORIES",
+    "SUBMIT_UNCERTAIN",
+    "applied_state_fingerprint",
+    "HeldFlowRefused",
+    "HeldForm",
     "INTENT_KEY",
     "INTENT_MODEL",
     "NEVER_SENT",
