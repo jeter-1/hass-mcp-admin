@@ -91,7 +91,8 @@ LANES = {
                   CONFIG_ENTRY_GET},
         required={OPTIONS_OPEN, OPTIONS_SUBMIT, OPTIONS_ABORT, ENTITY_GET, CONFIG_ENTRY_GET},
         # The gateway's own never-sent list; its "call_service" covers every service call.
-        never_sent=HELPER_NEVER_SENT,
+        # The config-flow start is a CI-harness-only route the runtime never names.
+        never_sent=(*HELPER_NEVER_SENT, "POST /config/config_entries/flow"),
         scenarios=(*HELPER_TYPES, "suggested_value", "field_not_editable", "validation_would_fail",
                    "stale_state", "concurrent_flow"),
         predecessor_probe={"changes": [{"entity_id": "sensor.seq15_absent", "set": {"precision": 1}}],

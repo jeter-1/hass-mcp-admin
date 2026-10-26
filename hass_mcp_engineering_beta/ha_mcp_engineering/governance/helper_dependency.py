@@ -1683,9 +1683,10 @@ class HelperDependencyRiskService:
         binding_builder: Any = None,
     ):
         self.index = index
-        # HAMCP-145: a domain reader supplies its own builder; the default
-        # is the unchanged input_boolean v13 builder.
-        self.binding_builder = binding_builder or build_helper_dependency_risk_binding
+        # HAMCP-145: a domain reader supplies its own builder; without one
+        # the unchanged input_boolean v13 builder is resolved at each call,
+        # exactly as before.
+        self.binding_builder = binding_builder
 
     async def assess(
         self,
@@ -1763,7 +1764,7 @@ class HelperDependencyRiskService:
                     "fallback_occurred": False,
                 },
             }
-        binding = self.binding_builder(
+        binding = (self.binding_builder or build_helper_dependency_risk_binding)(
             snapshot,
             entity_id=entity_id,
             index_metadata=metadata,

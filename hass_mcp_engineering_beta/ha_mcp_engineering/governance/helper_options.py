@@ -54,7 +54,9 @@ ENTITY_DOMAINS = ("binary_sensor", "sensor")
 SECTION = "additional_options"
 
 OPTIONS_FLOW_ROUTE = "/config/config_entries/options/flow"
-OPTIONS_FLOW_STEP_ROUTE = "/config/config_entries/options/flow/{}"
+# The hashed provider payload names the reviewed submit operation, not a
+# route template: the submit itself is sent only through ``rest_path``.
+OPTIONS_FLOW_SUBMIT_OPERATION = "config_entry_options_flow_submit"
 # The closed websocket vocabulary.  Everything else is refused before I/O.
 READ_COMMANDS = (
     "config/entity_registry/get",
@@ -62,8 +64,9 @@ READ_COMMANDS = (
     "config_entries/get_single",
 )
 # Never sent by this family (asserted by the dormant lane and the tests).
+# The config-flow start is a CI-harness-only route (HAMCP-200), so the lane
+# adds it to this list instead of naming it in the runtime package.
 NEVER_SENT = (
-    "POST /config/config_entries/flow",
     "DELETE /config/config_entries/entry/{}",
     "POST /config/config_entries/entry/{}/reload",
     "config_entries/update",
@@ -799,7 +802,7 @@ def applied_state_fingerprint(visible: dict[str, Any], modified_at: float) -> st
 def provider_payload(entry_id: str, submit: dict[str, Any]) -> dict[str, Any]:
     return {
         "method": "POST",
-        "route": OPTIONS_FLOW_STEP_ROUTE,
+        "operation": OPTIONS_FLOW_SUBMIT_OPERATION,
         "handler": entry_id,
         "user_input": copy.deepcopy(submit),
     }
@@ -1177,7 +1180,7 @@ __all__ = [
     "INTENT_MODEL",
     "NEVER_SENT",
     "OPTIONS_FLOW_ROUTE",
-    "OPTIONS_FLOW_STEP_ROUTE",
+    "OPTIONS_FLOW_SUBMIT_OPERATION",
     "PENDING_ADMISSION_REASON",
     "PROFILE",
     "PROVIDER",

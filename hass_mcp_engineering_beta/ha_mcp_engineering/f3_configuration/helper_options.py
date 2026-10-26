@@ -120,7 +120,7 @@ class HelperOptionsStrategy(ConfigurationStrategy):
 
     def provider_operation(self, target_id: str) -> str:
         del target_id
-        return "config_entry_options_flow_submit"
+        return contract.OPTIONS_FLOW_SUBMIT_OPERATION
 
     def provider_payload(
         self, target_id: str, proposed_config: dict[str, Any]
