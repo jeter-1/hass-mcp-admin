@@ -35,6 +35,16 @@ precision) and ``L*`` (an edge probe unbounded or uncounted, a field copied
 past the call bound or read after the deadline). The HAMCP-132 and PR #294
 credential suites run unchanged in the baseline and against every mutant.
 
+Review 2 retargets ``S6`` at the ``-P`` tokenizer and ``S8`` at the CSI
+strip, and adds ``K*`` (the label rule: the keyword on the normal form only,
+the tokenizer ignoring quotes or a split dash, the dash fold removed, the
+labelled mode falling back to value shapes only), ``A*`` (only the stripped
+or only the original text screened, a CSI sequence alone withholding) and
+``W4``/``W5`` (a withheld entry the level filter left out uncounted or
+complete). The reviewer's delta suite runs unchanged with its one
+owner-superseded method registered as an expected failure by
+``test_hamcp224_review2_corrections`` in the same invocation.
+
 Usage:
     python docs/evidence/hamcp224-mutations/run_mutations.py \\
         --work /var/tmp/hamcp224-mut --output docs/evidence/hamcp224-mutations/results.json
@@ -97,13 +107,13 @@ MUTATIONS = [
     m("S5-pem-private-key-kept", SANITIZE,
       (CRED, "        or _PEM_PRIVATE.search(text) is not None or _PEM_PRIVATE.search(squashed) is not None\n", "")),
     m("S6-mosquitto-password-option-kept", SANITIZE,
-      (CRED, "        or _PASSWORD_OPTION.search(decoded) is not None\n", "")),
+      (CRED, "        or password_option(decoded)\n", "")),
     m("S7-unverifiable-text-kept", SANITIZE,
       (CRED, "    if unverifiable_text(value):\n        return UNVERIFIABLE_MARKER\n"
              "    if credential_text(value, known_secrets, labelled=labelled):",
        "    if credential_text(value, known_secrets, labelled=labelled):")),
     m("S8-ansi-not-stripped", SANITIZE,
-      (HJ, '    text = _ANSI.sub("", text)\n', "")),
+      (HJ, '    text = _CSI.sub("", original)\n', "    text = original\n")),
     m("S9-withheld-text-returned-with-omission", SANITIZE,
       (HJ, "        return marker, OMISSIONS[marker]", "        return text, OMISSIONS[marker]")),
     m("S10-shared-sanitizer-output-ignored", SANITIZE,
@@ -233,6 +243,38 @@ MUTATIONS = [
        "            withheld = omission\n")),
     m("W3-filtered-withheld-uncounted", WITHHELD,
       (INC, "                    unsearched[position] += 1\n", "                    pass\n")),
+    # -- W, review 2 M1 residual: a withheld entry the level filter left out
+    m("W4-level-filtered-withheld-uncounted", WITHHELD,
+      (INC, "                    level_filtered[position] += 1\n", "                    pass\n")),
+    m("W5-level-filtered-withheld-complete", WITHHELD,
+      (INC, "              or unsearched[scan.position] or level_filtered[scan.position]\n",
+       "              or unsearched[scan.position]\n")),
+    # -- K: the label rule (review 2 H2 residual)
+    m("K1-keyword-normal-form-only", SANITIZE,
+      (CRED, "_KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None",
+       "_KEYWORD.search(text) is not None")),
+    m("K2-option-tokenizer-ignores-quotes", SANITIZE,
+      (CRED, """_OPTION_QUOTES = frozenset("'\\"`\\\\")""", "_OPTION_QUOTES = frozenset()")),
+    m("K3-option-split-dash-ignored", SANITIZE,
+      (CRED, '        if word != "-" or index + 1 == len(tokens):', "        if True:")),
+    m("K4-dash-fold-removed", SANITIZE,
+      (CRED, "    text, squashed = text.translate(_DASHES), squashed.translate(_DASHES)\n", "")),
+    m("K5-labelled-mode-shape-only", SANITIZE,
+      (CRED, "        _KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None\n"
+             "        or password_option(decoded)\n"
+             "        # The value shapes, an additional layer.\n"
+             "        or _LABELLED_FIELD.search(text) is not None\n",
+       "        _LABELLED_FIELD.search(text) is not None\n")),
+    # -- A: two-form ANSI screening (review 2 M4, owner decision)
+    m("A1-stripped-text-only-screened", SANITIZE,
+      (HJ, "    if marker is None and text != original:\n"
+           '        marker = credentials.screen(_CSI_ESCAPE.sub("", original), known_secrets, labelled=True)\n', "")),
+    m("A2-original-text-only-screened", SANITIZE,
+      (HJ, "    marker = credentials.screen(text, known_secrets, labelled=True)\n"
+           "    if marker is None and text != original:\n",
+       "    marker = None\n    if True:\n")),
+    m("A3-csi-sequence-alone-withholds", SANITIZE,
+      (HJ, 'credentials.screen(_CSI_ESCAPE.sub("", original), known_secrets', "credentials.screen(original, known_secrets")),
     # -- U: microsecond order (HAMCP-224 review 1 M2)
     m("U1-merge-precision-dropped", ORDER,
       (INC, "                running = max(running, record.rt_us)\n",
@@ -257,6 +299,7 @@ MUTATIONS = [
 ]
 
 base.MODULES = ("test_hamcp224_host_journal", "test_hamcp224_review1_corrections",
+                "test_hamcp224_review2_corrections", "test_pr313_delta_residuals",
                 "test_pr313_independent_review", "test_hamcp131_incident_logs",
                 "test_hamcp220_incident_log_timestamps", "test_hamcp191_shared_sanitizer",
                 "test_hamcp132_configuration_definitions", "test_pr294_delta_review",
