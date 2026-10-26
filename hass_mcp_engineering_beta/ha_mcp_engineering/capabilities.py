@@ -80,6 +80,8 @@ PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 # policy requirement.  Its current admission comes from the governance
 # service's admission snapshot (the one health projects); without one the
 # catalog says it was not evaluated, never a static "pending" as current.
+# The static entries spell the value as a literal: repository tooling reads
+# this catalog with ``ast.literal_eval``.
 CORE_ADMISSION_NOT_EVALUATED = "not_evaluated"
 
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
@@ -285,7 +287,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "policy": "governed_entity_registry_metadata_proposal",
         "core_capability": "core.entity_registry_metadata_operation",
         "core_admission_requirement": "signed_core_registry_admission",
-        "core_admission": CORE_ADMISSION_NOT_EVALUATED,
+        "core_admission": "not_evaluated",
         "fallback": "none",
         "fallback_occurred": False,
         "external_approval_required": True,
@@ -319,7 +321,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
             "core.entity_assistant_exposure_operation",
         ],
         "core_admission_requirement": "signed_core_registry_admission",
-        "core_admission": CORE_ADMISSION_NOT_EVALUATED,
+        "core_admission": "not_evaluated",
         "fallback": "none",
         "fallback_occurred": False,
         "external_approval_required": True,
@@ -350,7 +352,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
             "core.entity_registry_metadata_operation",
         ],
         "core_admission_requirement": "signed_core_registry_admission",
-        "core_admission": CORE_ADMISSION_NOT_EVALUATED,
+        "core_admission": "not_evaluated",
         "fallback": "none",
         "fallback_occurred": False,
         "external_approval_required": True,
@@ -380,7 +382,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "resource_types": ["automation", "script"],
         "core_capabilities": ["core.configuration_delete_operation"],
         "core_admission_requirement": "signed_core_registry_admission",
-        "core_admission": CORE_ADMISSION_NOT_EVALUATED,
+        "core_admission": "not_evaluated",
         "fallback": "none",
         "fallback_occurred": False,
         "external_approval_required": True,
