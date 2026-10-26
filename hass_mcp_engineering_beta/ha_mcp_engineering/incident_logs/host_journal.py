@@ -154,10 +154,6 @@ UNAVAILABLE_DETAIL = MappingProxyType({
 })
 
 
-def is_journal_source(key: str) -> bool:
-    return key in HOST_SOURCES or (key.startswith("addon:") and key != "addon:self")
-
-
 @dataclass(frozen=True)
 class SourceMatch:
     """What libsystemd filters on, and the full rule every entry is checked against."""

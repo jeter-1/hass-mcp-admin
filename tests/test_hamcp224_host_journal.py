@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import dataclasses
 import json
 import os
 from pathlib import Path
@@ -226,6 +227,13 @@ class HostJournalReaderTests(Roots, unittest.TestCase):
                                               resume=(record.rt_us, record.cursor_digest))]) \
                 .scans["addon:5c53de3b_esphome"]
         self.assertTrue(scan.stale)
+        with patch.object(hj, "MAX_SCAN_ENTRIES", 1):
+            scan = self.read(root, [self.plan("addon:5c53de3b_esphome",
+                                              resume=(record.rt_us, record.cursor_digest))]) \
+                .scans["addon:5c53de3b_esphome"]
+        # One walked entry found the position and spent the whole bound.
+        self.assertEqual((scan.stale, scan.resume_walked, scan.scanned, scan.stopped, scan.records),
+                         (False, 1, 0, "scan_entries_limit", []))
 
     def test_unavailability_comes_from_the_mount_table_and_the_open(self):
         root = self.root()
@@ -283,9 +291,9 @@ class HostJournalReaderTests(Roots, unittest.TestCase):
                        {"_TRANSPORT": "stdout"}, {"SYSLOG_IDENTIFIER": "app_core_mosquitto_extra",
                                                   "CONTAINER_NAME": "app_core_mosquitto_extra"}):
             self.assertFalse(hj.accepts(match, {**good, **change}), change)
-        self.assertFalse(hj.is_journal_source("addon:self"))
-        self.assertFalse(hj.is_journal_source("core"))
-        self.assertTrue(all(hj.is_journal_source(key) for key in ALL_JOURNAL_SOURCES))
+        self.assertFalse(c.is_journal_source("addon:self"))
+        self.assertFalse(c.is_journal_source("core"))
+        self.assertTrue(all(c.is_journal_source(key) for key in ALL_JOURNAL_SOURCES))
 
 
 class ScreenTextTests(unittest.TestCase):
@@ -294,7 +302,9 @@ class ScreenTextTests(unittest.TestCase):
                      "mosquitto_sub -u mqtt -P hunter2", "mosquitto_pub --pw=hunter2",
                      "-----BEGIN OPENSSH PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----",
                      "mqtt://user:secretvalue@host:1883", f"token {KNOWN_SECRET} seen",
-                     "wрa_psk=abc", "p s k = abc"):
+                     "wрa_psk=abc", "p s k = abc",
+                     # Confusables inside the key itself: caught only once folded.
+                     "p\u0455k=abc", "network_k\u0435y: abc"):
             with self.subTest(text=text):
                 self.assertEqual(hj.screen_text(text.encode(), (KNOWN_SECRET,)),
                                  (hj.WITHHELD_MARKER, hj.WITHHELD_OMISSION))
@@ -456,6 +466,16 @@ class JournalServiceTests(Roots, unittest.IsolatedAsyncioTestCase):
             await self.read(service=moved, sources=["addon:core_mosquitto"], limit=1, cursor=page["next_cursor"])
         self.assertEqual(caught.exception.details["reason"], "journal_continuity_broken")
 
+    async def test_a_signed_state_with_a_malformed_digest_is_refused(self):
+        page = await self.read(sources=["addon:5c53de3b_esphome"], limit=1)
+        codec = self.service.codec
+        for digest in ("zz", "0" * 31, "0" * 32 + "\n", "A" * 32, 7):
+            payload = codec.decode(page["next_cursor"])
+            payload["s"]["addon:5c53de3b_esphome"]["jd"] = digest
+            with self.assertRaises(GovernanceError) as caught:
+                await self.read(sources=["addon:5c53de3b_esphome"], limit=1, cursor=codec.encode(payload))
+            self.assertEqual(caught.exception.details["reason"], "integrity_or_format_invalid", digest)
+
     async def test_clock_regression_is_disclosed_and_ordering_uncertain(self):
         page = await self.read(sources=["addon:core_mosquitto"], start=iso(3000))
         self.assertEqual([entry["message"] for entry in page["entries"]],
@@ -511,6 +531,50 @@ class JournalServiceTests(Roots, unittest.IsolatedAsyncioTestCase):
                          [("unavailable", "journal_read_failed")] * 2)
         self.assertNotIn("PLANTED", json.dumps(page))
 
+    async def test_token_forms_the_screen_keeps_are_redacted_by_the_shared_sanitizer(self):
+        # Bearer and JWT tokens are not whole-message credential forms (design
+        # §7 step 2); the shared line sanitizer at the same exit redacts them.
+        real = reader(self.journal)
+        planted = (b"auth retry Authorization: Bearer PLANTEDbearer0123456789abcdef "
+                   b"jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJQTEFOVEVEIn0.PLANTEDsignature01")
+
+        class Planting:
+            def read(self, plans, digest, deadline):
+                result = real.read(plans, digest, deadline)
+                records = result.scans["supervisor"].records
+                first = next(n for n, record in enumerate(records) if record.rejected is None)
+                records[first] = dataclasses.replace(records[first], message=planted)
+                return result
+        page = await self.read(service=self.make_service(Planting()), sources=["supervisor"])
+        [entry] = [entry for entry in page["entries"] if entry["message"].startswith("auth retry")]
+        self.assertIn("[REDACTED:token]", entry["message"])
+        self.assertNotIn("withheld", entry)
+        self.assertNotIn("PLANTED", json.dumps(page))
+        self.assertIn("redacted_by_policy", page["omissions"])
+        self.assertFalse(page["complete"])
+
+    async def test_rejected_entries_are_counted_and_never_returned(self):
+        real = reader(self.journal)
+        whole = await self.read(sources=["supervisor"])
+
+        class Rejecting:
+            def read(self, plans, digest, deadline):
+                result = real.read(plans, digest, deadline)
+                records = result.scans["supervisor"].records
+                accepted = [n for n, record in enumerate(records) if record.rejected is None]
+                for n, reason in zip(accepted[:2], ("match_rejected", "entry_unreadable")):
+                    records[n] = dataclasses.replace(records[n], rejected=reason,
+                                                     message=b"PLANTED-REJECTED never returned")
+                return result
+        page = await self.read(service=self.make_service(Rejecting()), sources=["supervisor"])
+        self.assertEqual(page["returned"], whole["returned"] - 2)
+        self.assertEqual([entry["message"] for entry in page["entries"]],
+                         [entry["message"] for entry in whole["entries"]][2:])
+        row = self.row(page, "supervisor")
+        self.assertEqual((row["status"], row["match_rejected"], row["entries_unreadable"]), ("partial", 1, 1))
+        self.assertIn("journal_match_rejected:supervisor", page["omissions"])
+        self.assertNotIn("PLANTED", json.dumps(page))
+
     async def test_scan_bound_is_disclosed_and_resumes(self):
         with patch.object(hj, "MAX_SCAN_ENTRIES", 4):
             pages = await self.read_all(sources=["host"])
@@ -533,7 +597,8 @@ class JournalServiceTests(Roots, unittest.IsolatedAsyncioTestCase):
         [(on_main_thread, plans, deadline)] = seen
         self.assertFalse(on_main_thread)
         self.assertEqual([plan.key for plan in plans], ["host", "supervisor"])
-        self.assertLess(deadline - hj.time.monotonic(), c.CALL_DEADLINE_SECONDS)
+        # The reader stops a full second before the call deadline, leaving the exit time to finish.
+        self.assertLess(deadline - hj.time.monotonic(), c.CALL_DEADLINE_SECONDS - 1.0)
 
 
 class ZstdJournalServiceTests(JournalServiceTests):
@@ -576,6 +641,31 @@ class MixedSourceTests(Roots, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(JournalServiceTests.row(self, pages[0], "supervisor")["requests"], 0)
         self.assertGreater(JournalServiceTests.row(self, pages[0], "core")["requests"], 0)
 
+
+    async def test_a_journal_failure_stays_failed_on_later_pages(self):
+        core = self.sim.journal("/core/logs")
+        for second in (5, 23, 3602):
+            ts = T0_MS + second * 1000
+            stamp = service_module.datetime.fromtimestamp(ts / 1000, service_module.timezone.utc)
+            core.add(ts, f"{stamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]} INFO (MainThread) "
+                         f"[synthetic.component] core event {second}")
+        calls = []
+
+        class Exploding:
+            def read(self, *args):
+                calls.append(args)
+                raise RuntimeError("synthetic failure PLANTED-EXCEPTION")
+        transport = JournalTransport(token_source=lambda: SUPERVISOR_TOKEN, timeout_seconds=2.0, base_url=self.url)
+        service = JournalServiceTests.make_service(self, Exploding(), transport)
+        arguments = {"sources": ["core", "supervisor"], "start": iso(0), "end": iso(7000), "limit": 2}
+        first = await JournalServiceTests.read(self, service=service, **arguments)
+        self.assertEqual(JournalServiceTests.row(self, first, "supervisor")["reason"], "journal_read_failed")
+        self.assertTrue(first["next_cursor"])
+        second = await JournalServiceTests.read(self, service=service, **arguments, cursor=first["next_cursor"])
+        row = JournalServiceTests.row(self, second, "supervisor")
+        self.assertEqual((row["status"], row["reason"]), ("unavailable", "failed_in_earlier_page"))
+        self.assertFalse(second["complete"])
+        self.assertEqual(len(calls), 1)
 
 class StaticBoundaryTests(unittest.TestCase):
     FORBIDDEN_SYMBOLS = ("sd_journal_enumerate", "sd_journal_restart_data", "sd_journal_query_unique",
