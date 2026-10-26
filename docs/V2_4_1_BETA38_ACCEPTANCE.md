@@ -147,8 +147,13 @@ synthetic.
   step and no field read. The HAMCP-132 and PR #294 suites pass unchanged.
 - The HAMCP-131 and HAMCP-220 incident-log suites pass unchanged in intent;
   their former "manager role" expectations now expect the journal sources.
-- Mutations: `docs/evidence/hamcp224-mutations/`. `results.json` records
-  each mutant and the tests that killed it.
+- Mutations: `docs/evidence/hamcp224-mutations/`. Run 1 killed 43 of 51
+  (`results-run1.json`, `run1.log`); a test was added for each survivor and
+  run 2 killed 51 of 51 (`results-run2.json`, `run2.log`). Run 3 covers the
+  review 1 corrections, with 15 fragments retargeted and 12 mutants added
+  (H1–H3, W1–W3, U1–U2, L1–L4): it killed 63 of 63 (`results.json`,
+  `run3.log`). `results.json` records each mutant and the tests that killed
+  it.
 
 ## 2. Release CI and publication
 
