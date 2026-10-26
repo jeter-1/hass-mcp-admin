@@ -1120,16 +1120,18 @@ class InputSelectOptionOperationStrategy(OperationalStrategy):
                 )
             if not exc.dispatched:
                 raise
-            confirmed = exc.category == "provider_rejected"
+            # Design §4.2: a Core error after the send (an option removed in
+            # between) is never proof of failure.  It is not a confirmed
+            # failure; the exact-state readback decides.
+            responded = exc.category == "provider_rejected"
             return StrategyDispatch(
-                response_received=confirmed,
+                response_received=responded,
                 response_evidence_hash=stable_hash(
-                    {"category": exc.category, "confirmed": confirmed}
+                    {"category": exc.category, "responded": responded}
                 ),
-                confirmed_failure=confirmed,
                 diagnostic_code=(
-                    "provider_rejection_confirmed"
-                    if confirmed
+                    "provider_rejection_readback_decides"
+                    if responded
                     else "provider_response_lost"
                 ),
             )
