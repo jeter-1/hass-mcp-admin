@@ -9,10 +9,11 @@ v257.9; see ``docs/HAMCP_131_INCIDENT_LOGS.md``):
 - ``/addons/self/logs``: the same handler for the calling add-on's
   identifiers, admitted for every add-on by ``api_bypass``
   ``^/addons/self/(?!security|update)[^/]+$``.
-- ``/supervisor/logs``, ``/host/logs`` and ``/addons/<slug>/logs`` need role
-  ``manager``. Engineering runs as ``homeassistant`` and this read adds no
-  permission, so they are reported unavailable with that exact reason and
-  no request is sent.
+- ``supervisor``, ``host``, ``host:<category>`` and ``addon:<slug>`` (HAMCP-224):
+  their Supervisor routes need role ``manager``, which Engineering does not
+  hold and this read does not add. They are read instead from the host journal
+  the Supervisor mounts read-only with ``journald: true`` (``host_journal.py``);
+  no Supervisor request is sent for them.
 
 Every value here is a disclosed bound.
 """
@@ -88,21 +89,11 @@ READABLE_ROUTES = MappingProxyType({
     SOURCE_CORE: "/core/logs",
     SOURCE_SELF: "/addons/self/logs",
 })
-# Pinned Supervisor role patterns that refuse role ``homeassistant``.
-MANAGER_ROUTE_PATTERNS = MappingProxyType({
-    "supervisor": r"^/supervisor/.+$",
-    "host": r"^/host/.+$",
-    "addon": r"^/addons/[^/]+/(?!security).+$",
-})
-AUTHORITY_NOT_GRANTED = "authority_not_granted"
-# The Supervisor role a statically unavailable source would need.
-REQUIRED_ROLE = "manager"
-AUTHORITY_DETAIL = (
-    "requires Supervisor role manager; Engineering runs with hassio_role "
-    "homeassistant and this read adds no permission"
-)
+# HAMCP-224: the host journal sources (``host_journal.HOST_MATCHES``) and
+# every ``addon:<slug>`` other than ``addon:self``.
+HOST_CATEGORIES = ("kernel", "usb", "network", "storage", "os")
 
-_SOURCE_TOKEN = re.compile(r"(?:core|supervisor|host)\Z")
+_SOURCE_TOKEN = re.compile(r"(?:core|supervisor|host(?::(?:kernel|usb|network|storage|os))?)\Z")
 _SLUG = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 # ISO 8601 with an explicit offset and at most millisecond precision: journal
 # timestamps carry milliseconds, so a finer bound would be ambiguous.
@@ -242,10 +233,7 @@ def check_window(start_ms: int, end_ms: int) -> None:
         raise ValueError("Invalid incident log arguments.")
 
 
-def unavailable_reason(source_key: str) -> tuple[str, str] | None:
-    """The static authority refusal for a source, or ``None`` if readable."""
+def is_journal_source(source_key: str) -> bool:
+    """Read from the mounted host journal rather than a Supervisor route."""
 
-    if source_key in READABLE_ROUTES:
-        return None
-    family = "addon" if source_key.startswith("addon:") else source_key
-    return AUTHORITY_NOT_GRANTED, MANAGER_ROUTE_PATTERNS[family]
+    return source_key not in READABLE_ROUTES

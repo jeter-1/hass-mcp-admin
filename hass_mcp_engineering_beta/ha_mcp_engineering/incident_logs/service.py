@@ -8,8 +8,14 @@ Every page re-reads the last consumed entry and compares its keyed digest,
 so a vacuumed or rotated position is detected instead of silently skipping
 or repeating entries.
 
+HAMCP-224: the ``supervisor``, ``host``, ``host:<category>`` and
+``addon:<slug>`` sources are read from the mounted host journal instead
+(``host_journal.py``), in one worker thread before the gateway pages, and
+merged with them on journal realtime.
+
 Raw journal text never leaves this module unsanitized: ``_finish`` is the
-only place a sanitizer runs and the only place the response is built.
+only place a sanitizer or the credential screen runs and the only place the
+response is built.
 """
 
 from __future__ import annotations
@@ -21,11 +27,13 @@ import heapq
 import inspect
 import json
 import os
+import re
 from typing import Any, Callable
 
 from ..request_context import current_caller_id, current_telemetry
 from ..sanitization import ReferenceMarkerRegistry, sanitize_log_lines, sanitize_untrusted_data
 from . import contracts as c
+from . import host_journal as hj
 from .cursor import CursorCodec
 from .journal import RawEntry, detect_level, level_allows, split_prefix, valid_journal_cursor
 from .timebasis import (
@@ -65,8 +73,18 @@ LIMITATIONS = (
     "Around an unresolved local time, entries keep each source's journal order and are marked "
     "ordering_uncertain: their order against that entry and across sources is not established, on this "
     "page or the next.",
+    "Host journal sources (supervisor, host, host:<category>, addon:<slug>) need the add-on option journald; "
+    "without it, or when the journal cannot be read, each is unavailable with its reason, never empty.",
+    "Host journal times are the journal realtime in UTC as recorded by the host; a host clock step backwards "
+    "is reported (clock_regression) and the rows after it are ordering_uncertain. A continuation across such a "
+    "step may be stale and then has to restart.",
+    "Host journal entries are read through a fixed field allowlist; a message whose text may hold a credential "
+    "is withheld whole (withheld), and an addon:<slug> entry not from that add-on's container through journald "
+    "is never returned (match_rejected).",
     "An empty result never proves an event did not occur.",
 )
+
+_HEX32 = re.compile(r"[0-9a-f]{32}\Z")
 
 
 def now_ms() -> int:
@@ -102,6 +120,8 @@ class Item:
     # The merge key: the running maximum of the source's earliest readings,
     # so a source is always merged in its journal order (HAMCP-220 M1).
     key: int = 0
+    # HAMCP-224: the host journal entry, raw until ``_finish``.
+    record: hj.Record | None = None
 
 
 @dataclass
@@ -139,6 +159,11 @@ class Scan:
     # call read the journal in it (review 2 H1): nothing this call read is
     # returned, and the source resumes where the call started it.
     zone_unbound: str | None = None
+    # HAMCP-224: read from the mounted host journal, never a Supervisor route.
+    journal: bool = False
+    journal_state: dict | None = None
+    journal_scan: hj.SourceScan | None = None
+    errno_name: str | None = None
 
 
 class Deferred(Exception):
@@ -149,8 +174,10 @@ class IncidentLogService:
     def __init__(self, transport: JournalTransport, *, known_secrets: tuple[str, ...] = (),
                  codec: CursorCodec | None = None, clock: Callable[[], int] = now_ms,
                  zone_source: Callable[[], Any] = lambda: None,
-                 addon_zone_source: Callable[[], str | None] = lambda: os.environ.get("TZ")):
+                 addon_zone_source: Callable[[], str | None] = lambda: os.environ.get("TZ"),
+                 journal_reader: hj.HostJournalReader | None = None):
         self.transport = transport
+        self.journal_reader = journal_reader or hj.HostJournalReader()
         # Home Assistant's configured time zone (Core /api/config), read per
         # call; it may return the name or an awaitable of it. The default
         # reads nothing, so an unconfigured service reads no journal.
@@ -212,8 +239,12 @@ class IncidentLogService:
             args["end_ms"] = end_ms
         elif end_ms != args["end_ms"]:
             raise c.cursor_error(False, "query_mismatch")
-        for state in states.values():
+        for key, state in states.items():
             if state in ({"done": 1}, {"failed": 1}, {"u": 1}):
+                continue
+            if c.is_journal_source(key):
+                if not _valid_journal_state(state):
+                    raise c.cursor_error(False, "integrity_or_format_invalid")
                 continue
             if (
                 type(state) is not dict or set(state) != {"c", "k", "d", "t", "lv", "r"}
@@ -227,19 +258,18 @@ class IncidentLogService:
         return states
 
     async def _read(self, args: dict) -> dict:
-        # Only statically unavailable sources still return a result: each is
-        # reported unavailable with its authority reason and required role,
-        # with zero requests, never collapsed into a generic refusal.
-        readable = [key for key in args["sources"] if c.unavailable_reason(key) is None]
+        readable = list(args["sources"])
         args["ordering_uncertain_until"] = None
         states = self._resume(args, readable) if args["cursor"] is not None else None
         budget = Budget()
         reading = [key for key in readable
                    if not states or states.get(key) not in ({"done": 1}, {"failed": 1})]
-        await self._zones(args, reading, budget)
+        # Only the gateway sources read text in Home Assistant's time zone;
+        # the host journal is read on its realtime alone.
+        await self._zones(args, [key for key in reading if not c.is_journal_source(key)], budget)
         scans: list[Scan] = []
         for position, key in enumerate(readable):
-            scan = Scan(key=key, position=position)
+            scan = Scan(key=key, position=position, journal=c.is_journal_source(key))
             scans.append(scan)
             state = states.get(key) if states else None
             if state == {"u": 1}:
@@ -249,6 +279,14 @@ class IncidentLogService:
                 scan.finished = "continued_done" if state == {"done": 1} else None
                 scan.failure = "failed_in_earlier_page" if state == {"failed": 1} else None
                 scan.continued = True
+                continue
+            if scan.journal:
+                if state is not None:
+                    scan.continued, scan.start_location = True, "continued"
+                    scan.journal_state, scan.max_ts = state, state["t"]
+                else:
+                    # Nothing before the window start is ever emitted.
+                    scan.max_ts = args["start_ms"] - 1
                 continue
             if state is not None:
                 scan.continued = True
@@ -265,6 +303,7 @@ class IncidentLogService:
                 scan.deferred, scan.start_location = True, "deferred"
             except PageFailure as failure:
                 scan.failure, scan.status_code = failure.reason, failure.status
+        await self._read_journal(scans, args, budget)
         await self._fill(scans, args, budget)
         await self._bind_zone(scans, args, states)
         result = self._finish(scans, args, budget)
@@ -280,6 +319,64 @@ class IncidentLogService:
                 upstream_calls=budget.requests,
             )
         return result
+
+    async def _read_journal(self, scans: list[Scan], args: dict, budget: Budget) -> None:
+        """Every host journal source of this call, read in one worker thread.
+
+        libsystemd refuses a handle used from another thread's process view,
+        so one thread opens, reads and closes it; the call deadline bounds it.
+        Raw records stay on the items until ``_finish``.
+        """
+
+        wanted = [scan for scan in scans if scan.journal and scan.finished is None and scan.failure is None]
+        args["journal_field_bytes"] = 0
+        if not wanted:
+            return
+        target = args["limit"] if args["min_level"] is None and args["text"] is None \
+            else c.MAX_FILTER_SCAN_ENTRIES
+        start_us, end_us = args["start_ms"] * 1000, args["end_ms"] * 1000
+        plans = [
+            hj.Plan(scan.key, start_us, end_us, target,
+                    None if scan.journal_state is None else (scan.journal_state["jt"], scan.journal_state["jd"]))
+            for scan in wanted
+        ]
+        try:
+            read = await asyncio.to_thread(self.journal_reader.read, plans, self.codec.digest,
+                                           budget.deadline - 1.0)
+        except Exception:
+            read = hj.JournalRead(unavailable="journal_read_failed")
+        args["journal_field_bytes"] = read.field_bytes
+        for scan in wanted:
+            result = read.scans.get(scan.key)
+            if read.unavailable is not None or result is None:
+                scan.failure = read.unavailable or "journal_read_failed"
+                scan.errno_name = read.errno_name
+                continue
+            if result.stale:
+                # The consumed entry is gone, or a clock step hides it.
+                raise c.cursor_error(True, "journal_continuity_broken")
+            scan.journal_scan = result
+            scan.failure, scan.errno_name = result.failure, result.errno_name
+            scan.finished = result.finished
+            if not scan.continued:
+                scan.start_location = "exact"
+                scan.head_ts = None if result.earliest_us is None else result.earliest_us // 1000
+                scan.tail_ts = None if result.latest_us is None else result.latest_us // 1000
+                if read.cutoff_from_us is not None and read.cutoff_from_us > start_us:
+                    # The window starts before the oldest retained entry.
+                    scan.start_location = "retention_edge"
+                    scan.gaps.append({"from": c.format_ms(args["start_ms"]),
+                                      "to": c.format_ms(read.cutoff_from_us // 1000),
+                                      "reason": "before_retention_edge"})
+            running = scan.max_ts
+            for record in result.records:
+                ts = record.rt_us // 1000
+                running = max(running, ts)
+                entry = RawEntry(ts_ms=ts, lines=("",), raw=b"", basis=hj.BASIS_JOURNAL, zone="UTC")
+                in_window = record.rejected is None and start_us <= record.rt_us < end_us
+                scan.items.append(Item("", 0, record.cursor_digest, entry, in_window, key=running,
+                                       record=record))
+            scan.max_ts = running
 
     async def _zones(self, args: dict, reading: list[str], budget: Budget) -> None:
         """Home Assistant's zone, and the add-on TZ compared with it over the window."""
@@ -549,7 +646,7 @@ class IncidentLogService:
 
     @staticmethod
     def _open(scan: Scan) -> bool:
-        return scan.finished is None and scan.failure is None and scan.anchor is not None
+        return scan.finished is None and scan.failure is None and (scan.anchor is not None or scan.journal)
 
     async def _fill(self, scans: list[Scan], args: dict, budget: Budget) -> None:
         target = args["limit"] if args["min_level"] is None and args["text"] is None \
@@ -566,7 +663,8 @@ class IncidentLogService:
             if eligible >= target:
                 return
             scan = min(open_scans, key=lambda s: (s.max_ts, s.position))
-            if not budget.available(scan.requests):
+            if scan.journal or not budget.available(scan.requests):
+                # A host journal source read all it could in ``_read_journal``.
                 return
             # Resolution reads leave one forward page for each open source
             # that has none yet, so every source can advance the merge.
@@ -612,7 +710,8 @@ class IncidentLogService:
                 emitted.append((scan, index))
             elif item.in_window:
                 skipped[position] += 1
-            else:
+            elif item.record is None or item.record.rejected is None:
+                # A rejected or unreadable host journal entry is counted apart.
                 outside[position] += 1
             consumed[position] = index + 1
             if item.in_window and item.edge_uncertain:
@@ -637,13 +736,22 @@ class IncidentLogService:
         views: list[list[dict]] = []
         redacted_entries: list[set[int]] = []
         for scan in scans:
-            context = [scan.anchor_entry] if scan.anchor_entry is not None else []
-            window = context + [item.entry for item in scan.items]
-            lines = [line for entry in window for line in entry.lines]
+            if scan.journal:
+                # HAMCP-224: the credential screen runs first, here, on raw records.
+                screened = self._journal_screen(scan)
+                lines = [line for entry_lines, _omission in screened for line in entry_lines]
+            else:
+                context = [scan.anchor_entry] if scan.anchor_entry is not None else []
+                window = context + [item.entry for item in scan.items]
+                lines = [line for entry in window for line in entry.lines]
             sanitized = sanitize_log_lines(lines, known_secrets=self.known_secrets)
             if (sanitized.failed_closed or type(sanitized.value) is not list
                     or len(sanitized.value) != len(lines)):
                 raise c.IncidentLogsError("sources_unavailable")
+            if scan.journal:
+                views.append(self._journal_views(scan, screened, sanitized.value))
+                redacted_entries.append({number for number, view in enumerate(views[-1]) if view["redacted"]})
+                continue
             rows, changed, offset = [], set(), 0
             level = scan.anchor.level if scan.anchor is not None and scan.continued else None
             for number, entry in enumerate(window):
@@ -689,6 +797,8 @@ class IncidentLogService:
             # source and on any later page, has an unestablished order.
             until = args["ordering_uncertain_until"]
             disordered = [0] * len(scans)
+            withheld = [0] * len(scans)
+            withheld_reasons: list[str] = []
             for scan, index in emitted:
                 item, view = scan.items[index], views[scan.position][index]
                 redacted = redacted or index in redacted_entries[scan.position]
@@ -715,6 +825,19 @@ class IncidentLogService:
                     }
                 if item.edge_uncertain:
                     row["window_membership_uncertain"] = True
+                if item.record is not None:
+                    if view["withheld"] is not None:
+                        row["withheld"] = view["withheld"]
+                        withheld[scan.position] += 1
+                        withheld_reasons.append(view["withheld"])
+                    elif item.record.message_truncated:
+                        row["message_truncated"] = True
+                    for name in ("kernel_subsystem", "kernel_device"):
+                        if view[name] is not None:
+                            row[name] = registry.register_output(view[name], self.known_secrets)
+                    row["boot_ref"] = item.record.boot_ref
+                    if item.record.partial_line:
+                        row["partial_line"] = True
                 if entry.uncertain or item.key > entry.ts_ms or (until is not None and entry.ts_ms <= until):
                     row["ordering_uncertain"] = True
                     disordered[scan.position] += 1
@@ -724,9 +847,14 @@ class IncidentLogService:
 
             next_state: dict[str, dict] = {}
             source_rows: list[dict] = []
-            reasons = list(omissions)
+            reasons = list(omissions) + withheld_reasons
             for scan in scans:
                 count = consumed[scan.position]
+                if scan.journal:
+                    next_state[scan.key] = self._journal_next_state(scan, count)
+                    source_rows.append(self._journal_source_row(
+                        scan, consumed, skipped, outside, emitted, disordered, withheld))
+                    continue
                 if scan.deferred or (scan.zone_unbound is not None and scan.anchor is None):
                     # Unlocated: the next page locates the window start afresh.
                     next_state[scan.key] = {"u": 1}
@@ -746,15 +874,6 @@ class IncidentLogService:
                     next_state[scan.key] = {"c": anchor.cursor, "k": anchor.index, "d": anchor.digest,
                                             "t": anchor.ts_ms, "lv": anchor.level, "r": int(anchor.consumed)}
                 source_rows.append(self._source_row(scan, consumed, skipped, outside, emitted, edge, disordered))
-            for key in args["sources"]:
-                reason = c.unavailable_reason(key)
-                if reason is not None:
-                    source_rows.append({
-                        "source": key, "status": "unavailable", "reason": reason[0],
-                        "detail": c.AUTHORITY_DETAIL, "required_role": c.REQUIRED_ROLE,
-                        "required_route_pattern": reason[1],
-                        "route": None, "requests": 0,
-                    })
             source_rows.sort(key=lambda row: args["sources"].index(row["source"]))
             if args["zone_status"] == "unavailable":
                 reasons.append("time_zone_unavailable")
@@ -776,7 +895,14 @@ class IncidentLogService:
                     reasons.append(f"ordering_uncertain:{row['source']}")
                 if row.get("zone_unbound"):
                     reasons.append(f"{row['zone_unbound']}:{row['source']}")
-            has_more = any("c" in state or "u" in state for state in next_state.values())
+                if row.get("reader") == hj.READER:
+                    if row["reason"] in hj.BOUND_REASONS:
+                        reasons.append(f"{row['reason']}:{row['source']}")
+                    if row["match_rejected"]:
+                        reasons.append(f"journal_match_rejected:{row['source']}")
+                    if row["entries_unreadable"]:
+                        reasons.append(f"journal_entry_unreadable:{row['source']}")
+            has_more = any("c" in state or "u" in state or "jt" in state for state in next_state.values())
             if stopped:
                 reasons.append("entries_limit_reached")
             if truncated_messages:
@@ -805,6 +931,7 @@ class IncidentLogService:
                 "omissions": reasons,
                 "requests": budget.requests,
                 "downloaded_bytes": budget.downloaded,
+                "journal_field_bytes": args.get("journal_field_bytes", 0),
                 "bounds": _BOUNDS,
                 "time_basis": {
                     "preferred": BASIS_REALTIME,
@@ -819,9 +946,12 @@ class IncidentLogService:
                     "addon_time_zone_status": args["addon_zone_status"],
                     "uncertain_entries": sum(1 for row in entries_out if row["ts"] is None),
                     "ordering_uncertain_entries": sum(disordered),
+                    "host_journal": hj.BASIS_JOURNAL,
                 },
                 "pins": {"supervisor": c.SUPERVISOR_PIN, "journal_gateway": c.GATEWAYD_PIN,
-                         "supervisor_text_timestamps": c.TEXT_TIMESTAMP_PIN},
+                         "supervisor_text_timestamps": c.TEXT_TIMESTAMP_PIN,
+                         "host_journal_library": hj.LIBSYSTEMD_PIN,
+                         "host_identifiers": hj.IDENTIFIERS_PIN},
                 "limitations": list(LIMITATIONS),
             }
             envelope["complete"] = not reasons and not has_more
@@ -841,6 +971,116 @@ class IncidentLogService:
             if size > c.RESPONSE_BUDGET:
                 raise c.IncidentLogsError("sources_unavailable")
             return result.value
+
+    def _journal_screen(self, scan: Scan) -> list[tuple[list[str], str | None]]:
+        """One host journal source's messages as sanitizer window lines (``_finish`` only).
+
+        Each message is decoded and stripped of terminal escapes, then the
+        credential screen withholds a message that may hold a credential
+        whole, before the line-window sanitizer reads anything. A withheld
+        message, or a never-returned entry, enters the window as one empty
+        line, so it gives no context to its neighbours' sanitization.
+        """
+
+        screened: list[tuple[list[str], str | None]] = []
+        for item in scan.items:
+            record = item.record
+            if record.rejected is not None:
+                screened.append(([""], None))
+                continue
+            text, omission = hj.screen_text(record.message or b"", self.known_secrets)
+            screened.append(([""] if omission else text.split("\n"), omission))
+        return screened
+
+    def _journal_views(self, scan: Scan, screened: list[tuple[list[str], str | None]],
+                       sanitized: list[str]) -> list[dict]:
+        secrets = self.known_secrets
+        views, offset = [], 0
+        for item, (entry_lines, omission) in zip(scan.items, screened):
+            safe = list(sanitized[offset:offset + len(entry_lines)])
+            offset += len(entry_lines)
+            record = item.record
+            fields = {}
+            for name, raw in (("process", record.identifier), ("kernel_subsystem", record.kernel_subsystem),
+                              ("kernel_device", record.kernel_device)):
+                fields[name] = None if raw is None else hj.screen_text(raw, secrets)[0]
+            level = hj.LEVELS_BY_PRIORITY.get(record.priority)
+            body = (hj.UNVERIFIABLE_MARKER if omission == hj.UNVERIFIABLE_OMISSION else hj.WITHHELD_MARKER) \
+                if omission else "\n".join(safe)
+            views.append({
+                **fields, "message": body, "level": level,
+                "level_basis": hj.LEVEL_BASIS if level else None, "withheld": omission,
+                "redacted": omission is None and safe != entry_lines,
+                # A withheld message is never searched.
+                "search": ((fields["process"] or "") + ": " + ("" if omission else body)).casefold(),
+            })
+        return views
+
+    @staticmethod
+    def _journal_next_state(scan: Scan, count: int) -> dict:
+        if scan.failure is not None:
+            return {"failed": 1}
+        if scan.finished is not None and count == len(scan.items):
+            return {"done": 1}
+        if count:
+            item = scan.items[count - 1]
+            # The entry's realtime and keyed cursor digest, never the cursor.
+            return {"jt": item.record.rt_us, "jd": item.digest, "t": item.key}
+        if scan.journal_state is not None:
+            return dict(scan.journal_state)
+        return {"u": 1}
+
+    @staticmethod
+    def _journal_source_row(scan: Scan, consumed, skipped, outside, emitted, disordered, withheld) -> dict:
+        count = consumed[scan.position]
+        taken = scan.items[:count]
+        result = scan.journal_scan
+        rejected = sum(1 for item in taken if item.record.rejected == "match_rejected")
+        unreadable = sum(1 for item in taken if item.record.rejected == "entry_unreadable") \
+            + (result.positionless if result is not None else 0)
+        stopped = None if result is None or scan.failure is not None or scan.finished else result.stopped
+        if scan.failure is not None:
+            status = "unavailable" if not taken else "failed"
+        elif (stopped or rejected or unreadable or withheld[scan.position]
+              or scan.start_location == "retention_edge"):
+            status = "partial"
+        else:
+            status = "complete"
+        gaps = list(scan.gaps)
+        if scan.failure is not None and taken:
+            gaps.append({"from": c.format_ms(taken[-1].entry.ts_ms), "to": None, "reason": "unread_after_failure"})
+        in_window = [item for item in taken if item.in_window]
+        regressions = 0 if result is None else result.clock_regressions
+        row = {
+            "source": scan.key, "status": status,
+            "reason": scan.failure or scan.finished or stopped,
+            "route": None, "reader": hj.READER, "requests": 0, "http_status": None,
+            "start_location": scan.start_location,
+            "earliest_available": None if scan.head_ts is None else c.format_ms(scan.head_ts),
+            "latest_available": None if scan.tail_ts is None else c.format_ms(scan.tail_ts),
+            "retention_edge_reached": scan.start_location == "retention_edge",
+            "scanned_from": c.format_ms(in_window[0].entry.ts_ms) if in_window else None,
+            "scanned_to": c.format_ms(in_window[-1].entry.ts_ms) if in_window else None,
+            "entries_consumed": count,
+            "entries_returned": sum(1 for source, _ in emitted if source is scan),
+            "skipped_by_filter": skipped[scan.position],
+            "outside_window": outside[scan.position],
+            "finished": scan.finished is not None and count == len(scan.items),
+            "entries_scanned": 0 if result is None else result.scanned + result.resume_walked,
+            "match_rejected": rejected,
+            "entries_unreadable": unreadable,
+            "withheld_messages": withheld[scan.position],
+            "gaps": gaps,
+            "timestamp_basis": {"basis": hj.BASIS_JOURNAL, "time_zone": "UTC"},
+            "clock_regression": bool(regressions),
+            "clock_regressions": regressions,
+            "ordering_uncertain": disordered[scan.position],
+        }
+        if scan.failure in hj.UNAVAILABLE_DETAIL:
+            row["detail"] = hj.UNAVAILABLE_DETAIL[scan.failure]
+        if scan.errno_name is not None:
+            row["errno"] = scan.errno_name
+        return row
 
     @staticmethod
     def _source_row(scan: Scan, consumed, skipped, outside, emitted, edge, disordered) -> dict:
@@ -918,7 +1158,19 @@ _BOUNDS = {
     "cursor_ttl_seconds": 3600,
     "max_time_zone_reads": c.MAX_ZONE_READS,
     "time_zone_read_deadline_seconds": c.ZONE_READ_DEADLINE_SECONDS,
+    "max_journal_scan_entries_per_source": hj.MAX_SCAN_ENTRIES,
+    "max_journal_field_bytes": hj.MAX_FIELD_BYTES,
+    "max_call_journal_field_bytes": hj.MAX_CALL_FIELD_BYTES,
 }
+
+
+def _valid_journal_state(state: Any) -> bool:
+    return (
+        type(state) is dict and set(state) == {"jt", "jd", "t"}
+        and type(state["jt"]) is int and 0 <= state["jt"] < 1 << 64
+        and type(state["jd"]) is str and _HEX32.match(state["jd"]) is not None
+        and type(state["t"]) is int
+    )
 
 
 def _truncate_message(message: str) -> str:
@@ -946,6 +1198,7 @@ class IncidentLogsRuntime:
             known_secrets=(settings.ha_token, settings.access_secret),
             zone_source=HomeAssistantZoneReader(rest_client, core_runtime),
             addon_zone_source=lambda: os.environ.get("TZ"),
+            journal_reader=hj.HostJournalReader(),
         )
 
     def require(self) -> IncidentLogService:
