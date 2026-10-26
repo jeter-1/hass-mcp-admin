@@ -405,8 +405,12 @@ class AvailabilityExposureDispatchAdmissionTests(AvailabilityExposureServiceTest
     def test_both_resource_types_are_gated(self):
         self.assertEqual(
             sorted(UNSIGNED_PROFILE_REQUIREMENTS),
-            ["entity_assistant_exposure", "entity_registry_availability",
-             "label_registry_entry"],
+            [
+                # HAMCP-232: gated on its own runtime-only profile.
+                "config_entry_helper_options",
+                "entity_assistant_exposure", "entity_registry_availability",
+                "label_registry_entry",
+            ],
         )
 
     async def approved_under_admission(self, request: dict) -> dict:

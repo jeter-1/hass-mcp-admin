@@ -104,6 +104,8 @@ class RuntimeInertInvariantTests(unittest.TestCase):
                 "restart_addon",
                 "restart_home_assistant",
                 "set_input_boolean_state",
+                # HAMCP-145: runtime-only, pending signed admission.
+                "set_input_select_option",
             },
         )
 

@@ -913,7 +913,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["attempt"], 2)
         self.assertEqual(result["probe"]["upstream_version"], "8.1.0")
         self.assertEqual(result["probe"]["fallback"], "none")
-        self.assertEqual(result["probe"]["engineering_tool_count"], 92)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 96)
         self.assertTrue(result["probe"]["held_tools_absent"])
         self.assertEqual(
             result["probe"]["gateway_health"][
@@ -935,7 +935,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-        self.assertEqual(result["probe"]["engineering_tool_count"], 93)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 97)
         health = result["probe"]["gateway_health"]
         self.assertEqual(health["dynamically_exposed_count"], 25)
         self.assertEqual(health["held_tools"], [])
@@ -971,7 +971,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-        self.assertEqual(result["probe"]["engineering_tool_count"], 93)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 97)
         self.assertEqual(
             result["probe"]["engineering_local_tool_count"], 72
         )
@@ -995,7 +995,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-        self.assertEqual(result["probe"]["engineering_tool_count"], 93)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 97)
         self.assertEqual(
             result["probe"]["gateway_health"][
                 "selected_compatibility_entry_id"

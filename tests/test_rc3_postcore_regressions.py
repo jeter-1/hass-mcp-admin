@@ -485,12 +485,12 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(registered_tools(server)), 72)  # HAMCP-165 + HAMCP-155: +2; HAMCP-232/145: +4 inactive
         await gateway.initialize(server)
         baseline = {tool.name: tool.model_dump(mode="json") for tool in await server.list_tools()}
-        self.assertEqual(len(baseline), 96)  # HAMCP-165 + HAMCP-155: +2 inactive planners
+        self.assertEqual(len(baseline), 100)  # HAMCP-165 + HAMCP-155: +2; HAMCP-232/145: +4 inactive
 
         self.network.records[0]["name"] = False
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)
-        self.assertEqual(len(registered_tools(server)), 91)  # HAMCP-165 + HAMCP-155: +2 static
+        self.assertEqual(len(registered_tools(server)), 95)  # HAMCP-165 + HAMCP-155: +2 static; HAMCP-232/145: +4 inactive
         self.assertEqual({x["tool"] for x in gateway.health_snapshot()["core_withheld_tools"]},
                          set(core_tests.DEVICE_DEPENDENT_DELEGATED_TOOLS))
         result = json.loads(await registered_tools(server)["ha_get_state"].run(

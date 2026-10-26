@@ -41,7 +41,10 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
                                                           "get_incident_logs", "get_history_slices",
                                                           "create_entity_availability_exposure_plan",
                                                           "create_label_plan",
-                                                          "create_configuration_delete_plan"})
+                                                          "create_configuration_delete_plan",
+                                                          "create_helper_options_plan",
+                                                          "create_input_select_option_plan",
+                                                          "list_script_traces", "get_script_trace"})
         self.assertEqual(set(expected) - set(actual), set())
         actual["get_server_health"] = _without_hamcp171_deep_storage_audit(self, actual["get_server_health"])
         for name, digest in expected.items():

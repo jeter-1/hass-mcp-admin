@@ -289,6 +289,8 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
             "label_registry_entry": LABEL_PROFILE,
             "entity_registry_availability": AVAILABILITY_PROFILE,
             "entity_assistant_exposure": EXPOSURE_PROFILE,
+            # HAMCP-232: helper options edits are admitted only by their own profile.
+            "config_entry_helper_options": HELPER_OPTIONS_PROFILE,
         })
 
 

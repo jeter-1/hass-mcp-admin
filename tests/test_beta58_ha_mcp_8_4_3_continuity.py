@@ -267,7 +267,7 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(registered, EXACT_READS)
         self.assertEqual(snapshot["dynamically_exposed_count"], 28)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 72)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 96)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 100)
         self.assertNotIn("ha_get_operation_status", registered)
         self.assertEqual(snapshot["readmission_withheld_read_count"], 0)
         self.assertEqual(snapshot["readmission_withheld_tools"], [])

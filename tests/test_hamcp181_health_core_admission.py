@@ -27,6 +27,9 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 import tests.test_core_2026_10_device_registry as october  # noqa: E402
 import tests.test_hamcp155_configuration_delete_admission as delete_admission  # noqa: E402
 from ha_mcp_engineering.governance import configuration_delete, label_registry  # noqa: E402
+from ha_mcp_engineering.governance import helper_options as helper_options_contract  # noqa: E402
+from ha_mcp_engineering.governance import input_select_option as input_select_contract  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.routes import SCRIPT_TRACE_PROFILE  # noqa: E402
 from ha_mcp_engineering.governance.service import ChangeGovernanceService  # noqa: E402
 from ha_mcp_engineering.governance.storage import ChangePlanRepository  # noqa: E402
 
@@ -52,7 +55,26 @@ PROVIDERS = {
         (label_registry.CORE_CAPABILITY,),
         label_registry.PENDING_ADMISSION_REASON,
     ),
+    # HAMCP-232/145: three dormant providers join the same snapshot.
+    "input_select_provider": (
+        (input_select_contract.PROFILE,),
+        input_select_contract.PENDING_ADMISSION_REASON,
+    ),
+    "script_trace_provider": (
+        (SCRIPT_TRACE_PROFILE,),
+        "pending_signed_registry_admission",
+    ),
+    "helper_options_provider": (
+        (helper_options_contract.PROFILE,),
+        helper_options_contract.PENDING_ADMISSION_REASON,
+    ),
 }
+# The script-trace provider backs two tools (list_script_traces and
+# get_script_trace); the snapshot reads its profile once per tool surface.
+SURFACE_READS = (
+    *(profiles for profiles, _ in PROVIDERS.values()),
+    PROVIDERS["script_trace_provider"][0],
+)
 
 
 class _LocalCore:
@@ -120,9 +142,7 @@ class HealthCoreAdmissionTests(unittest.TestCase):
             self.providers(core), {key: "admitted" for key in PROVIDERS}
         )
         # Each provider reads exactly its own profiles.
-        self.assertEqual(
-            sorted(core.calls), sorted(profiles for profiles, _ in PROVIDERS.values())
-        )
+        self.assertEqual(sorted(core.calls), sorted(SURFACE_READS))
 
     def test_admission_is_per_provider(self):
         core = _LocalCore((configuration_delete.PROFILE,))

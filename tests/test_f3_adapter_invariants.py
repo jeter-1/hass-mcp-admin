@@ -85,7 +85,9 @@ class F3AdapterIsolationTests(unittest.TestCase):
         local_tools = registered_tools(get_registered_server())
         self.assertEqual(len(CAPABILITIES), 25)
         # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
-        self.assertEqual(len(local_tools) - len(CAPABILITIES), 43)
+        # HAMCP-232/145: +4 inactive create_helper_options_plan,
+        # create_input_select_option_plan, list_script_traces, get_script_trace.
+        self.assertEqual(len(local_tools) - len(CAPABILITIES), 47)
         self.assertEqual(len(local_tools), 72)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
@@ -101,6 +103,8 @@ class F3AdapterIsolationTests(unittest.TestCase):
                 "restart_addon",
                 "restart_home_assistant",
                 "set_input_boolean_state",
+                # HAMCP-145: runtime-only, pending signed admission.
+                "set_input_select_option",
             },
         )
 

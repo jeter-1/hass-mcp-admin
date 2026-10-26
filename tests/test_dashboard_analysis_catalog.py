@@ -68,7 +68,10 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "get_incident_logs", "get_history_slices",
                           "create_entity_availability_exposure_plan",
                           "create_label_plan",
-                          "create_configuration_delete_plan"})
+                          "create_configuration_delete_plan",
+                          "create_helper_options_plan",
+                          "create_input_select_option_plan",
+                          "list_script_traces", "get_script_trace"})
         current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])
 

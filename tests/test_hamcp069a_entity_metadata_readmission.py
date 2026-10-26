@@ -568,6 +568,9 @@ class StaticToolCompletenessTests(unittest.TestCase):
                 "create_label_plan",
                 # HAMCP-155 binds its own exact deletion targets (its tests cover it).
                 "create_configuration_delete_plan",
+                # HAMCP-232/145 bind their own exact targets (their tests cover them).
+                "create_helper_options_plan",
+                "create_input_select_option_plan",
             },
         )
         self.assertEqual(static_tool_target("create_entity_metadata_plan", ARGUMENTS), TARGET)
@@ -586,6 +589,8 @@ class StaticToolCompletenessTests(unittest.TestCase):
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
                 "create_configuration_delete_plan",
+                "create_helper_options_plan",
+                "create_input_select_option_plan",
             }:
                 for arguments in shapes:
                     with self.subTest(tool=name, arguments=repr(arguments)[:40]):
@@ -675,6 +680,13 @@ class OtherToolGatewayCallShapeTests(unittest.IsolatedAsyncioTestCase):
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
                 "create_configuration_delete_plan",
+                # HAMCP-232/145 and the script-trace reads: refused pending
+                # signed-registry admission before any acquisition (their
+                # tests cover it).
+                "create_helper_options_plan",
+                "create_input_select_option_plan",
+                "list_script_traces",
+                "get_script_trace",
             }:
                 continue
             for arguments in ({}, {"entity_id": "LIGHT.PORCH"}, {"entity_id": "light.porch"}):

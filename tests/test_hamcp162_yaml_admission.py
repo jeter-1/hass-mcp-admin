@@ -73,7 +73,7 @@ TOOL = y.TOOL_NAME
 OPTIONAL = (TOOL,) + y.SIBLING_TOOLS
 SESSION = "synthetic-ha-mcp-session"
 STOCK_UPSTREAM = {"8.4.3": 78, "8.5.0": 77}  # K9 stock reviewed catalogs
-STOCK_PUBLIC = 96
+STOCK_PUBLIC = 100
 
 
 def captured(version, label="A"):

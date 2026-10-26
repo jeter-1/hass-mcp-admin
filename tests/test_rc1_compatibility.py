@@ -199,6 +199,10 @@ class RC1PublicContractTests(unittest.TestCase):
                         "create_entity_availability_exposure_plan",
                         "create_label_plan",
                         "create_configuration_delete_plan",
+                        "create_helper_options_plan",
+                        "create_input_select_option_plan",
+                        "list_script_traces",
+                        "get_script_trace",
                     )
                 )
             ),
