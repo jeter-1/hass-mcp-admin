@@ -393,6 +393,10 @@ class ExecutionTests(HelperOptionsServiceTestCase):
         result = await self.apply(created)
         self.assertEqual(result["task_state"], "succeeded_verified", result)
         self.assertTrue(result["provider_dispatch_occurred"])
+        # OD-7: the apply receipt carries the accepted-window disclosure.
+        (receipt_child,) = result["plan"]["operations"]
+        self.assertIn(planning.CONCURRENCY_DISCLOSURE[:500],
+                      receipt_child["risk"]["warnings"])
         self.assertEqual(self.options_rest.visible("filterentry01")["time_constant"], 20)
         self.assertEqual(len(self.options_rest.submits()), 1)
         (body,) = self.options_rest.submitted_bodies()
