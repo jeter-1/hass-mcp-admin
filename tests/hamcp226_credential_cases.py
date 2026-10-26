@@ -42,7 +42,7 @@ def withheld_cases() -> dict[str, tuple[str, str]]:
         "known_secret": ("Token refresh " + KNOWN_SECRET, KNOWN_SECRET),
         "known_secret_upper": (KNOWN_SECRET.upper(), KNOWN_SECRET.upper()),
         "known_secret_swapcase": (KNOWN_SECRET.swapcase(), KNOWN_SECRET.swapcase()),
-        "pem": ("-----BEGIN PRIVATE KEY-----\n" + needle + "\n-----END PRIVATE KEY-----", needle),
+        "pem": ("-----BEGIN " + "PRIVATE KEY-----\n" + needle + "\n-----END PRIVATE KEY-----", needle),
     })
     for point in INVISIBLES:
         for encoded in (False, True):

@@ -572,6 +572,7 @@ SANITIZER_SITES = {
     ("dashboard_analysis/models.py", "_scalar", "sanitize_untrusted_data"): (1, "identifier"),
     ("dashboard_analysis/models.py", "validate_projection", "sanitize_untrusted_data"): (1, "identifier"),
     ("dashboard_analysis/provider.py", "safe_entity", "sanitize_untrusted_data"): (1, "identifier"),
+    ("dependency/bounded_sources.py", "_shown", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/extraction.py", "_bounded", "redact_data"): (1, "analysis"),
     ("dependency/models.py", "_bounded_evidence_text", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/models.py", "_bounded_evidence_values", "sanitize_untrusted_data"): (1, "analysis"),
