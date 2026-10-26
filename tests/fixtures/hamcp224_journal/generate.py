@@ -142,7 +142,7 @@ PERSISTENT = [
                                  "Invalid option password=PLANTED-OPTION-PASS-0004")),
     (23 * SECOND, BOOT_A, docker("homeassistant", "2026-10-20 10:00:23.000 INFO (MainThread) core line")),
     (24 * SECOND, BOOT_A, native("sshd", "not in the Supervisor host set")),
-    (25 * SECOND, BOOT_A, docker("app_core_mosquitto", "-----BEGIN OPENSSH PRIVATE KEY----- PLANTED-PEM-0005")),
+    (25 * SECOND, BOOT_A, docker("app_core_mosquitto", "-----BEGIN ENCRYPTED PRIVATE KEY----- PLANTED-PEM-0005")),
     (26 * SECOND, BOOT_A, native("haos-data-disk-detach", "Data disk detached")),
     (27 * SECOND, BOOT_A, kernel("ata1: SATA link down", None, None, 3)),
     # Three entries in one microsecond: the continuation digest picks one.
