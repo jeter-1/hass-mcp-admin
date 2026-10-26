@@ -647,17 +647,20 @@ class _Bound(Exception):
 
 # -- exit-point screening (called only from the service's ``_finish``) -----------
 
-# A well-formed ANSI CSI sequence (SGR colours included): ESC [, at most 32
-# parameter bytes, at most 4 intermediate bytes and one final byte. It is a
-# recognized display format (owner decision, HAMCP-224 review 2), not a
-# reason to withhold; any other escape or control character still is.
-_CSI = re.compile(r"\x1b\[[0-?]{0,32}[ -/]{0,4}[@-~]")
-_CSI_ESCAPE = re.compile(r"\x1b(?=\[[0-?]{0,32}[ -/]{0,4}[@-~])")
+# An SGR colour code and nothing else: ESC [, at most 32 digits or
+# semicolons, then m. It is the one recognized display format (owner
+# decision, HAMCP-224 review 2 M4, narrowed in review 3): its bytes are never
+# a letter but its final m, which no credential label holds, so removing it
+# cannot take a label character with it. Any other escape (another CSI final
+# byte, OSC, a stray, malformed or over-long escape) or control character is
+# never removed and withholds the field as unverifiable.
+_SGR = re.compile(r"\x1b\[[0-9;]{0,32}m")
+_SGR_ESCAPE = re.compile(r"\x1b(?=\[[0-9;]{0,32}m)")
 OMISSIONS = {WITHHELD_MARKER: WITHHELD_OMISSION, UNVERIFIABLE_MARKER: UNVERIFIABLE_OMISSION}
 
 
 def screen_text(raw: bytes, known_secrets: tuple[str, ...], truncated: bool = False) -> tuple[str, str | None]:
-    """``(text, omission)``: the decoded text without its CSI sequences, or a whole-text marker.
+    """``(text, omission)``: the decoded text without its SGR colour codes, or a whole-text marker.
 
     HAMCP-224 H1/H2: the decision is the configuration-definitions screen
     (``credentials.screen``) with its labelled forms, on the complete field
@@ -666,15 +669,17 @@ def screen_text(raw: bytes, known_secrets: tuple[str, ...], truncated: bool = Fa
     are not UTF-8 cannot be read as text: both are withheld whole as
     unverifiable.
 
-    Review 2 M4 (owner decision): two forms are screened and either one
-    withholds. The text as shown, with every well-formed CSI sequence
-    removed, so a credential split by a colour code (``pass``, SGR,
-    ``word=``) is seen whole; and the original text with only each such
-    sequence's ESC removed, so a label the sequence's own bytes spell
-    (``ESC[password=``, whose ``p`` ends the sequence) is seen too. A
-    well-formed CSI sequence alone never withholds; any other escape (a
-    stray ESC, an OSC title) or control character is in both forms and is
-    withheld as unverifiable. The omission is ``unverifiable_text_withheld``
+    Review 2 M4 (owner decision), narrowed in review 3 H3: only SGR colour
+    codes are removed for display. Two forms are screened and either one
+    withholds: the text as shown, with every SGR code removed, so a
+    credential split by a colour code (``pass``, SGR, ``word=``) is seen
+    whole; and the original text with only each SGR code's ESC removed, so
+    text the code's own digits and ``m`` spell is seen too. An SGR code
+    alone never withholds. Any other escape stays in both forms and is
+    withheld as unverifiable: ``ESC[p`` would take the ``p`` of
+    ``password`` as its final byte, so stripping it with a colour code
+    elsewhere in the field (``ESC[pass``, SGR, ``word=``) would hide the
+    label from both forms. The omission is ``unverifiable_text_withheld``
     or ``credential_text_withheld`` when the text is replaced, else ``None``.
     """
 
@@ -684,10 +689,10 @@ def screen_text(raw: bytes, known_secrets: tuple[str, ...], truncated: bool = Fa
         original = raw.decode("utf-8", "strict")
     except UnicodeDecodeError:
         return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION
-    text = _CSI.sub("", original)
+    text = _SGR.sub("", original)
     marker = credentials.screen(text, known_secrets, labelled=True)
     if marker is None and text != original:
-        marker = credentials.screen(_CSI_ESCAPE.sub("", original), known_secrets, labelled=True)
+        marker = credentials.screen(_SGR_ESCAPE.sub("", original), known_secrets, labelled=True)
     if marker is not None:
         return marker, OMISSIONS[marker]
     return text, None

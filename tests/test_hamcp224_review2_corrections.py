@@ -8,10 +8,11 @@ The reviewer's delta suite (``test_pr313_delta_residuals``) is kept byte for
 byte. One of its methods,
 ``test_original_control_text_is_screened_before_ansi_removal``, expects a
 coloured ordinary line to be withheld; the owner decided otherwise (review 2
-M4: a well-formed CSI sequence is a recognized display format, stripped for
-display and never by itself a reason to withhold). That method is registered
-below as an expected failure, so it still runs, still has to fail, and turns
-the build red if colour codes are ever withheld again.
+M4: an SGR colour code is a recognized display format, stripped for display
+and never by itself a reason to withhold; review 3 narrowed the exemption
+from every CSI sequence to SGR codes only). That method uses only SGR codes,
+so it is registered below as an expected failure: it still runs, still has to
+fail, and turns the build red if colour codes are ever withheld again.
 """
 
 from __future__ import annotations
@@ -180,12 +181,11 @@ class ReviewerSuiteTests(unittest.TestCase):
 
 
 class AnsiScreeningTests(review1.Harness):
-    """Review 2 M4 (owner decision): screen the original and the CSI-stripped text, show the stripped."""
+    """Review 2 M4 (owner decision, SGR only since review 3): screen the original and the stripped text, show the stripped."""
 
     async def test_coloured_ordinary_text_is_shown_in_every_field(self):
-        for value in ("\x1b[31mordinary\x1b[0m", "\x1b[1;32mUSB\x1b[0m reconnected", "\x1b[0K\x1b[2Jtidy"):
-            shown = value.replace("\x1b[31m", "").replace("\x1b[1;32m", "").replace("\x1b[0m", "") \
-                .replace("\x1b[0K", "").replace("\x1b[2J", "")
+        for value in ("\x1b[31mordinary\x1b[0m", "\x1b[1;32mUSB\x1b[0m reconnected"):
+            shown = value.replace("\x1b[31m", "").replace("\x1b[1;32m", "").replace("\x1b[0m", "")
             for field, source, key in FIELDS:
                 with self.subTest(value=value, field=field):
                     page = await self.planted(value.encode(), field, source)
@@ -212,10 +212,11 @@ class AnsiScreeningTests(review1.Harness):
                     self.assertFalse(page["complete"])
 
     async def test_a_label_spelled_by_the_sequence_is_withheld(self):
-        # The sequence's own final byte starts the label: the stripped text
-        # alone does not hold it, the original does.
+        # The sequence's own final byte would start the label. Since review 3
+        # such a sequence is not an SGR code: it is never removed, and the
+        # field is withheld as unverifiable.
         for value in ("\x1b[password=" + NEEDLE, "\x1b[Bearer " + NEEDLE, "\x1b[1;Token " + NEEDLE):
-            self.assertIsNone(credentials.screen(hj._CSI.sub("", value), (), labelled=True))
+            self.assertEqual(hj.screen_text(value.encode(), ()), (hj.UNVERIFIABLE_MARKER, hj.UNVERIFIABLE_OMISSION))
             for field, source, _key in FIELDS:
                 with self.subTest(value=value, field=field):
                     page = await self.planted(value.encode(), field, source)
