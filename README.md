@@ -1,5 +1,18 @@
 # HA MCP Engineering Server
 
+Staged, not yet released: Engineering **2.4.1-beta.40** (HAMCP-226,
+HAMCP-228) names each source that reached a scan bound and reports
+unavailable entity references in the integrity, dependency and helper scans;
+stores each finished `capture_automation_baseline` durably (12 baselines,
+180 days, under the governance path); resumes a capture's timed-out records;
+and adds `compare_automation_baselines`, which compares stored captures or
+recorded fingerprints with no Home Assistant read (a matching 16-character
+prefix is `PREFIX_MATCH`, never `UNCHANGED`). No Home Assistant write; static
+tools 69, advertised catalog 97 (98 with the optional YAML reader) on the
+beta.38 base. Read the
+[2.4.1-beta.40 release notes](docs/V2_4_1_BETA40_RELEASE_NOTES.md) and
+[2.4.1-beta.40 acceptance contract](docs/V2_4_1_BETA40_ACCEPTANCE.md).
+
 Engineering **2.4.1-beta.38** lets `get_incident_logs` read the
 `supervisor`, `host`, `host:<category>` and `addon:<slug>` sources
 (HAMCP-224). Engineering keeps role `homeassistant`; with the new add-on

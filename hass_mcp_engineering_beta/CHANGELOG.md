@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.4.1-beta.40 - Named scan bounds and durable baselines (HAMCP-226, HAMCP-228) (staged)
+
+Follows 2.4.1-beta.39 (#315). Adds no Home Assistant write.
+
+- `configuration_integrity_analysis`: new `unavailable_entity_reference`
+  finding. Integrity, dependency and helper scans name each source that hit a
+  bound in `bounded_sources` (at most 50). `entity_dependency_analysis` adds
+  `target_availability`. Home Assistant ids and names pass the default-mode
+  credential screen, now with the PEM private-key header check; long values
+  are screened over the shown part plus 1,024 characters.
+- `capture_automation_baseline` stores each finished capture under
+  `<governance_path>/audit-baselines-v1/` (12 baselines, 2 MiB, 180 days;
+  caller-bound, digest-verified, refused when full, never evicted) and writes
+  `automation-audit-baseline-v2` (`resume` header, `timed_out` status); v1
+  still loads. New `resume_capture_id` re-collects only timeouts and refuses
+  `resume_not_needed` or `resume_inventory_changed`. Page `snapshot` gains
+  `storage: durable_engineering_store`, `retention_seconds` and
+  `resumed_from`. The tool is now `readOnlyHint=false` (local evidence write).
+- New `compare_automation_baselines`: stored/stored through the existing
+  comparator, or stored/recorded fingerprints; a shorter matching prefix is
+  `PREFIX_MATCH` (`prefix_match:<n>`), counted apart from `UNCHANGED`; an id
+  on one side only is `UNKNOWN`. No Home Assistant read.
+- Static tools 69; catalog 97 (98 with the optional YAML reader) on the
+  beta.38 base; 73 / 101 (102) once #315 merges in.
+
 ## 2.4.1-beta.38 - Host journal sources for get_incident_logs (HAMCP-224)
 
 Builds on 2.4.1-beta.37.
