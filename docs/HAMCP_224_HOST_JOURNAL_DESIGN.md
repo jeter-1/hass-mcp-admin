@@ -104,6 +104,24 @@ update. Rollback: reinstall `2.4.1-beta.36`, which has no `journald: true`.
   the threshold does not shorten it (`journal-file.c:1926-1975`). So the
   reader copies at most 16 KiB of each field itself, and marks the message
   `message_truncated`. `sd_journal_set_data_threshold` is not bound.
+- **Two more unavailability reasons** beyond the §8 table:
+  `journal_mount_incomplete` (only one of the two journal paths is mounted)
+  and `journal_read_failed` (the reader raised, or a libsystemd call failed
+  mid-read). Both are `unavailable`, never `complete`. A source that fails on
+  one page stays `failed_in_earlier_page` on every later page.
+- **Three raw opens, not two (§11).** The reader opens the mount table, the
+  container root, and each journal directory (to refuse a symlink with
+  `O_NOFOLLOW` before libsystemd reads beneath the root). The static check pins
+  exactly these.
+- **Withholding scope (§7 step 2).** Whole-message withholding covers the
+  HAMCP-132 `credential_text` forms and the journal key extension, as §7
+  lists. Other token forms that `credential_text` does not flag (for example
+  `Authorization: Bearer ...`, a JWT, `api_key=...`) are redacted in place by
+  the shared `sanitize_log_lines` at the same exit (`redacted_by_policy`, the
+  result is partial). A test pins that layer for journal lines.
+- **Capability text.** Routing, provider and policy are unchanged (§11), but
+  the capability matrix's `get_incident_logs` justification text no longer
+  says these sources need role `manager`; it describes the journal read.
 
 Base: `main` at `5030982fe681737c47e52a7c01d1808fca52468b` (Engineering
 `2.4.1-beta.36`, 68 static tools, `hassio_role: homeassistant`). Engineering

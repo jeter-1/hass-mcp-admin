@@ -799,6 +799,46 @@ option, role, fallback or delegated provider.
 - **HAMCP-069B profiles.** The two unsigned 069B profiles now name every read
   their gateway sends; no signed profile changes.
 
+The `2.4.1-beta.37` slice (HAMCP-224) lets `get_incident_logs` read the
+`supervisor`, `host`, `host:<category>` and `addon:<slug>` sources from the
+host journal. It adds **one read-only permission** and no role, route,
+provider, fallback, write path or tool.
+
+- **Permission.** `journald: true` makes the Supervisor bind-mount the host's
+  `/var/log/journal` and `/run/log/journal` read-only (Supervisor 2026.09.1
+  `docker/app.py`). `hassio_role` stays `homeassistant`; the `manager` log
+  routes below are still never called.
+- **Reader.** `incident_logs/host_journal.py` is the only module that imports
+  `ctypes`. It binds 14 fixed symbols (`BOUND_SYMBOLS`) of the base image's
+  `libsystemd.so.0` (Debian `libsystemd0` 257.13-1~deb13u1) and reads 9 fixed
+  fields (`READ_FIELDS`) by name. No field-enumeration, unique-value,
+  descriptor, raw-cursor-seek, inotify or write symbol is bound. It opens the
+  container root `O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC` and passes it
+  with `SD_JOURNAL_OS_ROOT`; both journal directories must open without
+  following a symlink. One worker thread opens, reads and closes the handle,
+  bounded at 16 KiB per field, 4 MiB per call, 20,000 entries per source
+  (the resume walk counts) and the call deadline less one second.
+- **Matches.** Fixed per source (`supervisor` is `hassio_supervisor`; `host`
+  is the Supervisor's 52 default identifiers plus kernel entries;
+  `addon:<slug>` needs `SYSLOG_IDENTIFIER` equal to `CONTAINER_NAME`,
+  `app_<slug>` or `addon_<slug>`, through `_TRANSPORT=journal`). Every entry
+  is rechecked in Python; a failed recheck is counted, never returned.
+- **Positions.** Continuations hold a realtime and a keyed digest of the
+  libsystemd cursor, never the cursor (it embeds the raw boot ID); the boot
+  marker is a keyed digest too. The machine ID is never read.
+- **Secrets.** At the single `_finish` exit each journal message is
+  ANSI-stripped and screened first. Unverifiable text, the HAMCP-132
+  credential forms, journal key forms (`psk`, `wpa_psk`, `network_key`,
+  `encryption_key`, ...), PEM private keys and the mosquitto `-P`/`--pw`
+  options withhold the **whole** message (`credential_text_withheld`,
+  partial); a withheld message is never searched. The shared
+  `sanitize_log_lines` and strict sanitizer then run once, as below, and
+  redact other token forms in place (`redacted_by_policy`). A bare secret
+  with no key or known value can still pass (design §7, the same residual
+  risk as the Core log).
+- **Unavailability.** Decided from `/proc/self/mountinfo` and the open, never
+  from an empty result; an unavailable source is never `complete`.
+
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.
 

@@ -1,5 +1,20 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.37** lets `get_incident_logs` read the
+`supervisor`, `host`, `host:<category>` and `addon:<slug>` sources
+(HAMCP-224). Engineering keeps role `homeassistant`; with the new add-on
+option `journald: true` the Supervisor mounts the host journal read-only,
+and a fixed read-only `libsystemd` reader takes those sources from it with
+journal timestamps. A credential-looking journal message is withheld whole,
+and journald off or unreadable is reported unavailable with its reason.
+Rollback is reinstalling beta.36. Static tools 68, advertised catalog 96 (97
+with the optional YAML reader). Read the
+[2.4.1-beta.37 release notes](docs/V2_4_1_BETA37_RELEASE_NOTES.md) and
+[2.4.1-beta.37 acceptance contract](docs/V2_4_1_BETA37_ACCEPTANCE.md).
+
+It builds on beta.36 (the governed delete's drift-read correction, still
+inactive) and beta.35 below.
+
 Engineering **2.4.1-beta.35** ships governed deletion of UI-managed
 automations and scripts **inactive** (HAMCP-155). The new tool
 `create_configuration_delete_plan` proposes one to eight deletions. Its
