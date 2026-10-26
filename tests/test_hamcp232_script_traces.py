@@ -215,6 +215,15 @@ class ServiceAdmissionTests(ServiceTestCase):
         self.assertEqual(client.commands, [])
         self.assertEqual(self.core.calls[0], (PROFILE,))
 
+    async def test_unadmitted_profile_refuses_even_with_dispatch_authority(self):
+        # A Core lease for other profiles is not admission of this one.
+        self.core.available = False
+        self.telemetry.core_dispatch_authorizer = lambda: True
+        client = FakeClient([])
+        await self.refused(self.service(client).list_traces(SCRIPT_ID), "authority_unavailable")
+        await self.refused(self.service(client).get_trace(SCRIPT_ID, RUN_ID), "authority_unavailable")
+        self.assertEqual(client.commands, [])
+
     async def test_missing_dispatch_authority_refuses(self):
         client = FakeClient([])
         self.telemetry.core_dispatch_authorizer = None
