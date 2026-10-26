@@ -89,6 +89,23 @@ on it, because the allowlist refuses every non-ASCII character. A
 dictionary entry whose key is credential text is dropped. Any withholding
 adds the ``credential_text_withheld`` or ``unverifiable_text_withheld``
 omission, so the report is partial.
+
+**One screen for every caller** (HAMCP-224 H1/H2). ``screen`` is the single
+string decision (invisible text first, then credential text) that
+``withhold`` applies here and the host journal applies to every returned
+journal field. Log text names a credential by a label more often than by a
+URI, so a caller may opt in to the **labelled forms** (``labelled=True``):
+a credential label (``password``, ``passphrase``, ``pass``, ``pwd``,
+``pw``, ``psk``, ``secret``, ``token``, ``api_key``, ``access_key``,
+``private_key``, ``network_key``, ``encryption_key``, ``credential(s)``,
+``authorization``, with any ``word_`` prefix such as ``mqtt_pass``)
+followed by ``=`` or ``:``; a ``Bearer`` token; a PEM private-key header;
+and the mosquitto client password options (``-P`` case-sensitive, ``-p``
+is the port; ``--pw``). They are read in the same canonical,
+confusable-folded and squashed forms as the checks above, so
+``api%5fkey=``, ``api_<tab>key=`` and a Cyrillic ``е`` in ``key`` are
+withheld. The configuration-definitions report does not opt in: its
+behavior is unchanged.
 """
 
 from __future__ import annotations
@@ -98,7 +115,7 @@ import unicodedata
 from typing import Any
 from urllib.parse import unquote_to_bytes
 
-from ..providers.upstream_yaml_reader import MAX_DECODE_ROUNDS, _userinfo, canonical
+from ..providers.upstream_yaml_reader import MAX_DECODE_ROUNDS, _userinfo, canonical, canonical_forms
 from ..sanitization import sanitize_untrusted_data
 from . import contracts as c
 
@@ -182,6 +199,25 @@ _PASSWORD_FIELD = re.compile(r"\b(?:password|passwd|pwd)\s*=")
 _SQUASHED_PASSWORD_FIELD = re.compile(r"(?:password|passwd|pwd)=")
 _MARKER_FOLDED = WITHHELD_MARKER.casefold()
 
+# The labelled forms (``labelled=True``, HAMCP-224), read after casefold and
+# the confusable fold. A label is a whole word, optionally after ``word_``
+# or ``word-`` prefixes; in the squashed form it is matched anywhere, like
+# the squashed password field.
+_LABEL = (r"(?:password|passwd|passphrase|pass|pwd|pw|psk|secret|token|api[_-]?key|apikey|"
+          r"access[_-]?key|private[_-]?key|network[_-]?key|encryption[_-]?key|credentials?|"
+          r"authorization)")
+_LABELLED_FIELD = re.compile(r"(?<![a-z0-9])(?:[a-z0-9]+[_-])*" + _LABEL + r"[\"']?\s*[:=]")
+_SQUASHED_LABELLED_FIELD = re.compile(_LABEL + r"[\"']?[:=]")
+_TOKEN_CHARACTERS = r"[a-z0-9._~+/=-]"
+_BEARER = re.compile(r"\bbearer\s+" + _TOKEN_CHARACTERS + r"{8,}")
+_SQUASHED_BEARER = re.compile(r"bearer" + _TOKEN_CHARACTERS + r"{20,}")
+_PEM_PRIVATE = re.compile(r"begin[a-z0-9 ]*private ?key")
+_LONG_PASSWORD_OPTION = re.compile(r"--pw")
+# Case matters (mosquitto ``-p`` is the port), so ``-P`` is read on the
+# decoded NFKC text before casefold, with its uppercase look-alikes mapped.
+_PASSWORD_OPTION = re.compile(r"(?:^|\s)-P\s+\S")
+_UPPER_P = str.maketrans({chr(0x0420): "P", chr(0x03A1): "P", chr(0x13E2): "P", chr(0x146D): "P"})
+
 # The allowlist for Core free text: printable ASCII only, and no
 # password-like ``key=value`` or ``key: value`` (any letters after the
 # credential word: ``dbpassword=``, ``api_key: ``, ``Token =``).
@@ -235,14 +271,15 @@ def unverifiable_text(value: str) -> bool:
     return _invisible(text)
 
 
-def credential_text(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
+def credential_text(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> bool:
     """Whether ``value`` must not reach the caller.
 
     Two forms of the canonical, confusable-folded text are checked: the text
     itself and its ``squash`` (correction batch 4). Whitespace inside a
     credential (``pass<tab>word=``, a line feed inside a URI's user-info, literal or
     percent-encoded) hides it from the first form only; either form
-    matching withholds the original value whole.
+    matching withholds the original value whole. ``labelled`` adds the
+    labelled forms (HAMCP-224), read in the same forms.
     """
 
     if any(secret and secret in value for secret in known_secrets):
@@ -254,9 +291,11 @@ def credential_text(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
         return True
     text = fold_confusables(text)
     secrets = tuple(fold_confusables(secret.casefold()) for secret in known_secrets if secret)
+    squashed = squash(text)
     return (_credential_form(text, secrets, _PASSWORD_FIELD)
-            or _credential_form(squash(text), tuple(squash(secret) for secret in secrets),
-                                _SQUASHED_PASSWORD_FIELD))
+            or _credential_form(squashed, tuple(squash(secret) for secret in secrets),
+                                _SQUASHED_PASSWORD_FIELD)
+            or (labelled and _labelled_form(value, text, squashed)))
 
 
 def squash(text: str) -> str:
@@ -279,6 +318,36 @@ def _credential_form(text: str, secrets: tuple[str, ...], password_field: re.Pat
         or _MARKER_FOLDED in text
         or any(secret and secret in text for secret in secrets)
     )
+
+
+def _labelled_form(value: str, text: str, squashed: str) -> bool:
+    try:
+        _text, _rounds, decoded = canonical_forms(value)
+    except Exception:
+        return True
+    decoded = fold_confusables(decoded).translate(_UPPER_P)
+    return (
+        _LABELLED_FIELD.search(text) is not None
+        or _SQUASHED_LABELLED_FIELD.search(squashed) is not None
+        or _BEARER.search(text) is not None or _SQUASHED_BEARER.search(squashed) is not None
+        or _PEM_PRIVATE.search(text) is not None or _PEM_PRIVATE.search(squashed) is not None
+        or _LONG_PASSWORD_OPTION.search(squashed) is not None
+        or _PASSWORD_OPTION.search(decoded) is not None
+    )
+
+
+def screen(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> str | None:
+    """The marker that replaces ``value`` whole, or ``None`` when it is shown.
+
+    Invisible text first (``UNVERIFIABLE_MARKER``), then credential text
+    (``WITHHELD_MARKER``), always on the complete original ``value``.
+    """
+
+    if unverifiable_text(value):
+        return UNVERIFIABLE_MARKER
+    if credential_text(value, known_secrets, labelled=labelled):
+        return WITHHELD_MARKER
+    return None
 
 
 def withheld_at_exit(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
@@ -345,12 +414,9 @@ def withhold(value: Any, known_secrets: tuple[str, ...] = (),
     def walk(item: Any, path: tuple) -> Any:
         nonlocal count
         if type(item) is str:
-            if unverifiable_text(item):
-                return UNVERIFIABLE_MARKER
-            if credential_text(item, known_secrets):
-                count += 1
-                return WITHHELD_MARKER
-            return item
+            marker = screen(item, known_secrets)
+            count += marker == WITHHELD_MARKER
+            return item if marker is None else marker
         if type(item) is dict:
             kept = {}
             for key, child in item.items():

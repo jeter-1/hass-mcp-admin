@@ -212,11 +212,15 @@ class HostJournalReaderTests(Roots, unittest.TestCase):
         root = self.root()
         with patch.object(hj, "MAX_SCAN_ENTRIES", 3):
             scan = self.read(root, [self.plan("host")]).scans["host"]
-        self.assertEqual((scan.stopped, scan.finished, scan.scanned), ("scan_entries_limit", None, 3))
+        # HAMCP-224 M3: the edge probes' steps count toward the entry bound.
+        self.assertEqual((scan.stopped, scan.finished, scan.scanned + scan.probed),
+                         ("scan_entries_limit", None, 3))
+        self.assertGreater(scan.probed, 0)
         with patch.object(hj, "MAX_CALL_FIELD_BYTES", 200):
             read = self.read(root, [self.plan("host")])
         self.assertEqual(read.scans["host"].stopped, "field_bytes_limit")
-        self.assertLess(read.field_bytes, 200 + 4 * (hj.MAX_FIELD_BYTES + 32))
+        # No copy takes the call past the bound.
+        self.assertLessEqual(read.field_bytes, 200)
         scan = self.read(root, [self.plan("host")], deadline=hj.time.monotonic() - 1).scans["host"]
         self.assertEqual((scan.stopped, scan.records), ("deadline_reached", []))
         # The resume walk counts toward the scan bound.
@@ -316,12 +320,28 @@ class ScreenTextTests(unittest.TestCase):
                 self.assertEqual(hj.screen_text(text.encode(), (KNOWN_SECRET,)),
                                  (hj.WITHHELD_MARKER, hj.WITHHELD_OMISSION))
 
+    def test_bearer_tokens_are_withheld_whole(self):
+        # Built at run time: no token-shaped literal in this file.
+        token = "synth" + "q" * 24
+        for text in ("Authorization: " + "Bearer " + token, "authorization=" + "bearer " + token,
+                     "auth retry " + "Bea" + "rer " + token):
+            with self.subTest(text=text):
+                self.assertEqual(hj.screen_text(text.encode(), ()), (hj.WITHHELD_MARKER, hj.WITHHELD_OMISSION))
+
     def test_keeps_ordinary_lines_and_strips_terminal_escapes(self):
         for raw, expected in ((b"\x1b[32mSupervisor is up\x1b[0m", "Supervisor is up"),
                               (b"mosquitto -p 1883 -c /etc/mosquitto.conf", "mosquitto -p 1883 -c /etc/mosquitto.conf"),
-                              (b"keyboard: usb 1-1", "keyboard: usb 1-1"),
-                              (b"\xff bad utf-8", "� bad utf-8")):
+                              (b"keyboard: usb 1-1", "keyboard: usb 1-1")):
             self.assertEqual(hj.screen_text(raw, ()), (expected, None))
+
+    def test_bytes_that_are_not_utf8_or_were_cut_are_unverifiable(self):
+        # A replacement character could split a credential label apart, and a
+        # field cut at the field bound was never screened whole (H1).
+        for raw, truncated in ((b"\xff bad utf-8", False), (b"pass\xffword=abc", False),
+                               (b"Supervisor is up", True)):
+            with self.subTest(raw=raw, truncated=truncated):
+                self.assertEqual(hj.screen_text(raw, (), truncated),
+                                 (hj.UNVERIFIABLE_MARKER, hj.UNVERIFIABLE_OMISSION))
 
     def test_invisible_characters_are_unverifiable(self):
         self.assertEqual(hj.screen_text("ps​k=abc".encode(), ()),
@@ -441,7 +461,12 @@ class JournalServiceTests(Roots, unittest.IsolatedAsyncioTestCase):
         no_priority = page["entries"][-1]
         self.assertEqual((no_priority["message"], no_priority["level"], no_priority["level_basis"]),
                          ("line without priority", None, None))
-        self.assertTrue(page["entries"][0]["message_truncated"])
+        # A message longer than the field bound is never screened whole, so
+        # it is withheld whole (HAMCP-224 H1), never cut and shown.
+        self.assertEqual((page["entries"][0]["message"], page["entries"][0]["withheld"]),
+                         (hj.UNVERIFIABLE_MARKER, hj.UNVERIFIABLE_OMISSION))
+        self.assertNotIn("message_truncated", page["entries"][0])
+        self.assertFalse(page["complete"])
         self.assertTrue(page["entries"][1]["partial_line"])
 
     async def test_pages_continue_without_loss_or_repeat(self):
@@ -509,7 +534,8 @@ class JournalServiceTests(Roots, unittest.IsolatedAsyncioTestCase):
                          ["Booted into slot B", 'level=info msg="Loading containers: done."'])
         self.assertTrue(page["complete"])
         row = self.row(page, "host:os")
-        self.assertEqual((row["status"], row["reason"], row["entries_scanned"]), ("complete", "end_reached", 3))
+        # Three window steps and one step for each edge probe (HAMCP-224 M3).
+        self.assertEqual((row["status"], row["reason"], row["entries_scanned"]), ("complete", "end_reached", 5))
 
     async def test_unavailable_journal_is_never_reported_empty_or_complete(self):
         cases = (("mountinfo-off", "journald_not_enabled"), ("mountinfo-incomplete", "journal_mount_incomplete"),
@@ -539,11 +565,11 @@ class JournalServiceTests(Roots, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("PLANTED", json.dumps(page))
 
     async def test_token_forms_the_screen_keeps_are_redacted_by_the_shared_sanitizer(self):
-        # Bearer and JWT tokens are not whole-message credential forms (design
-        # §7 step 2); the shared line sanitizer at the same exit redacts them.
+        # A bare JWT is not a whole-message credential form (design §7 step
+        # 2); the shared line sanitizer at the same exit redacts it. A bearer
+        # token is withheld whole (test_bearer_tokens_are_withheld_whole).
         real = reader(self.journal)
-        planted = (b"auth retry Authorization: Bearer PLANTEDbearer0123456789abcdef "
-                   b"jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJQTEFOVEVEIn0.PLANTEDsignature01")
+        planted = b"auth retry jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJQTEFOVEVEIn0.PLANTEDsignature01"
 
         class Planting:
             def read(self, plans, digest, deadline):

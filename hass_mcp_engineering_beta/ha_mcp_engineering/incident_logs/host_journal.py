@@ -18,7 +18,10 @@ This module reads them with the base image's own ``libsystemd.so.0``
 - **Bounds.** Each field is copied up to ``MAX_FIELD_BYTES`` (257.13 returns
   the whole payload, so the cap is ours), at most ``MAX_CALL_FIELD_BYTES``
   per call, at most ``MAX_SCAN_ENTRIES`` entries per source per call, and
-  never past the call deadline.
+  never past the call deadline. Every step counts against them, the
+  earliest/latest edge probes included, and each is checked before the
+  step or the copy it limits (HAMCP-224 M3): no field is read once the
+  deadline has passed, and no copy takes the call past its field bytes.
 - **Positions.** A continuation carries an entry's realtime and a keyed
   digest of its libsystemd cursor, never the cursor (it embeds the raw boot
   ID). It seeks that realtime and walks to the entry with that digest; no
@@ -43,11 +46,10 @@ import time
 from types import MappingProxyType
 from typing import Callable
 
+from ..configuration_definitions import credentials
 from ..configuration_definitions.credentials import (
     OMISSION as WITHHELD_OMISSION, UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION, WITHHELD_MARKER,
-    credential_text, fold_confusables, squash, unverifiable_text,
 )
-from ..providers.upstream_yaml_reader import canonical_forms
 
 
 LIBRARY = "libsystemd.so.0"
@@ -306,6 +308,10 @@ class Record:
     rejected: str | None = None
     message: bytes | None = None
     message_truncated: bool = False
+    # The returned metadata fields (``process``, ``kernel_subsystem``,
+    # ``kernel_device``) longer than ``MAX_FIELD_BYTES``: never screened
+    # whole, so never shown.
+    truncated_fields: tuple[str, ...] = ()
     priority: bytes | None = None
     identifier: bytes | None = None
     kernel_subsystem: bytes | None = None
@@ -337,6 +343,8 @@ class SourceScan:
     errno_name: str | None = None
     scanned: int = 0
     resume_walked: int = 0
+    # Steps of the earliest/latest edge probes.
+    probed: int = 0
     rejected: int = 0
     unreadable: int = 0
     # Entries without a realtime or a cursor: never records, never returned.
@@ -466,9 +474,15 @@ class _Session:
         finally:
             self.lib.free(pointer)
 
-    def _field(self, name: str, budget: bool = True) -> tuple[bytes | None, bool]:
-        """``(value, truncated)``; ``None`` when absent. Raises on a read error."""
+    def _field(self, name: str) -> tuple[bytes | None, bool]:
+        """``(value, truncated)``; ``None`` when absent. Raises on a read error.
 
+        Raises ``_Bound`` before the read once the deadline has passed, and
+        before the copy when it would take the call past its field bytes.
+        """
+
+        if time.monotonic() >= self.deadline:
+            raise _Bound("deadline_reached")
         data, size = ctypes.c_void_p(), ctypes.c_size_t()
         code = self.lib.get_data(self.handle, name.encode("ascii"), ctypes.byref(data), ctypes.byref(size))
         if code == -errno.ENOENT:
@@ -477,11 +491,12 @@ class _Session:
             raise _EntryUnreadable(code)
         prefix = name.encode("ascii") + b"="
         take = min(size.value, len(prefix) + MAX_FIELD_BYTES)
+        if self.result.field_bytes + take > MAX_CALL_FIELD_BYTES:
+            raise _Bound("field_bytes_limit")
         raw = ctypes.string_at(data.value, take)
         if not raw.startswith(prefix):
             raise _EntryUnreadable(-errno.EBADMSG)
-        if budget:
-            self.result.field_bytes += take
+        self.result.field_bytes += take
         return raw[len(prefix):], size.value > take
 
     def _values(self, match: SourceMatch) -> dict[str, str | None]:
@@ -494,7 +509,7 @@ class _Session:
     def _bounded(self, scan: SourceScan) -> str | None:
         if time.monotonic() >= self.deadline:
             return "deadline_reached"
-        if scan.scanned + scan.resume_walked >= MAX_SCAN_ENTRIES:
+        if scan.scanned + scan.resume_walked + scan.probed >= MAX_SCAN_ENTRIES:
             return "scan_entries_limit"
         if self.result.field_bytes >= MAX_CALL_FIELD_BYTES:
             return "field_bytes_limit"
@@ -503,11 +518,18 @@ class _Session:
     # -- one source
 
     def _scan(self, plan: Plan, scan: SourceScan) -> None:
+        try:
+            self._walk(plan, scan)
+        except _Bound as bound:
+            # A bound met inside a step: the partly read entry is not a record.
+            scan.stopped = bound.reason
+
+    def _walk(self, plan: Plan, scan: SourceScan) -> None:
         match = source_match(plan.key)
         self._matches(match)
         if plan.resume is None:
-            scan.earliest_us = self._edge(match, self.lib.seek_head, self.lib.next)
-            scan.latest_us = self._edge(match, self.lib.seek_tail, self.lib.previous)
+            scan.earliest_us = self._edge(match, scan, self.lib.seek_head, self.lib.next)
+            scan.latest_us = self._edge(match, scan, self.lib.seek_tail, self.lib.previous)
             self._check(self.lib.seek_realtime_usec(self.handle, plan.start_us))
         elif not self._resume(plan, scan):
             return
@@ -554,7 +576,7 @@ class _Session:
                 return Record(rt, cursor)
             message, truncated = self._field("MESSAGE")
             priority, _ = self._field("PRIORITY")
-            identifier, _ = self._field("SYSLOG_IDENTIFIER")
+            identifier, cut_identifier = self._field("SYSLOG_IDENTIFIER")
             boot, _ = self._field("_BOOT_ID")
             partial, _ = self._field("CONTAINER_PARTIAL_MESSAGE")
             transport = values.get("_TRANSPORT")
@@ -562,24 +584,31 @@ class _Session:
                 raw, _ = self._field("_TRANSPORT")
                 transport = None if raw is None else raw.decode("utf-8", "replace")
             subsystem = device = None
+            cut_subsystem = cut_device = False
             if transport == "kernel":
-                subsystem, _ = self._field("_KERNEL_SUBSYSTEM")
-                device, _ = self._field("_UDEV_SYSNAME")
+                subsystem, cut_subsystem = self._field("_KERNEL_SUBSYSTEM")
+                device, cut_device = self._field("_UDEV_SYSNAME")
         except _EntryUnreadable:
             scan.unreadable += 1
             return Record(rt, cursor, rejected="entry_unreadable")
+        cut = (("process", cut_identifier), ("kernel_subsystem", cut_subsystem), ("kernel_device", cut_device))
         return Record(
             rt, cursor, message=message, message_truncated=truncated, priority=priority,
             identifier=identifier, kernel_subsystem=subsystem, kernel_device=device,
+            truncated_fields=tuple(name for name, value in cut if value),
             boot_ref=None if boot is None else self.digest("journal_boot", boot)[:12],
             partial_line=partial == b"true",
         )
 
-    def _edge(self, match: SourceMatch, seek, step) -> int | None:
+    def _edge(self, match: SourceMatch, scan: SourceScan, seek, step) -> int | None:
         self._check(seek(self.handle))
         for _ in range(EDGE_PROBE_ENTRIES):
+            stop = self._bounded(scan)
+            if stop is not None:
+                raise _Bound(stop)
             if not self._check(step(self.handle)):
                 return None
+            scan.probed += 1
             try:
                 values = self._values(match)
             except _EntryUnreadable:
@@ -608,55 +637,45 @@ class _EntryUnreadable(Exception):
         super().__init__(_errno_name(code))
 
 
+class _Bound(Exception):
+    """A bound met before a step or a field copy: the scan stops with ``reason``."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 # -- exit-point screening (called only from the service's ``_finish``) -----------
 
 _ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])")
-# Key forms common in add-on logs (design §7), checked on the canonical,
-# confusable-folded text and on its squashed form.
-_JOURNAL_KEYS = frozenset({
-    "psk", "wpa_psk", "wpa_passphrase", "network_key", "encryption_key", "noise_psk",
-    "private_key", "api_password", "mqtt_pass",
-})
-_KEY_FORM = re.compile(
-    r"(?<![a-z0-9_])(?:" + "|".join(sorted(map(re.escape, _JOURNAL_KEYS))) + r")[\"']?\s*[:=]"
-)
-_SQUASHED_KEY_FORM = re.compile(
-    r"(?:" + "|".join(sorted(map(re.escape, _JOURNAL_KEYS))) + r")[\"']?[:=]"
-)
-_PEM_PRIVATE = re.compile(r"begin[a-z0-9 ]*private ?key")
-# Case matters: mosquitto ``-p`` is the port, ``-P`` the password.
-_PASSWORD_OPTION = re.compile(r"(?:^|\s)(?:-P\s+|--pw(?:\s+|=))\S")
+OMISSIONS = {WITHHELD_MARKER: WITHHELD_OMISSION, UNVERIFIABLE_MARKER: UNVERIFIABLE_OMISSION}
 
 
-def journal_credential_text(value: str) -> bool:
-    """The journal extension: key forms, mosquitto options and PEM private keys."""
+def screen_text(raw: bytes, known_secrets: tuple[str, ...], truncated: bool = False) -> tuple[str, str | None]:
+    """``(text, omission)``: the decoded, ANSI-stripped text, or a whole-text marker.
 
-    try:
-        text, _rounds, decoded = canonical_forms(value)
-    except Exception:
-        return True
-    text = fold_confusables(text)
-    decoded = fold_confusables(decoded)
-    squashed = squash(text)
-    return bool(
-        _KEY_FORM.search(text) or _SQUASHED_KEY_FORM.search(squashed)
-        or _PEM_PRIVATE.search(text) or _PEM_PRIVATE.search(squashed)
-        or _PASSWORD_OPTION.search(decoded)
-    )
-
-
-def screen_text(raw: bytes, known_secrets: tuple[str, ...]) -> tuple[str, str | None]:
-    """``(text, omission)``: decoded and ANSI-stripped, or a whole-text marker.
-
-    The omission is ``unverifiable_text_withheld`` or ``credential_text_withheld``
+    HAMCP-224 H1/H2: the decision is the configuration-definitions screen
+    (``credentials.screen``) with its labelled forms, on the complete field
+    as read, before anything is cut for display. A field longer than
+    ``MAX_FIELD_BYTES`` (``truncated``) was never read whole, and bytes that
+    are not UTF-8 cannot be read as text: both are withheld whole as
+    unverifiable. Complete terminal escape sequences are removed first; the
+    remaining text, exactly as it would be shown, is what is screened, and
+    a stray escape in it is a control character, so it is withheld. The
+    omission is ``unverifiable_text_withheld`` or ``credential_text_withheld``
     when the text is replaced, else ``None``.
     """
 
-    text = _ANSI.sub("", raw.decode("utf-8", "replace"))
-    if unverifiable_text(text):
+    if truncated:
         return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION
-    if credential_text(text, known_secrets) or journal_credential_text(text):
-        return WITHHELD_MARKER, WITHHELD_OMISSION
+    try:
+        text = raw.decode("utf-8", "strict")
+    except UnicodeDecodeError:
+        return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION
+    text = _ANSI.sub("", text)
+    marker = credentials.screen(text, known_secrets, labelled=True)
+    if marker is not None:
+        return marker, OMISSIONS[marker]
     return text, None
 
 
