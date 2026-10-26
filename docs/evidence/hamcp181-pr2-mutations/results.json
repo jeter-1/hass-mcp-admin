@@ -1736,5 +1736,861 @@
       ],
       "final_verdict": "KILLED"
     }
-  ]
+  ],
+  "review_1_rerun": {
+    "mutant_base": "880bcf3f362630ac64a8f73d52d5df3ec1b84ea1",
+    "note": "PR2 review 1 (M1, M2, L1): every current spec rerun with the committed harness on a git-archive copy of the mutant base, fast modules first, then the full set one module per process. The campaign entries above are unchanged; HEALTH1-3 were respecified because review 1 replaced the code they mutate.",
+    "log_directory": "/var/tmp/hamcp181pr2-tmp/logs/mut3",
+    "total": 59,
+    "killed": 59,
+    "survived": 0,
+    "not_run": 0,
+    "mutants": [
+      {
+        "id": "M1a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.Beta8HistoricalRecordTests.test_every_beta8_shape_projects_and_is_never_rewritten",
+          "test_hamcp181_dispatch_facts.ParentTruthTableTests.test_every_truth_table_row_in_both_orders",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+        ]
+      },
+      {
+        "id": "M1b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.ConfigurationChainTests.test_helper_appearing_after_intent_is_proven_not_sent",
+          "test_hamcp181_proven_no_call_producers.EntityMetadataChainTests.test_authentication_refused_after_intent_is_proven_not_sent",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+        ]
+      },
+      {
+        "id": "M1c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+        ]
+      },
+      {
+        "id": "M1d",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.ConfigurationChainTests.test_callback_failure_after_intent_is_proven_not_sent",
+          "test_hamcp181_proven_no_call_producers.DashboardCallbackFailureTests.test_callback_failure_after_intent_is_proven_not_sent",
+          "test_hamcp181_proven_no_call_producers.FanProofTests.test_b5_callback_failure_is_proven_not_sent",
+          "test_hamcp181_proven_no_call_producers.HelperStateCallbackFailureTests.test_callback_failure_after_intent_is_proven_not_sent",
+          "test_hamcp181_proven_no_call_producers.PowerProofTests.test_b5_callback_failure_is_proven_not_sent",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+        ]
+      },
+      {
+        "id": "M2a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+          "test_hamcp181_terminal_outcome_t2.RejectedDeleteTests.test_rejected_delete_is_sent_and_proven_unchanged",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+        ]
+      },
+      {
+        "id": "M2b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_surface_consistency.ConfigurationReceiptTests.test_one_child_receipts",
+          "test_hamcp181_surface_consistency.ConfigurationReceiptTests.test_three_child_receipts",
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+          "test_hamcp181_surface_consistency.OperationalSurfaceTests.test_f03_duplicate_after_pre_dispatch_refusal_claims_no_dispatch",
+          "test_hamcp181_surface_consistency.OperationalSurfaceTests.test_lost_reload_response_is_uncertain_on_every_reader_and_reconciliation",
+          "test_hamcp181_surface_consistency.OperationalSurfaceTests.test_verified_reload_keeps_every_existing_value",
+          "test_hamcp181_surface_consistency.V9ValueIdentityTests.test_v9_values_are_identical_and_facts_are_additive",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+          "test_hamcp181_terminal_outcome_t2.RejectedDeleteTests.test_rejected_delete_is_sent_and_proven_unchanged",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+        ]
+      },
+      {
+        "id": "M2c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_facts_are_identical_after_a_restart",
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+          "test_hamcp181_surface_consistency.OperationalSurfaceTests.test_verified_reload_keeps_every_existing_value",
+          "test_hamcp181_surface_consistency.S16OperationalBlockTests.test_verified_reload_operational_dispatch_is_not_stale",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+          "test_hamcp181_terminal_outcome_t2.RejectedDeleteTests.test_rejected_delete_is_sent_and_proven_unchanged",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+        ]
+      },
+      {
+        "id": "M2d",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_surface_consistency.AllB1ParentReceiptTests.test_basis_is_kept_at_one_and_three_children_at_every_budget",
+          "test_hamcp181_surface_consistency.ConfigurationReceiptTests.test_one_child_receipts",
+          "test_hamcp181_surface_consistency.ConfigurationReceiptTests.test_three_child_receipts",
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+          "test_hamcp181_surface_consistency.MixedParentReceiptTests.test_sent_r_proven_r_unproven_b_and_c_children",
+          "test_hamcp181_surface_consistency.V9ValueIdentityTests.test_v9_values_are_identical_and_facts_are_additive",
+          "test_hamcp181_surface_consistency.ZeroChildReceiptTests.test_unestablished_manifest_is_uncertain_at_every_budget",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+          "test_hamcp181_terminal_outcome_t2.RejectedDeleteTests.test_compact_receipt_never_sheds_a_distinct_outcome_code",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+        ]
+      },
+      {
+        "id": "M2e",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_terminal_outcome_t2.RejectedDeleteTests.test_compact_receipt_never_sheds_a_distinct_outcome_code"
+        ]
+      },
+      {
+        "id": "M2f",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+        ]
+      },
+      {
+        "id": "M2g",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts",
+          "test_hamcp181_surface_consistency.OperationalSurfaceTests.test_verified_reload_keeps_every_existing_value",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_a_successful_update",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+        ]
+      },
+      {
+        "id": "M3a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp214_plan_verification_rollback_projection.AvailabilityExposureProjectionTests.test_verified_disable_is_available",
+          "test_hamcp214_plan_verification_rollback_projection.ConfigurationDeleteProjectionTests.test_verified_delete_without_recreate_eligibility_is_not_available",
+          "test_hamcp214_plan_verification_rollback_projection.ConfigurationDeleteProjectionTests.test_verified_recreate_eligible_delete_is_available",
+          "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_all_create_plan_is_unavailable_for_create",
+          "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_multi_operation_plan_keeps_fingerprints_per_operation",
+          "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_single_update_projects_plan_verification_and_rollback",
+          "test_hamcp214_plan_verification_rollback_projection.EntityMetadataProjectionTests.test_verified_single_update_is_available",
+          "test_hamcp214_plan_verification_rollback_projection.LabelProjectionTests.test_label_edit_and_assignment_rollback_is_not_supported",
+          "test_hamcp214_plan_verification_rollback_projection.LabelProjectionTests.test_label_plan_rollback_is_not_supported"
+        ]
+      },
+      {
+        "id": "M3b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_mixed_plan_is_available_but_not_verified",
+          "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_multi_operation_plan_keeps_fingerprints_per_operation",
+          "test_hamcp214_plan_verification_rollback_projection.ConfigurationProjectionTests.test_single_update_projects_plan_verification_and_rollback",
+          "test_hamcp214_plan_verification_rollback_projection.ConfigurationRejectionTests.test_verified_then_rejected_update_is_available_not_verified"
+        ]
+      },
+      {
+        "id": "M3c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "full:test_hamcp181_terminal_outcome_t2",
+        "killing_tests": [
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_a_successful_delete"
+        ]
+      },
+      {
+        "id": "M3d",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp214_plan_verification_rollback_projection.LabelProjectionTests.test_label_edit_and_assignment_rollback_is_not_supported",
+          "test_hamcp214_plan_verification_rollback_projection.LabelProjectionTests.test_label_plan_rollback_is_not_supported"
+        ]
+      },
+      {
+        "id": "M3e",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp214_plan_verification_rollback_projection.AvailabilityExposureProjectionTests.test_refused_expose_is_not_available"
+        ]
+      },
+      {
+        "id": "M4a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.Beta8HistoricalRecordTests.test_every_beta8_shape_projects_and_is_never_rewritten",
+          "test_hamcp181_dispatch_facts.ChildPhaseTests.test_every_child_phase",
+          "test_hamcp181_dispatch_facts.FieldSetTests.test_r_proven_and_r_unproven_fields",
+          "test_hamcp181_dispatch_facts.LegacyAndRecordTests.test_outcome_counts_one_per_parent",
+          "test_hamcp181_dispatch_facts.ParentTruthTableTests.test_every_truth_table_row_in_both_orders",
+          "test_hamcp181_dispatch_facts.RProvenTests.test_negatives_are_unproven",
+          "test_hamcp181_dispatch_facts.RProvenTests.test_p1_requires_the_rejection_proof_code",
+          "test_hamcp181_entity_registry_error_unproven.Beta8EntityRegistryErrorRecordTests.test_beta8_registry_error_record_projects_r_unproven_and_is_not_rewritten",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryProjectionControlTests.test_confirmed_failure_without_permission_denied_is_r_unproven",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryProjectionControlTests.test_only_permission_denied_proves_the_rejection"
+        ]
+      },
+      {
+        "id": "M4b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.RProvenTests.test_negatives_are_unproven"
+        ]
+      },
+      {
+        "id": "M4c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.Beta8HistoricalRecordTests.test_every_beta8_shape_projects_and_is_never_rewritten",
+          "test_hamcp181_dispatch_facts.FieldSetTests.test_r_proven_and_r_unproven_fields",
+          "test_hamcp181_dispatch_facts.ParentTruthTableTests.test_every_truth_table_row_in_both_orders",
+          "test_hamcp181_dispatch_facts.RProvenTests.test_p1_requires_the_rejection_proof_code"
+        ]
+      },
+      {
+        "id": "M4d",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.ParentTruthTableTests.test_every_truth_table_row_in_both_orders"
+        ]
+      },
+      {
+        "id": "M5a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_rollback_unchanged_forward.LegacyAutomationRollbackTests.test_proven_not_sent_forward_refuses_rollback",
+          "test_hamcp181_rollback_unchanged_forward.LegacyAutomationRollbackTests.test_proven_rejected_forward_refuses_rollback",
+          "test_hamcp181_rollback_unchanged_forward.LegacyAutomationRollbackTests.test_refusal_is_repeatable_and_never_redispatches"
+        ]
+      },
+      {
+        "id": "M5b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_rollback_unchanged_forward.LegacyAutomationRollbackTests.test_unproven_forward_keeps_rollback_admission"
+        ]
+      },
+      {
+        "id": "M5c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "full:test_f3_runtime_integration",
+        "killing_tests": [
+          "test_f3_runtime_integration.F3ConfigurationActivationTests.test_partial_sequence_rollback_includes_only_verified_updates"
+        ]
+      },
+      {
+        "id": "M5d",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_architecture_guard.ProjectionConsumerTests.test_stored_intent_predicate_is_unchanged"
+        ]
+      },
+      {
+        "id": "M6a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.WebSocketClientProofTests.test_answered_or_lost_commands_carry_no_proof"
+        ]
+      },
+      {
+        "id": "M6b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.HelperStateGatewaySiteTests.test_unclassified_failure_after_the_command_carries_no_proof"
+        ]
+      },
+      {
+        "id": "M6c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.HelperStateGatewaySiteTests.test_sent_command_failures_carry_no_proof"
+        ]
+      },
+      {
+        "id": "M6d",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.FanProofTests.test_authority_retired_after_the_call_is_never_proven_not_sent",
+          "test_hamcp181_proven_no_call_producers.PowerProofTests.test_authority_retired_after_the_call_is_never_proven_not_sent"
+        ]
+      },
+      {
+        "id": "M7a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.ConfigurationChainTests.test_p1_rejection_stays_sent_rejected_without_proof",
+          "test_hamcp181_proven_no_call_producers.EntityMetadataChainTests.test_unauthorized_result_stays_r_proven_without_proof"
+        ]
+      },
+      {
+        "id": "M7b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.SingleBPredicateTests.test_response_received_with_proof_code_is_contradiction"
+        ]
+      },
+      {
+        "id": "M7c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.EntityMetadataGatewaySiteTests.test_only_the_clients_pre_command_refusal_is_carried"
+        ]
+      },
+      {
+        "id": "M8a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.BackupExclusionTests.test_backup_callback_failure_is_never_proven_not_sent",
+          "test_hamcp181_proven_no_call_producers.BackupExclusionTests.test_real_provider_not_dispatched_error_after_intent_is_never_proven_not_sent",
+          "test_hamcp181_proven_no_call_producers.LifecycleExclusionTests.test_addon_restart_callback_failure_is_never_proven_not_sent"
+        ]
+      },
+      {
+        "id": "M8b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.BackupExclusionTests.test_real_provider_not_dispatched_error_after_intent_is_never_proven_not_sent"
+        ]
+      },
+      {
+        "id": "M8c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.BackupExclusionTests.test_backup_pre_send_refusal_is_labelled_refused"
+        ]
+      },
+      {
+        "id": "M9a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.ChildPhaseTests.test_every_child_phase",
+          "test_hamcp181_dispatch_facts.LegacyAndRecordTests.test_fan_power_record_never_publishes_a_send_time",
+          "test_hamcp181_dispatch_facts.SingleBPredicateTests.test_wrong_outcome_with_proof_code_is_never_b"
+        ]
+      },
+      {
+        "id": "M9b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_fan_power_dispatched_at.FanDispatchedAtTests.test_2_response_lost_has_no_response_time",
+          "test_hamcp181_fan_power_dispatched_at.PowerDispatchedAtTests.test_2_response_lost_has_no_response_time",
+          "test_hamcp181_proven_no_call_producers.FanProofTests.test_authority_retired_after_the_call_is_never_proven_not_sent",
+          "test_hamcp181_proven_no_call_producers.FanProofTests.test_lost_response_stays_uncertain_without_proof",
+          "test_hamcp181_proven_no_call_producers.PowerProofTests.test_authority_retired_after_the_call_is_never_proven_not_sent",
+          "test_hamcp181_proven_no_call_producers.PowerProofTests.test_lost_response_stays_uncertain_without_proof"
+        ]
+      },
+      {
+        "id": "M9c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.HelperStateGatewaySiteTests.test_sent_command_failures_carry_no_proof"
+        ]
+      },
+      {
+        "id": "M10a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.ConfigurationGatewaySiteTests.test_p1_rejection_is_answered_not_declared_not_sent"
+        ]
+      },
+      {
+        "id": "M10b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.EntityMetadataGatewaySiteTests.test_only_the_clients_pre_command_refusal_is_carried"
+        ]
+      },
+      {
+        "id": "M11a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.ConfigurationChainTests.test_lost_response_and_unavailable_stay_uncertain"
+        ]
+      },
+      {
+        "id": "M11b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.HelperStateGatewaySiteTests.test_sent_command_failures_carry_no_proof"
+        ]
+      },
+      {
+        "id": "M11c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.WebSocketClientProofTests.test_connection_failure_after_the_command_carries_no_proof"
+        ]
+      },
+      {
+        "id": "M12a",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_error_without_change_is_still_not_read_as_no_mutation",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_every_post_assignment_fault_is_not_disproven_on_every_surface",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_generic_unknown_error_after_assignment_is_not_disproven",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_readback_follows_the_error_result",
+          "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_change_then_unknown_error_is_verified_applied_never_unchanged",
+          "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_every_non_p3_core_error_code_is_uncertain_then_readback",
+          "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_rollback_is_offered_exactly_as_for_a_normal_success",
+          "test_hamcp183_entity_registry_error_truth.ErrorWithoutChangeTests.test_error_without_change_is_verified_not_applied",
+          "test_hamcp183_entity_registry_error_truth.ErrorWithoutChangeTests.test_third_state_after_error_requires_manual_review",
+          "test_hamcp183_entity_registry_error_truth.ReadbackUnavailableTests.test_readback_unavailable_stays_uncertain_and_never_redispatches",
+          "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_lost_response_third_state_mapping_is_unchanged",
+          "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_planned_state_is_verified",
+          "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_prior_state_is_verified_not_applied",
+          "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_third_state_requires_manual_review"
+        ]
+      },
+      {
+        "id": "M12b",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.RProvenTests.test_negatives_are_unproven",
+          "test_hamcp181_entity_registry_error_unproven.Beta8EntityRegistryErrorRecordTests.test_beta8_registry_error_record_projects_r_unproven_and_is_not_rewritten",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryProjectionControlTests.test_confirmed_failure_without_permission_denied_is_r_unproven"
+        ]
+      },
+      {
+        "id": "M12c",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_error_without_change_is_still_not_read_as_no_mutation",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_every_post_assignment_fault_is_not_disproven_on_every_surface",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_generic_unknown_error_after_assignment_is_not_disproven",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_readback_follows_the_error_result",
+          "test_hamcp181_proven_no_call_producers.EntityMetadataChainTests.test_registry_error_result_stays_unproven_without_proof",
+          "test_hamcp181_proven_no_call_producers.EntityMetadataGatewaySiteTests.test_error_result_and_transport_failures_carry_no_proof",
+          "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_change_then_unknown_error_is_verified_applied_never_unchanged",
+          "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_every_non_p3_core_error_code_is_uncertain_then_readback",
+          "test_hamcp183_entity_registry_error_truth.CodexProbeEndToEndTests.test_rollback_is_offered_exactly_as_for_a_normal_success",
+          "test_hamcp183_entity_registry_error_truth.ErrorWithoutChangeTests.test_error_without_change_is_verified_not_applied",
+          "test_hamcp183_entity_registry_error_truth.ErrorWithoutChangeTests.test_third_state_after_error_requires_manual_review",
+          "test_hamcp183_entity_registry_error_truth.GatewayClassificationTests.test_error_result_is_mutation_unknown_not_not_dispatched",
+          "test_hamcp183_entity_registry_error_truth.ReadbackUnavailableTests.test_readback_unavailable_stays_uncertain_and_never_redispatches",
+          "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_lost_response_third_state_mapping_is_unchanged",
+          "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_planned_state_is_verified",
+          "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_prior_state_is_verified_not_applied",
+          "test_hamcp183_entity_registry_error_truth.RecoveryReadbackTests.test_recovered_third_state_requires_manual_review"
+        ]
+      },
+      {
+        "id": "M12d",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.ChildPhaseTests.test_uncertainty_code_with_a_response_stays_send_uncertain",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_error_without_change_is_still_not_read_as_no_mutation",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_every_post_assignment_fault_is_not_disproven_on_every_surface",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryErrorEndToEndTests.test_generic_unknown_error_after_assignment_is_not_disproven",
+          "test_hamcp181_entity_registry_error_unproven.EntityRegistryProjectionControlTests.test_od15_error_result_codes_stay_uncertain_whatever_the_readback"
+        ]
+      },
+      {
+        "id": "HEALTH1",
+        "status": "respecified_in_review_1",
+        "concept": "health admits a non-boolean truthy answer",
+        "sites": [
+          "governance/service.py:15102"
+        ],
+        "edits": [
+          {
+            "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+            "old": "            admitted = status.get(\"available\") is True\n",
+            "new": "            admitted = bool(status.get(\"available\"))\n"
+          }
+        ],
+        "fast_modules": [
+          "test_hamcp181_health_core_admission",
+          "test_hamcp181_catalog_core_admission"
+        ],
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_health_core_admission.HealthCoreAdmissionTests.test_only_a_boolean_true_reads_as_admitted"
+        ]
+      },
+      {
+        "id": "HEALTH2",
+        "status": "respecified_in_review_1",
+        "concept": "health admits on a failing read",
+        "sites": [
+          "governance/service.py:15104"
+        ],
+        "edits": [
+          {
+            "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+            "old": "        except Exception:\n            admitted = False\n            generation = None",
+            "new": "        except Exception:\n            admitted = True\n            generation = None"
+          }
+        ],
+        "fast_modules": [
+          "test_hamcp181_health_core_admission",
+          "test_hamcp181_catalog_core_admission"
+        ],
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_failing_read_is_pending_in_both",
+          "test_hamcp181_health_core_admission.HealthCoreAdmissionTests.test_a_failing_read_reports_pending_and_health_still_answers"
+        ]
+      },
+      {
+        "id": "HEALTH3",
+        "status": "respecified_in_review_1",
+        "concept": "health admits a partial pair (first capability only)",
+        "sites": [
+          "governance/service.py:15101"
+        ],
+        "edits": [
+          {
+            "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+            "old": "            status = core.route_status(capabilities) if core is not None else {}",
+            "new": "            status = core.route_status(tuple(capabilities)[:1]) if core is not None else {}"
+          }
+        ],
+        "fast_modules": [
+          "test_hamcp181_health_core_admission",
+          "test_hamcp181_catalog_core_admission"
+        ],
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_partially_admitted_generation_agrees_per_group",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_each_069b_type_alone_keeps_the_pair_pending",
+          "test_hamcp181_health_core_admission.HealthCoreAdmissionTests.test_a_partially_admitted_pair_stays_pending",
+          "test_hamcp181_health_core_admission.HealthCoreAdmissionTests.test_an_admitted_generation_reports_admitted"
+        ]
+      },
+      {
+        "id": "SEND1",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "full:test_hamcp181_proven_no_call_producers",
+        "killing_tests": [
+          "test_hamcp181_proven_no_call_producers.EntityMetadataChainTests.test_authentication_refused_after_intent_stores_no_send_time"
+        ]
+      },
+      {
+        "id": "SEND2",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.Beta8HistoricalRecordTests.test_beta8_dashboard_b_keeps_stored_intent_but_publishes_null",
+          "test_hamcp181_dispatch_facts.FieldSetTests.test_not_sent_fields_and_governed_dispatched_at_null",
+          "test_hamcp181_fan_power_dispatched_at.GovernedDispatchedAtTests.test_b_publishes_null_with_call_not_sent",
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_b_proven_no_call_after_intent",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_b_proven_no_call_after_intent"
+        ]
+      },
+      {
+        "id": "SEND3",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_core_retirement_probe_reports_one_fact_set_on_every_surface",
+          "test_hamcp181_surface_consistency.DashboardNotSentSurfaceTests.test_late_setter_drift_reports_the_same_facts"
+        ]
+      },
+      {
+        "id": "SEND4",
+        "status": "campaign_spec",
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_terminal_outcome_t2.DeleteAgreementTests.test_c_indeterminate_delete",
+          "test_hamcp181_terminal_outcome_t2.UpdateAgreementTests.test_c_indeterminate_update"
+        ]
+      },
+      {
+        "id": "SEND5",
+        "status": "new_in_review_1",
+        "concept": "M1: send time captured at gateway entry, not the send boundary",
+        "sites": [
+          "f3_runtime/runtime.py:1920"
+        ],
+        "edits": [
+          {
+            "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+            "old": "        child_id = _ACTIVE_F3_CHILD.get()\n        if child_id is not None:\n            self._emit_f3_audit_event(\n                {\"event_type\": event_type, \"task_id\": child_id}",
+            "new": "        child_id = _ACTIVE_F3_CHILD.get()\n        if child_id is not None:\n            if event_type == \"provider_invocation_started\":\n                self._provider_call_started_at.setdefault(child_id, self.service._timestamp())\n            self._emit_f3_audit_event(\n                {\"event_type\": event_type, \"task_id\": child_id}"
+          }
+        ],
+        "fast_modules": [
+          "test_hamcp181_send_time_boundary"
+        ],
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_send_time_boundary.ConfigurationSendBoundaryTests.test_delete_publishes_the_send_time_not_gateway_entry",
+          "test_hamcp181_send_time_boundary.ConfigurationSendBoundaryTests.test_multi_child_sends_store_each_time_and_the_earliest",
+          "test_hamcp181_send_time_boundary.ConfigurationSendBoundaryTests.test_restart_keeps_the_stored_send_time",
+          "test_hamcp181_send_time_boundary.ConfigurationSendBoundaryTests.test_update_publishes_the_send_time_not_gateway_entry",
+          "test_hamcp181_send_time_boundary.WebSocketSendBoundaryTests.test_multi_child_websocket_sends"
+        ]
+      },
+      {
+        "id": "L1",
+        "status": "new_in_review_1",
+        "concept": "P1 claimed without the rejection proof code",
+        "sites": [
+          "f3_runtime/dispatch_facts.py:436"
+        ],
+        "edits": [
+          {
+            "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/dispatch_facts.py",
+            "old": "            PROVIDER_REJECTED_MUTATION in codes\n            and not (codes & _R_PROVEN_CONFLICTING_CODES)",
+            "new": "            True\n            and not (codes & _R_PROVEN_CONFLICTING_CODES)"
+          }
+        ],
+        "fast_modules": [
+          "test_hamcp181_dispatch_facts"
+        ],
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_dispatch_facts.RProvenTests.test_p1_requires_the_rejection_proof_code"
+        ]
+      },
+      {
+        "id": "CAT1",
+        "status": "new_in_review_1",
+        "concept": "M2: the catalog reads its static text, not the current admission",
+        "sites": [
+          "capabilities.py:977"
+        ],
+        "edits": [
+          {
+            "file": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+            "old": "            item[\"core_admission\"] = current\n",
+            "new": "            item[\"core_admission\"] = item[\"core_admission\"]\n"
+          }
+        ],
+        "fast_modules": [
+          "test_hamcp181_catalog_core_admission"
+        ],
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_failing_read_is_pending_in_both",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_generation_that_moves_once_is_read_again",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_generation_that_never_settles_reports_pending",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_partially_admitted_generation_agrees_per_group",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_refused_generation_is_pending_in_both",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_withdrawal_moves_both_together",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_an_admitted_generation_is_admitted_in_both",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_each_069b_type_alone_keeps_the_pair_pending",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_no_admitted_generation_is_not_reported_as_current",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_no_runtime_is_pending_in_both",
+          "test_hamcp181_catalog_core_admission.SignedRegistryCatalogAgreementTests.test_a_signed_reference_is_admitted_in_both",
+          "test_hamcp181_catalog_core_admission.SignedRegistryCatalogAgreementTests.test_the_shipped_entry_is_pending_in_both",
+          "test_hamcp181_catalog_core_admission.StaticCatalogTests.test_the_overlay_touches_only_governed_entries"
+        ]
+      },
+      {
+        "id": "CAT2",
+        "status": "new_in_review_1",
+        "concept": "M2: list_capabilities does not pass the admission snapshot",
+        "sites": [
+          "tools/compatibility.py:181"
+        ],
+        "edits": [
+          {
+            "file": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
+            "old": "                service.core_admission_snapshot() if service is not None else None",
+            "new": "                None"
+          }
+        ],
+        "fast_modules": [
+          "test_hamcp181_catalog_core_admission"
+        ],
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_failing_read_is_pending_in_both",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_generation_that_moves_once_is_read_again",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_generation_that_never_settles_reports_pending",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_partially_admitted_generation_agrees_per_group",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_refused_generation_is_pending_in_both",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_withdrawal_moves_both_together",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_an_admitted_generation_is_admitted_in_both",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_each_069b_type_alone_keeps_the_pair_pending",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_no_admitted_generation_is_not_reported_as_current",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_no_runtime_is_pending_in_both",
+          "test_hamcp181_catalog_core_admission.SignedRegistryCatalogAgreementTests.test_a_signed_reference_is_admitted_in_both",
+          "test_hamcp181_catalog_core_admission.SignedRegistryCatalogAgreementTests.test_the_shipped_entry_is_pending_in_both"
+        ]
+      },
+      {
+        "id": "CAT3",
+        "status": "new_in_review_1",
+        "concept": "M2: groups read from different generations are accepted",
+        "sites": [
+          "governance/service.py:15130"
+        ],
+        "edits": [
+          {
+            "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+            "old": "            if len(generations) == 1:\n                [generation] = generations\n",
+            "new": "            if True:\n                generation = reads[0][1]\n"
+          }
+        ],
+        "fast_modules": [
+          "test_hamcp181_catalog_core_admission"
+        ],
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_generation_that_moves_once_is_read_again",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_generation_that_never_settles_reports_pending"
+        ]
+      },
+      {
+        "id": "CAT4",
+        "status": "new_in_review_1",
+        "concept": "M2: a snapshot with no admitted generation is reported as current",
+        "sites": [
+          "governance/service.py:15148"
+        ],
+        "edits": [
+          {
+            "file": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+            "old": "                else \"current\"\n                if generation is not None\n",
+            "new": "                else \"current\"\n                if True\n"
+          }
+        ],
+        "fast_modules": [
+          "test_hamcp181_catalog_core_admission"
+        ],
+        "verdict": "KILLED",
+        "killed_by_stage": "fast",
+        "killing_tests": [
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_a_failing_read_is_pending_in_both",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_no_admitted_generation_is_not_reported_as_current",
+          "test_hamcp181_catalog_core_admission.CatalogHealthAgreementTests.test_no_runtime_is_pending_in_both"
+        ]
+      }
+    ]
+  }
 }

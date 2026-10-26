@@ -34,3 +34,24 @@ its concept, exact edit, site, the stage that killed it and the killing tests.
     `test_hamcp181_proven_no_call_producers`.
 
   `results.json` still records the campaign. The rerun logs are local only.
+- **Review 1 rerun (2026-10-26).** After the PR2 review 1 corrections (M1,
+  M2, L1), the 59 current specs ran with the committed harness on a
+  `git archive` copy of `880bcf3f362630ac64a8f73d52d5df3ec1b84ea1`. Every
+  edit applied as a single occurrence. Result: **59 of 59 killed**.
+  `results.json` records it under `review_1_rerun`, per mutant with its
+  stage and killing tests; the campaign entries are unchanged.
+  - New: SEND5 (send time captured at gateway entry, not the send boundary),
+    L1 (P1 claimed without the rejection proof code), CAT1 (the catalog
+    reads its static text, not the current admission), CAT2
+    (`list_capabilities` does not pass the admission snapshot), CAT3 (groups
+    read from different generations are accepted) and CAT4 (a snapshot with
+    no admitted generation is reported as current).
+  - Respecified: HEALTH1–3, because review 1 replaced the health code they
+    mutate with the shared admission snapshot. Their concepts are unchanged.
+  - 56 were killed by their fast modules. M3c (`test_hamcp181_terminal_outcome_t2`),
+    M5c (`test_f3_runtime_integration`) and SEND1
+    (`test_hamcp181_proven_no_call_producers`) were killed in the full set,
+    as before.
+  - The later commit `34c01e1f` changes only the static catalog literal
+    (no mutated site). `harness/build_review1.py` writes `review_1_rerun`.
+    The logs are local only.
