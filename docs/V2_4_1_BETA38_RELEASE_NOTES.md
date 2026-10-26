@@ -58,8 +58,9 @@ the host journal instead of raising the role.
   `api key`, `authorization`, `bearer`, `--pw`, …, in the normal or
   squashed form) or the mosquitto `-P` option in any quoting, argv or split
   form withholds the field. Coloured lines are shown without their ANSI
-  colour codes; a credential hidden by or across a colour code is still
-  withheld, and any other escape or control character is unverifiable. The
+  colour (SGR) codes; a credential hidden by or across a colour code is still
+  withheld, and any other escape (cursor movement, erase, OSC, a malformed
+  escape) or control character withholds the field as unverifiable. The
   final-envelope scan names each withheld entry (`withheld:entries[n]`); a
   withheld entry a text filter left out counts in `withheld_not_searched`,
   and one the level filter left out in `withheld_level_filtered`. Any of

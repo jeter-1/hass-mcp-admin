@@ -19,8 +19,10 @@ Builds on 2.4.1-beta.37.
   device) goes through the configuration-definitions credential screen
   (`credentials.screen`, with its labelled forms) on the complete field,
   before any cut; a hit, a field over 16 KiB or non-UTF-8 bytes withhold the
-  whole field. The final-envelope withheld-item scan names each withheld
-  entry, and a withheld entry a text filter left out is counted: any of
+  whole field. Coloured lines are shown without their SGR colour codes,
+  screened with and without them; any other escape or control character
+  withholds the field as unverifiable. The final-envelope withheld-item
+  scan names each withheld entry, and a withheld entry a text filter left out is counted: any of
   these makes the result partial.
 - Host journal entries merge on the full microsecond realtime; edge probes
   and every field read count toward the shared bounds and the deadline.

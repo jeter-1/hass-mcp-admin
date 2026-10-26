@@ -845,9 +845,11 @@ provider, fallback, write path or tool.
   or the mosquitto `-P` option in any quoting, argv or split form (a
   bounded quote-aware tokenizer); the value shapes remain a second layer.
   Ordinary text naming a keyword, or another tool's `-P`, is withheld too.
-  A well-formed ANSI CSI sequence is a display format: the field is
-  screened both without it and in its original form, either withholds, and
-  the shown text has no escape; any other escape or control character is
+  An ANSI SGR colour code (`ESC [`, at most 32 digits or semicolons, `m`;
+  review 3) is the only display format: the field is screened both without
+  it and in its original form, either withholds, and the shown text has no
+  escape; any other escape (another CSI final byte, OSC, a stray or
+  malformed escape) or control character is never removed and is
   unverifiable. The display cut to 2000 characters happens only after. A
   withheld field is never searched. The configuration-definitions
   final-envelope scan (`withheld_items`) then names each withheld entry, and

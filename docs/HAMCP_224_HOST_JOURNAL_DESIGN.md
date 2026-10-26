@@ -137,8 +137,8 @@ review, H1/H2 and M1–M3).** These supersede the "Withholding scope" and
      read whole, so it is withheld whole as `[unverifiable_text]`; nothing cut
      is ever screened;
   2. strict UTF-8 (invalid bytes are withheld whole as unverifiable), and
-     complete terminal escape sequences removed (review 2: well-formed CSI
-     only, and the original screened too);
+     complete terminal escape sequences removed (review 2, narrowed in
+     review 3: SGR colour codes only, and the original screened too);
   3. `unverifiable_text`: invisible, format or control characters (tab, LF
      and CR only as HAMCP-132 allows them) withhold the field whole;
   4. `credential_text`: bounded percent-decoding and NFKC (`canonical`), the
@@ -235,7 +235,8 @@ the "Fail-closed consequences" note where they differ.
   The shared screen itself still refuses raw escapes. The reviewer's
   `test_original_control_text_is_screened_before_ansi_removal` expects a
   coloured ordinary line to be withheld; it is superseded by this owner
-  decision and runs as a registered expected failure.
+  decision and runs as a registered expected failure. Review 3 narrowed
+  this decision to SGR colour codes (below).
 - **Level-filtered withholding (M1 residual).** `min_level` filters on the
   level from the structured journal `PRIORITY` field
   (`incident_logs/service.py` `_journal_views`,
@@ -244,6 +245,39 @@ the "Fail-closed consequences" note where they differ.
   row's `withheld_level_filtered`, and adds
   `withheld_level_filtered:<source>`, so the source and the result are
   `partial`.
+
+**Review 3 correction (architect direction on the PR #313 review 3, H3,
+owner-approved).** This supersedes the M4 bullet above where it differs.
+
+- **ANSI, SGR colour codes only (M4 narrowed).** Removing every well-formed
+  CSI sequence let two sequences hide a label from both screened forms:
+  `ESC[p` takes the `p` of `password` as its final byte, and a colour code
+  inside the rest of the word is removed as well, so neither form held the
+  label (`ESC[pass ESC[32m word=`, `ESC[Be ESC[0m arer`,
+  `ESC[1;To ESC[31m ken=`, spaces added here for reading). The one recognized
+  display format is now an SGR colour code: `ESC [`, at most 32 digits or
+  semicolons, then `m` (`host_journal._SGR`). Its bytes are never a letter
+  but its final `m`, and no credential label holds a digit, a `;` or an `m`,
+  so removing it cannot take a label character with it. SGR codes are
+  removed in one pass; a code assembled by removing another is a stray
+  escape. Every other escape (a CSI with any other final byte, cursor
+  movement, erase, OSC, a two-character escape, a stray, malformed or
+  over-long escape, C1 CSI) or control character is never removed: it
+  withholds the field whole as unverifiable (partial). Both forms are still
+  screened and either withholds: the SGR-stripped text as shown, and the
+  original with only each SGR code's `ESC` removed. Ordinary lines carrying
+  cursor or erase sequences (for example `ESC[2K`) are now withheld.
+- **Residual (disclosed, unchanged).** A known secret holding `[`, digits,
+  `;` or `m` is matched in the original form. A writer that knows a secret
+  holding digits, `;` or `m` can spell those characters as an SGR code's
+  own bytes: for a known secret `x1mY`, `x ESC[1m Y` is shown as `xY`, the
+  secret less those characters, and neither form matches it. This was
+  already so with the review 2 CSI rule, needs a writer that knows the
+  secret, shows no complete secret, and is outside the H3 direction.
+- **The superseded reviewer method.** It uses only `ESC[31m` and `ESC[0m`,
+  still fails only because coloured ordinary lines are shown, and stays the
+  single registered expected failure across the three reviewer suites
+  (`tests/test_hamcp224_review3_corrections.py` checks both).
 
 Base: `main` at `5030982fe681737c47e52a7c01d1808fca52468b` (Engineering
 `2.4.1-beta.37`, 68 static tools, `hassio_role: homeassistant`). Engineering

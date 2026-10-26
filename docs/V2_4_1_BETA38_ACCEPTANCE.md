@@ -82,8 +82,10 @@ The review needs a security section covering:
   confusable-folded, normal and squashed), a credential label with `=` or
   `:`, `Bearer`, PEM private keys, and (review 2) a strong keyword alone in
   the normal or squashed form or the mosquitto `-P` option in any quoting,
-  argv or split form withhold the **whole** field. A well-formed ANSI CSI
-  sequence is shown stripped; the field is screened with and without it.
+  argv or split form withhold the **whole** field. An ANSI SGR colour code
+  (review 3: `ESC [`, digits or `;`, `m`) is shown stripped; the field is
+  screened with and without it. Any other escape withholds the field as
+  unverifiable.
   The final-envelope withheld-item scan, `withheld_not_searched` and
   `withheld_level_filtered` make any withholding partial. Then the shared
   `sanitize_log_lines` and strict `sanitize_untrusted_data` run once, as for
@@ -161,6 +163,18 @@ synthetic.
   superseded by Josh's M4 decision (coloured ordinary lines are shown) and
   runs as a registered expected failure; a test pins both reviewer files by
   sha256.
+- `tests/test_review2_ansi_residual.py` (the reviewer's review 3 suite,
+  added byte-unchanged) and `tests/test_hamcp224_review3_corrections.py`:
+  only SGR colour codes are removed. The reviewer's combined forms and
+  every split of every label behind a letter-final CSI are withheld in
+  every field; every CSI final byte but `m` used to split a label, or on an
+  ordinary line, withholds; OSC, two-character, stray, malformed, colon,
+  private-parameter and C1 escapes withhold; a label split by an SGR code
+  is withheld in the stripped form; coloured, nested and adjacent SGR lines
+  are shown; a 33-character or longer SGR, or one assembled by removing
+  another, withholds; and the original form is still screened. A test pins
+  all three reviewer files by sha256 and checks that the superseded method
+  is the only expected failure in any reviewer suite.
 - The HAMCP-131 and HAMCP-220 incident-log suites pass unchanged in intent;
   their former "manager role" expectations now expect the journal sources.
 - Mutations: `docs/evidence/hamcp224-mutations/`. Run 1 killed 43 of 51
