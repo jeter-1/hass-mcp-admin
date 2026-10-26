@@ -482,7 +482,7 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         static = registered_tools(get_registered_server())
         McpSdkToolRegistry(server).replace({name: static[name]
                                             for name in ENGINEERING_STATIC_TOOL_NAMES})
-        self.assertEqual(len(registered_tools(server)), 68)  # HAMCP-165 + HAMCP-155: +2 inactive planners
+        self.assertEqual(len(registered_tools(server)), 72)  # HAMCP-165 + HAMCP-155: +2; HAMCP-232/145: +4 inactive
         await gateway.initialize(server)
         baseline = {tool.name: tool.model_dump(mode="json") for tool in await server.list_tools()}
         self.assertEqual(len(baseline), 96)  # HAMCP-165 + HAMCP-155: +2 inactive planners

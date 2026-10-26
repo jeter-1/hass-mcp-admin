@@ -2962,7 +2962,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         registry = load_reviewed_upstream_release_registry()
         policy = registry.by_version["8.4.3"].policy
         counts = policy.classification_counts
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 68)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 72)
         self.assertEqual(counts["automatic_read"], 28)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(

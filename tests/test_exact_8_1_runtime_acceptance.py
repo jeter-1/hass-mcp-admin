@@ -328,7 +328,7 @@ class ExactAddonProfileTests(unittest.TestCase):
 
     def test_addon_runtime_uses_authoritative_exact_local_accounting(self):
         self.assertEqual(
-            addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 68
+            addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 72
         )
         for version, delegated in (
             ("8.0.0", 24),
@@ -343,9 +343,9 @@ class ExactAddonProfileTests(unittest.TestCase):
                 snapshot = addon_acceptance._runtime_snapshot(
                     observed_catalog_fingerprint="a" * 64
                 )
-                self.assertEqual(snapshot["engineering_tool_count"], 68)
+                self.assertEqual(snapshot["engineering_tool_count"], 72)
                 self.assertEqual(
-                    snapshot["registered_tool_count"], 68 + delegated
+                    snapshot["registered_tool_count"], 72 + delegated
                 )
 
     def test_packaging_probe_has_no_third_party_requirement_parser(self):
@@ -973,7 +973,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["probe"]["engineering_tool_count"], 93)
         self.assertEqual(
-            result["probe"]["engineering_local_tool_count"], 68
+            result["probe"]["engineering_local_tool_count"], 72
         )
         self.assertEqual(
             result["probe"]["gateway_health"][

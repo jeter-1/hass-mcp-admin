@@ -1907,7 +1907,7 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
     def test_engineering_catalog_is_52_without_upstream_discovery(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 68)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 72)
         self.assertEqual(
             len(registered_tools(get_registered_server()).values()),
             ENGINEERING_STATIC_TOOL_COUNT,
@@ -2841,7 +2841,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         catalog = build_capability_catalog()
         self.assertEqual(catalog["dynamic_upstream_count"], 1)
-        self.assertEqual(catalog["engineering_registered_count"], 68)
+        self.assertEqual(catalog["engineering_registered_count"], 72)
         route = capability_for_tool("ha_get_state")
         self.assertEqual(route["provider"], "upstream_read_gateway")
         self.assertEqual(route["operation_class"], "automatic_read")
@@ -5232,7 +5232,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         release_first_wait.set()
         await asyncio.wait_for(second_wait.wait(), timeout=1)
         recovered = gateway.health_snapshot()
-        self.assertEqual(len(registered_tools(server).values()), 68)
+        self.assertEqual(len(registered_tools(server).values()), 72)
         self.assertTrue(recovered["admission_complete"])
         self.assertEqual(recovered["admission_status"], "admitted_exact")
         self.assertEqual(transport.discovery_calls, 2)
@@ -5458,7 +5458,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         await asyncio.wait_for(slow_wait_started.wait(), timeout=1)
-        self.assertEqual(len(registered_tools(server).values()), 68)
+        self.assertEqual(len(registered_tools(server).values()), 72)
         waiting = gateway.health_snapshot()
         self.assertEqual(waiting["compatibility_reprobe_status"], "waiting")
         self.assertEqual(waiting["compatibility_reprobe_interval_seconds"], 17.0)
@@ -5474,7 +5474,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             runtime_mode="home_assistant_addon",
             ha_connection={"checked": False, "status": "not_checked"},
         )
-        self.assertEqual(len(tool_names), 68)
+        self.assertEqual(len(tool_names), 72)
         self.assertTrue(health["initialized"])
         self.assertTrue(health["generic_delegation_available"])
         self.assertEqual(health["reconciliation_status"], "idle")
@@ -5657,7 +5657,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(started_ports, {configured.port, configured.ingress_port})
         self.assertTrue(failure_observed.is_set())
         self.assertEqual(transport.discovery_calls, 2)
-        self.assertEqual(len(registered_tools(server).values()), 68)
+        self.assertEqual(len(registered_tools(server).values()), 72)
         self.assertTrue(gateway.health_snapshot()["admission_complete"])
 
     async def test_concurrent_reconciliation_is_single_flight(self):
