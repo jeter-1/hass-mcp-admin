@@ -230,7 +230,8 @@ def _resolved_dynamic_reference_evidence(
     proven_other_domain = bool(
         not limit_exceeded
         and exact_domains
-        and "input_boolean" not in exact_domains
+        # HAMCP-145: the target's own domain; identical for input_boolean.
+        and entity_id.split(".", 1)[0] not in exact_domains
     )
     if proven_other_domain and not labels:
         complete = True
@@ -1675,8 +1676,16 @@ def build_helper_dependency_risk_binding(
 class HelperDependencyRiskService:
     """Read target-specific risk from the shared dependency index."""
 
-    def __init__(self, index: DependencyIndex):
+    def __init__(
+        self,
+        index: DependencyIndex,
+        *,
+        binding_builder: Any = None,
+    ):
         self.index = index
+        # HAMCP-145: a domain reader supplies its own builder; the default
+        # is the unchanged input_boolean v13 builder.
+        self.binding_builder = binding_builder or build_helper_dependency_risk_binding
 
     async def assess(
         self,
@@ -1754,7 +1763,7 @@ class HelperDependencyRiskService:
                     "fallback_occurred": False,
                 },
             }
-        binding = build_helper_dependency_risk_binding(
+        binding = self.binding_builder(
             snapshot,
             entity_id=entity_id,
             index_metadata=metadata,

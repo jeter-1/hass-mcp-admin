@@ -547,6 +547,9 @@ class DependencyScanResult:
     semantic_evidence: ReviewedCoreSemantics | None = field(default=None, repr=False, compare=False)
     # Diagnostic-only partition; never consumed by helper execution binding.
     script_diagnostics: ScriptDiagnostics | None = field(default=None, repr=False, compare=False)
+    # HAMCP-145: literal input_select state-trigger values for per-option
+    # disclosure only.  Never fingerprinted; never dependency authority.
+    state_trigger_values: tuple[Any, ...] = field(default=(), repr=False, compare=False)
 
 
 @dataclass
@@ -594,6 +597,9 @@ class DependencyIndexSnapshot:
     semantic_evidence: ReviewedCoreSemantics | None = field(default=None, repr=False, compare=False)
     # Diagnostic-only partition; never consumed by helper execution binding.
     script_diagnostics: ScriptDiagnostics | None = field(default=None, repr=False, compare=False)
+    # HAMCP-145: literal input_select state-trigger values for per-option
+    # disclosure only.  Never fingerprinted; never dependency authority.
+    state_trigger_values: tuple[Any, ...] = field(default=(), repr=False, compare=False)
     # HAMCP-191 D4: the identity record of the strings this build bounded;
     # analysis re-scans of the snapshot pass it. Never fingerprinted.
     sanitizer_registry: ReferenceMarkerRegistry | None = field(

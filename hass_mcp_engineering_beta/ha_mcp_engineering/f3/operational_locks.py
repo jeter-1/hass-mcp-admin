@@ -21,6 +21,9 @@ from ..governance.helper_dependency import (
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
     MAX_RELEVANT_AUTOMATIONS,
 )
+from ..governance.input_select_dependency import (
+    INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS,
+)
 from .models import validate_lock_key
 from .operational_models import (
     CONTROLLED_RELOAD,
@@ -28,6 +31,8 @@ from .operational_models import (
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
     SET_INPUT_BOOLEAN_STATE,
+    SET_INPUT_SELECT_OPTION,
+    HELPER_VALUE_OPERATIONS,
     PreparedOperationalOperation,
 )
 
@@ -194,7 +199,7 @@ class OperationalLockSetCalculator:
                 ),
             ),
         ]
-        if operation.operation != SET_INPUT_BOOLEAN_STATE:
+        if operation.operation not in HELPER_VALUE_OPERATIONS:
             requests.append(
                 LockRequest(
                     key=f"addon:{operation.authoritative_provider_slug}",
@@ -242,7 +247,16 @@ class OperationalLockSetCalculator:
                         reason_codes=("selected_upstream_provider_restart",),
                     )
                 )
-        elif operation.operation == SET_INPUT_BOOLEAN_STATE:
+        elif operation.operation in HELPER_VALUE_OPERATIONS:
+            if operation.operation == SET_INPUT_SELECT_OPTION:
+                # HAMCP-145: only the input_select reader's model has lock
+                # authority for this operation, for execution and readback.
+                domain = "input_select"
+                mutation_reason = "exact_input_select_option_mutation"
+                accepted_models = INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS
+            else:
+                domain = "input_boolean"
+                mutation_reason = "exact_input_boolean_state_mutation"
             downstream_automations = (
                 _bound_downstream_automation_resources(
                     operation,
@@ -253,16 +267,14 @@ class OperationalLockSetCalculator:
                 (
                     LockRequest(
                         key=resource_lock_key(
-                            "input_boolean", operation.target.target_id
+                            domain, operation.target.target_id
                         ),
                         scopes=(LockScope.RESOURCE,),
                         mode=LockMode.EXCLUSIVE,
-                        reason_codes=(
-                            "exact_input_boolean_state_mutation",
-                        ),
+                        reason_codes=(mutation_reason,),
                     ),
                     LockRequest(
-                        key="reload:input_boolean",
+                        key=f"reload:{domain}",
                         scopes=(LockScope.RESOURCE,),
                         mode=LockMode.SHARED,
                         reason_codes=(

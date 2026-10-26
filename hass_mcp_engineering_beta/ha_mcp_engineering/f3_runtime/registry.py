@@ -118,6 +118,14 @@ HELPER_STATE_REGISTRATION = (
     "input_boolean",
 )
 
+# HAMCP-145: the exact input_select option, admitted only by the dormant
+# ``core.typed_input_select_option_operation`` profile.
+INPUT_SELECT_REGISTRATION = (
+    "set_exact_input_select_option",
+    "set_input_select_option",
+    "input_select",
+)
+
 DASHBOARD_REGISTRATION = (
     "update_existing_dashboard",
     "update_dashboard",
@@ -317,6 +325,31 @@ class ClosedAdapterRegistry:
             )
         )
         adapters[capability] = operational_adapter
+        capability, operation, target = INPUT_SELECT_REGISTRATION
+        entries.append(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="operational_administration",
+                operation_family="operational_administration",
+                plan_operation=operation,
+                target_type=target,
+                action=operation,
+                provider_model="direct-ha-exact-input-select-option-v1",
+                resource_lock_model="f3-operational-complete-lock-graph-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="f3-input-select-exact-option-readback-v1",
+                recovery_model="exact_state_readback_only",
+                rollback_declaration="separate_governed_reverse_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+        )
+        adapters[capability] = operational_adapter
         capability, operation, target = DASHBOARD_REGISTRATION
         entries.append(
             AdapterRegistration(
@@ -350,6 +383,7 @@ class ClosedAdapterRegistry:
                 *CONFIGURATION_REGISTRATIONS,
                 *OPERATIONAL_REGISTRATIONS,
                 HELPER_STATE_REGISTRATION,
+                INPUT_SELECT_REGISTRATION,
                 ENTITY_METADATA_REGISTRATION,
                 *AVAILABILITY_EXPOSURE_REGISTRATIONS,
                 *LABEL_REGISTRATIONS,
@@ -367,6 +401,7 @@ class ClosedAdapterRegistry:
                 raise AdapterRegistryError("F3 adapter model is unsupported")
             direct_helper = entry.capability_id in {
                 HELPER_STATE_REGISTRATION[0],
+                INPUT_SELECT_REGISTRATION[0],
                 ENTITY_METADATA_REGISTRATION[0],
                 *(item[0] for item in AVAILABILITY_EXPOSURE_REGISTRATIONS),
                 *(item[0] for item in LABEL_REGISTRATIONS),
@@ -414,7 +449,7 @@ class ClosedAdapterRegistry:
                 or not entry.provider_dependency_lock_model
                 or entry.target_type not in {
                     "automation", "script", "input_boolean", "input_number",
-                    "backup", "reload_domain", "addon", "home_assistant",
+                    "input_select", "backup", "reload_domain", "addon", "home_assistant",
                     "dashboard", "entity_registry_metadata",
                     "entity_registry_availability", "entity_assistant_exposure",
                     "label_registry_entry",

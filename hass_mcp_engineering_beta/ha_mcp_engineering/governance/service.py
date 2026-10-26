@@ -208,6 +208,14 @@ from . import label_registry_planning
 from . import configuration_delete
 from . import configuration_delete_planning
 from .entity_metadata_disclosure import read_runtime_dependency_snapshot
+from . import input_select_option as input_select_contract
+from ..ha_core_readmission.routes import SCRIPT_TRACE_PROFILE
+from . import input_select_option_planning
+from .input_select_dependency import (
+    INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS,
+    option_trigger_disclosure,
+    read_input_select_dependency_risk,
+)
 from .helper_dependency import (
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
@@ -699,6 +707,10 @@ class ChangeGovernanceService:
         | None = None,
         label_registry_gateway: Any | None = None,
         configuration_delete_gateway: Any | None = None,
+        input_select_gateway: Any | None = None,
+        input_select_dependency_risk_reader: Callable[..., Awaitable[
+            dict[str, Any]
+        ]] | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
@@ -727,6 +739,13 @@ class ChangeGovernanceService:
         # HAMCP-165: closed-vocabulary label registry reads and writes.
         self.label_registry_gateway = label_registry_gateway
         self.configuration_delete_gateway = configuration_delete_gateway
+        # HAMCP-145: exact input_select option writes, inactive until a
+        # signed registry admits core.typed_input_select_option_operation.
+        self.input_select_gateway = input_select_gateway
+        self.input_select_dependency_risk_reader = (
+            input_select_dependency_risk_reader
+            or read_input_select_dependency_risk
+        )
         self.provider_identity_reader = provider_identity_reader
         self.approval_notifications = approval_notifications
         self._plan_observability_cursor_key = (
@@ -3444,7 +3463,11 @@ class ChangeGovernanceService:
     def _helper_dependency_plan_is_actionable(plan: ChangePlan) -> bool:
         """Require current bounded evidence before a helper challenge exists."""
 
-        if plan.operation != ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+        if plan.operation == ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+            execution_models = HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+        elif plan.operation == ChangeOperation.SET_INPUT_SELECT_OPTION:
+            execution_models = INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS
+        else:
             return True
         binding = ChangeGovernanceService._helper_dependency_binding(plan)
         return bool(
@@ -3452,8 +3475,7 @@ class ChangeGovernanceService:
             # Execution authority, not compatibility.  A binding from a
             # superseded model stays readable and recoverable but can never
             # authorize approval or dispatch.
-            and binding.get("model")
-            in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+            and binding.get("model") in execution_models
             and binding.get("execution_contract_complete") is True
             and binding.get("execution_block_reason_codes") == []
             and binding.get("execution_eligible") is True
@@ -4511,6 +4533,434 @@ class ChangeGovernanceService:
             "fallback": "none",
             "fallback_occurred": False,
             "plan": self._public(plan, include_configs=False),
+        }
+
+    async def create_input_select_option_plan(
+        self,
+        arguments: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Propose one exact input_select option change (HAMCP-145).
+
+        Admission of the runtime-only
+        ``core.typed_input_select_option_operation`` profile is enforced
+        first, before input validation, any read and any persistence; it is
+        re-checked at the persistence boundary.  Nothing is dispatched.
+        """
+
+        self._input_select_core()
+        try:
+            request = input_select_option_planning.validate_request(arguments)
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self._entity_metadata_refusal_error(exc, {}) from None
+        lease = self._input_select_planning_lease(request.lease_target_id)
+        async with lease:
+            baseline, provider_evidence = await self._input_select_planning_read(
+                request.entity_id
+            )
+            if request.option not in baseline["options"]:
+                raise self._entity_metadata_refusal_error(
+                    input_select_option_planning.Refusal(
+                        "option_not_available"
+                    ),
+                    {"entity_id": request.entity_id},
+                )
+            if baseline["state"] == request.option:
+                return {
+                    "status": "no_change",
+                    "outcome": "already_desired",
+                    "plan_created": False,
+                    "proposal_only": True,
+                    "provider_dispatch_occurred": False,
+                    "verified": True,
+                    "target_type": input_select_contract.TARGET_TYPE,
+                    "target_id": request.entity_id,
+                    "option": request.option,
+                    "observed_state_fingerprint": stable_hash(baseline),
+                    "provider": input_select_contract.PROVIDER,
+                    "fallback": "none",
+                    "fallback_occurred": False,
+                }
+            dependency_evidence = (
+                await self.input_select_dependency_risk_reader(
+                    request.entity_id, refresh=True
+                )
+            )
+            lease.require_current()
+            return self._create_input_select_option_plan(
+                request,
+                baseline=baseline,
+                provider_evidence=provider_evidence,
+                dependency_evidence=dependency_evidence,
+                caller_context=caller_context,
+                _before_persist=lease.require_current,
+            )
+
+    async def create_input_select_rollback_plan(
+        self, source_plan: ChangePlan
+    ) -> dict[str, Any]:
+        """Plan the separately approved return to the prior option (OD-12).
+
+        Allowed only after the source plan verified, only while the live
+        option still equals that verified readback, and only while the
+        captured prior option is still offered.  The reverse is an ordinary
+        new plan with its own dependency evidence and approval; nothing is
+        dispatched here.
+        """
+
+        self._input_select_core()
+
+        def refuse(reason: str) -> GovernanceError:
+            return GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": reason,
+                    "reason_code": reason,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+
+        operational = source_plan.operational
+        baseline = getattr(operational, "baseline", None)
+        task = self.task_repository.get_for_plan(source_plan.plan_id)
+        if (
+            source_plan.operation != ChangeOperation.SET_INPUT_SELECT_OPTION
+            or source_plan.target.target_type != input_select_contract.TARGET_TYPE
+            or not isinstance(baseline, dict)
+            or not isinstance(baseline.get("state"), str)
+            or not isinstance(source_plan.proposed_config, dict)
+            or not isinstance(source_plan.proposed_config.get("option"), str)
+        ):
+            raise refuse("input_select_rollback_source_invalid")
+        if task is None or task.state.value != "succeeded_verified":
+            raise refuse("input_select_rollback_source_not_verified")
+        entity_id = source_plan.target.target_id
+        prior = baseline["state"]
+        applied = source_plan.proposed_config["option"]
+        lease = self._input_select_planning_lease(entity_id)
+        async with lease:
+            current, provider_evidence = await self._input_select_planning_read(
+                entity_id
+            )
+            if current["state"] != applied:
+                raise refuse("rollback_baseline_drift")
+            if prior not in current["options"]:
+                raise refuse("option_not_available")
+            dependency_evidence = (
+                await self.input_select_dependency_risk_reader(
+                    entity_id, refresh=True
+                )
+            )
+            lease.require_current()
+            request = input_select_option_planning.Request(
+                entity_id,
+                prior,
+                f"Return {entity_id} to the option captured before plan "
+                f"{source_plan.plan_id}.",
+                120,
+            )
+            result = self._create_input_select_option_plan(
+                request,
+                baseline=current,
+                provider_evidence=provider_evidence,
+                dependency_evidence=dependency_evidence,
+                caller_context=None,
+                rollback_source=source_plan.plan_id,
+                _before_persist=lease.require_current,
+            )
+        rollback = result["plan"]
+        return {
+            "status": "rollback_plan_created",
+            "source_plan_id": source_plan.plan_id,
+            "rollback_plan_id": rollback["plan_id"],
+            "approval_required": True,
+            "plan_hash": rollback.get("plan_hash"),
+            "provider_dispatch_occurred": False,
+            "plan": rollback,
+        }
+
+    def _input_select_core(self) -> Any:
+        """Return Core only if a signed registry admits the option profile."""
+
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status((input_select_contract.PROFILE,)).get(
+                    "available"
+                )
+                is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": input_select_contract.PENDING_ADMISSION_REASON,
+                    "reason_code": input_select_contract.PENDING_ADMISSION_REASON,
+                    "resource_type": input_select_contract.TARGET_TYPE,
+                    "core_capability": input_select_contract.PROFILE,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _input_select_planning_lease(self, entity_id: str) -> Any:
+        """Hold exact-target Core authority across one option planning."""
+
+        from ..f3_runtime.runtime import _rollback_planning_lease
+
+        core = self._input_select_core()
+        return _rollback_planning_lease(
+            core,
+            ("core.dependency_helper_planning", input_select_contract.PROFILE),
+            target={
+                "target_type": input_select_contract.TARGET_TYPE,
+                "target_id": entity_id,
+            },
+        )
+
+    async def _input_select_planning_read(
+        self, entity_id: str
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        if self.input_select_gateway is None:
+            raise GovernanceError(ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE)
+        try:
+            evidence = await self.input_select_gateway.planning_evidence(
+                entity_id
+            )
+        except input_select_contract.InputSelectGatewayError as exc:
+            code = {
+                "entity_not_found": ErrorCode.ENTITY_NOT_FOUND,
+                "entity_unavailable": ErrorCode.HA_UNAVAILABLE,
+                "permission_failure": ErrorCode.AUTHORIZATION_FAILURE,
+                "provider_timeout": ErrorCode.HA_TIMEOUT,
+                "provider_unavailable": ErrorCode.HA_UNAVAILABLE,
+            }.get(exc.category, ErrorCode.HA_API_ERROR)
+            raise GovernanceError(
+                code,
+                details={
+                    "reason": f"input_select_{exc.category}"[:64],
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            ) from None
+        provider_evidence = evidence.get("provider")
+        baseline = evidence.get("baseline")
+        if (
+            provider_evidence != input_select_contract.provider_evidence()
+            or not isinstance(baseline, dict)
+            or set(baseline) != {"entity_id", "state", "options", "last_changed"}
+            or baseline.get("entity_id") != entity_id
+            or not isinstance(baseline.get("state"), str)
+            or not isinstance(baseline.get("options"), list)
+        ):
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        return baseline, provider_evidence
+
+    def _create_input_select_option_plan(
+        self,
+        request: Any,
+        *,
+        baseline: dict[str, Any],
+        provider_evidence: dict[str, Any],
+        dependency_evidence: dict[str, Any],
+        caller_context: dict[str, Any] | None,
+        rollback_source: str | None = None,
+        _before_persist: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        # Every persistence path re-checks admission and must hold a current
+        # Core lease; neither ever depends on the caller alone.
+        self._input_select_core()
+        if _before_persist is None:
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        entity_id = request.entity_id
+        option = request.option
+        operation = ChangeOperation.SET_INPUT_SELECT_OPTION
+        dependency_binding = dependency_evidence.get("binding")
+        if not isinstance(dependency_binding, dict):
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        option_triggers = option_trigger_disclosure(
+            dependency_binding, current=baseline["state"], option=option
+        )
+        bound_baseline = {**baseline, "dependency_risk": dependency_binding}
+        now = self.now()
+        risk = helper_dependency_risk_assessment(dependency_evidence)
+        limitations = [
+            "Only input_select.select_option with one exact listed option is supported.",
+            "Relative moves, options-list changes, arbitrary services, service data, and fallback are unavailable.",
+            "Recovery performs exact readback and never blindly redispatches.",
+            "Reversal requires a separately planned and approved return to the prior option.",
+            "A helper with an initial value reverts to it at the next restart; YAML initial values cannot be read, so persistence across restart is unknown.",
+        ]
+        operational = OperationalPlanDetails(
+            schema_version=1,
+            family="operational_administration",
+            operation=operation.value,
+            requested_name=option,
+            provider=input_select_contract.PROVIDER,
+            provider_capability_evidence=provider_evidence,
+            expected_effects=[
+                f"Select the exact option {option!r} on {entity_id}.",
+            ],
+            preconditions=[
+                "The exact entity remains available as an input_select.",
+                "The current option and the exact options list remain unchanged, or the requested option is already selected.",
+                "The requested option remains in the options list.",
+                "The normalized dependency-risk evidence remains execution-eligible and unchanged.",
+                "One unexpired external administrator approval is bound to this plan hash.",
+            ],
+            verification_contract={
+                "version": 1,
+                "operation": operation.value,
+                "required": [
+                    "exact_entity_id",
+                    "exact_requested_option",
+                    "authoritative_state_readback",
+                ],
+                "no_blind_redispatch": True,
+                "idempotent_preflight_noop": True,
+            },
+            baseline=bound_baseline,
+            dispatch={
+                "attempt_count": 0,
+                "dispatched": False,
+                "request_id": None,
+                "attempted_at": None,
+                "provider_response_received": False,
+            },
+            verification=RecoveryVerification(),
+            limitations=limitations,
+            rollback_available=False,
+        )
+        dry_run = {
+            "operation": operation.value,
+            "from_option": baseline["state"],
+            "to_option": option,
+            "options": list(baseline["options"]),
+            "provider_dispatch_occurred": False,
+            "rollback_available": False,
+            "rollback_route": "separately_approved_return_to_prior_option",
+            "option_triggers": option_triggers,
+            "dependency_risk": {
+                "model": dependency_binding.get("model"),
+                "completeness": dependency_binding.get("completeness"),
+                "physical_consequence": dependency_binding.get(
+                    "physical_consequence"
+                ),
+                "evidence_fingerprint": dependency_binding.get(
+                    "evidence_fingerprint"
+                ),
+            },
+        }
+        if rollback_source is not None:
+            dry_run["rollback_of_plan_id"] = rollback_source
+        plan = ChangePlan(
+            plan_id=self._new_id(),
+            plan_version=1,
+            created_at=now.isoformat(),
+            updated_at=now.isoformat(),
+            expires_at=(
+                now + timedelta(minutes=request.expiration_minutes)
+            ).isoformat(),
+            status=PlanStatus.AWAITING_APPROVAL,
+            title=(
+                f"Return {entity_id} to its prior option"
+                if rollback_source is not None
+                else f"Select an option on {entity_id}"
+            )[:160],
+            description=request.reason[:500],
+            requested_by=current_caller_id(),
+            target=ChangeTarget(input_select_contract.TARGET_TYPE, entity_id),
+            operation=operation,
+            proposed_config={"option": option},
+            current_config={"option": baseline["state"]},
+            normalized_proposed_config={"option": option},
+            normalized_current_config={"option": baseline["state"]},
+            current_state_fingerprint=stable_hash(bound_baseline),
+            proposed_config_hash=stable_hash(
+                {
+                    "operation": operation.value,
+                    "entity_id": entity_id,
+                    "option": option,
+                }
+            ),
+            risk=risk,
+            normalization_version=1,
+            warnings=list(risk.warnings),
+            validation_results={
+                "valid": True,
+                "planning_write_performed": False,
+                "provider_available": True,
+                "entity_state_readable": True,
+                "option_available": True,
+                "dependency_evidence_complete": (
+                    dependency_binding.get("evidence_complete") is True
+                ),
+                "consequence_evidence_complete": (
+                    dependency_binding.get("consequence_evidence_complete")
+                    is True
+                ),
+                "execution_contract_complete": (
+                    dependency_binding.get("execution_contract_complete")
+                    is True
+                ),
+                "execution_block_reason_codes": dependency_binding.get(
+                    "execution_block_reason_codes", []
+                ),
+                "consequence_uncertainty_reason_codes": dependency_binding.get(
+                    "consequence_uncertainty_reason_codes", []
+                ),
+                "owner_decision_required": bool(
+                    dependency_binding.get("owner_decision_required")
+                ),
+                "dependency_coverage_complete": (
+                    dependency_binding.get("coverage_complete") is True
+                ),
+                "dependency_semantic_precision": dependency_binding.get(
+                    "semantic_precision"
+                ),
+                "dependency_execution_eligible": (
+                    dependency_binding.get("execution_eligible") is True
+                ),
+                "dependency_evidence_completeness": dependency_binding.get(
+                    "completeness"
+                ),
+            },
+            dry_run_results=dry_run,
+            rollback=ChangeRollback(available=False, status="unavailable"),
+            caller_context=_sanitize_configuration_caller_context(
+                caller_context,
+                known_secrets=self.sensitive_values,
+            ),
+            contract_version=OPERATIONAL_PLAN_CONTRACT_VERSION,
+            plan_family="operational_administration",
+            operational=operational,
+            execution_outcome="not_applied",
+        )
+        plan.policy_decision = evaluate_change_policy(plan)
+        self._bind_new_plan_policy(plan)
+        self._require_strict_new_plan(plan)
+        # Admission and the Core lease are re-checked after the last read
+        # and before anything is stored.
+        self._input_select_core()
+        _before_persist()
+        self._supersede_prior(plan)
+        self._record(plan, "set_input_select_option_plan_created", "success")
+        public = self._public(plan, include_configs=False)
+        return {
+            "status": "awaiting_approval",
+            "proposal_only": True,
+            "provider_dispatch_occurred": False,
+            "provider": input_select_contract.PROVIDER,
+            "fallback": "none",
+            "fallback_occurred": False,
+            "plan": public,
         }
 
     async def create_reload_plan(
@@ -8374,10 +8824,25 @@ class ChangeGovernanceService:
                     }
                     if plan.operation
                     == ChangeOperation.SET_INPUT_BOOLEAN_STATE
+                    else {
+                        "entity_id": plan.target_id,
+                        "option": operational.requested_name,
+                        "service": "input_select.select_option",
+                    }
+                    if plan.operation
+                    == ChangeOperation.SET_INPUT_SELECT_OPTION
                     else {"confirm": True}
                 ),
             }
-            if plan.operation is ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+            if plan.operation is ChangeOperation.SET_INPUT_SELECT_OPTION:
+                triggers = plan.dry_run_results.get("option_triggers")
+                summary["option_trigger_review"] = (
+                    deepcopy(triggers) if isinstance(triggers, dict) else {}
+                )
+            if plan.operation in {
+                ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+                ChangeOperation.SET_INPUT_SELECT_OPTION,
+            }:
                 dependency = operational.baseline.get("dependency_risk")
                 if not isinstance(dependency, dict):
                     raise GovernanceError(
@@ -14118,6 +14583,69 @@ class ChangeGovernanceService:
                         != plan.proposed_config_hash,
                     )
                 )
+            elif plan.operation == ChangeOperation.SET_INPUT_SELECT_OPTION:
+                try:
+                    exact_entity_id = input_select_contract.validate_entity_id(
+                        plan.target_id
+                    )
+                    exact_option = input_select_contract.validate_option(
+                        operational.requested_name if operational else None
+                    )
+                except (TypeError, ValueError):
+                    exact_entity_id = ""
+                    exact_option = None
+                baseline = (
+                    operational.baseline
+                    if operational is not None
+                    and isinstance(operational.baseline, dict)
+                    else {}
+                )
+                dependency_risk = baseline.get("dependency_risk")
+                options = baseline.get("options")
+                invalid = invalid or any(
+                    (
+                        plan.target_type != input_select_contract.TARGET_TYPE,
+                        exact_entity_id != plan.target_id,
+                        exact_option is None,
+                        baseline.get("entity_id") != plan.target_id,
+                        not isinstance(baseline.get("state"), str),
+                        not isinstance(options, list),
+                        exact_option not in (
+                            options if isinstance(options, list) else []
+                        ),
+                        not isinstance(dependency_risk, dict),
+                        (
+                            dependency_risk.get("model")
+                            if isinstance(dependency_risk, dict)
+                            else None
+                        )
+                        not in INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS,
+                        not isinstance(
+                            (
+                                dependency_risk.get("evidence_fingerprint")
+                                if isinstance(dependency_risk, dict)
+                                else None
+                            ),
+                            str,
+                        ),
+                        (operational.provider if operational else None)
+                        != input_select_contract.PROVIDER,
+                        (
+                            operational.provider_capability_evidence
+                            if operational
+                            else None
+                        )
+                        != input_select_contract.provider_evidence(),
+                        stable_hash(
+                            {
+                                "operation": plan.operation.value,
+                                "entity_id": plan.target_id,
+                                "option": exact_option,
+                            }
+                        )
+                        != plan.proposed_config_hash,
+                    )
+                )
             else:
                 invalid = True
             if invalid:
@@ -14904,6 +15432,12 @@ class ChangeGovernanceService:
         operational["label_registry_provider"] = (
             self._label_registry_provider_health_snapshot(admission)
         )
+        operational["input_select_provider"] = (
+            self._input_select_provider_health_snapshot(admission)
+        )
+        operational["script_trace_provider"] = (
+            self._script_trace_provider_health_snapshot(admission)
+        )
         for operation, operation_health in operational["operations"].items():
             operation_health["active_reconciliations"] = (
                 self._active_lifecycle_reconciliations
@@ -15087,6 +15621,24 @@ class ChangeGovernanceService:
             "create_label_plan",
             (label_registry.CORE_CAPABILITY,),
             label_registry.PENDING_ADMISSION_REASON,
+        ),
+        (
+            "input_select_provider",
+            "create_input_select_option_plan",
+            (input_select_contract.PROFILE,),
+            input_select_contract.PENDING_ADMISSION_REASON,
+        ),
+        (
+            "script_trace_provider",
+            "list_script_traces",
+            (SCRIPT_TRACE_PROFILE,),
+            "pending_signed_registry_admission",
+        ),
+        (
+            "script_trace_provider",
+            "get_script_trace",
+            (SCRIPT_TRACE_PROFILE,),
+            "pending_signed_registry_admission",
         ),
     )
     _CORE_ADMISSION_READ_ATTEMPTS = 3
@@ -15287,6 +15839,48 @@ class ChangeGovernanceService:
             "core_admission": self._health_core_admission(
                 "configuration_delete_provider", admission
             ),
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _input_select_provider_health_snapshot(
+        self, admission: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Report the dormant HAMCP-145 provider without a Core call."""
+
+        configured = self.input_select_gateway is not None
+        return {
+            "provider": input_select_contract.PROVIDER,
+            "provider_contract": input_select_contract.PROVIDER_CONTRACT,
+            "provider_contract_status": "code_owned_exact",
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capability": input_select_contract.PROFILE,
+            "core_admission": self._health_core_admission(
+                "input_select_provider", admission
+            ),
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _script_trace_provider_health_snapshot(
+        self, admission: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Report the dormant script-trace read provider without a Core call."""
+
+        return {
+            "provider": "direct_home_assistant_trace",
+            "provider_contract": "compiled-core-script-trace-read-v1",
+            "provider_contract_status": "code_owned_exact",
+            "core_capability": SCRIPT_TRACE_PROFILE,
+            "core_admission": self._health_core_admission(
+                "script_trace_provider", admission
+            ),
+            "read_only": True,
             "fallback": "none",
             "fallback_count": 0,
             "fallback_policy": "none",

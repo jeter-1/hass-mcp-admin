@@ -204,8 +204,14 @@ class InputSelectGateway:
         return {
             "entity_id": entity_id,
             "state": state,
-            "options": tuple(options),
+            "options": list(options),
             "last_changed": last_changed,
+        }
+
+    async def planning_evidence(self, entity_id: str) -> dict[str, Any]:
+        return {
+            "provider": provider_evidence(),
+            "baseline": await self.read_state(entity_id),
         }
 
     async def select_option(

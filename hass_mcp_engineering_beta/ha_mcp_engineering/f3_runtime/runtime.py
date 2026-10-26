@@ -26,6 +26,7 @@ from ..f3.executor import (
 )
 from ..ha_core_readmission.routes import (
     CORE_REQUIREMENT_UNMAPPED,
+    INPUT_SELECT_PROFILE,
     f3_entry_admission_profiles,
     f3_requirements,
 )
@@ -107,6 +108,7 @@ from ..governance.models import (
     PlanStatus,
     StepExecutionStatus,
 )
+from ..governance import input_select_option as input_select_contract
 from ..governance.helper_state import (
     HELPER_STATE_PROVIDER_SLUG,
     helper_state_provider_evidence,
@@ -834,18 +836,27 @@ UNSIGNED_PROFILE_REQUIREMENTS = MappingProxyType(
 )
 
 
+# HAMCP-145: a dormant operational profile keyed by the plan's operation.
+# Entry, every dispatch and every readback are gated on its admission.
+UNSIGNED_OPERATIONAL_PROFILE_REQUIREMENTS = MappingProxyType(
+    {ChangeOperation.SET_INPUT_SELECT_OPTION: INPUT_SELECT_PROFILE}
+)
+
+
 def _unsigned_profiles(plan: Any) -> tuple[str, ...]:
     """Return the dormant Core profiles any child of ``plan`` depends on."""
 
-    return tuple(
-        sorted(
-            {
-                UNSIGNED_PROFILE_REQUIREMENTS[operation.resource_type]
-                for operation in plan.operations
-                if operation.resource_type in UNSIGNED_PROFILE_REQUIREMENTS
-            }
-        )
+    profiles = {
+        UNSIGNED_PROFILE_REQUIREMENTS[operation.resource_type]
+        for operation in plan.operations
+        if operation.resource_type in UNSIGNED_PROFILE_REQUIREMENTS
+    }
+    operational = UNSIGNED_OPERATIONAL_PROFILE_REQUIREMENTS.get(
+        getattr(plan, "operation", None)
     )
+    if operational is not None:
+        profiles.add(operational)
+    return tuple(sorted(profiles))
 
 
 def _unsigned_profile_refusal(
@@ -862,6 +873,30 @@ def _unsigned_profile_refusal(
     except Exception:
         admitted = False
     return None if admitted else UNSIGNED_PROFILE_PENDING_ADMISSION
+
+
+_DIRECT_HELPER_OPERATIONS = frozenset(
+    {
+        ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+        ChangeOperation.SET_INPUT_SELECT_OPTION,
+    }
+)
+
+
+def _direct_helper_identity(operation: Any) -> dict[str, str]:
+    """The code-owned direct-provider identity of one helper value operation."""
+
+    if operation is ChangeOperation.SET_INPUT_SELECT_OPTION:
+        return {
+            "slug": input_select_contract.PROVIDER_SLUG,
+            "evidence_hash": stable_hash(
+                input_select_contract.provider_evidence()
+            ),
+        }
+    return {
+        "slug": HELPER_STATE_PROVIDER_SLUG,
+        "evidence_hash": stable_hash(helper_state_provider_evidence()),
+    }
 
 
 class _UnsignedProfileAdmissionAdapter:
@@ -1498,6 +1533,63 @@ class _AuditedHelperStateGateway:
         return result
 
 
+class _AuditedInputSelectGateway:
+    """HAMCP-145: the same audited boundary for exact ``select_option``."""
+
+    def __init__(
+        self,
+        delegate: Any,
+        auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
+    ):
+        self.delegate = delegate
+        self.auditor = auditor
+        self.send_recorder = send_recorder
+
+    async def _readback(self, read: Callable[[], Awaitable[Any]]):
+        self.auditor("provider_readback_started")
+        try:
+            result = await read()
+        except Exception:
+            self.auditor("provider_readback_failed")
+            raise
+        self.auditor("provider_readback_received")
+        return result
+
+    async def planning_evidence(self, entity_id: str):
+        return await self._readback(
+            lambda: self.delegate.planning_evidence(entity_id)
+        )
+
+    async def read_state(self, entity_id: str):
+        return await self._readback(lambda: self.delegate.read_state(entity_id))
+
+    async def select_option(
+        self, entity_id: str, option: str, *, before_dispatch
+    ):
+        async def boundary():
+            await before_dispatch()
+            self.auditor("provider_invocation_started")
+            # OD-6(ii): the provider sends immediately after this callback.
+            self.send_recorder()
+
+        try:
+            result = await self.delegate.select_option(
+                entity_id, option, before_dispatch=boundary
+            )
+        except Exception as exc:
+            self.auditor(
+                "provider_response_lost"
+                if getattr(exc, "dispatched", False)
+                else "provider_call_not_sent"
+                if getattr(exc, "call_not_sent", False) is True
+                else "provider_invocation_refused"
+            )
+            raise
+        self.auditor("provider_response_received")
+        return result
+
+
 class _EvidenceCapturingBackupGateway:
     """Persist only C2's bounded backup identity evidence."""
 
@@ -1655,6 +1747,7 @@ class F3RuntimeIntegration:
         helper_state_gateway: Any = None,
         dashboard_gateway: Any | None = None,
         core_runtime: Any | None = None,
+        input_select_gateway: Any = None,
     ):
         self.service = service
         self.core_runtime = core_runtime
@@ -1753,6 +1846,18 @@ class F3RuntimeIntegration:
             ),
             helper_dependency_risk_reader=(
                 service.helper_dependency_risk_reader
+            ),
+            input_select_gateway=(
+                _AuditedInputSelectGateway(
+                    input_select_gateway,
+                    self._audit_provider_boundary,
+                    self._record_provider_send,
+                )
+                if input_select_gateway is not None
+                else None
+            ),
+            input_select_dependency_risk_reader=getattr(
+                service, "input_select_dependency_risk_reader", None
             ),
             evidence_reader=self.evidence_reader,
             authority_reader=self._operational_authority,
@@ -2231,6 +2336,7 @@ class F3RuntimeIntegration:
                 ChangeOperation.RESTART_ADDON,
                 ChangeOperation.RESTART_HOME_ASSISTANT,
                 ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+                ChangeOperation.SET_INPUT_SELECT_OPTION,
                 ChangeOperation.UPDATE_DASHBOARD,
             }
         )
@@ -2400,13 +2506,8 @@ class F3RuntimeIntegration:
             sequence = prepare_configuration_sequence((prepared,))
             return (prepared,), sequence.lock_requests, sequence.sequence_hash
 
-        if plan.operation is ChangeOperation.SET_INPUT_BOOLEAN_STATE:
-            identity = {
-                "slug": HELPER_STATE_PROVIDER_SLUG,
-                "evidence_hash": stable_hash(
-                    helper_state_provider_evidence()
-                ),
-            }
+        if plan.operation in _DIRECT_HELPER_OPERATIONS:
+            identity = _direct_helper_identity(plan.operation)
         elif plan.operation is ChangeOperation.UPDATE_DASHBOARD:
             identity = provider_identity or self._dashboard_provider_identity(
                 plan
@@ -2537,8 +2638,7 @@ class F3RuntimeIntegration:
                     provider_dependency_key=(
                         (
                             "home_assistant:core"
-                            if plan.operation
-                            is ChangeOperation.SET_INPUT_BOOLEAN_STATE
+                            if plan.operation in _DIRECT_HELPER_OPERATIONS
                             else f"addon:{operation.authoritative_provider_slug}"
                         )
                         if plan.contract_version == 3
@@ -2603,13 +2703,8 @@ class F3RuntimeIntegration:
         if plan.contract_version == 3:
             provider_key = declarations[0]["provider_dependency_key"]
             provider_identity = (
-                {
-                    "slug": HELPER_STATE_PROVIDER_SLUG,
-                    "evidence_hash": stable_hash(
-                        helper_state_provider_evidence()
-                    ),
-                }
-                if plan.operation is ChangeOperation.SET_INPUT_BOOLEAN_STATE
+                _direct_helper_identity(plan.operation)
+                if plan.operation in _DIRECT_HELPER_OPERATIONS
                 else self._dashboard_provider_identity(plan)
                 if plan.operation is ChangeOperation.UPDATE_DASHBOARD
                 else {
@@ -2635,6 +2730,7 @@ class F3RuntimeIntegration:
                     if plan.operation
                     in {
                         ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+                        ChangeOperation.SET_INPUT_SELECT_OPTION,
                         ChangeOperation.UPDATE_DASHBOARD,
                     }
                     else await self._provider_identity()
@@ -2899,6 +2995,17 @@ class F3RuntimeIntegration:
             self._merge_lock_mode(
                 values,
                 "reload:input_boolean",
+                LockMode.SHARED,
+            )
+        elif plan.operation == ChangeOperation.SET_INPUT_SELECT_OPTION:
+            self._merge_lock_mode(
+                values,
+                resource_lock_key("input_select", plan.target_id),
+                LockMode.EXCLUSIVE,
+            )
+            self._merge_lock_mode(
+                values,
+                "reload:input_select",
                 LockMode.SHARED,
             )
         return values
@@ -4567,6 +4674,15 @@ class F3RuntimeIntegration:
         calculated = self.service.plan_hash(source_plan)
         if expected_plan_hash and expected_plan_hash != calculated:
             raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
+        if (
+            source_plan.contract_version == 3
+            and source_plan.operation == ChangeOperation.SET_INPUT_SELECT_OPTION
+        ):
+            # HAMCP-145 OD-12: a separately approved return to the captured
+            # prior option.  Admission is checked first, before any read.
+            return await self.service.create_input_select_rollback_plan(
+                source_plan
+            )
         if source_plan.contract_version == 3:
             raise GovernanceError(ErrorCode.ROLLBACK_NOT_AVAILABLE)
         if any(

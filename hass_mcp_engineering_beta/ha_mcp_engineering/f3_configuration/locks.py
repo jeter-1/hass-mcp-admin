@@ -23,6 +23,11 @@ _NON_CAUSAL_AUTOMATION_RELATIONS = frozenset(
     {"action_data", "action_target", "service_target"}
 )
 UNCONSTRAINED_INPUT_BOOLEAN_DEPENDENCY = "input_boolean_dynamic"
+#: Helpers whose exact value operations bind automation dependency evidence.
+#: HAMCP-145 adds input_select; the unconstrained guard key stays the single
+#: shared fence (its historical name is kept so lock sets stay identical).
+_DEPENDENCY_HELPER_PREFIXES = ("input_boolean.", "input_select.")
+_DEPENDENCY_HELPER_DOMAINS = frozenset({"input_boolean", "input_select"})
 #: HAMCP-165: every label create or edit changes the registry's name
 #: namespace, so label children of every plan serialize on one exclusive key.
 LABEL_NAMESPACE_LOCK_KEY = "label_namespace:registry"
@@ -35,7 +40,8 @@ def resource_lock_key(resource_type: str, target_id: str) -> str:
         prefix = "automation"
     elif resource_type == "script":
         prefix = "script"
-    elif resource_type in {"input_boolean", "input_number"}:
+    elif resource_type in {"input_boolean", "input_number", "input_select"}:
+        # HAMCP-145: input_select joins the same exact helper identity space.
         prefix = "helper"
     elif resource_type in {
         "entity_registry_metadata",
@@ -56,11 +62,10 @@ def resource_lock_key(resource_type: str, target_id: str) -> str:
 
 
 def helper_dependency_lock_key(entity_id: str) -> str:
-    """Return the exact causal-dependency lock for one input_boolean."""
+    """Return the exact causal-dependency lock for one exact helper."""
 
-    if (
-        not valid_entity_id(entity_id)
-        or not entity_id.startswith("input_boolean.")
+    if not valid_entity_id(entity_id) or not entity_id.startswith(
+        _DEPENDENCY_HELPER_PREFIXES
     ):
         raise ValueError("helper dependency identity is invalid")
     key = f"helper_dependency:{entity_id}"
@@ -103,7 +108,7 @@ def _automation_helper_dependency_locks(
         exact_helpers.update(
             item.target_entity_id
             for item in findings
-            if item.target_entity_id.startswith("input_boolean.")
+            if item.target_entity_id.startswith(_DEPENDENCY_HELPER_PREFIXES)
             and item.relation not in _NON_CAUSAL_AUTOMATION_RELATIONS
         )
         for item in obligations:
@@ -114,7 +119,7 @@ def _automation_helper_dependency_locks(
                 exact_helpers.update(
                     entity_id
                     for entity_id in item.exact_entity_ids
-                    if entity_id.startswith("input_boolean.")
+                    if entity_id.startswith(_DEPENDENCY_HELPER_PREFIXES)
                 )
                 unconstrained = True
                 continue
@@ -130,8 +135,17 @@ def _automation_helper_dependency_locks(
             exact_helpers.update(
                 entity_id
                 for entity_id in item.exact_entity_ids
-                if entity_id.startswith("input_boolean.")
+                if entity_id.startswith(_DEPENDENCY_HELPER_PREFIXES)
             )
+            if (
+                item.obligation_kind == "call_service_event_trigger"
+                and item.outcome == "proven_target_exclusion"
+            ):
+                # HAMCP-145: the extractor proves this disjoint only for
+                # input_boolean; the input_select reader treats it as
+                # target-capable, so a mutation holds the guard exclusively.
+                unconstrained = True
+                continue
             scope = item.target_selector_scope or "target_capable"
             if scope == "dependency_neutral":
                 continue
@@ -139,7 +153,7 @@ def _automation_helper_dependency_locks(
                 continue
             domains = item.possible_entity_domains
             could_select_helper = bool(
-                domains is None or "input_boolean" in domains
+                domains is None or _DEPENDENCY_HELPER_DOMAINS & set(domains)
             )
             if scope == "closed_entity_domains":
                 unconstrained = bool(unconstrained or could_select_helper)

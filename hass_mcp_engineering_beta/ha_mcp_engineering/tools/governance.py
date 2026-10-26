@@ -88,6 +88,7 @@ IDENTIFIER_INPUTS: dict[str, tuple[str, ...]] = {
         "deletions[].resource_type",
         "deletions[].target_id",
     ),
+    "create_input_select_option_plan": ("entity_id",),
     "create_addon_restart_plan": ("addon_slug",),
     "create_home_assistant_restart_plan": (),
     "create_change_plan": ("operation", "automation_id"),
@@ -1302,6 +1303,111 @@ def registered_configuration_delete_tool():
     return tool
 
 
+#: The closed published input schema (HAMCP-145).  One exact input_select
+#: and the exact, case-sensitive option; the planner refuses an option the
+#: entity does not currently offer.
+INPUT_SELECT_OPTION_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "title": "create_input_select_option_planArguments",
+    "additionalProperties": False,
+    "required": ["entity_id", "option", "reason"],
+    "properties": {
+        "entity_id": {
+            "type": "string",
+            "minLength": 14,
+            "maxLength": 127,
+            "pattern": "^input_select\\.[a-z0-9_]{1,114}$",
+        },
+        "option": {"type": "string", "minLength": 1, "maxLength": 255},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+        "expiration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "default": 120,
+        },
+    },
+}
+
+
+async def _input_select_option_plan(arguments: Any) -> str:
+    return await run_structured(
+        "create_input_select_option_plan",
+        "Created one governed input_select option proposal without "
+        "dispatching it.",
+        _screened(
+            "create_input_select_option_plan",
+            arguments,
+            lambda: GOVERNANCE.require().create_input_select_option_plan(
+                arguments
+            ),
+        ),
+        metadata={
+            "resource_type": "input_select",
+            "provider": "direct_home_assistant_state",
+            "operation": "set_input_select_option",
+            "fallback": "none",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_input_select_option_plan(
+    entity_id: str,
+    option: str,
+    reason: str,
+    expiration_minutes: int = 120,
+) -> str:
+    """Propose selecting one exact option on one input_select, no dispatch.
+
+    The option must exactly (case-sensitively) match one the entity offers
+    now; an option not offered, or the one already selected, creates no
+    plan. The plan discloses the automations that depend on the helper and,
+    where their state triggers name literal options, whether this change
+    fires them; incomplete evidence raises the approval tier. External
+    administrator approval and apply_change_plan are required; dispatch
+    re-reads the entity and refuses if the option or the options list
+    changed, then sends exactly input_select.select_option and verifies by
+    exact readback. rollback_change plans a separately approved return to
+    the prior option. Until a signed registry admits this capability the
+    tool refuses with pending_signed_registry_admission.
+    """
+    return await _input_select_option_plan(
+        {
+            "entity_id": entity_id,
+            "option": option,
+            "reason": reason,
+            "expiration_minutes": expiration_minutes,
+        }
+    )
+
+
+class InputSelectOptionPlanTool(Tool):
+    """Pass the exact raw argument object to the closed planner validation."""
+
+    async def run(self, arguments, context=None, convert_result=False):
+        rendered = await _input_select_option_plan(arguments)
+        return (
+            self.fn_metadata.convert_result(rendered)
+            if convert_result
+            else rendered
+        )
+
+
+def registered_input_select_option_tool():
+    tool = InputSelectOptionPlanTool.from_function(
+        create_input_select_option_plan,
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    tool.parameters = INPUT_SELECT_OPTION_INPUT_SCHEMA
+    return tool
+
+
 GOVERNANCE_TOOLS = (
     create_backup_plan,
     create_reload_plan,
@@ -1310,6 +1416,7 @@ GOVERNANCE_TOOLS = (
     create_entity_availability_exposure_plan,
     create_label_plan,
     create_configuration_delete_plan,
+    create_input_select_option_plan,
     create_addon_restart_plan,
     create_home_assistant_restart_plan,
     create_change_plan,

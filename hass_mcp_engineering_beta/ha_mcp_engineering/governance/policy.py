@@ -69,6 +69,10 @@ F2_V2_POLICY_VERSION = "f2-v2"
 COMPATIBLE_POLICY_VERSIONS = frozenset(
     {"f2-v1", F2_V2_POLICY_VERSION, POLICY_VERSION}
 )
+_HELPER_VALUE_POLICY_PREFIX = {
+    ChangeOperation.SET_INPUT_BOOLEAN_STATE: "exact_input_boolean_state",
+    ChangeOperation.SET_INPUT_SELECT_OPTION: "exact_input_select_option",
+}
 
 _RISK_RANK = {
     RiskDelta.NONE: 0,
@@ -1326,7 +1330,10 @@ def _single_plan_policy(
                 ("home_assistant_restart_elevated_policy",),
             ),
         )
-    if plan.operation == ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+    if plan.operation in _HELPER_VALUE_POLICY_PREFIX:
+        # HAMCP-145: input_select reuses the reviewed helper rule with its
+        # own reason prefix; input_boolean output is unchanged.
+        prefix = _HELPER_VALUE_POLICY_PREFIX[plan.operation]
         baseline = (
             plan.operational.baseline
             if plan.operational is not None
@@ -1376,7 +1383,7 @@ def _single_plan_policy(
                     RiskDelta.LOW,
                     PhysicalConsequence.NONE,
                     (
-                        "exact_input_boolean_state_standard_policy",
+                        f"{prefix}_standard_policy",
                         evidence_reason,
                         "no_consequential_dependency_detected",
                     ),
@@ -1404,7 +1411,7 @@ def _single_plan_policy(
                             if consequence in {"direct", "safety_critical"}
                             else "unknown_helper_dependency_effect"
                         ),
-                        "exact_input_boolean_state_elevated_policy",
+                        f"{prefix}_elevated_policy",
                         evidence_reason,
                     ),
                 ),
@@ -1422,7 +1429,7 @@ def _single_plan_policy(
                         else PhysicalConsequence.INDIRECT
                     ),
                     (
-                        "exact_input_boolean_state_elevated_policy",
+                        f"{prefix}_elevated_policy",
                         "helper_dependency_bounded_semantic_opacity",
                         "helper_dependency_execution_ineligible",
                     ),
@@ -1435,7 +1442,7 @@ def _single_plan_policy(
                     RiskDelta.HIGH,
                     PhysicalConsequence.INDIRECT,
                     (
-                        "exact_input_boolean_state_elevated_policy",
+                        f"{prefix}_elevated_policy",
                         "helper_dependency_coverage_failure",
                         "low_risk_not_established",
                     ),
@@ -1783,7 +1790,7 @@ def _evaluate_change_policy_version(
     )
     dependency_binding = (
         plan.operational.baseline.get("dependency_risk")
-        if plan.operation == ChangeOperation.SET_INPUT_BOOLEAN_STATE
+        if plan.operation in _HELPER_VALUE_POLICY_PREFIX
         and plan.operational is not None
         and isinstance(plan.operational.baseline, dict)
         else None

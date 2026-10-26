@@ -48,7 +48,9 @@ from .operational_models import (
     PROVIDER_OPERATIONS,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
+    HELPER_VALUE_OPERATIONS,
     SET_INPUT_BOOLEAN_STATE,
+    SET_INPUT_SELECT_OPTION,
     SUPPORTED_OPERATIONS,
     TARGET_CLASSES,
     TARGET_TYPES,
@@ -211,6 +213,11 @@ class OperationalAdministrationAdapter:
             dict[str, Any]
         ]]
         | None = None,
+        input_select_gateway: Any = None,
+        input_select_dependency_risk_reader: Callable[..., Awaitable[
+            dict[str, Any]
+        ]]
+        | None = None,
         metrics: OperationalMetrics | None = None,
         events: OperationalEventRecorder | None = None,
         lock_calculator: OperationalLockSetCalculator | None = None,
@@ -231,6 +238,10 @@ class OperationalAdministrationAdapter:
                 helper_dependency_risk_reader
                 if helper_dependency_risk_reader is not None
                 else read_runtime_helper_dependency_risk
+            ),
+            input_select_gateway=input_select_gateway,
+            input_select_dependency_risk_reader=(
+                input_select_dependency_risk_reader
             ),
             metrics=self.metrics,
         )
@@ -324,6 +335,10 @@ class OperationalAdministrationAdapter:
             or (
                 operation == SET_INPUT_BOOLEAN_STATE
                 and plan.target_type != "input_boolean"
+            )
+            or (
+                operation == SET_INPUT_SELECT_OPTION
+                and plan.target_type != "input_select"
             )
         ):
             raise OperationalAdapterError("target_identity_mismatch")
@@ -637,7 +652,7 @@ class OperationalAdministrationAdapter:
                 self.metrics.increment(
                     operation.operation, "provider_admission_failures"
                 )
-            if category == "stale_baseline":
+            if category in {"stale_baseline", "stale_target_state"}:
                 self.metrics.increment(operation.operation, "stale_state_failures")
             return self._preflight_rejection(
                 operation,
@@ -726,8 +741,29 @@ class OperationalAdministrationAdapter:
         result = await strategy.dispatch(
             operation, before_dispatch=before_dispatch
         )
-        if result.call_not_sent and operation.operation == SET_INPUT_BOOLEAN_STATE:
-            # HAMCP-181 b5, helper state only: nothing was sent.  The
+        if (
+            result.predispatch_refusal
+            and operation.operation == SET_INPUT_SELECT_OPTION
+        ):
+            # HAMCP-145: the final pre-intent drift read refused.  No intent
+            # was recorded, the approval stays unconsumed, nothing was sent.
+            if "stale_target_state" in result.predispatch_refusal:
+                self.metrics.increment(
+                    operation.operation, "stale_state_failures"
+                )
+            return DispatchResult(
+                outcome=NormalizedOperationOutcome.FAILED_PRE_DISPATCH,
+                dispatch_intent_recorded=False,
+                mutating_invocation_count=0,
+                may_have_dispatched=False,
+                provider_response_received=False,
+                diagnostic_codes=result.predispatch_refusal,
+            )
+        if (
+            result.call_not_sent
+            and operation.operation in HELPER_VALUE_OPERATIONS
+        ):
+            # HAMCP-181 b5, helper value only: nothing was sent.  The
             # executor records a proven no-call only when its own callback
             # committed the intent and then raised.
             self.metrics.increment(operation.operation, "intent_failures")
