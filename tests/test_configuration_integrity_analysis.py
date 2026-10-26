@@ -208,9 +208,25 @@ class ClassificationTests(unittest.TestCase):
         )
 
     def test_present_state_is_not_missing_even_without_registry(self):
+        # HAMCP-226 deliberately changes this pin: a present but unavailable
+        # target is no longer silent. It is reported as
+        # unavailable_entity_reference, never as missing_entity_reference.
         value = bundle(
             references=[reference("sensor.live")],
             states={"sensor.live": {"state": "unavailable"}},
+        )
+        findings, _, _ = self.classify(value, include_orphans=False)
+        self.assertEqual(
+            [item.finding_type for item in findings],
+            ["unavailable_entity_reference"],
+        )
+        self.assertEqual(findings[0].target_state, "unavailable")
+        self.assertEqual(findings[0].severity, "medium")
+
+    def test_present_available_state_without_registry_is_silent(self):
+        value = bundle(
+            references=[reference("sensor.live")],
+            states={"sensor.live": {"state": "on"}},
         )
         findings, _, _ = self.classify(value, include_orphans=False)
         self.assertEqual(findings, [])

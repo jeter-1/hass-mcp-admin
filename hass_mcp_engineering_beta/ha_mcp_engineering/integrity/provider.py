@@ -9,6 +9,7 @@ import time
 from typing import Any
 
 from ..clients.paths import rest_path
+from ..dependency.bounded_sources import bounded_source_entries
 from ..dependency.models import SOURCE_TYPES
 from ..providers import (
     EngineeringEvidenceProvider,
@@ -21,11 +22,26 @@ from ..providers import (
     ProviderResult,
 )
 from ..sanitization import ReferenceMarkerRegistry, sanitize_untrusted_data
+from ..untrusted_text import screen_fields
 from .models import IntegrityEvidenceBundle, IntegritySourceCoverage
 
 
 MAX_INDEX_REFERENCES = 10_000
 MAX_DYNAMIC_REFERENCES = 1_000
+
+
+# HAMCP-226: the screened fields of each index reference (``untrusted_text``).
+REFERENCE_IDENTIFIER_KEYS = (
+    "target_entity_id",
+    "source_id",
+    "source_entity_id",
+    "config_path",
+    "blueprint_path",
+    "blueprint_input",
+    "possible_entity_ids",
+    "literal_label_selectors",
+)
+REFERENCE_TEXT_KEYS = ("source_name", "excerpt", "evidence_summary", "warning")
 
 
 class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
@@ -155,12 +171,25 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
             inherits=getattr(snapshot, "sanitizer_registry", None)
         )
 
+        screened_text_count = 0
         for finding in snapshot.findings[:MAX_INDEX_REFERENCES]:
             source_type = _effective_source_type(asdict(finding))
             if source_type not in requested:
                 continue
-            safe = sanitize_untrusted_data(
+            screened, withheld_ids, withheld_text = screen_fields(
                 asdict(finding),
+                identifier_keys=REFERENCE_IDENTIFIER_KEYS,
+                text_keys=REFERENCE_TEXT_KEYS,
+                known_secrets=(self.secret, self.ha_token),
+            )
+            if withheld_ids:
+                # A withheld identity cannot be named or grouped; the source
+                # is reported as a coverage failure instead (HAMCP-226).
+                sanitation_failures[source_type] += 1
+                continue
+            screened_text_count += len(withheld_text)
+            safe = sanitize_untrusted_data(
+                screened,
                 known_secrets=(self.secret, self.ha_token),
                 max_string=500,
                 registry=markers,
@@ -174,8 +203,18 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
             if item.source_type not in requested:
                 outside_dynamic_count += 1
                 continue
-            safe = sanitize_untrusted_data(
+            screened, withheld_ids, withheld_text = screen_fields(
                 asdict(item),
+                identifier_keys=REFERENCE_IDENTIFIER_KEYS,
+                text_keys=REFERENCE_TEXT_KEYS,
+                known_secrets=(self.secret, self.ha_token),
+            )
+            if withheld_ids:
+                sanitation_failures[item.source_type] += 1
+                continue
+            screened_text_count += len(withheld_text)
+            safe = sanitize_untrusted_data(
+                screened,
                 known_secrets=(self.secret, self.ha_token),
                 max_string=500,
                 registry=markers,
@@ -226,6 +265,21 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
             )
         )
 
+        # HAMCP-226: name each requested-scope source that hit a bound.
+        scripts = getattr(snapshot, "script_diagnostics", None)
+        bounded = bounded_source_entries(
+            (
+                *getattr(snapshot, "obligations", ()),
+                *(
+                    getattr(scripts.visible(), "bounded_obligations", ())
+                    if scripts is not None
+                    else ()
+                ),
+            ),
+            known_secrets=(self.secret, self.ha_token),
+            source_types=requested,
+        )
+
         return IntegrityEvidenceBundle(
             exact_references=exact_references,
             dynamic_references=dynamic_references,
@@ -255,6 +309,8 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
             },
             evidence_collection_duration_ms=(time.perf_counter() - started) * 1000,
             dynamic_outside_requested_scope_count=outside_dynamic_count,
+            screened_text_count=screened_text_count,
+            bounded_sources=bounded,
             orphan_scope_complete=set(requested) == set(SOURCE_TYPES),
         )
 
@@ -279,6 +335,9 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
             output[entity_id] = {
                 "entity_id": entity_id,
                 "state": str(item.get("state") or "")[:128],
+                # HAMCP-226: evidence for unavailable references; the rule
+                # keeps it only as an ISO 8601 timestamp.
+                "last_changed": str(item.get("last_changed") or "")[:64],
             }
         return output
 

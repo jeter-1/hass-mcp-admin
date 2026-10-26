@@ -282,6 +282,7 @@ async def configuration_integrity_analysis(
             "missing_entity_reference",
             "disabled_entity_reference",
             "registry_only_entity_reference",
+            "unavailable_entity_reference",
             "orphan_registry_candidate",
             "unresolved_dynamic_reference",
         ]
