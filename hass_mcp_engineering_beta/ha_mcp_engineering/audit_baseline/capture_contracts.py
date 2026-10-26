@@ -37,38 +37,54 @@ READ_SECONDS = 5
 CONCURRENCY = 4
 SNAPSHOT_BYTES = 2 * 1024 * 1024
 SNAPSHOT_TTL = 600
-MAX_SNAPSHOTS = 2
+# HAMCP-228 decision S: a durable bounded store; refuse at capacity, never evict.
+STORE_MODEL = "audit-baselines-v1"
+STORE_BASELINES = 12
+STORE_RETENTION_SECONDS = 180 * 86_400
+STORE_INDEX_BYTES = 65_536
+QUARANTINE_MAX = 32
 PAGE_BYTES = 48_000
 ID = re.compile(r"[A-Za-z0-9_.:-]{1,256}\Z")
 ENTITY = re.compile(r"automation\.[a-z0-9_]{1,220}\Z")
 CURSOR = re.compile(r"[0-9a-f]{32}:[0-9]{1,4}:[0-9a-f]{64}\Z")
+CAPTURE_ID = re.compile(r"[0-9a-f]{32}\Z")
 REASONS = frozenset({"invalid_arguments", "invalid_cursor", "snapshot_expired", "capacity_busy",
     "authority_unavailable", "authority_drift", "identity_unverified", "identity_drift", "access_denied",
     "source_unavailable", "malformed_response", "response_limit", "structural_limit", "timeout",
-    "output_limit", "configuration_unavailable", "configuration_identity_mismatch", "redacted_identity"})
+    "output_limit", "configuration_unavailable", "configuration_identity_mismatch", "redacted_identity",
+    "store_full", "store_unavailable", "baseline_not_found", "baseline_damaged", "resume_inventory_changed",
+    "resume_not_needed"})
 
 
 class CaptureError(GovernanceError):
-    def __init__(self, reason):
+    def __init__(self, reason, *, oldest_age_seconds=None):
         if reason not in REASONS:
             reason = "source_unavailable"
         code = (ErrorCode.INVALID_REQUEST if reason == "invalid_arguments" else
                 ErrorCode.INVALID_CURSOR if reason in {"invalid_cursor", "snapshot_expired"} else
                 ErrorCode.PROVIDER_UNAVAILABLE if reason in {"authority_unavailable", "authority_drift"} else
                 ErrorCode.ANALYSIS_UNAVAILABLE)
-        super().__init__(code, details={"reason": reason})
+        details = {"reason": reason}
+        if reason == "store_full" and type(oldest_age_seconds) is int and oldest_age_seconds >= 0:
+            # Only the fixed capacity and the oldest age; never a stored payload.
+            details.update(stored_baselines=STORE_BASELINES, oldest_age_seconds=oldest_age_seconds,
+                           retention_seconds=STORE_RETENTION_SECONDS)
+        super().__init__(code, details=details)
         self.reason = reason
 
     @property
     def retryable(self) -> bool:
-        return self.reason in {"capacity_busy", "timeout", "source_unavailable"}
+        return self.reason in {"capacity_busy", "timeout", "source_unavailable", "store_unavailable"}
 
 
 def validate_arguments(arguments):
-    if (type(arguments) is not dict or set(arguments) - {"limit", "cursor"}
+    resume = arguments.get("resume_capture_id", "") if type(arguments) is dict else ""
+    if (type(arguments) is not dict or set(arguments) - {"limit", "cursor", "resume_capture_id"}
             or type(arguments.get("limit", 25)) is not int or not 1 <= arguments.get("limit", 25) <= 100
             or type(arguments.get("cursor", "")) is not str
-            or (arguments.get("cursor") and not CURSOR.fullmatch(arguments["cursor"]))):
+            or (arguments.get("cursor") and not CURSOR.fullmatch(arguments["cursor"]))
+            or type(resume) is not str or (resume and not CAPTURE_ID.fullmatch(resume))
+            or (resume and arguments.get("cursor"))):
         raise CaptureError("invalid_arguments")
 
 

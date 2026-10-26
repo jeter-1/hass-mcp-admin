@@ -66,6 +66,9 @@ def _shared_unknown_reasons(
         reasons.append("earlier_mapping_unverified")
     if not later.identity_verified:
         reasons.append("later_mapping_unverified")
+    # HAMCP-228: a record the capture never attempted is unknown, not changed.
+    if "timed_out" in (earlier.configuration_status, later.configuration_status):
+        reasons.append("timed_out")
     if earlier.configuration_status != "readable":
         reasons.append("earlier_configuration_not_readable")
     if later.configuration_status != "readable":

@@ -2,6 +2,7 @@
 
 import asyncio
 from collections import Counter
+import copy
 from datetime import datetime, timezone
 import time
 import uuid
@@ -9,7 +10,7 @@ import uuid
 from ..request_context import current_telemetry
 from ..sanitization import sanitize_untrusted_data
 from . import capture_contracts as c
-from .models import BASELINE_SCHEMA, FINGERPRINT_MODEL
+from .models import BASELINE_SCHEMA_V2, FINGERPRINT_MODEL
 from .validation import canonical_configuration_digest, BaselineValidationError, _new_baseline
 
 
@@ -125,7 +126,18 @@ class BaselineCaptureProvider:
                 "verification_failure_count": integer(counters.get("verification_failures")),
                 "retirement_count": integer(counters.get("retirements")), "limitations": []}
 
-    async def collect(self):
+    @staticmethod
+    def retry_ids(baseline, outcomes):
+        """HAMCP-228 decision T: resume retries timeouts only, never other failures."""
+
+        return {row["configuration_id"] for row in baseline["records"]
+                if row["configuration"]["status"] == "timed_out"
+                or (row["configuration"]["status"] == "unreadable"
+                    and outcomes.get(row["configuration_id"]) == "timeout")}
+
+    async def collect(self, base=None):
+        """Full capture, or with ``base`` (a stored report) a resume of its timeouts."""
+
         authority = self.authority()
         started, started_at = time.monotonic(), now()
         sources, outcomes = [], {}
@@ -173,16 +185,36 @@ class BaselineCaptureProvider:
                                      "redacted": False, "truncated": False, "omitted": True}},
                     "enabled_state": {"state": state["state"], "collected_at": observed_at,
                                       "collection_time_status": "observed"}})
+            pending = list(range(len(records)))
+            if base is not None:
+                prior = base["baseline"]
+                prior_outcomes = base["diagnostics"]["record_outcomes"]
+                # The inventory fence: the same installation, Core authority
+                # generation and ordered automation mapping, or no resume.
+                if (prior["installation"]["installation_id"] != first["identity"]
+                        or prior["authority"]["generation"] != authority[0]
+                        or prior["inventory"]["declared_count"] != len(states) + first["states"]["invalid_count"]
+                        or [(r["configuration_id"], r["entity_id"]) for r in prior["records"]]
+                        != [(r["configuration_id"], r["entity_id"]) for r in records]):
+                    raise c.CaptureError("resume_inventory_changed")
+                retry = self.retry_ids(prior, prior_outcomes)
+                pending = [index for index, row in enumerate(records) if row["configuration_id"] in retry]
+                for index, row in enumerate(prior["records"]):
+                    if row["configuration_id"] not in retry:
+                        records[index] = copy.deepcopy(row)
+                outcomes.update({key: value for key, value in prior_outcomes.items() if key not in retry})
             position = 0
 
             async def collect_records():
                 nonlocal position
-                while position < len(records):
-                    index, position = position, position + 1
+                while position < len(pending):
+                    index, position = pending[position], position + 1
                     row = records[index]
                     config_id, config = row["configuration_id"], row["configuration"]
                     if time.monotonic() - started >= c.COLLECTION_SECONDS - 10:
+                        # HAMCP-228: never attempted before the bound; resume retries it.
                         outcomes[config_id] = "timeout"
+                        config["status"] = "timed_out"
                         continue
                     try:
                         authorize()
@@ -234,10 +266,23 @@ class BaselineCaptureProvider:
         mapping_drift = bool(last and any(registry.get(e) != last["registry"]["records"].get(e) for e in states))
         if mapping_drift:
             inventory_drift = "detected"
+        authority_drift = "none_observed_at_capture_fences" if identity_established else "unknown"
+        resume = None
+        if base is not None:
+            prior = base["baseline"]
+            # The non-atomic window spans the base capture and this resume.
+            started_at = prior["capture"]["started_at"]
+            if inventory_drift == "none_observed_at_capture_fences":
+                inventory_drift = prior["consistency"]["inventory_drift"]
+            if prior["consistency"]["authority_drift"] != "none_observed_at_capture_fences":
+                authority_drift = prior["consistency"]["authority_drift"]
+            identity_established = identity_established and prior["installation"]["status"] == "established"
+            resume = {"resumed_from": prior["baseline_id"], "resumed_count": len(pending)}
+        if mapping_drift:
             for record in records:
                 record["mapping_status"] = "contradictory"
         baseline = {
-            "schema": BASELINE_SCHEMA, "baseline_id": "aab-" + uuid.uuid4().hex, "source_artifact": None,
+            "schema": BASELINE_SCHEMA_V2, "baseline_id": "aab-" + uuid.uuid4().hex, "source_artifact": None,
             "capture": {"started_at": started_at, "ended_at": now(), "non_atomic": True},
             "installation": {"status": "established" if identity_established else "unestablished",
                 "installation_id": first["identity"] if identity_established else None, "method": c.IDENTITY_METHOD,
@@ -249,13 +294,14 @@ class BaselineCaptureProvider:
                 "limitations": ["loaded_scope_only_not_stored_yaml", "registry_only_discovery_partial"]},
             "fingerprint_contract": c.fingerprint_contract(), "records": records,
             "consistency": {"inventory_drift": inventory_drift,
-                "authority_drift": "none_observed_at_capture_fences" if identity_established else "unknown",
+                "authority_drift": authority_drift,
                 "limitations": ["non_atomic_changes_and_reversions_may_be_unobserved"]},
             "authority": authority_metadata,
             "limitations": ["blueprint_external_bodies_not_fingerprinted", "membership_removal_is_not_disk_deletion"],
             "structural_assertions": {"source_internal_material_digest_verified": None,
                 "configuration_hashes_recomputed": True, "record_count_verified": True,
                 "fingerprint_model_assignment": "native_full_configuration_data"},
+            "resume": resume,
         }
         await c.worker(_new_baseline, baseline)
         return {"baseline": baseline, "diagnostics": {

@@ -16,6 +16,7 @@ from .compatibility import SETTINGS
 async def capture_automation_baseline(
     limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 25,
     cursor: Annotated[str, Field(max_length=102)] = "",
+    resume_capture_id: Annotated[str, Field(max_length=32)] = "",
 ) -> str:
     """Capture exact configuration hashes for administrator-visible loaded automations.
 
@@ -25,14 +26,18 @@ async def capture_automation_baseline(
     UUID. Captures are non-atomic, bounded to 1000 records and 45 seconds of
     collection with four configuration reads at a time. No writes/retries/fallback.
     Export baseline_header plus all ordered records; validate artifact_sha256.
-    Continuations reuse one ten-minute memory snapshot with zero HA reads.
-    Compare distinct ordered exports using the existing offline comparator.
+    Each finished capture is stored durably (12 baselines, 180 days; refused
+    when full). Continuation cursors last ten minutes with zero HA reads.
+    resume_capture_id re-reads the inventory and re-collects only that
+    capture's timed-out records into a new baseline; it refuses when the
+    inventory changed. Compare with compare_automation_baselines.
     """
     metadata = {"provider": "engineering", "data_providers": ["direct_ha_api"],
                 "fallback_occurred": False, "upstream_calls": 0}
     async def action():
-        validate_arguments({"limit": limit, "cursor": cursor})
-        result = await AUTOMATION_BASELINE_CAPTURE.require().capture(limit=limit, cursor=cursor)
+        validate_arguments({"limit": limit, "cursor": cursor, "resume_capture_id": resume_capture_id})
+        result = await AUTOMATION_BASELINE_CAPTURE.require().capture(
+            limit=limit, cursor=cursor, resume_capture_id=resume_capture_id)
         header = result["baseline_header"]
         partial = (header["inventory"]["completeness"] != "complete"
                    or header["installation"]["status"] != "established"
@@ -45,6 +50,7 @@ async def capture_automation_baseline(
             telemetry.result_status = "partial" if partial else "success"
             telemetry.audit_context.update(scope=header["inventory"]["scope"],
                 capture_id=result["snapshot"]["capture_id"], continuation=bool(cursor),
+                resumed_from=result["snapshot"]["resumed_from"],
                 returned_records=len(result["records"]), fallback="none")
         return result
     return await run_structured("capture_automation_baseline", "Returned frozen loaded-automation baseline evidence.",
