@@ -575,6 +575,25 @@ class JournalServiceTests(Roots, unittest.IsolatedAsyncioTestCase):
         self.assertIn("journal_match_rejected:supervisor", page["omissions"])
         self.assertNotIn("PLANTED", json.dumps(page))
 
+    async def test_an_unreadable_entry_alone_makes_the_source_partial(self):
+        real = reader(self.journal)
+
+        class Unreadable:
+            def read(self, plans, digest, deadline):
+                result = real.read(plans, digest, deadline)
+                records = result.scans["host:os"].records
+                first = next(n for n, record in enumerate(records) if record.rejected is None)
+                records[first] = dataclasses.replace(records[first], rejected="entry_unreadable")
+                return result
+        # The window test_a_clean_window_is_complete proves complete.
+        page = await self.read(service=self.make_service(Unreadable()), sources=["host:os"],
+                               start=iso(15), end=iso(20))
+        row = self.row(page, "host:os")
+        self.assertEqual((row["status"], row["match_rejected"], row["entries_unreadable"]), ("partial", 0, 1))
+        self.assertIn("journal_entry_unreadable:host:os", page["omissions"])
+        self.assertFalse(page["complete"])
+        self.assertEqual(page["returned"], 1)
+
     async def test_scan_bound_is_disclosed_and_resumes(self):
         with patch.object(hj, "MAX_SCAN_ENTRIES", 4):
             pages = await self.read_all(sources=["host"])
