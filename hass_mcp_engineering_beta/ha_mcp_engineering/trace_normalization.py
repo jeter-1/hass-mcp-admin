@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
+import re
 from typing import Any, Awaitable, Callable
 
 from .reliability.timestamps import normalize_timestamp, parse_timestamp
-from .sanitization import sanitize_untrusted_data
+from .sanitization import (
+    ReferenceMarkerRegistry,
+    SanitizationResult,
+    redaction_summary,
+    sanitize_untrusted_data,
+)
 
 
 MAX_TRACE_HEADERS = 100
+TRACE_STRING_LIMIT = 2_000
+# HAMCP-225: the shared rules carry no PEM rule, and a trace is now stored
+# for 90 days. A trace string holding a private-key PEM header is withheld
+# whole (an unmarked, header-less key body is not detected).
+_PRIVATE_KEY_PEM = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----", re.IGNORECASE)
+PRIVATE_KEY_MARKER = "[REDACTED:private_key]"
 
 
 @dataclass(frozen=True)
@@ -23,6 +35,7 @@ class NormalizedAutomationTraceHeader:
     script_execution: str | None = None
     last_step: str | None = None
     error: Any = None
+    not_triggered: bool = False
 
     def public(self) -> dict[str, Any]:
         """Return the stable legacy-compatible trace-list shape."""
@@ -69,7 +82,7 @@ async def fetch_normalized_trace_list(
     if not isinstance(result, list):
         raise TypeError("trace list response is invalid")
     sanitation = sanitize_untrusted_data(
-        result, known_secrets=known_secrets, max_string=2_000
+        result, known_secrets=known_secrets, max_string=TRACE_STRING_LIMIT
     )
     if not isinstance(sanitation.value, list):
         raise TypeError("sanitized trace list response is invalid")
@@ -77,6 +90,93 @@ async def fetch_normalized_trace_list(
         sanitation.value,
         sanitization_failed_closed=sanitation.failed_closed,
     )
+
+
+def sanitize_trace_detail(
+    detail: Any,
+    *,
+    known_secrets: tuple[str, ...] = (),
+    registry: ReferenceMarkerRegistry | None = None,
+) -> SanitizationResult:
+    """The one HAMCP-225 exit for a Core ``trace/get`` result (O2).
+
+    Every automation trace read that leaves Engineering or reaches the
+    snapshot store passes here once; nothing is added to the value after it.
+    """
+
+    result = sanitize_untrusted_data(
+        detail,
+        known_secrets=known_secrets,
+        max_string=TRACE_STRING_LIMIT,
+        registry=registry,
+    )
+    withheld = 0
+
+    def walk(item: Any) -> Any:
+        nonlocal withheld
+        if type(item) is str:
+            if _PRIVATE_KEY_PEM.search(item) is None:
+                return item
+            withheld += 1
+            return PRIVATE_KEY_MARKER
+        if type(item) is dict:
+            return {key: walk(child) for key, child in item.items()}
+        if type(item) is list:
+            return [walk(child) for child in item]
+        return item
+
+    value = walk(result.value)
+    if not withheld:
+        return result
+    if registry is not None:
+        registry.register_output(PRIVATE_KEY_MARKER)
+    return replace(
+        result,
+        value=value,
+        redacted_field_count=result.redacted_field_count + withheld,
+        redaction_categories=tuple(sorted({*result.redaction_categories, "private_key"})),
+    )
+
+
+def trace_sanitization_partial(result: SanitizationResult) -> bool:
+    """Withheld, shortened, colliding or failed content is never complete."""
+
+    return bool(
+        result.redaction_applied
+        or result.truncated_field_count
+        or result.failed_closed
+        or result.marker_collision_count
+    )
+
+
+def trace_sanitization_evidence(result: SanitizationResult) -> dict[str, Any]:
+    """Bounded counts and category names only, never values."""
+
+    summary = redaction_summary(result) or {
+        "redacted_field_count": 0,
+        "categories": [],
+        "category_count": 0,
+        "marker_collision_count": result.marker_collision_count,
+    }
+    return {
+        **summary,
+        "truncated_field_count": result.truncated_field_count,
+        "failed_closed": result.failed_closed,
+    }
+
+
+def trace_sanitization_warning(result: SanitizationResult) -> str:
+    """One fixed warning naming the sanitizer's categories, never values."""
+
+    categories = sorted(result.redaction_categories)
+    reasons = []
+    if categories:
+        reasons.append("withheld " + ", ".join(categories))
+    if result.truncated_field_count:
+        reasons.append(f"shortened {result.truncated_field_count} string(s) to {TRACE_STRING_LIMIT} characters")
+    if result.failed_closed:
+        reasons.append("failed closed on one or more fields")
+    return "Trace content is partial: Engineering " + "; ".join(reasons or ["withheld content"]) + "."
 
 
 def normalize_trace_list(
@@ -125,6 +225,7 @@ def normalize_trace_list(
             script_execution=_bounded_text(item.get("script_execution"), 128),
             last_step=_bounded_text(item.get("last_step"), 160),
             error=item.get("error"),
+            not_triggered=item.get("not_triggered") is True,
         )
         existing = by_run_id.get(run_id)
         if existing is not None:

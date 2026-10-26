@@ -613,6 +613,30 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.39` trace snapshot slice (HAMCP-225) adds four
+Engineering-native tools and one Engineering-local store. It adds no Home
+Assistant write, permission, add-on option, Core capability profile,
+delegated provider or fallback.
+
+- **Reads.** Only `trace/list` and `trace/get` with `domain: "automation"`,
+  the shapes `list_automation_traces` and `get_automation_trace` already
+  send. Tests assert no other command and no `domain: "script"`.
+- **Sanitization.** `get_automation_trace` output and every captured trace
+  pass the shared trace sanitizer before they leave Engineering or reach the
+  store; capture runs one more strict pass over the complete record, and
+  read-back re-sanitizes each page. Withheld content makes the result
+  `partial`. PEM private-key blocks with a header are withheld whole.
+- **Store.** `trace-snapshots-v1/` under the governance path: `flock`,
+  `O_NOFOLLOW`, `0600`, atomic rename, digest-checked loads, quarantine,
+  fail-closed index, fixed diagnostics, bounded size, count and age. Manual
+  captures are refused at capacity; a watch evicts only its own snapshots.
+- **Watch poller.** The only periodic Core read: bounded to 10 watches every
+  30 seconds, under its own Core authority lease, paused while authority is
+  unavailable or the version is not admitted. Watch changes need no
+  approval but write a required, caller-attributed audit row.
+- **Caller binding.** List and read cursors are HMAC-bound to the caller
+  with a per-process key.
+
 The `2.4.1-beta.33` configuration-definition slice (HAMCP-132 slice 2) adds
 the read-only `get_configuration_definitions` tool. It adds no permission,
 add-on option, HTTP client, Supervisor call, route template, batch-allowlist

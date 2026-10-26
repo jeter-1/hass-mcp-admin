@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.4.1-beta.39 - Automation trace snapshots (HAMCP-225)
+
+Builds on 2.4.1-beta.38. Adds no Home Assistant write.
+
+- New `capture_automation_trace`: stores sanitized copies of an automation's
+  retained Core traces (exactly `run_id`, or up to 5 retained runs skipping
+  `not_triggered` and, by default, `failed_conditions`), with a per-run
+  outcome. Reads only `trace/list` and `trace/get` for the automation domain;
+  requires `core.automation_trace_read`.
+- New `list_trace_snapshots` and `get_trace_snapshot` (paged): no Home
+  Assistant call; caller-bound cursors that end at a restart; read-back is
+  re-sanitized and a partly redacted string is withheld whole (R1).
+- New `set_automation_trace_watch` (`add`, `remove`, `list`): no plan or
+  approval; every add and remove is audited with the caller and every
+  response returns the list. At most 10 watches, 168 hours each. A bounded
+  poller lists each watched automation's traces every 30 seconds and
+  captures new stopped runs matching the mode; it pauses without Core
+  authority and counts missed runs.
+- Store `trace-snapshots-v1` under the governance path: 200 snapshots,
+  256 KiB each, 32 MiB, 90 days. A manual capture at capacity is refused
+  (E1); a watch evicts only its own oldest snapshot beyond 20 (E2, new
+  behavior, audited); manual snapshots are never evicted.
+- `get_automation_trace` passes the shared trace sanitizer once (HAMCP-194
+  trace-read part, O2): credential-like and known-secret values withheld,
+  strings over 2,000 characters shortened, result `partial` with
+  categories. Input schema unchanged; description gains one disclosure.
+  The trace sanitizer also withholds PEM private-key blocks.
+- Static tools 72; catalog 100 (101 with the optional YAML reader).
+
 ## 2.4.1-beta.37 - Truthful stored outcomes (HAMCP-181 PR2, HAMCP-214, HAMCP-193)
 
 Builds on 2.4.1-beta.36. Activates nothing new.

@@ -176,13 +176,16 @@ REVIEWED_EMPTY_STATIC_ROUTES = frozenset(
         "get_core_log_history",
         "get_execution_task",
         "get_incident_logs",
+        "get_trace_snapshot",
         "list_capabilities",
         "list_change_plans",
         "list_execution_tasks",
+        "list_trace_snapshots",
         "reload_domain",
         "reverify_configuration_task",
         "rollback_change",
         "run_held_read_canary",
+        "set_automation_trace_watch",
         "upsert_automation",
     }
 )

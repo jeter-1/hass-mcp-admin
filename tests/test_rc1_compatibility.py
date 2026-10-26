@@ -199,6 +199,10 @@ class RC1PublicContractTests(unittest.TestCase):
                         "create_entity_availability_exposure_plan",
                         "create_label_plan",
                         "create_configuration_delete_plan",
+                        "capture_automation_trace",
+                        "list_trace_snapshots",
+                        "get_trace_snapshot",
+                        "set_automation_trace_watch",
                     )
                 )
             ),
@@ -440,7 +444,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 68)
+        self.assertEqual(len(classifications), 72)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

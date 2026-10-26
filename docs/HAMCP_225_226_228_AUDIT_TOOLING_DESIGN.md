@@ -189,7 +189,8 @@ recommended, because D11 is a deferred exception and this would widen it.
 
 ### 2.4 Store
 
-Namespace `/data/trace_snapshots/`. It follows the
+Namespace `trace-snapshots-v1/` under the governance disk boundary
+(`settings.governance_path`, on `/data`; section 10). It follows the
 `governance/reverification_storage.py` precedent: `flock` on a lock file,
 `O_NOFOLLOW`, mode `0600`, temporary file plus `fsync` plus `rename`, a fixed
 diagnostic with no payload reflection, and quarantine of a record whose stored
@@ -513,3 +514,66 @@ block at the top of this note).
   recovered.
 - No change to `COLLECTION_SECONDS`, `READ_SECONDS` or capture concurrency.
   Resume addresses HAAC-E014 without widening the bound.
+
+## 10. HAMCP-225 implementation note (Part 2, PR A)
+
+What the HAMCP-225 pull request built, and where it refines sections 2.1 to
+2.5. Bounds are the section 2.4 and 2.5 values (decision B) and live in
+`trace_snapshots/contracts.py`.
+
+- **Modules.** `trace_snapshots/contracts.py` (closed input checks, bounds,
+  outcomes), `store.py` (namespace, index, records, quarantine), `service.py`
+  (capture, list, get, watch), `poller.py` (W1), `runtime.py` (composition;
+  no import-time I/O), and `tools/trace_snapshots.py` (the four tools).
+  `application.py` configures the runtime and starts and stops the poller
+  with the server lifespan.
+- **Store location.** `<governance_path>/trace-snapshots-v1/` with
+  `index.json`, `records/` and `quarantine/`, and a nonblocking `flock`
+  (a second owner is refused, not queued). A corrupt or over-bound index
+  fails closed (`store_invalid`); a record whose SHA-256 does not match is
+  quarantined. A write whose commit cannot be confirmed sets
+  `commit_unknown` and refuses further store writes until restart.
+- **`get_automation_trace` (2.1).** The output passes
+  `sanitize_trace_detail` once (one exit). Withheld or shortened content
+  makes completeness `partial` with a fixed warning naming the categories.
+  The tool description gains one sanitization disclosure; the input schema
+  is unchanged. `trace_normalization.py` gains a PEM-block pass, so a private
+  key with its `-----BEGIN ... PRIVATE KEY-----` header is withheld whole.
+  A header-less key body is not detected, and the trace/list header path is
+  not PEM-checked.
+- **Read tools.** `list_trace_snapshots` and `get_trace_snapshot` are open to
+  any authenticated caller, like every other Engineering read. Their cursors
+  are HMAC-bound to the caller identity with a per-process key, so a cursor
+  is refused for another caller and ends at a server restart. Pages are at
+  most 40,000 bytes of sanitized content, inside the 60,000-byte response
+  bound. Read-back re-sanitizes the whole page envelope (R1).
+- **Watch tool (W1 addition).** `set_automation_trace_watch(action,
+  automation_id, mode, duration_hours)`: no plan, no approval. `add` and
+  `remove` write a `trace_watch_change` audit row with the caller; the write
+  is required, so an unavailable audit refuses the change. Every response,
+  including refusals, returns the current list. Watch captures write
+  `trace_watch_capture` rows (snapshot ids and evicted ids) and expiry writes
+  `trace_watch_expired`. A removed watch's snapshots stay until their age
+  expiry.
+- **Poller.** Every 30 seconds (a 20-second per-tick bound), one `trace/list`
+  per active watch, then `trace/get` for new stopped runs matching the mode.
+  It holds its own Core authority lease (`caller_id: trace_watch`) and never
+  borrows a caller's. It pauses while authority is unavailable or the
+  version is not admitted, and counts missed runs as a gap (no backfill). It
+  is the only periodic Core read Engineering makes. Server health output is
+  unchanged.
+- **Authority drift.** If the admitted Core authority changes while a
+  capture (manual) is reading, the capture is refused with `authority_drift`
+  before anything is stored.
+- **Core routes.** `capture_automation_trace` requires
+  `core.automation_trace_read`. The other three tools are
+  `CORE_INDEPENDENT_LOCAL_STATE`; the watch tool is classed this way because
+  the tool itself makes no Core call (the poller is separately gated).
+- **Catalog.** Static tools 68 to 72; catalog 96 to 100 (101 with the YAML
+  reader). Four `BETA_NATIVE_CAPABILITIES` and four provider-matrix entries.
+- **Tests.** `tests/test_hamcp225_trace_snapshots.py` (section 7 matrix,
+  needle planting in every trace field, negative command-shape checks) and a
+  new `SANITIZER_SITES` entry in `tests/test_hamcp191_shared_sanitizer.py`.
+  Historical descriptor baselines strip only the reviewed
+  `get_automation_trace` disclosure text before comparing.
+
