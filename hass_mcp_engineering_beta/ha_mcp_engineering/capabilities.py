@@ -671,7 +671,7 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "direct_ha_coverage": "not_used",
         "selected_provider": "supervisor_incident_logs", "fallback_policy": "none",
         "completeness": "partial_with_reasons_when_any_source_unavailable_gapped_or_limited",
-        "security_justification": "Fixed Supervisor GET /core/logs and /addons/self/logs only, admitted for role homeassistant; Supervisor, host and other add-on logs need role manager and are reported unavailable with zero requests; strict sanitizer at one exit.",
+        "security_justification": "Fixed Supervisor GET /core/logs and /addons/self/logs only, admitted for role homeassistant; supervisor, host, host:<category> and addon:<slug> are read from the host journal the Supervisor mounts read-only with journald: true, through fixed libsystemd symbol and field allowlists, never a Supervisor route that needs role manager; journald off or unreadable is reported unavailable with its reason; a credential-looking journal message is withheld whole; strict sanitizer at one exit.",
         "trust_mode": "reviewed_native_read",
         "trust_profile": "incident_window_journal_read_v1",
     },

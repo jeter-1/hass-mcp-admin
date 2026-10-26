@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.4.1-beta.38 - Host journal sources for get_incident_logs (HAMCP-224)
+
+Builds on 2.4.1-beta.37.
+
+- `get_incident_logs` reads `supervisor`, `host`, `host:<category>` and
+  `addon:<slug>` from the host journal, which the Supervisor mounts
+  read-only with the new `journald: true`; `hassio_role` stays
+  `homeassistant` and no `manager` route is called. Through beta.37 these
+  sources were `authority_not_granted`.
+- The reader binds 14 fixed `libsystemd.so.0` symbols (the base image's
+  library) and 9 fixed fields, merges the runtime and persistent journals in
+  one handle, and is bounded at 16 KiB per field, 4 MiB per call, 20,000
+  entries per source and the call deadline less one second.
+- Journal realtime timestamps; continuations hold a realtime and a keyed
+  cursor digest, never the raw cursor.
+- Every returned journal field (message, process, kernel subsystem and
+  device) goes through the configuration-definitions credential screen
+  (`credentials.screen`, with its labelled forms) on the complete field,
+  before any cut; a hit, a field over 16 KiB or non-UTF-8 bytes withhold the
+  whole field. Coloured lines are shown without their SGR colour codes,
+  screened with and without them; any other escape or control character
+  withholds the field as unverifiable. The final-envelope withheld-item
+  scan names each withheld entry, and a withheld entry a text filter left out is counted: any of
+  these makes the result partial.
+- Host journal entries merge on the full microsecond realtime; edge probes
+  and every field read count toward the shared bounds and the deadline.
+- journald off or unreadable is `unavailable` with its reason, never an
+  empty success.
+- No input schema, routing, provider, policy, profile, fingerprint, signed
+  registry, workflow, Dockerfile, dependency or stable-v1 change; static
+  tools 68, catalog 96 (97).
+
 ## 2.4.1-beta.37 - Truthful stored outcomes (HAMCP-181 PR2, HAMCP-214, HAMCP-193)
 
 Builds on 2.4.1-beta.36. Activates nothing new.

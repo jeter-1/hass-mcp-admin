@@ -21,6 +21,7 @@ from aiohttp import web
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta"))
 
+from host_journal_support import journald_off_reader  # noqa: E402
 from incident_logs_journal_sim import SupervisorSim, ms, start  # noqa: E402
 
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E402
@@ -225,7 +226,8 @@ class TimeBasisServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.service = IncidentLogService(transport, codec=CursorCodec("incident_logs", key=b"k" * 32),
                                           clock=lambda: now_ms, zone_source=zone_source,
-                                          addon_zone_source=lambda: self.zone[0])
+                                          addon_zone_source=lambda: self.zone[0],
+                                          journal_reader=journald_off_reader())
 
     async def read(self, **arguments) -> dict:
         telemetry, token = begin_request()
@@ -301,6 +303,7 @@ class TimeBasisServiceCases(TimeBasisServiceTests):
             "time_zone_after_read": CHICAGO, "time_zone_after_read_status": "agrees",
             "addon_time_zone": CHICAGO, "addon_time_zone_source": c.ADDON_TIME_ZONE_SOURCE,
             "addon_time_zone_status": "agrees", "uncertain_entries": 0, "ordering_uncertain_entries": 0,
+            "host_journal": "journal_realtime_utc",
         })
         # Home Assistant's zone is read from Core before and after each call's
         # journal reads (review 2 H1).
@@ -518,7 +521,8 @@ class TimeBasisServiceCases(TimeBasisServiceTests):
                     row = self.source(page, key)
                     self.assertEqual((row["status"], row["reason"], row["requests"]),
                                      ("unavailable", "time_zone_unavailable", 0))
-                self.assertEqual(self.source(page, "supervisor")["reason"], "authority_not_granted")
+                # HAMCP-224: the host journal source needs no zone.
+                self.assertEqual(self.source(page, "supervisor")["reason"], "journald_not_enabled")
                 self.assertEqual(page["time_basis"]["addon_time_zone_status"], "not_read")
                 self.assertEqual(self.zone_reads, 1)
 
@@ -535,7 +539,7 @@ class TimeBasisServiceCases(TimeBasisServiceTests):
         self.assertEqual(self.source(page, "core")["reason"], "time_zone_unavailable")
         self.assertIn("time_zone_unavailable", page["omissions"])
 
-    async def test_no_zone_is_read_when_no_journal_source_is_readable(self):
+    async def test_no_zone_is_read_when_only_host_journal_sources_are_read(self):
         await self.setup()
         page = await self.read(sources=["supervisor"], start="2026-10-22T12:00:00Z", end="2026-10-22T12:00:10Z")
         self.assertEqual((self.zone_reads, self.sim.calls), (0, []))

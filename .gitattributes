@@ -14,3 +14,7 @@ docs/evidence/hamcp162/fixtures/variants/crlf.yaml.fixture -whitespace
 # docs/evidence/hamcp222/inputs/evidence-add-2026.10.3.json; its blank context
 # lines are a single space and must stay byte-exact.
 docs/evidence/hamcp222/artifacts-2026.10.3/diff/flagged-diffs.patch -text -whitespace
+# HAMCP-224: journal export streams carry binary-length fields and are
+# SHA-256 pinned in provenance.json; journal files are gzip binaries.
+tests/fixtures/hamcp224_journal/*.export -text -whitespace
+tests/fixtures/hamcp224_journal/*.gz binary

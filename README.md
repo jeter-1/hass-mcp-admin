@@ -1,5 +1,20 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.38** lets `get_incident_logs` read the
+`supervisor`, `host`, `host:<category>` and `addon:<slug>` sources
+(HAMCP-224). Engineering keeps role `homeassistant`; with the new add-on
+option `journald: true` the Supervisor mounts the host journal read-only,
+and a fixed read-only `libsystemd` reader takes those sources from it with
+journal timestamps. A credential-looking journal field is withheld whole by
+the same screen as the configuration-definitions report,
+and journald off or unreadable is reported unavailable with its reason.
+Rollback is reinstalling beta.37. Static tools 68, advertised catalog 96 (97
+with the optional YAML reader). Read the
+[2.4.1-beta.38 release notes](docs/V2_4_1_BETA38_RELEASE_NOTES.md) and
+[2.4.1-beta.38 acceptance contract](docs/V2_4_1_BETA38_ACCEPTANCE.md).
+
+It builds on beta.37 below.
+
 Engineering **2.4.1-beta.37** stores truthful execution outcomes (HAMCP-181
 PR2, HAMCP-214, HAMCP-193). A call stopped after its dispatch intent, with
 positive proof that it was never sent, now reads
