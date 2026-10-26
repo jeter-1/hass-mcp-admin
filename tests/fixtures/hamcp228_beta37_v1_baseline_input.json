@@ -1,0 +1,101 @@
+{
+  "configs": {
+    "beta37_alpha": {
+      "actions": [
+        {
+          "action": "light.turn_on",
+          "target": {
+            "entity_id": "light.synthetic"
+          }
+        }
+      ],
+      "id": "beta37_alpha",
+      "mode": "single",
+      "triggers": [
+        {
+          "at": "07:00:00",
+          "trigger": "time"
+        }
+      ]
+    },
+    "beta37_bravo": {
+      "actions": [
+        {
+          "delay": {
+            "seconds": 1.5
+          }
+        }
+      ],
+      "description": "K\u00fcche 20 \u00b0C",
+      "id": "beta37_bravo",
+      "mode": "restart"
+    },
+    "beta37_charlie": null
+  },
+  "devices": [
+    {
+      "config_entry_id": "synthetic_entry",
+      "id": "synthetic_core_device",
+      "identifiers": [
+        [
+          "hassio",
+          "core"
+        ]
+      ],
+      "parent_device_id": null
+    }
+  ],
+  "entries": [
+    {
+      "domain": "hassio",
+      "entry_id": "synthetic_entry",
+      "state": "loaded"
+    }
+  ],
+  "principal": {
+    "is_admin": true
+  },
+  "registry": [
+    {
+      "disabled_by": null,
+      "entity_id": "automation.beta37_alpha",
+      "platform": "automation",
+      "unique_id": "beta37_alpha"
+    },
+    {
+      "disabled_by": null,
+      "entity_id": "automation.beta37_bravo",
+      "platform": "automation",
+      "unique_id": "beta37_bravo"
+    },
+    {
+      "disabled_by": null,
+      "entity_id": "automation.beta37_charlie",
+      "platform": "automation",
+      "unique_id": "beta37_charlie"
+    }
+  ],
+  "states": [
+    {
+      "attributes": {
+        "id": "beta37_alpha"
+      },
+      "entity_id": "automation.beta37_alpha",
+      "state": "on"
+    },
+    {
+      "attributes": {
+        "id": "beta37_bravo"
+      },
+      "entity_id": "automation.beta37_bravo",
+      "state": "off"
+    },
+    {
+      "attributes": {
+        "id": "beta37_charlie"
+      },
+      "entity_id": "automation.beta37_charlie",
+      "state": "on"
+    }
+  ]
+}

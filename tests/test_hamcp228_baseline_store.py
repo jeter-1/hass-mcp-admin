@@ -637,6 +637,54 @@ class CredentialScreenTests(Harness):
                         'recorded_fingerprints': [{'configuration_id': value, 'fingerprint': 'sha256:' + '0' * 16}]})
 
 
+FIXTURES = ROOT / 'tests' / 'fixtures'
+
+
+class BetaThirtySevenV1FixtureTests(Harness):
+    """The v1 baseline written by the shipped beta.37 capture code still loads and compares."""
+
+    def setUp(self):
+        super().setUp()
+        self.provenance = json.loads((FIXTURES / 'hamcp228_beta37_v1_baseline_provenance.json').read_text())
+        self.path = FIXTURES / 'hamcp228_beta37_v1_baseline.json'
+        self.raw = self.path.read_bytes()
+
+    def test_provenance_binds_the_exact_bytes_generator_and_source(self):
+        provenance = self.provenance
+        self.assertEqual(provenance['source']['commit'], '06a28134f219244f258ab26307c1dfcb9e5d18cb')
+        self.assertEqual(provenance['source']['version'], '2.4.1-beta.37')
+        self.assertEqual(provenance['fixture']['sha256'], hashlib.sha256(self.raw).hexdigest())
+        generator = ROOT / provenance['generator']
+        self.assertEqual(provenance['generator_sha256'], hashlib.sha256(generator.read_bytes()).hexdigest())
+        data = (FIXTURES / 'hamcp228_beta37_v1_baseline_input.json').read_bytes()
+        self.assertEqual(provenance['input']['sha256'], hashlib.sha256(data).hexdigest())
+        baseline = json.loads(self.raw)
+        # Unedited canonical export: the bytes are the shipped artifact digest.
+        self.assertEqual(c.canonical(baseline), self.raw)
+        self.assertEqual(c.digest(baseline), provenance['fixture']['artifact_sha256'])
+        self.assertEqual(baseline['schema'], 'automation-audit-baseline-v1')
+        self.assertNotIn('resume', baseline)
+
+    async def test_v1_loads_and_compares_with_a_current_v2_capture(self):
+        from ha_mcp_engineering.audit_baseline import load_baseline
+        earlier = load_baseline(self.path)
+        self.assertEqual(baseline_from_value(json.loads(self.raw)).baseline_id, earlier.baseline_id)
+        data = json.loads((FIXTURES / 'hamcp228_beta37_v1_baseline_input.json').read_text())
+        service, _ = self.service(data)
+        page = await self.capture(service)
+        report, _ = service.store.get(capture_id(page), OWNER, service.now_ms())
+        self.assertEqual(report['baseline']['schema'], 'automation-audit-baseline-v2')
+        later = baseline_from_value(report['baseline'])
+        result = compare_baselines(earlier, later)
+        self.assertEqual(result.counts, {'ADDED': 0, 'REMOVED': 0, 'CHANGED': 0, 'UNCHANGED': 2,
+                                         'UNKNOWN': 1, 'TOTAL': 3})
+        digests = {r['configuration_id']: r['configuration']['digest'] for r in json.loads(self.raw)['records']}
+        fingerprints = {k: v[7:23] for k, v in digests.items() if v}
+        recorded = compare_recorded_fingerprints(earlier, fingerprints, FINGERPRINT_MODEL)
+        self.assertEqual((recorded['counts']['PREFIX_MATCH'], recorded['counts']['UNCHANGED'],
+                          recorded['counts']['UNKNOWN']), (2, 0, 1))
+
+
 class PublicToolTests(Harness):
     async def serve(self, service, arguments):
         import httpx
