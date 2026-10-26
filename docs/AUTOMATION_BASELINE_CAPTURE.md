@@ -1,9 +1,13 @@
 # Native loaded-automation baseline capture
 
 This owner-approved source increment adds `capture_automation_baseline(limit=25,
-cursor="")`. Release preparation, signed applicability and installed acceptance
-remain separate. It consumes the unchanged
-[offline baseline contract](AUTOMATION_AUDIT_BASELINE.md).
+cursor="", resume_capture_id="")`. HAMCP-228 adds the
+[durable baseline store](#durable-baseline-store-hamcp-228),
+[resume](#resume-hamcp-228) and
+[`compare_automation_baselines`](#compare_automation_baselines-hamcp-228).
+Release preparation, signed applicability and installed acceptance remain
+separate. It consumes the [offline baseline contract](AUTOMATION_AUDIT_BASELINE.md);
+captures are written as `automation-audit-baseline-v2`.
 
 ## Scope and identity
 
@@ -75,14 +79,19 @@ reversions within the interval may be missed.
 
 Sensitive metadata from auth, config entries and device records is discarded before
 retention or hashing. Retained identifiers must pass the existing sanitizer unchanged,
-even when optional redaction is disabled. Fixed diagnostic reasons never reflect
+even when optional redaction is disabled. HAMCP-228 also applies the HAMCP-226
+default-mode credential screen (`untrusted_text.screen`: `credentials.screen`
+in default mode plus the PEM private-key header check) to every retained
+identifier (owner direction, Josh, 2026-10-26). A withheld identifier is
+unusable, so its object is omitted with a counted limitation exactly like a
+sanitizer change; no credential-shaped identifier reaches a stored baseline. Fixed diagnostic reasons never reflect
 rejected keys, exception text, payloads or cursor values. Audit records contain only
 scope, bounded limit, continuation presence and bounded capture summaries; no raw
 configuration, auth identity or cursor is recorded.
 
 Capture failures preserve the existing error codes and response envelope.
-Only `capacity_busy`, `timeout` and `source_unavailable` advertise
-`retryable=true`; all other declared capture reasons are nonretryable.
+Only `capacity_busy`, `timeout`, `source_unavailable` and (HAMCP-228)
+`store_unavailable` advertise `retryable=true`; all other declared capture reasons are nonretryable.
 Retryability guides a later caller decision. It never triggers an internal
 retry, fallback or automatic refresh, and repeating unchanged access, identity,
 configuration or limit failures is not a recovery strategy.
@@ -110,10 +119,12 @@ capture at every stage; it is never reduced to an unreadable record.
 | Collection / individual read deadlines | 45 s / 5 s |
 | Concurrent configuration reads | 4 |
 | Application reads, including auth | At most 1,011 |
-| Retained snapshots | 2 × 2 MiB, 600 s TTL |
+| Stored baselines (HAMCP-228) | 12 × 2 MiB, 180 days; continuation cursors 600 s |
 | Page records / response data | Default 25, maximum 100 / 48,000 bytes |
 
 Configuration scheduling stops with ten seconds reserved for the final fence.
+HAMCP-228: a record not scheduled before that reserve is `timed_out` (schema
+v2), with no digest, instead of an indistinguishable unreadable record.
 Network operations share the collection deadline; cancellation drains owned bounded
 pure worker computation and closes transport before returning. There is no detached
 capture job, retry, redirect, fallback or automatic refresh. Parsing, projection,
@@ -125,11 +136,13 @@ Reaching the record ceiling is explicitly partial even at exactly 1,000. Unmappe
 and registry-only ID previews retain at most 16 IDs each; counts and their precision
 remain separate. A byte/structural failure is never accepted as a complete inventory.
 
-A continuation cursor is HMAC-bound to the caller and the immutable snapshot.
-Continuations make zero HA reads. Expiration/restart/tampering fails explicitly;
-unexpired snapshots are never silently evicted. At capacity or during another
-capture, a new capture is refused. No snapshot is retained after failed/cancelled
-initial capture. This adds no durable server store or background watcher.
+A continuation cursor is HMAC-bound to the caller and the stored capture.
+Continuations make zero HA reads and page the stored, digest-verified copy.
+Cursor expiration (600 s), restart or tampering fails explicitly; the stored
+baseline itself remains available to `compare_automation_baselines` and resume
+until its retention ends. During another capture, a new capture is refused. A
+capture that fails or is cancelled before its first page is ready stores nothing.
+There is no background watcher.
 
 To export, retain the first `baseline_header` and append `records` from every page
 in offset order. Verify every header/digest agrees, offsets are contiguous, the
@@ -139,13 +152,105 @@ that a client retained earlier pages. Construct `{**baseline_header, "records":
 all_records}`, serialize sorted compact JSON with `ensure_ascii=True`, UTF-8, and
 verify `artifact_sha256` before saving. Do not add diagnostics to baseline bytes.
 
-Two distinct ordered exports can then be passed unchanged to:
+Two distinct ordered exports can also be passed unchanged to the offline command:
 
 ```bash
 python scripts/compare_automation_baselines.py earlier.json later.json --output comparison.json
 ```
 
 Legacy October evidence remains unresolved and is never retroactively upgraded.
+
+## Durable baseline store (HAMCP-228)
+
+Owner decision S: each finished capture is committed to one bounded
+Engineering-local store at `<governance_path>/audit-baselines-v1/` (the
+Engineering governance disk boundary, beside the other governance records; not
+`/data/audit_baselines/`; architect-accepted). It holds `index.json` and one
+`records/<capture_id>.json` per baseline.
+
+- At most 12 baselines of at most 2 MiB each, kept 180 days from commit. At
+  capacity a new capture is refused with `store_full` before any Home Assistant
+  read; the details carry only `stored_baselines`, `oldest_age_seconds` and
+  `retention_seconds`. Nothing is evicted to make room.
+- Only the validated baseline report is stored: identities, digests,
+  statuses, outcomes and diagnostics, never a configuration body.
+- Each baseline is bound to the capturing caller. Another caller's baseline is
+  indistinguishable from a missing one (`baseline_not_found`); `anonymous` is
+  refused.
+- Files are mode 0600 in 0700 directories, read with `O_NOFOLLOW` as regular
+  files only; writes use a temporary file, `fsync` and rename, record before
+  index. One nonblocking `flock` owner at a time: a second owner is refused
+  (`capacity_busy`), not queued. A commit whose outcome is unknown fails closed
+  (`store_unavailable`) until restart.
+- Every load checks the file size and SHA-256, the `artifact_sha256` and the
+  baseline validator. A damaged record (`missing`, `unreadable`,
+  `digest_mismatch`, `invalid_record`) is deleted and reported as
+  `baseline_damaged`; the index keeps a content-free quarantine stub (at most
+  32, older stubs counted as `dropped`). An invalid or symlinked index or
+  namespace is refused, never rebuilt.
+- Each store operation sweeps expired entries, abandoned temporaries and
+  unindexed records.
+- Hashes detect accidental damage, not an attacker able to rewrite both a
+  record and the index.
+
+The capture page `snapshot` block reports `storage:
+"durable_engineering_store"`, `retention_seconds` and `resumed_from` (the
+resumed `capture_id`, or `null`). Because a capture now writes this
+Engineering-local record, the tool is classified as Engineering local evidence
+capture with `readOnlyHint=false`; it still performs no Home Assistant write.
+
+## Resume (HAMCP-228)
+
+Owner decision T: `resume_capture_id` names one of the caller's stored
+captures. Only its timeouts are retried: `timed_out` records and `unreadable`
+records whose outcome is `timeout`. Any other failure is carried forward
+unchanged; repeating it is not a recovery strategy.
+
+Before any Home Assistant read, the base is loaded (same caller, digests
+verified) and `resume_not_needed` is refused if it has nothing to retry, and
+capacity is checked. The resume then runs both capture fences again and
+refuses `resume_inventory_changed` unless the installation identity, the Core
+authority generation, the declared inventory count and the ordered
+`(configuration_id, entity_id)` mapping all equal the base's. Retried records
+are collected fresh; all others are copied verbatim from the base. The result
+is a new stored baseline with `resume: {resumed_from: <base baseline_id>,
+resumed_count}`; its capture interval starts at the base's start, and drift or
+unestablished identity in the base is inherited. The base is never changed.
+`resume_capture_id` cannot be combined with `cursor`.
+
+## `compare_automation_baselines` (HAMCP-228)
+
+`compare_automation_baselines(earlier_capture_id, later_capture_id="",
+recorded_fingerprints=None, fingerprint_model="")` compares the caller's stored
+capture with either a later stored capture or caller-recorded fingerprints. It
+makes no Home Assistant read, is read-only and idempotent, and has a closed
+argument contract; invalid arguments are refused without dispatch and never
+echoed.
+
+- Two stored captures use the [offline comparator](AUTOMATION_AUDIT_BASELINE.md#comparison-semantics)
+  unchanged, including `same_baseline_id` and `capture_intervals_not_ordered`.
+- `recorded_fingerprints` holds at most 1,000 unique `{configuration_id,
+  fingerprint: "sha256:" + 16..64 lowercase hex}` rows and requires
+  `fingerprint_model`. A full 64-character match is `UNCHANGED`. A shorter
+  matching prefix is its own `PREFIX_MATCH` bucket with reason
+  `prefix_match:<n>` and its own count; it is never counted as `UNCHANGED`
+  (architect direction, Josh agrees). A differing prefix is `CHANGED`.
+- Recorded fingerprints carry no installation identity or inventory
+  authority, so an id on one side only is `UNKNOWN`
+  (`absent_from_capture` / `absent_from_recorded_fingerprints`), never `ADDED`
+  or `REMOVED`. A `fingerprint_model` other than the capture's makes every row
+  `UNKNOWN` (`fingerprint_model_mismatch`). The capture's own prerequisites
+  (installation, authority continuity, mapping, readability including
+  `timed_out`, coverage and digest) also apply.
+- Counts are `UNCHANGED`, `PREFIX_MATCH`, `CHANGED`, `ADDED`, `REMOVED`,
+  `UNKNOWN` and `TOTAL`; stored/stored comparisons report `PREFIX_MATCH: 0`.
+- Rows other than `UNCHANGED`/`PREFIX_MATCH` come first, then by
+  configuration id, so a bounded result keeps the rows needing attention. The
+  output is credential-screened (`untrusted_text.screen_tree`, default mode),
+  then bounded to the page budget; `omitted_detail_count` and
+  `screened_withheld_count` make a cut or a withheld value a partial result.
+- Audit records carry the mode, the counts and the omitted/withheld counts;
+  never capture ids, configuration ids or digests.
 
 ## Exact Core source evidence and validation stages
 
