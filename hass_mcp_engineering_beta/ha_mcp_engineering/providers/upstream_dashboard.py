@@ -32,9 +32,8 @@ from ..clients.mcp import (
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..errors import DashboardProviderError, ErrorCode, GovernanceError
-from ..f3.contracts import mark_provider_send
 from ..observability import METRICS
-from ..request_context import current_telemetry
+from ..request_context import current_telemetry, mark_provider_send
 from ..sanitization import (
     RedactionTally,
     sanitize_untrusted_data,

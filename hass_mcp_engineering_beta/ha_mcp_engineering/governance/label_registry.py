@@ -21,7 +21,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from ..errors import AuthorizationError, HomeAssistantApiError
-from ..f3.contracts import mark_provider_send
+from ..request_context import mark_provider_send
 from .entity_metadata import (
     ICON_PATTERN,
     MAX_REGISTRY_LIST_ITEMS,

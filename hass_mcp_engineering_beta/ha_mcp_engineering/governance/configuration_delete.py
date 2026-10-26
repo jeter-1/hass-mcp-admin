@@ -20,7 +20,7 @@ import copy
 from typing import Any
 
 from ..errors import AuthorizationError, HomeAssistantApiError
-from ..f3.contracts import mark_provider_send
+from ..request_context import mark_provider_send
 from .normalize import stable_hash
 
 PROFILE = "core.configuration_delete_operation"

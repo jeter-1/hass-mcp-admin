@@ -19,7 +19,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     GovernanceError,
     HomeAssistantApiError,
 )
-from ha_mcp_engineering.f3.contracts import mark_provider_send  # noqa: E402
+from ha_mcp_engineering.request_context import mark_provider_send  # noqa: E402
 from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ApprovalState,

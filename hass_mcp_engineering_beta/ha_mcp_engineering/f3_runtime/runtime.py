@@ -16,6 +16,7 @@ from types import MappingProxyType
 from typing import Any, Awaitable, Callable
 
 from ..errors import ErrorCode, GovernanceError
+from ..request_context import observe_provider_send
 from .health_scan import HealthScanFence
 from ..governance.task_storage import TaskHealthSnapshotSuperseded
 from ..f3.executor import (
@@ -35,7 +36,6 @@ from ..f3.contracts import (
     NormalizedOperationOutcome,
     ObservationResult,
     VerificationResult,
-    observe_provider_send,
 )
 from ..f3.locks import (
     DurableLockStore,

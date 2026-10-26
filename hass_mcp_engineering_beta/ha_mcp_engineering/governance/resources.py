@@ -16,7 +16,7 @@ from ..clients.paths import UnsafeRequestPathError, rest_path
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import AuthorizationError, HomeAssistantApiError
-from ..f3.contracts import mark_provider_send
+from ..request_context import mark_provider_send
 from ..sanitization import (
     SegmentMemo,
     record_marker_collision_refusal,

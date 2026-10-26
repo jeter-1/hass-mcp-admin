@@ -20,7 +20,7 @@ from typing import Any
 
 from ..entity_ids import validate_entity_id
 from ..errors import AuthorizationError, HomeAssistantApiError
-from ..f3.contracts import mark_provider_send
+from ..request_context import mark_provider_send
 from .normalize import stable_hash
 
 
