@@ -33,7 +33,12 @@ from ..errors import AuthorizationError
 from ..governance import helper_options as contract
 from ..governance.normalize import stable_hash
 from ..governance.resources import ConfigurationMutationNotDispatchedError
-from .adapter import PRIOR_STATE_OBSERVED, ConfigurationOperationAdapter
+from .adapter import (
+    PREDISPATCH_READ_WINDOW,
+    PRIOR_STATE_OBSERVED,
+    ConfigurationOperationAdapter,
+    PredispatchAuthorityRefused,
+)
 from .locks import lock_set_hash
 from .models import (
     ConfigurationObservationResult,
@@ -400,9 +405,33 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
         except Exception:  # noqa: BLE001 - an orphan is disclosed, never fatal
             return False
 
-    async def _release(self, key: str) -> None:
+    async def _windowed_abort(self, flow_id: str) -> bool:
+        """Abort a held flow outside the read window in its own short window.
+
+        After the pre-dispatch read window has closed and before (or without)
+        the submit, the client admits no call: the release abort gets its
+        own Core-authority window, like the read that opened the flow.
+        """
+
+        window = PREDISPATCH_READ_WINDOW.get()
+        if window is None:
+            return await self._abort(flow_id)
+        try:
+            async with window():
+                return await self._abort(flow_id)
+        except PredispatchAuthorityRefused:
+            return False
+
+    async def _release(self, key: str, *, windowed: bool = False) -> None:
         held = self._held.pop(key, None)
-        if held is not None and not await self._abort(held.flow_id):
+        if held is None:
+            return
+        aborted = (
+            await self._windowed_abort(held.flow_id)
+            if windowed
+            else await self._abort(held.flow_id)
+        )
+        if not aborted:
             self._orphaned.add(key)
 
     async def dispatch(self, operation, preflight, *, before_dispatch):
@@ -412,10 +441,10 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
             try:
                 await before_dispatch()
             except BaseException:
-                # Nothing was submitted; the held flow is released.  The
-                # abort may itself be refused outside dispatch authority, in
-                # which case the orphan is disclosed.
-                await self._release(key)
+                # Nothing was submitted; the held flow is released in its
+                # own Core-authority window.  A refused or failed abort is
+                # disclosed as an orphan.
+                await self._release(key, windowed=True)
                 raise
 
         try:
@@ -424,7 +453,7 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
             )
         finally:
             # Safety net for any path that left a flow held.
-            await self._release(key)
+            await self._release(key, windowed=True)
             self._orphaned.discard(key)
 
     def _dispatch_result(self, operation, outcome, *, codes, **kwargs):
