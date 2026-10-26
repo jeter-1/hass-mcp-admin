@@ -1,10 +1,11 @@
 # HAMCP-232 + HAMCP-145 (input_select): governed edits to existing UI helpers and setting an input_select value — design
 
-Status: **Part 0 (signed-coverage gate) and Part 1 (design). STOPPED for
-Josh's decisions in §8.** Nothing here authorizes implementation, a release,
-deployment, live Home Assistant access, registry preparation or signing, or a
-change to existing approval behavior. Part 2 (build inactive) starts only
-after Josh records decisions in a new §0.
+Status: **Part 0 (signed-coverage gate) and Part 1 (design) complete; Josh's
+decisions recorded in §0 (2026-10-26); Part 2 builds all three families
+INACTIVE.** Nothing here authorizes a release, deployment, live Home Assistant
+access, registry preparation or signing, or a change to existing approval
+behavior. Each family refuses `pending_signed_registry_admission` until an
+owner-signed registry sequence names its exact profile.
 
 | Item | Value |
 |---|---|
@@ -13,6 +14,40 @@ after Josh records decisions in a new §0.
 | Signed registry | `upstream-trust/ha-core-release-registry.json`, tip **sequence 14** (expires 2027-01-23): 2026.10.0 (22 capabilities), 2026.10.1 (26), 2026.10.3 (26) |
 | Core source | release archives for 2026.10.1 (`abe1fdd7`) and 2026.10.3 (`1f214b84`) under `/var/tmp/hamcp222-src/`; sha256 of each archive equals the signed `source_archive_sha256` (`a4305046…81c4`, `57a15d2d…e4e9`). Every Core file cited below is byte-identical in 2026.10.1 and 2026.10.3 (`diff -rq` over `components/{config,template,filter,statistics,utility_meter,input_select,select,websocket_api,diagnostics}`, `config_entries.py`, `data_entry_flow.py`, `helpers/{data_entry_flow,schema_config_entry_flow,selector,json}.py`) |
 | Paths | Core paths are relative to `homeassistant/` in 2026.10.1. `E/` = `hass_mcp_engineering_beta/ha_mcp_engineering/`; `P` = `E/ha_core_readmission/profiles.py`; `R` = `E/ha_core_readmission/routes.py` |
+
+## 0. Owner decisions (Josh, 2026-10-26)
+
+Recorded verbatim in substance from Josh's reply on draft PR #314. Under
+[`ADR-022`](architecture/ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md)
+these are product decisions; they do not turn an unverified fact into
+evidence (the probatio 0.13.0 `suggested_value` question, §2.3, stays open
+until the evidence lane proves it).
+
+| # | Decision |
+|---|---|
+| OD-1 | **Yes.** Baseline and readback open and abort the options flow, **only** inside `core.config_entry_helper_options_operation`, **only** for the plan's exact config entries, and never as a general read. **This supersedes HAMCP-132 decision (i)** ("no options-flow open and abort", `docs/HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md:437`, `:449`) **for this narrow use only**; HAMCP-132's read surfaces are unchanged and no general options read exists |
+| OD-2 | Increment 1 = **template (sensor, binary_sensor only), filter, statistics**, in **one shared profile with a closed domain list**. **utility_meter is DEFERRED** (cycle/tariffs are not editable through the options flow, and the editable fields are not a current need). §2.4's utility_meter row and §3.6's utility_meter row remain as research only |
+| OD-3 | As §3.6: template types with ActionSelector fields are refused; `read_only` fields are **enforced by Engineering as pinned** (must equal the baseline) |
+| OD-4 | As §3.7: always governed with exact-hash approval; 069B consumer disclosure; incomplete evidence → protected → elevated |
+| OD-5 | 1–8 entries per plan, one helper domain per plan, non-atomic, stop on first failure |
+| OD-6 | Rollback is a separately approved plan (§3.5) |
+| OD-7 | **Accept** the residual concurrency window (§3.3); it is disclosed in the plan **and** in the receipt |
+| OD-8 | Injected defaults are disclosed as separate `normalization_changes`, not refused |
+| OD-9 | input_select: governed plan |
+| OD-10 | New tool `create_input_select_option_plan`; `create_helper_state_plan`'s schema stays byte-identical |
+| OD-11 | The **new domain-parameterized reader** with per-option trigger disclosure (§4.3) |
+| OD-12 | input_select rollback: separately approved (§4.4) |
+| OD-13 | **seq 15 = extend 2026.10.3** (the batch's profiles; Josh wrote "+2" before the script-trace addition below, so 26 → 28 as written, 26 → 29 if the script-trace profile joins the same step — **to be confirmed by Josh when the signing package is prepared**); **seq 16 = add 2026.11.x with all profiles**; **2026.10.1 is NOT extended** (the rollback slot stays at 26, so a Core rollback to 10.1 withholds the new families, fail-closed) |
+| OD-14 | **Authorized:** the protected `.github/workflows/ci.yml` wiring for the dormant lanes, gated like sequence 13, with **no change to existing steps** |
+| OD-15 | HAMCP-233 is decided separately; it is not a dependency |
+| Addition | Include a **script-trace READ profile** in this batch: `trace/list` + `trace/get` for `domain: script`, sanitized through the shared sanitizer exactly like the automation trace reads, read-only, built inactive, with its own dormant lane in the same set (§4b) |
+
+**Consequences recorded.** Static tools 68 → 72 (`create_helper_options_plan`,
+`create_input_select_option_plan`, `list_script_traces`, `get_script_trace`);
+F3 identity pins 15 → 17 (one options-submit identity, one input_select
+identity); three new runtime-only profiles (§4b lists all three fingerprints);
+no signed profile, F3 identity or fingerprint changes. Part 2 is the next
+free beta (§6.5).
 
 **Owner direction (Josh, from the brief).**
 - **E016 / HAMCP-232:** change EXISTING UI-created helpers (template state
@@ -425,14 +460,61 @@ Proposal: a separately approved rollback plan selecting the captured prior
 option, only while the live state equals the verified readback and the prior
 option is still in the list. This is what the "flip and back" canary uses.
 
+## 4b. Script-trace read profile (owner addition, 2026-10-26)
+
+**Purpose.** Read the run traces of one exact script, the same way the
+automation trace reads already work, so a client can debug a script without a
+second connector.
+
+**Core authority** (`homeassistant/components/trace/websocket_api.py`,
+identical in 2026.10.0/.1/.3): `trace/list {domain, item_id?}` returns a list
+of trace-header mappings; `trace/get {domain, item_id, run_id}` returns one
+trace mapping or the error `{code: "not_found", message: "The trace could not
+be found"}`. A script's `item_id` is its configuration key
+(`homeassistant/components/script/__init__.py`, `unique_id = key`).
+
+**Profile** `core.script_trace_read` (runtime-only, read-only, no
+pre-dispatch requirements), adapter `compiled-core-script-trace-read-v1`,
+checks `script_trace_list_command_contract`,
+`script_trace_list_bounded_mapping_sequence`,
+`script_trace_get_command_contract`, `script_trace_get_not_found_contract`.
+
+**Tools.** `list_script_traces(script_id)` and
+`get_script_trace(script_id, run_id)`, both requiring
+`core.script_trace_read`.
+
+- `item_id` is always the exact, validated script key; the list-all form
+  (no `item_id`) is never sent.
+- Every result passes through the shared untrusted-data sanitizer (known
+  secrets redacted, bounded strings) **before** output, exactly as the
+  automation trace reads in `trace_normalization.py` do; both call sites are
+  registered in the HAMCP-191 sanitizer-site inventory.
+- Closed vocabulary: only `trace/list` and `trace/get` with
+  `domain: "script"`. Never sent: `trace/contexts`, every `trace/debug/*`
+  command (breakpoints, continue, step, stop).
+- Not-found is reported as not-found (no fallback to delegated trace tools).
+- Until a signed sequence names the profile, both tools refuse
+  `pending_signed_registry_admission` before any Home Assistant request.
+
+**Fingerprints (runtime-only profiles, computed from this branch's
+`profiles.py`; final values are re-verified at the review head):**
+
+| Profile | sha256 |
+|---|---|
+| `core.config_entry_helper_options_operation` | `581234deff89b489c620c8d9143da6a654781431d5a84086cd3f48c072ff5b9e` |
+| `core.typed_input_select_option_operation` | `e2240555fb35042e47e7ee7afb7f5552977d019a27058fb2c2c5802674fee38d` |
+| `core.script_trace_read` | `abf10d9b5599991aa1ef439e1525f51ee184136671f88a1266bcd43a7c665789` |
+
 ## 5. Signing batch shape (November)
 
-- Two new profiles. Each changed release entry is its own sequence step
-  (`scripts/prepare_core_release_registry.py:165-185`).
-- **Proposal (OD-13):** seq 15 extends **2026.10.3** (26 → 28); seq 16 adds
-  **2026.11.x** with all 28 after its evidence run. Extending 2026.10.1 (the
-  rollback slot) is optional; leaving it at 26 means a Core rollback to 10.1
-  withholds just these two families (fail-closed, like 10.0 today).
+- Three new profiles (two write, one read; §4b). Each changed release entry
+  is its own sequence step (`scripts/prepare_core_release_registry.py:165-185`).
+- **Decided (OD-13):** seq 15 extends **2026.10.3** with the batch's profiles
+  (26 → 29 including the script-trace read; the exact set is confirmed by Josh
+  when the signing package is prepared); seq 16 adds **2026.11.x** with all
+  profiles after its evidence run. **2026.10.1 is not extended** and stays at
+  26, so a Core rollback to 10.1 withholds these families (fail-closed, like
+  10.0 today).
 - 071/106 (HAMCP-222 deferrals) can join only if built and frozen before the
   evidence run (HAMCP-222 §6.3: freeze before the run).
 
@@ -468,7 +550,7 @@ option is still in the list. This is what the "flip and back" canary uses.
    never-sent list, refuses anything else before I/O, and calls
    `mark_provider_send()` at the exact send boundary; an error result is never
    proof of failure.
-8. **All pins updated in the same PR:** static tool count (68 → 70), catalog,
+8. **All pins updated in the same PR:** static tool count (68 → 72), catalog,
    capability metadata, F3 identity pins (15 → 17), profile pins, allowlists,
    `ROUTE_TEMPLATES` (three new options-flow templates, method-bound).
 9. **Mutation evidence** for each new gateway and policy rule, memory-capped.
@@ -497,10 +579,12 @@ readback mismatch; input_boolean path byte-identical; no other domain, no
 
 Behind the existing dormant switch pattern (`.github/workflows/ci.yml:363-365`,
 `scripts/real_ha_contract_tests.py:3657-3680`; the `ci.yml` wiring is a
-protected path and needs Josh's explicit authorization, as for seq 13):
+protected path; **authorized by OD-14**, dormant gating like seq 13, no change
+to existing steps):
 
 - **helper options lane:** the harness (under `scripts/`, own sender) creates
-  disposable filter, statistics, template-sensor and utility_meter helpers via
+  disposable filter, statistics, template-sensor and template-binary_sensor
+  helpers (utility_meter deferred, OD-2) via
   their config flows; then through Engineering: edit + verify + rollback per
   type; refusals recorded (not aborted): drift injected between plan and apply,
   pinned-field change, validation error, concurrent flow; **proves the
@@ -510,12 +594,17 @@ protected path and needs Josh's explicit authorization, as for seq 13):
 - **input_select lane:** flip + verify + rollback; option not in list refused
   pre-dispatch; options changed between plan and apply refused; predecessor
   refusal with zero HA requests.
+- **script-trace lane:** the harness creates and runs a disposable script,
+  then through Engineering lists and gets its traces; asserts the sanitized
+  shape, the not-found contract for an unknown run id, that only
+  `trace/list`/`trace/get` with `domain: script` were sent, and predecessor
+  refusal with zero HA requests.
 
 ### 6.5 Release
 
 Next free beta **2.4.1-beta.38** (staged `.release/next-version` +
 `docs/V2_4_1_BETA38_{ACCEPTANCE,RELEASE_NOTES}.md`), declared as
-"activates nothing new": both families refuse
+"activates nothing new": all three families refuse
 `pending_signed_registry_admission` until a signed sequence names them.
 
 ### 6.6 Post-signing canaries (defined now, run only after signing)
@@ -531,7 +620,9 @@ All signed profiles and fingerprints; `create_helper_state_plan` and the
 input_boolean path; HAMCP-132's read surfaces (no general options read);
 delegated tool routing (HAMCP-233 is separate); stable v1.
 
-## 8. Owner decisions requested (Josh)
+## 8. Owner decisions requested (Josh) — answered 2026-10-26, see §0
+
+Kept as the record of what was asked.
 
 | # | Decision | Recommendation |
 |---|---|---|

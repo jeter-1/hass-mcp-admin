@@ -56,7 +56,10 @@ TOOL = "create_configuration_delete_plan"
 PENDING = "pending_signed_registry_admission"
 # Every runtime profile this source compiles that the shipped signed set lacks.
 DORMANT = frozenset({CAPABILITY, "core.entity_registry_availability_operation",
-                     "core.entity_assistant_exposure_operation", "core.label_registry_operation"})
+                     "core.entity_assistant_exposure_operation", "core.label_registry_operation",
+                     # HAMCP-232/145 November batch (seq 15+).
+                     "core.config_entry_helper_options_operation",
+                     "core.typed_input_select_option_operation", "core.script_trace_read"})
 SHIPPED_SIGNED_COUNT = 22
 AUTHORITY_TRANSITION = [SHIPPED_SIGNED_COUNT, SHIPPED_SIGNED_COUNT + 1]
 REGISTRY_LIST = "config/entity_registry/list"

@@ -609,12 +609,125 @@ CORE_CONFIGURATION_DELETE_PROFILES = (
                      "session_fingerprint", "generation"),
     ),
 )
+# HAMCP-232/HAMCP-145/script traces (November batch): three runtime-only
+# contracts.  Like 069A/069B/165/155 they are never part of
+# CORE_CAPABILITY_PROFILES, so no signed probe fingerprint changes, and each
+# stays dormant until an owner-signed registry reference (planned sequence
+# 15) selects it exactly.  Every read and the one write each gateway sends
+# are named; everything in ``never_sent`` is refused before I/O.
+CORE_NOVEMBER_BATCH_PROFILES = (
+    _contract(
+        "core.config_entry_helper_options_operation",
+        CoreCapabilityClass.CONFIG_ENTRY_HELPER_OPTIONS_OPERATION,
+        "compiled-core-config-entry-helper-options-operation-v1",
+        (
+            "websocket_entity_registry_get",
+            "websocket_entity_registry_list",
+            "websocket_config_entries_get_single",
+            "rest_options_flow_start_exact_entry",
+            "rest_options_flow_abort_exact_flow",
+            "rest_options_flow_submit_single_step",
+            "rest_entity_state_get",
+            "options_flow_suggested_value_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "bounded_exact_existing_config_entry_helpers",
+            "domains": ["filter", "statistics", "template"],
+            "template_types": ["binary_sensor", "sensor"],
+            "fields": "closed_per_type_allowlist_pinned_fields_equal_baseline",
+            "baseline": "options_flow_open_read_suggested_values_then_abort",
+            "dispatch": "at_most_once_options_flow_step_submit_per_config_entry",
+            "never_sent": [
+                "rest_config_entries_flow_start",
+                "rest_config_entries_entry_delete",
+                "rest_config_entries_entry_reload",
+                "websocket_config_entries_update",
+                "websocket_config_entries_disable",
+                "websocket_config_entries_subentries",
+                "websocket_call_service",
+            ],
+            "readback": "options_flow_suggested_values_and_modified_at_exact",
+            "concurrency": "no_core_compare_and_swap_residual_window_disclosed",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+    _contract(
+        "core.typed_input_select_option_operation",
+        CoreCapabilityClass.TYPED_INPUT_SELECT_OPTION_OPERATION,
+        "compiled-core-typed-input-select-option-operation-v1",
+        (
+            "rest_entity_state_get",
+            "websocket_call_service_input_select_select_option_single",
+            "input_select_state_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "one_exact_existing_input_select",
+            "domain": "input_select",
+            "service": "select_option",
+            "arguments": "option_exact_case_sensitive_member_of_current_options",
+            "dispatch": "at_most_once_call_service_input_select_select_option",
+            "never_sent": [
+                "input_select.reload",
+                "input_select.select_first",
+                "input_select.select_last",
+                "input_select.select_next",
+                "input_select.select_previous",
+                "input_select.set_options",
+            ],
+            "readback": "authoritative_exact_state",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+    _contract(
+        "core.script_trace_read",
+        CoreCapabilityClass.SCRIPT_TRACE_READ,
+        "compiled-core-script-trace-read-v1",
+        (
+            "script_trace_list_command_contract",
+            "script_trace_list_bounded_mapping_sequence",
+            "script_trace_get_command_contract",
+            "script_trace_get_not_found_contract",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "domain": "script",
+            "trace_list": "bounded_list_of_trace_header_mappings",
+            "trace_get": {
+                "success": "bounded_trace_mapping",
+                "missing": {
+                    "code": "not_found",
+                    "message": "The trace could not be found",
+                },
+            },
+            "sanitization": "shared_untrusted_data_sanitizer_before_output",
+            "item_id": "always_exact_script_key_never_list_all",
+            "never_sent": [
+                "trace/contexts",
+                "trace/debug/breakpoint/clear",
+                "trace/debug/breakpoint/list",
+                "trace/debug/breakpoint/set",
+                "trace/debug/breakpoint/subscribe",
+                "trace/debug/continue",
+                "trace/debug/step",
+                "trace/debug/stop",
+            ],
+            "write": "none",
+        },
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
     + CORE_AUTOMATION_BASELINE_PROFILES + CORE_ENTITY_METADATA_PROFILES
     + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
     + CORE_LABEL_REGISTRY_PROFILES
     + CORE_CONFIGURATION_DELETE_PROFILES
+    + CORE_NOVEMBER_BATCH_PROFILES
 )
 
 
@@ -678,6 +791,7 @@ __all__ = [
     "CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES",
     "CORE_LABEL_REGISTRY_PROFILES",
     "CORE_CONFIGURATION_DELETE_PROFILES",
+    "CORE_NOVEMBER_BATCH_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

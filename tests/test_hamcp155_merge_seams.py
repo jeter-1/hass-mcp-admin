@@ -46,7 +46,10 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     CONFIGURATION_DELETE_PROFILE,
     EXPOSURE_PROFILE,
     F3_ENTRY_ADMISSION_PROFILES,
+    HELPER_OPTIONS_PROFILE,
+    INPUT_SELECT_PROFILE,
     LABEL_PROFILE,
+    SCRIPT_TRACE_PROFILE,
     f3_entry_admission_profiles,
 )
 
@@ -260,7 +263,9 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
     def test_entry_admission_covers_every_dormant_profile(self):
         self.assertEqual(
             F3_ENTRY_ADMISSION_PROFILES,
-            {CONFIGURATION_DELETE_PROFILE, LABEL_PROFILE, AVAILABILITY_PROFILE, EXPOSURE_PROFILE},
+            {CONFIGURATION_DELETE_PROFILE, LABEL_PROFILE, AVAILABILITY_PROFILE, EXPOSURE_PROFILE,
+             # HAMCP-232/145 November batch.
+             HELPER_OPTIONS_PROFILE, INPUT_SELECT_PROFILE, SCRIPT_TRACE_PROFILE},
         )
         expected = {
             "delete_automation_configuration": (CONFIGURATION_DELETE_PROFILE,),
@@ -270,6 +275,9 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
             "update_entity_registry_availability_configuration": (AVAILABILITY_PROFILE,),
             "update_entity_assistant_exposure_configuration": (EXPOSURE_PROFILE,),
             "update_automation_configuration": (),
+            "update_config_entry_helper_options_configuration": (HELPER_OPTIONS_PROFILE,),
+            "set_exact_input_select_option": (INPUT_SELECT_PROFILE,),
+            "set_exact_input_boolean_state": (),
         }
         for identity, profiles in expected.items():
             with self.subTest(identity=identity):

@@ -132,6 +132,28 @@ _F3_LABEL_OPERATIONS = frozenset(
     }
 )
 
+# HAMCP-232/145 November batch: each family binds only its own dormant
+# runtime profile.  The options-flow submit and the input_select service call
+# never map to the signed typed-helper or governed-configuration contracts.
+HELPER_OPTIONS_PROFILE = "core.config_entry_helper_options_operation"
+HELPER_OPTIONS_TOOL = "create_helper_options_plan"
+HELPER_OPTIONS_RESOURCE_TYPE = "config_entry_helper_options"
+_F3_HELPER_OPTIONS_OPERATIONS = frozenset(
+    {
+        (
+            "update_config_entry_helper_options_configuration",
+            "update_config_entry_helper_options_configuration",
+        ),
+    }
+)
+INPUT_SELECT_PROFILE = "core.typed_input_select_option_operation"
+INPUT_SELECT_TOOL = "create_input_select_option_plan"
+_F3_INPUT_SELECT_OPERATIONS = frozenset(
+    {("set_exact_input_select_option", "set_input_select_option")}
+)
+SCRIPT_TRACE_PROFILE = "core.script_trace_read"
+SCRIPT_TRACE_TOOLS = frozenset({"list_script_traces", "get_script_trace"})
+
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
     "ha_config_get_calendar_events": ("core.basic_websocket_read",),
@@ -741,6 +763,10 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         values.add(CONFIGURATION_DELETE_PROFILE)
     elif identity in _F3_LABEL_OPERATIONS:
         values.add(LABEL_PROFILE)
+    elif identity in _F3_HELPER_OPTIONS_OPERATIONS:
+        values.add(HELPER_OPTIONS_PROFILE)
+    elif identity in _F3_INPUT_SELECT_OPERATIONS:
+        values.add(INPUT_SELECT_PROFILE)
     elif identity in _F3_ENTITY_METADATA_OPERATIONS:
         # Never the signed governed_configuration_operation contract: that
         # evidence did not cover the entity registry write adapter.
@@ -762,7 +788,20 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         EXPOSURE_PROFILE,
         CONFIGURATION_DELETE_PROFILE,
         LABEL_PROFILE,
+        HELPER_OPTIONS_PROFILE,
+        INPUT_SELECT_PROFILE,
+        # Read-only and never an F3 identity, so it never matches here; listed
+        # so the entry set stays exactly "compiled minus shipped".
+        SCRIPT_TRACE_PROFILE,
     }
+)
+
+
+# Operational (single-target) identities whose F3 operation differs from the
+# capability id.  input_boolean is deliberately absent: its signed typed-helper
+# profile is not an entry-admission profile.
+_F3_OPERATIONAL_ENTRY_OPERATIONS = MappingProxyType(
+    {capability: operation for capability, operation in _F3_INPUT_SELECT_OPERATIONS}
 )
 
 
@@ -778,7 +817,12 @@ def f3_entry_admission_profiles(identities: Any) -> tuple[str, ...]:
     profiles: set[str] = set()
     for identity in identities:
         requirements = f3_requirements(
-            _F3Identity(capability_id=identity, operation=identity)
+            _F3Identity(
+                capability_id=identity,
+                # HAMCP-145: an operational identity's operation differs from
+                # its capability id; only the exact reviewed pair maps.
+                operation=_F3_OPERATIONAL_ENTRY_OPERATIONS.get(identity, identity),
+            )
         )
         profiles.update(set(requirements) & F3_ENTRY_ADMISSION_PROFILES)
     return tuple(sorted(profiles))

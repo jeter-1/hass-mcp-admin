@@ -224,7 +224,7 @@ class DormantProfileTests(unittest.TestCase):
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
         # 22 through 069A, plus the two dormant 069B profiles, the dormant
         # 165 label profile and the dormant HAMCP-155 deletion profile.
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 26)
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 29)  # + HAMCP-232/145 November batch
         (profile,) = CORE_ENTITY_METADATA_PROFILES
         mapping = profile.to_mapping()
         self.assertEqual(
