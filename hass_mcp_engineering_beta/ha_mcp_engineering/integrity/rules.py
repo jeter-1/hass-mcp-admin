@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import asdict, replace
 import json
-import re
 from typing import Any
 
+from ..dependency.bounded_sources import availability, last_changed
 from ..dependency.extraction import valid_entity_id
 from .models import (
     IntegrityEvidenceBundle,
@@ -351,33 +351,14 @@ def _disabled_classification(value: str | None) -> str:
     return "not_disabled"
 
 
-AVAILABILITY_STATES = ("available", "unavailable", "unknown", "absent")
-_LAST_CHANGED = re.compile(
-    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})"
-)
-
-
 def _availability(state: dict[str, Any] | None) -> str:
-    """The target's availability from its current state-machine entry.
+    """The target's availability from its current state-machine entry."""
 
-    Home Assistant's ``STATE_UNAVAILABLE`` and ``STATE_UNKNOWN`` are the
-    literal strings ``unavailable`` and ``unknown``; any other value is an
-    available state. No entry is ``absent``.
-    """
-
-    if state is None:
-        return "absent"
-    value = str(state.get("state") or "")
-    if value in {"unavailable", "unknown"}:
-        return value
-    return "available"
+    return availability(None if state is None else state.get("state") or "")
 
 
 def _last_changed(value: Any) -> str | None:
-    """``last_changed`` only when it is an ISO 8601 timestamp, else ``None``."""
-
-    text = str(value or "")
-    return text if _LAST_CHANGED.fullmatch(text) else None
+    return last_changed(value)
 
 
 def _reference_severity(

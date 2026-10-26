@@ -8,17 +8,14 @@ bound or sanitizer cuts it. A screened value is replaced whole by the
 screen's marker; nothing is derived from it (owner decision, Josh,
 2026-10-22).
 
-Two rules, by what the text is:
-
-- **Free text** (a name, an alias, an excerpt, a summary) is read with the
-  labelled forms (``labelled=True``): a credential keyword or label, a
-  mosquitto ``-P`` option, a bearer value or a private-key header withholds
-  it, in any letter case, percent-encoding, confusable or whitespace split.
-- **An identifier** (a configuration ID, an entity ID, a source ID, a
-  configuration path) made only of ``PLAIN_IDENTIFIER`` characters is read
-  with the default screen, so an ordinary ID such as ``token_refresh`` stays
-  visible; any other character (whitespace, ``:``, ``=``, ``%``, non-ASCII)
-  makes it free text, so ``api_key=...`` is withheld.
+Home Assistant's own identifiers and names (automation and script IDs and
+aliases, entity IDs and names, configuration paths, excerpts) are read with
+the screen's **default** mode, the HAMCP-132 shape-based checks: a
+credential URL, a known secret, a PEM private key, an invisible or format
+character, in the percent-decoded, NFKC, confusable-folded and squashed
+forms. The journal's labelled keyword mode (``labelled=True``, HAMCP-224) is
+for third-party log text only, so an ordinary name such as ``Token
+refresh`` is shown (owner direction, Josh, 2026-10-26).
 
 The caller decides what a withheld value costs: a withheld identifier drops
 its record (the result is partial), a withheld text field keeps its record
@@ -27,26 +24,17 @@ with the marker in place of the text.
 
 from __future__ import annotations
 
-import re
 from typing import Any, Iterable
 
 from .configuration_definitions import credentials
 
-PLAIN_IDENTIFIER = re.compile(r"[A-Za-z0-9_./\[\]-]+")
 MARKERS = frozenset({credentials.WITHHELD_MARKER, credentials.UNVERIFIABLE_MARKER})
 
 
-def screen_text(value: str, known_secrets: tuple[str, ...] = ()) -> str | None:
-    """The marker that replaces free text ``value``, or ``None`` when shown."""
+def screen(value: str, known_secrets: tuple[str, ...] = ()) -> str | None:
+    """The marker that replaces Home Assistant text ``value``, or ``None`` when shown."""
 
-    return credentials.screen(value, _secrets(known_secrets), labelled=True)
-
-
-def screen_identifier(value: str, known_secrets: tuple[str, ...] = ()) -> str | None:
-    """The marker that replaces identifier ``value``, or ``None`` when shown."""
-
-    labelled = PLAIN_IDENTIFIER.fullmatch(value) is None
-    return credentials.screen(value, _secrets(known_secrets), labelled=labelled)
+    return credentials.screen(value, _secrets(known_secrets))
 
 
 def screen_fields(
@@ -66,14 +54,14 @@ def screen_fields(
     output = dict(record)
     withheld_identifiers: list[str] = []
     withheld_text: list[str] = []
-    for keys, screen, withheld in (
-        (identifier_keys, screen_identifier, withheld_identifiers),
-        (text_keys, screen_text, withheld_text),
+    for keys, withheld in (
+        (identifier_keys, withheld_identifiers),
+        (text_keys, withheld_text),
     ):
         for key in keys:
             if key not in output:
                 continue
-            value, hit = _screen_value(output[key], screen, known_secrets)
+            value, hit = _screen_value(output[key], known_secrets)
             if hit:
                 output[key] = value
                 withheld.append(key)
@@ -90,7 +78,7 @@ def withheld(value: Any) -> bool:
     return False
 
 
-def _screen_value(value: Any, screen, known_secrets) -> tuple[Any, bool]:
+def _screen_value(value: Any, known_secrets) -> tuple[Any, bool]:
     if isinstance(value, str):
         marker = screen(value, known_secrets)
         return (marker, True) if marker is not None else (value, False)
@@ -98,7 +86,7 @@ def _screen_value(value: Any, screen, known_secrets) -> tuple[Any, bool]:
         items = []
         hit = False
         for item in value:
-            screened, item_hit = _screen_value(item, screen, known_secrets)
+            screened, item_hit = _screen_value(item, known_secrets)
             items.append(screened)
             hit = hit or item_hit
         return (type(value)(items) if isinstance(value, tuple) else items), hit

@@ -24,10 +24,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+import re
 from typing import Any, Iterable
 
 from ..sanitization import sanitize_untrusted_data
-from ..untrusted_text import screen_identifier
+from ..untrusted_text import screen
 
 MAX_BOUNDED_SOURCES = 50
 # Obligations retained per script scan for naming (scripts are not in the
@@ -204,7 +205,7 @@ def _entry(source_type, source_id, source_entity_id, reason, known_secrets):
 
 
 def _shown(value: str, known_secrets: tuple[str, ...]) -> bool:
-    if len(value) > 256 or screen_identifier(value, known_secrets) is not None:
+    if len(value) > 256 or screen(value, known_secrets) is not None:
         return False
     safe = sanitize_untrusted_data(
         value, known_secrets=known_secrets, max_string=256
@@ -238,3 +239,41 @@ def screening_warnings(bounded: BoundedSources, screened_text: int = 0) -> list[
             f"{screened_text} text field(s) were withheld whole by the credential screen."
         )
     return warnings
+
+
+AVAILABILITY_STATES = ("available", "unavailable", "unknown", "absent")
+_LAST_CHANGED = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})"
+)
+
+
+def availability(state: Any) -> str:
+    """Availability from a state value; ``None`` (no state entry) is ``absent``.
+
+    Home Assistant's ``STATE_UNAVAILABLE`` and ``STATE_UNKNOWN`` are the
+    literal strings ``unavailable`` and ``unknown``; any other value is an
+    available state.
+    """
+
+    if state is None:
+        return "absent"
+    value = str(state)
+    return value if value in {"unavailable", "unknown"} else "available"
+
+
+def last_changed(value: Any) -> str | None:
+    """``last_changed`` only when it is an ISO 8601 timestamp, else ``None``."""
+
+    text = str(value or "")
+    return text if _LAST_CHANGED.fullmatch(text) else None
+
+
+def target_availability(metadata: dict[str, Any]) -> dict[str, Any]:
+    """``{state, last_changed}`` for the analysed entity's dependency metadata."""
+
+    if not metadata.get("entity_exists"):
+        return {"state": "absent", "last_changed": None}
+    return {
+        "state": availability(metadata.get("state")),
+        "last_changed": last_changed(metadata.get("last_changed")),
+    }

@@ -874,6 +874,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 "domain": entity_id.split(".", 1)[0],
                 "friendly_name": redact_data(attrs.get("friendly_name"), secret=self.secret, max_string=160),
                 "state": redact_data(state.get("state"), secret=self.secret, max_string=128),
+                # HAMCP-226: evidence for ``target_availability``; the service
+                # keeps it only as an ISO 8601 timestamp.
+                "last_changed": str(state.get("last_changed") or "")[:64],
             }
         for entry in semantic_registry:
             if not isinstance(entry, dict):
