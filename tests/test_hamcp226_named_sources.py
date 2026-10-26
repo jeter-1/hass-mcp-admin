@@ -407,6 +407,25 @@ class ExtractionScreenWindowTests(unittest.TestCase):
                 value = "x" * offset + cases.credential_url() + "y" * 70_000
                 self.assertEqual(extraction._bounded(value), c.WITHHELD_MARKER)
 
+    def test_credential_straddling_the_cut_is_withheld_whole(self):
+        # Property: everything output (the first 160 characters) is screened,
+        # with a 1,024-character margin past the cut. A credential that starts
+        # inside the shown part and ends past the cut is withheld whole; its
+        # shown head is never returned on its own.
+        from ha_mcp_engineering.dependency import extraction
+        limit = 160
+        for kind, credential, secret in (("url", cases.credential_url(), ""),
+                                         ("known_secret", SECRET, SECRET)):
+            for inside in (1, len(credential) // 2, len(credential) - 1):
+                with self.subTest(kind=kind, inside=inside):
+                    offset = limit - inside
+                    self.assertGreater(offset + len(credential), limit)
+                    value = "x" * offset + credential + "y" * 70_000
+                    self.assertEqual(extraction._bounded(value, limit, secret), c.WITHHELD_MARKER)
+                    # Without the screen, the bound alone would show the head.
+                    unscreened = extraction.redact_data(value, secret="", max_string=limit)
+                    self.assertIn(credential[:inside], str(unscreened))
+
     def test_text_past_the_window_is_never_shown(self):
         from ha_mcp_engineering.dependency import extraction
         value = "x" * (160 + extraction._SCREEN_MARGIN) + cases.credential_url()
