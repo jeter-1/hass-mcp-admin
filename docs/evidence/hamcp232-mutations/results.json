@@ -1,0 +1,1105 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp232_helper_options",
+   "test_hamcp145_input_select_option",
+   "test_hamcp232_script_traces",
+   "test_seq15_contract_acceptance",
+   "test_f3_configuration_identity"
+  ],
+  "returncode": 0,
+  "tests": 208,
+  "seconds": 95.1,
+  "summary": "OK"
+ },
+ "mutation_count": 57,
+ "killed": 57,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "A1-helper-options-entry-admission",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        self._helper_options_core()\n        try:\n            request = helper_options_planning.validate_request(arguments)",
+     "        try:\n            request = helper_options_planning.validate_request(arguments)"
+    ]
+   ],
+   "log_path": "mutation-logs/A1-helper-options-entry-admission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_refuses_before_validation_and_any_read (test_hamcp232_helper_options.ServiceAdmissionTests.test_refuses_before_validation_and_any_read)"
+   ],
+   "seconds": 45.6
+  },
+  {
+   "id": "A2-helper-options-persist-admission",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        # current Core lease; neither ever depends on the caller alone.\n        self._helper_options_core()\n",
+     "        # current Core lease; neither ever depends on the caller alone.\n"
+    ]
+   ],
+   "log_path": "mutation-logs/A2-helper-options-persist-admission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_internal_builder_refuses_without_admission (test_hamcp232_helper_options.ServiceAdmissionTests.test_internal_builder_refuses_without_admission)"
+   ],
+   "seconds": 48.0
+  },
+  {
+   "id": "A3-helper-options-apply-context-admission",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        if helper_options:\n            self._helper_options_core()",
+     "        if False:\n            self._helper_options_core()"
+    ]
+   ],
+   "log_path": "mutation-logs/A3-helper-options-apply-context-admission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_generic_builder_refuses_a_raw_options_operation_first (test_hamcp232_helper_options.ServiceAdmissionTests.test_generic_builder_refuses_a_raw_options_operation_first)"
+   ],
+   "seconds": 46.4
+  },
+  {
+   "id": "A4-adapter-preflight-admission",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        if not self._admitted():\n            return self._preflight_rejected(",
+     "        if False:\n            return self._preflight_rejected("
+    ]
+   ],
+   "log_path": "mutation-logs/A4-adapter-preflight-admission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_preflight_refuses_before_any_read (test_hamcp232_helper_options.AdapterAdmissionTests.test_preflight_refuses_before_any_read)"
+   ],
+   "seconds": 4.9
+  },
+  {
+   "id": "A5-adapter-predispatch-admission",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        if not self._admitted():\n            return (CORE_ADMISSION_UNAVAILABLE,)",
+     "        if False:\n            return (CORE_ADMISSION_UNAVAILABLE,)"
+    ]
+   ],
+   "log_path": "mutation-logs/A5-adapter-predispatch-admission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_predispatch_refuses_before_opening_a_flow (test_hamcp232_helper_options.AdapterAdmissionTests.test_predispatch_refuses_before_opening_a_flow)"
+   ],
+   "seconds": 3.9
+  },
+  {
+   "id": "A6-adapter-readback-admission",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        if not self._admitted():\n            return self._incomplete_observation(",
+     "        if False:\n            return self._incomplete_observation("
+    ]
+   ],
+   "log_path": "mutation-logs/A6-adapter-readback-admission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_readback_refuses_after_the_submit (test_hamcp232_helper_options.AdapterAdmissionTests.test_readback_refuses_after_the_submit)"
+   ],
+   "seconds": 6.7
+  },
+  {
+   "id": "A7-runtime-helper-options-admitted-always",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "            status = core.route_status((helper_options_contract.PROFILE,))\n        except Exception:\n            return False\n        return isinstance(status, dict) and status.get(\"available\") is True",
+     "            status = core.route_status((helper_options_contract.PROFILE,))\n        except Exception:\n            return False\n        return True"
+    ]
+   ],
+   "log_path": "mutation-logs/A7-runtime-helper-options-admitted-always.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_adapter_admission_follows_the_live_core_status (test_hamcp232_helper_options.AdmittedServiceBoundaryTests.test_adapter_admission_follows_the_live_core_status)"
+   ],
+   "seconds": 6.9
+  },
+  {
+   "id": "A8-runtime-operational-profile-seam",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "    if operational is not None:\n        profiles.add(operational)",
+     "    if False:\n        profiles.add(operational)"
+    ]
+   ],
+   "log_path": "mutation-logs/A8-runtime-operational-profile-seam.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_admission_withdrawn_after_approval_refuses_at_entry (test_hamcp145_input_select_option.ExecutionTests.test_admission_withdrawn_after_approval_refuses_at_entry)"
+   ],
+   "seconds": 60.0
+  },
+  {
+   "id": "A9-input-select-entry-admission",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        self._input_select_core()\n        try:\n            request = input_select_option_planning.validate_request(arguments)",
+     "        try:\n            request = input_select_option_planning.validate_request(arguments)"
+    ]
+   ],
+   "log_path": "mutation-logs/A9-input-select-entry-admission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_entry_refuses_before_validation_and_any_read (test_hamcp145_input_select_option.UnadmittedServiceTests.test_every_entry_refuses_before_validation_and_any_read)"
+   ],
+   "seconds": 96.2
+  },
+  {
+   "id": "A10-script-trace-profile-authority",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "        if (status.get(\"available\") is not True or telemetry is None",
+     "        if (False or telemetry is None"
+    ]
+   ],
+   "log_path": "mutation-logs/A10-script-trace-profile-authority.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unadmitted_profile_refuses_even_with_dispatch_authority (test_hamcp232_script_traces.ServiceAdmissionTests.test_unadmitted_profile_refuses_even_with_dispatch_authority)"
+   ],
+   "seconds": 90.5
+  },
+  {
+   "id": "A11-script-trace-generation-recheck",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "        if self.authority() != generation:",
+     "        if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/A11-script-trace-generation-recheck.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_admission_withdrawn_across_the_read_refuses (test_hamcp232_script_traces.ServiceAdmissionTests.test_admission_withdrawn_across_the_read_refuses)"
+   ],
+   "seconds": 91.6
+  },
+  {
+   "id": "A12-script-trace-anonymous-caller",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "        if current_caller_id() == \"anonymous\":",
+     "        if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/A12-script-trace-anonymous-caller.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_anonymous_caller_refuses (test_hamcp232_script_traces.ServiceAdmissionTests.test_anonymous_caller_refuses)"
+   ],
+   "seconds": 91.2
+  },
+  {
+   "id": "D1-entry-modified-at-moved",
+   "class": "drift accepted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        if facts.modified_at != intent[\"modified_at\"]:\n            # Core moves",
+     "        if False:\n            # Core moves"
+    ]
+   ],
+   "log_path": "mutation-logs/D1-entry-modified-at-moved.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_drift_before_apply_is_stale_with_no_flow (test_hamcp232_helper_options.ExecutionTests.test_drift_before_apply_is_stale_with_no_flow)"
+   ],
+   "seconds": 15.4
+  },
+  {
+   "id": "D2-held-flow-form-differs",
+   "class": "drift accepted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "            return await refuse(STALE)\n        # ``modified_at`` read after the open",
+     "            pass\n        # ``modified_at`` read after the open"
+    ]
+   ],
+   "log_path": "mutation-logs/D2-held-flow-form-differs.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_abort_of_a_drifted_flow_is_an_orphan (test_hamcp232_helper_options.ExecutionTests.test_failed_abort_of_a_drifted_flow_is_an_orphan)"
+   ],
+   "seconds": 18.9
+  },
+  {
+   "id": "D3-post-open-entry-check",
+   "class": "drift accepted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        code = await self._entry_code(operation, intent)\n        if code != \"state_matches_plan\":\n            return await refuse(code)",
+     "        code = await self._entry_code(operation, intent)\n        if False:\n            return await refuse(code)"
+    ]
+   ],
+   "log_path": "mutation-logs/D3-post-open-entry-check.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_entry_moved_after_the_open_is_stale_and_aborted (test_hamcp232_helper_options.ExecutionTests.test_entry_moved_after_the_open_is_stale_and_aborted)"
+   ],
+   "seconds": 17.1
+  },
+  {
+   "id": "D4-planning-entry-moved",
+   "class": "drift accepted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options_planning.py",
+     "            or after.modified_at != facts.modified_at",
+     "            or False"
+    ]
+   ],
+   "log_path": "mutation-logs/D4-planning-entry-moved.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_change_while_the_flow_is_open_refuses (test_hamcp232_helper_options.PlanningTests.test_change_while_the_flow_is_open_refuses)"
+   ],
+   "seconds": 23.8
+  },
+  {
+   "id": "D5-input-select-option-removed",
+   "class": "drift accepted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_strategies.py",
+     "        if not isinstance(options, list) or option not in options:",
+     "        if not isinstance(options, list):"
+    ]
+   ],
+   "log_path": "mutation-logs/D5-input-select-option-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_drift_before_apply_is_refused_with_no_send (test_hamcp145_input_select_option.ExecutionTests.test_drift_before_apply_is_refused_with_no_send)"
+   ],
+   "seconds": 65.9
+  },
+  {
+   "id": "D6-input-select-state-moved",
+   "class": "drift accepted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_strategies.py",
+     "        if current != _input_select_state(prepared.baseline):",
+     "        if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/D6-input-select-state-moved.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_restamped_but_equal_state_is_stale (test_hamcp145_input_select_option.ExecutionTests.test_a_restamped_but_equal_state_is_stale)"
+   ],
+   "seconds": 60.3
+  },
+  {
+   "id": "D7-input-select-plan-option-unoffered",
+   "class": "drift accepted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            if request.option not in baseline[\"options\"]:",
+     "            if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/D7-input-select-plan-option-unoffered.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_option_comparison_is_exact (test_hamcp145_input_select_option.PlanningTests.test_option_comparison_is_exact)"
+   ],
+   "seconds": 76.7
+  },
+  {
+   "id": "D8-input-select-predispatch-refusal-ignored",
+   "class": "drift accepted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_strategies.py",
+     "        refusal = await self._windowed_predispatch_refusal(prepared)\n        if refusal:",
+     "        refusal = await self._windowed_predispatch_refusal(prepared)\n        if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/D8-input-select-predispatch-refusal-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_drift_in_the_predispatch_read_is_refused_with_no_intent (test_hamcp145_input_select_option.ExecutionTests.test_drift_in_the_predispatch_read_is_refused_with_no_intent)"
+   ],
+   "seconds": 68.2
+  },
+  {
+   "id": "C1-pinned-field-value-accepted",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "    if spec.pinned:\n        raise HelperOptionsContractError(\"options_field_pinned\"",
+     "    if False:\n        raise HelperOptionsContractError(\"options_field_pinned\""
+    ]
+   ],
+   "log_path": "mutation-logs/C1-pinned-field-value-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_pinned_field_is_refused_at_coercion (test_hamcp232_helper_options.PinnedFieldContractTests.test_every_pinned_field_is_refused_at_coercion)"
+   ],
+   "seconds": 24.4
+  },
+  {
+   "id": "C2-intent-pinned-change-accepted",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "                errors.append(\"options intent changes a pinned field\")",
+     "                pass"
+    ]
+   ],
+   "log_path": "mutation-logs/C2-intent-pinned-change-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_intent_changing_a_pinned_field_is_refused (test_hamcp232_helper_options.IntentContractTests.test_an_intent_changing_a_pinned_field_is_refused)"
+   ],
+   "seconds": 21.0
+  },
+  {
+   "id": "C3-intent-no-op-accepted",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "        errors.append(\"options intent is a no-op\")",
+     "        pass"
+    ]
+   ],
+   "log_path": "mutation-logs/C3-intent-no-op-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_no_op_intent_is_refused (test_hamcp232_helper_options.IntentContractTests.test_a_no_op_intent_is_refused)"
+   ],
+   "seconds": 21.2
+  },
+  {
+   "id": "C4-flow-id-shape-loosened",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "FLOW_ID_PATTERN = re.compile(r\"[0-9a-f]{32}\\Z\")",
+     "FLOW_ID_PATTERN = re.compile(r\"[^?#]{1,64}\\Z\")"
+    ]
+   ],
+   "log_path": "mutation-logs/C4-flow-id-shape-loosened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_malformed_flow_ids_never_reach_core (test_hamcp232_helper_options.GatewayContractTests.test_malformed_flow_ids_never_reach_core)"
+   ],
+   "seconds": 21.1
+  },
+  {
+   "id": "C5-visible-equal-subset",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "    return set(left) == set(right) and all(",
+     "    return set(left) <= set(right) and all("
+    ]
+   ],
+   "log_path": "mutation-logs/C5-visible-equal-subset.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_template_binary_sensor_section_field (test_hamcp232_helper_options.PlanningTests.test_template_binary_sensor_section_field)"
+   ],
+   "seconds": 24.6
+  },
+  {
+   "id": "C6-submit-4xx-accepted",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "            if type(status) is int and 400 <= status < 500:\n                return SubmitOutcome(False, SUBMIT_REJECTED_REASON, status)",
+     "            if type(status) is int and 400 <= status < 500:\n                return SubmitOutcome(True, SUBMIT_REJECTED_REASON, status)"
+    ]
+   ],
+   "log_path": "mutation-logs/C6-submit-4xx-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_raised_client_error_is_a_confirmed_rejection (test_hamcp232_helper_options.GatewayContractTests.test_a_raised_client_error_is_a_confirmed_rejection)"
+   ],
+   "seconds": 20.6
+  },
+  {
+   "id": "C7-helper-options-send-boundary-unmarked",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "        mark_provider_send()  # the exact send boundary\n        try:\n            response = await self.rest_client.request(",
+     "        try:\n            response = await self.rest_client.request("
+    ]
+   ],
+   "log_path": "mutation-logs/C7-helper-options-send-boundary-unmarked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_submit_marks_the_provider_send_boundary (test_hamcp232_helper_options.ReachabilityTests.test_submit_marks_the_provider_send_boundary)"
+   ],
+   "seconds": 25.9
+  },
+  {
+   "id": "C8-input-select-send-boundary-unmarked",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/input_select_option.py",
+     "        mark_provider_send()  # the exact send boundary\n        try:\n            await self.websocket_client.command(payload)",
+     "        try:\n            await self.websocket_client.command(payload)"
+    ]
+   ],
+   "log_path": "mutation-logs/C8-input-select-send-boundary-unmarked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_select_option_gateway_marks_the_send_boundary (test_hamcp145_input_select_option.ReachabilityTests.test_select_option_gateway_marks_the_send_boundary)"
+   ],
+   "seconds": 72.5
+  },
+  {
+   "id": "O1-release-orphan-unrecorded",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        if not aborted:\n            self._orphaned.add(key)",
+     "        if False:\n            self._orphaned.add(key)"
+    ]
+   ],
+   "log_path": "mutation-logs/O1-release-orphan-unrecorded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_release_after_a_before_dispatch_failure_is_disclosed (test_hamcp232_helper_options.OrphanDisclosureTests.test_failed_release_after_a_before_dispatch_failure_is_disclosed)"
+   ],
+   "seconds": 23.3
+  },
+  {
+   "id": "O2-before-dispatch-failure-flow-kept",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "                await self._release(key, windowed=True)\n                raise",
+     "                raise"
+    ]
+   ],
+   "log_path": "mutation-logs/O2-before-dispatch-failure-flow-kept.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_release_after_a_before_dispatch_failure_is_disclosed (test_hamcp232_helper_options.OrphanDisclosureTests.test_failed_release_after_a_before_dispatch_failure_is_disclosed)"
+   ],
+   "seconds": 22.3
+  },
+  {
+   "id": "O3-before-dispatch-release-unwindowed",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "                await self._release(key, windowed=True)\n                raise",
+     "                await self._release(key)\n                raise"
+    ]
+   ],
+   "log_path": "mutation-logs/O3-before-dispatch-release-unwindowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_before_dispatch_failure_releases_the_held_flow (test_hamcp232_helper_options.ExecutionTests.test_before_dispatch_failure_releases_the_held_flow)"
+   ],
+   "seconds": 12.8
+  },
+  {
+   "id": "O4-dispatch-orphan-disclosure-dropped",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "            codes = (*codes, FLOW_ORPHANED)",
+     "            codes = codes"
+    ]
+   ],
+   "log_path": "mutation-logs/O4-dispatch-orphan-disclosure-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_release_after_a_before_dispatch_failure_is_disclosed (test_hamcp232_helper_options.OrphanDisclosureTests.test_failed_release_after_a_before_dispatch_failure_is_disclosed)"
+   ],
+   "seconds": 22.5
+  },
+  {
+   "id": "O5-readback-orphan-disclosure-dropped",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        if not aborted:\n            codes += (FLOW_ORPHANED,)",
+     "        if False:\n            codes += (FLOW_ORPHANED,)"
+    ]
+   ],
+   "log_path": "mutation-logs/O5-readback-orphan-disclosure-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_abort_of_the_readback_flow_is_disclosed (test_hamcp232_helper_options.OrphanDisclosureTests.test_failed_abort_of_the_readback_flow_is_disclosed)"
+   ],
+   "seconds": 21.1
+  },
+  {
+   "id": "O6-planning-orphan-count-dropped",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options_planning.py",
+     "        if not aborted:\n            orphan_flows += 1",
+     "        if False:\n            orphan_flows += 1"
+    ]
+   ],
+   "log_path": "mutation-logs/O6-planning-orphan-count-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_abort_at_planning_is_disclosed_as_an_orphan (test_hamcp232_helper_options.PlanningTests.test_failed_abort_at_planning_is_disclosed_as_an_orphan)"
+   ],
+   "seconds": 22.5
+  },
+  {
+   "id": "R1-helper-readback-entry-unhealthy-accepted",
+   "class": "readback accepts an unverified result",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        if proposed and moved and loaded and registered:",
+     "        if proposed and moved:"
+    ]
+   ],
+   "log_path": "mutation-logs/R1-helper-readback-entry-unhealthy-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_entry_not_reloaded_is_manual_review (test_hamcp232_helper_options.SubmitOutcomeTests.test_entry_not_reloaded_is_manual_review)"
+   ],
+   "seconds": 47.1
+  },
+  {
+   "id": "R2-helper-readback-unmoved-accepted",
+   "class": "readback accepts an unverified result",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        if proposed and moved and loaded and registered:",
+     "        if proposed and loaded and registered:"
+    ]
+   ],
+   "log_path": "mutation-logs/R2-helper-readback-unmoved-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_proposed_options_without_a_stored_update_are_not_verified (test_hamcp232_helper_options.ReadbackRuleTests.test_proposed_options_without_a_stored_update_are_not_verified)"
+   ],
+   "seconds": 26.2
+  },
+  {
+   "id": "R3-input-select-readback-unverified",
+   "class": "readback accepts an unverified result",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_strategies.py",
+     "        # An error result is never proof: this exact readback decides.\n        verified = state.get(\"state\") == prepared.requested_name",
+     "        # An error result is never proof: this exact readback decides.\n        verified = True"
+    ]
+   ],
+   "log_path": "mutation-logs/R3-input-select-readback-unverified.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_responses_that_did_not_apply_fail_without_a_resend (test_hamcp145_input_select_option.ExecutionTests.test_responses_that_did_not_apply_fail_without_a_resend)"
+   ],
+   "seconds": 65.8
+  },
+  {
+   "id": "R4-input-select-rejection-treated-unsent",
+   "class": "readback accepts an unverified result",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/input_select_option.py",
+     "                \"provider_rejected\" if confirmed else \"dispatch_indeterminate\",\n                dispatched=True,",
+     "                \"provider_rejected\" if confirmed else \"dispatch_indeterminate\",\n                dispatched=False,"
+    ]
+   ],
+   "log_path": "mutation-logs/R4-input-select-rejection-treated-unsent.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_rejection_that_applied_is_decided_by_readback (test_hamcp145_input_select_option.ExecutionTests.test_rejection_that_applied_is_decided_by_readback)"
+   ],
+   "seconds": 63.8
+  },
+  {
+   "id": "P1-target-limit-widened",
+   "class": "planning policy weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options_planning.py",
+     "    if len(changes) > MAX_CHANGES:",
+     "    if len(changes) > MAX_CHANGES + 1:"
+    ]
+   ],
+   "log_path": "mutation-logs/P1-target-limit-widened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_one_to_eight_targets (test_hamcp232_helper_options.RequestVocabularyTests.test_one_to_eight_targets)"
+   ],
+   "seconds": 27.2
+  },
+  {
+   "id": "P2-mixed-domains-accepted",
+   "class": "planning policy weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options_planning.py",
+     "            raise Refusal(\"helper_options_mixed_domains\", **target)",
+     "            pass"
+    ]
+   ],
+   "log_path": "mutation-logs/P2-mixed-domains-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_one_domain_per_plan (test_hamcp232_helper_options.PlanningTests.test_one_domain_per_plan)"
+   ],
+   "seconds": 23.3
+  },
+  {
+   "id": "P3-classification-not-elevated",
+   "class": "planning policy weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options_planning.py",
+     "        \"policy\": \"elevated\" if basis else \"standard\",",
+     "        \"policy\": \"standard\","
+    ]
+   ],
+   "log_path": "mutation-logs/P3-classification-not-elevated.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_predispatch_refuses_before_opening_a_flow (test_hamcp232_helper_options.AdapterAdmissionTests.test_predispatch_refuses_before_opening_a_flow)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "P4-od7-disclosure-dropped",
+   "class": "planning policy weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options_planning.py",
+     "        warnings = [CONCURRENCY_DISCLOSURE, HIDDEN_KEYS_DISCLOSURE,",
+     "        warnings = [HIDDEN_KEYS_DISCLOSURE,"
+    ]
+   ],
+   "log_path": "mutation-logs/P4-od7-disclosure-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_apply_verifies_and_offers_a_separately_approved_rollback (test_hamcp232_helper_options.ExecutionTests.test_apply_verifies_and_offers_a_separately_approved_rollback)"
+   ],
+   "seconds": 9.4
+  },
+  {
+   "id": "P5-injected-defaults-undisclosed",
+   "class": "planning policy weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options_planning.py",
+     "            \"normalization_changes\": normalization,",
+     "            \"normalization_changes\": [],"
+    ]
+   ],
+   "log_path": "mutation-logs/P5-injected-defaults-undisclosed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_injected_default_is_disclosed_separately (test_hamcp232_helper_options.PlanningTests.test_injected_default_is_disclosed_separately)"
+   ],
+   "seconds": 22.3
+  },
+  {
+   "id": "P6-domain-vocabulary-widened",
+   "class": "planning policy weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "DOMAINS = (\"filter\", \"statistics\", \"template\")",
+     "DOMAINS = (\"filter\", \"statistics\", \"template\", \"utility_meter\")"
+    ]
+   ],
+   "log_path": "mutation-logs/P6-domain-vocabulary-widened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_entry_refusals (test_hamcp232_helper_options.PlanningTests.test_entry_refusals)"
+   ],
+   "seconds": 22.4
+  },
+  {
+   "id": "P7-template-type-vocabulary-widened",
+   "class": "planning policy weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "TEMPLATE_TYPES = (\"binary_sensor\", \"sensor\")",
+     "TEMPLATE_TYPES = (\"binary_sensor\", \"sensor\", \"switch\")"
+    ]
+   ],
+   "log_path": "mutation-logs/P7-template-type-vocabulary-widened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_template_types_are_the_closed_catalog (test_hamcp232_helper_options.RequestVocabularyTests.test_template_types_are_the_closed_catalog)"
+   ],
+   "seconds": 26.0
+  },
+  {
+   "id": "S1-list-known-secrets-dropped",
+   "class": "script-trace read unsanitized or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "        if not isinstance(result, list):\n            raise ScriptTraceError(\"invalid_provider_response\")\n        sanitation = sanitize_untrusted_data(\n            result, known_secrets=self.known_secrets, max_string=MAX_STRING",
+     "        if not isinstance(result, list):\n            raise ScriptTraceError(\"invalid_provider_response\")\n        sanitation = sanitize_untrusted_data(\n            result, known_secrets=(), max_string=MAX_STRING"
+    ]
+   ],
+   "log_path": "mutation-logs/S1-list-known-secrets-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_list_is_exact_sanitized_and_normalized (test_hamcp232_script_traces.ServiceReadTests.test_list_is_exact_sanitized_and_normalized)"
+   ],
+   "seconds": 82.4
+  },
+  {
+   "id": "S2-get-known-secrets-dropped",
+   "class": "script-trace read unsanitized or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "        if not isinstance(result, dict):\n            raise ScriptTraceError(\"invalid_provider_response\")\n        sanitation = sanitize_untrusted_data(\n            result, known_secrets=self.known_secrets, max_string=MAX_STRING",
+     "        if not isinstance(result, dict):\n            raise ScriptTraceError(\"invalid_provider_response\")\n        sanitation = sanitize_untrusted_data(\n            result, known_secrets=(), max_string=MAX_STRING"
+    ]
+   ],
+   "log_path": "mutation-logs/S2-get-known-secrets-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_get_is_exact_and_sanitized_before_output (test_hamcp232_script_traces.ServiceReadTests.test_get_is_exact_and_sanitized_before_output)"
+   ],
+   "seconds": 81.7
+  },
+  {
+   "id": "S3-get-trace-unsanitized",
+   "class": "script-trace read unsanitized or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "            \"trace\": sanitation.value,",
+     "            \"trace\": result,"
+    ]
+   ],
+   "log_path": "mutation-logs/S3-get-trace-unsanitized.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_get_is_exact_and_sanitized_before_output (test_hamcp232_script_traces.ServiceReadTests.test_get_is_exact_and_sanitized_before_output)"
+   ],
+   "seconds": 80.8
+  },
+  {
+   "id": "S4-trace-not-found-unmapped",
+   "class": "script-trace read unsanitized or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "                if payload[\"type\"] == GET_COMMAND and details.get(\"status\") == 404",
+     "                if False"
+    ]
+   ],
+   "log_path": "mutation-logs/S4-trace-not-found-unmapped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_not_found_is_reported_without_fallback (test_hamcp232_script_traces.ServiceReadTests.test_not_found_is_reported_without_fallback)"
+   ],
+   "seconds": 80.5
+  },
+  {
+   "id": "S5-script-id-shape-loosened",
+   "class": "script-trace read unsanitized or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "SCRIPT_ID_PATTERN = re.compile(r\"[a-z0-9_]{1,128}\\Z\")",
+     "SCRIPT_ID_PATTERN = re.compile(r\".{1,128}\\Z\")"
+    ]
+   ],
+   "log_path": "mutation-logs/S5-script-id-shape-loosened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_payloads_are_the_closed_vocabulary (test_hamcp232_script_traces.ContractTests.test_payloads_are_the_closed_vocabulary)"
+   ],
+   "seconds": 80.7
+  },
+  {
+   "id": "L1-lanes-enabled-by-default",
+   "class": "dormant lane gate opened",
+   "replacements": [
+    [
+     "scripts/seq15_contract_acceptance.py",
+     "    return os.environ.get(ENABLE_FLAG) == ENABLED",
+     "    return True"
+    ]
+   ],
+   "log_path": "mutation-logs/L1-lanes-enabled-by-default.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_lanes_refuse_unless_exactly_enabled (test_seq15_contract_acceptance.DormancyTests.test_lanes_refuse_unless_exactly_enabled)"
+   ],
+   "seconds": 81.4
+  },
+  {
+   "id": "L2-raw-client-loopback-dropped",
+   "class": "dormant lane gate opened",
+   "replacements": [
+    [
+     "scripts/seq15_contract_acceptance.py",
+     "        if urlsplit(self.api_url).hostname not in {\"127.0.0.1\", \"localhost\", \"::1\"}:",
+     "        if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/L2-raw-client-loopback-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_only_a_loopback_core_is_accepted (test_seq15_contract_acceptance.LaneRawRouteTests.test_only_a_loopback_core_is_accepted)"
+   ],
+   "seconds": 81.3
+  },
+  {
+   "id": "L3-lane-guard-loopback-dropped",
+   "class": "dormant lane gate opened",
+   "replacements": [
+    [
+     "scripts/seq15_contract_acceptance.py",
+     "            or urlsplit(configured.ha_url).hostname not in {\"127.0.0.1\", \"localhost\", \"::1\"}",
+     "            or False"
+    ]
+   ],
+   "log_path": "mutation-logs/L3-lane-guard-loopback-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_lane_refuses_unextended_slot_wrong_image_or_remote_host_before_any_client (test_seq15_contract_acceptance.LaneGuardTests.test_lane_refuses_unextended_slot_wrong_image_or_remote_host_before_any_client)"
+   ],
+   "seconds": 82.6
+  },
+  {
+   "id": "L4-raw-route-state-widened",
+   "class": "dormant lane gate opened",
+   "replacements": [
+    [
+     "scripts/seq15_contract_acceptance.py",
+     "    r\"|/states/(?:input_select|script)\\.seq15_[0-9a-z_]{1,64}\")",
+     "    r\"|/states/(?:input_select|script)\\.[0-9a-z_]{1,64}\")"
+    ]
+   ],
+   "log_path": "mutation-logs/L4-raw-route-state-widened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_routes_outside_the_closed_set_are_refused_before_sending (test_seq15_contract_acceptance.LaneRawRouteTests.test_routes_outside_the_closed_set_are_refused_before_sending)"
+   ],
+   "seconds": 82.5
+  },
+  {
+   "id": "K1-select-option-observer-unguarded",
+   "class": "input_select lock projection loosened or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/locks.py",
+     "                if not call_service_exclusions_cover_input_select(config):",
+     "                if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/K1-select-option-observer-unguarded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_input_boolean_disjoint_call_service_filters_guard_input_select (test_f3_configuration_identity.LockSetTests.test_input_boolean_disjoint_call_service_filters_guard_input_select)"
+   ],
+   "seconds": 87.3
+  },
+  {
+   "id": "K2-select-option-service-dropped",
+   "class": "input_select lock projection loosened or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/extraction.py",
+     "INPUT_SELECT_EVENT_SERVICES = frozenset({\"select_option\"})",
+     "INPUT_SELECT_EVENT_SERVICES = frozenset()"
+    ]
+   ],
+   "log_path": "mutation-logs/K2-select-option-service-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_service_names_are_confined (test_hamcp145_input_select_option.ReachabilityTests.test_the_service_names_are_confined)"
+   ],
+   "seconds": 67.8
+  },
+  {
+   "id": "K3-every-exclusion-guarded",
+   "class": "input_select lock projection loosened or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/locks.py",
+     "                if not call_service_exclusions_cover_input_select(config):",
+     "                if True:"
+    ]
+   ],
+   "log_path": "mutation-logs/K3-every-exclusion-guarded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_call_service_event_triggers_take_exact_or_conservative_locks (test_f3_configuration_identity.LockSetTests.test_call_service_event_triggers_take_exact_or_conservative_locks)"
+   ],
+   "seconds": 85.6
+  }
+ ]
+}
