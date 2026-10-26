@@ -9,6 +9,7 @@ from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
 from ha_mcp_engineering.f3.models import MAX_LOCK_TOKENS
 
 from ..dependency.extraction import (
+    call_service_exclusions_cover_input_select,
     extract_document_with_obligations,
     valid_entity_id,
 )
@@ -145,9 +146,11 @@ def _automation_helper_dependency_locks(
                 and item.outcome == "proven_target_exclusion"
             ):
                 # HAMCP-145: the extractor proves this disjoint only for
-                # input_boolean; the input_select reader treats it as
-                # target-capable, so a mutation holds the guard exclusively.
-                unconstrained = True
+                # input_boolean.  A filter that could still observe
+                # input_select.select_option holds the guard; a filter
+                # proven disjoint from both keeps the historical lock set.
+                if not call_service_exclusions_cover_input_select(config):
+                    unconstrained = True
                 continue
             scope = item.target_selector_scope or "target_capable"
             if scope == "dependency_neutral":
