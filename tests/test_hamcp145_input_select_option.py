@@ -920,11 +920,20 @@ class ReachabilityTests(unittest.TestCase):
                          ["select_option"])
 
     def test_the_service_names_are_confined(self):
-        """Only the gateway (and Core's profile table) names a select service."""
+        """Only the gateway (and Core's profile table) names a select service.
+
+        The dependency extractor also names ``select_option``, but only as a
+        read-only call_service event-filter selector for lock projection; it
+        has no send path (it imports no transport).
+        """
 
         gateway = PACKAGE / "governance" / "input_select_option.py"
-        expected = {"select_option": {gateway,
+        extraction = PACKAGE / "dependency" / "extraction.py"
+        expected = {"select_option": {gateway, extraction,
                                       PACKAGE / "ha_core_readmission" / "profiles.py"}}
+        extraction_source = extraction.read_text(encoding="utf-8")
+        for transport in ("clients.", "websocket", "rest_path", "mark_provider_send"):
+            self.assertNotIn(transport, extraction_source)
         # ``reload`` is a generic name; the gateway's closed payload builder
         # (``test_exact_payload_only``) proves it is never sent here.
         never = [n for n in contract.NEVER_SENT_SERVICES if n != "reload"]
