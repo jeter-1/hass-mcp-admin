@@ -1,9 +1,109 @@
 # HAMCP-224 host journal sources for `get_incident_logs` (journald option C) — design
 
-Status: **Part 1 design. Josh's decisions in §10 are pending.** This document
-authorizes nothing. It does not authorize implementation, a `config.yaml` or
-`Dockerfile` change, a release, deployment, or live Home Assistant access.
-Part 2 starts only after Josh records decisions in a new §0.
+Status: **Part 2. Josh's decisions are recorded in §0.** This document does
+not authorize a `Dockerfile` change, deployment, or live Home Assistant access.
+
+## 0. Owner decisions and start-risk evidence (Part 2)
+
+**Decisions (Josh, 2026-10-25): D1–D10 all as recommended in §10.**
+
+| # | Decision |
+| --- | --- |
+| D1 | Bind with `ctypes` to the base image's existing `libsystemd0` |
+| D2 | Read in an in-add-on worker thread |
+| D3 | `host` (all host logs) and the `host:kernel`, `host:usb`, `host:network`, `host:storage`, `host:os` categories |
+| D4 | Any add-on slug |
+| D5 | `core` stays on its current `/core/logs` route |
+| D6 | The §6 bounds |
+| D7 | Withhold the whole credential-looking message; the result is partial |
+| D8 | Return the reboot marker (`boot_ref`) and the kernel device fields |
+| D9 | **Authorized:** `journald: true` in `hass_mcp_engineering_beta/config.yaml`; `hassio_role` stays `homeassistant` |
+| D10 | Generated real-format journal fixtures |
+
+**Host check: inconclusive.** Josh ran it from the Terminal & SSH add-on,
+whose container has no journal mount, so both folders were reported missing
+there, as expected. The "a missing journal folder prevents the add-on from
+starting" risk (§9) was therefore settled from source and precedent instead.
+Josh's instruction was to stop if the evidence shows a real start risk on HAOS.
+It does not, so Part 2 proceeds.
+
+- **(a) Supervisor.** `journald: true` adds both bind mounts
+  **unconditionally**: no existence check, no `CreateMountpoint` (SV
+  `supervisor/docker/app.py:650-665`; SVL `:669-683` is identical). They go
+  through the Docker Mounts API (`docker/manager.py:399-400`), which refuses a
+  missing bind source when the container is created (MB
+  `daemon/volume/mounts/linux_parser.go:83-92`, `ParseMountSpec` →
+  `validateBindSourceExists=true`, `:315-320`). So the risk is real only if a
+  host can lack `/var/log/journal` or `/run/log/journal`.
+- **(b) HAOS and systemd.**
+  - `/var/log/journal` is the HAOS bind of `/mnt/data/logs`. It is ordered
+    before the journal flush (OS
+    `rootfs-overlay/usr/lib/systemd/system/var-log-journal.mount:1-14`). The
+    Supervisor and its data also live on `/mnt/data`.
+  - `/run` is a fresh tmpfs every boot, so journald's flushed flag
+    (`/run/systemd/journal/flushed`, SD `journald-server.c:324-336`) is
+    absent at boot. journald therefore opens the runtime journal first and
+    creates its parents: `mkdir_parents("/run/log/journal/<machine-id>")`
+    (SD `journald-server.c:405-415`, path `:2843`). That creates
+    `/run/log/journal`.
+  - The flush removes only `/run/log/journal/<machine-id>` (`rm_rf(...,
+    REMOVE_ROOT)` on `runtime_storage.path`, plus the runtime journals' own
+    `<machine-id>` directories, SD `journald-server.c:1420-1450`). It never
+    removes `/run/log/journal`. systemd-tmpfiles only adjusts it (`z`, SD
+    `tmpfiles.d/systemd.conf.in:24`).
+  - HAOS sets `Storage=auto` (not `none`), unchanged from OS 17.2 to 18.3
+    (OS `rootfs-overlay/etc/systemd/journald.conf:1-4`).
+- **(c) Precedent.** Published, maintained add-ons that ship `journald: true`
+  (each read at an exact commit, SHA-256 of the file in brackets):
+  - Advanced SSH & Web Terminal 24.2.0, community add-ons
+    (`hassio-addons/repository` `282dcf9b`, `ssh/config.yaml:55`
+    [`316e24ba…9744`]; source `hassio-addons/app-ssh` `e35d13ca`);
+  - Grafana Cloud 0.3.0, Grafana Labs (`grafana/home-assistant-addons`
+    `b29794a1`, `grafana_cloud/config.yaml:24` [`d0a34f10…9e32`]);
+  - CrowdSec 1.8.0 (`crowdsecurity/home-assistant-addons` `088bb75e`,
+    `crowdsec/config.yaml:66` [`a8601ce4…42e6`]);
+  - Promtail (`mdegat01/addon-promtail` `ac4976b3`, 2022; the oldest, so it
+    predates the current Supervisor and counts least).
+
+**Conclusion: no start risk on HAOS** from the journal folders. Residual
+risk, disclosed: a non-HAOS (Supervised) host with `Storage=none` or
+volatile-only logging could lack `/var/log/journal`. That is not Josh's
+install type, and it is outside what the evidence covers. The acceptance
+document's **first** step is still to confirm the add-on starts after the
+update. Rollback: reinstall `2.4.1-beta.36`, which has no `journald: true`.
+
+**Implementation notes (Part 2, refining §4–§7 without changing a decision):**
+
+- **Continuation position.** The signed cursor is signed but not encrypted
+  (`incident_logs/cursor.py:1-9`). libsystemd's cursor string embeds the raw
+  boot ID (`b=`), which D8 keeps out of every output. So a journal source's
+  position is carried as its realtime plus a **keyed digest of the libsystemd
+  cursor string**, never the string itself. A continuation seeks that realtime,
+  then finds the entry whose cursor digest matches among the entries at that
+  realtime. If none does, the result is `STALE_CURSOR` /
+  `journal_continuity_broken`, as §5 required. So `sd_journal_seek_cursor` and
+  `sd_journal_test_cursor` are **not** bound.
+- **Exact matches only.** The `host:os` category uses the exact `haos-*`
+  identifiers in the pinned 52-identifier set, not a wildcard. Every yielded
+  entry is also checked again in Python against its source's match. An entry
+  that fails the check is never returned and is counted (`match_rejected`).
+- **Correction.** Part 1 said the Supervisor's default host set has 54
+  identifiers. The file is 54 lines; it holds **52** identifiers. The count is
+  corrected throughout.
+- **One merged handle.** The reader opens the container root once
+  (`O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC`) and passes it with
+  `SD_JOURNAL_OS_ROOT`. libsystemd then reads `run/log/journal` and
+  `var/log/journal` beneath it, in one merged order (systemd v257.13,
+  `70b5d110`, `src/libsystemd/sd-journal/sd-journal.c:2206-2224,2448-2477`),
+  and sets the persistent and runtime file flags from those paths
+  (`:1568-1574`). It also reads `var/log/journal/remote` if it exists
+  (`:2220-2221`). That is host journal data under the same read-only mount,
+  and every entry still passes the source match. No inotify watch is created,
+  because `sd_journal_get_fd` is not bound.
+- **Field size.** In 257.13 `sd_journal_get_data` returns the whole payload;
+  the threshold does not shorten it (`journal-file.c:1926-1975`). So the
+  reader copies at most 16 KiB of each field itself, and marks the message
+  `message_truncated`. `sd_journal_set_data_threshold` is not bound.
 
 Base: `main` at `5030982fe681737c47e52a7c01d1808fca52468b` (Engineering
 `2.4.1-beta.36`, 68 static tools, `hassio_role: homeassistant`). Engineering
@@ -105,7 +205,7 @@ every journal file `O_RDONLY` (SD `sd-journal.c:1530-1532,1585`).
 | Supervisor plugins | Containers | `hassio_dns`, `hassio_audio`, `hassio_multicast` | SV `api/__init__.py:441,947,977` |
 | Kernel (USB, disk, block, network drivers) | kmsg | `_TRANSPORT=kernel`. `SYSLOG_IDENTIFIER=kernel` is set when the facility is KERN. Device fields: `_KERNEL_SUBSYSTEM`, `_KERNEL_DEVICE`, `_UDEV_SYSNAME`, `_UDEV_DEVNODE` | SD `src/journal/journald-kmsg.c:200-232,260,271` |
 | USB disconnect and reconnect (example) | kernel `dev_info` | "USB disconnect, device number %d"; "%s %s USB device number %d using %s" | gregkh/linux `v6.18.52` (`8f3741e6`) `drivers/usb/core/hub.c:2331,5000-5002`; kernel 6.18.52 per OS `buildroot-external/configs/generic_x86_64_defconfig:21` |
-| Host services | native, syslog or stdout | the Supervisor's default host set: 54 identifiers, including `NetworkManager`, `wpa_supplicant`, `systemd-udevd`, `dockerd`, `containerd`, `rauc`, `os-agent`, `haos-*`, `systemd-fsck`, `fstrim`, `systemd-timesyncd`, `kernel` | SV `supervisor/data/syslog-identifiers.json:1-54` (byte-identical in SVL) |
+| Host services | native, syslog or stdout | the Supervisor's default host set: 52 identifiers, including `NetworkManager`, `wpa_supplicant`, `systemd-udevd`, `dockerd`, `containerd`, `rauc`, `os-agent`, `haos-*`, `systemd-fsck`, `fstrim`, `systemd-timesyncd`, `kernel` | SV `supervisor/data/syslog-identifiers.json:1-54` (byte-identical in SVL) |
 
 Fields the Docker driver writes on every container entry (MB `journald.go`):
 
@@ -276,7 +376,7 @@ Source tokens that already exist (`incident_logs/contracts.py:105`) are
 | Token | Match | Note |
 | --- | --- | --- |
 | `supervisor` | `SYSLOG_IDENTIFIER=hassio_supervisor` | The same identifier the Supervisor's own route uses |
-| `host` | The Supervisor's pinned 54-identifier default set (SV `data/syslog-identifiers.json`), plus `_TRANSPORT=kernel` | The same scope as the Supervisor's `/host/logs`. The set is pinned in code, not read live |
+| `host` | The Supervisor's pinned 52-identifier default set (SV `data/syslog-identifiers.json`), plus `_TRANSPORT=kernel` | The same scope as the Supervisor's `/host/logs`. The set is pinned in code, not read live |
 | `host:kernel`, `host:usb`, `host:network`, `host:storage`, `host:os` (D3) | Named subsets: kernel = `_TRANSPORT=kernel`; usb = kernel with `_KERNEL_SUBSYSTEM=usb`, plus `systemd-udevd`; network = `NetworkManager`, `wpa_supplicant`, `systemd-resolved`, `systemd-timesyncd`; storage = kernel block/scsi/ata/nvme/mmc subsystems, plus `systemd-fsck`, `fstrim`, `systemd-growfs`, `haos-data-disk-detach`; os = `rauc`, `os-agent`, `dockerd`, `containerd`, `haos-*` | Narrower and cheaper for the AI. Each is a fixed match set |
 | `addon:<slug>` | §3 mapping | Every add-on (D4) |
 | `addon:self` | unchanged (Supervisor `api_bypass` route) | No change |
@@ -448,7 +548,7 @@ planted-secret sweep in Part 2 covers every returned field.
 | --- | --- | --- | --- |
 | D1 | Reader | (a) `journalctl`, (b) systemd-python, (c) pure Python, (d) `ctypes` + base `libsystemd0`, (e) `cysystemd` | **(d)**. Fallback (c) if in-process native code is unacceptable |
 | D2 | Where the reader runs | in-process worker thread; or a spawned Python reader process from the same image (no external binary), which isolates a native crash | **Worker thread**: simpler, the library is mature, and the files are written by the host's journald. A process boundary adds IPC and a second process lifecycle |
-| D3 | Host scope | `host` = the Supervisor's 54-identifier set plus kernel; and/or named subsets `host:kernel`, `host:usb`, `host:network`, `host:storage`, `host:os` | **Both** |
+| D3 | Host scope | `host` = the Supervisor's 52-identifier set plus kernel; and/or named subsets `host:kernel`, `host:usb`, `host:network`, `host:storage`, `host:os` | **Both** |
 | D4 | Add-on scope | any installed slug; a code allowlist; or a new owner-configured option (an options-schema change) | **Any slug**, under §7 withholding. Govee and other third-party add-ons then need no release. A narrower option is safer but needs a release, or a config edit, each time a slug is added |
 | D5 | Core via the journal | keep `core` on `/core/logs`; switch it; or add a separate `core:journal` token | **Keep `core` unchanged.** HAMCP-220 behavior stays as reviewed. Revisit after the journal path is deployed |
 | D6 | Bounds | §6 values | **§6 as proposed** |
