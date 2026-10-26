@@ -4,6 +4,8 @@
   "modules": [
    "test_hamcp224_host_journal",
    "test_hamcp224_review1_corrections",
+   "test_hamcp224_review2_corrections",
+   "test_pr313_delta_residuals",
    "test_pr313_independent_review",
    "test_hamcp131_incident_logs",
    "test_hamcp220_incident_log_timestamps",
@@ -14,12 +16,12 @@
    "test_pr294_final32_review"
   ],
   "returncode": 0,
-  "tests": 485,
-  "seconds": 63.6,
-  "summary": "OK"
+  "tests": 510,
+  "seconds": 69.2,
+  "summary": "OK (expected failures=1)"
  },
- "mutation_count": 63,
- "killed": 63,
+ "mutation_count": 73,
+ "killed": 73,
  "survived": [],
  "python": "3.12.14",
  "results": [
@@ -40,7 +42,7 @@
    "first_failures": [
     "FAIL test_only_allowlisted_fields_and_bound_symbols_are_used (test_hamcp224_host_journal.HostJournalReaderTests.test_only_allowlisted_fields_and_bound_symbols_are_used)"
    ],
-   "seconds": 2.5
+   "seconds": 2.6
   },
   {
    "id": "F2-raw-boot-id-returned",
@@ -59,7 +61,7 @@
    "first_failures": [
     "FAIL test_runtime_and_persistent_journals_merge_in_one_order (test_hamcp224_host_journal.HostJournalReaderTests.test_runtime_and_persistent_journals_merge_in_one_order)"
    ],
-   "seconds": 2.6
+   "seconds": 2.5
   },
   {
    "id": "F3-raw-journal-cursor-kept",
@@ -116,7 +118,7 @@
    "first_failures": [
     "FAIL test_screening_is_called_only_at_the_single_exit (test_hamcp224_host_journal.StaticBoundaryTests.test_screening_is_called_only_at_the_single_exit)"
    ],
-   "seconds": 6.4
+   "seconds": 6.6
   },
   {
    "id": "S1-credential-screen-skipped",
@@ -135,7 +137,7 @@
    "first_failures": [
     "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
    ],
-   "seconds": 2.8
+   "seconds": 3.0
   },
   {
    "id": "S2-labelled-forms-not-opted-in",
@@ -154,7 +156,7 @@
    "first_failures": [
     "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
    ],
-   "seconds": 2.8
+   "seconds": 3.0
   },
   {
    "id": "S3-squashed-labelled-form-dropped",
@@ -173,7 +175,7 @@
    "first_failures": [
     "FAIL test_withholds_the_whole_message_for_credential_forms (test_hamcp224_host_journal.ScreenTextTests.test_withholds_the_whole_message_for_credential_forms)"
    ],
-   "seconds": 5.0
+   "seconds": 5.3
   },
   {
    "id": "S4-confusables-not-folded",
@@ -192,7 +194,7 @@
    "first_failures": [
     "FAIL test_withholds_the_whole_message_for_credential_forms (test_hamcp224_host_journal.ScreenTextTests.test_withholds_the_whole_message_for_credential_forms)"
    ],
-   "seconds": 5.1
+   "seconds": 5.4
   },
   {
    "id": "S5-pem-private-key-kept",
@@ -209,9 +211,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
+    "FAIL test_the_value_shapes_remain_a_layer_of_their_own (test_hamcp224_review2_corrections.LabelKeyedTests.test_the_value_shapes_remain_a_layer_of_their_own)"
    ],
-   "seconds": 2.9
+   "seconds": 25.1
   },
   {
    "id": "S6-mosquitto-password-option-kept",
@@ -219,7 +221,7 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
-     "        or _PASSWORD_OPTION.search(decoded) is not None\n",
+     "        or password_option(decoded)\n",
      ""
     ]
    ],
@@ -249,7 +251,7 @@
    "first_failures": [
     "FAIL test_invisible_characters_are_unverifiable (test_hamcp224_host_journal.ScreenTextTests.test_invisible_characters_are_unverifiable)"
    ],
-   "seconds": 5.2
+   "seconds": 5.4
   },
   {
    "id": "S8-ansi-not-stripped",
@@ -257,8 +259,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-     "    text = _ANSI.sub(\"\", text)\n",
-     ""
+     "    text = _CSI.sub(\"\", original)\n",
+     "    text = original\n"
     ]
    ],
    "log_path": "mutation-logs/S8-ansi-not-stripped.log",
@@ -268,7 +270,7 @@
    "first_failures": [
     "FAIL test_credential_messages_are_withheld_whole_and_never_searched (test_hamcp224_host_journal.JournalServiceTests.test_credential_messages_are_withheld_whole_and_never_searched)"
    ],
-   "seconds": 3.0
+   "seconds": 3.1
   },
   {
    "id": "S9-withheld-text-returned-with-omission",
@@ -287,7 +289,7 @@
    "first_failures": [
     "FAIL test_bearer_tokens_are_withheld_whole (test_hamcp224_host_journal.ScreenTextTests.test_bearer_tokens_are_withheld_whole)"
    ],
-   "seconds": 5.1
+   "seconds": 5.4
   },
   {
    "id": "S10-shared-sanitizer-output-ignored",
@@ -306,7 +308,7 @@
    "first_failures": [
     "FAIL test_token_forms_the_screen_keeps_are_redacted_by_the_shared_sanitizer (test_hamcp224_host_journal.JournalServiceTests.test_token_forms_the_screen_keeps_are_redacted_by_the_shared_sanitizer)"
    ],
-   "seconds": 4.8
+   "seconds": 5.0
   },
   {
    "id": "S11-withheld-message-searchable",
@@ -325,7 +327,7 @@
    "first_failures": [
     "FAIL test_credential_messages_are_withheld_whole_and_never_searched (test_hamcp224_host_journal.JournalServiceTests.test_credential_messages_are_withheld_whole_and_never_searched)"
    ],
-   "seconds": 3.0
+   "seconds": 3.2
   },
   {
    "id": "H1-truncated-before-screening",
@@ -344,7 +346,7 @@
    "first_failures": [
     "ERROR test_levels_text_filter_and_kernel_fields (test_hamcp224_host_journal.JournalServiceTests.test_levels_text_filter_and_kernel_fields)"
    ],
-   "seconds": 3.2
+   "seconds": 3.4
   },
   {
    "id": "H2-journal-specific-screen",
@@ -363,7 +365,7 @@
    "first_failures": [
     "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
    ],
-   "seconds": 2.8
+   "seconds": 2.9
   },
   {
    "id": "H3-squashed-form-removed",
@@ -382,7 +384,7 @@
    "first_failures": [
     "FAIL test_withholds_the_whole_message_for_credential_forms (test_hamcp224_host_journal.ScreenTextTests.test_withholds_the_whole_message_for_credential_forms)"
    ],
-   "seconds": 5.1
+   "seconds": 5.4
   },
   {
    "id": "T1-text-prefix-time-used",
@@ -401,7 +403,7 @@
    "first_failures": [
     "FAIL test_core_and_supervisor_journal_entries_interleave_by_time (test_hamcp224_host_journal.MixedSourceTests.test_core_and_supervisor_journal_entries_interleave_by_time)"
    ],
-   "seconds": 5.2
+   "seconds": 5.4
   },
   {
    "id": "T2-epoch-prefix-time-used",
@@ -420,7 +422,7 @@
    "first_failures": [
     "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
    ],
-   "seconds": 2.8
+   "seconds": 3.1
   },
   {
    "id": "O1-journald-off-not-detected",
@@ -439,7 +441,7 @@
    "first_failures": [
     "FAIL test_unavailability_comes_from_the_mount_table_and_the_open (test_hamcp224_host_journal.HostJournalReaderTests.test_unavailability_comes_from_the_mount_table_and_the_open)"
    ],
-   "seconds": 2.6
+   "seconds": 2.7
   },
   {
    "id": "O2-empty-journal-read-as-empty",
@@ -458,7 +460,7 @@
    "first_failures": [
     "FAIL test_unavailability_comes_from_the_mount_table_and_the_open (test_hamcp224_host_journal.HostJournalReaderTests.test_unavailability_comes_from_the_mount_table_and_the_open)"
    ],
-   "seconds": 2.6
+   "seconds": 2.7
   },
   {
    "id": "O3-unavailable-read-finished",
@@ -477,7 +479,7 @@
    "first_failures": [
     "FAIL test_a_reader_exception_fails_closed_per_source (test_hamcp224_host_journal.JournalServiceTests.test_a_reader_exception_fails_closed_per_source)"
    ],
-   "seconds": 2.7
+   "seconds": 2.8
   },
   {
    "id": "O4-unavailable-row-complete",
@@ -496,7 +498,7 @@
    "first_failures": [
     "FAIL test_a_reader_exception_fails_closed_per_source (test_hamcp224_host_journal.JournalServiceTests.test_a_reader_exception_fails_closed_per_source)"
    ],
-   "seconds": 2.7
+   "seconds": 2.8
   },
   {
    "id": "O5-failed-source-cursor-done",
@@ -515,7 +517,7 @@
    "first_failures": [
     "FAIL test_a_journal_failure_stays_failed_on_later_pages (test_hamcp224_host_journal.MixedSourceTests.test_a_journal_failure_stays_failed_on_later_pages)"
    ],
-   "seconds": 5.0
+   "seconds": 5.3
   },
   {
    "id": "O6-reader-exception-escapes",
@@ -534,7 +536,7 @@
    "first_failures": [
     "ERROR test_a_reader_exception_fails_closed_per_source (test_hamcp224_host_journal.JournalServiceTests.test_a_reader_exception_fails_closed_per_source)"
    ],
-   "seconds": 2.8
+   "seconds": 2.9
   },
   {
    "id": "M1-read-write-mount-accepted",
@@ -553,7 +555,7 @@
    "first_failures": [
     "FAIL test_unavailability_comes_from_the_mount_table_and_the_open (test_hamcp224_host_journal.HostJournalReaderTests.test_unavailability_comes_from_the_mount_table_and_the_open)"
    ],
-   "seconds": 2.9
+   "seconds": 2.7
   },
   {
    "id": "M2-incomplete-mount-accepted",
@@ -572,7 +574,7 @@
    "first_failures": [
     "FAIL test_mount_table_parsing (test_hamcp224_host_journal.HostJournalReaderTests.test_mount_table_parsing)"
    ],
-   "seconds": 2.8
+   "seconds": 2.7
   },
   {
    "id": "M3-lowest-mount-wins",
@@ -591,7 +593,7 @@
    "first_failures": [
     "FAIL test_unavailability_comes_from_the_mount_table_and_the_open (test_hamcp224_host_journal.HostJournalReaderTests.test_unavailability_comes_from_the_mount_table_and_the_open)"
    ],
-   "seconds": 2.6
+   "seconds": 2.8
   },
   {
    "id": "M4-mount-escapes-not-decoded",
@@ -610,7 +612,7 @@
    "first_failures": [
     "FAIL test_mount_table_parsing (test_hamcp224_host_journal.HostJournalReaderTests.test_mount_table_parsing)"
    ],
-   "seconds": 2.5
+   "seconds": 2.6
   },
   {
    "id": "M5-symlinks-followed",
@@ -629,7 +631,7 @@
    "first_failures": [
     "FAIL test_unavailability_comes_from_the_mount_table_and_the_open (test_hamcp224_host_journal.HostJournalReaderTests.test_unavailability_comes_from_the_mount_table_and_the_open)"
    ],
-   "seconds": 2.6
+   "seconds": 2.7
   },
   {
    "id": "M6-journal-directories-not-opened",
@@ -648,7 +650,7 @@
    "first_failures": [
     "FAIL test_an_unreadable_mount_directory_reports_its_errno (test_hamcp224_host_journal.HostJournalReaderTests.test_an_unreadable_mount_directory_reports_its_errno)"
    ],
-   "seconds": 2.4
+   "seconds": 2.3
   },
   {
    "id": "B1-field-cap-ignored",
@@ -686,7 +688,7 @@
    "first_failures": [
     "FAIL test_field_cap_truncates_the_message_and_marks_it (test_hamcp224_host_journal.HostJournalReaderTests.test_field_cap_truncates_the_message_and_marks_it)"
    ],
-   "seconds": 2.4
+   "seconds": 2.6
   },
   {
    "id": "B3-resume-walk-uncounted",
@@ -705,7 +707,7 @@
    "first_failures": [
     "FAIL test_each_bound_stops_the_scan_with_its_reason (test_hamcp224_host_journal.HostJournalReaderTests.test_each_bound_stops_the_scan_with_its_reason)"
    ],
-   "seconds": 2.4
+   "seconds": 2.5
   },
   {
    "id": "B4-field-bytes-uncounted",
@@ -724,7 +726,7 @@
    "first_failures": [
     "FAIL test_each_bound_stops_the_scan_with_its_reason (test_hamcp224_host_journal.HostJournalReaderTests.test_each_bound_stops_the_scan_with_its_reason)"
    ],
-   "seconds": 2.4
+   "seconds": 2.5
   },
   {
    "id": "B5-deadline-ignored",
@@ -743,7 +745,7 @@
    "first_failures": [
     "FAIL test_an_expired_deadline_takes_no_step_and_reads_no_field (test_hamcp224_review1_corrections.SharedBoundTests.test_an_expired_deadline_takes_no_step_and_reads_no_field)"
    ],
-   "seconds": 21.3
+   "seconds": 21.7
   },
   {
    "id": "B6-deadline-not-reserved",
@@ -762,7 +764,7 @@
    "first_failures": [
     "FAIL test_the_journal_read_runs_in_one_worker_thread_with_the_call_deadline (test_hamcp224_host_journal.JournalServiceTests.test_the_journal_read_runs_in_one_worker_thread_with_the_call_deadline)"
    ],
-   "seconds": 5.0
+   "seconds": 5.1
   },
   {
    "id": "B7-bound-stop-not-disclosed",
@@ -781,7 +783,7 @@
    "first_failures": [
     "FAIL test_scan_bound_is_disclosed_and_resumes (test_hamcp224_host_journal.JournalServiceTests.test_scan_bound_is_disclosed_and_resumes)"
    ],
-   "seconds": 4.8
+   "seconds": 5.0
   },
   {
    "id": "B8-read-on-the-event-loop",
@@ -800,7 +802,7 @@
    "first_failures": [
     "FAIL test_the_journal_read_runs_in_one_worker_thread_with_the_call_deadline (test_hamcp224_host_journal.JournalServiceTests.test_the_journal_read_runs_in_one_worker_thread_with_the_call_deadline)"
    ],
-   "seconds": 4.7
+   "seconds": 4.9
   },
   {
    "id": "C1-resume-without-digest-match",
@@ -819,7 +821,7 @@
    "first_failures": [
     "FAIL test_an_unknown_digest_is_stale (test_hamcp224_host_journal.HostJournalReaderTests.test_an_unknown_digest_is_stale)"
    ],
-   "seconds": 2.2
+   "seconds": 2.3
   },
   {
    "id": "C2-stale-continuation-restarted",
@@ -838,7 +840,7 @@
    "first_failures": [
     "FAIL test_a_vanished_entry_breaks_continuity (test_hamcp224_host_journal.JournalServiceTests.test_a_vanished_entry_breaks_continuity)"
    ],
-   "seconds": 2.9
+   "seconds": 3.0
   },
   {
    "id": "C3-state-names-the-wrong-entry",
@@ -857,7 +859,7 @@
    "first_failures": [
     "FAIL test_pages_continue_without_loss_or_repeat (test_hamcp224_host_journal.JournalServiceTests.test_pages_continue_without_loss_or_repeat)"
    ],
-   "seconds": 4.8
+   "seconds": 5.0
   },
   {
    "id": "C4-state-digest-unchecked",
@@ -876,7 +878,7 @@
    "first_failures": [
     "FAIL test_a_signed_state_with_a_malformed_digest_is_refused (test_hamcp224_host_journal.JournalServiceTests.test_a_signed_state_with_a_malformed_digest_is_refused)"
    ],
-   "seconds": 2.8
+   "seconds": 3.0
   },
   {
    "id": "A1-addon-equality-unchecked",
@@ -914,7 +916,7 @@
    "first_failures": [
     "FAIL test_addon_match_requires_container_transport_and_equal_names (test_hamcp224_host_journal.HostJournalReaderTests.test_addon_match_requires_container_transport_and_equal_names)"
    ],
-   "seconds": 2.1
+   "seconds": 2.2
   },
   {
    "id": "A3-rejected-entries-in-window",
@@ -933,7 +935,7 @@
    "first_failures": [
     "FAIL test_an_unreadable_entry_alone_makes_the_source_partial (test_hamcp224_host_journal.JournalServiceTests.test_an_unreadable_entry_alone_makes_the_source_partial)"
    ],
-   "seconds": 2.9
+   "seconds": 3.1
   },
   {
    "id": "A4-addon-self-as-journal-source",
@@ -952,7 +954,7 @@
    "first_failures": [
     "FAIL test_addon_match_requires_container_transport_and_equal_names (test_hamcp224_host_journal.HostJournalReaderTests.test_addon_match_requires_container_transport_and_equal_names)"
    ],
-   "seconds": 2.2
+   "seconds": 2.3
   },
   {
    "id": "A5-sshd-in-host-set",
@@ -990,7 +992,7 @@
    "first_failures": [
     "FAIL test_levels_text_filter_and_kernel_fields (test_hamcp224_host_journal.JournalServiceTests.test_levels_text_filter_and_kernel_fields)"
    ],
-   "seconds": 3.2
+   "seconds": 3.3
   },
   {
    "id": "E1-clock-regression-uncounted",
@@ -1028,7 +1030,7 @@
    "first_failures": [
     "FAIL test_window_before_retention_is_a_gap_never_complete (test_hamcp224_host_journal.JournalServiceTests.test_window_before_retention_is_a_gap_never_complete)"
    ],
-   "seconds": 5.0
+   "seconds": 5.1
   },
   {
    "id": "W1-final-envelope-scan-removed",
@@ -1047,7 +1049,7 @@
    "first_failures": [
     "FAIL test_a_withheld_returned_field_is_reported (test_hamcp224_review1_corrections.CompletenessTests.test_a_withheld_returned_field_is_reported)"
    ],
-   "seconds": 8.6
+   "seconds": 8.7
   },
   {
    "id": "W2-withheld-field-not-reported",
@@ -1066,7 +1068,7 @@
    "first_failures": [
     "ERROR test_a_cut_returned_field_is_unverifiable (test_hamcp224_review1_corrections.CompletenessTests.test_a_cut_returned_field_is_unverifiable)"
    ],
-   "seconds": 9.1
+   "seconds": 9.6
   },
   {
    "id": "W3-filtered-withheld-uncounted",
@@ -1085,7 +1087,197 @@
    "first_failures": [
     "FAIL test_a_withheld_entry_the_filter_left_out_is_reported (test_hamcp224_review1_corrections.CompletenessTests.test_a_withheld_entry_the_filter_left_out_is_reported)"
    ],
-   "seconds": 9.2
+   "seconds": 9.5
+  },
+  {
+   "id": "W4-level-filtered-withheld-uncounted",
+   "class": "a withheld entry or field reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                    level_filtered[position] += 1\n",
+     "                    pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/W4-level-filtered-withheld-uncounted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_entry_the_filter_left_out_is_reported (test_hamcp224_review1_corrections.CompletenessTests.test_a_withheld_entry_the_filter_left_out_is_reported)"
+   ],
+   "seconds": 10.0
+  },
+  {
+   "id": "W5-level-filtered-withheld-complete",
+   "class": "a withheld entry or field reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "              or unsearched[scan.position] or level_filtered[scan.position]\n",
+     "              or unsearched[scan.position]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/W5-level-filtered-withheld-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_entry_the_filter_left_out_is_reported (test_hamcp224_review1_corrections.CompletenessTests.test_a_withheld_entry_the_filter_left_out_is_reported)"
+   ],
+   "seconds": 9.5
+  },
+  {
+   "id": "K1-keyword-normal-form-only",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "_KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None",
+     "_KEYWORD.search(text) is not None"
+    ]
+   ],
+   "log_path": "mutation-logs/K1-keyword-normal-form-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_keyword_alone_is_enough (test_hamcp224_review2_corrections.LabelKeyedTests.test_a_keyword_alone_is_enough)"
+   ],
+   "seconds": 22.4
+  },
+  {
+   "id": "K2-option-tokenizer-ignores-quotes",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "_OPTION_QUOTES = frozenset(\"'\\\"`\\\\\")",
+     "_OPTION_QUOTES = frozenset()"
+    ]
+   ],
+   "log_path": "mutation-logs/K2-option-tokenizer-ignores-quotes.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_password_option_form_is_withheld_in_every_field (test_hamcp224_review2_corrections.LabelKeyedTests.test_every_password_option_form_is_withheld_in_every_field)"
+   ],
+   "seconds": 23.4
+  },
+  {
+   "id": "K3-option-split-dash-ignored",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "        if word != \"-\" or index + 1 == len(tokens):",
+     "        if True:"
+    ]
+   ],
+   "log_path": "mutation-logs/K3-option-split-dash-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_password_option_form_is_withheld_in_every_field (test_hamcp224_review2_corrections.LabelKeyedTests.test_every_password_option_form_is_withheld_in_every_field)"
+   ],
+   "seconds": 23.9
+  },
+  {
+   "id": "K4-dash-fold-removed",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    text, squashed = text.translate(_DASHES), squashed.translate(_DASHES)\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/K4-dash-fold-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_keyword_alone_is_enough (test_hamcp224_review2_corrections.LabelKeyedTests.test_a_keyword_alone_is_enough)"
+   ],
+   "seconds": 22.5
+  },
+  {
+   "id": "K5-labelled-mode-shape-only",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "        _KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None\n        or password_option(decoded)\n        # The value shapes, an additional layer.\n        or _value_shape(text, squashed)\n",
+     "        _value_shape(text, squashed)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/K5-labelled-mode-shape-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "A1-stripped-text-only-screened",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    if marker is None and text != original:\n        marker = credentials.screen(_CSI_ESCAPE.sub(\"\", original), known_secrets, labelled=True)\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/A1-stripped-text-only-screened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_label_spelled_by_the_sequence_is_withheld (test_hamcp224_review2_corrections.AnsiScreeningTests.test_a_label_spelled_by_the_sequence_is_withheld)"
+   ],
+   "seconds": 21.8
+  },
+  {
+   "id": "A2-original-text-only-screened",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    marker = credentials.screen(text, known_secrets, labelled=True)\n    if marker is None and text != original:\n",
+     "    marker = None\n    if True:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/A2-original-text-only-screened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_journal_screen_is_the_configuration_definitions_screen (test_hamcp224_review1_corrections.CrossPathCredentialTests.test_the_journal_screen_is_the_configuration_definitions_screen)"
+   ],
+   "seconds": 16.4
+  },
+  {
+   "id": "A3-csi-sequence-alone-withholds",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "credentials.screen(_CSI_ESCAPE.sub(\"\", original), known_secrets",
+     "credentials.screen(original, known_secrets"
+    ]
+   ],
+   "log_path": "mutation-logs/A3-csi-sequence-alone-withholds.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_credential_messages_are_withheld_whole_and_never_searched (test_hamcp224_host_journal.JournalServiceTests.test_credential_messages_are_withheld_whole_and_never_searched)"
+   ],
+   "seconds": 3.2
   },
   {
    "id": "U1-merge-precision-dropped",
@@ -1104,7 +1296,7 @@
    "first_failures": [
     "FAIL test_sub_millisecond_order_across_sources (test_hamcp224_review1_corrections.MicrosecondOrderTests.test_sub_millisecond_order_across_sources)"
    ],
-   "seconds": 16.3
+   "seconds": 16.9
   },
   {
    "id": "U2-continuation-key-in-milliseconds",
@@ -1123,7 +1315,7 @@
    "first_failures": [
     "FAIL test_the_continuation_keeps_the_microsecond_key (test_hamcp224_review1_corrections.MicrosecondOrderTests.test_the_continuation_keeps_the_microsecond_key)"
    ],
-   "seconds": 16.1
+   "seconds": 16.7
   },
   {
    "id": "L1-edge-probe-unbounded",
@@ -1142,7 +1334,7 @@
    "first_failures": [
     "FAIL test_an_expired_deadline_takes_no_step_and_reads_no_field (test_hamcp224_review1_corrections.SharedBoundTests.test_an_expired_deadline_takes_no_step_and_reads_no_field)"
    ],
-   "seconds": 21.8
+   "seconds": 22.0
   },
   {
    "id": "L2-edge-probe-uncounted",
@@ -1180,7 +1372,7 @@
    "first_failures": [
     "FAIL test_each_bound_stops_the_scan_with_its_reason (test_hamcp224_host_journal.HostJournalReaderTests.test_each_bound_stops_the_scan_with_its_reason)"
    ],
-   "seconds": 2.4
+   "seconds": 2.5
   },
   {
    "id": "L4-field-read-after-deadline",
@@ -1199,7 +1391,7 @@
    "first_failures": [
     "FAIL test_no_field_is_read_once_the_deadline_passes_mid_entry (test_hamcp224_review1_corrections.SharedBoundTests.test_no_field_is_read_once_the_deadline_passes_mid_entry)"
    ],
-   "seconds": 21.6
+   "seconds": 22.0
   },
   {
    "id": "E3-unreadable-entries-complete",

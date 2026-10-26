@@ -148,15 +148,33 @@ synthetic.
   sub-millisecond cross-source order; the reviewer's oversized probe within
   the call bound with every native step counted; an expired deadline with no
   step and no field read. The HAMCP-132 and PR #294 suites pass unchanged.
+- `tests/test_pr313_delta_residuals.py` (the reviewer's review 2 suite, added
+  byte-unchanged) and `tests/test_hamcp224_review2_corrections.py`: every
+  quoted, argv and split `-P` form, split and short `Bearer`, every keyword
+  in 10 case, spacing, encoding and confusable forms, PEM forms and the
+  value-shape layer on its own; the ordinary lines still shown, the ordinary
+  lines now withheld, and the fixture-corpus false positives (0 of 32
+  journal lines; 3 of 35 HAMCP-191 ordinary samples); ANSI in two forms;
+  the level taken from `PRIORITY` only, and `withheld_level_filtered`. The
+  reviewer method
+  `test_original_control_text_is_screened_before_ansi_removal` is
+  superseded by Josh's M4 decision (coloured ordinary lines are shown) and
+  runs as a registered expected failure; a test pins both reviewer files by
+  sha256.
 - The HAMCP-131 and HAMCP-220 incident-log suites pass unchanged in intent;
   their former "manager role" expectations now expect the journal sources.
 - Mutations: `docs/evidence/hamcp224-mutations/`. Run 1 killed 43 of 51
   (`results-run1.json`, `run1.log`); a test was added for each survivor and
   run 2 killed 51 of 51 (`results-run2.json`, `run2.log`). Run 3 covers the
   review 1 corrections, with 15 fragments retargeted and 12 mutants added
-  (H1–H3, W1–W3, U1–U2, L1–L4): it killed 63 of 63 (`results.json`,
-  `run3.log`). `results.json` records each mutant and the tests that killed
-  it.
+  (H1–H3, W1–W3, U1–U2, L1–L4): it killed 63 of 63 (`results-run3.json`,
+  `run3.log`). Runs 4 and 5 cover the review 2 corrections, with S6 and S8
+  retargeted and 10 mutants added (K1–K5, A1–A3, W4–W5). Run 4 killed 72
+  of 73 (`results-run4.json`, `run4.log`); the survivor, S5 (the PEM shape
+  dropped), was hidden by the `private key` keyword, so the value shapes
+  became `credentials._value_shape` with a test of their own, and run 5
+  killed 73 of 73 (`results.json`, `run5.log`). `results.json` records each
+  mutant and the tests that killed it.
 
 ## 2. Release CI and publication
 
