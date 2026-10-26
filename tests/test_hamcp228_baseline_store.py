@@ -22,6 +22,7 @@ sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 import hamcp226_credential_cases as cases  # noqa: E402
 from test_automation_baseline_capture import SECRET, Client, Core, fixture  # noqa: E402
 from ha_mcp_engineering import untrusted_text  # noqa: E402
+from ha_mcp_engineering.configuration_definitions import credentials  # noqa: E402
 from ha_mcp_engineering.audit_baseline import capture_contracts as c  # noqa: E402
 from ha_mcp_engineering.audit_baseline import compare_baselines  # noqa: E402
 from ha_mcp_engineering.audit_baseline.capture_provider import BaselineCaptureProvider, Projector  # noqa: E402
@@ -215,6 +216,23 @@ class StoreTests(Harness):
                 service.store.get(bad, OWNER, now_ms)
             self.assertEqual(caught.exception.reason, 'baseline_not_found')
 
+    async def test_cursor_from_another_caller_is_refused_by_the_cursor_itself(self):
+        # The cursor binds its caller twice (HMAC input and stored caller), in
+        # front of the store's own caller check: the refusal is invalid_cursor,
+        # never the store's baseline_not_found, and the store is not consulted.
+        service, _ = self.service()
+        page = await service.capture(limit=1)
+        cursor = page['pagination']['next_cursor']
+        self.telemetry.caller_id = 'synthetic-other'
+        with patch.object(service.store, 'get', side_effect=AssertionError('store consulted')):
+            self.assertEqual((await self.reason(service.capture(limit=1, cursor=cursor))).reason, 'invalid_cursor')
+            # With a validly signed token, the stored caller still refuses.
+            key, offset, _ = cursor.split(':')
+            forged = service._token(key, int(offset), 'synthetic-other')
+            self.assertEqual((await self.reason(service.capture(limit=1, cursor=forged))).reason, 'invalid_cursor')
+        self.telemetry.caller_id = OWNER
+        self.assertEqual((await service.capture(limit=1, cursor=cursor))['pagination']['offset'], 1)
+
     async def test_symlinked_namespace_index_and_invalid_index_refused(self):
         service, key, entry, raw = await self.stored_record()
         now_ms = entry['created_at_ms'] + 1
@@ -340,14 +358,22 @@ class ResumeTests(Harness):
         def renamed(data):
             data['states'][0]['entity_id'] = data['registry'][0]['entity_id'] = 'automation.renamed'
 
+        def renamed_in_place(data):
+            # Same configuration ids in the same order; one entity id differs.
+            data['states'][0]['entity_id'] = data['registry'][0]['entity_id'] = 'automation.a0x'
+
+        def unmapped(data):
+            # The mapped records are unchanged; only the declared count grows.
+            data['states'].append({'entity_id': 'automation.zz', 'state': 'on', 'attributes': {}})
+
         def installation(data):
             data['devices'][0]['id'] = 'device2'
 
         def generation(_data):
             self.core.generation = 2
 
-        for label, change in (('added', added), ('renamed', renamed), ('installation', installation),
-                              ('generation', generation)):
+        for label, change in (('added', added), ('renamed', renamed), ('renamed_in_place', renamed_in_place),
+                              ('unmapped', unmapped), ('installation', installation), ('generation', generation)):
             with self.subTest(label):
                 self.core = Core()
                 directory = tempfile.TemporaryDirectory()
@@ -399,22 +425,41 @@ class ValidationTests(Harness):
     async def test_v2_validator_negatives(self):
         valid = await self.baseline(timed_out=True)
         baseline_from_value(valid)
+        def v1(b):
+            # The v1 field set exactly, so only the timed_out status is wrong.
+            b.update(schema='automation-audit-baseline-v1')
+            b.pop('resume')
+
+        resumed = {'resumed_from': 'aab-' + '1' * 32}
         mutations = {
-            'timed_out_digest': lambda b: b['records'][0]['configuration'].update(
+            'timed_out_digest': (lambda b: b['records'][0]['configuration'].update(
                 digest='sha256:' + '0' * 64, fingerprint_model=FINGERPRINT_MODEL),
-            'v1_timed_out': lambda b: b.update(schema='automation-audit-baseline-v1'),
-            'unknown_status': lambda b: b['records'][0]['configuration'].update(status='paused'),
-            'resume_extra': lambda b: b.update(resume={'resumed_from': b['baseline_id'], 'resumed_count': 1, 'x': 1}),
-            'resume_negative': lambda b: b.update(resume={'resumed_from': b['baseline_id'], 'resumed_count': -1}),
-            'resume_missing': lambda b: b.pop('resume'),
-            'schema': lambda b: b.update(schema='automation-audit-baseline-v3'),
+                'timed_out_configuration_digest_present'),
+            'v1_timed_out': (v1, 'configuration_status_invalid'),
+            'unknown_status': (lambda b: b['records'][0]['configuration'].update(status='paused'),
+                               'configuration_status_invalid'),
+            'resume_extra': (lambda b: b.update(resume={**resumed, 'resumed_count': 1, 'x': 1}),
+                             'resume_fields_invalid'),
+            'resume_negative': (lambda b: b.update(resume={**resumed, 'resumed_count': -1}), 'resumed_count_invalid'),
+            'resume_zero': (lambda b: b.update(resume={**resumed, 'resumed_count': 0}), 'resumed_count_invalid'),
+            'resume_self': (lambda b: b.update(resume={'resumed_from': b['baseline_id'], 'resumed_count': 1}),
+                            'resume_contradiction'),
+            'resume_over_count': (lambda b: b.update(resume={**resumed, 'resumed_count': 4}), 'resume_contradiction'),
+            'resume_missing': (lambda b: b.pop('resume'), 'baseline_fields_invalid'),
+            'schema': (lambda b: b.update(schema='automation-audit-baseline-v3'), 'baseline_schema_unsupported'),
         }
-        for label, mutate in mutations.items():
+        for label, (mutate, code) in mutations.items():
             with self.subTest(label):
                 value = copy.deepcopy(valid)
                 mutate(value)
-                with self.assertRaises(BaselineValidationError):
+                with self.assertRaises(BaselineValidationError) as caught:
                     baseline_from_value(value)
+                self.assertEqual(caught.exception.code, code)
+        # The boundary values themselves are valid.
+        for count in (1, 3):
+            value = copy.deepcopy(valid)
+            value['resume'] = {**resumed, 'resumed_count': count}
+            self.assertEqual(baseline_from_value(value).resumed_count, count)
         with self.assertRaises(BaselineValidationError):
             baseline_from_value([valid])
 
@@ -425,6 +470,10 @@ class ValidationTests(Harness):
             report = compare_baselines(earlier, later)
             self.assertEqual(report.counts['UNKNOWN'], 3)
             self.assertEqual(report.counts['UNCHANGED'], 0)
+            for record in report.records:
+                self.assertIn('timed_out', record.reasons)
+        readable_pair = compare_baselines(readable, readable)
+        self.assertFalse(any('timed_out' in record.reasons for record in readable_pair.records))
         rows = compare_recorded_fingerprints(timed_out, {'0': '0' * 64}, FINGERPRINT_MODEL)['records']
         self.assertIn('timed_out', rows[0]['reasons'])
         self.assertEqual(rows[0]['classification'], 'UNKNOWN')
@@ -596,6 +645,28 @@ class CredentialScreenTests(Harness):
         for value in ('token_refresh', 'password_reset_reminder', '1700000000000', 'Token.refresh:1'):
             self.assertEqual(projector.identifier(value), value)
         self.assertEqual(projector.identifier('automation.token_refresh', entity=True), 'automation.token_refresh')
+
+    async def test_pem_header_identifiers_are_withheld_by_the_pem_addition_alone(self):
+        # Identifier-shaped PEM private-key headers that credentials.screen's
+        # default mode shows: only the stricter PEM check withholds them.
+        headers = ('BEGINPRIVATEKEY', '-----BEGINRSAPRIVATEKEY-----', 'x.beginopensshprivatekey')
+        projector = Projector((KNOWN,))
+        for value in headers:
+            with self.subTest(value):
+                self.assertIsNone(credentials.screen(value))
+                self.assertTrue(credentials.private_key_header(value))
+                self.assertIsNone(projector.identifier(value))
+        self.assertIsNone(projector.identifier('automation.beginprivatekey', entity=True))
+        self.assertEqual(projector.identifier('BEGINPUBLICKEY'), 'BEGINPUBLICKEY')
+        service, _ = self.service()
+        key = capture_id(await self.capture(service))
+        rows = [{'configuration_id': v, 'fingerprint': 'sha256:' + '0' * 16} for v in headers]
+        result = await service.compare(earlier_capture_id=key, recorded_fingerprints=rows,
+                                       fingerprint_model=FINGERPRINT_MODEL)
+        rendered = json.dumps(result)
+        for value in headers:
+            self.assertNotIn(value, rendered)
+        self.assertEqual(result['screened_withheld_count'], len(headers))
 
     async def test_capture_drops_a_credential_shaped_identifier_and_stores_no_needle(self):
         data = fixture(2)
@@ -775,6 +846,26 @@ class PublicToolTests(Harness):
         self.assertEqual(record['resource_ids'], {})
         for value in (key, 'ghost_id', digest[7:23], '1' * 16):
             self.assertNotIn(value, audit)
+
+    async def test_withheld_values_make_the_result_partial(self):
+        service, _ = self.service()
+        key = capture_id(await self.capture(service))
+        for rows, completeness in (([{'configuration_id': 'ghost_id', 'fingerprint': 'sha256:' + '1' * 16}],
+                                    'complete'),
+                                   ([{'configuration_id': 'BEGINPRIVATEKEY', 'fingerprint': 'sha256:' + '1' * 16}],
+                                    'partial')):
+            with self.subTest(completeness):
+                if self.token is None:
+                    self.telemetry, self.token = begin_request()
+                    self.telemetry.caller_id = OWNER
+                response, _ = await self.serve(service, {'earlier_capture_id': key, 'recorded_fingerprints': rows,
+                                                         'fingerprint_model': FINGERPRINT_MODEL})
+                data = json.loads(json.loads(response)['result']['content'][0]['text'])
+                self.assertTrue(data['success'], data)
+                self.assertFalse(data['data']['details_truncated'])
+                self.assertEqual(data['metadata']['completeness'], completeness)
+                self.assertEqual(data['data']['screened_withheld_count'], int(completeness == 'partial'))
+                self.assertNotIn('BEGINPRIVATEKEY', response)
 
     async def test_gateway_refuses_invalid_arguments_without_echo_or_dispatch(self):
         import httpx
