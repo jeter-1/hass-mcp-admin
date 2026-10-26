@@ -5,7 +5,8 @@ Engineering **2.4.1-beta.38** lets `get_incident_logs` read the
 (HAMCP-224). Engineering keeps role `homeassistant`; with the new add-on
 option `journald: true` the Supervisor mounts the host journal read-only,
 and a fixed read-only `libsystemd` reader takes those sources from it with
-journal timestamps. A credential-looking journal message is withheld whole,
+journal timestamps. A credential-looking journal field is withheld whole by
+the same screen as the configuration-definitions report,
 and journald off or unreadable is reported unavailable with its reason.
 Rollback is reinstalling beta.37. Static tools 68, advertised catalog 96 (97
 with the optional YAML reader). Read the

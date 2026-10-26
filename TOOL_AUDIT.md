@@ -12,7 +12,9 @@ and `addon:<slug>` are no longer `authority_not_granted`: they are read from
 the host journal the Supervisor mounts read-only with `journald: true`,
 through a `ctypes` reader of 14 fixed `libsystemd` symbols and 9 fixed
 fields. No `manager` route is called and no role changes. A
-credential-looking journal message is withheld whole; journald off or
+credential-looking journal field is withheld whole by the
+configuration-definitions screen (`credentials.screen`), and the result is
+partial; journald off or
 unreadable is `unavailable` with its reason. Only the tool description and
 the capability justification text change. The catalog is still 68 static +
 28 delegated = 96 (97 with the optional YAML reader). See

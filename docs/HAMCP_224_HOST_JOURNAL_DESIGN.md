@@ -123,6 +123,69 @@ update. Rollback: reinstall `2.4.1-beta.37`, which has no `journald: true`.
   the capability matrix's `get_incident_logs` justification text no longer
   says these sources need role `manager`; it describes the journal read.
 
+**Review 1 corrections (architect direction on the PR #313 independent
+review, H1/H2 and M1–M3).** These supersede the "Withholding scope" and
+"Field size" notes above and §7 steps 1–2.
+
+- **One screen (H1/H2).** The journal keeps no credential screen of its own.
+  Every returned journal field — the message, `process`
+  (`SYSLOG_IDENTIFIER`), `kernel_subsystem` and `kernel_device` — goes
+  through `configuration_definitions/credentials.py` `screen`, the same
+  decision `withhold` applies to the configuration-definitions report. The
+  order, on each field:
+  1. the complete field as read. A field over the 16 KiB read bound was never
+     read whole, so it is withheld whole as `[unverifiable_text]`; nothing cut
+     is ever screened;
+  2. strict UTF-8 (invalid bytes are withheld whole as unverifiable), and
+     complete terminal escape sequences removed;
+  3. `unverifiable_text`: invisible, format or control characters (tab, LF
+     and CR only as HAMCP-132 allows them) withhold the field whole;
+  4. `credential_text`: bounded percent-decoding and NFKC (`canonical`), the
+     confusable fold, then the URI, user-info, `password=` and known-secret
+     forms on both the text and its squashed form;
+  5. the journal opts in to the **labelled forms** (`labelled=True`), read in
+     the same canonical, folded and squashed forms: a credential label
+     (`password`, `pass`, `pwd`, `pw`, `psk`, `secret`, `token`, `api_key`,
+     `access_key`, `private_key`, `network_key`, `encryption_key`,
+     `credential(s)`, `authorization`, with any `word_` prefix) followed by
+     `=` or `:`; a `Bearer` token; a PEM private-key header; mosquitto `-P`
+     and `--pw`;
+  6. any hit withholds the whole field; the message is cut to 2000
+     characters for display only after it is cleared.
+
+  The configuration-definitions report does **not** opt in to the labelled
+  forms, so its behavior is unchanged (its suites pass unchanged). A
+  labelled form such as `api%5fkey=` in a configuration definition is
+  therefore still decided by HAMCP-132's own forms; extending that report
+  is a separate decision (suggested follow-up).
+- **Fail-closed consequences, disclosed.** A `Bearer` token and an
+  `api_key=` value are now withheld whole instead of redacted in place.
+  Ordinary text with a label followed by `:` or `=` (`token: refreshed`,
+  `pass=1`) is withheld too, as is text that literally contains the
+  withheld-marker text. These are false positives, never leaks.
+- **Completeness (M1).** The configuration-definitions final-envelope scan
+  (`credentials.withheld_items`) runs on every journal result: each entry
+  carrying a withheld field is named (`withheld:entries[n]`, at most 20,
+  then `withheld_items_not_listed:<n>`). A withheld returned field counts in
+  the source row's `withheld_fields`. A withheld entry that a text filter
+  left out (withheld text is never searched, so the filter cannot tell)
+  counts in `withheld_not_searched` and adds `withheld_not_searched:<source>`.
+  Any of these makes the source and the result `partial`.
+- **Microsecond order (M2).** Journal entries merge on the full-precision
+  microsecond `__REALTIME_TIMESTAMP` (a source's running maximum, so a clock
+  step never reorders it); a gateway entry's key is its millisecond time ×
+  1000. Ties go to the earlier requested source, then the source's own
+  order. The continuation keeps the microsecond key. `ts` still shows
+  milliseconds, so two entries in the same millisecond can show the same
+  `ts`; they are returned in their true order.
+- **Shared bounds on every path (M3).** Edge probes (the head and tail
+  checks) take the same step bound as the scan and are counted (`probed`,
+  included in `entries_scanned`). Each field read checks the deadline before
+  `sd_journal_get_data` and the 4 MiB call field-byte bound before the copy,
+  so no path — edge, resume or scan — reads past either. The reviewer's
+  oversized probe now stops at 4,192,200 of 4,194,304 bytes, with every
+  native step counted.
+
 Base: `main` at `5030982fe681737c47e52a7c01d1808fca52468b` (Engineering
 `2.4.1-beta.37`, 68 static tools, `hassio_role: homeassistant`). Engineering
 paths are relative to `hass_mcp_engineering_beta/ha_mcp_engineering/` unless
@@ -463,7 +526,10 @@ This is structural: no field-enumeration symbol is bound (§4).
 
 **Sanitization** stays at the single exit, `incident_logs/service.py` `_finish`
 (L625-843). Journal entries join the same list before it, so no new sanitizer
-call site is added to `test_hamcp191_shared_sanitizer.SANITIZER_SITES`. Order:
+call site is added to `test_hamcp191_shared_sanitizer.SANITIZER_SITES`.
+**Steps 1–2 are superseded by the review 1 corrections in §0:** the
+journal's own key extension was removed, and every returned field goes
+through the shared `credentials.screen` before any cut. The Part 1 order was:
 
 1. Decode as UTF-8 with replacement. Strip ANSI escapes. Truncate to 16 KiB
    (the read threshold).

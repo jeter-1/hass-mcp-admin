@@ -73,13 +73,21 @@ The review needs a security section covering:
   digest of its libsystemd cursor, never the cursor (it embeds the raw boot
   ID). A digest not found from that realtime is `journal_continuity_broken`
   (stale). The reboot marker `boot_ref` is a 12-character keyed digest.
-- **Secrets.** The single `_finish` exit screens each message first: ANSI
-  is stripped; unverifiable text, any known-secret or credential form, the
-  journal key forms (`psk=`, `network_key:`, ...), PEM private keys and the
-  mosquitto `-P`/`--pw` options withhold the **whole** message
-  (`credential_text_withheld`, the result is partial). Then the shared
+- **Secrets.** The single `_finish` exit screens every returned journal
+  field (message, `process`, `kernel_subsystem`, `kernel_device`) first,
+  with the configuration-definitions screen (`credentials.screen`, labelled
+  forms opted in), on the complete field before any cut. A field over
+  16 KiB or bytes that are not UTF-8 are unverifiable; invisible or control
+  characters, any known-secret or credential form (percent-decoded, NFKC,
+  confusable-folded, normal and squashed), a credential label with `=` or
+  `:`, `Bearer`, PEM private keys and the mosquitto `-P`/`--pw` options
+  withhold the **whole** field. The final-envelope withheld-item scan and
+  `withheld_not_searched` make any withholding partial. Then the shared
   `sanitize_log_lines` and strict `sanitize_untrusted_data` run once, as for
   every other source.
+- **Order and bounds.** Host journal entries merge on the full microsecond
+  realtime. Edge probes count toward the entry bound; each field read checks
+  the deadline and the 4 MiB call bound first.
 - **Unavailability.** Decided from `/proc/self/mountinfo` and the open,
   never from an empty result: `journald_not_enabled`,
   `journal_mount_incomplete`, `journal_mount_not_read_only`,
@@ -129,6 +137,14 @@ synthetic.
   a mixed `core` and `supervisor` read, and static boundary checks (the only
   `ctypes` module, the three `os.open` calls, no write API, the
   `config.yaml` pin, the library pin).
+- `tests/test_pr313_independent_review.py` (the independent reviewer's
+  suite, added unchanged) and `tests/test_hamcp224_review1_corrections.py`:
+  every credential case of the PR #294 suites (96 cases) through the journal
+  message and each returned field, all withheld and partial; the
+  final-envelope scan, withheld fields and `withheld_not_searched`;
+  sub-millisecond cross-source order; the reviewer's oversized probe within
+  the call bound with every native step counted; an expired deadline with no
+  step and no field read. The HAMCP-132 and PR #294 suites pass unchanged.
 - The HAMCP-131 and HAMCP-220 incident-log suites pass unchanged in intent;
   their former "manager role" expectations now expect the journal sources.
 - Mutations: `docs/evidence/hamcp224-mutations/`. `results.json` records
@@ -178,9 +194,9 @@ read-only.
 6. **Host and kernel.** `sources: ["host"]` and `["host:kernel"]` over a
    recent window return entries; kernel entries carry `kernel_subsystem` or
    `kernel_device` where the kernel recorded them.
-7. **Withholding.** Any withheld message shows `withheld:
-   credential_text_withheld` and a partial result; no credential text
-   appears.
+7. **Withholding.** Any withheld message or field shows `withheld:
+   credential_text_withheld` (or `unverifiable_text_withheld`), the omission
+   `withheld:entries[n]` and a partial result; no credential text appears.
 8. **journald-off reason (optional).** Only if Josh separately authorizes a
    temporary reinstall of beta.37: the same `supervisor` read there is the
    beta.37 `authority_not_granted` refusal. The beta.38 `journald_not_enabled`

@@ -42,13 +42,29 @@ the host journal instead of raising the role.
 - **Positions.** A continuation holds the entry's realtime and a keyed
   digest of its libsystemd cursor, never the raw cursor. A position that is
   no longer found is `journal_continuity_broken`.
-- **Secrets.** At the single `_finish` exit, a journal message is screened
-  before anything reads it: unverifiable text, the HAMCP-132 credential
-  forms, journal key forms (`psk`, `wpa_psk`, `network_key`, ...), PEM
-  private keys and the mosquitto `-P`/`--pw` options withhold the **whole**
-  message (`credential_text_withheld`; the result is partial). The shared
-  `sanitize_log_lines` and the strict sanitizer then run once, as for every
-  source; they redact other token forms in place (`redacted_by_policy`).
+- **Secrets.** At the single `_finish` exit, every returned journal field
+  (message, `process`, `kernel_subsystem`, `kernel_device`) is screened
+  before anything reads it, by the **same** screen as the
+  configuration-definitions report (`credentials.screen`; the journal has no
+  screen of its own). The complete field is screened before any cut: a field
+  over 16 KiB, or bytes that are not UTF-8, are withheld whole as
+  unverifiable. Invisible, format or control characters, the HAMCP-132
+  credential and known-secret forms (after bounded percent-decoding, NFKC
+  and the confusable fold, on the text and its squashed form) and the
+  labelled forms the journal opts in to (a credential label with `=` or `:`,
+  `Bearer`, PEM private keys, mosquitto `-P`/`--pw`) withhold the **whole**
+  field (`credential_text_withheld` or `unverifiable_text_withheld`). The
+  final-envelope scan names each withheld entry (`withheld:entries[n]`); a
+  withheld entry a text filter left out counts in `withheld_not_searched`.
+  Any of these makes the result partial. The shared `sanitize_log_lines`
+  and the strict sanitizer then run once, as for every source. Fail closed:
+  ordinary text with a label and `:` or `=` (`token: refreshed`) is withheld
+  too. The configuration-definitions report does not opt in to the labelled
+  forms and is unchanged.
+- **Order and bounds.** Host journal entries merge on the full microsecond
+  realtime (`ts` shows milliseconds; ties go to the earlier requested
+  source). Edge probes count toward the 20,000-entry bound, and each field
+  read checks the deadline and the 4 MiB call bound before it copies.
 - **Unavailability** comes from `/proc/self/mountinfo` and the open, never
   from an empty result: `journald_not_enabled`, `journal_mount_incomplete`,
   `journal_mount_not_read_only`, `journal_unreadable` (with errno),

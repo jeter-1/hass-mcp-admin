@@ -817,7 +817,9 @@ provider, fallback, write path or tool.
   with `SD_JOURNAL_OS_ROOT`; both journal directories must open without
   following a symlink. One worker thread opens, reads and closes the handle,
   bounded at 16 KiB per field, 4 MiB per call, 20,000 entries per source
-  (the resume walk counts) and the call deadline less one second.
+  (the resume walk and the edge probes count) and the call deadline less one
+  second. Each field read checks the deadline first and the call byte bound
+  before the copy, on every path.
 - **Matches.** Fixed per source (`supervisor` is `hassio_supervisor`; `host`
   is the Supervisor's 52 default identifiers plus kernel entries;
   `addon:<slug>` needs `SYSLOG_IDENTIFIER` equal to `CONTAINER_NAME`,
@@ -826,16 +828,26 @@ provider, fallback, write path or tool.
 - **Positions.** Continuations hold a realtime and a keyed digest of the
   libsystemd cursor, never the cursor (it embeds the raw boot ID); the boot
   marker is a keyed digest too. The machine ID is never read.
-- **Secrets.** At the single `_finish` exit each journal message is
-  ANSI-stripped and screened first. Unverifiable text, the HAMCP-132
-  credential forms, journal key forms (`psk`, `wpa_psk`, `network_key`,
-  `encryption_key`, ...), PEM private keys and the mosquitto `-P`/`--pw`
-  options withhold the **whole** message (`credential_text_withheld`,
-  partial); a withheld message is never searched. The shared
-  `sanitize_log_lines` and strict sanitizer then run once, as below, and
-  redact other token forms in place (`redacted_by_policy`). A bare secret
-  with no key or known value can still pass (design §7, the same residual
-  risk as the Core log).
+- **Secrets.** At the single `_finish` exit every returned journal field
+  (message, `process`, `kernel_subsystem`, `kernel_device`) goes through the
+  **same** screen as the configuration-definitions report,
+  `configuration_definitions/credentials.py` `screen`; the journal has no
+  screen of its own (review 1 H1/H2). It reads the complete field before any
+  cut: a field over 16 KiB, or bytes that are not UTF-8, are withheld whole
+  as unverifiable. Invisible, format or control characters, then the
+  HAMCP-132 credential and known-secret forms after bounded percent-decoding,
+  NFKC and the confusable fold, on the text and its squashed form, plus the
+  labelled forms the journal opts in to (a credential label with `=` or `:`,
+  `Bearer`, PEM private keys, mosquitto `-P`/`--pw`), withhold the **whole**
+  field. The display cut to 2000 characters happens only after. A withheld
+  field is never searched. The configuration-definitions final-envelope scan
+  (`withheld_items`) then names each withheld entry, and a withheld entry a
+  text filter left out is counted (`withheld_not_searched`): any of these
+  makes the result partial. The shared `sanitize_log_lines` and strict
+  sanitizer then run once, as below. The configuration-definitions report
+  does not opt in to the labelled forms and is unchanged. A bare secret with
+  no key or known value can still pass (design §7, the same residual risk as
+  the Core log).
 - **Unavailability.** Decided from `/proc/self/mountinfo` and the open, never
   from an empty result; an unavailable source is never `complete`.
 
