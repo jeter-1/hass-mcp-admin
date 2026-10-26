@@ -147,6 +147,27 @@ class IntentContractTests(unittest.TestCase):
         self.assertEqual(errors, ["options intent is a no-op"])
 
 
+class RequestVocabularyTests(unittest.TestCase):
+    def test_one_to_eight_targets(self):
+        changes = [{"entity_id": f"sensor.filtered_{index}", "set": {"time_constant": 20}}
+                   for index in range(planning.MAX_CHANGES + 1)]
+        self.assertEqual(planning.MAX_CHANGES, 8)  # OD-5
+        request = planning.validate_request({"changes": changes[:-1], "reason": "Synthetic"})
+        self.assertEqual(len(request.changes), planning.MAX_CHANGES)
+        with self.assertRaises(planning.Refusal) as raised:
+            planning.validate_request({"changes": changes, "reason": "Synthetic"})
+        self.assertEqual(raised.exception.reason_code, "helper_options_too_many_targets")
+
+    def test_template_types_are_the_closed_catalog(self):
+        # OD-2: template sensor and binary_sensor only; the declared vocabulary
+        # and the compiled step catalog must agree exactly.
+        self.assertEqual(contract.TEMPLATE_TYPES, ("binary_sensor", "sensor"))
+        self.assertEqual(
+            {step for domain, step in contract.STEP_CATALOG if domain == "template"},
+            set(contract.TEMPLATE_TYPES),
+        )
+
+
 class StubRest:
     def __init__(self, failure: Exception | None = None):
         self.failure = failure
@@ -697,6 +718,65 @@ class ExecutionTests(HelperOptionsServiceTestCase):
         self.assertEqual(getattr(self.options_rest, "authority_refusals", []), [],
                          "the release abort runs in its own Core window")
         self.assertEqual(len(self.options_rest.aborts()), 2)
+
+
+class OrphanDisclosureTests(HelperOptionsServiceTestCase):
+    async def test_failed_release_after_a_before_dispatch_failure_is_disclosed(self):
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        original = HelperOptionsAdapter.dispatch
+        abort_failure = HomeAssistantApiError(details={"status": 500})
+
+        async def failing_dispatch(adapter, operation, preflight, *, before_dispatch):
+            async def refuse():
+                self.options_rest.abort_failure = abort_failure
+                raise RuntimeError("synthetic intent persistence failure")
+
+            return await original(adapter, operation, preflight, before_dispatch=refuse)
+
+        with mock.patch.object(HelperOptionsAdapter, "dispatch", failing_dispatch):
+            result = await self.apply(created)
+        self.assertFalse(result["provider_dispatch_occurred"], result)
+        self.assertEqual(self.options_rest.submits(), [])
+        codes = self.child_codes(result["task_id"])
+        self.assertIn("dispatch_intent_persistence_failed", codes)
+        self.assertIn("options_flow_orphaned", codes, "the failed release is disclosed")
+        self.assertEqual(len(self.options_rest.flows), 1, "the orphan is Core-memory only")
+
+    async def test_failed_abort_of_the_readback_flow_is_disclosed(self):
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        abort_failure = HomeAssistantApiError(details={"status": 500})
+
+        def fail_aborts_after_the_submit(entry_id, flow_id, ordinal):
+            if self.options_rest.submits():
+                self.options_rest.abort_failure = abort_failure
+
+        self.options_rest.after_open = fail_aborts_after_the_submit
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertIn("options_flow_orphaned", self.child_codes(result["task_id"]))
+        self.assertEqual(len(self.options_rest.flows), 1)
+
+
+class ReadbackRuleTests(HelperOptionsServiceTestCase):
+    async def test_proposed_options_without_a_stored_update_are_not_verified(self):
+        # Core moves ``modified_at`` whenever it stores options; equal options
+        # with an unmoved entry are not proof of this submit.
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        original = self.options_rest._apply
+
+        def apply_without_moving(entry_id, submit):
+            before = self.options_rest.modified_at(entry_id)
+            original(entry_id, submit)
+            self.ws.config_entries[entry_id]["modified_at"] = before
+
+        self.options_rest._apply = apply_without_moving
+        result = await self.apply(created)
+        self.assertNotEqual(result["task_state"], "succeeded_verified", result)
+        self.assertNotIn("exact_readback_verified", self.child_codes(result["task_id"]))
+        self.assertEqual(len(self.options_rest.submits()), 1, "never resubmitted")
 
 
 class SubmitOutcomeTests(HelperOptionsServiceTestCase):
