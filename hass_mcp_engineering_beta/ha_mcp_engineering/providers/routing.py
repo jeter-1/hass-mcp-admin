@@ -46,6 +46,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.UNREGISTERED_ENTITIES,
     ProviderCapability.CONFIGURATION_DEFINITIONS,
     ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
+    ProviderCapability.AUTOMATION_BASELINE_COMPARE,
     ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     ProviderCapability.TYPED_FAN_EXECUTION,
     ProviderCapability.TYPED_POWER_EXECUTION,
@@ -134,6 +135,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
+    "compare_automation_baselines": ProviderCapability.AUTOMATION_BASELINE_COMPARE,
     "dashboard_integrity_analysis": ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
     "control_power": ProviderCapability.TYPED_POWER_EXECUTION,
@@ -233,8 +235,8 @@ ANALYTICAL_PROVIDER_POLICIES = {
     },
     "capture_automation_baseline": {
         "policy_id": "loaded_automation_entities-v1", "access": "read", "orchestrator": "engineering",
-        "scope": "bounded loaded-automation inventory and exact configuration hashes; frozen export",
-        "writes_allowed": "none", "fallback_policy": "none",
+        "scope": "bounded loaded-automation inventory and exact configuration hashes; stored caller-bound export",
+        "writes_allowed": "engineering_local_evidence_only", "fallback_policy": "none",
     },
     "get_integration_inspection": {
         "policy_id": "alarmo_allowlist_v1", "access": "read", "orchestrator": "engineering",

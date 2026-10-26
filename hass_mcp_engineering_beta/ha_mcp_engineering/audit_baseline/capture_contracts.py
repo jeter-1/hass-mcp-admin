@@ -88,6 +88,46 @@ def validate_arguments(arguments):
         raise CaptureError("invalid_arguments")
 
 
+# HAMCP-228 compare_automation_baselines: stored/stored or stored/recorded.
+COMPARE_KEYS = frozenset({"earlier_capture_id", "later_capture_id", "recorded_fingerprints",
+                          "fingerprint_model"})
+MAX_FINGERPRINTS = MAX_RECORDS
+FINGERPRINT = re.compile(r"[0-9a-f]{16,64}\Z")
+
+
+def validate_compare_arguments(arguments):
+    """Exact closed compare arguments; the later side is a capture XOR fingerprints."""
+
+    if type(arguments) is not dict or set(arguments) - COMPARE_KEYS:
+        raise CaptureError("invalid_arguments")
+    earlier = arguments.get("earlier_capture_id")
+    later = arguments.get("later_capture_id", "")
+    rows = arguments.get("recorded_fingerprints")
+    model = arguments.get("fingerprint_model", "")
+    if (type(earlier) is not str or not CAPTURE_ID.fullmatch(earlier)
+            or type(later) is not str or (later and not CAPTURE_ID.fullmatch(later))
+            or type(model) is not str or len(model) > 64):
+        raise CaptureError("invalid_arguments")
+    if rows is None:
+        if not later or model:
+            raise CaptureError("invalid_arguments")
+        return None
+    if (later or type(rows) is not list or len(rows) > MAX_FINGERPRINTS
+            or not ID.fullmatch(model)):
+        raise CaptureError("invalid_arguments")
+    fingerprints = {}
+    for row in rows:
+        if (type(row) is not dict or set(row) != {"configuration_id", "fingerprint"}
+                or type(row["configuration_id"]) is not str or not ID.fullmatch(row["configuration_id"])
+                or type(row["fingerprint"]) is not str
+                or not row["fingerprint"].startswith("sha256:")
+                or not FINGERPRINT.fullmatch(row["fingerprint"][7:])
+                or row["configuration_id"] in fingerprints):
+            raise CaptureError("invalid_arguments")
+        fingerprints[row["configuration_id"]] = row["fingerprint"][7:]
+    return fingerprints
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
                       allow_nan=False).encode("utf-8")

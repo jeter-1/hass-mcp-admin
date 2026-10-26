@@ -12,9 +12,13 @@ import json
 import secrets
 import time
 
+from .. import untrusted_text
 from ..request_context import current_caller_id
 from . import capture_contracts as c
+from .comparison import (PREFIX_MATCH, bound_report_dict, compare_baselines,
+                         compare_recorded_fingerprints, comparison_report_dict)
 from .store import StoreError
+from .validation import BaselineValidationError, baseline_from_value
 
 _STORE_REASONS = {"store_busy": "capacity_busy", "store_full": "store_full",
                   "baseline_not_found": "baseline_not_found", "baseline_damaged": "baseline_damaged"}
@@ -152,3 +156,45 @@ class BaselineCaptureService:
             return page
         finally:
             self.active = False
+
+    async def compare(self, *, earlier_capture_id, later_capture_id="", recorded_fingerprints=None,
+                      fingerprint_model=""):
+        """HAMCP-228: compare the caller's stored capture with a later capture or recorded fingerprints.
+
+        Reads only the caller's own digest-verified stored baselines; no Home
+        Assistant read. The result is credential-screened, then bounded.
+        """
+
+        arguments = {"earlier_capture_id": earlier_capture_id, "later_capture_id": later_capture_id,
+                     "fingerprint_model": fingerprint_model}
+        if recorded_fingerprints is not None:
+            arguments["recorded_fingerprints"] = recorded_fingerprints
+        fingerprints = c.validate_compare_arguments(arguments)
+        caller = current_caller_id()
+        if caller == "anonymous":
+            raise c.CaptureError("access_denied")
+        earlier, _ = await self.load(earlier_capture_id, caller)
+        later = (await self.load(later_capture_id, caller))[0] if later_capture_id else None
+        return await c.worker(self._compare, earlier_capture_id, earlier, later_capture_id or None, later,
+                              fingerprints, fingerprint_model)
+
+    def _compare(self, earlier_id, earlier, later_id, later, fingerprints, model):
+        try:
+            first = baseline_from_value(earlier["baseline"])
+            second = baseline_from_value(later["baseline"]) if later is not None else None
+        except (BaselineValidationError, KeyError, TypeError):
+            raise c.CaptureError("baseline_damaged") from None
+        if second is not None:
+            value = comparison_report_dict(compare_baselines(first, second))
+            value["counts"] = {**value["counts"], PREFIX_MATCH: 0}
+            value.update(mode="stored_captures", earlier_capture_id=earlier_id, later_capture_id=later_id)
+        else:
+            value = compare_recorded_fingerprints(first, fingerprints, model)
+            value.update(mode="recorded_fingerprints", earlier_capture_id=earlier_id, later_capture_id=None)
+        # Rows needing attention first, so a bounded result keeps them.
+        value["records"].sort(key=lambda row: (row["classification"] in {"UNCHANGED", PREFIX_MATCH},
+                                               row["configuration_id"]))
+        value["record_order"] = "not_unchanged_or_prefix_match_first_then_configuration_id"
+        value, withheld = untrusted_text.screen_tree(value, tuple(getattr(getattr(self.provider, "projector", None), "known_secrets", ())))
+        value["screened_withheld_count"] = withheld
+        return bound_report_dict(value, max_bytes=self.page_limit)

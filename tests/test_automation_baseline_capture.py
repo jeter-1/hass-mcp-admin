@@ -649,13 +649,15 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(response['retryable'], True)
         self.assertFalse(response['success'])
 
-    async def test_public_invalid_arguments_never_echo_and_catalog_route_is_read_only(self):
+    async def test_public_invalid_arguments_never_echo_and_catalog_route_reads_home_assistant_only(self):
         from ha_mcp_engineering.tools import get_registered_server,registered_tools
         from ha_mcp_engineering.providers.routing import routing_for_tool
         from ha_mcp_engineering.ha_core_readmission.routes import static_tool_requirements
         tools=registered_tools(get_registered_server()); tool=tools['capture_automation_baseline']
-        self.assertEqual(len(tools),68)
-        self.assertTrue(tool.annotations.readOnlyHint)
+        self.assertEqual(len(tools),69)
+        # HAMCP-228: a capture writes one Engineering-local stored baseline;
+        # its Home Assistant access stays read-only.
+        self.assertFalse(tool.annotations.readOnlyHint)
         self.assertFalse(tool.annotations.destructiveHint)
         self.assertFalse(tool.parameters['additionalProperties'])
         self.assertEqual(routing_for_tool('capture_automation_baseline').fallback_providers,())

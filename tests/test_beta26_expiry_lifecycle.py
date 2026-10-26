@@ -509,6 +509,7 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
                 "create_configuration_delete_plan",
+                "compare_automation_baselines",
                 "get_execution_task",
                 "list_execution_tasks",
                 "cancel_execution_task",
@@ -517,11 +518,14 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
                 "control_fan",
             }
         }
+        from hamcp226_228_descriptor_changes import without_hamcp226_finding_type
+        schemas["configuration_integrity_analysis"] = without_hamcp226_finding_type(
+            self, schemas["configuration_integrity_analysis"])
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), F2_PUBLIC_SCHEMA_SHA256)
-        self.assertEqual(len(tools), 68)
+        self.assertEqual(len(tools), 69)
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 68)
+        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 69)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

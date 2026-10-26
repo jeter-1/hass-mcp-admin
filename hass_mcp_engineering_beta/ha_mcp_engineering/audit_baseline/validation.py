@@ -1100,6 +1100,20 @@ def normalize_legacy_baseline(path: str | Path) -> dict[str, Any]:
     return normalized
 
 
+def baseline_from_value(value: Any) -> Baseline:
+    """Validate one current-schema baseline already parsed from a trusted store.
+
+    HAMCP-228: the Engineering store verified the bytes' digest; the value is
+    still validated in full, as a file would be.
+    """
+
+    value = _require_dict(value, "baseline_root_invalid")
+    _validate_json_limits(value)
+    if value.get("schema") not in (BASELINE_SCHEMA, BASELINE_SCHEMA_V2):
+        raise BaselineValidationError("baseline_schema_unsupported")
+    return _new_baseline(value)
+
+
 def load_baseline(path: str | Path) -> Baseline:
     raw = _read_input(path)
     value = _strict_loads(raw)

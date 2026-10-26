@@ -104,10 +104,19 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     },
     {
         "tool": "capture_automation_baseline", "category": "evidence",
+        "status": "beta_native", "risk": "engineering_evidence_write", "additive": True,
+        "operation_class": "engineering_local_evidence_capture", "routing": "engineering_native",
+        "provider": "engineering", "data_providers": ["direct_ha_api"], "fallback": "none",
+        "home_assistant_provider": "direct_ha_api", "home_assistant_access": "read",
+        "policy": "loaded_automation_entities-v1", "external_approval_required": False,
+        "direct_write_allowed": False, "dispatch_allowed": False, "durable_evidence_write": True,
+    },
+    {
+        "tool": "compare_automation_baselines", "category": "evidence",
         "status": "beta_native", "risk": "read", "additive": True,
         "operation_class": "read", "routing": "engineering_native",
-        "provider": "engineering", "data_providers": ["direct_ha_api"],
-        "fallback": "none", "policy": "loaded_automation_entities-v1", "direct_write_allowed": False,
+        "provider": "engineering", "data_providers": [], "fallback": "none",
+        "policy": "automation-baseline-compare-v1", "direct_write_allowed": False,
     },
     {
         "tool": "get_integration_inspection", "category": "evidence",
@@ -607,6 +616,15 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "completeness": "loaded_scope_only_with_explicit_omissions",
         "security_justification": "Administrator visibility, verified registry-lineage identity, fixed reads and frozen sanitized exports.",
         "trust_mode": "reviewed_native_read", "trust_profile": "automation-baseline-read-v1",
+    },
+    {
+        "tool": "compare_automation_baselines", "capability": "automation_baseline_compare",
+        "required_semantics": "Stored-capture or recorded-fingerprint comparison; full-digest UNCHANGED, separate PREFIX_MATCH, one-side recorded ids UNKNOWN.",
+        "standard_ha_mcp_coverage": "unavailable", "direct_ha_coverage": "not_used",
+        "selected_provider": "engineering", "fallback_policy": "none",
+        "completeness": "bounded_details_with_omitted_count_and_screened_withheld_count",
+        "security_justification": "Caller-bound digest-verified local baselines only; credential-screened output; no Home Assistant call.",
+        "trust_mode": "reviewed_native_read", "trust_profile": "automation-baseline-compare-v1",
     },
     {
         "tool": "get_integration_inspection", "capability": "integration_inspection",

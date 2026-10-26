@@ -68,8 +68,16 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "get_incident_logs", "get_history_slices",
                           "create_entity_availability_exposure_plan",
                           "create_label_plan",
-                          "create_configuration_delete_plan"})
+                          "create_configuration_delete_plan",
+                          "compare_automation_baselines"})
         current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
+        from hamcp226_228_descriptor_changes import (without_hamcp226_descriptor_change,
+                                                     without_hamcp228_capture_changes)
+        current["configuration_integrity_analysis"] = without_hamcp226_descriptor_change(
+            self, current["configuration_integrity_analysis"])
+        current["capture_automation_baseline"] = without_hamcp228_capture_changes(
+            self, current["capture_automation_baseline"],
+            baseline["descriptors"]["capture_automation_baseline"]["description"])
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])
 
     async def test_old_delegated_descriptors_are_identical(self):
