@@ -78,6 +78,8 @@ MAX_TEMPLATE_LENGTH = 4_096
 MAX_TEXT_LENGTH = 64
 MAX_DURATION_PART = 1_000_000
 MAX_NUMBER = 1_000_000_000
+# Year ~5138; any real ``modified_at`` is far below it.
+MAX_TIMESTAMP = 1e11
 MAX_REGISTRY_LIST_ITEMS = 5_000
 MAX_ENTRY_ENTITIES = 16
 MAX_SUGGESTED_TEXT = 8_192
@@ -273,6 +275,20 @@ def _number(value: Any) -> bool:
         type(value) in (int, float)
         and math.isfinite(value)
         and -MAX_NUMBER <= value <= MAX_NUMBER
+    )
+
+
+def _timestamp(value: Any) -> bool:
+    """A Core ``modified_at``: a finite, non-negative POSIX timestamp.
+
+    Separate from ``_number`` (the option-value bound): a current timestamp
+    is ~1.7e9, above the option-value limit.
+    """
+
+    return (
+        type(value) in (int, float)
+        and math.isfinite(value)
+        and 0 <= value <= MAX_TIMESTAMP
     )
 
 
@@ -684,7 +700,7 @@ def intent_errors(target_id: str, proposed: Any) -> list[str]:
             if entity_id.split(".", 1)[0] not in ENTITY_DOMAINS:
                 errors.append("options intent entity_ids are invalid")
                 break
-    if not _number(intent["modified_at"]) or isinstance(intent["modified_at"], bool):
+    if not _timestamp(intent["modified_at"]):
         errors.append("options intent modified_at is invalid")
     names = {spec.name for spec in step_fields(domain, step_id)}
     for key in ("baseline", "proposed"):
@@ -915,8 +931,7 @@ class HelperOptionsGateway:
             or entry.get("entry_id") != entry_id
             or not isinstance(entry.get("domain"), str)
             or not isinstance(entry.get("state"), str)
-            or not _number(entry.get("modified_at"))
-            or isinstance(entry.get("modified_at"), bool)
+            or not _timestamp(entry.get("modified_at"))
             or type(entry.get("supports_options")) is not bool
         ):
             raise HelperOptionsProviderError("config_entry_malformed")
