@@ -16,6 +16,7 @@ from types import MappingProxyType
 from typing import Any, Awaitable, Callable
 
 from ..errors import ErrorCode, GovernanceError
+from ..request_context import observe_provider_send
 from .health_scan import HealthScanFence
 from ..governance.task_storage import TaskHealthSnapshotSuperseded
 from ..f3.executor import (
@@ -102,6 +103,7 @@ from ..f3_dashboard.errors import DashboardFoundationError
 from ..governance.models import (
     ApprovalState,
     ChangeOperation,
+    ChangeVerification,
     PlanStatus,
     StepExecutionStatus,
 )
@@ -1211,12 +1213,56 @@ class _CoreVerificationAdapter:
         )
 
 
+def _verification_checked_at(record: Any) -> str | None:
+    """The time of a child's latest recorded verification (or (a) check)."""
+
+    times = [
+        event.get("occurred_at")
+        for event in getattr(record, "events", ()) or ()
+        if isinstance(event, dict)
+        and event.get("event_type")
+        in {"verification_recorded", "preflight_noop_verified"}
+        and isinstance(event.get("occurred_at"), str)
+    ]
+    return times[-1] if times else None
+
+
+def _desired_state_fingerprint(operation: Any) -> str:
+    """HAMCP-214: the fingerprint of the state the operation should leave.
+
+    A delete child's ``proposed_config_hash`` hashes its closed delete
+    intent, not a state, so its desired state is absence, fingerprinted the
+    way the delete readback fingerprints it.
+    """
+
+    if operation.action == "delete":
+        from ..governance.resources import resource_fingerprint
+
+        return resource_fingerprint(operation.resource_type, None)
+    return operation.proposed_config_hash
+
+
+def _recreate_eligible(operation: Any) -> bool:
+    try:
+        return configuration_delete_intent(
+            operation.proposed_config
+        ).get("recreate_eligible") is True
+    except (TypeError, KeyError, AttributeError):
+        return False
+
+
 class _AuditedDashboardGateway:
     """Emit bounded provider-boundary events without persisting payloads."""
 
-    def __init__(self, delegate: Any, auditor: Callable[[str], None]):
+    def __init__(
+        self,
+        delegate: Any,
+        auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
+    ):
         self.delegate = delegate
         self.auditor = auditor
+        self.send_recorder = send_recorder
 
     async def preread(self, *, url_path: str):
         self.auditor("provider_ha_config_get_dashboard")
@@ -1234,7 +1280,9 @@ class _AuditedDashboardGateway:
 
     async def write(self, **arguments):
         self.auditor("provider_ha_config_set_dashboard")
-        return await self.delegate.write(**arguments)
+        # OD-6(ii): the provider marks the exact send, after its handshake.
+        with observe_provider_send(self.send_recorder):
+            return await self.delegate.write(**arguments)
 
 
 class _OperationalEvidenceReader:
@@ -1292,9 +1340,15 @@ class _OperationalEvidenceReader:
 class _AuditedConfigurationGateway:
     """Central fixed bridge that adds no authority or provider arguments."""
 
-    def __init__(self, delegate: Any, auditor: Callable[[str], None]):
+    def __init__(
+        self,
+        delegate: Any,
+        auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
+    ):
         self.delegate = delegate
         self.auditor = auditor
+        self.send_recorder = send_recorder
         self.provider_admitted = delegate.provider_admitted
 
     async def read(self, resource_type, target_id):
@@ -1355,7 +1409,10 @@ class _AuditedConfigurationGateway:
     async def _audited(self, call):
         self.auditor("provider_invocation_started")
         try:
-            result = await call
+            # OD-6(ii): the resource gateway marks the exact send, immediately
+            # before its client issues the mutating request.
+            with observe_provider_send(self.send_recorder):
+                result = await call
         except Exception as exc:
             # HAMCP-181 design section 5.1 (PR1 gateway-audit rule): label a
             # received response only when the exception proves one.
@@ -1366,9 +1423,13 @@ class _AuditedConfigurationGateway:
                 isinstance(details, dict)
                 and details.get("provider_response_received") is True
             )
+            # PR2 (design section 5.1): a producer that owns the send
+            # boundary passes positive not-sent proof on the exception.
             self.auditor(
                 "provider_response_received"
                 if response_received
+                else "provider_call_not_sent"
+                if getattr(exc, "call_not_sent", False) is True
                 else "provider_result_uncertain"
             )
             raise
@@ -1379,9 +1440,15 @@ class _AuditedConfigurationGateway:
 class _AuditedHelperStateGateway:
     """Audit the one direct mutation boundary and bounded exact readbacks."""
 
-    def __init__(self, delegate: Any, auditor: Callable[[str], None]):
+    def __init__(
+        self,
+        delegate: Any,
+        auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
+    ):
         self.delegate = delegate
         self.auditor = auditor
+        self.send_recorder = send_recorder
 
     async def planning_evidence(self, entity_id: str):
         self.auditor("provider_readback_started")
@@ -1409,6 +1476,8 @@ class _AuditedHelperStateGateway:
         async def boundary():
             await before_dispatch()
             self.auditor("provider_invocation_started")
+            # OD-6(ii): the provider sends immediately after this callback.
+            self.send_recorder()
 
         try:
             result = await self.delegate.set_state(
@@ -1420,6 +1489,8 @@ class _AuditedHelperStateGateway:
             self.auditor(
                 "provider_response_lost"
                 if getattr(exc, "dispatched", False)
+                else "provider_call_not_sent"
+                if getattr(exc, "call_not_sent", False) is True
                 else "provider_invocation_refused"
             )
             raise
@@ -1435,10 +1506,12 @@ class _EvidenceCapturingBackupGateway:
         delegate: Any,
         recorder: Callable[..., None],
         auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
     ):
         self.delegate = delegate
         self.recorder = recorder
         self.auditor = auditor
+        self.send_recorder = send_recorder
 
     async def planning_evidence(self):
         return await self.delegate.planning_evidence()
@@ -1447,6 +1520,8 @@ class _EvidenceCapturingBackupGateway:
         async def boundary():
             await before_dispatch()
             self.auditor("provider_invocation_started")
+            # OD-6(ii): the provider sends immediately after this callback.
+            self.send_recorder()
 
         try:
             result = await self.delegate.create_full_backup(
@@ -1478,15 +1553,19 @@ class _EvidenceCapturingLifecycleGateway:
         delegate: Any,
         recorder: Callable[..., None],
         auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
     ):
         self.delegate = delegate
         self.recorder = recorder
         self.auditor = auditor
+        self.send_recorder = send_recorder
 
     async def _dispatch(self, call, *, before_dispatch):
         async def boundary():
             await before_dispatch()
             self.auditor("provider_invocation_started")
+            # OD-6(ii): the provider sends immediately after this callback.
+            self.send_recorder()
 
         try:
             result = await call(boundary)
@@ -1579,6 +1658,10 @@ class F3RuntimeIntegration:
     ):
         self.service = service
         self.core_runtime = core_runtime
+        # HAMCP-181 PR2 (OD-6(ii)): in-process exact provider send times by
+        # child, persisted into the task verification summary at projection.
+        # A restart loses an unprojected value; it is then never invented.
+        self._provider_call_started_at: dict[str, str] = {}
         self.children = ChildExecutionRepository(
             storage_root, retention_days=retention_days,
             event_sink=self._emit_lock_cleanup_audit_event,
@@ -1597,6 +1680,7 @@ class F3RuntimeIntegration:
         config_gateway = _AuditedConfigurationGateway(
             ExistingConfigurationGatewayBridge(configuration_gateway),
             self._audit_provider_boundary,
+            self._record_provider_send,
         )
         configuration_adapters = {
             f"{action}_{resource}_configuration": ConfigurationOperationAdapter(
@@ -1642,6 +1726,7 @@ class F3RuntimeIntegration:
                 backup_gateway,
                 self._record_operation_evidence,
                 self._audit_provider_boundary,
+                self._record_provider_send,
             )
         )
         captured_lifecycle = (
@@ -1651,6 +1736,7 @@ class F3RuntimeIntegration:
                 lifecycle_gateway,
                 self._record_operation_evidence,
                 self._audit_provider_boundary,
+                self._record_provider_send,
             )
         )
         self.operational_adapter = OperationalAdministrationAdapter(
@@ -1660,6 +1746,7 @@ class F3RuntimeIntegration:
                 _AuditedHelperStateGateway(
                     helper_state_gateway,
                     self._audit_provider_boundary,
+                    self._record_provider_send,
                 )
                 if helper_state_gateway is not None
                 else None
@@ -1673,7 +1760,9 @@ class F3RuntimeIntegration:
         )
         self.dashboard_adapter = DashboardUpdateAdapter(
             _AuditedDashboardGateway(
-                dashboard_gateway, self._audit_provider_boundary
+                dashboard_gateway,
+                self._audit_provider_boundary,
+                self._record_provider_send,
             )
             if dashboard_gateway is not None
             else None,
@@ -1832,6 +1921,20 @@ class F3RuntimeIntegration:
         if child_id is not None:
             self._emit_f3_audit_event(
                 {"event_type": event_type, "task_id": child_id}
+            )
+
+    def _record_provider_send(self) -> None:
+        """OD-6(ii): record the child's exact provider send time.
+
+        Called only at the send boundary: immediately before the provider
+        client issues the one mutating request, never at gateway entry.  The
+        first send of a child is its one dispatch, so a time is never replaced.
+        """
+
+        child_id = _ACTIVE_F3_CHILD.get()
+        if child_id is not None:
+            self._provider_call_started_at.setdefault(
+                child_id, self.service._timestamp()
             )
 
     def _reconstruct_selective_holds(self) -> None:
@@ -3232,6 +3335,53 @@ class F3RuntimeIntegration:
         return dispatch_projection.qualify_counters(value, facts)
 
     @staticmethod
+    def _child_projection_entry(declaration: Any, record: Any) -> dict[str, Any]:
+        """One ``verification_summary.children`` entry (shape unchanged by PR2)."""
+
+        return {
+            "child_execution_id": declaration["child_id"],
+            "operation_id": declaration["operation_id"],
+            "ordinal": declaration["operation_ordinal"],
+            "state": "not_started" if record is None else record.state,
+            "normalized_outcome": None if record is None else record.normalized_outcome,
+            "dispatch_count": 0 if record is None else record.dispatch_count,
+            "terminal": False if record is None else record.terminal,
+        }
+
+    def _summary_send_times(
+        self, task: Any, declarations: Any, records: Any, facts: DispatchFacts
+    ) -> dict[str, Any] | None:
+        """The ``verification_summary`` send-time map, keyed by child id.
+
+        OD-6(ii): an intent-bearing child stores the exact provider send time
+        observed at the send boundary (``null`` when not observed in-process or
+        proven not sent).  The map sits beside ``children`` so each child
+        entry keeps its shipped shape.  A stored value is never replaced, and
+        a terminal task keeps exactly the map it already stores.
+        """
+
+        key = dispatch_projection.SEND_TIME_SUMMARY_KEY
+        stored = task.verification_summary.get(key)
+        stored = dict(stored) if isinstance(stored, dict) else None
+        if task.state in TERMINAL_TASK_STATES:
+            return stored
+        times = dict(stored or {})
+        phases = {child.child_id: child.phase for child in facts.children}
+        for declaration, record in zip(declarations, records, strict=True):
+            child_id = declaration["child_id"]
+            if record is None or record.dispatch_intent is None:
+                continue
+            if isinstance(times.get(child_id), str):
+                continue
+            phase = phases.get(child_id, PHASE_SEND_UNCERTAIN)
+            times[child_id] = (
+                None
+                if phase == dispatch_projection.PHASE_INTENT_RECORDED_NOT_SENT
+                else self._provider_call_started_at.get(child_id)
+            )
+        return times or None
+
+    @staticmethod
     def _entity_metadata_not_dispatched(
         declarations: Any, records: Any
     ) -> bool:
@@ -3302,6 +3452,9 @@ class F3RuntimeIntegration:
                 task, event_type, new_state=new_state, changes=changes,
                 result_status=result_status,
             )
+            # The terminal summary now stores every captured send time.
+            for declaration in declarations:
+                self._provider_call_started_at.pop(declaration["child_id"], None)
 
         declarations, records = self._validate_sequence_state(task)
         if terminal_recovery and not (
@@ -3326,16 +3479,16 @@ class F3RuntimeIntegration:
             for index, outcome in enumerate(outcomes)
             if outcome == "succeeded_verified"
         ]
+        facts = self.dispatch_facts_for_task(
+            task,
+            declarations=declarations,
+            records={
+                declaration["child_id"]: record
+                for declaration, record in zip(declarations, records, strict=True)
+            },
+        )
         child_projection = [
-            {
-                "child_execution_id": declaration["child_id"],
-                "operation_id": declaration["operation_id"],
-                "ordinal": declaration["operation_ordinal"],
-                "state": "not_started" if record is None else record.state,
-                "normalized_outcome": None if record is None else record.normalized_outcome,
-                "dispatch_count": 0 if record is None else record.dispatch_count,
-                "terminal": False if record is None else record.terminal,
-            }
+            self._child_projection_entry(declaration, record)
             for declaration, record in zip(declarations, records, strict=True)
         ]
         summary = {
@@ -3345,9 +3498,20 @@ class F3RuntimeIntegration:
             "completed_operation_ids": completed,
             "children": child_projection,
         }
+        send_times = self._summary_send_times(task, declarations, records, facts)
+        if send_times is not None:
+            summary[dispatch_projection.SEND_TIME_SUMMARY_KEY] = send_times
         if all(outcome == "succeeded_verified" for outcome in outcomes):
+            # T2 (a): every child verified with no dispatch.  A terminal
+            # task written before PR2 keeps its stored outcome verbatim.
             not_dispatched = self._entity_metadata_not_dispatched(
                 declarations, records
+            ) or (
+                facts.already_present
+                and (
+                    not terminal_recovery
+                    or task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME
+                )
             )
             terminal_outcome = (
                 ENTITY_METADATA_NOT_DISPATCHED_OUTCOME
@@ -3457,20 +3621,41 @@ class F3RuntimeIntegration:
                             changes={},
                         )
                         task = self.service._load_task(task.task_id)
+                    # T2 (b): every intent proven not sent (P-proof codes
+                    # only).  The coarse state stays failed_post_dispatch; a
+                    # terminal task written before PR2 keeps its outcome.
+                    not_sent = facts.not_sent and (
+                        not terminal_recovery
+                        or task.terminal_outcome == dispatch_projection.NOT_SENT_OUTCOME
+                    )
+                    failed_summary = {**summary, "status": "failed_post_dispatch"}
+                    terminal_outcome = "failed_post_dispatch"
+                    if not_sent:
+                        terminal_outcome = dispatch_projection.NOT_SENT_OUTCOME
+                        failed_summary.update(
+                            {
+                                "outcome_code": terminal_outcome,
+                                "dispatch_performed": False,
+                                (
+                                    dispatch_projection.SETTER_CALL_NOT_SENT
+                                    if facts.setter_not_sent
+                                    else PROVIDER_CALL_NOT_SENT
+                                ): True,
+                                "result_text": dispatch_projection.NOT_SENT_TEXT,
+                            }
+                        )
                     terminal_event(
                         "task_failed_post_dispatch",
                         new_state=ExecutionTaskState.FAILED_POST_DISPATCH,
                         changes={
                             "completed_at": self.service._timestamp(),
-                            "terminal_outcome": "failed_post_dispatch",
-                            "verification_summary": {
-                                **summary, "status": "failed_post_dispatch"
-                            },
+                            "terminal_outcome": terminal_outcome,
+                            "verification_summary": failed_summary,
                         },
                         result_status="failure",
                     )
                     plan.status = PlanStatus.FAILED
-                    plan.execution_outcome = "failed_post_dispatch"
+                    plan.execution_outcome = terminal_outcome
                 else:
                     if task.state == ExecutionTaskState.PREFLIGHT:
                         self.service._record_task_event(
@@ -3493,6 +3678,7 @@ class F3RuntimeIntegration:
                     plan.execution_outcome = "manual_review_required"
         if plan.contract_version == 2:
             by_id = {item["operation_id"]: item for item in child_projection}
+            verified_at: list[str] = []
             for operation in plan.operations:
                 child = by_id[operation.operation_id]
                 if child["normalized_outcome"] == "succeeded_verified":
@@ -3502,9 +3688,147 @@ class F3RuntimeIntegration:
                         "resulting_state_fingerprint"
                     )
                     operation.snapshot = operation.snapshot or None
+                    # HAMCP-214: the operation verification is the child's
+                    # recorded verification, never a separate check.
+                    checked_at = _verification_checked_at(record)
+                    operation.verification = ChangeVerification(
+                        status="verified",
+                        checked_at=checked_at,
+                        desired_fingerprint=_desired_state_fingerprint(operation),
+                        actual_fingerprint=operation.post_apply_fingerprint,
+                    )
+                    if checked_at is not None:
+                        verified_at.append(checked_at)
                 elif child["normalized_outcome"] is not None:
                     operation.execution_status = StepExecutionStatus.FAILED
+            if plan.operations and all(
+                by_id[operation.operation_id]["normalized_outcome"]
+                == "succeeded_verified"
+                for operation in plan.operations
+            ):
+                # HAMCP-214: a succeeded_verified task shows the plan
+                # verified.  A single fingerprint exists only for one
+                # operation; a multi-operation plan keeps both fingerprints
+                # per operation and none at plan level.
+                single = plan.operations[0] if len(plan.operations) == 1 else None
+                plan.post_apply_fingerprint = (
+                    single.post_apply_fingerprint if single is not None else None
+                )
+                plan.verification = ChangeVerification(
+                    status="verified",
+                    checked_at=max(verified_at) if verified_at else None,
+                    desired_fingerprint=(
+                        single.verification.desired_fingerprint
+                        if single is not None
+                        else None
+                    ),
+                    actual_fingerprint=plan.post_apply_fingerprint,
+                )
+            self._project_rollback_availability(
+                plan,
+                task,
+                {
+                    declaration["operation_id"]: record
+                    for declaration, record in zip(declarations, records, strict=True)
+                },
+            )
         self.service._save(plan)
+
+    def _project_rollback_availability(
+        self, plan: Any, task: Any, records: dict[str, Any]
+    ) -> None:
+        """HAMCP-214: replace the creation placeholder once the task is final.
+
+        Display only: ``rollback_change`` re-derives admission and reads live
+        state, so ``available`` means only that its leading conditions hold.
+        Only the untouched placeholder is replaced; a rollback request or any
+        later status is never rewritten.
+        """
+
+        from ..governance.configuration_eligibility import bound_proof
+
+        if (
+            plan.rollback.request_id is not None
+            or plan.rollback.status != "unavailable_for_configuration_plan"
+        ):
+            return
+        task = self.service._load_task(task.task_id)
+        if task.state not in {
+            ExecutionTaskState.SUCCEEDED_VERIFIED,
+            ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
+            ExecutionTaskState.FAILED_POST_DISPATCH,
+        }:
+            return
+        forward = bound_proof(plan.operations)
+        if forward is not None and forward["kind"] == "caller_owned_retry":
+            # The garage inverse has its own bundle admission; unchanged.
+            return
+        operations = [
+            (operation, records.get(operation.operation_id))
+            for operation in plan.operations
+        ]
+
+        def dispatched_once(record: Any) -> bool:
+            return bool(
+                record is not None
+                and record.terminal
+                and record.normalized_outcome == "succeeded_verified"
+                and record.dispatch_intent is not None
+                and record.dispatch_count == 1
+            )
+
+        if any(
+            operation.resource_type == LABEL_RESOURCE_TYPE
+            for operation in plan.operations
+        ):
+            available, status = False, label_registry_planning.ROLLBACK_NOT_SUPPORTED
+        elif any(
+            operation.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES
+            for operation in plan.operations
+        ):
+            available = any(dispatched_once(record) for _, record in operations)
+            status = None
+        elif any(
+            operation.action == CONFIGURATION_DELETE_ACTION
+            for operation in plan.operations
+        ):
+            available = any(
+                dispatched_once(record)
+                and _recreate_eligible(operation)
+                for operation, record in operations
+            )
+            status = None
+        elif any(
+            operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE
+            for operation in plan.operations
+        ):
+            available = bool(
+                len(operations) == 1
+                and task.state == ExecutionTaskState.SUCCEEDED_VERIFIED
+                and task.terminal_outcome == "succeeded_verified"
+                and dispatched_once(operations[0][1])
+            )
+            status = None
+        else:
+            available = any(
+                operation.action == "update"
+                and operation.current_config is not None
+                and record is not None
+                and record.normalized_outcome == "succeeded_verified"
+                and record.evidence.get("resulting_state_fingerprint") is not None
+                for operation, record in operations
+            )
+            status = None
+            if not available and all(
+                operation.action == "create" for operation in plan.operations
+            ):
+                status = "unavailable_for_create"
+        plan.rollback.available = available
+        plan.rollback.status = status or (
+            "available_pending_current_state_check"
+            if available
+            else "unavailable_no_verified_dispatched_change"
+        )
 
     async def apply(self, plan: Any, expected_plan_hash: str) -> dict[str, Any]:
         if not self.readiness_state()["execution_ready"]:
@@ -4411,6 +4735,18 @@ class F3RuntimeIntegration:
             source_plan.operation == ChangeOperation.UPDATE_AUTOMATION
             and source_plan.current_config is not None
         ):
+            if self.dispatch_facts_for_task(task).changed_by_engineering is False:
+                # OD-11 (refusal only): every child is proven unchanged
+                # ((a), (b) or (r-proven)), so there is nothing to reverse.
+                # An (r-unproven) child keeps today's admission.
+                raise GovernanceError(
+                    ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                    details={
+                        "resource_id": source_plan.plan_id,
+                        "reason": "forward_unchanged",
+                        "provider_dispatch_occurred": False,
+                    },
+                )
             operations.append(
                 {
                     "operation_id": "rollback_legacy_automation",

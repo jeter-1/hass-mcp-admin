@@ -1338,6 +1338,7 @@ own §5.3 row, files and tests.
 | `R/f3_runtime/runtime.py` | `_project_locked`: T2 strings and keys; configuration gateway label (`:702-721`) and helper-state gateway label (`_AuditedHelperStateGateway` `:765-769`) for in-scope producers only; backup (`_EvidenceCapturingBackupGateway` `:801-805`) and lifecycle (`_EvidenceCapturingLifecycleGateway` `:839-843`) labels unchanged and not authorized for edit; legacy rollback refusal (`:3423-3436`) |
 | `R/f3_runtime/dispatch_facts.py` | Read the T2 strings |
 | `R/governance/service.py` | `terminal_outcome` filter (`:1966-1970`) accepts the T2 strings |
+| `R/f3/contracts.py` | **Owner-confirmed addition (Josh, 2026-10-25).** The shared not-sent constants `CALLBACK_FAILED_NOT_SENT_DECLARATION` and `PROVIDER_CALL_NOT_SENT`, used by the executor and the in-scope adapters. Constants only; no behavior. |
 
 **Excluded from PR2 (OD-7 aligned).** No files for b6
 (`R/clients/upstream_read.py:442-447`), b7 (`R/clients/rest.py:77-84`,
@@ -1533,3 +1534,78 @@ confirmation** and are not decisions until he confirms them.
 No runtime, test, release, workflow, registry, schema or stable-v1 change. No
 live Home Assistant or deployed MCP access. No dispatch. No reviewer session.
 No Ready, merge, tag, publish or deploy. PR #254 / HAMCP-180 was not touched.
+
+## 10. PR2 implementation note (2.4.1-beta.37)
+
+This note records where PR2 source differs from revision 4. The decisions
+are unchanged.
+
+- **§7 item 11 and OD-15 were overtaken by HAMCP-183** (`494defc1`, on main
+  before PR2). An entity-registry error result other than P3 now raises
+  `EntityMetadataUpdateErrorResult`. The configuration adapter records it as
+  `dispatch_indeterminate` with codes `provider_error_after_send` and
+  `provider_response_indeterminate`, and `provider_mutation_count` null.
+  Registry readback then decides.
+
+  As a result, a live error result projects
+  `intent_recorded_send_uncertain` (c), not the (r-unproven) phase the §6
+  test row expected. (c) is stricter than (r-unproven): it never claims
+  non-mutation and never publishes `changed_by_engineering:false`.
+  `tests/test_hamcp181_entity_registry_error_unproven.py` pins that phase.
+  It also checks that the phase is never less uncertain than (r-unproven)
+  and that no surface claims non-mutation.
+
+  The design's (r-unproven) expectation still applies to historical records.
+  The test proves it on a record written by the shipped beta.8 writer, with
+  provenance. PR2 does not change this producer.
+- **Residual (c) sites outside the §6 file scope** keep today's
+  send-uncertain classification. The safe direction is to overstate that a
+  send may have happened. These sites are reported in the PR:
+  - the pre-request raises in `governance/configuration_delete.py`, in
+    `entity_availability_exposure.py` and in `label_registry.py`;
+  - `service.py:633` and `:655`;
+  - the backup and lifecycle gateways.
+- **OD-6(ii) send time.** The send time is captured in memory at the runtime
+  provider-boundary audit (`provider_invocation_started`). It is persisted in
+  the task's `verification_summary` child entry as `provider_call_started_at`.
+  `dispatched_at` then publishes it with basis `provider_call_start_time`.
+  (b) stays null. Records without the key keep their stored basis. There is
+  no F3 persisted-format change (OD-2).
+- **§4.3 item 3 is not attainable for governed change plans (pre-existing,
+  owner decision needed).** `tests/test_hamcp181_beta8_downgrade.py` ran the
+  exact beta.8 reader over thirteen PR2-candidate shapes.
+
+  Fan and power records meet item 3 fully. Every reader action makes zero
+  provider calls and changes no task or child file.
+
+  The governed plans do not. beta.8 quarantines every change plan written
+  since HAMCP-213 (first shipped in 2.4.1-beta.29). Its `ChangePlan.from_dict`
+  rejects two things:
+  - the `ConfigurationOperation` field `called_scripts`;
+  - policy version `f2-v3`.
+
+  The plan file then moves to `quarantine/`, `get_change_plan` answers
+  `change_plan_not_found`, and a duplicate apply is refused as not found
+  rather than as a duplicate. Execution tasks still load.
+
+  PR2 did not cause this and does not change it. Three `expectedFailure`
+  tests keep the item 3 plan requirements visible.
+- **Owner decision on the downgrade floor (Josh, 2026-10-25), options (i)
+  and (ii).** This supersedes §4.3 item 1 for governed plans.
+  - (i) beta.8 is documented as a **fan/power/task-only floor**. Its hiding
+    of governed plans written since beta.29 is an accepted pre-existing
+    limitation and is not fixed here.
+  - (ii) The supported **governed-plan rollback target is exactly
+    2.4.1-beta.36** (tag `v2.4.1-beta.36`, tag object
+    `a4ffc66ddf60095427a1f9f68f0d2c2121b94c3d`, commit
+    `16b724ec0b1d0fa8aae9705df569704f27ad783e`).
+    `tests/test_hamcp181_beta36_downgrade.py` runs that commit's reader,
+    from `git archive`, over the same PR2-candidate fixtures, under the
+    item 2 quiescence. It applies the item 3 checks, adds no-rewrite and
+    no-loss checks for plans, tasks, `verification_summary` and terminal
+    outcomes, and passes for all thirteen shapes. Beta.36 shows its own
+    display, for example `dispatched_at` at the intent commit time, which is
+    a §4.3 "not guaranteed" behavioral difference.
+- **`f3/contracts.py` (owner-confirmed, 2026-10-25).** It holds the shared
+  not-sent constants and is recorded in the §6 PR2 file table as an
+  owner-confirmed addition.

@@ -12,7 +12,7 @@ not import the ``f3`` package (packaging boundary).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -74,6 +74,22 @@ DISPATCHED_AT_NO_INTENT = "no_dispatch_intent"
 DISPATCHED_AT_CALL_NOT_SENT = "call_not_sent"
 DISPATCHED_AT_SEND_TIME_NOT_RECORDED = "send_time_not_recorded"
 DISPATCHED_AT_INTENT_COMMIT_TIME = "dispatch_intent_commit_time"
+# HAMCP-181 PR2 (OD-6(ii)): the exact send time, captured at the provider send
+# boundary (immediately before the provider client issues the one mutating
+# request, never at gateway entry), stored by the runtime in the task verification summary
+# map ``SEND_TIME_SUMMARY_KEY`` (child id -> time or ``null``) beside
+# ``children``, whose entries keep their shipped shape.  Published as
+# ``dispatched_at`` only for a child whose send is proven (a sent phase).  A
+# child listed in the map marks a PR2-written task: without a stored send time
+# its ``dispatched_at`` is ``null``, never the intent commit time.
+DISPATCHED_AT_PROVIDER_CALL_START = "provider_call_start_time"
+SEND_TIME_SUMMARY_KEY = "provider_call_started_at"
+# A parent (task, apply result or receipt) states the scope of its one
+# ``dispatched_at``: the earliest stored send time among its sent children.
+DISPATCHED_AT_SCOPE_PARENT = "earliest_child_send_time"
+
+# HAMCP-181 PR2 (T2, OD-5): the stored terminal outcome for (b).
+NOT_SENT_OUTCOME = "failed_after_intent_not_dispatched"
 
 # Recorded F3 diagnostic codes read by the predicates.
 DASHBOARD_CAPABILITY_ID = "update_existing_dashboard"
@@ -159,6 +175,8 @@ class ChildFacts:
     dispatch_intent_recorded_at: str | None = None
     provider_response_recorded_at: str | None = None
     evidence_conflict: bool = False
+    send_time_captured: bool = False
+    provider_call_started_at: str | None = None
 
     @property
     def attempt_counts_basis(self) -> str:
@@ -223,6 +241,8 @@ class DispatchFacts:
     def outcome_code(self) -> str | None:
         if self.already_present:
             return ALREADY_PRESENT_OUTCOME
+        if self.not_sent:
+            return NOT_SENT_OUTCOME
         if self.dispatch_phase == PHASE_SENT_REJECTED_NO_MUTATION:
             return PROVIDER_REJECTED_MUTATION
         return None
@@ -286,6 +306,8 @@ class DispatchFacts:
         if include_dispatched_at:
             value["dispatched_at"] = self.dispatched_at
         value["dispatched_at_basis"] = self.dispatched_at_basis
+        if self.is_parent:
+            value["dispatched_at_scope"] = DISPATCHED_AT_SCOPE_PARENT
         value["dispatch_intent_recorded_at"] = self.dispatch_intent_recorded_at
         value["provider_response_recorded_at"] = self.provider_response_recorded_at
         return value
@@ -491,6 +513,13 @@ def _governed_child_basis(child: ChildFacts) -> str:
         return DISPATCHED_AT_NO_INTENT
     if child.phase == PHASE_INTENT_RECORDED_NOT_SENT:
         return DISPATCHED_AT_CALL_NOT_SENT
+    if child.send_time_captured:
+        return (
+            DISPATCHED_AT_PROVIDER_CALL_START
+            if child.phase in SENT_PHASES
+            and child.provider_call_started_at is not None
+            else DISPATCHED_AT_SEND_TIME_NOT_RECORDED
+        )
     if child.dispatch_intent_recorded_at is None:
         return DISPATCHED_AT_SEND_TIME_NOT_RECORDED
     return DISPATCHED_AT_INTENT_COMMIT_TIME
@@ -580,18 +609,39 @@ def dispatch_facts(
 
     established = children is not None and len(children) > 0
     resolved: tuple[ChildFacts, ...] = (
-        tuple(children)
+        _with_send_times(tuple(children), task)
         if established
         else (ChildFacts(None, None, PHASE_SEND_UNCERTAIN, evidence_conflict=True),)
     )
     agg = aggregate(resolved)
+    stored_outcome = getattr(task, "terminal_outcome", None)
+    if (stored_outcome == NOT_SENT_OUTCOME and not agg.all_not_sent) or (
+        stored_outcome == ALREADY_PRESENT_OUTCOME and not agg.all_already_present
+    ):
+        # A stored no-dispatch outcome that the child authority does not
+        # reproduce is an evidence conflict: never claim the stronger fact.
+        agg = Aggregate(PHASE_SEND_UNCERTAIN, True, None, False, False, False)
     stored_dispatched_at = getattr(task, "dispatched_at", None)
+    send_times = [
+        child.provider_call_started_at
+        for child in resolved
+        if child.phase in SENT_PHASES and child.provider_call_started_at is not None
+    ]
     if agg.phase in NO_INTENT_PHASES:
         dispatched_at = stored_dispatched_at
         basis = DISPATCHED_AT_NO_INTENT
     elif agg.phase == PHASE_INTENT_RECORDED_NOT_SENT:
         dispatched_at = None
         basis = DISPATCHED_AT_CALL_NOT_SENT
+    elif any(child.send_time_captured for child in resolved):
+        # PR2-written task (OD-6(ii)): the exact stored send time of the
+        # earliest proven send, or ``null`` until one is stored.
+        dispatched_at = _earliest(send_times)
+        basis = (
+            DISPATCHED_AT_PROVIDER_CALL_START
+            if dispatched_at is not None
+            else DISPATCHED_AT_SEND_TIME_NOT_RECORDED
+        )
     else:
         dispatched_at = stored_dispatched_at
         basis = (
@@ -622,6 +672,38 @@ def dispatch_facts(
     )
 
 
+def _with_send_times(
+    children: tuple[ChildFacts, ...], task: Any
+) -> tuple[ChildFacts, ...]:
+    """Attach the stored per-child send times from the task summary."""
+
+    summary = getattr(task, "verification_summary", None)
+    entries = summary.get(SEND_TIME_SUMMARY_KEY) if isinstance(summary, Mapping) else None
+    if not isinstance(entries, Mapping):
+        return children
+    stored: dict[str, Any] = {
+        child_id: value
+        for child_id, value in entries.items()
+        if isinstance(child_id, str)
+    }
+    if not stored:
+        return children
+    return tuple(
+        replace(
+            child,
+            send_time_captured=True,
+            provider_call_started_at=(
+                stored[child.child_id]
+                if isinstance(stored[child.child_id], str)
+                else None
+            ),
+        )
+        if child.child_id in stored
+        else child
+        for child in children
+    )
+
+
 def legacy_dispatch_facts(task: Any) -> DispatchFacts:
     """Facts for a task without F3 child authority.
 
@@ -629,8 +711,11 @@ def legacy_dispatch_facts(task: Any) -> DispatchFacts:
     dispatch is conservatively (c); nothing else is inferred.
     """
 
+    # A stored (b) outcome without child authority stays (c).
     dispatched = bool(
-        getattr(task, "dispatched_at", None) or getattr(task, "provider_attempts", None)
+        getattr(task, "dispatched_at", None)
+        or getattr(task, "provider_attempts", None)
+        or getattr(task, "terminal_outcome", None) == NOT_SENT_OUTCOME
     )
     if dispatched:
         phase = PHASE_SEND_UNCERTAIN

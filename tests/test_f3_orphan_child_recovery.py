@@ -2969,7 +2969,11 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         child = public["f3_children"][0]
         self.assertEqual(1, result["active_recovery_transitions"])
         self.assertEqual("succeeded_verified", public["state"])
-        self.assertEqual("succeeded_verified", public["terminal_outcome"])
+        # HAMCP-181 PR2 (T2 case (a)): every child verified with no dispatch.
+        self.assertEqual(
+            "desired_state_already_present_not_dispatched",
+            public["terminal_outcome"],
+        )
         self.assertEqual("succeeded_verified", child["normalized_outcome"])
         self.assertEqual(0, child["dispatch_count"])
         self.assertEqual(terminal.events, self.runtime.children.get(

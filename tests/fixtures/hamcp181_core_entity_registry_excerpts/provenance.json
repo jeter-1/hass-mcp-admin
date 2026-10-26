@@ -1,0 +1,161 @@
+{
+  "consumer": "tests/test_hamcp181_entity_registry_error_unproven.py",
+  "line_ranges": "1-based, inclusive, decorators included; excerpt bytes are the exact source lines including the final newline",
+  "purpose": "HAMCP-181 R3-1 regression: Core can assign an entity-registry entry and then answer config/entity_registry/update with an error result",
+  "retrieval": "read-only HTTPS GET of raw.githubusercontent.com at the exact commit; no other source",
+  "retrieved": "2026-10-25",
+  "revisions": {
+    "core_2026_10_0": {
+      "commit": "6a811d3359c7b2076dc9e1cf900843a129c044af",
+      "core_version": "2026.10.0",
+      "excerpts": {
+        "config_entity_registry_websocket_update_entity.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/components/config/entity_registry.py#L154-L305",
+          "first_line": 154,
+          "last_line": 305,
+          "path": "homeassistant/components/config/entity_registry.py",
+          "sha256": "90f0ba7a6db076597603fbdecadacd25b8ca1de3c66db4f4f6f3f3e25ef88638",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/components/config/entity_registry.py",
+          "symbol": "websocket_update_entity"
+        },
+        "entity_registry_async_update_entity_private.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/helpers/entity_registry.py#L1947-L2134",
+          "first_line": 1947,
+          "last_line": 2134,
+          "path": "homeassistant/helpers/entity_registry.py",
+          "sha256": "14e0ae4f99e176fe204b14e731c1dea23b6f82c38959db4fdfe175dc43eaae60",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/helpers/entity_registry.py",
+          "symbol": "EntityRegistry._async_update_entity"
+        },
+        "entity_registry_async_update_entity_public.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/helpers/entity_registry.py#L2136-L2191",
+          "first_line": 2136,
+          "last_line": 2191,
+          "path": "homeassistant/helpers/entity_registry.py",
+          "sha256": "90b4c12f1a4dbadec705043150d3cbccfa0f2e5a86fc999b41535ae2ab2df003",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/helpers/entity_registry.py",
+          "symbol": "EntityRegistry.async_update_entity"
+        },
+        "websocket_api_connection_async_handle.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/components/websocket_api/connection.py#L199-L255",
+          "first_line": 199,
+          "last_line": 255,
+          "path": "homeassistant/components/websocket_api/connection.py",
+          "sha256": "c3cf32ecac4f654a276fe96430bee8e3170bc16526aed0dd62166a17b89d7082",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/components/websocket_api/connection.py",
+          "symbol": "ActiveConnection.async_handle"
+        },
+        "websocket_api_connection_async_handle_exception.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/components/websocket_api/connection.py#L281-L332",
+          "first_line": 281,
+          "last_line": 332,
+          "path": "homeassistant/components/websocket_api/connection.py",
+          "sha256": "2c8301de89d7aec9cbef7e41469c7af8465cf27abe474f673847888ffdfd576a",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/components/websocket_api/connection.py",
+          "symbol": "ActiveConnection.async_handle_exception"
+        },
+        "websocket_api_const_error_codes.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/components/websocket_api/const.py#L35-L46",
+          "first_line": 35,
+          "last_line": 46,
+          "path": "homeassistant/components/websocket_api/const.py",
+          "sha256": "3525042eee00913df8bbaf6fd4efec8a198fa6fa5d37607f5a3d55ff091d3cdb",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/components/websocket_api/const.py",
+          "symbol": "ERR_* error-code constants"
+        },
+        "websocket_api_decorators_require_admin.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/components/websocket_api/decorators.py#L54-L69",
+          "first_line": 54,
+          "last_line": 69,
+          "path": "homeassistant/components/websocket_api/decorators.py",
+          "sha256": "8df2996253952a8e787dba74b2f1d6e2d2817c0a3bdf9620c0bff8edf66423b0",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/6a811d3359c7b2076dc9e1cf900843a129c044af/homeassistant/components/websocket_api/decorators.py",
+          "symbol": "require_admin"
+        }
+      },
+      "full_file_sha256": {
+        "homeassistant/components/config/entity_registry.py": "b932ed29ee9a4d8ec0cf6f52b7862e809acb92deecfdbcfbe92ca231194e293e",
+        "homeassistant/components/websocket_api/connection.py": "a54ade029fa8ae3308e23444d6394347a7901f65e742ae6206f258f20c0c16f4",
+        "homeassistant/components/websocket_api/const.py": "8c797be2529ba7ff0d6d29b98ce9b84fe845fabc77520aecf743ba00efd1602a",
+        "homeassistant/components/websocket_api/decorators.py": "e69652a7301b374d65bbd7892707ecfb503bb6ecd89eca359d09088eb039051d",
+        "homeassistant/helpers/entity_registry.py": "f77b7ae946a0902136faadb3cfe45d17aca24fa639c43189295e101f5e47f425"
+      }
+    },
+    "core_2026_10_1": {
+      "commit": "abe1fdd7cd6b4de1715c87b6fd87d92699514ef9",
+      "core_version": "2026.10.1",
+      "excerpts": {
+        "config_entity_registry_websocket_update_entity.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/components/config/entity_registry.py#L154-L305",
+          "first_line": 154,
+          "last_line": 305,
+          "path": "homeassistant/components/config/entity_registry.py",
+          "sha256": "90f0ba7a6db076597603fbdecadacd25b8ca1de3c66db4f4f6f3f3e25ef88638",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/components/config/entity_registry.py",
+          "symbol": "websocket_update_entity"
+        },
+        "entity_registry_async_update_entity_private.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/helpers/entity_registry.py#L1947-L2134",
+          "first_line": 1947,
+          "last_line": 2134,
+          "path": "homeassistant/helpers/entity_registry.py",
+          "sha256": "14e0ae4f99e176fe204b14e731c1dea23b6f82c38959db4fdfe175dc43eaae60",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/helpers/entity_registry.py",
+          "symbol": "EntityRegistry._async_update_entity"
+        },
+        "entity_registry_async_update_entity_public.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/helpers/entity_registry.py#L2136-L2191",
+          "first_line": 2136,
+          "last_line": 2191,
+          "path": "homeassistant/helpers/entity_registry.py",
+          "sha256": "90b4c12f1a4dbadec705043150d3cbccfa0f2e5a86fc999b41535ae2ab2df003",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/helpers/entity_registry.py",
+          "symbol": "EntityRegistry.async_update_entity"
+        },
+        "websocket_api_connection_async_handle.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/components/websocket_api/connection.py#L199-L255",
+          "first_line": 199,
+          "last_line": 255,
+          "path": "homeassistant/components/websocket_api/connection.py",
+          "sha256": "c3cf32ecac4f654a276fe96430bee8e3170bc16526aed0dd62166a17b89d7082",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/components/websocket_api/connection.py",
+          "symbol": "ActiveConnection.async_handle"
+        },
+        "websocket_api_connection_async_handle_exception.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/components/websocket_api/connection.py#L281-L332",
+          "first_line": 281,
+          "last_line": 332,
+          "path": "homeassistant/components/websocket_api/connection.py",
+          "sha256": "2c8301de89d7aec9cbef7e41469c7af8465cf27abe474f673847888ffdfd576a",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/components/websocket_api/connection.py",
+          "symbol": "ActiveConnection.async_handle_exception"
+        },
+        "websocket_api_const_error_codes.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/components/websocket_api/const.py#L35-L46",
+          "first_line": 35,
+          "last_line": 46,
+          "path": "homeassistant/components/websocket_api/const.py",
+          "sha256": "3525042eee00913df8bbaf6fd4efec8a198fa6fa5d37607f5a3d55ff091d3cdb",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/components/websocket_api/const.py",
+          "symbol": "ERR_* error-code constants"
+        },
+        "websocket_api_decorators_require_admin.txt": {
+          "blob_url": "https://github.com/home-assistant/core/blob/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/components/websocket_api/decorators.py#L54-L69",
+          "first_line": 54,
+          "last_line": 69,
+          "path": "homeassistant/components/websocket_api/decorators.py",
+          "sha256": "8df2996253952a8e787dba74b2f1d6e2d2817c0a3bdf9620c0bff8edf66423b0",
+          "source_url": "https://raw.githubusercontent.com/home-assistant/core/abe1fdd7cd6b4de1715c87b6fd87d92699514ef9/homeassistant/components/websocket_api/decorators.py",
+          "symbol": "require_admin"
+        }
+      },
+      "full_file_sha256": {
+        "homeassistant/components/config/entity_registry.py": "b932ed29ee9a4d8ec0cf6f52b7862e809acb92deecfdbcfbe92ca231194e293e",
+        "homeassistant/components/websocket_api/connection.py": "a54ade029fa8ae3308e23444d6394347a7901f65e742ae6206f258f20c0c16f4",
+        "homeassistant/components/websocket_api/const.py": "8c797be2529ba7ff0d6d29b98ce9b84fe845fabc77520aecf743ba00efd1602a",
+        "homeassistant/components/websocket_api/decorators.py": "e69652a7301b374d65bbd7892707ecfb503bb6ecd89eca359d09088eb039051d",
+        "homeassistant/helpers/entity_registry.py": "f77b7ae946a0902136faadb3cfe45d17aca24fa639c43189295e101f5e47f425"
+      }
+    }
+  }
+}

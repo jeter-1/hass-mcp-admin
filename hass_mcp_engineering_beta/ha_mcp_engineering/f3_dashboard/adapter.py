@@ -24,6 +24,7 @@ from ..f3.contracts import (
     RecoveryContext,
     VerificationResult,
 )
+from ..f3.contracts import CALLBACK_FAILED_NOT_SENT_DECLARATION
 from ..governance.models import ApprovalState, ChangeOperation, PlanStatus
 from ..governance.normalize import stable_hash
 from .artifact_store import (
@@ -495,7 +496,23 @@ class DashboardUpdateAdapter:
                 provider_response_received=False,
                 diagnostic_codes=("ephemeral_bps_receipt_missing",),
             )
-        await before_dispatch()
+        try:
+            await before_dispatch()
+        except Exception:
+            # HAMCP-181 b5: the callback raised before the setter call, so
+            # nothing was sent.  The executor decides whether an intent was
+            # already durable; this result only declares the no-call.
+            return DispatchResult(
+                outcome=NormalizedOperationOutcome.FAILED_PRE_DISPATCH,
+                dispatch_intent_recorded=False,
+                mutating_invocation_count=0,
+                may_have_dispatched=False,
+                provider_response_received=False,
+                diagnostic_codes=(
+                    "dispatch_intent_persistence_failed",
+                    CALLBACK_FAILED_NOT_SENT_DECLARATION,
+                ),
+            )
         try:
             response = await self.gateway.write(
                 url_path=operation.target.target_id,

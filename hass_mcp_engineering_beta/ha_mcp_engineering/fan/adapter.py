@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 from ..f3.contracts import (
+    CALLBACK_FAILED_NOT_SENT_DECLARATION, PROVIDER_CALL_NOT_SENT,
     AdapterCapabilityDescriptor, DispatchResult, F3_ADAPTER_CONTRACT_MODEL,
     HA_MCP_PROVIDER_LOCK_KEY, LockMode, LockRequest, LockScope,
     NormalizedOperationOutcome as Outcome, ObservationResult, OperationTarget,
@@ -106,8 +107,9 @@ class FanAdapter:
 
     async def dispatch(self, prepared, preflight, *, before_dispatch):
         dispatched = False
+        callback_failed = False
         async def once():
-            nonlocal dispatched
+            nonlocal dispatched, callback_failed
             if dispatched:
                 raise ValueError("fan_duplicate_dispatch")
             state = await self.core.read(
@@ -115,7 +117,11 @@ class FanAdapter:
             )
             if digest(state) != prepared.current_state_fingerprint:
                 raise self.refusal("fan_state_changed")
-            await before_dispatch()
+            try:
+                await before_dispatch()
+            except Exception:
+                callback_failed = True
+                raise
             dispatched = True
         try:
             evidence = await self.provider.dispatch(prepared.request, once, contract=prepared.provider_contract)
@@ -123,9 +129,29 @@ class FanAdapter:
                 raise ValueError("fan_dispatch_boundary_missing")
             return DispatchResult(Outcome.OBSERVING, True, 1, True, True,
                                   response_evidence_hash=evidence)
-        except Exception:
+        except Exception as exc:
             if not dispatched:
+                if callback_failed:
+                    # HAMCP-181 b5: the intent callback raised inside the
+                    # provider's pre-call hook, so tools/call never ran.
+                    return DispatchResult(
+                        Outcome.FAILED_PRE_DISPATCH, False, 0, False, False,
+                        diagnostic_codes=(
+                            self.diagnostic("fan_dispatch_refused"),
+                            CALLBACK_FAILED_NOT_SENT_DECLARATION,
+                        ),
+                    )
                 raise self.refusal("fan_dispatch_refused") from None
+            if isinstance(exc, self.refusal) and getattr(exc, "call_not_sent", False) is True:
+                # HAMCP-181 b8: the provider's post-callback authority recheck
+                # refused strictly before tools/call.
+                return DispatchResult(
+                    Outcome.DISPATCH_FAILED_CONFIRMED, True, 1, True, False,
+                    diagnostic_codes=(
+                        PROVIDER_CALL_NOT_SENT,
+                        self.diagnostic("fan_provider_authority_retired"),
+                    ),
+                )
             return DispatchResult(
                 Outcome.DISPATCH_INDETERMINATE, True, 1, True, False,
                 diagnostic_codes=(self.diagnostic("fan_response_uncertain"),),

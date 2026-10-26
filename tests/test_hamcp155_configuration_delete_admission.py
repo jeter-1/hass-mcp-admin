@@ -294,9 +294,12 @@ class CatalogAndHealthTests(unittest.TestCase):
             "configuration_delete_provider"
         ]
 
-    def test_capability_shows_pending_admission(self):
+    def test_capability_states_the_admission_requirement(self):
+        # HAMCP-181 PR2 M2: the static entry is policy, not current status;
+        # list_capabilities projects the current admission (as health does).
         capability = capability_for_tool(TOOL)
-        self.assertEqual(capability["core_admission"], PENDING)
+        self.assertEqual(capability["core_admission_requirement"], "signed_core_registry_admission")
+        self.assertEqual(capability["core_admission"], "not_evaluated")
         self.assertEqual(capability["core_capabilities"], [DELETE])
         self.assertEqual(capability["resource_types"], ["automation", "script"])
         self.assertEqual(capability["max_deletions_per_plan"], 8)

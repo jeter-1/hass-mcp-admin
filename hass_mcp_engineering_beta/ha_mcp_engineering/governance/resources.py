@@ -16,6 +16,7 @@ from ..clients.paths import UnsafeRequestPathError, rest_path
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import AuthorizationError, HomeAssistantApiError
+from ..request_context import mark_provider_send
 from ..sanitization import (
     SegmentMemo,
     record_marker_collision_refusal,
@@ -133,6 +134,18 @@ class ConfigurationMutationNotDispatchedError(HomeAssistantApiError):
 
     mutation_dispatched = False
     mutation_completed = False
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        details: dict[str, Any] | None = None,
+        call_not_sent: bool = False,
+    ) -> None:
+        super().__init__(message, details=details)
+        # HAMCP-181 b2-L: set only by a raise site that runs strictly before
+        # the write is sent.  A received rejection never sets it.
+        self.call_not_sent = call_not_sent is True
 
 
 class ConfigurationMutationCompletedUnexpectedlyError(
@@ -754,7 +767,8 @@ class ConfigurationResourceGateway:
                     "operation": f"{resource_type}_config_create",
                     "resource_id": resource_id,
                     "reason": "helper_create_preflight_unavailable",
-                }
+                },
+                call_not_sent=True,
             ) from exc
         if existing is not None:
             raise ConfigurationMutationNotDispatchedError(
@@ -762,7 +776,8 @@ class ConfigurationResourceGateway:
                     "operation": f"{resource_type}_config_create",
                     "resource_id": resource_id,
                     "reason": "target_already_exists",
-                }
+                },
+                call_not_sent=True,
             )
         try:
             entity_state = await self.rest_client.request(
@@ -776,7 +791,8 @@ class ConfigurationResourceGateway:
                     "operation": f"{resource_type}_config_create",
                     "resource_id": resource_id,
                     "reason": "helper_create_preflight_unavailable",
-                }
+                },
+                call_not_sent=True,
             ) from exc
         if not (
             isinstance(entity_state, ExpectedHttpStatus)
@@ -787,8 +803,10 @@ class ConfigurationResourceGateway:
                     "operation": f"{resource_type}_config_create",
                     "resource_id": resource_id,
                     "reason": "target_entity_id_reserved",
-                }
+                },
+                call_not_sent=True,
             )
+        mark_provider_send()  # OD-6(ii): the exact send boundary
         result = await self.websocket_client.command(
             {"type": f"{resource_type}/create", **approved_config}
         )
@@ -854,7 +872,8 @@ class ConfigurationResourceGateway:
                         "operation": "entity_registry_metadata_update",
                         "resource_id": resource_id,
                         "reason": "closed_payload_violation",
-                    }
+                    },
+                    call_not_sent=True,
                 )
             return await self.entity_metadata.update(
                 resource_id,
@@ -884,6 +903,7 @@ class ConfigurationResourceGateway:
             resource_type, resource_id
         )
         id_field = _HELPER_ID_FIELDS[resource_type]
+        mark_provider_send()  # OD-6(ii): the exact send boundary
         result = await self.websocket_client.command(
             {
                 "type": f"{resource_type}/update",
@@ -1083,7 +1103,8 @@ class ConfigurationResourceGateway:
                     "operation": f"{resource_type}_configuration_write",
                     "reason": "invalid_identifier",
                     "provider_response_received": False,
-                }
+                },
+                call_not_sent=True,
             ) from exc
         if resource_type in {"automation", "script"}:
             # HAMCP-209/HAMCP-212: verify loaded against stored until the
@@ -1095,6 +1116,7 @@ class ConfigurationResourceGateway:
             else:
                 DEPENDENCY_ANALYSIS.note_script_write(resource_id)
         try:
+            mark_provider_send()  # OD-6(ii): the exact send boundary
             return await self.rest_client.request(
                 "POST",
                 path,

@@ -9,7 +9,11 @@ import inspect
 import time
 from typing import Any, Awaitable, Callable, Protocol
 
-from .contracts import ApprovalConsumptionRecorder
+from .contracts import (
+    CALLBACK_FAILED_NOT_SENT_DECLARATION,
+    PROVIDER_CALL_NOT_SENT,
+    ApprovalConsumptionRecorder,
+)
 from .locks import (
     DurableLockError,
     DurableLockStore,
@@ -101,6 +105,13 @@ def _authority_refusal_code(exc: BaseException) -> str:
     ):
         return str(code)
     return "dispatch_authority_unavailable"
+
+
+# HAMCP-181 PR2 (design section 5.2, b3/b4/b5): stage reasons recorded with
+# PROVIDER_CALL_NOT_SENT when an honoured callback-failure declaration proves
+# the durable intent was never followed by a send.
+STAGE_AUTHORITY_RETIRED_BEFORE_SEND = "dispatch_authority_retired_before_send"
+STAGE_BEFORE_DISPATCH_FAILED = "before_dispatch_failed"
 
 
 class SimulatedProcessLoss(BaseException):
@@ -601,6 +612,7 @@ class SharedOperationExecutor:
         irreversible_boundary_invoked = False
         approval_consumption_started = False
         approval_consumption_succeeded = False
+        callback_failed_after_intent: str | None = None
 
         async def before_dispatch() -> None:
             nonlocal irreversible_boundary_invoked
@@ -608,6 +620,7 @@ class SharedOperationExecutor:
             nonlocal approval_consumption_succeeded
             nonlocal dispatch_metric_recorded
             nonlocal external_commits
+            nonlocal callback_failed_after_intent
             if irreversible_boundary_invoked:
                 raise AdapterContractViolation(
                     "irreversible dispatch callback was invoked more than once"
@@ -654,21 +667,30 @@ class SharedOperationExecutor:
                 timing=self.executor_timing,
                 now=self.now(),
             )
-            self.metrics.increment("durable_intents_committed")
-            self.metrics.increment("dispatch_attempts")
-            dispatch_metric_recorded = True
-            self._inject("after_durable_intent_before_provider_invocation")
-            if dispatch_authority is not None:
-                if external_authority is None or external_commits is None:
-                    raise OperationExecutorError(
-                        "dispatch authority was not committed"
-                    )
-                if not dispatch_authority.revalidate(
-                    external_authority, external_commits
-                ):
-                    raise OperationExecutorError(
-                        "dispatch authority was retired after intent"
-                    )
+            # From here on the intent is durable.  A failure below is raised
+            # into the adapter before it can send; the stage is remembered so
+            # an adapter's not-sent declaration can be recorded truthfully.
+            stage = STAGE_BEFORE_DISPATCH_FAILED
+            try:
+                self.metrics.increment("durable_intents_committed")
+                self.metrics.increment("dispatch_attempts")
+                dispatch_metric_recorded = True
+                self._inject("after_durable_intent_before_provider_invocation")
+                if dispatch_authority is not None:
+                    if external_authority is None or external_commits is None:
+                        raise OperationExecutorError(
+                            "dispatch authority was not committed"
+                        )
+                    if not dispatch_authority.revalidate(
+                        external_authority, external_commits
+                    ):
+                        stage = STAGE_AUTHORITY_RETIRED_BEFORE_SEND
+                        raise OperationExecutorError(
+                            "dispatch authority was retired after intent"
+                        )
+            except Exception:
+                callback_failed_after_intent = stage
+                raise
 
         renewer = _LeaseRenewer(
             store=self.lock_store,
@@ -702,6 +724,34 @@ class SharedOperationExecutor:
                         code=refusal[0],
                         codes=refusal,
                     )
+                    self._release_safely(handle)
+                    return self._result(record)
+            if (
+                callback_failed_after_intent is not None
+                and self._declares_callback_not_sent(dispatch)
+            ):
+                # b3/b4/b5: the executor's own callback committed the intent
+                # and then raised, and the adapter declared that it stopped
+                # without sending.  The intent stays; nothing is redispatched.
+                persisted = self.execution_repository.get(identity.task_id)
+                if (
+                    persisted is not None
+                    and persisted.dispatch_intent is not None
+                    and not persisted.terminal
+                ):
+                    record = self.execution_repository.record_dispatch_result(
+                        identity.task_id,
+                        owner_id=identity.owner_id,
+                        claim_generation=claim.claim_generation,
+                        outcome="dispatch_failed_confirmed",
+                        provider_response_received=False,
+                        diagnostic_codes=(
+                            PROVIDER_CALL_NOT_SENT,
+                            callback_failed_after_intent,
+                        ),
+                        now=self.now(),
+                    )
+                    self.metrics.increment("confirmed_dispatch_failures")
                     self._release_safely(handle)
                     return self._result(record)
             self._validate_dispatch(dispatch)
@@ -925,6 +975,23 @@ class SharedOperationExecutor:
         except (AttributeError, TypeError, ValueError):
             return None
         return codes or None
+
+    def _declares_callback_not_sent(self, dispatch: object) -> bool:
+        """Whether the adapter declared that its callback failed unsent."""
+
+        codes = self._pre_intent_refusal_codes(dispatch)
+        if codes is None:
+            return False
+        try:
+            adapter_count = getattr(dispatch, "adapter_dispatch_count", 0)
+            mutation_count = getattr(dispatch, "provider_mutation_count", 0)
+        except AttributeError:
+            return False
+        return (
+            CALLBACK_FAILED_NOT_SENT_DECLARATION in codes
+            and adapter_count == 0
+            and mutation_count == 0
+        )
 
     @staticmethod
     def _validate_dispatch(dispatch: object) -> None:

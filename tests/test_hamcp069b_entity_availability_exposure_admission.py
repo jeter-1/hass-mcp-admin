@@ -354,9 +354,12 @@ class CatalogAndHealthTests(unittest.TestCase):
         summary = service.health_summary()
         return summary["operational_administration"]["entity_availability_exposure_provider"]
 
-    def test_capability_shows_pending_admission(self):
+    def test_capability_states_the_admission_requirement(self):
+        # HAMCP-181 PR2 M2: the static entry is policy, not current status;
+        # list_capabilities projects the current admission (as health does).
         capability = capability_for_tool(TOOL)
-        self.assertEqual(capability["core_admission"], "pending_signed_registry_admission")
+        self.assertEqual(capability["core_admission_requirement"], "signed_core_registry_admission")
+        self.assertEqual(capability["core_admission"], "not_evaluated")
         self.assertEqual(sorted(capability["core_capabilities"]), [EXPOSURE, AVAILABILITY])
         self.assertEqual(capability["max_entities_per_plan"], 8)
         self.assertEqual(

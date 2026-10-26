@@ -20,6 +20,7 @@ from typing import Any
 
 from ..entity_ids import validate_entity_id
 from ..errors import AuthorizationError, HomeAssistantApiError
+from ..request_context import mark_provider_send
 from .normalize import stable_hash
 
 
@@ -591,9 +592,11 @@ class EntityRegistryMetadataGateway:
                     "operation": ENTITY_METADATA_PROVIDER_OPERATION,
                     "resource_id": entity_id,
                     "reason": "closed_payload_violation",
-                }
+                },
+                call_not_sent=True,
             )
         try:
+            mark_provider_send()  # OD-6(ii): the exact send boundary
             result = await self.websocket_client.command(dict(command))
         except AuthorizationError as exc:
             # The websocket client raises this either while authenticating,
@@ -609,7 +612,14 @@ class EntityRegistryMetadataGateway:
                     "provider_response_received": (
                         details.get("provider_response_received") is True
                     ),
-                }
+                },
+                # b2-A: only the client's pre-command authorization failure
+                # carries the not-sent attribute; an ``unauthorized`` result
+                # was answered after the command was sent (P3).
+                call_not_sent=(
+                    getattr(exc, "call_not_sent", False) is True
+                    and details.get("provider_response_received") is not True
+                ),
             ) from exc
         except HomeAssistantApiError as exc:
             details = exc.details if isinstance(exc.details, dict) else {}

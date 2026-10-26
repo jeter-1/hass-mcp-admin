@@ -50,6 +50,9 @@ class StrategyDispatch:
     provider_backup_id: str | None = None
     confirmed_failure: bool = False
     diagnostic_code: str = "provider_response_received"
+    # HAMCP-181 b5 (helper state only): the gateway declared that its
+    # dispatch callback raised before the command was sent.
+    call_not_sent: bool = False
 
 
 @dataclass(frozen=True)
@@ -850,6 +853,13 @@ class InputBooleanStateOperationStrategy(OperationalStrategy):
                 before_dispatch=before_dispatch,
             )
         except HelperStateGatewayError as exc:
+            if exc.call_not_sent:
+                return StrategyDispatch(
+                    response_received=False,
+                    response_evidence_hash=None,
+                    diagnostic_code="before_dispatch_failed",
+                    call_not_sent=True,
+                )
             if not exc.dispatched:
                 raise
             confirmed = exc.category == "provider_rejected"

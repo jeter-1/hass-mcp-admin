@@ -85,6 +85,12 @@ EXPECTED_CONSUMERS = {
         # HAMCP-069B: reads only the static ALREADY_PRESENT_CAPABILITY_IDENTITIES
         # constant (the V9 identity set), never a projected dispatch fact.
         "F3RuntimeIntegration._entity_metadata_not_dispatched",
+        # HAMCP-181 PR2 producers: the T2 terminal outcome and summary keys
+        # (design section 6), the send-time entry for an intent-bearing child
+        # (OD-6(ii)), and the OD-11 refusal-only gate.
+        "F3RuntimeIntegration._project_locked",
+        "F3RuntimeIntegration._summary_send_times",
+        "F3RuntimeIntegration._plan_fresh_rollback",
     },
     "governance/service.py": {
         "ChangeGovernanceService._build_health_summary",
@@ -245,7 +251,18 @@ def _on_refusal_path(node: ast.AST, function: ast.AST, parents) -> bool:
     current = node
     while current is not function:
         parent = parents[current]
-        # A branch condition is the decision itself, never a refusal detail.
+        # A branch condition is the decision itself, never a refusal detail,
+        # except a refusal-only gate (design section 5, "except the stricter
+        # refusal"; HAMCP-181 PR2 OD-11): an ``if`` with no ``else`` whose
+        # body ends by raising can only refuse, never admit.
+        if (
+            isinstance(parent, ast.If)
+            and current is parent.test
+            and not parent.orelse
+            and parent.body
+            and isinstance(parent.body[-1], ast.Raise)
+        ):
+            return True
         if (
             isinstance(parent, (ast.If, ast.While, ast.IfExp, ast.Assert))
             and current is parent.test
@@ -262,6 +279,29 @@ def _on_refusal_path(node: ast.AST, function: ast.AST, parents) -> bool:
                     return True
         current = parent
     return False
+
+
+def _decision_references(tree: ast.Module):
+    """Count projection references in decision functions; list those not on a refusal path."""
+
+    imported = _imports_projection(tree)
+    parents = _parents(tree)
+    checked = 0
+    outside = []
+    for qualified, function in _decision_functions(tree).items():
+        tainted = _tainted_names(function, imported)
+        for node in _own_nodes(function):
+            reference = _is_fact_reference(node, imported) or (
+                isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id in tainted
+            )
+            if not reference:
+                continue
+            checked += 1
+            if not _on_refusal_path(node, function, parents):
+                outside.append((qualified, node.lineno))
+    return checked, outside
 
 
 def _decision_functions(tree: ast.Module) -> dict[str, ast.AST]:
@@ -282,6 +322,121 @@ def _decision_functions(tree: ast.Module) -> dict[str, ast.AST]:
         if calls_stored_predicate or named_decision:
             decisions[qualified] = function
     return decisions
+
+
+def _reads_legacy_field(node: ast.AST, tainted: set[str] = frozenset()) -> bool:
+    """Reads a legacy stored field directly or through a tainted local name."""
+
+    return any(
+        (isinstance(item, ast.Attribute) and item.attr in LEGACY_FIELDS)
+        or (
+            isinstance(item, ast.Name)
+            and isinstance(item.ctx, ast.Load)
+            and item.id in tainted
+        )
+        for item in ast.walk(node)
+    )
+
+
+def _legacy_tainted_names(function: ast.AST, parents) -> set[str]:
+    """Local names derived (data or branch dependence) from a legacy field.
+
+    HAMCP-181 PR1 review L1: an alias such as
+    ``flag = len(task.provider_attempts) > 0`` followed by
+    ``{"provider_dispatch_occurred": flag}`` is the same bare legacy
+    calculation and must fail the guard.
+    """
+
+    tainted: set[str] = set()
+
+    def guarded(node: ast.AST) -> bool:
+        current = node
+        while current is not function and current in parents:
+            parent = parents[current]
+            if isinstance(parent, (ast.If, ast.While, ast.IfExp)) and current is not parent.test:
+                if _reads_legacy_field(parent.test, tainted):
+                    return True
+            current = parent
+        return False
+
+    changed = True
+    while changed:
+        changed = False
+        for node in _own_nodes(function):
+            if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                if node.value is None:
+                    continue
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                value = node.value
+            elif isinstance(node, ast.NamedExpr):
+                targets, value = [node.target], node.value
+            elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+                targets, value = [node.target], node.iter
+            else:
+                continue
+            if not (_reads_legacy_field(value, tainted) or guarded(node)):
+                continue
+            for target in targets:
+                for item in ast.walk(target):
+                    if isinstance(item, ast.Name) and item.id not in tainted:
+                        tainted.add(item.id)
+                        changed = True
+    return tainted
+
+
+def _projected_pairs(node: ast.AST):
+    if isinstance(node, ast.Dict):
+        return [
+            (key.value, value)
+            for key, value in zip(node.keys, node.values)
+            if isinstance(key, ast.Constant)
+        ]
+    if isinstance(node, ast.Call):
+        return [(item.arg, item.value) for item in node.keywords]
+    if isinstance(node, ast.Assign):
+        return [
+            (target.slice.value, node.value)
+            for target in node.targets
+            if isinstance(target, ast.Subscript)
+            and isinstance(target.slice, ast.Constant)
+        ]
+    return []
+
+
+def _legacy_derived_keys(tree: ast.Module) -> list[str]:
+    """``<scope>:<key>`` for every projected key computed from a legacy field."""
+
+    parents = _parents(tree)
+    found = []
+    scopes = [("<module>", tree, set())]
+    scopes += [
+        (qualified, function, _legacy_tainted_names(function, parents))
+        for qualified, function in _functions(tree)
+    ]
+    for qualified, scope, tainted in scopes:
+        nodes = (
+            _own_nodes(scope)
+            if scope is not tree
+            else (
+                node
+                for node in ast.walk(tree)
+                if not any(
+                    isinstance(ancestor, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    for ancestor in _ancestors(node, parents)
+                )
+            )
+        )
+        for node in nodes:
+            for key, value in _projected_pairs(node):
+                if key in PROJECTED_KEYS and _reads_legacy_field(value, tainted):
+                    found.append(f"{qualified}:{key}")
+    return found
+
+
+def _ancestors(node: ast.AST, parents):
+    while node in parents:
+        node = parents[node]
+        yield node
 
 
 class ProjectionImportBoundaryTests(unittest.TestCase):
@@ -344,28 +499,46 @@ class ProjectionConsumerTests(unittest.TestCase):
     def test_decision_functions_consult_the_projection_only_to_word_a_refusal(self):
         checked = 0
         for relative in sorted(PROJECTION_HOSTS):
-            tree = _tree(relative)
-            imported = _imports_projection(tree)
-            parents = _parents(tree)
-            for qualified, function in _decision_functions(tree).items():
-                tainted = _tainted_names(function, imported)
-                for node in _own_nodes(function):
-                    reference = _is_fact_reference(node, imported) or (
-                        isinstance(node, ast.Name)
-                        and isinstance(node.ctx, ast.Load)
-                        and node.id in tainted
+            references, outside = _decision_references(_tree(relative))
+            checked += references
+            for qualified, line in outside:
+                with self.subTest(function=qualified, line=line):
+                    self.fail(
+                        f"{relative}:{line} {qualified} consults the "
+                        "dispatch-facts projection outside a refusal"
                     )
-                    if not reference:
-                        continue
-                    checked += 1
-                    with self.subTest(function=qualified, line=node.lineno):
-                        self.assertTrue(
-                            _on_refusal_path(node, function, parents),
-                            f"{relative}:{node.lineno} {qualified} consults the "
-                            "dispatch-facts projection outside a refusal",
-                        )
         # The cancel refusals really are covered (not vacuous).
         self.assertGreater(checked, 0)
+
+    def test_refusal_only_gate_cannot_be_widened_into_an_admission(self):
+        """HAMCP-181 PR2 OD-11: only an ``if`` that can solely refuse passes."""
+
+        source = (RUNTIME / "f3_runtime/runtime.py").read_text(encoding="utf-8")
+        gate = "            if self.dispatch_facts_for_task(task).changed_by_engineering is False:\n"
+        self.assertEqual(source.count(gate), 1)
+        start = source.index(gate)
+        raise_at = source.index("                raise GovernanceError(\n", start)
+        end = source.index("                )\n", raise_at) + len("                )\n")
+        block = source[start:end]
+        self.assertEqual(_decision_references(ast.parse(source))[1], [])
+        mutants = {
+            # An else branch makes the condition decide an admission.
+            "else_admits": block + "            else:\n                pass\n",
+            # Returning instead of raising admits a different path.
+            "return_not_raise": block.replace(
+                "                raise GovernanceError(", "                return GovernanceError(", 1),
+            # A trailing statement after the raise-bearing body admits.
+            "body_does_not_end_by_raising": block.replace(
+                "                raise GovernanceError(",
+                "                _unused = GovernanceError(", 1),
+        }
+        for name, mutated_block in mutants.items():
+            with self.subTest(mutant=name):
+                mutated = source[:start] + mutated_block + source[end:]
+                self.assertIn(
+                    "F3RuntimeIntegration._plan_fresh_rollback",
+                    {qualified for qualified, _ in _decision_references(ast.parse(mutated))[1]},
+                )
 
     def test_stored_intent_predicate_is_unchanged(self):
         tree = _tree("governance/service.py")
@@ -419,13 +592,6 @@ class LegacyPredicateTests(unittest.TestCase):
             for item in operands
         )
 
-    @staticmethod
-    def _reads_legacy(node: ast.AST) -> bool:
-        return any(
-            isinstance(item, ast.Attribute) and item.attr in LEGACY_FIELDS
-            for item in ast.walk(node)
-        )
-
     def test_no_bare_legacy_predicate_outside_the_stored_intent_decision(self):
         found = []
         for path in sorted(RUNTIME.rglob("*.py")):
@@ -440,37 +606,67 @@ class LegacyPredicateTests(unittest.TestCase):
         )
 
     def test_public_dispatch_fields_are_not_derived_from_legacy_stored_fields(self):
+        found = []
         for path in sorted(RUNTIME.rglob("*.py")):
             relative = path.relative_to(RUNTIME).as_posix()
             if relative == PROJECTION:
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                pairs = []
-                if isinstance(node, ast.Dict):
-                    pairs = [
-                        (key.value, value)
-                        for key, value in zip(node.keys, node.values)
-                        if isinstance(key, ast.Constant)
-                    ]
-                elif isinstance(node, ast.Call):
-                    pairs = [(item.arg, item.value) for item in node.keywords]
-                elif isinstance(node, ast.Assign):
-                    for target in node.targets:
-                        if (
-                            isinstance(target, ast.Subscript)
-                            and isinstance(target.slice, ast.Constant)
-                        ):
-                            pairs.append((target.slice.value, node.value))
-                for key, value in pairs:
-                    if key in PROJECTED_KEYS:
-                        with self.subTest(path=relative, line=value.lineno, key=key):
-                            self.assertFalse(
-                                self._reads_legacy(value),
-                                f"{relative}:{value.lineno} derives {key} from "
-                                "dispatched_at/provider_attempts",
-                            )
+            found += [f"{relative}:{item}" for item in _legacy_derived_keys(tree)]
+        self.assertEqual(found, [])
 
+    def test_guard_catches_an_aliased_legacy_calculation(self):
+        """HAMCP-181 PR1 review L1: the alias mutant must not pass the guard."""
+
+        relative = "governance/service.py"
+        source = (RUNTIME / relative).read_text(encoding="utf-8")
+        start = source.index("    def _task_plan_projection(\n")
+        end = source.index("\n    @staticmethod\n", start)
+        body = source[start:end]
+        original = (
+            '            "provider_dispatch_occurred": '
+            "facts.provider_dispatch_occurred,\n"
+        )
+        self.assertEqual(body.count(original), 1)
+        anchor = "        facts = facts if facts is not None else self._dispatch_facts(task)\n"
+        self.assertEqual(body.count(anchor), 1)
+        mutants = {
+            "alias": (
+                anchor + "        legacy_flag = len(task.provider_attempts) > 0\n",
+                '            "provider_dispatch_occurred": legacy_flag,\n',
+            ),
+            "chained_alias": (
+                anchor
+                + "        attempts = task.provider_attempts\n"
+                + "        legacy_flag = bool(attempts)\n",
+                '            "provider_dispatch_occurred": legacy_flag,\n',
+            ),
+            "branch_assignment": (
+                anchor
+                + "        legacy_flag = False\n"
+                + "        if task.dispatched_at is not None:\n"
+                + "            legacy_flag = True\n",
+                '            "provider_dispatch_occurred": legacy_flag,\n',
+            ),
+            "walrus": (
+                anchor,
+                '            "provider_dispatch_occurred": '
+                "(legacy_flag := task.dispatched_at is not None),\n",
+            ),
+        }
+        self.assertEqual(_legacy_derived_keys(ast.parse(source)), [])
+        for name, (prefix, entry) in mutants.items():
+            with self.subTest(mutant=name):
+                mutated_body = body.replace(anchor, prefix, 1).replace(
+                    original, entry, 1
+                )
+                self.assertNotEqual(mutated_body, body)
+                mutated = source[:start] + mutated_body + source[end:]
+                self.assertIn(
+                    "ChangeGovernanceService._task_plan_projection:"
+                    "provider_dispatch_occurred",
+                    _legacy_derived_keys(ast.parse(mutated)),
+                )
 
 if __name__ == "__main__":
     unittest.main()

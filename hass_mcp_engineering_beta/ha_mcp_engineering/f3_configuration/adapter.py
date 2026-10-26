@@ -15,6 +15,10 @@ from ha_mcp_engineering.f3.contracts import (
     OperationTarget,
     RecoveryContext,
 )
+from ha_mcp_engineering.f3.contracts import (
+    CALLBACK_FAILED_NOT_SENT_DECLARATION,
+    PROVIDER_CALL_NOT_SENT,
+)
 from ha_mcp_engineering.f3.locks import (
     normalize_lock_requests as normalize_durable_lock_requests,
 )
@@ -512,6 +516,9 @@ class ConfigurationOperationAdapter:
         try:
             await before_dispatch()
         except Exception:
+            # Nothing has been sent: the not-sent declaration lets the
+            # executor record a proven no-call when its callback failed after
+            # the durable intent (HAMCP-181 b3/b4/b5).
             self._increment("intent_failures")
             return self._dispatch_result(
                 operation,
@@ -520,7 +527,10 @@ class ConfigurationOperationAdapter:
                 invocation_count=0,
                 may_have_dispatched=False,
                 response_received=False,
-                codes=("dispatch_intent_persistence_failed",),
+                codes=(
+                    "dispatch_intent_persistence_failed",
+                    CALLBACK_FAILED_NOT_SENT_DECLARATION,
+                ),
                 provider_mutation_count=0,
             )
 
@@ -549,6 +559,15 @@ class ConfigurationOperationAdapter:
                     "provider_rejected_mutation"
                     if response_received
                     else "provider_confirmed_no_mutation",
+                    # b2-L/b2-A: only a raise site that runs strictly before
+                    # the write sets ``call_not_sent``; a received response
+                    # is never a no-call.
+                    *(
+                        (PROVIDER_CALL_NOT_SENT,)
+                        if not response_received
+                        and getattr(exc, "call_not_sent", False) is True
+                        else ()
+                    ),
                     *self.strategy.dispatch_error_codes(exc),
                 ),
                 provider_mutation_count=0,

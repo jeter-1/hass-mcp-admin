@@ -19,6 +19,9 @@ from ha_mcp_engineering.f3.contracts import (
     RecoveryContext,
     VerificationResult,
 )
+from ha_mcp_engineering.f3.contracts import (
+    CALLBACK_FAILED_NOT_SENT_DECLARATION,
+)
 from ha_mcp_engineering.f3.locks import (
     normalize_lock_requests as normalize_durable_lock_requests,
 )
@@ -723,6 +726,22 @@ class OperationalAdministrationAdapter:
         result = await strategy.dispatch(
             operation, before_dispatch=before_dispatch
         )
+        if result.call_not_sent and operation.operation == SET_INPUT_BOOLEAN_STATE:
+            # HAMCP-181 b5, helper state only: nothing was sent.  The
+            # executor records a proven no-call only when its own callback
+            # committed the intent and then raised.
+            self.metrics.increment(operation.operation, "intent_failures")
+            return DispatchResult(
+                outcome=NormalizedOperationOutcome.FAILED_PRE_DISPATCH,
+                dispatch_intent_recorded=False,
+                mutating_invocation_count=0,
+                may_have_dispatched=False,
+                provider_response_received=False,
+                diagnostic_codes=(
+                    "dispatch_intent_persistence_failed",
+                    CALLBACK_FAILED_NOT_SENT_DECLARATION,
+                ),
+            )
         self.metrics.increment(operation.operation, "intents_committed")
         self.metrics.increment(operation.operation, "dispatch_attempts")
         if result.response_received:

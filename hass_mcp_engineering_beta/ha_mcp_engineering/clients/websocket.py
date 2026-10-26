@@ -298,8 +298,10 @@ class HomeAssistantWebSocketClient:
                     if message.get("type") != "auth_ok":
                         record()
                         self._set_error(ErrorCode.AUTHORIZATION_FAILURE)
+                        # HAMCP-181 b2-A: the command frame is not written.
                         raise AuthorizationError(
-                            details=self._error_details(category)
+                            details=self._error_details(category),
+                            call_not_sent=True,
                         )
                     await websocket.send_json({"id": 1, **payload})
                     while True:
@@ -339,8 +341,10 @@ class HomeAssistantWebSocketClient:
             status = int(exc.status)
             if status in {401, 403}:
                 self._set_error(ErrorCode.AUTHORIZATION_FAILURE)
+                # HAMCP-181 b2-A: the handshake failed before any frame.
                 raise AuthorizationError(
-                    details=self._error_details(category, status=status)
+                    details=self._error_details(category, status=status),
+                    call_not_sent=True,
                 ) from exc
             self._set_error(ErrorCode.HA_API_ERROR)
             raise HomeAssistantApiError(
@@ -421,7 +425,11 @@ class HomeAssistantWebSocketClient:
                     message = await websocket.receive_json()
                     if message.get("type") != "auth_ok":
                         self._set_error(ErrorCode.AUTHORIZATION_FAILURE)
-                        raise AuthorizationError(details=self._error_details(category))
+                        # HAMCP-181 b2-A: no command frame is written.
+                        raise AuthorizationError(
+                            details=self._error_details(category),
+                            call_not_sent=True,
+                        )
                     sent = 0
                     received = 0
                     while received < len(payloads):
@@ -469,8 +477,10 @@ class HomeAssistantWebSocketClient:
             status = int(exc.status)
             if status in {401, 403}:
                 self._set_error(ErrorCode.AUTHORIZATION_FAILURE)
+                # HAMCP-181 b2-A: the handshake failed before any frame.
                 raise AuthorizationError(
-                    details=self._error_details(category, status=status)
+                    details=self._error_details(category, status=status),
+                    call_not_sent=True,
                 ) from exc
             self._set_error(ErrorCode.HA_API_ERROR)
             raise HomeAssistantApiError(

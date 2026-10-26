@@ -170,10 +170,22 @@ async def list_capabilities(status: str = "", category: str = "") -> str:
 
     Planned engineering capabilities are returned separately.
     """
+
+    def action() -> dict[str, Any]:
+        # Current Core admission from the snapshot health projects (M2).
+        service = getattr(HEALTH.governance, "service", None)
+        return build_capability_catalog(
+            status=status,
+            category=category,
+            core_admission=(
+                service.core_admission_snapshot() if service is not None else None
+            ),
+        )
+
     return await run_structured(
         "list_capabilities",
         "Returned the canonical tool catalog and additive beta capabilities.",
-        lambda: build_capability_catalog(status=status, category=category),
+        action,
         response_limit=SETTINGS.response_size_limit,
     )
 
