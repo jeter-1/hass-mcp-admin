@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
+from types import MappingProxyType
 from typing import Any, final
 from urllib.parse import quote, unquote
 import weakref
@@ -53,6 +54,8 @@ ROUTE_TEMPLATES = frozenset({
     "/addons/self/logs",
     "/config",
     "/config/automation/config/{}",
+    "/config/config_entries/options/flow",
+    "/config/config_entries/options/flow/{}",
     "/config/core/check_config",
     "/config/script/config/{}",
     "/core/logs",
@@ -63,6 +66,13 @@ ROUTE_TEMPLATES = frozenset({
     "/states",
     "/states/{}",
     "/template",
+})
+# HAMCP-232: a route listed here accepts only its reviewed methods; the
+# transport refuses any other method before a credential or session exists.
+# The options-flow routes are reached only by the helper-options gateway.
+ROUTE_METHODS: Mapping[str, frozenset[str]] = MappingProxyType({
+    "/config/config_entries/options/flow": frozenset({"POST"}),
+    "/config/config_entries/options/flow/{}": frozenset({"DELETE", "POST"}),
 })
 # Disposable-Core CI harness routes are not runtime routes: they live only
 # under ``scripts/`` with their own sender, outside the add-on image.
@@ -287,15 +297,22 @@ def _encode(
     return encoded
 
 
-def require_route(path: Any) -> Route:
-    """Return ``path`` if ``rest_path`` issued it; refuse anything else."""
+def require_route(path: Any, method: Any = None) -> Route:
+    """Return ``path`` if ``rest_path`` issued it; refuse anything else.
 
-    if is_route(path):
-        return path
-    raise UnsafeRequestPathError("unbound_request_path")
+    A method-bound route (``ROUTE_METHODS``) is refused for any other method,
+    including when no method is named.
+    """
+
+    if not is_route(path):
+        raise UnsafeRequestPathError("unbound_request_path")
+    allowed = ROUTE_METHODS.get(path.template)
+    if allowed is not None and method not in allowed:
+        raise UnsafeRequestPathError("route_method_not_allowed")
+    return path
 
 
-def request_url(api_url: str, path: Any) -> URL:
+def request_url(api_url: str, path: Any, method: Any = None) -> URL:
     """Return the exact URL for ``path`` after re-verifying its fixed route.
 
     Only an issued ``Route`` is accepted. Its template, every bound value
@@ -303,10 +320,10 @@ def request_url(api_url: str, path: Any) -> URL:
     client parses a string (requoting and dot-segment normalization). The
     request is refused unless that normalized URL keeps the base origin,
     the base path plus exactly the template's segments, the template's
-    query, and no fragment.
+    query, and no fragment. A method-bound route needs its reviewed method.
     """
 
-    route = require_route(path)
+    route = require_route(path, method)
     # Central guard: re-check the template, every bound value and the
     # encoding, however the route object came to hold them.
     if str.__str__(route) != _encode(route.template, route.values, route.kinds, route.query):
@@ -335,6 +352,7 @@ def request_url(api_url: str, path: Any) -> URL:
 
 __all__ = [
     "INVALID_IDENTIFIER_MESSAGE",
+    "ROUTE_METHODS",
     "ROUTE_TEMPLATES",
     "Route",
     "UnsafeRequestPathError",

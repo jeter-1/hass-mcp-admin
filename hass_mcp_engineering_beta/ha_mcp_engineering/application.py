@@ -186,6 +186,7 @@ def create_application(
     from .integration_inspection.runtime import INTEGRATION_INSPECTION
     from .backup_inventory.service import BACKUP_INVENTORY
     from .recorder_settings.service import RECORDER_SETTINGS
+    from .script_traces import SCRIPT_TRACES
     from .entity_reconciliation.service import ENTITY_RECONCILIATION
     from .configuration_definitions.service import CONFIGURATION_DEFINITIONS
     from .incident_logs.service import INCIDENT_LOGS
@@ -210,6 +211,8 @@ def create_application(
         HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings,
         yaml_reader_factory=lambda: UPSTREAM_READ_GATEWAY.yaml_config_reader(audit=audit),
     )
+    # HAMCP-232/145 §4b: dormant until a signed registry admits the profile.
+    SCRIPT_TRACES.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
     ENTITY_RECONCILIATION.configure(HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings),
                                     CORE_READMISSION, settings)
     CONFIGURATION_DEFINITIONS.configure(

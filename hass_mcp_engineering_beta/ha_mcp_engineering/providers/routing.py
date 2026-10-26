@@ -42,6 +42,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.INTEGRATION_INSPECTION,
     ProviderCapability.BACKUP_INVENTORY,
     ProviderCapability.RECORDER_SETTINGS,
+    ProviderCapability.SCRIPT_TRACE,
     ProviderCapability.HISTORY_SLICES,
     ProviderCapability.UNREGISTERED_ENTITIES,
     ProviderCapability.CONFIGURATION_DEFINITIONS,
@@ -131,6 +132,8 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_integration_inspection": ProviderCapability.INTEGRATION_INSPECTION,
     "get_backup_inventory": ProviderCapability.BACKUP_INVENTORY,
     "get_recorder_settings": ProviderCapability.RECORDER_SETTINGS,
+    "list_script_traces": ProviderCapability.SCRIPT_TRACE,
+    "get_script_trace": ProviderCapability.SCRIPT_TRACE,
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
@@ -185,6 +188,10 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     ),
     "create_label_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
     "create_configuration_delete_plan": (
+        ProviderCapability.OPERATIONAL_ADMINISTRATION
+    ),
+    "create_helper_options_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
+    "create_input_select_option_plan": (
         ProviderCapability.OPERATIONAL_ADMINISTRATION
     ),
     "get_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,
@@ -249,6 +256,16 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "get_recorder_settings": {
         "policy_id": "recorder_settings_read_v1", "access": "read", "orchestrator": "engineering",
         "scope": "admitted YAML reader at fixed recorder/homeassistant paths, recorder/info and up to 50 recorder/entity_options/get; db_url withheld",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "list_script_traces": {
+        "policy_id": "script_trace_list_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "one exact script key; trace/list domain script only; shared sanitizer before normalization; admitted core.script_trace_read only",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_script_trace": {
+        "policy_id": "script_trace_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "one exact script key and run id; trace/get domain script only; shared sanitizer before output; admitted core.script_trace_read only",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "get_history_slices": {

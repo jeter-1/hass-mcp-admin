@@ -184,6 +184,8 @@ from .backup_inventory import registered_tool as backup_inventory_tool
 from .recorder_settings import registered_tool as recorder_settings_tool
 from .entity_reconciliation import registered_tool as entity_reconciliation_tool
 from .configuration_definitions import registered_tool as configuration_definitions_tool
+from .script_traces import registered_get_tool as script_trace_get_tool
+from .script_traces import registered_list_tool as script_trace_list_tool
 
 _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integration_inspection_tool(),
                     "capture_automation_baseline": baseline_capture_tool(),
@@ -191,7 +193,9 @@ _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integ
                     "get_backup_inventory": backup_inventory_tool(),
                     "get_recorder_settings": recorder_settings_tool(),
                     "get_unregistered_entities": entity_reconciliation_tool(),
-                    "get_configuration_definitions": configuration_definitions_tool()})
+                    "get_configuration_definitions": configuration_definitions_tool(),
+                    "list_script_traces": script_trace_list_tool(),
+                    "get_script_trace": script_trace_get_tool()})
 
 
 # Freeze the exact local catalog before any admitted upstream reads are added.

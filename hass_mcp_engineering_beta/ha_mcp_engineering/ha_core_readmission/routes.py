@@ -151,8 +151,10 @@ INPUT_SELECT_TOOL = "create_input_select_option_plan"
 _F3_INPUT_SELECT_OPERATIONS = frozenset(
     {("set_exact_input_select_option", "set_input_select_option")}
 )
+INPUT_SELECT_TARGET_TYPE = "input_select"
 SCRIPT_TRACE_PROFILE = "core.script_trace_read"
 SCRIPT_TRACE_TOOLS = frozenset({"list_script_traces", "get_script_trace"})
+SCRIPT_TRACE_RESOURCE_TYPE = "script_trace"
 
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
@@ -258,6 +260,17 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
         "core.entity_registry_metadata_operation",
         LABEL_PROFILE,
     ),
+    # HAMCP-232/145: runtime-only, admitted only by an owner-signed registry.
+    HELPER_OPTIONS_TOOL: (
+        "core.dependency_helper_planning",
+        HELPER_OPTIONS_PROFILE,
+    ),
+    INPUT_SELECT_TOOL: (
+        "core.dependency_helper_planning",
+        INPUT_SELECT_PROFILE,
+    ),
+    "list_script_traces": (SCRIPT_TRACE_PROFILE,),
+    "get_script_trace": (SCRIPT_TRACE_PROFILE,),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
     "create_reload_plan": (
@@ -594,6 +607,24 @@ def static_tool_core_route(
     return StaticCoreRoute(CORE_ROUTE_UNMAPPED)
 
 
+# Static tools whose single runtime-only profile is refused
+# ``pending_signed_registry_admission`` before the request is validated,
+# before any target is bound and before any Core authority is acquired:
+# tool -> (reported resource type, profile).
+PENDING_ADMISSION_TOOLS: Mapping[str, tuple[str, str]] = MappingProxyType(
+    {
+        LABEL_TOOL: (LABEL_RESOURCE_TYPE, LABEL_PROFILE),
+        CONFIGURATION_DELETE_TOOL: (
+            CONFIGURATION_DELETE_TARGET_TYPE,
+            CONFIGURATION_DELETE_PROFILE,
+        ),
+        HELPER_OPTIONS_TOOL: (HELPER_OPTIONS_RESOURCE_TYPE, HELPER_OPTIONS_PROFILE),
+        INPUT_SELECT_TOOL: (INPUT_SELECT_TARGET_TYPE, INPUT_SELECT_PROFILE),
+        "list_script_traces": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
+        "get_script_trace": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
+    }
+)
+
 STATIC_TARGET_INVALID_ENTITY_ID = "entity_metadata_invalid_entity_id"
 STATIC_TARGET_INVALID_OPERATION = "entity_availability_exposure_invalid_operation"
 STATIC_TARGET_INVALID_ENTITY_IDS = "entity_availability_exposure_invalid_entity_ids"
@@ -627,6 +658,10 @@ def static_tool_target(
         return configuration_delete_target(arguments)
     if tool_name == LABEL_TOOL:
         return label_plan_target(arguments)
+    if tool_name == HELPER_OPTIONS_TOOL:
+        return helper_options_target(arguments)
+    if tool_name == INPUT_SELECT_TOOL:
+        return input_select_target(arguments)
     if tool_name != "create_entity_metadata_plan":
         return None
     entity_id = arguments.get("entity_id") if isinstance(arguments, dict) else None
@@ -727,6 +762,57 @@ def label_plan_target(arguments: Any) -> dict[str, str]:
     return {
         "target_type": LABEL_RESOURCE_TYPE,
         "target_id": ",".join(sorted(request.label_ids)),
+    }
+
+
+def helper_options_target(arguments: Any) -> dict[str, str]:
+    """Bind the 232 planner lease to its exact, bounded entity set.
+
+    The target identity is the sorted, comma-joined entity ids (a comma never
+    occurs in an entity id).  The planner's own closed validator runs first,
+    so every shape it would refuse is refused here with its reason.
+    """
+
+    # Imported at call time: governance composes this package at load.
+    from ..governance.helper_options_planning import (
+        HelperOptionsRefusal,
+        validate_request,
+    )
+
+    try:
+        request = validate_request(arguments)
+    except HelperOptionsRefusal as refusal:
+        field = refusal.details.get("field")
+        raise StaticToolTargetRefused(
+            refusal.reason_code,
+            field if isinstance(field, str) else "changes",
+        ) from None
+    return {
+        "target_type": HELPER_OPTIONS_RESOURCE_TYPE,
+        "target_id": request.lease_target_id,
+    }
+
+
+def input_select_target(arguments: Any) -> dict[str, str]:
+    """Bind the 145 planner lease to its one exact input_select entity."""
+
+    # Imported at call time: governance composes this package at load.
+    from ..governance.input_select_option_planning import (
+        InputSelectOptionRefusal,
+        validate_request,
+    )
+
+    try:
+        request = validate_request(arguments)
+    except InputSelectOptionRefusal as refusal:
+        field = refusal.details.get("field")
+        raise StaticToolTargetRefused(
+            refusal.reason_code,
+            field if isinstance(field, str) else "entity_id",
+        ) from None
+    return {
+        "target_type": INPUT_SELECT_TARGET_TYPE,
+        "target_id": request.lease_target_id,
     }
 
 
@@ -862,6 +948,18 @@ __all__ = [
     "LABEL_RESOURCE_TYPE",
     "LABEL_TOOL",
     "label_plan_target",
+    "HELPER_OPTIONS_PROFILE",
+    "HELPER_OPTIONS_RESOURCE_TYPE",
+    "HELPER_OPTIONS_TOOL",
+    "helper_options_target",
+    "INPUT_SELECT_PROFILE",
+    "INPUT_SELECT_TARGET_TYPE",
+    "INPUT_SELECT_TOOL",
+    "input_select_target",
+    "PENDING_ADMISSION_TOOLS",
+    "SCRIPT_TRACE_PROFILE",
+    "SCRIPT_TRACE_RESOURCE_TYPE",
+    "SCRIPT_TRACE_TOOLS",
     "StaticCoreRoute",
     "StaticToolTargetRefused",
     "static_tool_core_route",
