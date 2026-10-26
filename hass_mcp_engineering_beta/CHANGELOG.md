@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.4.1-beta.38 - November Core batch built inactive (HAMCP-232, HAMCP-145)
+
+Builds on 2.4.1-beta.37. Activates nothing new.
+
+- New tools `create_helper_options_plan`, `create_input_select_option_plan`,
+  `list_script_traces` and `get_script_trace` (static tools 68 -> 72). Each
+  refuses `pending_signed_registry_admission` before any read, request or
+  persistence until a signed Core registry sequence names its runtime-only
+  profile: `core.config_entry_helper_options_operation`,
+  `core.typed_input_select_option_operation` or `core.script_trace_read`.
+- Helper options (OD-1 to OD-8): template (sensor, binary_sensor), filter and
+  statistics; one helper domain and 1-8 entries per plan; baseline and
+  readback by opening and aborting the options flow for the plan's exact
+  entries only; one held, guarded submit per child; drift refused as
+  `stale_target_state`; pinned `read_only` fields; injected defaults
+  disclosed as `normalization_changes`; the accepted OD-7 window disclosed in
+  the plan and the apply response; separately approved rollback.
+- input_select option (OD-9 to OD-12): one exact `select_option` call;
+  per-option trigger disclosure; drift refused; a Core error after the send
+  decided by readback; separately approved rollback. `create_helper_state_plan`
+  and the input_boolean path are unchanged.
+- Script-trace reads: `trace/list` and `trace/get` with `domain: script`
+  only, sanitized through the shared sanitizer; no fallback.
+- Dormant sequence-15 evidence lanes and additive `ci.yml` wiring (OD-14).
+  Post-signing canaries defined, not run.
+- No signed registry, signed profile, fingerprint or existing persisted
+  format change. Rollback is reinstalling 2.4.1-beta.37.
+
 ## 2.4.1-beta.37 - Truthful stored outcomes (HAMCP-181 PR2, HAMCP-214, HAMCP-193)
 
 Builds on 2.4.1-beta.36. Activates nothing new.

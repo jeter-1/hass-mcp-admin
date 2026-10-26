@@ -1,5 +1,22 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.38** builds the November Core batch inactive
+(HAMCP-232, HAMCP-145): governed edits of existing template (sensor,
+binary_sensor), filter and statistics helpers through their options flow,
+governed input_select option selection, and sanitized script-trace reads. It
+activates nothing new: `create_helper_options_plan`,
+`create_input_select_option_plan`, `list_script_traces` and
+`get_script_trace` refuse `pending_signed_registry_admission` before any Home
+Assistant request until a signed Core registry sequence names their
+runtime-only profiles. The dormant sequence-15 evidence lanes are wired but
+do not run. No signed registry, signed profile, fingerprint or existing
+schema change; static tools 72, advertised catalog 100 (101 with the
+optional YAML reader). Read the
+[2.4.1-beta.38 release notes](docs/V2_4_1_BETA38_RELEASE_NOTES.md) and
+[2.4.1-beta.38 acceptance contract](docs/V2_4_1_BETA38_ACCEPTANCE.md).
+
+It builds on beta.37 below.
+
 Engineering **2.4.1-beta.37** stores truthful execution outcomes (HAMCP-181
 PR2, HAMCP-214, HAMCP-193). A call stopped after its dispatch intent, with
 positive proof that it was never sent, now reads
