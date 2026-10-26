@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime
-import re
 from typing import Any, Awaitable, Callable
 
+from .configuration_definitions import credentials
 from .reliability.timestamps import normalize_timestamp, parse_timestamp
 from .sanitization import (
     ReferenceMarkerRegistry,
@@ -18,11 +18,13 @@ from .sanitization import (
 
 MAX_TRACE_HEADERS = 100
 TRACE_STRING_LIMIT = 2_000
-# HAMCP-225: the shared rules carry no PEM rule, and a trace is now stored
-# for 90 days. A trace string holding a private-key PEM header is withheld
-# whole (an unmarked, header-less key body is not detected).
-_PRIVATE_KEY_PEM = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----", re.IGNORECASE)
-PRIVATE_KEY_MARKER = "[REDACTED:private_key]"
+# HAMCP-225 review 1 H1: deeper nesting than this is not screened; the
+# subtree is withheld whole and the result fails closed.
+TRACE_SCREEN_DEPTH = 64
+SCREEN_CATEGORIES = {
+    credentials.WITHHELD_MARKER: "credential_text",
+    credentials.UNVERIFIABLE_MARKER: "unverifiable_text",
+}
 
 
 @dataclass(frozen=True)
@@ -102,40 +104,81 @@ def sanitize_trace_detail(
 
     Every automation trace read that leaves Engineering or reaches the
     snapshot store passes here once; nothing is added to the value after it.
+
+    Review 1 H1 (architect direction): first the shared credential screen
+    HAMCP-132 and HAMCP-224 use (``credentials.screen`` with its labelled
+    forms), on every complete original string, dictionary keys included, at
+    every depth. A string it withholds is replaced whole by its marker; a
+    key it withholds drops its entry, key and value. Only then the strict
+    sanitizer runs, and truncation comes last, after the text was cleared.
+    There is no trace-specific rule.
     """
 
+    screened, withheld, categories, failed = screen_trace_value(detail, known_secrets)
     result = sanitize_untrusted_data(
-        detail,
+        screened,
         known_secrets=known_secrets,
         max_string=TRACE_STRING_LIMIT,
         registry=registry,
     )
-    withheld = 0
-
-    def walk(item: Any) -> Any:
-        nonlocal withheld
-        if type(item) is str:
-            if _PRIVATE_KEY_PEM.search(item) is None:
-                return item
-            withheld += 1
-            return PRIVATE_KEY_MARKER
-        if type(item) is dict:
-            return {key: walk(child) for key, child in item.items()}
-        if type(item) is list:
-            return [walk(child) for child in item]
-        return item
-
-    value = walk(result.value)
-    if not withheld:
+    if not withheld and not failed:
         return result
-    if registry is not None:
-        registry.register_output(PRIVATE_KEY_MARKER)
     return replace(
         result,
-        value=value,
         redacted_field_count=result.redacted_field_count + withheld,
-        redaction_categories=tuple(sorted({*result.redaction_categories, "private_key"})),
+        redaction_categories=tuple(sorted({*result.redaction_categories, *categories})),
+        failed_closed=result.failed_closed or failed,
     )
+
+
+def screen_trace_value(
+    value: Any, known_secrets: tuple[str, ...] = ()
+) -> tuple[Any, int, set[str], bool]:
+    """``(screened copy, strings and entries withheld, categories, failed closed)``.
+
+    The shared screen alone, without the strict sanitizer: every string and
+    every dictionary key, compared whole and as originally given.
+    """
+
+    withheld = 0
+    categories: set[str] = set()
+    failed = False
+    decided: dict[str, str | None] = {}
+
+    def marker(text: str) -> str | None:
+        if text not in decided:
+            decided[text] = credentials.screen(text, known_secrets, labelled=True)
+        return decided[text]
+
+    def walk(item: Any, depth: int) -> Any:
+        nonlocal withheld, failed
+        if depth > TRACE_SCREEN_DEPTH and type(item) in (dict, list, tuple):
+            withheld += 1
+            failed = True
+            categories.add(SCREEN_CATEGORIES[credentials.UNVERIFIABLE_MARKER])
+            return credentials.UNVERIFIABLE_MARKER
+        if type(item) is str:
+            found = marker(item)
+            if found is None:
+                return item
+            withheld += 1
+            categories.add(SCREEN_CATEGORIES[found])
+            return found
+        if type(item) is dict:
+            kept = {}
+            for key, child in item.items():
+                found = marker(key if type(key) is str else str(key))
+                if found is not None:
+                    withheld += 1
+                    categories.add(SCREEN_CATEGORIES[found])
+                    continue
+                kept[key] = walk(child, depth + 1)
+            return kept
+        if type(item) in (list, tuple):
+            return [walk(child, depth + 1) for child in item]
+        return item
+
+    return walk(value, 0), withheld, categories, failed
 
 
 def trace_sanitization_partial(result: SanitizationResult) -> bool:

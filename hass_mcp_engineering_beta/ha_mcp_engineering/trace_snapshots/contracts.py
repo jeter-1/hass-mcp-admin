@@ -55,6 +55,10 @@ RUN_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 # Caller attribution (a 12-hex caller hash, "anonymous" or "trace_watch").
 CALLER = re.compile(r"[A-Za-z0-9_.:-]{1,64}\Z")
 SNAPSHOT_ID = re.compile(r"[0-9a-f]{32}\Z")
+# An identifier the shared credential screen withholds is stored, audited and
+# returned only as this keyed digest (review H2); the form is reserved, so a
+# caller can never supply one.
+WITHHELD_ID = re.compile(r"withheld_[0-9a-f]{32}\Z")
 WATCH_ID = re.compile(r"[0-9a-f]{32}\Z")
 # get: <snapshot id>:<page>:<mac>; list: <captured ms>:<snapshot id>:<mac>.
 PAGE_CURSOR = re.compile(r"[0-9a-f]{32}:[0-9]{1,4}:[0-9a-f]{64}\Z")
@@ -90,7 +94,8 @@ class TraceSnapshotError(GovernanceError):
 
 
 def _automation_id(value):
-    if type(value) is not str or not AUTOMATION_CONFIG_ID_PATTERN.fullmatch(value):
+    if (type(value) is not str or not AUTOMATION_CONFIG_ID_PATTERN.fullmatch(value)
+            or WITHHELD_ID.fullmatch(value)):
         raise TraceSnapshotError("invalid_arguments")
     return value
 
@@ -110,7 +115,8 @@ def validate_capture(arguments):
     _closed(arguments, {"automation_id", "run_id", "include_condition_failures", "note"})
     _automation_id(arguments.get("automation_id"))
     run_id = arguments.get("run_id", "")
-    if type(run_id) is not str or (run_id and not RUN_ID.fullmatch(run_id)):
+    if type(run_id) is not str or (run_id and (not RUN_ID.fullmatch(run_id)
+                                               or WITHHELD_ID.fullmatch(run_id))):
         raise TraceSnapshotError("invalid_arguments")
     _strict_bool(arguments.get("include_condition_failures", False))
     note = arguments.get("note", "")
@@ -121,8 +127,10 @@ def validate_capture(arguments):
 def validate_list(arguments):
     _closed(arguments, {"automation_id", "limit", "cursor"})
     automation_id = arguments.get("automation_id", "")
-    if type(automation_id) is not str or (automation_id and not AUTOMATION_CONFIG_ID_PATTERN.fullmatch(automation_id)):
+    if type(automation_id) is not str:
         raise TraceSnapshotError("invalid_arguments")
+    if automation_id:
+        _automation_id(automation_id)
     limit = arguments.get("limit", 20)
     if type(limit) is not int or not 1 <= limit <= LIST_LIMIT:
         raise TraceSnapshotError("invalid_arguments")

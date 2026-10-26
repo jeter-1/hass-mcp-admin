@@ -48,17 +48,29 @@ The review needs a security section covering:
   `domain: "script"`, service call, reload, restart or deletion becomes
   reachable. The new writes are Engineering-local only (risk
   `engineering_evidence_write`).
-- **One sanitized exit.** `get_automation_trace` output passes the shared
-  trace sanitizer once (HAMCP-191 exit plus HAMCP-132 credential and
-  known-secret withholding). Capture sanitizes before anything is stored,
-  then runs one strict pass over the complete record. Read-back
-  re-sanitizes each page envelope (R1). Any withholding makes the result
-  `partial` with its categories.
+- **One sanitized exit, one shared screen (review H1).**
+  `get_automation_trace` output passes `sanitize_trace_detail` once: first the
+  shared `credentials.screen` (the HAMCP-132 and HAMCP-224 pipeline, labelled
+  forms) on every string and every dictionary key at every depth, then the
+  HAMCP-191 strict sanitizer, with truncation last. A flagged key withholds its
+  whole entry; nesting beyond 64 levels is withheld as unverifiable. There is
+  no trace-specific rule. Capture screens before anything is stored, then runs
+  one strict pass over the complete record. Read-back re-screens each page
+  envelope (R1 strict). Any withholding makes the result `partial` with its
+  categories.
+- **Identifiers (review H2).** An automation or run ID the screen flags is
+  replaced by `withheld_` and a per-process HMAC digest in the index, records,
+  watch list, audit rows, results and refusals; the gateway audit records
+  such an ID as `null` with `identifiers_withheld: true`. The reserved form is
+  refused as input. After a restart, a watch on a withheld ID ends with an
+  `identifier_unavailable` audit row.
 - **Store integrity.** `<governance_path>/trace-snapshots-v1/`: `flock`,
   `O_NOFOLLOW`, mode `0600`, temporary file plus `fsync` plus `rename`,
-  digest-checked loads, quarantine, a fail-closed index, and fixed
-  diagnostics with no payload. Bounds: 200 snapshots, 256 KiB each, 32 MiB,
-  90 days, 5 runs a capture.
+  digest-checked loads, a fail-closed index, and fixed diagnostics with no
+  payload. Bounds: 200 snapshots, 256 KiB each, 32 MiB, 90 days, 5 runs a
+  capture. A damaged record is deleted and leaves a content-free quarantine
+  stub; at most 20 stubs, aged on the 90-day rule, oldest dropped first and
+  counted (review H3).
 - **Capacity (E1 + E2).** A manual capture at capacity is refused
   (`store_full`). A watch evicts only its own oldest snapshot beyond its
   20-snapshot quota; manual snapshots are never evicted. Every eviction is
@@ -68,6 +80,11 @@ The review needs a security section covering:
   seconds, `trace/get` only for new stopped runs matching the mode, under
   its own Core authority lease. It pauses while authority is unavailable or
   the version is not admitted; missed runs are counted, not backfilled.
+  The first poll captures runs that finished after the watch was created
+  (review M1). Each watch gets an equal share of the remaining read time and
+  the start order rotates every tick (M2). Authority is re-checked before a
+  watch's reads are committed; after retirement nothing is stored and the
+  poller pauses (M3).
   Managing the list needs no plan or approval; every add and remove writes
   a required audit row with the caller, and every response returns the
   current list.
@@ -106,6 +123,16 @@ No test reaches a live system. Every transport is a synthetic fake.
   (E2) and a manual snapshot surviving a full watch quota; watch
   add, replace, remove and list with audit rows, and refusal when the audit
   is unavailable; negative command-shape checks (automation domain only).
+- `tests/test_hamcp225_cross_path_credentials.py`: every credential case
+  from the HAMCP-132 reviewer suites (`test_pr294_delta_review`,
+  `test_pr294_corr2_extra`, `test_pr294_final32_review`) and the HAMCP-224
+  reviewer suites (`test_pr313_independent_review`,
+  `test_pr313_delta_residuals`, `test_review2_ansi_residual`), 123 cases, as a
+  value and as a key in 12 trace positions, through the capture path (never
+  on disk, never returned, partial) and through `get_automation_trace`.
+- `tests/test_hamcp225_review1_{reviewer,store,wire}_probes.py`: the
+  independent reviewer's reproductions, unchanged, including the cross-watch
+  eviction test.
 - `tests/test_hamcp191_shared_sanitizer.py`: the new `SANITIZER_SITES`
   entries.
 - Catalog, routing and Core-gate pins updated to 72 static and 100 total

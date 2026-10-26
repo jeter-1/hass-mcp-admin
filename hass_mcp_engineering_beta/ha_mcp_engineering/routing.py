@@ -48,6 +48,7 @@ from .providers.dispatch import CANONICAL_DISPATCHER
 from .providers.routing import requires_prevalidation_enforcement
 from .identifiers import AUTOMATION_CONFIG_ID_PATTERN
 from .trace_snapshots import contracts as trace_contracts
+from .trace_snapshots.service import identifier_cleared as trace_identifier_cleared
 from .request_context import (
     RequestTelemetry,
     begin_request,
@@ -159,12 +160,24 @@ TRACE_SNAPSHOT_TOOLS = frozenset({
 })
 
 
-def _trace_snapshot_audit_parameters(tool_name, parameters):
-    """Bounded HAMCP-225 audit shape; a value is kept only when it is valid."""
+def _trace_snapshot_audit_parameters(tool_name, parameters, known_secrets=()):
+    """Bounded HAMCP-225 audit shape; a value is kept only when it is valid.
+
+    An identifier the shared trace screen withholds is never copied; its
+    field is ``None`` and ``identifiers_withheld`` is set (review H2).
+    """
+
+    withheld = False
 
     def matched(key, pattern):
+        nonlocal withheld
         value = parameters.get(key)
-        return value if type(value) is str and pattern.fullmatch(value) else None
+        if type(value) is not str or not pattern.fullmatch(value):
+            return None
+        if not trace_identifier_cleared(value, known_secrets):
+            withheld = True
+            return None
+        return value
 
     def bounded_int(key, default, low, high):
         value = parameters.get(key, default)
@@ -198,6 +211,7 @@ def _trace_snapshot_audit_parameters(tool_name, parameters):
             mode=mode if type(mode) is str and mode in trace_contracts.WATCH_MODES else None,
             duration_hours=bounded_int("duration_hours", 24, 1, trace_contracts.WATCH_MAX_HOURS),
         )
+    audit["identifiers_withheld"] = withheld
     audit["argument_fields"] = sorted(str(key)[:64] for key in parameters
                                       if key in _TRACE_SNAPSHOT_FIELDS[tool_name])
     audit["unknown_fields_present"] = any(key not in _TRACE_SNAPSHOT_FIELDS[tool_name] for key in parameters)
@@ -1432,7 +1446,8 @@ class AuthenticatedMcpGateway:
                     # HAMCP-225: pattern-checked identifiers and bounded flags
                     # only; note text, cursors and rejected values are never
                     # copied into the audit.
-                    audit_parameters = _trace_snapshot_audit_parameters(tool_name, parameters)
+                    audit_parameters = _trace_snapshot_audit_parameters(
+                        tool_name, parameters, self._known_secrets)
                     resource_ids = {}
                 elif tool_name == "capture_automation_baseline":
                     audit_parameters = {

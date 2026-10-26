@@ -363,17 +363,18 @@ class SanitizationTests(ServiceCase):
                 self.assertNotIn(needle, rendered)
         self.assertGreater(pages[0]["capture_sanitization"]["redacted_field_count"], 0)
 
-    async def test_partly_redacted_string_is_withheld_whole_on_read(self):
-        # Decision R1: the strict read pass withholds a string that still
-        # carries a capture-time marker, so its surrounding text is lost too.
+    async def test_string_with_a_known_secret_is_withheld_whole_at_capture(self):
+        # Review H1: the shared screen withholds the whole string before
+        # storage, so its surrounding text is never stored either.
         prose = "surrounding-prose-" + h.needle("prose") + " then " + KNOWN + " end"
         self.core.add("p1")
         self.core.details["p1"] = {**header("p1"), "trace": {
             "action/0": [{"path": "action/0", "result": {"message": prose}}]}}
         captured, _ = await self.service.capture(automation_id="a1", run_id="p1")
         stored = all_store_bytes(self.root)
-        self.assertIn(h.needle("prose").encode(), stored)
+        self.assertNotIn(h.needle("prose").encode(), stored)
         self.assertNotIn(KNOWN.encode(), stored)
+        self.assertIn(b"[withheld:credential_text]", stored)
         page, partial = await self.service.get(snapshot_id=captured["runs"][0]["snapshot_id"])
         self.assertTrue(partial)
         rendered = json.dumps(page)
@@ -574,6 +575,152 @@ class WatchTests(ServiceCase):
                 error = await self.refused(self.service.watch(**arguments))
                 self.assertEqual(error.reason, "invalid_arguments")
         self.assertEqual(self.audit.rows, [])
+
+
+class IdentifierTests(ServiceCase):
+    """Review H2: a withheld identifier is persisted, audited and returned only as a digest."""
+
+    # A run ID the labelled screen withholds; still a valid Core run ID.
+    LABELLED_RUN = "run-token-1"
+
+    def sinks(self, *responses):
+        return {
+            "store": all_store_bytes(self.root),
+            "audit": json.dumps(self.audit.rows).encode(),
+            "audit_context": json.dumps(self.telemetry.audit_context).encode(),
+            "responses": json.dumps(responses).encode(),
+        }
+
+    def assert_absent(self, raw, *responses):
+        for sink, found in self.sinks(*responses).items():
+            with self.subTest(sink=sink):
+                self.assertNotIn(raw.encode(), found)
+
+    async def test_capture_persists_and_returns_only_digests(self):
+        self.core.add(self.LABELLED_RUN)
+        captured, _ = await self.service.capture(automation_id=KNOWN)
+        stored_id = captured["automation_id"]
+        self.assertRegex(stored_id, c.WITHHELD_ID)
+        run = captured["runs"][0]
+        self.assertEqual(run["outcome"], "captured")
+        self.assertRegex(run["run_id"], c.WITHHELD_ID)
+        # The raw IDs were still what Core was read with.
+        self.assertEqual(self.core.sent[-1]["item_id"], KNOWN)
+        self.assertEqual(self.core.sent[-1]["run_id"], self.LABELLED_RUN)
+        entry = self.index()["snapshots"][0]
+        self.assertEqual((entry["automation_id"], entry["run_id"]), (stored_id, run["run_id"]))
+        # The caller filters by the raw ID; the digest is stable in-process.
+        listed, _ = await self.service.list(automation_id=KNOWN)
+        self.assertEqual([e["snapshot_id"] for e in listed["snapshots"]], [run["snapshot_id"]])
+        page, _ = await self.service.get(snapshot_id=run["snapshot_id"])
+        again, _ = await self.service.capture(automation_id=KNOWN, run_id=self.LABELLED_RUN)
+        self.assertEqual((again["automation_id"], again["requested_run_id"], again["runs"][0]["outcome"]),
+                         (stored_id, run["run_id"], "already_captured"))
+        self.assert_absent(KNOWN, captured, listed, page, again)
+        self.assert_absent(self.LABELLED_RUN, captured, listed, page, again)
+
+    async def test_clean_identifiers_are_kept(self):
+        self.core.add("r1")
+        captured, _ = await self.service.capture(automation_id="a1")
+        self.assertEqual((captured["automation_id"], captured["runs"][0]["run_id"]), ("a1", "r1"))
+        self.assertEqual(self.service.watch_sources, {})
+
+    async def test_watch_rows_audit_and_polls_use_the_digest(self):
+        added, _ = await self.service.watch(action="add", automation_id=KNOWN, mode="executed")
+        stored_id = added["watch"]["automation_id"]
+        self.assertRegex(stored_id, c.WITHHELD_ID)
+        await self.service.poll_once(authority=(7, VERSION))
+        self.core.add(self.LABELLED_RUN)
+        await self.service.poll_once(authority=(7, VERSION))
+        await self.service.poll_once(authority=(7, VERSION))
+        self.assertEqual({p["item_id"] for p in self.core.sent}, {KNOWN})
+        entries = self.index()["snapshots"]
+        self.assertEqual([(e["automation_id"], e["origin"]) for e in entries], [(stored_id, "trace_watch")])
+        watch = self.index()["watches"][0]
+        self.assertEqual(watch["seen_run_ids"], [entries[0]["run_id"]])
+        listed, _ = await self.service.watch(action="list")
+        removed, _ = await self.service.watch(action="remove", automation_id=KNOWN)
+        self.assertEqual(removed["watches"], [])
+        self.assertEqual(self.service.watch_sources, {})
+        self.assertEqual([r["automation_id"] for r in self.audit.rows],
+                         [stored_id, stored_id, stored_id])
+        self.assert_absent(KNOWN, added, listed, removed)
+        self.assert_absent(self.LABELLED_RUN, added, listed, removed)
+
+    async def test_refusals_never_echo_a_withheld_identifier(self):
+        await self.service.watch(action="add", automation_id=KNOWN)
+        for i in range(c.MAX_WATCHES - 1):
+            await self.service.watch(action="add", automation_id=f"w{i}")
+        limit = await self.refused(self.service.watch(action="add", automation_id="w_extra"))
+        self.assertEqual(limit.reason, "watch_limit")
+        await self.service.watch(action="remove", automation_id="w0")
+        missing = await self.refused(self.service.watch(action="remove",
+                                                        automation_id=KNOWN + "x"))
+        self.assertEqual(missing.reason, "watch_not_found")
+        self.audit.fail = True
+        audit = await self.refused(self.service.watch(action="remove", automation_id=KNOWN))
+        self.assertEqual(audit.reason, "audit_unavailable")
+        for error in (limit, missing, audit):
+            with self.subTest(reason=error.reason):
+                self.assertNotIn(KNOWN, json.dumps(error.details))
+                self.assertEqual(sum(w["automation_id"].startswith("withheld_")
+                                     for w in error.details["watches"]), 1)
+
+    async def test_digest_shaped_input_is_refused(self):
+        digest = "withheld_" + "0" * 32
+        for call in (self.service.capture(automation_id=digest),
+                     self.service.capture(automation_id="a1", run_id=digest),
+                     self.service.list(automation_id=digest),
+                     self.service.watch(action="add", automation_id=digest),
+                     self.service.watch(action="remove", automation_id=digest)):
+            error = await self.refused(call)
+            self.assertEqual(error.reason, "invalid_arguments")
+        self.assertEqual((self.core.sent, self.audit.rows), ([], []))
+
+    async def test_a_restart_ends_a_watch_whose_identifier_was_withheld(self):
+        await self.service.watch(action="add", automation_id=KNOWN)
+        await self.service.watch(action="add", automation_id="a1")
+        restarted = TraceSnapshotService(self.root, self.core.command, self.runtime, self.audit,
+                                         known_secrets=(KNOWN,), clock=self.clock)
+        await restarted.poll_once(authority=(7, VERSION))
+        self.assertEqual([w["automation_id"] for w in self.index()["watches"]], ["a1"])
+        self.assertEqual({p["item_id"] for p in self.core.sent}, {"a1"})
+        ended = self.audit.rows[-1]
+        self.assertEqual((ended["event"], ended["result_status"]),
+                         ("trace_watch_expired", "identifier_unavailable"))
+        self.assertRegex(ended["automation_id"], c.WITHHELD_ID)
+        # The caller may add it again: a new digest, polled with the raw ID.
+        added, _ = await restarted.watch(action="add", automation_id=KNOWN)
+        self.assertNotEqual(added["watch"]["automation_id"], ended["automation_id"])
+        self.assert_absent(KNOWN, added)
+
+    async def test_quarantine_stub_keeps_only_the_digest(self):
+        self.core.add("r1")
+        captured, _ = await self.service.capture(automation_id=KNOWN, run_id="r1")
+        snapshot_id = captured["runs"][0]["snapshot_id"]
+        path = self.root / c.MODEL / "records" / (snapshot_id + ".json")
+        path.write_bytes(path.read_bytes().replace(b"Synthetic", b"Tampered!"))
+        error = await self.refused(self.service.get(snapshot_id=snapshot_id))
+        self.assertEqual(error.reason, "store_invalid")
+        stub = self.index()["quarantine"]["entries"][0]
+        self.assertEqual(stub["automation_id"], captured["automation_id"])
+        self.assert_absent(KNOWN, captured)
+
+    def test_gateway_audit_parameters_never_copy_a_withheld_identifier(self):
+        for tool, arguments in (
+                ("capture_automation_trace", {"automation_id": KNOWN, "run_id": self.LABELLED_RUN}),
+                ("list_trace_snapshots", {"automation_id": KNOWN}),
+                ("set_automation_trace_watch", {"action": "add", "automation_id": KNOWN})):
+            with self.subTest(tool=tool):
+                audit = _trace_snapshot_audit_parameters(tool, arguments, (KNOWN,))
+                self.assertIsNone(audit["automation_id"])
+                self.assertTrue(audit["identifiers_withheld"])
+                self.assertNotIn(KNOWN, json.dumps(audit))
+                self.assertNotIn(self.LABELLED_RUN, json.dumps(audit))
+        clean = _trace_snapshot_audit_parameters("capture_automation_trace",
+                                                 {"automation_id": "a1", "run_id": "r1"}, (KNOWN,))
+        self.assertEqual((clean["automation_id"], clean["run_id"], clean["identifiers_withheld"]),
+                         ("a1", "r1", False))
 
 
 class QuarantineTests(ServiceCase):
@@ -981,7 +1128,8 @@ class GetAutomationTraceTests(unittest.IsolatedAsyncioTestCase):
         envelope = json.loads(raw)
         self.assertNotIn(h.needle("compat"), raw)
         self.assertNotIn(h.needle("compat_pem"), raw)
-        self.assertIn("private_key", envelope["metadata"]["sanitization"]["categories"])
+        # Review H1: the PEM is withheld whole by the shared credential screen.
+        self.assertIn("credential_text", envelope["metadata"]["sanitization"]["categories"])
         self.assertEqual(envelope["metadata"]["completeness"], "partial")
         self.assertEqual(envelope["metadata"]["sanitization"]["truncated_field_count"], 1)
         self.assertEqual(len(envelope["warnings"]), 1)

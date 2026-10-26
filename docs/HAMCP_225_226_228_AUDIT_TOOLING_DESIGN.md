@@ -537,10 +537,11 @@ What the HAMCP-225 pull request built, and where it refines sections 2.1 to
   `sanitize_trace_detail` once (one exit). Withheld or shortened content
   makes completeness `partial` with a fixed warning naming the categories.
   The tool description gains one sanitization disclosure; the input schema
-  is unchanged. `trace_normalization.py` gains a PEM-block pass, so a private
-  key with its `-----BEGIN ... PRIVATE KEY-----` header is withheld whole.
-  A header-less key body is not detected, and the trace/list header path is
-  not PEM-checked.
+  is unchanged. Since review 1 (H1) the screen is the shared one (see
+  "Review 1 corrections" below); a private key with its
+  `-----BEGIN ... PRIVATE KEY-----` header is withheld whole as credential
+  text. A header-less key body is not detected, and the trace/list header
+  path keeps the HAMCP-191 sanitizer only.
 - **Read tools.** `list_trace_snapshots` and `get_trace_snapshot` are open to
   any authenticated caller, like every other Engineering read. Their cursors
   are HMAC-bound to the caller identity with a per-process key, so a cursor
@@ -577,3 +578,39 @@ What the HAMCP-225 pull request built, and where it refines sections 2.1 to
   Historical descriptor baselines strip only the reviewed
   `get_automation_trace` disclosure text before comparing.
 
+### Review 1 corrections (PR #315)
+
+The independent review of `e2f981f1` found H1 to H3 and M1 to M3. The
+architect's direction (owner approved) and what changed:
+
+- **H1, one shared screen.** `sanitize_trace_detail` first applies
+  `credentials.screen(..., labelled=True)`, the pipeline HAMCP-132 and
+  HAMCP-224 use, to every complete original string and every dictionary key
+  at every depth; then the HAMCP-191 strict sanitizer; truncation last. A
+  flagged string becomes its marker whole; a flagged key drops its entry, key
+  and value; containers deeper than 64 levels become the unverifiable marker.
+  The earlier PEM regex is gone. Capture screens before anything is written;
+  read-back re-screens (R1 strict). `fetch_normalized_trace_list` is shared
+  with the reliability analysis and keeps the HAMCP-191 sanitizer only. The
+  HAMCP-191 `SANITIZER_SITES` inventory is unchanged (no new call site).
+  Tests: `tests/test_hamcp225_cross_path_credentials.py` runs every
+  HAMCP-132 and HAMCP-224 reviewer credential case through both paths.
+- **H2, identifiers.** An automation or run ID the same screen flags is
+  replaced by `withheld_` plus 32 hex of an HMAC keyed by the process secret,
+  in the index, records, watch list, audit rows, results and refusals. The
+  raw automation ID is held only in memory to poll Core. The reserved form
+  is refused as input. After a restart such a watch ends with an
+  `identifier_unavailable` audit row. The gateway audit records a withheld ID
+  as `null` with `identifiers_withheld: true`. Identifiers that contain a
+  credential word (for example `rotate_api_token`) are over-withheld.
+- **H3, bounded quarantine.** A damaged record is deleted; the index keeps
+  at most `QUARANTINE_MAX = 20` content-free stubs (identity, observed
+  length, digest), aged on the 90-day rule; the oldest is dropped and
+  counted.
+- **M1.** The first poll captures runs that finished after the watch was
+  created; earlier runs are history.
+- **M2.** Each watch gets an equal share of the time left in the tick, and
+  the first watch rotates every tick.
+- **M3.** Before a watch's reads are committed, the tick's lease and exact
+  Core generation are re-checked; after retirement nothing is stored, the
+  rest of the tick is skipped and the poller pauses.

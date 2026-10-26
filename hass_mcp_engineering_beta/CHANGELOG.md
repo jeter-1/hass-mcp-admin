@@ -11,22 +11,30 @@ Builds on 2.4.1-beta.38. Adds no Home Assistant write.
   requires `core.automation_trace_read`.
 - New `list_trace_snapshots` and `get_trace_snapshot` (paged): no Home
   Assistant call; caller-bound cursors that end at a restart; read-back is
-  re-sanitized and a partly redacted string is withheld whole (R1).
+  re-screened and a withheld string stays withheld whole (R1 strict).
 - New `set_automation_trace_watch` (`add`, `remove`, `list`): no plan or
   approval; every add and remove is audited with the caller and every
   response returns the list. At most 10 watches, 168 hours each. A bounded
   poller lists each watched automation's traces every 30 seconds and
   captures new stopped runs matching the mode; it pauses without Core
-  authority and counts missed runs.
+  authority and counts missed runs. The first poll captures runs finished
+  after the watch was created; each watch gets an equal, rotating share of
+  the tick; authority is re-checked before a watch's reads are stored.
 - Store `trace-snapshots-v1` under the governance path: 200 snapshots,
   256 KiB each, 32 MiB, 90 days. A manual capture at capacity is refused
   (E1); a watch evicts only its own oldest snapshot beyond 20 (E2, new
-  behavior, audited); manual snapshots are never evicted.
+  behavior, audited); manual snapshots are never evicted. A damaged record
+  is deleted and leaves a content-free stub; at most 20 stubs.
 - `get_automation_trace` passes the shared trace sanitizer once (HAMCP-194
   trace-read part, O2): credential-like and known-secret values withheld,
   strings over 2,000 characters shortened, result `partial` with
   categories. Input schema unchanged; description gains one disclosure.
-  The trace sanitizer also withholds PEM private-key blocks.
+- Every trace string and dictionary key, at every depth, passes the shared
+  `credentials.screen` (the HAMCP-132 and HAMCP-224 pipeline) before storage
+  and on read; a flagged key withholds its whole entry. No trace-specific
+  screen. An automation or run ID the screen flags is stored, audited and
+  returned only as `withheld_<32 hex>` (per-process key); that form is
+  refused as input.
 - Static tools 72; catalog 100 (101 with the optional YAML reader).
 
 ## 2.4.1-beta.38 - Host journal sources for get_incident_logs (HAMCP-224)

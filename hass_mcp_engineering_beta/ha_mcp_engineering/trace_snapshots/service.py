@@ -1,22 +1,26 @@
 """Capture, list, read and watch sanitized automation trace snapshots (HAMCP-225).
 
 Every Core read is ``trace/list`` or ``trace/get`` with ``domain:
-"automation"``. Nothing unsanitized reaches the store: the ``trace/get``
-result passes the shared trace exit, the complete record passes it again with
-the same registry, and the stored bytes are the last pass's output (design
-note section 2.3). Every read response passes the strict sanitizer once more
-without a registry (decision R1), so a string partly withheld at capture is
-withheld whole on read.
+"automation"``. Nothing unscreened reaches the store: the ``trace/get``
+result passes the shared trace exit (the shared credential screen, then the
+strict sanitizer), the complete record passes it again with the same
+registry, and the stored bytes are the last pass's output plus the
+record's own sanitization counts (design note section 2.3). Every read
+response passes the same exit once more without a registry (decision R1),
+so a string partly withheld at capture is withheld whole on read.
 """
 
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 import hashlib
 import hmac
+import re
 import secrets
 import time
 
+from ..configuration_definitions import credentials
 from ..errors import EngineeringServerError, HomeAssistantApiError
 from ..reliability.timestamps import parse_timestamp
 from ..request_context import current_caller_id, current_request_id, current_telemetry
@@ -32,6 +36,11 @@ from .store import StoreError, TraceSnapshotStore
 
 _RECORD_PASSES = 3
 _RUN_TEXT = ("state", "script_execution", "last_step")
+_EVIDENCE_COUNTS = ("redacted_field_count", "category_count", "marker_collision_count",
+                    "truncated_field_count")
+_CATEGORY = re.compile(r"[a-z][a-z_]{0,39}")
+_MAX_CATEGORIES = 32
+_NO_EVIDENCE = object()
 
 
 def _ms(epoch):
@@ -61,6 +70,35 @@ def _evidence_total(results):
         "truncated_field_count": sum(result.truncated_field_count for result in results),
         "failed_closed": any(result.failed_closed for result in results),
     }
+
+
+def _stored_evidence(value, known_secrets):
+    """A record's capture evidence when it has exactly Engineering's shape, else ``None``.
+
+    The evidence is set after the record's scan, since category names such
+    as ``token`` are what the labelled screen withholds. On read it is
+    checked against a closed shape instead: four counts, a flag, and
+    category names, each a short snake_case word the default screen clears.
+    """
+
+    if type(value) is not dict or set(value) != {*_EVIDENCE_COUNTS, "categories", "failed_closed"}:
+        return None
+    if any(type(value[key]) is not int or value[key] < 0 for key in _EVIDENCE_COUNTS):
+        return None
+    categories = value["categories"]
+    if (type(value["failed_closed"]) is not bool or type(categories) is not list
+            or len(categories) > _MAX_CATEGORIES
+            or not all(type(name) is str and _CATEGORY.fullmatch(name)
+                       and credentials.screen(name, known_secrets) is None for name in categories)):
+        return None
+    return {**value, "categories": list(categories)}
+
+
+def identifier_cleared(value, known_secrets):
+    """Whether the shared trace screen leaves an identifier unchanged (review H2)."""
+
+    result = sanitize_trace_detail(value, known_secrets=known_secrets)
+    return result.value == value and not trace_sanitization_partial(result)
 
 
 def _caller():
@@ -105,9 +143,34 @@ class TraceSnapshotService:
         self.paused = False
         # The watch polled first; advanced every authorized tick (review M2).
         self.rotation = 0
+        # Withheld automation ID digest -> the ID Core is read with, for this
+        # process's watches only (review H2); never written anywhere.
+        self.watch_sources = {}
 
     # ------------------------------------------------------------------
     # Authority, Core reads and record construction
+
+    def _persisted(self, value):
+        """The form of an identifier that is stored, audited and returned (review H2).
+
+        An identifier the shared trace screen clears is kept; any other is
+        replaced by ``withheld_`` and a digest keyed by this process's secret,
+        so the raw value is never persisted and a stored digest cannot be
+        tested against a guess. The digest is stable for the process's life.
+        """
+
+        if identifier_cleared(value, self.known_secrets):
+            return value
+        mac = hmac.new(self.secret, b"identifier:" + value.encode("utf-8", "surrogatepass"),
+                       hashlib.sha256)
+        return "withheld_" + mac.hexdigest()[:32]
+
+    def _source(self, automation_id):
+        """The ID Core is read with for a stored automation ID; ``None`` when lost."""
+
+        if c.WITHHELD_ID.fullmatch(automation_id):
+            return self.watch_sources.get(automation_id)
+        return automation_id
 
     def authority(self):
         """The request's admitted Core generation and version, or refusal."""
@@ -184,7 +247,6 @@ class TraceSnapshotService:
                 "not_triggered": value.get("not_triggered") is True,
             },
             "completeness": "partial" if trace_sanitization_partial(first) else "complete",
-            "sanitization": _evidence_total(passes),
             "trace": {
                 "config": value.get("config"),
                 "blueprint_inputs": value.get("blueprint_inputs"),
@@ -208,9 +270,11 @@ class TraceSnapshotService:
             if not isinstance(record, dict) or record.get("snapshot_id") != snapshot_id:
                 return Prepared(run_id, "read_failed")
             record["completeness"] = "partial"
-            record["sanitization"] = _evidence_total(passes)
         else:
             return Prepared(run_id, "read_failed")
+        # Engineering's own counts and category names, added after the scan
+        # (``_stored_evidence`` checks their shape on read).
+        record["sanitization"] = _evidence_total(passes)
         try:
             raw = c.canonical(record)
         except (TypeError, ValueError, RecursionError):
@@ -426,6 +490,7 @@ class TraceSnapshotService:
         c.validate_capture({"automation_id": automation_id, "run_id": run_id,
                             "include_condition_failures": include_condition_failures, "note": note})
         caller, request_id = _caller(), current_request_id()
+        stored_id = self._persisted(automation_id)
         authority = self.authority()
         listing = await self.list_runs(automation_id)
         excluded = {"not_triggered": 0, "failed_conditions": 0}
@@ -446,20 +511,23 @@ class TraceSnapshotService:
         prepared = []
         now = self.clock()
         for selected_id in selected:
+            # Listed run IDs already passed the HAMCP-191 screen; the stored
+            # and returned form is screened again (review H2).
             if not c.RUN_ID.fullmatch(selected_id):
-                prepared.append(Prepared(selected_id, "read_failed"))
+                prepared.append(Prepared(self._persisted(selected_id), "read_failed"))
                 continue
+            stored_run = self._persisted(selected_id)
             if states.get(selected_id) == "running":
-                prepared.append(Prepared(selected_id, "run_in_progress"))
+                prepared.append(Prepared(stored_run, "run_in_progress"))
                 continue
             if self.authority() != authority:
                 raise c.TraceSnapshotError("authority_drift")
             outcome, detail = await self.read_detail(automation_id, selected_id)
             if outcome != "captured":
-                prepared.append(Prepared(selected_id, "read_failed" if outcome == "source_unavailable" else outcome))
+                prepared.append(Prepared(stored_run, "read_failed" if outcome == "source_unavailable" else outcome))
                 continue
             prepared.append(await asyncio.to_thread(
-                self.prepare, detail, automation_id=automation_id, run_id=selected_id,
+                self.prepare, detail, automation_id=stored_id, run_id=stored_run,
                 origin="manual", watch_id=None, caller=caller, request_id=request_id,
                 authority=authority, note=note, now=now))
             del detail
@@ -472,8 +540,8 @@ class TraceSnapshotService:
                 for item in prepared]
         index = await self._run(self.store.load_index)
         result = {
-            "automation_id": automation_id,
-            "requested_run_id": run_id or None,
+            "automation_id": stored_id,
+            "requested_run_id": self._persisted(run_id) if run_id else None,
             "runs": runs,
             "selection": {
                 "retained_runs_listed": len(listing.headers),
@@ -495,7 +563,7 @@ class TraceSnapshotService:
                    or any(item["completeness"] == "partial" for item in captured)
                    or listing.source_truncated or listing.sanitization_failed_closed)
         return self._exit(result, partial, audit={
-            "automation_id": automation_id,
+            "automation_id": stored_id,
             "snapshot_ids": [item["snapshot_id"] for item in captured],
             "outcomes": sorted({item["outcome"] for item in runs})})
 
@@ -512,11 +580,19 @@ class TraceSnapshotService:
                        "quarantine": c.QUARANTINE_MAX},
         }
 
-    def _exit(self, value, partial, *, audit=None):
-        """One strict exit for every response (R1); nothing is added after it."""
+    def _exit(self, value, partial, *, audit=None, evidence=_NO_EVIDENCE):
+        """One strict exit for every response (R1).
+
+        Nothing is added after it but a read's ``capture_sanitization``
+        (``evidence``), which only ``_stored_evidence``'s closed shape passes.
+        """
 
         result = sanitize_trace_detail(value, known_secrets=self.known_secrets)
         partial = bool(partial or trace_sanitization_partial(result))
+        if evidence is not _NO_EVIDENCE:
+            checked = _stored_evidence(evidence, self.known_secrets)
+            partial = partial or checked is None
+            result = replace(result, value={**result.value, "capture_sanitization": checked})
         telemetry = current_telemetry()
         if telemetry is not None:
             telemetry.completeness = "partial" if partial else "complete"
@@ -549,8 +625,9 @@ class TraceSnapshotService:
                 raise c.TraceSnapshotError("invalid_cursor")
             after = (int(captured_ms), snapshot_id)
         index = await self._run(self._maintain, _ms(self.clock()))
+        stored_id = self._persisted(automation_id) if automation_id else ""
         entries = sorted((e for e in index["snapshots"]
-                          if not automation_id or e["automation_id"] == automation_id),
+                          if not stored_id or e["automation_id"] == stored_id),
                          key=lambda e: (e["captured_at_ms"], e["snapshot_id"]), reverse=True)
         if after is not None:
             entries = [e for e in entries if (e["captured_at_ms"], e["snapshot_id"]) < after]
@@ -643,13 +720,13 @@ class TraceSnapshotService:
             "run": record.get("run"),
             "core": record.get("core"),
             "note": record.get("note"),
-            "capture_sanitization": record.get("sanitization"),
             "page": {"index": page_index, "count": len(pages), "next_cursor": next_cursor,
                      "omitted_units": omitted, "page_bytes_bound": c.PAGE_BYTES},
             "units": units,
         }
         partial = entry["completeness"] == "partial" or bool(omitted)
-        return self._exit(result, partial, audit={"snapshot_id": snapshot_id, "page": page_index})
+        return self._exit(result, partial, audit={"snapshot_id": snapshot_id, "page": page_index},
+                          evidence=record.get("sanitization"))
 
     # ------------------------------------------------------------------
     # Watch list (no plan or approval; audited and bounded)
@@ -733,8 +810,13 @@ class TraceSnapshotService:
             arguments.update(mode=mode, duration_hours=duration_hours)
         c.validate_watch(arguments)
         caller, request_id = _caller(), current_request_id()
-        index, changed = await self._run(self._change_watch, action, automation_id, mode,
+        stored_id = self._persisted(automation_id) if automation_id else ""
+        index, changed = await self._run(self._change_watch, action, stored_id, mode,
                                          duration_hours, caller, request_id, self.clock())
+        if stored_id != automation_id and action == "add":
+            self.watch_sources[stored_id] = automation_id
+        held = {w["automation_id"] for w in index["watches"]}
+        self.watch_sources = {key: raw for key, raw in self.watch_sources.items() if key in held}
         result = {
             "action": action,
             "changed": changed is not None,
@@ -764,6 +846,9 @@ class TraceSnapshotService:
         authorized = authority is not None
         now = self.clock()
         index = await self._run(self._maintain, _ms(now))
+        lost = [w["watch_id"] for w in index["watches"] if self._source(w["automation_id"]) is None]
+        if lost:
+            index = await self._run(self._end_watches, lost, _ms(now))
         if not index["watches"]:
             self.paused = not authorized
             return
@@ -787,6 +872,30 @@ class TraceSnapshotService:
                 if rest:
                     await self._run(self._skip_all, rest, _ms(self.clock()))
                 return
+
+    def _end_watches(self, watch_ids, now_ms):
+        """End watches whose withheld automation ID this process cannot read.
+
+        Only the digest of such an ID is stored, and its key is per process,
+        so after a restart the watch cannot be polled; it ends with an audit
+        row and frees its slot (review H2). The caller may add it again.
+        """
+
+        with self.store.transaction():
+            index = self.store.load_index()
+            ended = [w for w in index["watches"] if w["watch_id"] in watch_ids]
+            index["watches"] = [w for w in index["watches"] if w["watch_id"] not in watch_ids]
+            if ended:
+                self.store.write_index(index)
+        for watch in ended:
+            self._write_audit({
+                "event": "trace_watch_expired", "tool_name": "set_automation_trace_watch",
+                "request_id": watch["request_id"], "result_status": "identifier_unavailable",
+                "caller_id": watch["caller_id"], "watch_id": watch["watch_id"],
+                "automation_id": watch["automation_id"],
+                "captured_count": watch["captured_count"],
+            }, required=False)
+        return index
 
     def _skip_all(self, watch_ids, now_ms):
         with self.store.transaction():
@@ -820,9 +929,10 @@ class TraceSnapshotService:
         if watch_deadline is None:
             watch_deadline = time.monotonic() + c.TICK_SECONDS * c.READ_SHARE
         watch_id, automation_id = watch["watch_id"], watch["automation_id"]
+        source = self._source(automation_id)
         try:
             async with asyncio.timeout_at(self._loop_deadline(watch_deadline)):
-                listing = await self.list_runs(automation_id)
+                listing = await self.list_runs(source)
         except (c.TraceSnapshotError, TimeoutError):
             if not self._still_authorized(authority):
                 self.paused = True
@@ -831,38 +941,40 @@ class TraceSnapshotService:
             await self._run(self._skip_all, [watch_id], _ms(self.clock()))
             return True
         listed = [h for h in listing.headers if c.RUN_ID.fullmatch(h.run_id)]
+        # Seen and stored run IDs are the persisted form (review H2).
+        stored = {h.run_id: self._persisted(h.run_id) for h in listed}
         seen = set(watch["seen_run_ids"])
-        settled = {h.run_id for h in listed if h.state != "running"}
+        settled = {stored[h.run_id] for h in listed if h.state != "running"}
         if watch["baseline_done"]:
-            fresh = [h for h in listed if h.run_id not in seen and h.state != "running"]
+            fresh = [h for h in listed if stored[h.run_id] not in seen and h.state != "running"]
             handled = set()
         else:
             # First poll: runs before the watch existed are history, not
             # captured; runs that finished after its creation are (review M1).
             fresh = [h for h in listed if h.state != "running"
                      and _ended_after(h, watch["created_at_ms"])]
-            handled = settled - {h.run_id for h in fresh}
+            handled = settled - {stored[h.run_id] for h in fresh}
         fresh.sort(key=lambda h: (h.started_instant, h.run_id))
         matching = [h for h in fresh if header_matches(watch["mode"], h)]
-        handled |= {h.run_id for h in fresh if not header_matches(watch["mode"], h)}
+        handled |= {stored[h.run_id] for h in fresh if not header_matches(watch["mode"], h)}
         prepared, failed, deferred = [], 0, False
         now = self.clock()
         for header in matching[:c.MAX_CAPTURES]:
             try:
                 async with asyncio.timeout_at(self._loop_deadline(watch_deadline)):
-                    outcome, detail = await self.read_detail(automation_id, header.run_id)
+                    outcome, detail = await self.read_detail(source, header.run_id)
             except TimeoutError:
                 outcome, detail = "source_unavailable", None
             if outcome == "source_unavailable":
                 # Authority, transport or time loss: retried next tick, not a gap.
                 deferred = True
                 break
-            handled.add(header.run_id)
+            handled.add(stored[header.run_id])
             if outcome != "captured":
                 failed += 1
                 continue
             prepared.append(await asyncio.to_thread(
-                self.prepare, detail, automation_id=automation_id, run_id=header.run_id,
+                self.prepare, detail, automation_id=automation_id, run_id=stored[header.run_id],
                 origin="trace_watch", watch_id=watch_id, caller=watch["caller_id"],
                 request_id=current_request_id(), authority=authority,
                 note=None, now=now))

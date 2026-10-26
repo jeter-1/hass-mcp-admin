@@ -625,15 +625,24 @@ delegated provider or fallback.
   pass the shared trace sanitizer before they leave Engineering or reach the
   store; capture runs one more strict pass over the complete record, and
   read-back re-sanitizes each page. Withheld content makes the result
-  `partial`. PEM private-key blocks with a header are withheld whole.
+  `partial`. Before the strict sanitizer, every string and every dictionary
+  key at every depth passes the shared `credentials.screen` used by HAMCP-132
+  and HAMCP-224 (no trace-specific screen); a flagged key withholds its whole
+  entry, and nesting beyond 64 levels is withheld as unverifiable. PEM
+  private-key blocks with a header are withheld whole.
+- **Identifiers.** An automation or run ID the screen flags is persisted,
+  audited and returned only as `withheld_` plus a per-process HMAC digest;
+  refusals never echo it, and the gateway audit records it as `null`.
 - **Store.** `trace-snapshots-v1/` under the governance path: `flock`,
-  `O_NOFOLLOW`, `0600`, atomic rename, digest-checked loads, quarantine,
-  fail-closed index, fixed diagnostics, bounded size, count and age. Manual
+  `O_NOFOLLOW`, `0600`, atomic rename, digest-checked loads, at most 20
+  content-free quarantine stubs, fail-closed index, fixed diagnostics,
+  bounded size, count and age. Manual
   captures are refused at capacity; a watch evicts only its own snapshots.
 - **Watch poller.** The only periodic Core read: bounded to 10 watches every
   30 seconds, under its own Core authority lease, paused while authority is
-  unavailable or the version is not admitted. Watch changes need no
-  approval but write a required, caller-attributed audit row.
+  unavailable or the version is not admitted, and re-checked before each
+  watch's reads are stored. Watch changes need no approval but write a
+  required, caller-attributed audit row.
 - **Caller binding.** List and read cursors are HMAC-bound to the caller
   with a per-process key.
 
