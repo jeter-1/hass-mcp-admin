@@ -799,6 +799,31 @@ option, role, fallback or delegated provider.
 - **HAMCP-069B profiles.** The two unsigned 069B profiles now name every read
   their gateway sends; no signed profile changes.
 
+The `2.4.1-beta.42` slice (HAMCP-234 step 1) adds no permission, role,
+route, provider, fallback, write path or tool, and **changes nothing in what
+is withheld**.
+
+- **Rule ids.** `credentials.screen` is `screen_rule(...)[0]`, and
+  `credential_text` is `credential_rule(...) is not None`, so the one
+  ordered chain still decides. The journal reads a rule id only for text the
+  screen already withheld. Each id is a fixed constant (`RULE_IDS`, 45 with
+  the reader's `field_too_long`, `not_utf8` and `unverifiable_escape`). A
+  keyword id is the named group of the fixed pattern. Anything else is
+  reported as `unlisted_rule`. An id never carries the text, its length or
+  the matched substring.
+- **Calibration.** It is accepted for host journal sources only and never
+  with `min_level`, `text` or `cursor`. It uses the same sources and window
+  bounds as a read, at most 2,000 entries per source, with the same screen.
+  It returns counts, fixed ids, source names and window coverage times only.
+  The strict sanitizer still runs at the single `_finish` exit. Any change
+  it would make fails the call closed (`sources_unavailable`); this is the
+  one new sanitizer call site, listed in the HAMCP-191 table.
+- **Levels.** The level of a `supervisor` or `addon:<slug>` line is a
+  decision read from the start of its screened, sanitized first line in an
+  anchored known format; it is never output text. A withheld message is
+  never parsed: its level is `priority_unverified`, a level filter never
+  passes it, and it counts in `withheld_level_filtered` (partial).
+
 The `2.4.1-beta.38` slice (HAMCP-224) lets `get_incident_logs` read the
 `supervisor`, `host`, `host:<category>` and `addon:<slug>` sources from the
 host journal. It adds **one read-only permission** and no role, route,

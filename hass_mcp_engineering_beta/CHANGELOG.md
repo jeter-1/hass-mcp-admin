@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.4.1-beta.42 - Journal logs usable on real add-on formats (HAMCP-234 step 1)
+
+Builds on 2.4.1-beta.41. Nothing withheld is relaxed.
+
+- A withheld host journal entry names, per withheld part, the fixed id of
+  the screen rule that withheld it (`withheld_rules`). There are 45 ids,
+  exposed as data by the shared `credentials.screen` (`screen_rule`); an id
+  never carries the text, its length or the matched part.
+- `calibration: true` (host journal sources, no `min_level`, `text` or
+  `cursor`) returns per-source counts only: scanned, shown, withheld, and
+  withheld and matched per rule id. It returns no entry or text.
+- `supervisor` and `addon:<slug>` levels are parsed from known formats
+  (Supervisor, matter.js, Python logging, bashio; `level_basis:
+  parsed_text`), else they are the journal priority. A withheld container
+  line keeps its priority as `priority_unverified` and is counted in
+  `withheld_level_filtered` under `min_level`, never returned.
+- The `get_incident_logs` description no longer says a manager role is
+  needed.
+- One new optional input (`calibration`); no tool, routing, provider,
+  policy, profile, fingerprint, signed registry, persisted format,
+  workflow, Dockerfile, dependency or stable-v1 change.
+
 ## 2.4.1-beta.38 - Host journal sources for get_incident_logs (HAMCP-224)
 
 Builds on 2.4.1-beta.37.

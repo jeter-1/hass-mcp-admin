@@ -1,5 +1,18 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.42** makes host journal reads usable on real
+add-on log formats (HAMCP-234 step 1). A withheld entry names the fixed
+screen rule that withheld each part (`withheld_rules`), and `calibration:
+true` returns per-source counts only, with no text. `supervisor` and add-on
+levels are parsed from known log formats instead of the stderr priority.
+The tool description no longer says a manager role is needed. Nothing
+withheld is relaxed; relaxations follow a live calibration. Rollback is
+reinstalling beta.41. Read the
+[2.4.1-beta.42 release notes](docs/V2_4_1_BETA42_RELEASE_NOTES.md) and
+[2.4.1-beta.42 acceptance contract](docs/V2_4_1_BETA42_ACCEPTANCE.md).
+
+It builds on beta.41 and the releases below.
+
 Engineering **2.4.1-beta.38** lets `get_incident_logs` read the
 `supervisor`, `host`, `host:<category>` and `addon:<slug>` sources
 (HAMCP-224). Engineering keeps role `homeassistant`; with the new add-on
