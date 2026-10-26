@@ -13,7 +13,9 @@ aliases, entity IDs and names, configuration paths, excerpts) are read with
 the screen's **default** mode, the HAMCP-132 shape-based checks: a
 credential URL, a known secret, a PEM private key, an invisible or format
 character, in the percent-decoded, NFKC, confusable-folded and squashed
-forms. The journal's labelled keyword mode (``labelled=True``, HAMCP-224) is
+forms. A PEM private-key header is checked too (``private_key_header``): the
+owner's list names it, and the default mode reads it only in labelled mode,
+so it is added here alone, without the labelled keywords. The journal's labelled keyword mode (``labelled=True``, HAMCP-224) is
 for third-party log text only, so an ordinary name such as ``Token
 refresh`` is shown (owner direction, Josh, 2026-10-26).
 
@@ -34,7 +36,10 @@ MARKERS = frozenset({credentials.WITHHELD_MARKER, credentials.UNVERIFIABLE_MARKE
 def screen(value: str, known_secrets: tuple[str, ...] = ()) -> str | None:
     """The marker that replaces Home Assistant text ``value``, or ``None`` when shown."""
 
-    return credentials.screen(value, _secrets(known_secrets))
+    marker = credentials.screen(value, _secrets(known_secrets))
+    if marker is None and credentials.private_key_header(value):
+        return credentials.WITHHELD_MARKER
+    return marker
 
 
 def screen_fields(
@@ -66,6 +71,37 @@ def screen_fields(
                 output[key] = value
                 withheld.append(key)
     return output, tuple(withheld_identifiers), tuple(withheld_text)
+
+
+def screen_tree(value: Any, known_secrets: tuple[str, ...] = ()) -> tuple[Any, int]:
+    """``(copy, withheld count)``: every string leaf of ``value`` screened.
+
+    Mapping keys are left as they are; callers use it only on results whose
+    keys are fixed field names. A withheld leaf is replaced by its marker
+    and the record holding it is kept, so a count or relation is not lost.
+    A leaf that already is a marker counts as withheld.
+    """
+
+    if isinstance(value, str):
+        if value in MARKERS:
+            # Withheld upstream (extraction screens the original first).
+            return value, 1
+        marker = screen(value, known_secrets)
+        return (value, 0) if marker is None else (marker, 1)
+    if isinstance(value, dict):
+        output, count = {}, 0
+        for key, item in value.items():
+            output[key], hits = screen_tree(item, known_secrets)
+            count += hits
+        return output, count
+    if isinstance(value, (list, tuple)):
+        items, count = [], 0
+        for item in value:
+            screened, hits = screen_tree(item, known_secrets)
+            items.append(screened)
+            count += hits
+        return (tuple(items) if isinstance(value, tuple) else items), count
+    return value, 0
 
 
 def withheld(value: Any) -> bool:

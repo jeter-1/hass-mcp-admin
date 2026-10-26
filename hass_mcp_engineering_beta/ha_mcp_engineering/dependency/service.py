@@ -11,7 +11,8 @@ from typing import Any
 
 from ..errors import EngineeringServerError, ErrorCode, GovernanceError, InvalidRequestError
 from ..observability import METRICS
-from .bounded_sources import bounded_source_entries, screening_warnings, target_availability
+from ..untrusted_text import screen_tree
+from .bounded_sources import EMPTY as EMPTY_BOUNDED, bounded_source_entries, screening_warnings, target_availability
 from .extraction import valid_entity_id
 from .index import DependencyIndex
 from .models import DependencyFinding, SOURCE_TYPES, SourceCoverageItem
@@ -277,6 +278,12 @@ class EntityDependencyAnalysisService:
                 **self.index.evidence_metadata(snapshot),
             },
         }
+        # HAMCP-226: Home Assistant's names, IDs, paths and excerpts leave
+        # through the default-mode screen. A withheld field keeps its finding,
+        # so a reference is never hidden by withholding its name.
+        data, screened = screen_tree(data, self.known_secrets())
+        warnings, screened_warnings = screen_tree(list(dict.fromkeys(warnings)), self.known_secrets())
+        warnings[:0] = screening_warnings(EMPTY_BOUNDED, screened + screened_warnings)
         METRICS.record_dependency_analysis_success()
         if partial:
             METRICS.record_dependency_analysis_partial()

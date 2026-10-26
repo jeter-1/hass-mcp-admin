@@ -68,6 +68,15 @@ depth, bindings, abstract-value/container growth, candidates, external
 references, obligation count, retained
 identities, profiles, evidence, and output are deterministically bounded.
 
+HAMCP-226: every source whose configuration exceeded one of those bounds is
+named in the binding's `bounded_sources` (with `bounded_sources_omitted`,
+`bounded_sources_withheld`, and `bounded_source_total`), so the owner can see
+which automation or script hides a possible writer. The fields are disclosure
+only: they are stored with a new plan but are outside the hashed binding
+material, so they never change `evidence_fingerprint` or approval, and
+coverage remains failed while any bounded source exists. See
+[Configuration integrity analysis](CONFIGURATION_INTEGRITY_ANALYSIS.md#named-bound-overruns).
+
 Configuration context follows Home Assistant scope and ordering. Root
 automation/script defaults retain the possible caller-supplied run-variable
 override; action-level variables are rendered sequentially in insertion order;
