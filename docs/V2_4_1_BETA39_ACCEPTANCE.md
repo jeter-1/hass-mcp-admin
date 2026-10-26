@@ -138,6 +138,15 @@ No test reaches a live system. Every transport is a synthetic fake.
 - Catalog, routing and Core-gate pins updated to 72 static and 100 total
   (`tests/test_hamcp164_core_gate_fail_closed.py` classifies the four new
   tools).
+- `docs/evidence/hamcp225-mutations/`: the review-1 mutation runner and its
+  results. All 18 mutants were killed: the shared screen skipped, a
+  trace-specific screen, keys not screened, screening after storage, an
+  unscreened `get_automation_trace`, a raw identifier kept, a raw gateway
+  audit identifier, the digest form accepted as input, unbounded quarantine,
+  first-poll discard, no rotation, no per-watch budget, no authority recheck
+  before commit, cross-watch eviction, and four design §7 mutants. Raw
+  per-mutant logs are not committed because a surviving leak would print
+  planted values.
 
 ## 2. Release CI and publication
 
