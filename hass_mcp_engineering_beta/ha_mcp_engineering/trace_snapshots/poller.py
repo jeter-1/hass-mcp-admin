@@ -81,10 +81,13 @@ class TraceWatchPoller:
         self.failed_ticks = 0
 
     async def tick(self):
-        deadline = time.monotonic() + self.tick_seconds
+        started = time.monotonic()
+        deadline = started + self.tick_seconds
         with watch_poll_authority(self.core_runtime, deadline) as authority:
             async with asyncio.timeout(self.tick_seconds):
-                await self.service.poll_once(authority=authority)
+                # Reads stop at the read share; the rest is the commit reserve.
+                await self.service.poll_once(
+                    authority=authority, deadline=started + self.tick_seconds * c.READ_SHARE)
 
     async def run(self):
         while True:

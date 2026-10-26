@@ -26,6 +26,10 @@ MAX_CAPTURES = 5
 NOTE_CHARS = 200
 LIST_LIMIT = 50
 PAGE_BYTES = 40_000
+# A damaged record is deleted; the index keeps at most this many content-free
+# quarantine stubs (identity, observed length and digest), aged on the same
+# retention rule. The oldest stub goes first and is counted as dropped.
+QUARANTINE_MAX = 20
 
 # Decisions W1 and E2: at most 10 watches, a 30 s poll, 20 snapshots a watch.
 MAX_WATCHES = 10
@@ -34,6 +38,8 @@ WATCH_MAX_HOURS = 168
 POLL_SECONDS = 30.0
 TICK_SECONDS = 20.0
 MAX_SEEN_RUNS = 100
+# Share of a tick spent on Core reads; the rest is the local commit reserve.
+READ_SHARE = 0.8
 WATCH_MODES = ("failures", "executed")
 WATCH_ACTIONS = ("add", "remove", "list")
 

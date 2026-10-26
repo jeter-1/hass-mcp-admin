@@ -3,7 +3,8 @@
 It follows the ``governance/reverification_storage.py`` precedent: a
 nonblocking ``flock``, ``O_NOFOLLOW`` reads of regular files only, mode 0600,
 temporary file plus ``fsync`` plus ``rename``, fixed diagnostics with no
-payload reflection, and quarantine of a record whose digest does not match.
+payload reflection. A damaged record is deleted, never retained: the index
+keeps a bounded, content-free quarantine stub for it (HAMCP-225 review H3).
 Hashes detect accidental damage, not an attacker able to rewrite both a
 record and the index.
 """
@@ -34,6 +35,11 @@ WATCH_KEYS = frozenset({
     "captured_count", "evicted_count", "last_poll_at_ms",
 })
 _COUNTERS = ("skipped_polls", "uncaptured_runs", "captured_count", "evicted_count")
+QUARANTINE_KEYS = frozenset({
+    "snapshot_id", "automation_id", "run_id", "quarantined_at_ms", "reason",
+    "observed_bytes", "observed_sha256",
+})
+DAMAGE_REASONS = frozenset({"missing", "unreadable", "digest_mismatch", "invalid_record"})
 
 
 class StoreError(RuntimeError):
@@ -45,7 +51,8 @@ class StoreError(RuntimeError):
 
 
 def empty_index():
-    return {"model": c.MODEL, "snapshots": [], "watches": []}
+    return {"model": c.MODEL, "snapshots": [], "watches": [],
+            "quarantine": {"entries": [], "dropped": 0}}
 
 
 def _text(value, limit, *, optional=False):
@@ -96,13 +103,31 @@ def _valid_watch(watch):
             and (watch["last_poll_at_ms"] is None or _count(watch["last_poll_at_ms"])))
 
 
+def _valid_stub(stub):
+    return (type(stub) is dict and set(stub) == QUARANTINE_KEYS
+            and type(stub["snapshot_id"]) is str and c.SNAPSHOT_ID.fullmatch(stub["snapshot_id"])
+            and _match(AUTOMATION_CONFIG_ID_PATTERN, stub["automation_id"])
+            and _match(c.RUN_ID, stub["run_id"])
+            and _count(stub["quarantined_at_ms"]) and stub["reason"] in DAMAGE_REASONS
+            and (stub["observed_bytes"] is None or _count(stub["observed_bytes"]))
+            and (stub["observed_sha256"] is None
+                 or (type(stub["observed_sha256"]) is str and len(stub["observed_sha256"]) == 64)))
+
+
+def _valid_quarantine(value):
+    return (type(value) is dict and set(value) == {"entries", "dropped"}
+            and type(value["entries"]) is list and len(value["entries"]) <= c.QUARANTINE_MAX
+            and all(_valid_stub(stub) for stub in value["entries"]) and _count(value["dropped"]))
+
+
 def validate_index(value):
-    if (type(value) is not dict or set(value) != {"model", "snapshots", "watches"}
+    if (type(value) is not dict or set(value) != {"model", "snapshots", "watches", "quarantine"}
             or value["model"] != c.MODEL or type(value["snapshots"]) is not list
             or type(value["watches"]) is not list
             or len(value["snapshots"]) > c.MAX_SNAPSHOTS or len(value["watches"]) > c.MAX_WATCHES
             or not all(_valid_snapshot(e) for e in value["snapshots"])
-            or not all(_valid_watch(w) for w in value["watches"])):
+            or not all(_valid_watch(w) for w in value["watches"])
+            or not _valid_quarantine(value["quarantine"])):
         raise StoreError("store_invalid")
     ids = [e["snapshot_id"] for e in value["snapshots"]]
     runs = [(e["automation_id"], e["run_id"]) for e in value["snapshots"]]
@@ -238,45 +263,32 @@ class TraceSnapshotStore:
         self._replace(raw, self.records / (snapshot_id + ".json"), "record")
 
     def read_record(self, entry):
-        """The stored record, or ``None`` after quarantining a damaged one."""
+        """``(record, None)``, or ``(None, damage)`` for a damaged record.
+
+        ``damage`` holds only the fixed reason and the observed length and
+        digest; the damaged bytes are never parsed into a response or kept.
+        """
 
         path = self.records / (entry["snapshot_id"] + ".json")
         try:
             raw = self._read_regular(path, c.SNAPSHOT_BYTES)
         except StoreError:
-            self.quarantine(entry["snapshot_id"])
-            return None
+            return None, {"reason": "unreadable", "observed_bytes": None, "observed_sha256": None}
         except OSError:
             raise StoreError("store_unavailable") from None
         if raw is None:
-            return None
-        if len(raw) != entry["bytes"] or c.sha256(raw) != entry["sha256"]:
-            self.quarantine(entry["snapshot_id"])
-            return None
+            return None, {"reason": "missing", "observed_bytes": None, "observed_sha256": None}
+        observed = {"observed_bytes": len(raw), "observed_sha256": c.sha256(raw)}
+        if len(raw) != entry["bytes"] or observed["observed_sha256"] != entry["sha256"]:
+            return None, {"reason": "digest_mismatch", **observed}
         try:
             record = json.loads(raw)
         except (ValueError, RecursionError):
-            self.quarantine(entry["snapshot_id"])
-            return None
+            return None, {"reason": "invalid_record", **observed}
         if (type(record) is not dict or record.get("model") != c.RECORD_MODEL
                 or record.get("snapshot_id") != entry["snapshot_id"]):
-            self.quarantine(entry["snapshot_id"])
-            return None
-        return record
-
-    def quarantine(self, snapshot_id):
-        """Move a damaged record aside; never parse or reflect its content."""
-
-        source = self.records / (snapshot_id + ".json")
-        try:
-            self.quarantine_root.mkdir(exist_ok=True, mode=0o700)
-            if self.quarantine_root.is_symlink():
-                raise StoreError("store_invalid")
-            os.replace(source, self.quarantine_root / (snapshot_id + "-" + uuid.uuid4().hex + ".json"))
-        except FileNotFoundError:
-            return
-        except OSError:
-            raise StoreError("store_unavailable") from None
+            return None, {"reason": "invalid_record", **observed}
+        return record, None
 
     def remove_record(self, snapshot_id):
         try:

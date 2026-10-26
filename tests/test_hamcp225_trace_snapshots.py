@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -449,7 +450,13 @@ class ListAndGetTests(ServiceCase):
         error = await self.refused(self.service.get(snapshot_id=entry["snapshot_id"]))
         self.assertEqual(error.reason, "store_invalid")
         self.assertEqual(self.index()["snapshots"], [])
-        self.assertEqual(len(list((self.root / c.MODEL / "quarantine").iterdir())), 1)
+        stubs = self.index()["quarantine"]["entries"]
+        self.assertEqual([(s["snapshot_id"], s["reason"]) for s in stubs],
+                         [(entry["snapshot_id"], "digest_mismatch")])
+        self.assertFalse(path.exists())
+        quarantine = self.root / c.MODEL / "quarantine"
+        self.assertEqual(list(quarantine.iterdir()) if quarantine.exists() else [], [])
+        self.assertNotIn(b"Tampered", all_store_bytes(self.root))
         self.assertNotIn("Tampered", json.dumps(error.details))
 
     async def test_corrupt_index_and_symlinks_fail_closed(self):
@@ -569,6 +576,77 @@ class WatchTests(ServiceCase):
         self.assertEqual(self.audit.rows, [])
 
 
+class QuarantineTests(ServiceCase):
+    """H3: damaged records are deleted; only bounded content-free stubs remain."""
+
+    async def corrupt(self, run_id):
+        self.core.add(run_id)
+        self.clock.now += 1
+        value, _ = await self.service.capture(automation_id="a1", run_id=run_id)
+        snapshot_id = value["runs"][0]["snapshot_id"]
+        path = self.root / c.MODEL / "records" / (snapshot_id + ".json")
+        path.write_bytes(path.read_bytes().replace(b"Synthetic", b"Tampered!"))
+        error = await self.refused(self.service.get(snapshot_id=snapshot_id))
+        self.assertEqual(error.reason, "store_invalid")
+        return snapshot_id
+
+    async def test_repeated_corruption_cannot_grow_storage_past_the_bound(self):
+        sizes = []
+        with patch.object(c, "QUARANTINE_MAX", 2):
+            ids = []
+            for i in range(6):
+                ids.append(await self.corrupt(f"r{i}"))
+                sizes.append(len(all_store_bytes(self.root)))
+            stubs = self.index()["quarantine"]
+            self.assertEqual([s["snapshot_id"] for s in stubs["entries"]], ids[-2:])
+            self.assertEqual(stubs["dropped"], 4)
+            listing, partial = await self.service.list()
+        self.assertEqual((listing["store"]["quarantined"], listing["store"]["quarantine_dropped"]), (2, 4))
+        self.assertEqual(listing["store"]["bytes"], 0)
+        self.assertEqual(list((self.root / c.MODEL / "records").iterdir()), [])
+        self.assertLessEqual(max(sizes[2:]) - min(sizes[2:]), 64)
+        stored = all_store_bytes(self.root)
+        self.assertNotIn(b"Tampered", stored)
+        self.assertNotIn(b"Synthetic", stored)
+        for stub in self.index()["quarantine"]["entries"]:
+            self.assertEqual(set(stub), store_module.QUARANTINE_KEYS)
+            self.assertEqual(stub["reason"], "digest_mismatch")
+
+    async def test_stubs_expire_on_the_retention_rule(self):
+        await self.corrupt("r0")
+        self.assertEqual(len(self.index()["quarantine"]["entries"]), 1)
+        self.clock.now += c.RETENTION_SECONDS + 1
+        listing, _ = await self.service.list()
+        self.assertEqual(listing["store"]["quarantined"], 0)
+        self.assertEqual(self.index()["quarantine"]["entries"], [])
+
+    async def test_a_missing_record_is_a_stub_and_never_reflected(self):
+        self.core.add("r0")
+        value, _ = await self.service.capture(automation_id="a1", run_id="r0")
+        snapshot_id = value["runs"][0]["snapshot_id"]
+        (self.root / c.MODEL / "records" / (snapshot_id + ".json")).unlink()
+        error = await self.refused(self.service.get(snapshot_id=snapshot_id))
+        self.assertEqual(error.reason, "store_invalid")
+        stub = self.index()["quarantine"]["entries"][0]
+        self.assertEqual((stub["reason"], stub["observed_bytes"], stub["observed_sha256"]),
+                         ("missing", None, None))
+
+    def test_index_refuses_an_oversized_or_content_bearing_quarantine(self):
+        stub = {"snapshot_id": "a" * 32, "automation_id": "a1", "run_id": "r0",
+                "quarantined_at_ms": 1, "reason": "digest_mismatch", "observed_bytes": 3,
+                "observed_sha256": "0" * 64}
+        index = store_module.empty_index()
+        index["quarantine"]["entries"] = [stub]
+        store_module.validate_index(index)
+        for bad in ({"entries": [stub] * (c.QUARANTINE_MAX + 1), "dropped": 0},
+                    {"entries": [{**stub, "content": "x"}], "dropped": 0},
+                    {"entries": [{**stub, "reason": "other"}], "dropped": 0},
+                    {"entries": [stub], "dropped": -1}):
+            with self.subTest(bad=list(bad["entries"][0])[-1]):
+                with self.assertRaises(store_module.StoreError):
+                    store_module.validate_index({**index, "quarantine": bad})
+
+
 class PollTests(ServiceCase):
     AUTHORITY = (7, VERSION)
 
@@ -577,6 +655,7 @@ class PollTests(ServiceCase):
 
     async def test_first_poll_is_a_baseline_then_new_failures_are_captured(self):
         self.core.add("old", "error", minute=0)
+        self.clock.now = NOW + 2 * 3600 + 27 * 60  # 10:00:20, after "old" finished
         await self.service.watch(action="add", automation_id="a1")
         await self.poll()
         self.assertEqual(self.index()["snapshots"], [])
@@ -675,6 +754,81 @@ class PollTests(ServiceCase):
         await self.poll()
         self.assertEqual(len(removing), 1)
         self.assertEqual(self.index()["snapshots"], [])
+
+    async def test_first_poll_captures_runs_finished_after_the_watch_was_created(self):
+        self.core.add("before", "error", minute=0)
+        self.clock.now = NOW + 2 * 3600 + 27 * 60  # 10:00:20
+        await self.service.watch(action="add", automation_id="a1")
+        self.core.add("after", "error", minute=1)
+        self.core.add("busy", "error", minute=2, state="running")
+        # A restart between the add and the first tick keeps the rule.
+        restarted = TraceSnapshotService(self.root, self.core.command, self.runtime, self.audit,
+                                         known_secrets=(KNOWN,), clock=self.clock)
+        await restarted.poll_once(authority=self.AUTHORITY)
+        self.assertEqual([e["run_id"] for e in self.index()["snapshots"]], ["after"])
+        self.core.runs[-1]["state"] = "stopped"
+        await restarted.poll_once(authority=self.AUTHORITY)
+        self.assertEqual(sorted(e["run_id"] for e in self.index()["snapshots"]), ["after", "busy"])
+
+    async def two_watches(self):
+        await self.service.watch(action="add", automation_id="a1", mode="executed")
+        self.clock.now += 1
+        await self.service.watch(action="add", automation_id="a2", mode="executed")
+        await self.poll()
+        await self.poll()  # two baseline ticks: the next one starts with a1 again
+        self.core.add("w1", minute=1)
+        self.core.sent.clear()
+
+    async def test_slow_first_watch_cannot_starve_the_next_and_the_start_rotates(self):
+        await self.two_watches()
+
+        async def slow(payload):
+            if payload["item_id"] == "a1" and payload["type"] == "trace/get":
+                await asyncio.sleep(0.3)
+            return await self.core.command(payload)
+        self.service.command = slow
+        await self.service.poll_once(authority=self.AUTHORITY, deadline=time.monotonic() + 0.2)
+        lists = [p["item_id"] for p in self.core.sent if p["type"] == "trace/list"]
+        held = {(e["automation_id"], e["run_id"]) for e in self.index()["snapshots"]}
+        self.assertIn(("a2", "w1"), held)
+        self.assertNotIn(("a1", "w1"), held)
+        self.core.sent.clear()
+        self.service.command = self.core.command
+        await self.poll()
+        lists.append([p["item_id"] for p in self.core.sent if p["type"] == "trace/list"])
+        # Deferred, not a gap: the slow watch captures its run on the next tick.
+        self.assertEqual(lists, ["a1", "a2", ["a2", "a1"]])
+        self.assertIn(("a1", "w1"), {(e["automation_id"], e["run_id"]) for e in self.index()["snapshots"]})
+        listed, _ = await self.service.watch(action="list")
+        self.assertEqual([w["uncaptured_runs"] for w in listed["watches"]], [0, 0])
+
+    async def test_an_exhausted_tick_reads_nothing_and_counts_every_skip(self):
+        await self.two_watches()
+        await self.service.poll_once(authority=self.AUTHORITY, deadline=time.monotonic() - 1)
+        self.assertEqual(self.core.sent, [])
+        listed, _ = await self.service.watch(action="list")
+        self.assertEqual([w["skipped_polls"] for w in listed["watches"]], [1, 1])
+
+    async def test_authority_retired_before_commit_stores_nothing_and_pauses(self):
+        await self.two_watches()
+        authorized = [True]
+        self.telemetry.core_dispatch_authorizer = lambda: authorized[0]
+        self.core.on_get = lambda payload: authorized.__setitem__(0, False)
+        await self.poll()
+        self.assertEqual(self.index()["snapshots"], [])
+        self.assertTrue(self.service.paused)
+        self.assertEqual([p["item_id"] for p in self.core.sent if p["type"] == "trace/list"], ["a1"])
+        self.assertNotIn("trace_watch_capture", [r["event"] for r in self.audit.rows])
+        listed, _ = await self.service.watch(action="list")
+        self.assertEqual([(w["status"], w["skipped_polls"], w["uncaptured_runs"]) for w in listed["watches"]],
+                         [("paused_core_unavailable", 1, 0)] * 2)
+
+    async def test_generation_change_before_commit_stores_nothing(self):
+        await self.two_watches()
+        self.core.on_get = lambda payload: setattr(self.runtime, "generation", 8)
+        await self.poll()
+        self.assertEqual(self.index()["snapshots"], [])
+        self.assertTrue(self.service.paused)
 
 
 class PollerAuthorityTests(unittest.IsolatedAsyncioTestCase):
@@ -957,13 +1111,16 @@ class SourceShapeTests(unittest.TestCase):
                 "expires_at_ms": 2, "caller_id": "caller", "request_id": "req", "seen_run_ids": [],
                 "baseline_done": False, "skipped_polls": 0, "uncaptured_runs": 0, "captured_count": 0,
                 "evicted_count": 0, "last_poll_at_ms": None}
-        store_module.validate_index({"model": c.MODEL, "snapshots": [], "watches": [base]})
+        empty = store_module.empty_index()["quarantine"]
+        store_module.validate_index({"model": c.MODEL, "snapshots": [], "watches": [base],
+                                     "quarantine": empty})
         for key, value in (("caller_id", "caller " + h.needle("x")), ("automation_id", "../a"),
                            ("seen_run_ids", ["bad/run"]), ("skipped_polls", True)):
             with self.subTest(key=key):
                 with self.assertRaises(store_module.StoreError):
                     store_module.validate_index({"model": c.MODEL, "snapshots": [],
-                                                 "watches": [{**base, key: value}]})
+                                                 "watches": [{**base, key: value}],
+                                                 "quarantine": empty})
 
 
 if __name__ == "__main__":

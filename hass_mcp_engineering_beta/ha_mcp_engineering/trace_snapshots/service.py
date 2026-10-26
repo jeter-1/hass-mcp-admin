@@ -18,6 +18,7 @@ import secrets
 import time
 
 from ..errors import EngineeringServerError, HomeAssistantApiError
+from ..reliability.timestamps import parse_timestamp
 from ..request_context import current_caller_id, current_request_id, current_telemetry
 from ..trace_normalization import (
     fetch_normalized_trace_list,
@@ -35,6 +36,13 @@ _RUN_TEXT = ("state", "script_execution", "last_step")
 
 def _ms(epoch):
     return int(epoch * 1000)
+
+
+def _ended_after(header, boundary_ms):
+    """Whether a run finished (or, without a finish time, started) after ``boundary_ms``."""
+
+    instant = parse_timestamp(header.finished_at) or header.started_instant
+    return instant.timestamp() * 1000 > boundary_ms
 
 
 def _short(value, limit=160):
@@ -95,6 +103,8 @@ class TraceSnapshotService:
         self.secret = secrets.token_bytes(32)
         # Set by the poller: Core authority was unavailable at the last tick.
         self.paused = False
+        # The watch polled first; advanced every authorized tick (review M2).
+        self.rotation = 0
 
     # ------------------------------------------------------------------
     # Authority, Core reads and record construction
@@ -222,18 +232,41 @@ class TraceSnapshotService:
     # Store transactions (run in a worker thread under ``self.lock``)
 
     def _sweep(self, index, now_ms):
-        """Drop expired snapshots and watches from ``index``; return what went."""
+        """Drop expired snapshots, quarantine stubs and watches; return what went.
+
+        An aged quarantine stub is reported with the removed snapshots so the
+        index is rewritten; its record file was deleted when it was damaged.
+        """
 
         cutoff = now_ms - c.RETENTION_SECONDS * 1000
         removed = [e["snapshot_id"] for e in index["snapshots"] if e["captured_at_ms"] <= cutoff]
         expired = [w for w in index["watches"] if w["expires_at_ms"] <= now_ms]
+        quarantine = index["quarantine"]
+        aged = [q["snapshot_id"] for q in quarantine["entries"] if q["quarantined_at_ms"] <= cutoff]
         if removed:
             gone = set(removed)
             index["snapshots"] = [e for e in index["snapshots"] if e["snapshot_id"] not in gone]
+        if aged:
+            quarantine["entries"] = [q for q in quarantine["entries"]
+                                     if q["quarantined_at_ms"] > cutoff]
         if expired:
             ended = {w["watch_id"] for w in expired}
             index["watches"] = [w for w in index["watches"] if w["watch_id"] not in ended]
-        return removed, expired
+        return removed + aged, expired
+
+    @staticmethod
+    def _quarantine(index, entry, damage, now_ms):
+        """Replace a damaged entry by a content-free stub; the file goes in ``_tidy``."""
+
+        index["snapshots"] = [e for e in index["snapshots"] if e["snapshot_id"] != entry["snapshot_id"]]
+        quarantine = index["quarantine"]
+        quarantine["entries"].append({
+            "snapshot_id": entry["snapshot_id"], "automation_id": entry["automation_id"],
+            "run_id": entry["run_id"], "quarantined_at_ms": now_ms, **damage})
+        overflow = len(quarantine["entries"]) - c.QUARANTINE_MAX
+        if overflow > 0:
+            quarantine["entries"] = quarantine["entries"][overflow:]
+            quarantine["dropped"] += overflow
 
     def _tidy(self, index, removed):
         """After the index commit: unlink removed, orphaned and pending files."""
@@ -372,8 +405,17 @@ class TraceSnapshotService:
 
     async def _run(self, function, *args, **kwargs):
         async with self.lock:
+            # A started local transaction is never abandoned: a cancelled
+            # caller (a timed-out tick) waits for it to finish before the lock
+            # is released, so the next caller does not meet a held file lock.
+            work = asyncio.ensure_future(asyncio.to_thread(function, *args, **kwargs))
             try:
-                return await asyncio.to_thread(function, *args, **kwargs)
+                return await asyncio.shield(work)
+            except asyncio.CancelledError:
+                await asyncio.wait({work})
+                if not work.cancelled():
+                    work.exception()
+                raise
             except StoreError as exc:
                 raise c.TraceSnapshotError(exc.reason) from None
 
@@ -462,9 +504,12 @@ class TraceSnapshotService:
             "snapshots": len(index["snapshots"]),
             "bytes": sum(e["bytes"] for e in index["snapshots"]),
             "watches": len(index["watches"]),
+            "quarantined": len(index["quarantine"]["entries"]),
+            "quarantine_dropped": index["quarantine"]["dropped"],
             "limits": {"snapshots": c.MAX_SNAPSHOTS, "bytes": c.STORE_BYTES,
                        "snapshot_bytes": c.SNAPSHOT_BYTES, "retention_days": c.RETENTION_SECONDS // 86400,
-                       "watches": c.MAX_WATCHES, "watch_quota": c.WATCH_QUOTA},
+                       "watches": c.MAX_WATCHES, "watch_quota": c.WATCH_QUOTA,
+                       "quarantine": c.QUARANTINE_MAX},
         }
 
     def _exit(self, value, partial, *, audit=None):
@@ -557,12 +602,13 @@ class TraceSnapshotService:
             index = self.store.load_index()
             removed, expired = self._sweep(index, now_ms)
             entry = next((e for e in index["snapshots"] if e["snapshot_id"] == snapshot_id), None)
-            record = self.store.read_record(entry) if entry is not None else None
-            damaged = entry is not None and record is None
+            record, damage = self.store.read_record(entry) if entry is not None else (None, None)
+            damaged = damage is not None
             if damaged:
-                index["snapshots"] = [e for e in index["snapshots"] if e["snapshot_id"] != snapshot_id]
+                self._quarantine(index, entry, damage, now_ms)
             if removed or expired or damaged:
                 self.store.write_index(index)
+            # A damaged file is unlinked only after the index no longer names it.
             self._tidy(index, removed)
         self._audit_watch_expiry(expired)
         if entry is None:
@@ -704,11 +750,15 @@ class TraceSnapshotService:
     # ------------------------------------------------------------------
     # Poller tick (W1); see ``poller.py`` for the authority it runs under
 
-    async def poll_once(self, *, authority):
+    async def poll_once(self, *, authority, deadline=None):
         """One bounded tick: at most one ``trace/list`` per watch.
 
         ``authority`` is the tick's own admitted ``(generation, version)``,
         or ``None`` when Core authority was unavailable (the tick pauses).
+        ``deadline`` (``time.monotonic``) ends the tick's Core reads. Each
+        watch gets an equal share of the time left when its turn comes, and
+        the first watch rotates every tick, so one slow automation cannot
+        starve the others (review M2).
         """
 
         authorized = authority is not None
@@ -722,8 +772,21 @@ class TraceSnapshotService:
             await self._run(self._skip_all, [w["watch_id"] for w in index["watches"]], _ms(now))
             return
         self.paused = False
-        for watch in index["watches"]:
-            await self._poll_watch(watch, authority)
+        if deadline is None:
+            deadline = time.monotonic() + c.TICK_SECONDS * c.READ_SHARE
+        watches = sorted(index["watches"], key=lambda w: (w["created_at_ms"], w["watch_id"]))
+        first = self.rotation % len(watches)
+        self.rotation += 1
+        order = watches[first:] + watches[:first]
+        for position, watch in enumerate(order):
+            share = (deadline - time.monotonic()) / (len(order) - position)
+            if share <= 0 or not await self._poll_watch(watch, authority, time.monotonic() + share):
+                # Out of time, or Core authority retired: nothing more is read
+                # or stored this tick; every watch not polled counts a skip.
+                rest = [w["watch_id"] for w in order[position + (0 if share <= 0 else 1):]]
+                if rest:
+                    await self._run(self._skip_all, rest, _ms(self.clock()))
+                return
 
     def _skip_all(self, watch_ids, now_ms):
         with self.store.transaction():
@@ -734,41 +797,80 @@ class TraceSnapshotService:
                     watch["last_poll_at_ms"] = now_ms
             self.store.write_index(index)
 
-    async def _poll_watch(self, watch, authority):
+    def _still_authorized(self, authority):
+        """The tick's lease and its exact generation still hold (review M3)."""
+
+        telemetry = current_telemetry()
+        if (telemetry is None or telemetry.core_dispatch_authorizer is None
+                or not telemetry.authorize_core_dispatch()):
+            return False
+        runtime = self.core_runtime
+        status = runtime.route_status(c.REQUIREMENTS) if runtime is not None else {}
+        return status.get("available") is True and status.get("generation") == authority[0]
+
+    async def _poll_watch(self, watch, authority, watch_deadline=None):
+        """Poll one watch until ``watch_deadline``; ``False`` when authority retired.
+
+        Reads finished before the deadline are kept, so a watch slower than
+        its share still makes bounded progress; the rest is read next tick.
+        Before anything read from Core is committed, the tick's authority is
+        checked again; after retirement nothing from this watch is stored.
+        """
+
+        if watch_deadline is None:
+            watch_deadline = time.monotonic() + c.TICK_SECONDS * c.READ_SHARE
         watch_id, automation_id = watch["watch_id"], watch["automation_id"]
         try:
-            listing = await self.list_runs(automation_id)
-        except c.TraceSnapshotError:
+            async with asyncio.timeout_at(self._loop_deadline(watch_deadline)):
+                listing = await self.list_runs(automation_id)
+        except (c.TraceSnapshotError, TimeoutError):
+            if not self._still_authorized(authority):
+                self.paused = True
+                await self._run(self._skip_all, [watch_id], _ms(self.clock()))
+                return False
             await self._run(self._skip_all, [watch_id], _ms(self.clock()))
-            return
+            return True
         listed = [h for h in listing.headers if c.RUN_ID.fullmatch(h.run_id)]
         seen = set(watch["seen_run_ids"])
         settled = {h.run_id for h in listed if h.state != "running"}
-        prepared, failed, deferred = [], 0, False
         if watch["baseline_done"]:
-            fresh = sorted((h for h in listed if h.run_id not in seen and h.state != "running"),
-                           key=lambda h: (h.started_instant, h.run_id))
-            matching = [h for h in fresh if header_matches(watch["mode"], h)]
-            handled = {h.run_id for h in fresh if not header_matches(watch["mode"], h)}
-            now = self.clock()
-            for header in matching[:c.MAX_CAPTURES]:
-                outcome, detail = await self.read_detail(automation_id, header.run_id)
-                if outcome == "source_unavailable":
-                    # Authority or transport loss: retried next tick, not a gap.
-                    deferred = True
-                    break
-                handled.add(header.run_id)
-                if outcome != "captured":
-                    failed += 1
-                    continue
-                prepared.append(await asyncio.to_thread(
-                    self.prepare, detail, automation_id=automation_id, run_id=header.run_id,
-                    origin="trace_watch", watch_id=watch_id, caller=watch["caller_id"],
-                    request_id=current_request_id(), authority=authority,
-                    note=None, now=now))
-                del detail
+            fresh = [h for h in listed if h.run_id not in seen and h.state != "running"]
+            handled = set()
         else:
-            handled = settled
+            # First poll: runs before the watch existed are history, not
+            # captured; runs that finished after its creation are (review M1).
+            fresh = [h for h in listed if h.state != "running"
+                     and _ended_after(h, watch["created_at_ms"])]
+            handled = settled - {h.run_id for h in fresh}
+        fresh.sort(key=lambda h: (h.started_instant, h.run_id))
+        matching = [h for h in fresh if header_matches(watch["mode"], h)]
+        handled |= {h.run_id for h in fresh if not header_matches(watch["mode"], h)}
+        prepared, failed, deferred = [], 0, False
+        now = self.clock()
+        for header in matching[:c.MAX_CAPTURES]:
+            try:
+                async with asyncio.timeout_at(self._loop_deadline(watch_deadline)):
+                    outcome, detail = await self.read_detail(automation_id, header.run_id)
+            except TimeoutError:
+                outcome, detail = "source_unavailable", None
+            if outcome == "source_unavailable":
+                # Authority, transport or time loss: retried next tick, not a gap.
+                deferred = True
+                break
+            handled.add(header.run_id)
+            if outcome != "captured":
+                failed += 1
+                continue
+            prepared.append(await asyncio.to_thread(
+                self.prepare, detail, automation_id=automation_id, run_id=header.run_id,
+                origin="trace_watch", watch_id=watch_id, caller=watch["caller_id"],
+                request_id=current_request_id(), authority=authority,
+                note=None, now=now))
+            del detail
+        if not self._still_authorized(authority):
+            self.paused = True
+            await self._run(self._skip_all, [watch_id], _ms(self.clock()))
+            return False
 
         def update(row, outcomes):
             bad = failed + sum(1 for value in outcomes.values()
@@ -803,3 +905,11 @@ class TraceSnapshotService:
                 item.outcome = "read_failed"
             await self._run(self._commit, prepared, _ms(self.clock()), watch_id=watch_id,
                             update_watch=update)
+        return True
+
+    @staticmethod
+    def _loop_deadline(monotonic_deadline):
+        """``time.monotonic`` deadline to the running loop's clock."""
+
+        loop = asyncio.get_running_loop()
+        return loop.time() + (monotonic_deadline - time.monotonic())
