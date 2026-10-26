@@ -1,0 +1,246 @@
+"""HAMCP-228 mutation runner (offline, deterministic).
+
+Reuses the HAMCP-131 runner's machinery: a disposable copy of the tracked
+tree outside the repository, every fragment matching exactly once before
+anything runs, and fail-fast suites per mutant. The suites are
+``test_hamcp228_baseline_store`` (first, so most mutants fail fast), the
+capture suite and the offline comparator suite. Each run has its own
+temporary directory, removed after it.
+
+The task's classes each have mutations:
+- ``S*``: the credential screen bypassed before a baseline is written or a
+  comparison is returned (the default-mode identifier screen, its PEM
+  header check, the compare output screen, its known secrets);
+- ``P*``: prefix-only reported as verified (a prefix match counted as
+  ``UNCHANGED``, a differing prefix not ``CHANGED``, the stored/stored
+  ``PREFIX_MATCH`` count dropped, the partial flag ignoring withheld values,
+  rows needing attention not first);
+- ``R*``: the resume record filter widened or narrowed (every unreadable
+  record retried, timeout outcomes not retried, carried records re-read,
+  ``resume_not_needed`` skipped, the resumed count, the base's start and
+  outcomes not inherited);
+- ``F*``: the resume inventory fence weakened (installation, authority
+  generation, declared count, the mapping compared by configuration id only);
+- ``C*``: the capacity boundary (off by one, checked only after the reads,
+  the retention sweep boundary, the quarantine bound);
+- ``A*``: the caller check (another caller's baseline, anonymous compare,
+  a cursor from another caller);
+- ``D*``: the stored digest or validator check skipped;
+- ``V*``/``T*``: v2 ``timed_out`` and ``resume`` validation and the
+  comparator's ``timed_out`` reason;
+- ``O*``: public output (the compare tool's read-only annotation and the
+  page's ``resumed_from``).
+
+Runs: ``run1.log`` stopped at its baseline (a wrong suite name);
+``results-run2.json`` and ``results-run3.json`` keep runs 2 and 3;
+``results.json`` is the final run 4 (44 of 44 killed).
+
+Equivalent mutants, analysed and left out after run 2:
+- the resumed baseline inheriting the base's ``unestablished`` identity or a
+  drifted authority: the fence requires the base's ``installation_id`` to
+  equal the current identity, and a baseline this code writes has
+  ``installation_id`` ``null`` exactly when it is unestablished and an
+  ``authority_drift`` other than ``none_observed_at_capture_fences`` only
+  then, so no resumable base reaches either inheritance;
+- the ordered mapping compared as an unordered set: both sides are built
+  from ``sorted(states.items())``, so equal sets are equal sequences.
+
+Run 3 showed ``A3`` (both cursor bindings removed) masked by the store's own
+caller check; the HAMCP-228 suite now requires the cursor itself to refuse
+(``invalid_cursor``, store not consulted), including a token signed for the
+other caller, which also makes the stored-caller check alone (``A4``)
+observable.
+
+Usage:
+    python docs/evidence/hamcp228-mutations/run_mutations.py \\
+        --work /var/tmp/hamcp228-mut --output docs/evidence/hamcp228-mutations/results.json
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hamcp131-mutations"))
+
+import run_mutations as base  # noqa: E402
+
+m = base.m
+E = base.E
+AB = f"{E}/audit_baseline"
+PROV = f"{AB}/capture_provider.py"
+SERV = f"{AB}/capture_service.py"
+STORE = f"{AB}/store.py"
+COMP = f"{AB}/comparison.py"
+VAL = f"{AB}/validation.py"
+TOOL = f"{E}/tools/audit_baseline.py"
+UT = f"{E}/untrusted_text.py"
+SCREEN = "the credential screen bypassed before a write or a returned comparison"
+PREFIX = "prefix-only evidence reported as verified or complete"
+RESUME = "the resume record filter widened or narrowed"
+FENCE = "the resume inventory fence weakened"
+CAPACITY = "the store capacity or retention boundary moved"
+CALLER = "the caller binding skipped"
+DIGEST = "a stored baseline's integrity check skipped"
+SCHEMA = "v2 timed_out or resume validation weakened"
+OUTPUT = "a public output field or annotation changed"
+FENCE_HEAD = '                if (prior["installation"]["installation_id"] != first["identity"]\n'
+GENERATION = '                        or prior["authority"]["generation"] != authority[0]\n'
+DECLARED = ('                        or prior["inventory"]["declared_count"] != len(states)'
+            ' + first["states"]["invalid_count"]\n')
+MAPPING = ('                        or [(r["configuration_id"], r["entity_id"]) for r in prior["records"]]\n'
+           '                        != [(r["configuration_id"], r["entity_id"]) for r in records]):\n')
+
+MUTATIONS = [
+    # -- S: the credential screen
+    m("S1-identifier-default-screen-removed", SCREEN,
+      (PROV, "        return value if untrusted_text.screen(value, tuple(self.known_secrets)) is None else None",
+       "        return value")),
+    m("S2-identifier-known-secrets-dropped", SCREEN,
+      (PROV, "untrusted_text.screen(value, tuple(self.known_secrets))", "untrusted_text.screen(value, ())")),
+    m("S3-pem-header-check-removed", SCREEN,
+      (UT, "    if marker is None and credentials.private_key_header(value):", "    if False:")),
+    m("S4-compare-output-unscreened", SCREEN,
+      (SERV, '        value, withheld = untrusted_text.screen_tree(value, tuple(getattr(getattr(self.provider, '
+             '"projector", None), "known_secrets", ())))',
+       "        withheld = 0")),
+    m("S5-compare-screen-without-known-secrets", SCREEN,
+      (SERV, 'untrusted_text.screen_tree(value, tuple(getattr(getattr(self.provider, "projector", None), '
+             '"known_secrets", ())))', "untrusted_text.screen_tree(value, ())")),
+    # -- P: prefix-only reporting
+    m("P1-prefix-match-counted-unchanged", PREFIX,
+      (COMP, "            elif len(recorded) == len(digest):", "            elif True:")),
+    m("P2-differing-prefix-not-changed", PREFIX,
+      (COMP, "            if not digest.startswith(recorded):", "            if False:")),
+    m("P3-prefix-match-reason-dropped", PREFIX,
+      (COMP, '                reasons.append(f"prefix_match:{len(recorded)}")\n', "")),
+    m("P4-stored-pair-prefix-count-dropped", PREFIX,
+      (SERV, '            value["counts"] = {**value["counts"], PREFIX_MATCH: 0}\n', "")),
+    m("P5-partial-ignores-withheld", PREFIX,
+      (TOOL, 'partial = result["details_truncated"] or result["screened_withheld_count"] > 0',
+       'partial = result["details_truncated"]')),
+    m("P6-attention-rows-not-first", PREFIX,
+      (SERV, 'row["classification"] in {"UNCHANGED", PREFIX_MATCH},', "False,")),
+    m("P7-one-side-only-not-unknown", PREFIX,
+      (COMP, '        elif recorded is None:\n            reasons.append("absent_from_recorded_fingerprints")\n',
+       '        elif recorded is None:\n            pass\n')),
+    m("P8-fingerprint-timed-out-reason-dropped", PREFIX,
+      (COMP, '            if record.configuration_status == "timed_out":\n                reasons.append("timed_out")\n',
+       "")),
+    # -- R: the resume record filter
+    m("R1-every-unreadable-retried", RESUME,
+      (PROV, '                or (row["configuration"]["status"] == "unreadable"\n'
+             '                    and outcomes.get(row["configuration_id"]) == "timeout")}',
+       '                or row["configuration"]["status"] == "unreadable"}')),
+    m("R2-timeout-outcome-not-retried", RESUME,
+      (PROV, '                or (row["configuration"]["status"] == "unreadable"\n'
+             '                    and outcomes.get(row["configuration_id"]) == "timeout")}',
+       "                or False}")),
+    m("R3-carried-records-re-read", RESUME,
+      (PROV, '                pending = [index for index, row in enumerate(records) if row["configuration_id"] in retry]',
+       "                pending = list(range(len(records)))")),
+    m("R4-carried-records-not-copied", RESUME,
+      (PROV, "                        records[index] = copy.deepcopy(row)", "                        pass")),
+    m("R5-resume-not-needed-skipped", RESUME,
+      (SERV, '                if not self.provider.retry_ids(base["baseline"], base["diagnostics"]["record_outcomes"]):',
+       "                if False:")),
+    m("R6-resumed-count-all-records", RESUME,
+      (PROV, '"resumed_count": len(pending)}', '"resumed_count": len(records)}')),
+    m("R8-base-start-not-inherited", RESUME,
+      (PROV, '            started_at = prior["capture"]["started_at"]\n', "")),
+    m("R10-base-outcomes-not-carried", RESUME,
+      (PROV, "                outcomes.update({key: value for key, value in prior_outcomes.items() if key not in retry})\n",
+       "")),
+    # -- F: the inventory fence
+    m("F1-installation-not-fenced", FENCE,
+      (PROV, FENCE_HEAD + GENERATION, '                if (prior["authority"]["generation"] != authority[0]\n')),
+    m("F2-generation-not-fenced", FENCE, (PROV, GENERATION, "")),
+    m("F3-declared-count-not-fenced", FENCE, (PROV, DECLARED, "")),
+    m("F4-mapping-by-configuration-id-only", FENCE,
+      (PROV, MAPPING,
+       '                        or [r["configuration_id"] for r in prior["records"]]\n'
+       '                        != [r["configuration_id"] for r in records]):\n')),
+    # -- C: capacity and retention
+    m("C1-capacity-off-by-one", CAPACITY,
+      (STORE, '        if len(index["baselines"]) >= c.STORE_BASELINES:', '        if len(index["baselines"]) > c.STORE_BASELINES:')),
+    m("C2-capacity-checked-after-reads", CAPACITY,
+      (SERV, '            await self.stored("check_capacity", self.now_ms())\n', "")),
+    m("C3-retention-boundary-inclusive", CAPACITY,
+      (STORE, 'if entry["created_at_ms"] > horizon]', 'if entry["created_at_ms"] >= horizon]')),
+    m("C4-retention-not-swept", CAPACITY,
+      (STORE, 'if entry["created_at_ms"] > horizon]', "]")),
+    m("C5-quarantine-unbounded", CAPACITY,
+      (STORE, "        if len(stubs) > c.QUARANTINE_MAX:", "        if False:")),
+    m("C6-full-store-age-dropped", CAPACITY,
+      (STORE, '            raise StoreError("store_full", max(0, (now_ms - oldest) // 1000))',
+       '            raise StoreError("store_full")')),
+    # -- A: the caller binding
+    m("A1-other-caller-baseline-returned", CALLER,
+      (STORE, '            if entry is None or entry["caller"] != caller:', "            if entry is None:")),
+    m("A2-anonymous-compare-allowed", CALLER,
+      (SERV, '        caller = current_caller_id()\n        if caller == "anonymous":\n'
+             '            raise c.CaptureError("access_denied")\n        earlier, _ =',
+       "        caller = current_caller_id()\n        earlier, _ =")),
+    m("A3-cursor-other-caller-accepted", CALLER,
+      (SERV, '(value + ":" + caller).encode()', '(value + ":").encode()'),
+      (SERV, "        if cursor[1] != caller:", "        if False:")),
+    m("A4-cursor-stored-caller-unchecked", CALLER,
+      (SERV, "        if cursor[1] != caller:", "        if False:")),
+    # -- D: stored integrity
+    m("D1-stored-digest-not-checked", DIGEST,
+      (STORE, '                    if len(raw) != entry["bytes"] or observed["observed_sha256"] != entry["sha256"]:',
+       "                    if False:")),
+    m("D2-stored-report-not-validated", DIGEST,
+      (STORE, "                        report = validate_report(raw, entry)", "                        report = json.loads(raw)")),
+    # -- V/T: v2 validation and the comparator
+    m("V1-v1-accepts-timed-out", SCHEMA,
+      (VAL, "    if schema == BASELINE_SCHEMA_V2:\n        # HAMCP-228: a record",
+       "    if True:\n        # HAMCP-228: a record")),
+    m("V2-timed-out-digest-accepted", SCHEMA,
+      (VAL, '    if config_status == "timed_out" and digest is not None:', "    if False:")),
+    m("V3-resumed-count-zero-accepted", SCHEMA,
+      (VAL, '_require_int(resume["resumed_count"], "resumed_count_invalid", minimum=1)',
+       '_require_int(resume["resumed_count"], "resumed_count_invalid", minimum=0)')),
+    m("T1-comparator-timed-out-reason-dropped", SCHEMA,
+      (COMP, '    if "timed_out" in (earlier.configuration_status, later.configuration_status):\n'
+             '        reasons.append("timed_out")\n', "")),
+    m("T2-unscheduled-record-unreadable", SCHEMA,
+      (PROV, '                        config["status"] = "timed_out"', '                        config["status"] = "unreadable"')),
+    # -- O: public output
+    m("O1-compare-not-read-only", OUTPUT,
+      (TOOL, "    return _tool(compare_automation_baselines, read_only=True)",
+       "    return _tool(compare_automation_baselines, read_only=False)")),
+    m("O2-page-resumed-from-dropped", OUTPUT,
+      (SERV, '"resumed_from": resumed_from, "provider_reads_for_continuation": 0}}',
+       '"resumed_from": None, "provider_reads_for_continuation": 0}}')),
+]
+
+base.MODULES = ("test_hamcp228_baseline_store", "test_automation_baseline_capture",
+                "test_automation_audit_baseline")
+base.MUTATIONS = MUTATIONS
+
+_run_tests = base.run_tests
+
+
+def run_tests(tree: Path, timeout: int, *, failfast: bool) -> tuple[int, str, float]:
+    scratch = tempfile.mkdtemp(prefix="hamcp228-mutant-")
+    previous = os.environ.get("TMPDIR")
+    os.environ["TMPDIR"] = scratch
+    try:
+        return _run_tests(tree, timeout, failfast=failfast)
+    finally:
+        if previous is None:
+            del os.environ["TMPDIR"]
+        else:
+            os.environ["TMPDIR"] = previous
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+base.run_tests = run_tests
+
+
+if __name__ == "__main__":
+    raise SystemExit(base.main())

@@ -1,0 +1,61 @@
+baseline rc=1 FAILED (errors=1) (9s)
+             
+                             alidation/python/cpython-3.12.1                    
+                             4-linux-x86_64-gnu/lib/python3.                    
+                             12/asyncio/base_events.py:448>                     
+                             cb=[_run_until_complete_cb() at                    
+                             /home/josh/repos/home-infrastru                    
+                             cture/.codex-worktrees/adr021-v                    
+                             alidation/python/cpython-3.12.1                    
+                             4-linux-x86_64-gnu/lib/python3.                    
+                             12/asyncio/base_events.py:181]                     
+                             created at                                         
+                             /home/josh/repos/home-infrastru                    
+                             cture/.codex-worktrees/adr021-v                    
+                             alidation/python/cpython-3.12.1                    
+                             4-linux-x86_64-gnu/lib/python3.                    
+                             12/asyncio/runners.py:100> took                    
+                             0.552 seconds                                      
+.[10/26/26 17:23:25] WARNING  Executing <Task finished        base_events.py:1994
+                             name='Task-729'                                    
+                             coro=<StoreTests.test_damage_qu                    
+                             arantines_with_bounded_content_                    
+                             free_stubs() done, defined at                      
+                             /var/tmp/hamcp228-mut/tree/test                    
+                             s/test_hamcp228_baseline_store.                    
+                             py:154> result=None created at                     
+                             /home/josh/repos/home-infrastru                    
+                             cture/.codex-worktrees/adr021-v                    
+                             alidation/python/cpython-3.12.1                    
+                             4-linux-x86_64-gnu/lib/python3.                    
+                             12/asyncio/runners.py:100> took                    
+                             0.190 seconds                                      
+................_maximum_capture_bounded_pages_responsive (test_automation_baseline_capture.CaptureTests._maximum_capture_bounded_pages_responsive) ... ok
+
+----------------------------------------------------------------------
+Isolated child test summary: 1 test in 1.559s
+
+OK
+............[10/26/26 17:23:29] INFO     Authenticated MCP request     logging_config.py:119
+                             started.                                           
+                    INFO     MCP request completed.        logging_config.py:119
+                    INFO     HTTP Request: POST                  _client.py:1740
+                             http://127.0.0.1:8100/SYNTHETIC_ACC                
+                             ESS_TOKEN/mcp "HTTP/1.1 200 OK"                    
+......E
+======================================================================
+ERROR: test_automation_baseline (unittest.loader._FailedTest.test_automation_baseline)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_automation_baseline
+Traceback (most recent call last):
+  File "/home/josh/repos/home-infrastructure/.codex-worktrees/adr021-validation/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/loader.py", line 137, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'test_automation_baseline'
+
+
+----------------------------------------------------------------------
+Ran 58 tests in 7.333s
+
+FAILED (errors=1)
+
