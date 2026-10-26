@@ -45,6 +45,14 @@ complete). The reviewer's delta suite runs unchanged with its one
 owner-superseded method registered as an expected failure by
 ``test_hamcp224_review2_corrections`` in the same invocation.
 
+Review 3 (H3) narrows the ANSI exemption to SGR colour codes: ``S8`` and
+``A1``-``A3`` follow the SGR names, and ``N*`` add every CSI removed again,
+letters allowed in the SGR code, the original form screened after the strip,
+the SGR code removed repeatedly and its length unbounded. The reviewer's
+combined-ANSI suite (``test_review2_ansi_residual``) and
+``test_hamcp224_review3_corrections`` run unchanged in the baseline and
+against every mutant.
+
 Usage:
     python docs/evidence/hamcp224-mutations/run_mutations.py \\
         --work /var/tmp/hamcp224-mut --output docs/evidence/hamcp224-mutations/results.json
@@ -76,6 +84,8 @@ DISCLOSE = "a clock or retention disclosure dropped"
 WITHHELD = "a withheld entry or field reported as complete"
 ORDER = "the merge not on the full microsecond realtime"
 TS = "                entry = RawEntry(ts_ms=record.rt_us // 1000,"
+SGR = r'_SGR = re.compile(r"\x1b\[[0-9;]{0,32}m")'
+SGR_ESCAPE = r'_SGR_ESCAPE = re.compile(r"\x1b(?=\[[0-9;]{0,32}m)")'
 
 MUTATIONS = [
     # -- F: a non-allowlisted field
@@ -113,7 +123,7 @@ MUTATIONS = [
              "    if credential_text(value, known_secrets, labelled=labelled):",
        "    if credential_text(value, known_secrets, labelled=labelled):")),
     m("S8-ansi-not-stripped", SANITIZE,
-      (HJ, '    text = _CSI.sub("", original)\n', "    text = original\n")),
+      (HJ, '    text = _SGR.sub("", original)\n', "    text = original\n")),
     m("S9-withheld-text-returned-with-omission", SANITIZE,
       (HJ, "        return marker, OMISSIONS[marker]", "        return text, OMISSIONS[marker]")),
     m("S10-shared-sanitizer-output-ignored", SANITIZE,
@@ -268,13 +278,28 @@ MUTATIONS = [
     # -- A: two-form ANSI screening (review 2 M4, owner decision)
     m("A1-stripped-text-only-screened", SANITIZE,
       (HJ, "    if marker is None and text != original:\n"
-           '        marker = credentials.screen(_CSI_ESCAPE.sub("", original), known_secrets, labelled=True)\n', "")),
+           '        marker = credentials.screen(_SGR_ESCAPE.sub("", original), known_secrets, labelled=True)\n', "")),
     m("A2-original-text-only-screened", SANITIZE,
       (HJ, "    marker = credentials.screen(text, known_secrets, labelled=True)\n"
            "    if marker is None and text != original:\n",
        "    marker = None\n    if True:\n")),
     m("A3-csi-sequence-alone-withholds", SANITIZE,
-      (HJ, 'credentials.screen(_CSI_ESCAPE.sub("", original), known_secrets', "credentials.screen(original, known_secrets")),
+      (HJ, 'credentials.screen(_SGR_ESCAPE.sub("", original), known_secrets', "credentials.screen(original, known_secrets")),
+    # -- N: SGR colour codes only (review 3 H3, architect direction)
+    m("N1-any-csi-stripped", SANITIZE,
+      (HJ, SGR + "\n" + SGR_ESCAPE + "\n",
+       r'_SGR = re.compile(r"\x1b\[[0-?]{0,32}[ -/]{0,4}[@-~]")' + "\n"
+       + r'_SGR_ESCAPE = re.compile(r"\x1b(?=\[[0-?]{0,32}[ -/]{0,4}[@-~])")' + "\n")),
+    m("N2-sgr-pattern-allows-letters", SANITIZE,
+      (HJ, SGR, r'_SGR = re.compile(r"\x1b\[[0-9;A-Za-z]{0,32}m")')),
+    m("N3-original-form-stripped-first", SANITIZE,
+      (HJ, 'credentials.screen(_SGR_ESCAPE.sub("", original), known_secrets',
+       'credentials.screen(_SGR.sub("", original), known_secrets')),
+    m("N4-sgr-removed-repeatedly", SANITIZE,
+      (HJ, '    text = _SGR.sub("", original)\n',
+       "    text = original\n    while _SGR.search(text):\n        text = _SGR.sub(\"\", text)\n")),
+    m("N5-sgr-length-unbounded", SANITIZE,
+      (HJ, SGR, r'_SGR = re.compile(r"\x1b\[[0-9;]*m")')),
     # -- U: microsecond order (HAMCP-224 review 1 M2)
     m("U1-merge-precision-dropped", ORDER,
       (INC, "                running = max(running, record.rt_us)\n",
@@ -299,8 +324,8 @@ MUTATIONS = [
 ]
 
 base.MODULES = ("test_hamcp224_host_journal", "test_hamcp224_review1_corrections",
-                "test_hamcp224_review2_corrections", "test_pr313_delta_residuals",
-                "test_pr313_independent_review", "test_hamcp131_incident_logs",
+                "test_hamcp224_review2_corrections", "test_hamcp224_review3_corrections",
+                "test_pr313_delta_residuals", "test_pr313_independent_review", "test_review2_ansi_residual", "test_hamcp131_incident_logs",
                 "test_hamcp220_incident_log_timestamps", "test_hamcp191_shared_sanitizer",
                 "test_hamcp132_configuration_definitions", "test_pr294_delta_review",
                 "test_pr294_corr2_extra", "test_pr294_final32_review")
