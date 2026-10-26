@@ -7,8 +7,8 @@ are authoritative. The audit sheet `08 HA Automation Audit - Cycle 2026-10`,
 tab `Engineering Gaps`, is background only.
 
 Base: `origin/main` `06a28134f219244f258ab26307c1dfcb9e5d18cb`
-(2.4.1-beta.37). This note changes no runtime file. Part 2 implements the
-decisions in section 8, in the next free beta.
+(2.4.1-beta.37). Part 1 of this note changed no runtime file. Part 2
+implements the decisions in section 8 in two pull requests (decision P).
 
 Owner decisions in force (Josh, 2026-10-26):
 
@@ -22,6 +22,32 @@ Owner decisions in force (Josh, 2026-10-26):
   the result `partial`. Capture sanitizes before anything is stored. The rest of
   HAMCP-194 stays in its backlog (recorded on the HAMCP-194 row).
 - **O3.** Register rows HAMCP-225, HAMCP-226 and HAMCP-228 define scope.
+
+Part 2 owner decisions (Josh, 2026-10-26): **all section 8 recommendations
+accepted**, plus one addition.
+
+- **W1.** Bounded read-only poller: at most 10 watched automations, polled
+  every 30 seconds.
+- **E1 + E2.** At capacity, new manual captures are refused (`store_full`).
+  Each watch has a 20-snapshot quota and evicts only its **own** oldest
+  snapshot when that quota is full. This eviction is new behavior and is
+  disclosed in the tool description and the capture result. Manual snapshots
+  are never evicted.
+- **R1.** Strict re-scan on read-back. A string that was partly redacted at
+  capture is withheld whole on read.
+- **S2.** A durable bounded baseline store: 12 baselines, 180 days.
+- **T.** Resume retries timed-out records only (`timed_out`, plus `unreadable`
+  with outcome `timeout`).
+- **B.** The bounds in sections 2.4, 2.5 and 4.1 as written.
+- **P.** Two pull requests: HAMCP-225 alone first, with its own review; then
+  HAMCP-226 and HAMCP-228 together. Consecutive betas, each taking the next
+  free number at materialization (`2.4.1-beta.38` is staged by #313).
+- **W1 addition (watch-list management).** Adding or removing a watched
+  automation needs **no change plan and no external approval**: it is
+  read-only toward Home Assistant and has no effect on the house. It is still
+  an owner-visible, audited action: every add and remove writes an audit row
+  with caller attribution, the list is bounded at 10, and the managing tool
+  returns the current watch list with every response (section 2.5).
 
 ## 1. Part 0: signed coverage (ADR-021)
 
@@ -204,13 +230,22 @@ Engineering-local write tool. Age expiry is the release valve.
 
 On-demand capture alone does not fix HAAC-E001. Someone must call it within
 about five minutes of the run. The register outcome allows an optional bounded
-trigger. That requires Engineering to start Core reads on its own schedule,
-which no Engineering feature does today. Options:
+trigger. That requires Engineering to start Core reads on its own schedule.
+The only precedent is the dependency-index prewarm (`dependency/runtime.py`
+`start_prewarm`), which owns its own Core authority lease
+(`dependency/authority.py`) and retries every 300 seconds until one build
+succeeds; no Engineering feature polls periodically today. Options:
 
 - **W0:** on-demand only in this PR; watch becomes a follow-up task.
-- **W1 (recommended): bounded poller.** Tool
-  `set_automation_trace_watch(automation_id, mode, duration_hours)`, risk
-  `engineering_evidence_write`, plus `clear` and list through the same tool.
+- **W1 (recommended; decided): bounded poller.** Tool
+  `set_automation_trace_watch(action, automation_id, mode, duration_hours)`
+  with `action` one of `add`, `remove` or `list`. Risk
+  `engineering_evidence_write` with `external_approval_required: false`: no
+  change plan and no approval (W1 addition), because it is read-only toward
+  Home Assistant. Every `add` and `remove` writes an audit row with caller
+  attribution, and every response (including refusals) returns the current
+  watch list. `add` for an automation already watched replaces its mode and
+  expiry and keeps its snapshots.
   - At most 10 watches, each expiring after at most 168 hours. Watches persist
     in the store, so a restart resumes them until expiry.
   - Every 30 seconds the poller sends one `trace/list` per watched automation
@@ -393,7 +428,7 @@ Today scheduling stops 10 seconds before `COLLECTION_SECONDS = 45`
 
 | Surface | Change |
 | --- | --- |
-| Static tools | 68 to 72 (`capture_automation_trace`, `list_trace_snapshots`, `get_trace_snapshot`, `compare_automation_baselines`), or 73 with W1 (`set_automation_trace_watch`). About 29 tests assert 68 static and 96 total. |
+| Static tools | HAMCP-225 PR: 68 to 72 (`capture_automation_trace`, `list_trace_snapshots`, `get_trace_snapshot`, `set_automation_trace_watch`). HAMCP-226 + 228 PR: 72 to 73 (`compare_automation_baselines`). About 29 tests assert 68 static and 96 total. |
 | Input schemas | `get_automation_trace` unchanged. Additive: `finding_types` value, `resume_capture_id`. New tools add new schemas. |
 | Output | `get_automation_trace` data keeps its shape; completeness can now be `partial`. New fields: `bounded_sources`, `target_availability`, `last_changed`, `timed_out`. |
 | Persisted formats | New: trace snapshot store and baseline store. Changed: baseline schema v2 (v1 still read). |
@@ -455,7 +490,10 @@ and the direct-HA read policy for the trace capture), and
 
 ## 8. Decisions for Josh
 
-| ID | Question | Options | Recommendation |
+Every recommendation below was accepted by Josh on 2026-10-26 (see the decision
+block at the top of this note).
+
+| ID | Question | Options | Recommendation (accepted) |
 | --- | --- | --- | --- |
 | W | Bounded trigger for HAMCP-225 | W0 on-demand only; W1 bounded poller via a tool; W2 via add-on options | **W1.** Without it HAAC-E001 recurs whenever no one calls capture within about five minutes. |
 | E | Trace store at capacity | E1 refuse; E2 oldest-first inside each watch's quota, manual never evicted; E3 global oldest-first | **E1 for manual, plus E2 if W1.** E2 is new eviction behavior. |
