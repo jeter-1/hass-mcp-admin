@@ -411,6 +411,8 @@ def _record(value: Any, schema: str = BASELINE_SCHEMA) -> AutomationRecord:
     model = config["fingerprint_model"]
     if model is not None:
         model = _require_str(model, "record_fingerprint_model_invalid", safe_id=True)
+    if config_status == "timed_out" and digest is not None:
+        raise BaselineValidationError("timed_out_configuration_digest_present")
     if config_status == "readable" and (digest is None or model is None):
         raise BaselineValidationError("readable_configuration_digest_missing")
     if digest is not None and model is None:

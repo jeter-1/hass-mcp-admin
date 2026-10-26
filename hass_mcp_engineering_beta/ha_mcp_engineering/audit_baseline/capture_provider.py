@@ -9,6 +9,7 @@ import uuid
 
 from ..request_context import current_telemetry
 from ..sanitization import sanitize_untrusted_data
+from .. import untrusted_text
 from . import capture_contracts as c
 from .models import BASELINE_SCHEMA_V2, FINGERPRINT_MODEL
 from .validation import canonical_configuration_digest, BaselineValidationError, _new_baseline
@@ -27,7 +28,11 @@ class Projector:
         if type(value) is not str or not pattern.fullmatch(value) or value in {".", ".."}:
             return None
         sanitized = sanitize_untrusted_data(value, known_secrets=self.known_secrets, max_string=256)
-        return value if sanitized.value == value and not sanitized.failed_closed else None
+        if sanitized.value != value or sanitized.failed_closed:
+            return None
+        # HAMCP-228: the HAMCP-226 default-mode credential screen too (owner
+        # direction, Josh, 2026-10-26); a withheld identifier is unusable.
+        return value if untrusted_text.screen(value, tuple(self.known_secrets)) is None else None
 
     def project(self, kind, value):
         c.bounded(value)

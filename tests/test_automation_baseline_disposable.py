@@ -13,7 +13,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'scripts'), str(ROOT / 'hass_mcp_engineering_beta')]
 import automation_baseline_contract_acceptance as lane
-from test_automation_baseline_capture import Client, Core, fixture, export
+from test_automation_baseline_capture import Client, Core, fixture, export, make_store
 from test_alarmo_interval_observer import CORE, NOT_SLOTS, NOT_STRINGS, OTHER_CORE, SLOT_VERSIONS, cleanup_value, receipt
 import alarmo_inspection_contract_acceptance as alarmo
 from ha_mcp_engineering.audit_baseline import capture_contracts as c, compare_baselines, load_baseline
@@ -47,7 +47,7 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
         telemetry.caller_id = 'synthetic-disposable-offline'
         telemetry.core_dispatch_authorizer = lambda: True
         client = Client(data())
-        service = BaselineCaptureService(BaselineCaptureProvider(client, Core()))
+        service = BaselineCaptureService(BaselineCaptureProvider(client, Core()), make_store(self))
         before, _ = await export(service, 17)
         client.data = data(True)
         after, _ = await export(service, 17)
