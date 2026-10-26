@@ -157,8 +157,10 @@ synthetic.
 
   Further classes probe the parse (`F1`-`F4`), the counts (`C1`-`C3`) and
   the row (`W1`). Run 1 stopped at its baseline on the HAMCP-191 table
-  test (`run1-baseline-failed.log`). The results of the later runs are in
-  `results.json` and the `run<N>.log` files named in the PR.
+  test (`run1-baseline-failed.log`): the calibration exit's sanitizer call
+  was not yet listed. With it listed, run 2 killed 22 of 22 (`results.json`,
+  `run2.log`); `results.json` records each mutant and the tests that killed
+  it.
 
 ## 2. Release CI and publication
 
