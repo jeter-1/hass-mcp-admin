@@ -32,6 +32,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     HomeAssistantApiError,
 )
 from ha_mcp_engineering.f3_configuration.helper_options import (  # noqa: E402
+    CORE_ADMISSION_UNAVAILABLE,
     HelperOptionsAdapter,
 )
 from ha_mcp_engineering.governance import helper_options as contract  # noqa: E402
@@ -117,8 +118,37 @@ class ServiceAdmissionTests(HelperOptionsServiceTestCase):
         self.assertEqual(raised.exception.details, PENDING_DETAILS)
         self.assertEqual(self.repository.list(), [])
 
+    async def test_generic_builder_refuses_a_raw_options_operation_first(self):
+        # The lowest builder refuses the dormant resource type before it
+        # validates anything, so an unadmitted raw route learns nothing more.
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service._create_configuration_plan(
+                title="t",
+                description="d",
+                operations=[{
+                    "operation_id": "options_1",
+                    "resource_type": contract.RESOURCE_TYPE,
+                    "action": contract.ACTION,
+                    "target_id": "filterentry01",
+                    "proposed_config": {},
+                }],
+                _before_persist=lambda: None,
+            )
+        self.assertEqual(raised.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+        self.assertEqual(raised.exception.details, PENDING_DETAILS)
+        self.assertEqual(self.ha_calls(), 0)
+        self.assertEqual(self.repository.list(), [])
+
 
 class AdmittedServiceBoundaryTests(HelperOptionsServiceTestCase):
+    async def test_adapter_admission_follows_the_live_core_status(self):
+        adapter = self.runtime._configuration_adapters[contract.CAPABILITY_IDENTITY]
+        self.assertTrue(self.runtime._helper_options_admitted())
+        self.assertTrue(adapter._admitted())
+        self.core.withdraw()
+        self.assertFalse(self.runtime._helper_options_admitted())
+        self.assertFalse(adapter._admitted())
+
     async def test_internal_builder_requires_a_persistence_lease(self):
         self.add_filter()
         request = planning.validate_request(
@@ -384,6 +414,58 @@ class PlanningTests(HelperOptionsServiceTestCase):
         await self.assert_refused(
             "helper_options_target_changed_during_planning", TIME_CONSTANT_20
         )
+
+
+class AdapterAdmissionTests(HelperOptionsServiceTestCase):
+    """The adapter re-reads admission itself at preflight, pre-dispatch and
+    readback; Core and the service still admit, so only its own gate refuses."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.add_filter()
+        self.created = await self.approved_options(TIME_CONSTANT_20)
+        self.adapter = self.runtime._configuration_adapters[contract.CAPABILITY_IDENTITY]
+        self.adapter_admits = True
+        self.adapter._admission = lambda: self.adapter_admits
+
+    async def test_preflight_refuses_before_any_read(self):
+        self.adapter_admits = False
+        calls = self.ha_calls()
+        result = await self.apply(self.created)
+        self.assertFalse(result["provider_dispatch_occurred"])
+        self.assertIn(CORE_ADMISSION_UNAVAILABLE, self.child_codes(result["task_id"]))
+        self.assertEqual(self.ha_calls(), calls, "no Home Assistant read")
+
+    async def test_predispatch_refuses_before_opening_a_flow(self):
+        original = HelperOptionsAdapter.preflight
+
+        async def then_withdraw(adapter, *args, **kwargs):
+            outcome = await original(adapter, *args, **kwargs)
+            self.adapter_admits = False
+            return outcome
+
+        opens = len(self.options_rest.opens())
+        with mock.patch.object(HelperOptionsAdapter, "preflight", then_withdraw):
+            result = await self.apply(self.created)
+        self.assertFalse(result["provider_dispatch_occurred"])
+        self.assertIn(CORE_ADMISSION_UNAVAILABLE, self.child_codes(result["task_id"]))
+        self.assertEqual(len(self.options_rest.opens()), opens, "no flow opened")
+        self.assertEqual(self.options_rest.submits(), [])
+
+    async def test_readback_refuses_after_the_submit(self):
+        gateway = self.adapter.gateway
+        original = gateway.options_submit
+
+        async def submit_then_withdraw(*args, **kwargs):
+            outcome = await original(*args, **kwargs)
+            self.adapter_admits = False
+            return outcome
+
+        with mock.patch.object(gateway, "options_submit", submit_then_withdraw):
+            result = await self.apply(self.created)
+        self.assertEqual(len(self.options_rest.submits()), 1)
+        self.assertNotEqual(result["task_state"], "succeeded_verified", result)
+        self.assertIn(CORE_ADMISSION_UNAVAILABLE, self.child_codes(result["task_id"]))
 
 
 class ExecutionTests(HelperOptionsServiceTestCase):
