@@ -2211,6 +2211,11 @@ SEQ13_UPLOAD_IF = "always() && " + SEQ13_STAGE_IF
 SEQ13_STAGE = "Stage seq-13 contract evidence paths"
 SEQ13_UPLOAD = "Upload bounded seq-13 label and availability/exposure contract evidence"
 SEQ13_DELETE_UPLOAD = "Upload bounded seq-13 configuration delete contract evidence"
+# HAMCP-232/145: seq 15 extends the candidate slot's Core only (OD-13).
+SEQ15_STAGE_IF = "matrix.alarmo && matrix.support_slot == 'candidate' && env.REAL_HA_SEQ15_LANES == 'enabled'"
+SEQ15_UPLOAD_IF = "always() && " + SEQ15_STAGE_IF
+SEQ15_STAGE = "Stage seq-15 contract evidence paths"
+SEQ15_UPLOAD = "Upload bounded seq-15 helper options, input select and script trace contract evidence"
 
 
 class WorkflowBindingTests(unittest.TestCase):
@@ -2239,13 +2244,17 @@ class WorkflowBindingTests(unittest.TestCase):
             SEQ13_STAGE: SEQ13_STAGE_IF,
             SEQ13_UPLOAD: SEQ13_UPLOAD_IF,
             SEQ13_DELETE_UPLOAD: SEQ13_UPLOAD_IF,
+            # HAMCP-232/145: the dormant seq-15 lanes add one stage and one upload.
+            SEQ15_STAGE: SEQ15_STAGE_IF,
+            SEQ15_UPLOAD: SEQ15_UPLOAD_IF,
         })
         for step in self.steps:
             text = json.dumps(step)
             if "alarmo" in text.lower():
                 with self.subTest(step=step.get("name")):
                     self.assertIn(step.get("if"), ("matrix.alarmo", "always() && matrix.alarmo",
-                                                   SEQ13_STAGE_IF, SEQ13_UPLOAD_IF))
+                                                   SEQ13_STAGE_IF, SEQ13_UPLOAD_IF, SEQ15_STAGE_IF,
+                                                   SEQ15_UPLOAD_IF))
                     self.assertNotIn("2026.9.4", text)
                     self.assertNotIn("2026-9-4", text)
                     self.assertNotIn("matrix.ha_version ==", text)
@@ -2264,6 +2273,8 @@ class WorkflowBindingTests(unittest.TestCase):
         self.assertLess(names.index("Upload bounded entity metadata contract evidence"),
                         names.index(SEQ13_UPLOAD))
         self.assertLess(names.index(SEQ13_UPLOAD), names.index(SEQ13_DELETE_UPLOAD))
+        self.assertTrue(names.index(SEQ13_STAGE) < names.index(SEQ15_STAGE) < run)
+        self.assertLess(names.index(SEQ13_DELETE_UPLOAD), names.index(SEQ15_UPLOAD))
         self.assertIn("--verify-publication", self.steps[bind]["run"])
         self.assertIn("--verify-cleanup", self.steps[cleanup]["run"])
 
@@ -2294,6 +2305,35 @@ class WorkflowBindingTests(unittest.TestCase):
             "${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json"])
         self.assertEqual(delete_upload["with"]["if-no-files-found"], "error")
         self.assertEqual(delete_upload["with"]["retention-days"], 14)
+
+    def test_seq15_lanes_are_defined_but_dormant(self):
+        # HAMCP-232/145 (OD-14): the committed workflow keeps the seq-15 lanes off and
+        # changes no existing step; only the candidate slot would stage or upload them.
+        workflow = yaml.safe_load(CI.read_text(encoding="utf-8"))
+        job = workflow["jobs"]["real-ha-contract-tests"]
+        self.assertEqual(job["env"]["REAL_HA_SEQ15_LANES"], "dormant")
+        self.assertEqual(CI.read_text(encoding="utf-8").count("REAL_HA_SEQ15_LANES: "), 1)
+        users = [step["name"] for step in self.steps if "REAL_HA_SEQ15_LANES" in json.dumps(step)]
+        self.assertEqual(users, [SEQ15_STAGE, SEQ15_UPLOAD])
+        stage = self.step(SEQ15_STAGE)
+        self.assertEqual(re.findall(r"printf '([A-Z_]+)=", stage["run"]),
+                         ["REAL_HA_HELPER_OPTIONS_RESULT", "REAL_HA_INPUT_SELECT_OPTION_RESULT",
+                          "REAL_HA_SCRIPT_TRACES_RESULT"])
+        import seq15_contract_acceptance as seq15
+        self.assertEqual(sorted(lane["output_env"] for lane in seq15.LANES.values()),
+                         sorted(re.findall(r"printf '([A-Z_]+)=", stage["run"])))
+        upload = self.step(SEQ15_UPLOAD)
+        self.assertEqual(upload["uses"], self.step(SEQ13_UPLOAD)["uses"])
+        self.assertEqual(upload["with"]["name"], "seq15-contracts-core-${{ matrix.ha_version }}"
+                         "-${{ matrix.support_slot }}-${{ matrix.lane }}")
+        self.assertEqual(upload["with"]["path"].splitlines(), [
+            "${{ runner.temp }}/seq15-helper-options-${{ matrix.lane }}.json",
+            "${{ runner.temp }}/seq15-input-select-option-${{ matrix.lane }}.json",
+            "${{ runner.temp }}/seq15-script-traces-${{ matrix.lane }}.json"])
+        self.assertEqual(upload["with"]["if-no-files-found"], "error")
+        self.assertEqual(upload["with"]["retention-days"], 14)
+        # The target Core is the window's candidate slot today; rotation fails the upload closed.
+        self.assertEqual(SLOT_VERSIONS["candidate"], seq15.TARGET_CORE)
 
     def test_core_archive_uses_only_fixed_codeload_forms_and_exact_digest(self):
         step = self.step("Stage exact Alarmo and independent interval observer for the Core slot")

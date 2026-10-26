@@ -3671,6 +3671,18 @@ async def _run_core_2026_9_child_contract(
                     core_version=EXPECTED_HA_VERSION)
                 if seq13_results["seq13_configuration_delete"].get("result") != "PASS":
                     raise RuntimeError("Required seq-13 disposable scenario did not pass")
+            # HAMCP-232/145: the seq-15 lanes extend 2026.10.3 only (OD-13) and run only
+            # when the batch evidence run sets REAL_HA_SEQ15_LANES=enabled.
+            seq15_results = {}
+            if os.environ.get("REAL_HA_SEQ15_LANES") == "enabled":
+                import seq15_contract_acceptance as seq15
+                # Only the target slot runs them; the CI upload then requires every receipt.
+                for lane_key in seq15.LANES if EXPECTED_HA_VERSION == seq15.TARGET_CORE else ():
+                    seq15_results["seq15_" + lane_key] = await seq15.run_disposable(
+                        lane_key, configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+                        core_version=EXPECTED_HA_VERSION)
+                    if seq15_results["seq15_" + lane_key].get("result") != "PASS":
+                        raise RuntimeError("Required seq-15 disposable scenario did not pass")
             # The existing required artifact carries every clearly named proof.
             receipt = Path(os.environ["REAL_HA_ALARMO_RESULT"])
             # HAMCP-180: the shared strict loader refuses a repeated key before the rewrite.
@@ -3678,6 +3690,7 @@ async def _run_core_2026_9_child_contract(
             retained["automation_baseline"] = baseline_result
             retained["entity_metadata"] = entity_metadata_result
             retained.update(seq13_results)
+            retained.update(seq15_results)
             receipt.write_text(json.dumps(retained, sort_keys=True, indent=2) + "\n")
         # Native interval observations must finish before the independent
         # upstream client starts its background traffic. Unexpected commands

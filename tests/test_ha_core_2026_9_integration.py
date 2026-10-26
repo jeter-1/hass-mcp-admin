@@ -2646,6 +2646,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             CORE_ENTITY_METADATA_PROFILES, CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES,
             CORE_LABEL_REGISTRY_PROFILES,
             CORE_CONFIGURATION_DELETE_PROFILES,
+            CORE_NOVEMBER_BATCH_PROFILES,
         )
         source = _MutableSource(_core_2026_9_snapshot())
         events: list[dict] = []
@@ -2671,14 +2672,15 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
                                                             + CORE_ENTITY_METADATA_PROFILES
                                                             + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
                                                             + CORE_CONFIGURATION_DELETE_PROFILES
-                                                            + CORE_LABEL_REGISTRY_PROFILES))
+                                                            + CORE_LABEL_REGISTRY_PROFILES
+                                                            + CORE_NOVEMBER_BATCH_PROFILES))
         self.assertEqual(
             {p["capability_id"] for p in runtime.health_snapshot()["authority_profiles"]
              if not p["disposition"].startswith("admitted_")},
             {p.capability_id for p in CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES + CORE_AUTOMATION_BASELINE_PROFILES
              + CORE_ENTITY_METADATA_PROFILES + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
              + CORE_CONFIGURATION_DELETE_PROFILES
-             + CORE_LABEL_REGISTRY_PROFILES},
+             + CORE_LABEL_REGISTRY_PROFILES + CORE_NOVEMBER_BATCH_PROFILES},
         )
         self.assertEqual(summary["fallback_count"], 0)
         encoded = json.dumps(event, sort_keys=True)
@@ -2973,7 +2975,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             },
             {"ha_get_operation_status"},
         )
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 96)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 100)
         # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
         # never a stock policy entry (30 -> 31).
         self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
@@ -3038,7 +3040,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(counts["reviewed_upstream_version"], "8.6.0")
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
         self.assertEqual(counts["expected_delegated_reads"], 28)
-        self.assertEqual(counts["expected_connector_total"], 96)
+        self.assertEqual(counts["expected_connector_total"], 100)
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
         evidence = [
@@ -3112,7 +3114,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         health = gateway.health_snapshot()
         self.assertEqual(health["core_withheld_read_count"], 5)
         self.assertEqual(health["dynamically_exposed_count"], 20)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 88)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 92)
         self.assertEqual(
             {item["tool"] for item in health["core_withheld_tools"]},
             set(DEVICE_DEPENDENT_DELEGATED_TOOLS),
