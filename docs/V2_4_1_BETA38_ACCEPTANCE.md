@@ -187,8 +187,17 @@ synthetic.
   of 73 (`results-run4.json`, `run4.log`); the survivor, S5 (the PEM shape
   dropped), was hidden by the `private key` keyword, so the value shapes
   became `credentials._value_shape` with a test of their own, and run 5
-  killed 73 of 73 (`results.json`, `run5.log`). `results.json` records each
-  mutant and the tests that killed it.
+  killed 73 of 73 (`results-run5.json`, `run5.log`). Runs 6 and 7 cover the
+  review 3 correction, with S8 and A1–A3 retargeted at the SGR names and 5
+  mutants added (N1–N5: every CSI removed again, letters allowed in the SGR
+  code, the original form screened after the strip, SGR codes removed
+  repeatedly, the SGR length unbounded). Run 6 killed 75 of 78
+  (`results-run6.json`, `run6.log`); N2, N4 and N5 changed only the shown
+  form, whose leftover escape the second form still withheld, as
+  unverifiable, so a test now requires the unverifiable withholding for a
+  label behind a refused escape, and run 7 killed 78 of 78 (`results.json`,
+  `run7.log`). `results.json` records each mutant and the tests that killed
+  it.
 
 ## 2. Release CI and publication
 
