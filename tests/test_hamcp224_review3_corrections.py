@@ -167,6 +167,25 @@ class SgrOnlyTests(review1.Harness):
             with self.subTest(value=value):
                 self.assertEqual(hj.screen_text(value.encode(), ()), UNVERIFIABLE)
 
+    async def test_a_label_behind_a_refused_escape_is_unverifiable_not_matched(self):
+        # Removing more than one SGR code (a letter in it, any length, or a
+        # code assembled by a removal) would expose the label, a credential
+        # match. The escape stays, so the field is withheld as unverifiable.
+        values = ["pass\x1b[1" + final + "mword=" + NEEDLE for final in FINAL_BYTES if final.isalpha()]
+        values += ["pass\x1b[" + "1" * 33 + "mword=" + NEEDLE, "pass\x1b[" + "9" * 200 + "mword=" + NEEDLE,
+                   "pass\x1b[3\x1b[1m1mword=" + NEEDLE, "pass\x1b\x1b[0m[31mword=" + NEEDLE,
+                   "pass\x1b[\x1b[0mmword=" + NEEDLE]
+        for value in values:
+            with self.subTest(value=value):
+                self.assertEqual(hj.screen_text(value.encode(), ()), UNVERIFIABLE)
+        for field, source, _key in FIELDS:
+            for value in (values[0], values[-5], values[-3]):
+                with self.subTest(value=value, field=field):
+                    page = await self.planted(value.encode(), field, source)
+                    self.assertNotIn(NEEDLE, json.dumps(page))
+                    self.assertEqual(page["entries"][0]["withheld"], hj.UNVERIFIABLE_OMISSION)
+                    self.assertFalse(page["complete"])
+
     def test_the_original_form_is_still_screened(self):
         # Text the code's own characters spell: only the original with the
         # ESC removed holds it.

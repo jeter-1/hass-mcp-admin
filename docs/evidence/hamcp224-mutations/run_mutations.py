@@ -51,7 +51,8 @@ letters allowed in the SGR code, the original form screened after the strip,
 the SGR code removed repeatedly and its length unbounded. The reviewer's
 combined-ANSI suite (``test_review2_ansi_residual``) and
 ``test_hamcp224_review3_corrections`` run unchanged in the baseline and
-against every mutant.
+against every mutant. Each test run has its own temporary directory,
+removed after it.
 
 Usage:
     python docs/evidence/hamcp224-mutations/run_mutations.py \\
@@ -60,8 +61,11 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import shutil
 import sys
+import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hamcp131-mutations"))
 
@@ -330,6 +334,28 @@ base.MODULES = ("test_hamcp224_host_journal", "test_hamcp224_review1_corrections
                 "test_hamcp132_configuration_definitions", "test_pr294_delta_review",
                 "test_pr294_corr2_extra", "test_pr294_final32_review")
 base.MUTATIONS = MUTATIONS
+
+_run_tests = base.run_tests
+
+
+def run_tests(tree: Path, timeout: int, *, failfast: bool) -> tuple[int, str, float]:
+    # Each run gets its own temporary directory, removed after it: the
+    # unchanged reviewer suites leave fixture journal roots behind, and a
+    # run stopped by its timeout skips its cleanups.
+    scratch = tempfile.mkdtemp(prefix="hamcp224-mutant-")
+    previous = os.environ.get("TMPDIR")
+    os.environ["TMPDIR"] = scratch
+    try:
+        return _run_tests(tree, timeout, failfast=failfast)
+    finally:
+        if previous is None:
+            del os.environ["TMPDIR"]
+        else:
+            os.environ["TMPDIR"] = previous
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+base.run_tests = run_tests
 
 
 if __name__ == "__main__":
