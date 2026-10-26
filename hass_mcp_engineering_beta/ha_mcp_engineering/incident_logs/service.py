@@ -82,7 +82,7 @@ LIMITATIONS = (
     "Host journal entries are read through a fixed field allowlist; a message or returned field whose text may "
     "hold a credential, or that was longer than the field bound and so never screened whole, is withheld whole "
     "(withheld) and the read is partial, also when the text filter left that entry out "
-    "(withheld_not_searched); an addon:<slug> entry not from that add-on's container through journald is never "
+    "(withheld_not_searched) or the level filter left it out (withheld_level_filtered); an addon:<slug> entry not from that add-on's container through journald is never "
     "returned (match_rejected).",
     "Host journal entries are merged on their microsecond journal realtime; ts shows milliseconds. A Supervisor "
     "or gateway time has millisecond precision, so within one millisecond it is merged before a host journal "
@@ -720,6 +720,7 @@ class IncidentLogService:
         skipped = [0] * len(scans)
         outside = [0] * len(scans)
         unsearched = [0] * len(scans)
+        level_filtered = [0] * len(scans)
         emitted: list[tuple[Scan, int]] = []
         stopped = False
         while heap:
@@ -737,10 +738,16 @@ class IncidentLogService:
                 emitted.append((scan, index))
             elif item.in_window:
                 skipped[position] += 1
-                if view.get("withheld") is not None and level_allows(view["level"], args["min_level"]):
+                withheld_entry = view.get("withheld") is not None
+                if withheld_entry and level_allows(view["level"], args["min_level"]):
                     # HAMCP-224 M1: withheld text is never searched, so the
                     # filter cannot tell whether this entry matched.
                     unsearched[position] += 1
+                elif withheld_entry:
+                    # Review 2 M1 residual: the level is the journal PRIORITY,
+                    # never the text, but withholding is still disclosed when
+                    # the level filter leaves the entry out.
+                    level_filtered[position] += 1
             elif item.record is None or item.record.rejected is None:
                 # A rejected or unreadable host journal entry is counted apart.
                 outside[position] += 1
@@ -750,7 +757,7 @@ class IncidentLogService:
             heapq.heappop(heap)
             if index + 1 < len(scan.items):
                 heapq.heappush(heap, (scan.items[index + 1].key_us, position, index + 1))
-        return emitted, consumed, skipped, outside, stopped, edge, unsearched
+        return emitted, consumed, skipped, outside, stopped, edge, unsearched, level_filtered
 
     def _finish(self, scans: list[Scan], args: dict, budget: Budget) -> dict:
         """The single exit point: sanitize once, filter, merge, build, sanitize.
@@ -823,7 +830,7 @@ class IncidentLogService:
         withheld_items: list[str] = []
         journal = any(scan.journal for scan in scans)
         while True:
-            emitted, consumed, skipped, outside, stopped, edge, unsearched = self._walk(
+            emitted, consumed, skipped, outside, stopped, edge, unsearched, level_filtered = self._walk(
                 scans, views, args, emit_cap)
             entries_out = []
             redacted = False
@@ -892,7 +899,7 @@ class IncidentLogService:
                     next_state[scan.key] = self._journal_next_state(scan, count)
                     source_rows.append(self._journal_source_row(
                         scan, consumed, skipped, outside, emitted, disordered, withheld, withheld_fields,
-                        unsearched))
+                        unsearched, level_filtered))
                     continue
                 if scan.deferred or (scan.zone_unbound is not None and scan.anchor is None):
                     # Unlocated: the next page locates the window start afresh.
@@ -943,6 +950,8 @@ class IncidentLogService:
                         reasons.append(f"journal_entry_unreadable:{row['source']}")
                     if row["withheld_not_searched"]:
                         reasons.append(f"withheld_not_searched:{row['source']}")
+                    if row["withheld_level_filtered"]:
+                        reasons.append(f"withheld_level_filtered:{row['source']}")
             has_more = any("c" in state or "u" in state or "jt" in state for state in next_state.values())
             if stopped:
                 reasons.append("entries_limit_reached")
@@ -1090,7 +1099,7 @@ class IncidentLogService:
 
     @staticmethod
     def _journal_source_row(scan: Scan, consumed, skipped, outside, emitted, disordered, withheld,
-                            withheld_fields, unsearched) -> dict:
+                            withheld_fields, unsearched, level_filtered) -> dict:
         count = consumed[scan.position]
         taken = scan.items[:count]
         result = scan.journal_scan
@@ -1101,7 +1110,8 @@ class IncidentLogService:
         if scan.failure is not None:
             status = "unavailable" if not taken else "failed"
         elif (stopped or rejected or unreadable or withheld[scan.position] or withheld_fields[scan.position]
-              or unsearched[scan.position] or scan.start_location == "retention_edge"):
+              or unsearched[scan.position] or level_filtered[scan.position]
+              or scan.start_location == "retention_edge"):
             status = "partial"
         else:
             status = "complete"
@@ -1131,6 +1141,7 @@ class IncidentLogService:
             "withheld_messages": withheld[scan.position],
             "withheld_fields": withheld_fields[scan.position],
             "withheld_not_searched": unsearched[scan.position],
+            "withheld_level_filtered": level_filtered[scan.position],
             "gaps": gaps,
             "timestamp_basis": {"basis": hj.BASIS_JOURNAL, "time_zone": "UTC"},
             "clock_regression": bool(regressions),

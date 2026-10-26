@@ -209,14 +209,34 @@ _LABEL = (r"(?:password|passwd|passphrase|pass|pwd|pw|psk|secret|token|api[_-]?k
 _LABELLED_FIELD = re.compile(r"(?<![a-z0-9])(?:[a-z0-9]+[_-])*" + _LABEL + r"[\"']?\s*[:=]")
 _SQUASHED_LABELLED_FIELD = re.compile(_LABEL + r"[\"']?[:=]")
 _TOKEN_CHARACTERS = r"[a-z0-9._~+/=-]"
+# One threshold in both forms (review 2): ``Be<tab>arer`` and ``Bearer``
+# with the same token decide the same.
 _BEARER = re.compile(r"\bbearer\s+" + _TOKEN_CHARACTERS + r"{8,}")
-_SQUASHED_BEARER = re.compile(r"bearer" + _TOKEN_CHARACTERS + r"{20,}")
+_SQUASHED_BEARER = re.compile(r"bearer" + _TOKEN_CHARACTERS + r"{8,}")
 _PEM_PRIVATE = re.compile(r"begin[a-z0-9 ]*private ?key")
-_LONG_PASSWORD_OPTION = re.compile(r"--pw")
+# The strong credential keywords (HAMCP-224 review 2, owner direction): in
+# the labelled forms a keyword alone withholds the value, whatever follows
+# it. Matched anywhere, with no word boundary, in both forms; the squashed
+# form has no whitespace left, so ``api key`` reads as ``apikey`` there.
+_KEYWORD = re.compile(r"bearer|password|passwd|pwd|--pw|authorization|api[\s_-]*key|secret|token|"
+                      r"private[\s_-]*key")
+# Look-alikes of the hyphen-minus that NFKC leaves unchanged (a fixed table,
+# like ``_CONFUSABLE_POINTS``), folded in the labelled forms only so the
+# default screen is unchanged: ``\u2013P`` and ``\u2212\u2212pw`` read as ``-P`` and ``--pw``.
+_DASHES = str.maketrans(dict.fromkeys(
+    map(chr, (0x2010, 0x2012, 0x2013, 0x2014, 0x2015, 0x2212, 0x2043, 0x02D7, 0x2796, 0x2E3A, 0x2E3B,
+              0x058A, 0x05BE, 0x1806, 0x2E17, 0x1428)), "-"))
 # Case matters (mosquitto ``-p`` is the port), so ``-P`` is read on the
 # decoded NFKC text before casefold, with its uppercase look-alikes mapped.
-_PASSWORD_OPTION = re.compile(r"(?:^|\s)-P\s+\S")
 _UPPER_P = str.maketrans({chr(0x0420): "P", chr(0x03A1): "P", chr(0x13E2): "P", chr(0x146D): "P"})
+# The ``-P`` tokenizer (``password_option``): quotes and backslashes join
+# the text around them, as a shell does (``-P'x'`` is ``-Px``, ``"-P"`` is
+# ``-P``); whitespace and the argv-list and assignment punctuation separate
+# tokens (``["pub", "-P", "x"]``, ``-P= x``). The scan is one pass, bounded
+# by ``MAX_OPTION_SCAN`` characters; longer text is withheld (fail closed).
+_OPTION_QUOTES = frozenset("'\"`\\")
+_OPTION_SEPARATORS = frozenset(",;:=[](){}<>|&")
+MAX_OPTION_SCAN = 65536
 
 # The allowlist for Core free text: printable ASCII only, and no
 # password-like ``key=value`` or ``key: value`` (any letters after the
@@ -320,19 +340,61 @@ def _credential_form(text: str, secrets: tuple[str, ...], password_field: re.Pat
     )
 
 
+def password_option(decoded: str) -> bool:
+    """Whether ``decoded`` holds a mosquitto ``-P`` option, in any quoting or splitting.
+
+    ``decoded`` is the case-kept NFKC text with the ``-P`` look-alikes
+    mapped. A token starting with ``-P`` is the option (``-P``, ``-Px``,
+    ``-P'x'``, ``"-P"``, ``-P=x``; ``--P`` and ``-p`` are not). A lone
+    ``-`` token followed by a ``P`` token is the option split apart: the
+    ``P`` token is ``P`` exactly (``- P x``, ``"-" "P"``, ``- P=x``) or,
+    when the text between them is not only spaces (``-<tab>P``,
+    ``-<line feed>Px``), any token starting with ``P``. A lone ``-``
+    followed by a word after spaces (``Kitchen - Pool``) is not the option.
+    """
+
+    if len(decoded) > MAX_OPTION_SCAN:
+        return True
+    tokens: list[tuple[str, str]] = []  # (token, the separating text before it)
+    token: list[str] = []
+    gap = ""
+    for character in decoded + " ":
+        if character in _OPTION_QUOTES:
+            continue
+        if character.isspace() or character in _OPTION_SEPARATORS:
+            if token:
+                tokens.append(("".join(token), gap))
+                token, gap = [], ""
+            gap += character
+            continue
+        token.append(character)
+    for index, (word, _gap) in enumerate(tokens):
+        if word.startswith("-P"):
+            return True
+        if word != "-" or index + 1 == len(tokens):
+            continue
+        following, between = tokens[index + 1]
+        if following == "P" or (following.startswith("P") and set(between) - {" "}):
+            return True
+    return False
+
+
 def _labelled_form(value: str, text: str, squashed: str) -> bool:
     try:
         _text, _rounds, decoded = canonical_forms(value)
     except Exception:
         return True
-    decoded = fold_confusables(decoded).translate(_UPPER_P)
+    text, squashed = text.translate(_DASHES), squashed.translate(_DASHES)
+    decoded = fold_confusables(decoded).translate(_UPPER_P).translate(_DASHES)
     return (
-        _LABELLED_FIELD.search(text) is not None
+        # The label itself (review 2): a strong keyword, in either form.
+        _KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None
+        or password_option(decoded)
+        # The value shapes, an additional layer.
+        or _LABELLED_FIELD.search(text) is not None
         or _SQUASHED_LABELLED_FIELD.search(squashed) is not None
         or _BEARER.search(text) is not None or _SQUASHED_BEARER.search(squashed) is not None
         or _PEM_PRIVATE.search(text) is not None or _PEM_PRIVATE.search(squashed) is not None
-        or _LONG_PASSWORD_OPTION.search(squashed) is not None
-        or _PASSWORD_OPTION.search(decoded) is not None
     )
 
 

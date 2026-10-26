@@ -227,9 +227,14 @@ class CompletenessTests(Harness):
                          (0, 1, 1, "partial"))
         self.assertIn("withheld_not_searched:supervisor", page["omissions"])
         self.assertFalse(page["complete"])
-        # Left out by its level, it is not missing evidence.
+        # Left out by its level (review 2 M1 residual): still disclosed, in
+        # its own count, and the read is partial.
         page = await self.planted(self.password_text(), min_level="critical")
-        self.assertEqual((page["returned"], page["sources"][0]["withheld_not_searched"]), (0, 0))
+        row = page["sources"][0]
+        self.assertEqual((page["returned"], row["withheld_not_searched"], row["withheld_level_filtered"],
+                          row["status"]), (0, 0, 1, "partial"))
+        self.assertIn("withheld_level_filtered:supervisor", page["omissions"])
+        self.assertFalse(page["complete"])
 
     async def test_the_omission_list_is_bounded(self):
         real = author.reader(self.helper.journal)

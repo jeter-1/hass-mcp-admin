@@ -647,33 +647,47 @@ class _Bound(Exception):
 
 # -- exit-point screening (called only from the service's ``_finish``) -----------
 
-_ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])")
+# A well-formed ANSI CSI sequence (SGR colours included): ESC [, at most 32
+# parameter bytes, at most 4 intermediate bytes and one final byte. It is a
+# recognized display format (owner decision, HAMCP-224 review 2), not a
+# reason to withhold; any other escape or control character still is.
+_CSI = re.compile(r"\x1b\[[0-?]{0,32}[ -/]{0,4}[@-~]")
+_CSI_ESCAPE = re.compile(r"\x1b(?=\[[0-?]{0,32}[ -/]{0,4}[@-~])")
 OMISSIONS = {WITHHELD_MARKER: WITHHELD_OMISSION, UNVERIFIABLE_MARKER: UNVERIFIABLE_OMISSION}
 
 
 def screen_text(raw: bytes, known_secrets: tuple[str, ...], truncated: bool = False) -> tuple[str, str | None]:
-    """``(text, omission)``: the decoded, ANSI-stripped text, or a whole-text marker.
+    """``(text, omission)``: the decoded text without its CSI sequences, or a whole-text marker.
 
     HAMCP-224 H1/H2: the decision is the configuration-definitions screen
     (``credentials.screen``) with its labelled forms, on the complete field
     as read, before anything is cut for display. A field longer than
     ``MAX_FIELD_BYTES`` (``truncated``) was never read whole, and bytes that
     are not UTF-8 cannot be read as text: both are withheld whole as
-    unverifiable. Complete terminal escape sequences are removed first; the
-    remaining text, exactly as it would be shown, is what is screened, and
-    a stray escape in it is a control character, so it is withheld. The
-    omission is ``unverifiable_text_withheld`` or ``credential_text_withheld``
-    when the text is replaced, else ``None``.
+    unverifiable.
+
+    Review 2 M4 (owner decision): two forms are screened and either one
+    withholds. The text as shown, with every well-formed CSI sequence
+    removed, so a credential split by a colour code (``pass``, SGR,
+    ``word=``) is seen whole; and the original text with only each such
+    sequence's ESC removed, so a label the sequence's own bytes spell
+    (``ESC[password=``, whose ``p`` ends the sequence) is seen too. A
+    well-formed CSI sequence alone never withholds; any other escape (a
+    stray ESC, an OSC title) or control character is in both forms and is
+    withheld as unverifiable. The omission is ``unverifiable_text_withheld``
+    or ``credential_text_withheld`` when the text is replaced, else ``None``.
     """
 
     if truncated:
         return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION
     try:
-        text = raw.decode("utf-8", "strict")
+        original = raw.decode("utf-8", "strict")
     except UnicodeDecodeError:
         return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION
-    text = _ANSI.sub("", text)
+    text = _CSI.sub("", original)
     marker = credentials.screen(text, known_secrets, labelled=True)
+    if marker is None and text != original:
+        marker = credentials.screen(_CSI_ESCAPE.sub("", original), known_secrets, labelled=True)
     if marker is not None:
         return marker, OMISSIONS[marker]
     return text, None
