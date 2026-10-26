@@ -23,6 +23,7 @@ T_SURF = "test_hamcp181_surface_consistency"
 T_RB = "test_hamcp181_rollback_unchanged_forward"
 T_214 = "test_hamcp214_plan_verification_rollback_projection"
 T_HEALTH = "test_hamcp181_health_core_admission"
+T_CAT = "test_hamcp181_catalog_core_admission"
 T_ARCH = "test_hamcp181_architecture_guard"
 T_LBL = "test_hamcp181_audit_labels"
 T_ERR = "test_hamcp181_entity_registry_error_unproven"
@@ -232,17 +233,17 @@ M["M12d"] = ("child_facts: (c) uncertainty codes no longer pin send-uncertain", 
 # ---- OD-11 (also covered by M5a/M5b)
 # ---- HEALTH: core_admission
 M["HEALTH1"] = ("health admits a non-boolean truthy answer", [(SV,
-    "                and core.route_status(capabilities).get(\"available\") is True\n            )\n        except Exception:\n            admitted = False",
-    "                and bool(core.route_status(capabilities).get(\"available\"))\n            )\n        except Exception:\n            admitted = False")],
-    [T_HEALTH])
+    "            admitted = status.get(\"available\") is True\n",
+    "            admitted = bool(status.get(\"available\"))\n")],
+    [T_HEALTH, T_CAT])
 M["HEALTH2"] = ("health admits on a failing read", [(SV,
-    "        except Exception:\n            admitted = False\n        return \"admitted\" if admitted else pending",
-    "        except Exception:\n            admitted = True\n        return \"admitted\" if admitted else pending")],
-    [T_HEALTH])
+    "        except Exception:\n            admitted = False\n            generation = None",
+    "        except Exception:\n            admitted = True\n            generation = None")],
+    [T_HEALTH, T_CAT])
 M["HEALTH3"] = ("health admits a partial pair (first capability only)", [(SV,
-    "                and core.route_status(capabilities).get(\"available\") is True\n            )\n        except Exception:\n            admitted = False",
-    "                and core.route_status(tuple(capabilities)[:1]).get(\"available\") is True\n            )\n        except Exception:\n            admitted = False")],
-    [T_HEALTH])
+    "            status = core.route_status(capabilities) if core is not None else {}",
+    "            status = core.route_status(tuple(capabilities)[:1]) if core is not None else {}")],
+    [T_HEALTH, T_CAT])
 
 # ---- SEND: send time published for (b)
 M["SEND1"] = ("summary send-time map stores a captured time for (b)", [(RT,
@@ -264,3 +265,32 @@ M["SEND4"] = ("send_times include (b) children; (b) branch publishes them", [(DF
     "        dispatched_at = None\n        basis = DISPATCHED_AT_CALL_NOT_SENT",
     "        dispatched_at = _earliest(send_times) if send_times else None\n        basis = DISPATCHED_AT_PROVIDER_CALL_START if send_times else DISPATCHED_AT_CALL_NOT_SENT")],
     [T_DF, T_T2, T_FAN])
+
+# ---- PR2 review 1 corrections
+T_SB = "test_hamcp181_send_time_boundary"
+M["SEND5"] = ("M1: send time captured at gateway entry, not the send boundary", [(RT,
+    "        child_id = _ACTIVE_F3_CHILD.get()\n        if child_id is not None:\n            self._emit_f3_audit_event(\n                {\"event_type\": event_type, \"task_id\": child_id}",
+    "        child_id = _ACTIVE_F3_CHILD.get()\n        if child_id is not None:\n            if event_type == \"provider_invocation_started\":\n                self._provider_call_started_at.setdefault(child_id, self.service._timestamp())\n            self._emit_f3_audit_event(\n                {\"event_type\": event_type, \"task_id\": child_id}")],
+    [T_SB])
+M["L1"] = ("P1 claimed without the rejection proof code", [(DF,
+    "            PROVIDER_REJECTED_MUTATION in codes\n            and not (codes & _R_PROVEN_CONFLICTING_CODES)",
+    "            True\n            and not (codes & _R_PROVEN_CONFLICTING_CODES)")],
+    [T_DF])
+CAP = "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py"
+CMP = "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py"
+M["CAT1"] = ("M2: the catalog reads its static text, not the current admission", [(CAP,
+    "            item[\"core_admission\"] = current\n",
+    "            item[\"core_admission\"] = item[\"core_admission\"]\n")],
+    [T_CAT])
+M["CAT2"] = ("M2: list_capabilities does not pass the admission snapshot", [(CMP,
+    "                service.core_admission_snapshot() if service is not None else None",
+    "                None")],
+    [T_CAT])
+M["CAT3"] = ("M2: groups read from different generations are accepted", [(SV,
+    "            if len(generations) == 1:\n                [generation] = generations\n",
+    "            if True:\n                generation = reads[0][1]\n")],
+    [T_CAT])
+M["CAT4"] = ("M2: a snapshot with no admitted generation is reported as current", [(SV,
+    "                else \"current\"\n                if generation is not None\n",
+    "                else \"current\"\n                if True\n")],
+    [T_CAT])

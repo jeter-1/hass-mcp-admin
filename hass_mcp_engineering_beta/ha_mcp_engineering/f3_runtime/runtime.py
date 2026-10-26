@@ -35,6 +35,7 @@ from ..f3.contracts import (
     NormalizedOperationOutcome,
     ObservationResult,
     VerificationResult,
+    observe_provider_send,
 )
 from ..f3.locks import (
     DurableLockStore,
@@ -1212,12 +1213,6 @@ class _CoreVerificationAdapter:
         )
 
 
-# The audited gateway events that begin a provider mutation call.
-_PROVIDER_CALL_START_EVENTS = frozenset(
-    {"provider_invocation_started", "provider_ha_config_set_dashboard"}
-)
-
-
 def _verification_checked_at(record: Any) -> str | None:
     """The time of a child's latest recorded verification (or (a) check)."""
 
@@ -1259,9 +1254,15 @@ def _recreate_eligible(operation: Any) -> bool:
 class _AuditedDashboardGateway:
     """Emit bounded provider-boundary events without persisting payloads."""
 
-    def __init__(self, delegate: Any, auditor: Callable[[str], None]):
+    def __init__(
+        self,
+        delegate: Any,
+        auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
+    ):
         self.delegate = delegate
         self.auditor = auditor
+        self.send_recorder = send_recorder
 
     async def preread(self, *, url_path: str):
         self.auditor("provider_ha_config_get_dashboard")
@@ -1279,7 +1280,9 @@ class _AuditedDashboardGateway:
 
     async def write(self, **arguments):
         self.auditor("provider_ha_config_set_dashboard")
-        return await self.delegate.write(**arguments)
+        # OD-6(ii): the provider marks the exact send, after its handshake.
+        with observe_provider_send(self.send_recorder):
+            return await self.delegate.write(**arguments)
 
 
 class _OperationalEvidenceReader:
@@ -1337,9 +1340,15 @@ class _OperationalEvidenceReader:
 class _AuditedConfigurationGateway:
     """Central fixed bridge that adds no authority or provider arguments."""
 
-    def __init__(self, delegate: Any, auditor: Callable[[str], None]):
+    def __init__(
+        self,
+        delegate: Any,
+        auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
+    ):
         self.delegate = delegate
         self.auditor = auditor
+        self.send_recorder = send_recorder
         self.provider_admitted = delegate.provider_admitted
 
     async def read(self, resource_type, target_id):
@@ -1400,7 +1409,10 @@ class _AuditedConfigurationGateway:
     async def _audited(self, call):
         self.auditor("provider_invocation_started")
         try:
-            result = await call
+            # OD-6(ii): the resource gateway marks the exact send, immediately
+            # before its client issues the mutating request.
+            with observe_provider_send(self.send_recorder):
+                result = await call
         except Exception as exc:
             # HAMCP-181 design section 5.1 (PR1 gateway-audit rule): label a
             # received response only when the exception proves one.
@@ -1428,9 +1440,15 @@ class _AuditedConfigurationGateway:
 class _AuditedHelperStateGateway:
     """Audit the one direct mutation boundary and bounded exact readbacks."""
 
-    def __init__(self, delegate: Any, auditor: Callable[[str], None]):
+    def __init__(
+        self,
+        delegate: Any,
+        auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
+    ):
         self.delegate = delegate
         self.auditor = auditor
+        self.send_recorder = send_recorder
 
     async def planning_evidence(self, entity_id: str):
         self.auditor("provider_readback_started")
@@ -1458,6 +1476,8 @@ class _AuditedHelperStateGateway:
         async def boundary():
             await before_dispatch()
             self.auditor("provider_invocation_started")
+            # OD-6(ii): the provider sends immediately after this callback.
+            self.send_recorder()
 
         try:
             result = await self.delegate.set_state(
@@ -1486,10 +1506,12 @@ class _EvidenceCapturingBackupGateway:
         delegate: Any,
         recorder: Callable[..., None],
         auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
     ):
         self.delegate = delegate
         self.recorder = recorder
         self.auditor = auditor
+        self.send_recorder = send_recorder
 
     async def planning_evidence(self):
         return await self.delegate.planning_evidence()
@@ -1498,6 +1520,8 @@ class _EvidenceCapturingBackupGateway:
         async def boundary():
             await before_dispatch()
             self.auditor("provider_invocation_started")
+            # OD-6(ii): the provider sends immediately after this callback.
+            self.send_recorder()
 
         try:
             result = await self.delegate.create_full_backup(
@@ -1529,15 +1553,19 @@ class _EvidenceCapturingLifecycleGateway:
         delegate: Any,
         recorder: Callable[..., None],
         auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
     ):
         self.delegate = delegate
         self.recorder = recorder
         self.auditor = auditor
+        self.send_recorder = send_recorder
 
     async def _dispatch(self, call, *, before_dispatch):
         async def boundary():
             await before_dispatch()
             self.auditor("provider_invocation_started")
+            # OD-6(ii): the provider sends immediately after this callback.
+            self.send_recorder()
 
         try:
             result = await call(boundary)
@@ -1630,7 +1658,7 @@ class F3RuntimeIntegration:
     ):
         self.service = service
         self.core_runtime = core_runtime
-        # HAMCP-181 PR2 (OD-6(ii)): in-process provider-call start times by
+        # HAMCP-181 PR2 (OD-6(ii)): in-process exact provider send times by
         # child, persisted into the task verification summary at projection.
         # A restart loses an unprojected value; it is then never invented.
         self._provider_call_started_at: dict[str, str] = {}
@@ -1652,6 +1680,7 @@ class F3RuntimeIntegration:
         config_gateway = _AuditedConfigurationGateway(
             ExistingConfigurationGatewayBridge(configuration_gateway),
             self._audit_provider_boundary,
+            self._record_provider_send,
         )
         configuration_adapters = {
             f"{action}_{resource}_configuration": ConfigurationOperationAdapter(
@@ -1697,6 +1726,7 @@ class F3RuntimeIntegration:
                 backup_gateway,
                 self._record_operation_evidence,
                 self._audit_provider_boundary,
+                self._record_provider_send,
             )
         )
         captured_lifecycle = (
@@ -1706,6 +1736,7 @@ class F3RuntimeIntegration:
                 lifecycle_gateway,
                 self._record_operation_evidence,
                 self._audit_provider_boundary,
+                self._record_provider_send,
             )
         )
         self.operational_adapter = OperationalAdministrationAdapter(
@@ -1715,6 +1746,7 @@ class F3RuntimeIntegration:
                 _AuditedHelperStateGateway(
                     helper_state_gateway,
                     self._audit_provider_boundary,
+                    self._record_provider_send,
                 )
                 if helper_state_gateway is not None
                 else None
@@ -1728,7 +1760,9 @@ class F3RuntimeIntegration:
         )
         self.dashboard_adapter = DashboardUpdateAdapter(
             _AuditedDashboardGateway(
-                dashboard_gateway, self._audit_provider_boundary
+                dashboard_gateway,
+                self._audit_provider_boundary,
+                self._record_provider_send,
             )
             if dashboard_gateway is not None
             else None,
@@ -1885,13 +1919,22 @@ class F3RuntimeIntegration:
             self._require_execution_ready()
         child_id = _ACTIVE_F3_CHILD.get()
         if child_id is not None:
-            if event_type in _PROVIDER_CALL_START_EVENTS:
-                # The first provider call of a child is its one dispatch.
-                self._provider_call_started_at.setdefault(
-                    child_id, self.service._timestamp()
-                )
             self._emit_f3_audit_event(
                 {"event_type": event_type, "task_id": child_id}
+            )
+
+    def _record_provider_send(self) -> None:
+        """OD-6(ii): record the child's exact provider send time.
+
+        Called only at the send boundary: immediately before the provider
+        client issues the one mutating request, never at gateway entry.  The
+        first send of a child is its one dispatch, so a time is never replaced.
+        """
+
+        child_id = _ACTIVE_F3_CHILD.get()
+        if child_id is not None:
+            self._provider_call_started_at.setdefault(
+                child_id, self.service._timestamp()
             )
 
     def _reconstruct_selective_holds(self) -> None:
@@ -3310,8 +3353,8 @@ class F3RuntimeIntegration:
     ) -> dict[str, Any] | None:
         """The ``verification_summary`` send-time map, keyed by child id.
 
-        OD-6(ii): an intent-bearing child stores the gateway-observed
-        provider-call start time (``null`` when not observed in-process or
+        OD-6(ii): an intent-bearing child stores the exact provider send time
+        observed at the send boundary (``null`` when not observed in-process or
         proven not sent).  The map sits beside ``children`` so each child
         entry keeps its shipped shape.  A stored value is never replaced, and
         a terminal task keeps exactly the map it already stores.

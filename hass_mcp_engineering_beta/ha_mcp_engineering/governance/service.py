@@ -148,6 +148,7 @@ from ..f3_runtime.dispatch_facts import (
     PHASE_INTENT_RECORDED_NOT_SENT,
     PHASE_PRE_INTENT,
     SENT_PHASES,
+    DISPATCHED_AT_SCOPE_PARENT,
     DispatchFacts,
     dispatch_facts as f3_dispatch_facts,
     legacy_dispatch_facts,
@@ -2380,6 +2381,7 @@ class ChangeGovernanceService:
                 "attempt_counts_basis": facts.attempt_counts_basis,
                 "attempt_count_scope": "parent_sum_of_child_intents",
                 "dispatched_at_basis": facts.dispatched_at_basis,
+                "dispatched_at_scope": DISPATCHED_AT_SCOPE_PARENT,
                 "dispatch_intent_recorded_at": facts.dispatch_intent_recorded_at,
                 "provider_response_recorded_at": (
                     facts.provider_response_recorded_at
@@ -14885,17 +14887,22 @@ class ChangeGovernanceService:
         operational["provider"] = backup_provider
         operational["lifecycle_provider"] = lifecycle_provider
         operational["helper_state_provider"] = helper_state_provider
+        # One admission snapshot for all four groups (HAMCP-181 PR2 M2).
+        admission = self.core_admission_snapshot()
+        operational["core_admission_generation"] = admission["generation"]
         operational["entity_metadata_provider"] = (
-            self._entity_metadata_provider_health_snapshot()
+            self._entity_metadata_provider_health_snapshot(admission)
         )
         operational["configuration_delete_provider"] = (
-            self._configuration_delete_provider_health_snapshot()
+            self._configuration_delete_provider_health_snapshot(admission)
         )
         operational["entity_availability_exposure_provider"] = (
-            self._entity_availability_exposure_provider_health_snapshot()
+            self._entity_availability_exposure_provider_health_snapshot(
+                admission
+            )
         )
         operational["label_registry_provider"] = (
-            self._label_registry_provider_health_snapshot()
+            self._label_registry_provider_health_snapshot(admission)
         )
         for operation, operation_health in operational["operations"].items():
             operation_health["active_reconciliations"] = (
@@ -15050,26 +15057,116 @@ class ChangeGovernanceService:
                 "fallback_policy": "none",
             }
 
-    def _health_core_admission(
-        self, capabilities: tuple[str, ...], pending: str
-    ) -> str:
-        """The current Core admission of a provider's profiles, for display.
+    # HAMCP-181 PR2 review 1 (M2): the Core-admitted provider groups that
+    # health and list_capabilities both project from one admission snapshot:
+    # (health provider key, catalog tool, Core profiles, pending reason).
+    CORE_ADMISSION_SURFACES: tuple[tuple[str, str, tuple[str, ...], str], ...] = (
+        (
+            "entity_metadata_provider",
+            "create_entity_metadata_plan",
+            ("core.entity_registry_metadata_operation",),
+            "owner_signed_reference_required",
+        ),
+        (
+            "configuration_delete_provider",
+            "create_configuration_delete_plan",
+            (configuration_delete.PROFILE,),
+            configuration_delete.PENDING_ADMISSION_REASON,
+        ),
+        (
+            "entity_availability_exposure_provider",
+            "create_entity_availability_exposure_plan",
+            (
+                "core.entity_registry_availability_operation",
+                "core.entity_assistant_exposure_operation",
+            ),
+            "pending_signed_registry_admission",
+        ),
+        (
+            "label_registry_provider",
+            "create_label_plan",
+            (label_registry.CORE_CAPABILITY,),
+            label_registry.PENDING_ADMISSION_REASON,
+        ),
+    )
+    _CORE_ADMISSION_READ_ATTEMPTS = 3
+
+    @staticmethod
+    def _core_admission_read(
+        core: Any, capabilities: tuple[str, ...]
+    ) -> tuple[bool, Any]:
+        """One group's local admission and the generation it was read from."""
+
+        try:
+            status = core.route_status(capabilities) if core is not None else {}
+            admitted = status.get("available") is True
+            generation = status.get("generation")
+        except Exception:
+            admitted = False
+            generation = None
+        return admitted, generation
+
+    def core_admission_snapshot(self) -> dict[str, Any]:
+        """The current Core admission of every governed provider group.
 
         Reads the local admitted generation only (no Core call) and never
-        decides admission; any failure reports the pending reason.
+        decides admission.  Health and ``list_capabilities`` both project
+        this one snapshot, so they cannot disagree.  Every group is read from
+        the same generation: when the generation moves between reads the
+        read repeats, and when it does not settle every group reports its
+        pending reason.  Any failure reports the pending reason; with no
+        admitted generation (a failed read, no runtime, nothing admitted) the
+        status says so instead of ``current``.
         """
 
         core = getattr(self.f3_runtime, "core_runtime", None)
-        try:
-            admitted = (
-                core is not None
-                and core.route_status(capabilities).get("available") is True
-            )
-        except Exception:
-            admitted = False
-        return "admitted" if admitted else pending
+        surfaces = self.CORE_ADMISSION_SURFACES
+        for _attempt in range(self._CORE_ADMISSION_READ_ATTEMPTS):
+            reads = [
+                self._core_admission_read(core, capabilities)
+                for _key, _tool, capabilities, _pending in surfaces
+            ]
+            generations = {generation for _admitted, generation in reads}
+            if len(generations) == 1:
+                [generation] = generations
+                settled = True
+                break
+        else:
+            reads = [(False, None) for _surface in surfaces]
+            generation = None
+            settled = False
+        providers: dict[str, str] = {}
+        tools: dict[str, str] = {}
+        for (key, tool, _capabilities, pending), (admitted, _generation) in zip(
+            surfaces, reads
+        ):
+            providers[key] = tools[tool] = "admitted" if admitted else pending
+        return {
+            "status": (
+                "generation_unsettled"
+                if not settled
+                else "current"
+                if generation is not None
+                else "no_admitted_generation"
+            ),
+            "generation": generation,
+            "providers": providers,
+            "tools": tools,
+        }
 
-    def _entity_metadata_provider_health_snapshot(self) -> dict[str, Any]:
+    def _health_core_admission(
+        self, provider: str, admission: dict[str, Any] | None
+    ) -> str:
+        """One provider group's admission from the shared snapshot."""
+
+        snapshot = admission if admission is not None else (
+            self.core_admission_snapshot()
+        )
+        return snapshot["providers"][provider]
+
+    def _entity_metadata_provider_health_snapshot(
+        self, admission: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Report the code-owned entity metadata provider without a Core call."""
 
         configured = self.entity_metadata_gateway is not None
@@ -15085,8 +15182,7 @@ class ChangeGovernanceService:
             ),
             "core_capability": "core.entity_registry_metadata_operation",
             "core_admission": self._health_core_admission(
-                ("core.entity_registry_metadata_operation",),
-                "owner_signed_reference_required",
+                "entity_metadata_provider", admission
             ),
             "label_creation": False,
             "fallback": "none",
@@ -15095,7 +15191,7 @@ class ChangeGovernanceService:
         }
 
     def _entity_availability_exposure_provider_health_snapshot(
-        self,
+        self, admission: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Report the dormant HAMCP-069B providers without a Core call.
 
@@ -15125,11 +15221,7 @@ class ChangeGovernanceService:
                 "core.entity_assistant_exposure_operation",
             ],
             "core_admission": self._health_core_admission(
-                (
-                    "core.entity_registry_availability_operation",
-                    "core.entity_assistant_exposure_operation",
-                ),
-                "pending_signed_registry_admission",
+                "entity_availability_exposure_provider", admission
             ),
             "writable_assistants": ["cloud.google_assistant", "conversation"],
             "fallback": "none",
@@ -15137,7 +15229,9 @@ class ChangeGovernanceService:
             "fallback_policy": "none",
         }
 
-    def _label_registry_provider_health_snapshot(self) -> dict[str, Any]:
+    def _label_registry_provider_health_snapshot(
+        self, admission: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Report the dormant HAMCP-165 label provider without a Core call.
 
         Label create and edit stay refused until a signed registry sequence
@@ -15160,8 +15254,7 @@ class ChangeGovernanceService:
             ),
             "core_capabilities": [label_registry.CORE_CAPABILITY],
             "core_admission": self._health_core_admission(
-                (label_registry.CORE_CAPABILITY,),
-                label_registry.PENDING_ADMISSION_REASON,
+                "label_registry_provider", admission
             ),
             "label_deletion": False,
             "fallback": "none",
@@ -15169,7 +15262,9 @@ class ChangeGovernanceService:
             "fallback_policy": "none",
         }
 
-    def _configuration_delete_provider_health_snapshot(self) -> dict[str, Any]:
+    def _configuration_delete_provider_health_snapshot(
+        self, admission: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Report the dormant HAMCP-155 provider without a Core call.
 
         Deletion stays refused until a signed registry sequence admits its
@@ -15190,8 +15285,7 @@ class ChangeGovernanceService:
             ),
             "core_capabilities": [configuration_delete.PROFILE],
             "core_admission": self._health_core_admission(
-                (configuration_delete.PROFILE,),
-                configuration_delete.PENDING_ADMISSION_REASON,
+                "configuration_delete_provider", admission
             ),
             "fallback": "none",
             "fallback_count": 0,

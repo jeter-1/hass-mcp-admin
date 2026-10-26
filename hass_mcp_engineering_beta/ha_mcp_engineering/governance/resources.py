@@ -16,6 +16,7 @@ from ..clients.paths import UnsafeRequestPathError, rest_path
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import AuthorizationError, HomeAssistantApiError
+from ..f3.contracts import mark_provider_send
 from ..sanitization import (
     SegmentMemo,
     record_marker_collision_refusal,
@@ -805,6 +806,7 @@ class ConfigurationResourceGateway:
                 },
                 call_not_sent=True,
             )
+        mark_provider_send()  # OD-6(ii): the exact send boundary
         result = await self.websocket_client.command(
             {"type": f"{resource_type}/create", **approved_config}
         )
@@ -901,6 +903,7 @@ class ConfigurationResourceGateway:
             resource_type, resource_id
         )
         id_field = _HELPER_ID_FIELDS[resource_type]
+        mark_provider_send()  # OD-6(ii): the exact send boundary
         result = await self.websocket_client.command(
             {
                 "type": f"{resource_type}/update",
@@ -1113,6 +1116,7 @@ class ConfigurationResourceGateway:
             else:
                 DEPENDENCY_ANALYSIS.note_script_write(resource_id)
         try:
+            mark_provider_send()  # OD-6(ii): the exact send boundary
             return await self.rest_client.request(
                 "POST",
                 path,

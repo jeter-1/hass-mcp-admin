@@ -74,8 +74,9 @@ DISPATCHED_AT_NO_INTENT = "no_dispatch_intent"
 DISPATCHED_AT_CALL_NOT_SENT = "call_not_sent"
 DISPATCHED_AT_SEND_TIME_NOT_RECORDED = "send_time_not_recorded"
 DISPATCHED_AT_INTENT_COMMIT_TIME = "dispatch_intent_commit_time"
-# HAMCP-181 PR2 (OD-6(ii)): the instant the audited provider gateway began
-# the provider call, stored by the runtime in the task verification summary
+# HAMCP-181 PR2 (OD-6(ii)): the exact send time, captured at the provider send
+# boundary (immediately before the provider client issues the one mutating
+# request, never at gateway entry), stored by the runtime in the task verification summary
 # map ``SEND_TIME_SUMMARY_KEY`` (child id -> time or ``null``) beside
 # ``children``, whose entries keep their shipped shape.  Published as
 # ``dispatched_at`` only for a child whose send is proven (a sent phase).  A
@@ -83,6 +84,9 @@ DISPATCHED_AT_INTENT_COMMIT_TIME = "dispatch_intent_commit_time"
 # its ``dispatched_at`` is ``null``, never the intent commit time.
 DISPATCHED_AT_PROVIDER_CALL_START = "provider_call_start_time"
 SEND_TIME_SUMMARY_KEY = "provider_call_started_at"
+# A parent (task, apply result or receipt) states the scope of its one
+# ``dispatched_at``: the earliest stored send time among its sent children.
+DISPATCHED_AT_SCOPE_PARENT = "earliest_child_send_time"
 
 # HAMCP-181 PR2 (T2, OD-5): the stored terminal outcome for (b).
 NOT_SENT_OUTCOME = "failed_after_intent_not_dispatched"
@@ -302,6 +306,8 @@ class DispatchFacts:
         if include_dispatched_at:
             value["dispatched_at"] = self.dispatched_at
         value["dispatched_at_basis"] = self.dispatched_at_basis
+        if self.is_parent:
+            value["dispatched_at_scope"] = DISPATCHED_AT_SCOPE_PARENT
         value["dispatch_intent_recorded_at"] = self.dispatch_intent_recorded_at
         value["provider_response_recorded_at"] = self.provider_response_recorded_at
         return value

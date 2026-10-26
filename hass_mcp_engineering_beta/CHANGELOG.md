@@ -16,9 +16,12 @@ Builds on 2.4.1-beta.36. Activates nothing new.
   response, a registry error and the backup/lifecycle gateways are never
   proof.
 - Already present (a) stores `desired_state_already_present_not_dispatched`.
-- `dispatched_at` is the exact provider-call start time (basis
-  `provider_call_start_time`), kept in the task `verification_summary`;
-  `null` until a send is proven.
+- `dispatched_at` is the exact send time, captured at the send boundary
+  inside the gateway, not at gateway entry (basis
+  `provider_call_start_time`), kept per child in the task
+  `verification_summary`; a task publishes its earliest child's send time
+  with `dispatched_at_scope: earliest_child_send_time`; `null` until a send
+  is proven.
 - No-mutation claims only on a proven Core rejection (P1 config REST 4xx,
   P3 WebSocket `unauthorized`/`forbidden`).
 - HAMCP-214: a `succeeded_verified` plan shows `verification.status:
@@ -28,7 +31,9 @@ Builds on 2.4.1-beta.36. Activates nothing new.
 - OD-11: `rollback_change` of a legacy forward whose every child is proven
   unchanged refuses with `forward_unchanged`.
 - Health `core_admission` reports `admitted` from the local admitted signed
-  generation (no Core call).
+  generation (no Core call); `list_capabilities` projects the same snapshot
+  from one generation, and its static entries state only the requirement
+  (`not_evaluated` without a current read).
 - HAMCP-193 dashboard governed-path tests; beta.36 and beta.8 downgrade
   tests over PR2-candidate fixtures. 2.4.1-beta.36 is the governed-plan
   rollback target (plans, tasks, `verification_summary` and outcomes read
@@ -38,7 +43,9 @@ Builds on 2.4.1-beta.36. Activates nothing new.
 - No intent is discarded and nothing is redispatched.
 - No tool, schema, profile, fingerprint, signed registry, F3 persisted
   format, workflow, permission, dependency or stable-v1 change; static tools
-  68, catalog 96 (97).
+  68, catalog 96 (97). Response content gains additive fields only
+  (`list_capabilities` `core_admission` and `core_admission_requirement`,
+  health `core_admission_generation`, task `dispatched_at_scope`).
 
 ## 2.4.1-beta.36 - Governed delete drift read in its own Core window, inactive (HAMCP-155)
 

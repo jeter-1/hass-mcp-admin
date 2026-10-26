@@ -21,6 +21,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from ..errors import AuthorizationError, HomeAssistantApiError
+from ..f3.contracts import mark_provider_send
 from .entity_metadata import (
     ICON_PATTERN,
     MAX_REGISTRY_LIST_ITEMS,
@@ -437,6 +438,7 @@ class LabelRegistryGateway:
                 }
             )
         try:
+            mark_provider_send()  # OD-6(ii): the exact send boundary
             result = await self._send(command)
         except AuthorizationError as exc:
             # Raised while authenticating, before the command is sent, or for

@@ -7,7 +7,9 @@ providers, adapters, tasks, plans, or recovery routes.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol, TypeAlias, TypeVar
@@ -26,6 +28,33 @@ HA_MCP_PROVIDER_LOCK_KEY = "addon:ha_mcp"
 # intent and then raised, and records PROVIDER_CALL_NOT_SENT with a stage reason.
 CALLBACK_FAILED_NOT_SENT_DECLARATION = "dispatch_callback_failed_not_sent"
 PROVIDER_CALL_NOT_SENT = "provider_call_not_sent"
+# HAMCP-181 PR2 (OD-6(ii)): the exact provider send boundary.  A mutation
+# gateway calls ``mark_provider_send`` immediately before its client issues
+# the one mutating request.  The F3 runtime observes the mark only while it
+# awaits that gateway mutation; anywhere else the mark is a no-op.  The mark
+# records a time only: it never sends, admits or authorizes anything.
+_PROVIDER_SEND_OBSERVER: ContextVar[Callable[[], None] | None] = ContextVar(
+    "f3_provider_send_observer", default=None
+)
+
+
+def mark_provider_send() -> None:
+    """Report that the mutating request is being issued now."""
+
+    observer = _PROVIDER_SEND_OBSERVER.get()
+    if observer is not None:
+        observer()
+
+
+@contextmanager
+def observe_provider_send(observer: Callable[[], None]) -> Iterator[None]:
+    """Route ``mark_provider_send`` to ``observer`` within this context."""
+
+    token = _PROVIDER_SEND_OBSERVER.set(observer)
+    try:
+        yield
+    finally:
+        _PROVIDER_SEND_OBSERVER.reset(token)
 
 
 class OperationAdapterPhase(str, Enum):

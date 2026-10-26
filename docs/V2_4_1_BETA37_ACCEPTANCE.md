@@ -69,9 +69,18 @@ The review needs a security section covering:
   `list_execution_tasks`, `get_change_plan`, `list_change_plans`, audit,
   compact receipts, fan and power reads) derives dispatch facts from the
   shared projection.
-- **Health is display only.** `core_admission` reads the local admitted
-  generation through `core_runtime.route_status`; it makes no Core call and
-  never decides admission.
+- **Health and catalog are display only.** `core_admission` reads the local
+  admitted generation through `core_runtime.route_status`; it makes no Core
+  call and never decides admission. Health and `list_capabilities` project
+  one snapshot read from a single generation, whose `status` is `current`
+  only when an admitted generation was read (otherwise
+  `generation_unsettled` or `no_admitted_generation`); the catalog's static
+  entries state only the requirement (`not_evaluated` without a current
+  read).
+- **Exact send time.** `dispatched_at` is captured at the send boundary
+  inside the gateway, immediately before the client issues the request;
+  a task publishes its earliest child's send time
+  (`dispatched_at_scope: earliest_child_send_time`).
 
 Preserve the following:
 - stable v1.1.2;
@@ -108,6 +117,14 @@ enforces the real clients' Core-authority check
 - `tests/test_hamcp181_rollback_unchanged_forward.py`: OD-11.
 - `tests/test_hamcp181_health_core_admission.py`: stub and TEST-signed
   registry.
+- `tests/test_hamcp181_catalog_core_admission.py`: health and
+  `list_capabilities` evaluated together against the same admitted,
+  refused, partial, withdrawn and unsettled generations, and a TEST-signed
+  registry.
+- `tests/test_hamcp181_send_time_boundary.py`: a delay between gateway
+  entry and the client send (configuration update and delete, a
+  multi-child configuration plan, a multi-child WebSocket plan); the
+  published time is the send time on every surface.
 - `tests/test_hamcp181_entity_registry_error_unproven.py`: a registry error
   is never no-mutation, with hash-pinned Core 2026.10.0 and 2026.10.1
   excerpts and one record written by the exact beta.8 writer.
@@ -190,8 +207,9 @@ Separately authorize installation. Checks 1 to 3 are read-only; checks 4 and
    image index digest, the release tag and the protected `main` merge commit.
 2. **Catalog.** `tools/list` shows 96 tools (97 with the YAML reader
    admitted).
-3. **Health `core_admission`.** For the four signed-registry providers,
-   server health reports `core_admission: admitted` exactly when the
+3. **Health and catalog `core_admission`.** For the four signed-registry
+   providers, server health and `list_capabilities` report the same
+   `core_admission` and generation, `admitted` exactly when the
    locally admitted signed generation admits every listed profile for the
    running Core. Under sequence 14 that is Core 2026.10.1 or 2026.10.3 after
    the add-on has fetched the journal. Otherwise it reports the pending

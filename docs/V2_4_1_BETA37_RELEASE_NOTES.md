@@ -42,11 +42,15 @@ producers behind it truthful.
   dispatch stores `terminal_outcome:
   desired_state_already_present_not_dispatched`, the string entity metadata
   already used.
-- **Sent time (OD-6(ii)).** `dispatched_at` is now the instant the audited
-  provider gateway began the call (basis `provider_call_start_time`),
-  stored in the task's `verification_summary.provider_call_started_at`
-  map. It is `null` until a send is proven. Tasks written earlier keep their
-  stored basis.
+- **Sent time (OD-6(ii)).** `dispatched_at` is now the instant the
+  provider client issued the request, captured at the send boundary inside
+  the gateway, not at gateway entry (basis `provider_call_start_time`). Each
+  child's time is stored in the task's
+  `verification_summary.provider_call_started_at` map; a task states its
+  scope, `dispatched_at_scope: earliest_child_send_time`, and publishes its
+  earliest child's send time. The intent commit time stays separate
+  (`dispatch_intent_recorded_at`). It is `null` until a send is proven.
+  Tasks written earlier keep their stored basis.
 - **No-mutation claims (OD-14).** `changed_by_engineering: false` and
   `sent_rejected_no_mutation` are published only on P1 (a configuration
   REST 4xx answer) or P3 (WebSocket `unauthorized`/`forbidden`). Any other
@@ -68,11 +72,19 @@ producers behind it truthful.
   every child is proven unchanged ((a), (b) or r-proven) refuses with
   `rollback_not_available`, reason `forward_unchanged`. An unproven or
   uncertain forward keeps today's admission.
-- **Health.** The four signed-registry providers report
+- **Health and catalog.** The four signed-registry providers report
   `core_admission: admitted` when the locally admitted signed generation
-  admits every listed profile. The read is local only, never a Core call,
-  and any failure reports the pending reason. Health never decides
-  admission.
+  admits every listed profile. Health and `list_capabilities` project one
+  admission snapshot, read from a single Core generation (published as
+  `core_admission_generation` in health and `core_admission.generation` in
+  the catalog), so they cannot disagree. The catalog's static entry for
+  each of the four tools states only its policy requirement
+  (`core_admission_requirement: signed_core_registry_admission`); without a
+  current read it says `not_evaluated`, never a static pending. The read is
+  local only, never a Core call, and any failure, or a generation that does
+  not settle, reports the pending reason. The snapshot `status` is
+  `current`, `generation_unsettled`, or `no_admitted_generation` (a failed
+  read, no runtime, or nothing admitted). Neither decides admission.
 - **Compact receipts.** A minimal receipt sheds the duplicate
   `outcome_code` and duplicate task verification status last, so a receipt
   that fits under the PR1 rules keeps every value it had.
@@ -117,6 +129,13 @@ terminal plan reuses its terminal authority and refuses.
 
 - No tool, descriptor or input schema change. The catalog is still **96
   tools, 97 with the optional YAML reader admitted**; static tools 68.
+- Additive response content only: the `list_capabilities` result gains a
+  top-level `core_admission` (`status`, `generation`) and, on the four
+  signed-registry tools, `core_admission_requirement`; their
+  `core_admission` value is now the current admission (or `not_evaluated`)
+  instead of a static string. Health gains
+  `operational_administration.core_admission_generation`, and task views
+  gain `dispatched_at_scope`.
 - The 17 signed Core capability profiles, the probe fingerprints, the
   owner-signed Core registry (sequence 14 at base, published by HAMCP-222
   #312 and unchanged here), the signed ha-mcp registry and

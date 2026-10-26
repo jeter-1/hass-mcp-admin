@@ -76,6 +76,12 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
 
 PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 
+# HAMCP-181 PR2 review 1 (M2): a governed tool's static entry states only its
+# policy requirement.  Its current admission comes from the governance
+# service's admission snapshot (the one health projects); without one the
+# catalog says it was not evaluated, never a static "pending" as current.
+CORE_ADMISSION_NOT_EVALUATED = "not_evaluated"
+
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
         "tool": "dashboard_integrity_analysis", "category": "analysis",
@@ -278,7 +284,8 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "provider": "direct_home_assistant_entity_registry",
         "policy": "governed_entity_registry_metadata_proposal",
         "core_capability": "core.entity_registry_metadata_operation",
-        "core_admission": "owner_signed_reference_required",
+        "core_admission_requirement": "signed_core_registry_admission",
+        "core_admission": CORE_ADMISSION_NOT_EVALUATED,
         "fallback": "none",
         "fallback_occurred": False,
         "external_approval_required": True,
@@ -311,7 +318,8 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
             "core.entity_registry_availability_operation",
             "core.entity_assistant_exposure_operation",
         ],
-        "core_admission": "pending_signed_registry_admission",
+        "core_admission_requirement": "signed_core_registry_admission",
+        "core_admission": CORE_ADMISSION_NOT_EVALUATED,
         "fallback": "none",
         "fallback_occurred": False,
         "external_approval_required": True,
@@ -341,7 +349,8 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
             "core.label_registry_operation",
             "core.entity_registry_metadata_operation",
         ],
-        "core_admission": "pending_signed_registry_admission",
+        "core_admission_requirement": "signed_core_registry_admission",
+        "core_admission": CORE_ADMISSION_NOT_EVALUATED,
         "fallback": "none",
         "fallback_occurred": False,
         "external_approval_required": True,
@@ -370,7 +379,8 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "policy": "governed_configuration_delete_proposal",
         "resource_types": ["automation", "script"],
         "core_capabilities": ["core.configuration_delete_operation"],
-        "core_admission": "pending_signed_registry_admission",
+        "core_admission_requirement": "signed_core_registry_admission",
+        "core_admission": CORE_ADMISSION_NOT_EVALUATED,
         "fallback": "none",
         "fallback_occurred": False,
         "external_approval_required": True,
@@ -958,8 +968,27 @@ def build_server_metadata(*, ha_url: str, runtime_mode: str, ha_connection: dict
     }
 
 
-def build_capability_catalog(*, status: str = "", category: str = "") -> dict[str, Any]:
-    """Return the public capability catalog with optional exact filters."""
+def _with_current_admission(
+    item: dict[str, Any], admission: dict[str, Any] | None
+) -> dict[str, Any]:
+    if "core_admission_requirement" in item and admission is not None:
+        current = admission["tools"].get(item["tool"])
+        if current is not None:
+            item["core_admission"] = current
+    return item
+
+
+def build_capability_catalog(
+    *,
+    status: str = "",
+    category: str = "",
+    core_admission: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return the public capability catalog with optional exact filters.
+
+    ``core_admission`` is the governance service's admission snapshot; the
+    governed tools' current admission is projected from it.
+    """
     normalized_status = status.strip().lower()
     normalized_category = category.strip().lower()
     tools = [
@@ -983,9 +1012,20 @@ def build_capability_catalog(*, status: str = "", category: str = "") -> dict[st
         "tools": tools,
         "planned": [dict(item) for item in PLANNED_CAPABILITIES],
         "beta_native": [
-            {**dict(item), "operation_class": item.get("operation_class", "read" if item.get("risk") == "read" else "prohibited")}
+            _with_current_admission(
+                {**dict(item), "operation_class": item.get("operation_class", "read" if item.get("risk") == "read" else "prohibited")},
+                core_admission,
+            )
             for item in BETA_NATIVE_CAPABILITIES
         ],
+        "core_admission": (
+            {
+                "status": core_admission["status"],
+                "generation": core_admission["generation"],
+            }
+            if core_admission is not None
+            else {"status": CORE_ADMISSION_NOT_EVALUATED, "generation": None}
+        ),
         "dynamic_upstream": dynamic_tools,
         "upstream_read_gateway": dict(_UPSTREAM_READ_GATEWAY_SUMMARY),
         "provider_matrix": [dict(item) for item in CAPABILITY_PROVIDER_MATRIX],

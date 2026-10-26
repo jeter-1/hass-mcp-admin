@@ -559,8 +559,8 @@ class ConfigurationChainTests(_ProofAssertions, f3_integration.F3ConfigurationAc
         return task.verification_summary.get(df.SEND_TIME_SUMMARY_KEY)
 
     async def test_helper_appearing_after_intent_stores_no_send_time(self):
-        # OD-6(ii): the gateway observed a provider-call start for this child
-        # (its boundary ran before the preflight refused), but a proven
+        # OD-6(ii): the time is captured only at the send boundary, so the
+        # preflight refusal (after gateway entry) records none, and a proven
         # no-call stores null, after apply and after a restart.
         self.routed.add(("input_number", "input_number.hvac_target"))
         self.websocket.responses["input_number/list"] = [{"id": "hvac_target", "name": "x"}]
@@ -569,7 +569,7 @@ class ConfigurationChainTests(_ProofAssertions, f3_integration.F3ConfigurationAc
         result, view, _events = await self.applied(created)
         self.assertEqual(view["dispatch_phase"], NOT_SENT)
         child_id = self.runtime.children.declarations_for_task(result["task_id"])[0]["child_id"]
-        self.assertIsInstance(times.captured.get(child_id), str)
+        self.assertNotIn(child_id, times.captured)
         self.assertEqual(self.send_times(result["task_id"]), {child_id: None})
         self.assertIsNone(view["verification_summary"][df.SEND_TIME_SUMMARY_KEY][child_id])
         self.assertIsNone(view["dispatched_at"])

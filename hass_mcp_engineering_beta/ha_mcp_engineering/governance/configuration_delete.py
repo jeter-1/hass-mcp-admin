@@ -20,6 +20,7 @@ import copy
 from typing import Any
 
 from ..errors import AuthorizationError, HomeAssistantApiError
+from ..f3.contracts import mark_provider_send
 from .normalize import stable_hash
 
 PROFILE = "core.configuration_delete_operation"
@@ -343,6 +344,7 @@ class ConfigurationDeleteGateway:
         else:
             DEPENDENCY_ANALYSIS.note_script_write(target_id)
         try:
+            mark_provider_send()  # OD-6(ii): the exact send boundary
             return await self.rest_client.request("DELETE", path)
         except AuthorizationError:
             raise

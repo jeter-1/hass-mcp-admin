@@ -19,6 +19,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     GovernanceError,
     HomeAssistantApiError,
 )
+from ha_mcp_engineering.f3.contracts import mark_provider_send  # noqa: E402
 from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ApprovalState,
@@ -205,6 +206,9 @@ class FakeConfigurationGateway:
     async def write(
         self, action, resource_type, resource_id, approved_config
     ):
+        # Synthetic client send boundary (HAMCP-181 OD-6(ii)), as in the
+        # real gateway: immediately before the client's mutating request.
+        mark_provider_send()
         require_core_authority(self, "POST", f"config/{resource_type}")
         self.calls.append(
             ("write", action, resource_type, resource_id)

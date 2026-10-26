@@ -20,6 +20,7 @@ from typing import Any
 
 from ..entity_ids import validate_entity_id
 from ..errors import AuthorizationError, HomeAssistantApiError
+from ..f3.contracts import mark_provider_send
 from .normalize import stable_hash
 
 
@@ -595,6 +596,7 @@ class EntityRegistryMetadataGateway:
                 call_not_sent=True,
             )
         try:
+            mark_provider_send()  # OD-6(ii): the exact send boundary
             result = await self.websocket_client.command(dict(command))
         except AuthorizationError as exc:
             # The websocket client raises this either while authenticating,

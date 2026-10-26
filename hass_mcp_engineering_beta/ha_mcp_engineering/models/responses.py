@@ -101,7 +101,7 @@ _RECEIPT_FACTS = frozenset({
     "dispatch_phase", "attempt_counts_basis", "attempt_count_scope",
     "intent_recorded", "changed_by_engineering", "dispatch_performed",
     "setter_call_not_sent", "provider_call_not_sent", "outcome_code",
-    "result_text", "dispatched_at_basis",
+    "result_text", "dispatched_at_basis", "dispatched_at_scope",
 })
 
 # HAMCP-181 S9: a dispatch counter is never emitted without its basis.
@@ -111,7 +111,7 @@ _MINIMAL_DISPATCH_FACTS = (
     "dispatch_phase", "attempt_counts_basis", "attempt_count_scope",
     "intent_recorded", "changed_by_engineering", "dispatch_performed",
     "setter_call_not_sent", "provider_call_not_sent", "outcome_code",
-    "result_text", "dispatched_at_basis",
+    "result_text", "dispatched_at_basis", "dispatched_at_scope",
 )
 
 
@@ -254,8 +254,10 @@ def _shed_self_retrieval(value, facts, reads) -> bool:
 
 
 def _shed_dispatched_at_basis(value, facts, reads) -> bool:
-    # dispatched_at itself is a legacy receipt fact and stays.
-    return facts.pop("dispatched_at_basis", None) is not None
+    # dispatched_at itself is a legacy receipt fact and stays; its basis and
+    # parent scope leave together.
+    scope = facts.pop("dispatched_at_scope", None)
+    return facts.pop("dispatched_at_basis", None) is not None or scope is not None
 
 
 def _shed_dispatch_phase(value, facts, reads) -> bool:
