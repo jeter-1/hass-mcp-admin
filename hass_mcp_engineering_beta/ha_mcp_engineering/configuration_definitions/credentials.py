@@ -99,13 +99,28 @@ a credential label (``password``, ``passphrase``, ``pass``, ``pwd``,
 ``pw``, ``psk``, ``secret``, ``token``, ``api_key``, ``access_key``,
 ``private_key``, ``network_key``, ``encryption_key``, ``credential(s)``,
 ``authorization``, with any ``word_`` prefix such as ``mqtt_pass``)
-followed by ``=`` or ``:``; a ``Bearer`` token; a PEM private-key header;
-and the mosquitto client password options (``-P`` case-sensitive, ``-p``
-is the port; ``--pw``). They are read in the same canonical,
-confusable-folded and squashed forms as the checks above, so
-``api%5fkey=``, ``api_<tab>key=`` and a Cyrillic ``е`` in ``key`` are
-withheld. The configuration-definitions report does not opt in: its
-behavior is unchanged.
+followed by ``=`` or ``:``; a ``Bearer`` token; a PEM private-key header.
+They are read in the same canonical, confusable-folded and squashed forms
+as the checks above, so ``api%5fkey=``, ``api_<tab>key=`` and a Cyrillic
+``е`` in ``key`` are withheld. The configuration-definitions report does
+not opt in: its behavior is unchanged.
+
+**The label withholds, not the value's shape** (HAMCP-224 review 2). In
+labelled mode a strong keyword alone withholds the text, in the normal or
+the squashed form (Unicode dashes folded to ``-``): ``bearer``,
+``password``, ``passwd``, ``pwd``, ``--pw``, ``authorization``, ``api
+key``/``apikey``/``api_key``, ``secret``, ``token``, ``private key``. So
+does the mosquitto password option ``-P`` (``-p`` is the port), decided by
+``password_option``: a bounded tokenizer on the decoded, confusable-folded
+text in which quotes and backslashes are transparent and whitespace and
+``,;:=[](){}<>|&`` separate tokens. A token starting with ``-P`` (``-P x``,
+``-Px``, ``-P'x'``, ``"-P" x``, ``-P= x``, an argv list) is the option, and
+so is a lone ``-`` followed by the token ``P``, or by a token starting
+with ``P`` after anything but plain spaces (``-<tab>P x``); a text over
+``MAX_OPTION_SCAN`` characters fails closed. The value shapes above remain
+an additional layer. The cost is disclosed, never a leak: ordinary text
+that names a keyword (``token refreshed``) or a real ``-P`` option of
+another tool (``iptables -P``) is withheld too.
 """
 
 from __future__ import annotations

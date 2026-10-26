@@ -137,7 +137,8 @@ review, H1/H2 and M1–M3).** These supersede the "Withholding scope" and
      read whole, so it is withheld whole as `[unverifiable_text]`; nothing cut
      is ever screened;
   2. strict UTF-8 (invalid bytes are withheld whole as unverifiable), and
-     complete terminal escape sequences removed;
+     complete terminal escape sequences removed (review 2: well-formed CSI
+     only, and the original screened too);
   3. `unverifiable_text`: invisible, format or control characters (tab, LF
      and CR only as HAMCP-132 allows them) withhold the field whole;
   4. `credential_text`: bounded percent-decoding and NFKC (`canonical`), the
@@ -185,6 +186,62 @@ review, H1/H2 and M1–M3).** These supersede the "Withholding scope" and
   so no path — edge, resume or scan — reads past either. The reviewer's
   oversized probe now stops at 4,192,200 of 4,194,304 bytes, with every
   native step counted.
+
+**Review 2 corrections (architect direction on the PR #313 delta review,
+H2 residual, M4 and M1 residual).** These supersede steps 2 and 5 above and
+the "Fail-closed consequences" note where they differ.
+
+- **The label withholds (H2 residual).** Matching value shapes let quoted,
+  argv and split forms through, so the journal's labelled mode now keys on
+  the label. After the shared normalization (bounded decode, NFKC, the
+  confusable fold, case-folding, Unicode dashes folded to `-`), in the
+  normal **or** the squashed form, a strong keyword withholds the whole
+  field: `bearer`, `password`, `passwd`, `pwd`, `--pw`, `authorization`,
+  `api key`/`apikey`/`api_key`, `secret`, `token`, `private key` (a PEM
+  header in any split or spacing). The mosquitto `-P` option is decided by
+  `credentials.password_option`, a bounded tokenizer: quotes and
+  backslashes are transparent, whitespace and `,;:=[](){}<>|&` separate
+  tokens; a token starting with `-P` is the option (`-P x`, `-Px`, `-P'x'`,
+  `-P"x"`, `"-P" x`, `'-P' x`, `-P= x`, a Python or JSON argv), and so is a
+  lone `-` followed by the token `P`, or by a token starting with `P` after
+  anything but plain spaces (`-<tab>P`, `-<newline>P`). Over 65,536
+  characters it fails closed. The value shapes stay as a second layer; the
+  configuration-definitions (HAMCP-132) default mode is unchanged.
+- **False positives, measured.** On the repository's log-shaped fixtures
+  (the 32 ordinary journal fixture lines, the 35 HAMCP-191 ordinary
+  samples, 164 log-shaped lines of the HAMCP-131 and HAMCP-220 suites; 231
+  lines, all synthetic or generated, since the repository holds no
+  captured add-on logs) the `-P` rule withholds none and the keyword rule
+  withholds 3 (1.3%), all keyword-only HAMCP-191 samples:
+  `reset your password in the companion app`, `token bucket refill rate`
+  and a line with `password was **REDACTED**`. Known ordinary lines now
+  withheld: a real `-P` of another tool (`iptables -P`, `grep -P`,
+  `rsync -P`, `xargs -P`) and any line naming a keyword (`token
+  refreshed`, `Authorization header present`). Lower-case `-p` (`ssh -p`,
+  `mkdir -p`, `docker run -p`), `-avP`, `Kitchen - Pool` and
+  `X-Powered-By` stay shown.
+- **ANSI, two forms (M4, owner decision).** A well-formed CSI sequence
+  (`ESC [`, at most 32 parameter and 4 intermediate bytes, one final byte;
+  SGR colours included) is a recognized display format. The field is
+  screened twice and either withholds: the text as shown, with every such
+  sequence removed (a credential split by a colour code is seen whole), and
+  the original with only each sequence's `ESC` removed (a label spelled by
+  the sequence's own final byte, `ESC[password=`, is seen). A CSI sequence
+  alone never withholds; the shown text carries no escape. Any other
+  escape (OSC, a two-character escape, a stray or over-long one, C1 CSI) or
+  control character stays in both forms and is withheld as unverifiable.
+  The shared screen itself still refuses raw escapes. The reviewer's
+  `test_original_control_text_is_screened_before_ansi_removal` expects a
+  coloured ordinary line to be withheld; it is superseded by this owner
+  decision and runs as a registered expected failure.
+- **Level-filtered withholding (M1 residual).** `min_level` filters on the
+  level from the structured journal `PRIORITY` field
+  (`incident_logs/service.py` `_journal_views`,
+  `hj.LEVELS_BY_PRIORITY.get(record.priority)`), never on message text. A
+  withheld entry the level filter leaves out still counts, in the source
+  row's `withheld_level_filtered`, and adds
+  `withheld_level_filtered:<source>`, so the source and the result are
+  `partial`.
 
 Base: `main` at `5030982fe681737c47e52a7c01d1808fca52468b` (Engineering
 `2.4.1-beta.37`, 68 static tools, `hassio_role: homeassistant`). Engineering

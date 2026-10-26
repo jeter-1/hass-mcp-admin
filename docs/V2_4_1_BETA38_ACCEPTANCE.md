@@ -80,9 +80,12 @@ The review needs a security section covering:
   16 KiB or bytes that are not UTF-8 are unverifiable; invisible or control
   characters, any known-secret or credential form (percent-decoded, NFKC,
   confusable-folded, normal and squashed), a credential label with `=` or
-  `:`, `Bearer`, PEM private keys and the mosquitto `-P`/`--pw` options
-  withhold the **whole** field. The final-envelope withheld-item scan and
-  `withheld_not_searched` make any withholding partial. Then the shared
+  `:`, `Bearer`, PEM private keys, and (review 2) a strong keyword alone in
+  the normal or squashed form or the mosquitto `-P` option in any quoting,
+  argv or split form withhold the **whole** field. A well-formed ANSI CSI
+  sequence is shown stripped; the field is screened with and without it.
+  The final-envelope withheld-item scan, `withheld_not_searched` and
+  `withheld_level_filtered` make any withholding partial. Then the shared
   `sanitize_log_lines` and strict `sanitize_untrusted_data` run once, as for
   every other source.
 - **Order and bounds.** Host journal entries merge on the full microsecond

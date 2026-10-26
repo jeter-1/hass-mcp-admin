@@ -838,12 +838,23 @@ provider, fallback, write path or tool.
   HAMCP-132 credential and known-secret forms after bounded percent-decoding,
   NFKC and the confusable fold, on the text and its squashed form, plus the
   labelled forms the journal opts in to (a credential label with `=` or `:`,
-  `Bearer`, PEM private keys, mosquitto `-P`/`--pw`), withhold the **whole**
-  field. The display cut to 2000 characters happens only after. A withheld
-  field is never searched. The configuration-definitions final-envelope scan
-  (`withheld_items`) then names each withheld entry, and a withheld entry a
-  text filter left out is counted (`withheld_not_searched`): any of these
-  makes the result partial. The shared `sanitize_log_lines` and strict
+  `Bearer`, PEM private keys), withhold the **whole** field. In that
+  labelled mode the label itself withholds (review 2): a strong keyword
+  (`bearer`, `password`, `passwd`, `pwd`, `--pw`, `authorization`, `api
+  key`, `secret`, `token`, `private key`) in the normal or squashed form,
+  or the mosquitto `-P` option in any quoting, argv or split form (a
+  bounded quote-aware tokenizer); the value shapes remain a second layer.
+  Ordinary text naming a keyword, or another tool's `-P`, is withheld too.
+  A well-formed ANSI CSI sequence is a display format: the field is
+  screened both without it and in its original form, either withholds, and
+  the shown text has no escape; any other escape or control character is
+  unverifiable. The display cut to 2000 characters happens only after. A
+  withheld field is never searched. The configuration-definitions
+  final-envelope scan (`withheld_items`) then names each withheld entry, and
+  a withheld entry a text filter left out (`withheld_not_searched`) or the
+  level filter left out (`withheld_level_filtered`; the level is the
+  journal `PRIORITY`, never the text) is counted: any of these makes the
+  result partial. The shared `sanitize_log_lines` and strict
   sanitizer then run once, as below. The configuration-definitions report
   does not opt in to the labelled forms and is unchanged. A bare secret with
   no key or known value can still pass (design §7, the same residual risk as

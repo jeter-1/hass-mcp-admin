@@ -52,14 +52,22 @@ the host journal instead of raising the role.
   credential and known-secret forms (after bounded percent-decoding, NFKC
   and the confusable fold, on the text and its squashed form) and the
   labelled forms the journal opts in to (a credential label with `=` or `:`,
-  `Bearer`, PEM private keys, mosquitto `-P`/`--pw`) withhold the **whole**
-  field (`credential_text_withheld` or `unverifiable_text_withheld`). The
+  `Bearer`, PEM private keys) withhold the **whole** field
+  (`credential_text_withheld` or `unverifiable_text_withheld`). In the
+  journal a strong credential keyword alone (`password`, `token`, `secret`,
+  `api key`, `authorization`, `bearer`, `--pw`, …, in the normal or
+  squashed form) or the mosquitto `-P` option in any quoting, argv or split
+  form withholds the field. Coloured lines are shown without their ANSI
+  colour codes; a credential hidden by or across a colour code is still
+  withheld, and any other escape or control character is unverifiable. The
   final-envelope scan names each withheld entry (`withheld:entries[n]`); a
-  withheld entry a text filter left out counts in `withheld_not_searched`.
-  Any of these makes the result partial. The shared `sanitize_log_lines`
+  withheld entry a text filter left out counts in `withheld_not_searched`,
+  and one the level filter left out in `withheld_level_filtered`. Any of
+  these makes the result partial. The shared `sanitize_log_lines`
   and the strict sanitizer then run once, as for every source. Fail closed:
-  ordinary text with a label and `:` or `=` (`token: refreshed`) is withheld
-  too. The configuration-definitions report does not opt in to the labelled
+  ordinary text with a label and `:` or `=` (`token: refreshed`), any line
+  naming a credential keyword (`token refreshed`) and another tool's `-P`
+  option (`iptables -P`) are withheld too. The configuration-definitions report does not opt in to the labelled
   forms and is unchanged.
 - **Order and bounds.** Host journal entries merge on the full microsecond
   realtime (`ts` shows milliseconds; ties go to the earlier requested
