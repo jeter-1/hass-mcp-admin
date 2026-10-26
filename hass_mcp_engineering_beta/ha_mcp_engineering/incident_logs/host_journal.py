@@ -657,6 +657,13 @@ class _Bound(Exception):
 _SGR = re.compile(r"\x1b\[[0-9;]{0,32}m")
 _SGR_ESCAPE = re.compile(r"\x1b(?=\[[0-9;]{0,32}m)")
 OMISSIONS = {WITHHELD_MARKER: WITHHELD_OMISSION, UNVERIFIABLE_MARKER: UNVERIFIABLE_OMISSION}
+# The reader's own rule ids (HAMCP-234), beside the shared screen's.
+RULE_FIELD_TOO_LONG = "field_too_long"
+RULE_NOT_UTF8 = "not_utf8"
+RULE_UNVERIFIABLE_ESCAPE = "unverifiable_escape"
+RULE_IDS = credentials.RULE_IDS | {RULE_FIELD_TOO_LONG, RULE_NOT_UTF8, RULE_UNVERIFIABLE_ESCAPE}
+# Reported in place of any id outside ``RULE_IDS``; never produced by the screen.
+RULE_UNLISTED = "unlisted_rule"
 
 
 def screen_text(raw: bytes, known_secrets: tuple[str, ...], truncated: bool = False) -> tuple[str, str | None]:
@@ -683,19 +690,62 @@ def screen_text(raw: bytes, known_secrets: tuple[str, ...], truncated: bool = Fa
     or ``credential_text_withheld`` when the text is replaced, else ``None``.
     """
 
+    text, omission, _rule = screen_text_rule(raw, known_secrets, truncated)
+    return text, omission
+
+
+def screen_text_rule(raw: bytes, known_secrets: tuple[str, ...],
+                     truncated: bool = False) -> tuple[str, str | None, str | None]:
+    """``screen_text``'s ``(text, omission)`` and the id of the rule that withheld it.
+
+    HAMCP-234: the same single decision, with its rule as data. The id is a
+    fixed name of ``RULE_IDS``: ``credentials.screen_rule``'s, or the
+    reader's own for what it cannot read as text (``field_too_long``,
+    ``not_utf8``) and for an escape other than an SGR code left in the text
+    (``unverifiable_escape``, a case of ``invisible_or_control``). It is
+    ``None`` exactly when the text is shown.
+    """
+
     if truncated:
-        return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION
+        return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION, RULE_FIELD_TOO_LONG
     try:
         original = raw.decode("utf-8", "strict")
     except UnicodeDecodeError:
-        return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION
-    text = _SGR.sub("", original)
+        return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION, RULE_NOT_UTF8
+    text = screened = _SGR.sub("", original)
     marker = credentials.screen(text, known_secrets, labelled=True)
     if marker is None and text != original:
-        marker = credentials.screen(_SGR_ESCAPE.sub("", original), known_secrets, labelled=True)
-    if marker is not None:
-        return marker, OMISSIONS[marker]
-    return text, None
+        screened = _SGR_ESCAPE.sub("", original)
+        marker = credentials.screen(screened, known_secrets, labelled=True)
+    if marker is None:
+        return text, None, None
+    # The decision is the screen's alone; the id is read for withheld text only.
+    rule = credentials.screen_rule(screened, known_secrets, labelled=True)[1]
+    if rule == credentials.RULE_INVISIBLE and "\x1b" in text:
+        rule = RULE_UNVERIFIABLE_ESCAPE
+    return marker, OMISSIONS[marker], rule
+
+
+def screen_text_rules(raw: bytes, known_secrets: tuple[str, ...], truncated: bool = False) -> tuple[str, ...]:
+    """Every rule that matches the field, deciding rule first; empty exactly when it is shown.
+
+    For the calibration counts only (HAMCP-234): both screened forms, each
+    rule once. A field the reader cannot read as text has its one rule.
+    """
+
+    if truncated:
+        return (RULE_FIELD_TOO_LONG,)
+    try:
+        original = raw.decode("utf-8", "strict")
+    except UnicodeDecodeError:
+        return (RULE_NOT_UTF8,)
+    text = _SGR.sub("", original)
+    rules = credentials.screen_rules(text, known_secrets, labelled=True)
+    if text != original:
+        rules += credentials.screen_rules(_SGR_ESCAPE.sub("", original), known_secrets, labelled=True)
+    if "\x1b" in text:
+        rules = tuple(RULE_UNVERIFIABLE_ESCAPE if rule == credentials.RULE_INVISIBLE else rule for rule in rules)
+    return tuple(dict.fromkeys(rules))
 
 
 LEVELS_BY_PRIORITY = MappingProxyType({

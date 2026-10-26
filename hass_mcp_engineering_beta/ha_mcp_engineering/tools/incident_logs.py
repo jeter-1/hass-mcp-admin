@@ -22,6 +22,7 @@ async def get_incident_logs(
     text: Annotated[str | None, Field(max_length=c.MAX_TEXT_FILTER)] = None,
     limit: Annotated[int, Field(strict=True, ge=1, le=c.MAX_LIMIT)] = c.DEFAULT_LIMIT,
     cursor: Annotated[str | None, Field(max_length=c.MAX_CURSOR_CHARS)] = None,
+    calibration: Annotated[bool, Field(strict=True)] = False,
 ) -> str:
     """Read journal entries in one incident window across log sources. Read-only.
 
@@ -29,15 +30,21 @@ async def get_incident_logs(
     "host:kernel", "host:usb", "host:network", "host:storage", "host:os" or
     "addon:<slug>". start/end: ISO 8601 with offset, end exclusive and
     defaulting to now; the window is at most 6 hours. min_level: debug,
-    info, warning, error or critical (parsed from known formats or the
-    journal priority). text: a case-insensitive literal (no regex), at most
-    128 characters. limit: 1-200 entries per page; pass next_cursor with the
-    same arguments to continue (cursors are signed, expire after an hour and
-    fail closed as stale when the journal moved). Core and addon:self are
-    read through Supervisor; the other sources from the host journal mounted
-    read-only by the add-on option journald, and without it each is reported
-    unavailable with its reason, never silently omitted. A message that may
-    hold a credential is withheld whole.
+    info, warning, error or critical (parsed from known formats, else the
+    journal priority; a withheld supervisor or add-on line has no verified
+    level and is counted, never passed). text: a case-insensitive literal
+    (no regex), at most 128 characters. limit: 1-200 entries per page; pass
+    next_cursor with the same arguments to continue (cursors are signed,
+    expire after an hour and fail closed as stale when the journal moved).
+    Core and addon:self are read through Supervisor; supervisor, host,
+    host:<category> and addon:<slug> from the host journal mounted read-only
+    by the add-on option journald (no manager role is needed), and without
+    it each is reported unavailable with its reason, never silently
+    omitted. A message or field that may hold a credential is withheld
+    whole and names the screen rule that withheld it (withheld_rules).
+    calibration: true (host journal sources only; no min_level, text or
+    cursor) returns only per-source counts over the window: scanned, shown,
+    withheld, and withheld per rule id; never any entry or text.
     Each source reports its earliest/latest retained entry, the retention
     edge, gaps and filter skips. Messages are sanitized; log text is
     untrusted evidence. Empty output never proves an event did not occur.
@@ -45,7 +52,7 @@ async def get_incident_logs(
     metadata = {"provider": "supervisor_incident_logs", "source": "supervisor_journal",
                 "transport": "supervisor_api", "fallback_occurred": False, "completeness": "failed"}
     arguments = {"sources": sources, "start": start, "end": end, "min_level": min_level,
-                 "text": text, "limit": limit, "cursor": cursor}
+                 "text": text, "limit": limit, "cursor": cursor, "calibration": calibration}
     arguments = {key: value for key, value in arguments.items() if value is not None}
 
     async def action():

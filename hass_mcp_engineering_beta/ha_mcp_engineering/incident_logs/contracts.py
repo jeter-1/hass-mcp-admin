@@ -102,7 +102,8 @@ _TIMESTAMP = re.compile(
 )
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
-ALLOWED_ARGUMENTS = frozenset({"sources", "start", "end", "min_level", "text", "limit", "cursor"})
+ALLOWED_ARGUMENTS = frozenset({"sources", "start", "end", "min_level", "text", "limit", "cursor",
+                               "calibration"})
 
 
 class IncidentLogsError(GovernanceError):
@@ -221,10 +222,18 @@ def validate_arguments(arguments: Any, *, now_ms: int | None = None) -> dict[str
         type(cursor) is not str or not cursor or len(cursor) > MAX_CURSOR_CHARS
     ):
         raise ValueError("Invalid incident log arguments.")
+    # HAMCP-234: a calibration counts host journal sources over one window,
+    # unfiltered; it returns no entry, so it takes no filter and no cursor.
+    calibration = arguments.get("calibration", False)
+    if type(calibration) is not bool or calibration and (
+        not all(is_journal_source(key) for key in keys)
+        or min_level is not None or text is not None or cursor is not None
+    ):
+        raise ValueError("Invalid incident log arguments.")
     return {
         "sources": tuple(keys), "start_ms": start_ms, "end_ms": end_ms,
         "end_defaulted": end is None, "min_level": min_level, "text": text,
-        "limit": limit, "cursor": cursor,
+        "limit": limit, "cursor": cursor, "calibration": calibration,
     }
 
 
