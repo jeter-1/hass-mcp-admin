@@ -263,8 +263,8 @@ MUTATIONS = [
       (CRED, "        _KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None\n"
              "        or password_option(decoded)\n"
              "        # The value shapes, an additional layer.\n"
-             "        or _LABELLED_FIELD.search(text) is not None\n",
-       "        _LABELLED_FIELD.search(text) is not None\n")),
+             "        or _value_shape(text, squashed)\n",
+       "        _value_shape(text, squashed)\n")),
     # -- A: two-form ANSI screening (review 2 M4, owner decision)
     m("A1-stripped-text-only-screened", SANITIZE,
       (HJ, "    if marker is None and text != original:\n"

@@ -318,6 +318,26 @@ class LabelKeyedTests(review1.Harness):
                 withheld.add(sample["id"])
         self.assertEqual(withheld, {"text_16", "text_17", "text_30"})
 
+    def test_the_value_shapes_remain_a_layer_of_their_own(self):
+        # The label rule overlaps them, so they are checked apart: dropping
+        # one shape must fail here even though a keyword still withholds.
+        def value_shape(value: str) -> bool:
+            text, _rounds = credentials.canonical(value)
+            text = credentials.fold_confusables(text)
+            return credentials._value_shape(text, credentials.squash(text))
+
+        bearer = {name: value for name, value in bearer_forms().items() if name != "colon"}
+        labelled = {"field": "pass" + "word=" + NEEDLE, "encoded": "api%5f" + "key=" + NEEDLE,
+                    "tab": "api_\tkey: " + NEEDLE}
+        for name, value in {**pem_forms(), **bearer, **labelled}.items():
+            with self.subTest(form=name):
+                self.assertTrue(value_shape(value))
+        # Keyword-only text is the label rule's alone.
+        for value in ("token refreshed", "the api key rotated", "Authorization header present"):
+            with self.subTest(value=value):
+                self.assertFalse(value_shape(value))
+                self.assertEqual(credentials.screen(value, (), labelled=True), credentials.WITHHELD_MARKER)
+
 
 class LevelFilterTests(review1.Harness):
     """Review 2 M1 residual: the level is the journal PRIORITY, never the message text."""

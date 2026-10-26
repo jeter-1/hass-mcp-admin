@@ -406,7 +406,18 @@ def _labelled_form(value: str, text: str, squashed: str) -> bool:
         _KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None
         or password_option(decoded)
         # The value shapes, an additional layer.
-        or _LABELLED_FIELD.search(text) is not None
+        or _value_shape(text, squashed)
+    )
+
+
+def _value_shape(text: str, squashed: str) -> bool:
+    """The labelled value shapes (review 1), kept under the label rule.
+
+    A layer of its own, so it is tested apart from the keywords it overlaps.
+    """
+
+    return (
+        _LABELLED_FIELD.search(text) is not None
         or _SQUASHED_LABELLED_FIELD.search(squashed) is not None
         or _BEARER.search(text) is not None or _SQUASHED_BEARER.search(squashed) is not None
         or _PEM_PRIVATE.search(text) is not None or _PEM_PRIVATE.search(squashed) is not None

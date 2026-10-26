@@ -205,7 +205,9 @@ the "Fail-closed consequences" note where they differ.
   `-P"x"`, `"-P" x`, `'-P' x`, `-P= x`, a Python or JSON argv), and so is a
   lone `-` followed by the token `P`, or by a token starting with `P` after
   anything but plain spaces (`-<tab>P`, `-<newline>P`). Over 65,536
-  characters it fails closed. The value shapes stay as a second layer; the
+  characters it fails closed. The value shapes stay as a second layer
+  (`credentials._value_shape`, tested on its own because the keywords
+  overlap it); the
   configuration-definitions (HAMCP-132) default mode is unchanged.
 - **False positives, measured.** On the repository's log-shaped fixtures
   (the 32 ordinary journal fixture lines, the 35 HAMCP-191 ordinary
