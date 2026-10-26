@@ -26,6 +26,15 @@ Further classes probe the mounts (``M*``), the bounds (``B*``), the
 continuation (``C*``), the source match (``A*``) and the clock and
 retention disclosures (``E*``).
 
+Review 1 (HAMCP-224 H1/H2, M1-M3) retargets the ``S*`` mutations at the
+shared configuration-definitions screen the journal now calls, and adds
+``H*`` (a cut before the screen, a journal-specific screen, the squashed
+form removed), ``W*`` (a withheld entry, field or filtered-out entry
+reported as complete), ``U*`` (the merge or continuation key at millisecond
+precision) and ``L*`` (an edge probe unbounded or uncounted, a field copied
+past the call bound or read after the deadline). The HAMCP-132 and PR #294
+credential suites run unchanged in the baseline and against every mutant.
+
 Usage:
     python docs/evidence/hamcp224-mutations/run_mutations.py \\
         --work /var/tmp/hamcp224-mut --output docs/evidence/hamcp224-mutations/results.json
@@ -44,6 +53,7 @@ m = base.m
 E = base.E
 INC, CON = base.INC, base.CON
 HJ = f"{E}/incident_logs/host_journal.py"
+CRED = f"{E}/configuration_definitions/credentials.py"
 FIELD = "a non-allowlisted field read or returned"
 SANITIZE = "the sanitizer or whole-message withholding bypassed"
 TEXT_TIME = "text timestamps used instead of the journal realtime"
@@ -53,7 +63,9 @@ BOUND = "a scan or field bound not enforced"
 CONTINUE = "a continuation not bound to the consumed entry"
 MATCH = "an entry outside its source's match returned"
 DISCLOSE = "a clock or retention disclosure dropped"
-TS = "                ts = record.rt_us // 1000\n"
+WITHHELD = "a withheld entry or field reported as complete"
+ORDER = "the merge not on the full microsecond realtime"
+TS = "                entry = RawEntry(ts_ms=record.rt_us // 1000,"
 
 MUTATIONS = [
     # -- F: a non-allowlisted field
@@ -70,47 +82,59 @@ MUTATIONS = [
        "                    row[\"boot_ref\"] = item.record.boot_ref\n"
        "                    row[\"journal_entry\"] = item.digest\n")),
     m("F5-process-returned-unscreened", FIELD,
-      (INC, '                fields[name] = None if raw is None else hj.screen_text(raw, secrets)[0]',
-       '                fields[name] = None if raw is None else raw.decode("utf-8", "replace")')),
-    # -- S: the sanitizer or withholding
+      (INC, "                fields[name], field_omission = hj.screen_text(raw, secrets, name in record.truncated_fields)",
+       '                fields[name], field_omission = raw.decode("utf-8", "replace"), None')),
+    # -- S: the sanitizer or withholding (the shared screen, HAMCP-224 H1/H2)
     m("S1-credential-screen-skipped", SANITIZE,
-      (HJ, "    if credential_text(text, known_secrets) or journal_credential_text(text):",
-       "    if False:")),
-    m("S2-journal-key-forms-skipped", SANITIZE,
-      (HJ, "    if credential_text(text, known_secrets) or journal_credential_text(text):",
-       "    if credential_text(text, known_secrets):")),
-    m("S3-squashed-key-form-dropped", SANITIZE,
-      (HJ, "_KEY_FORM.search(text) or _SQUASHED_KEY_FORM.search(squashed)", "_KEY_FORM.search(text)")),
+      (HJ, "    marker = credentials.screen(text, known_secrets, labelled=True)", "    marker = None")),
+    m("S2-labelled-forms-not-opted-in", SANITIZE,
+      (HJ, "    marker = credentials.screen(text, known_secrets, labelled=True)",
+       "    marker = credentials.screen(text, known_secrets)")),
+    m("S3-squashed-labelled-form-dropped", SANITIZE,
+      (CRED, "        or _SQUASHED_LABELLED_FIELD.search(squashed) is not None\n", "")),
     m("S4-confusables-not-folded", SANITIZE,
-      (HJ, "    text = fold_confusables(text)\n", "")),
+      (CRED, "    text = fold_confusables(text)\n", "")),
     m("S5-pem-private-key-kept", SANITIZE,
-      (HJ, "        or _PEM_PRIVATE.search(text) or _PEM_PRIVATE.search(squashed)\n", "")),
+      (CRED, "        or _PEM_PRIVATE.search(text) is not None or _PEM_PRIVATE.search(squashed) is not None\n", "")),
     m("S6-mosquitto-password-option-kept", SANITIZE,
-      (HJ, "        or _PASSWORD_OPTION.search(decoded)\n", "")),
+      (CRED, "        or _PASSWORD_OPTION.search(decoded) is not None\n", "")),
     m("S7-unverifiable-text-kept", SANITIZE,
-      (HJ, "    if unverifiable_text(text):\n        return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION\n", "")),
+      (CRED, "    if unverifiable_text(value):\n        return UNVERIFIABLE_MARKER\n"
+             "    if credential_text(value, known_secrets, labelled=labelled):",
+       "    if credential_text(value, known_secrets, labelled=labelled):")),
     m("S8-ansi-not-stripped", SANITIZE,
-      (HJ, '    text = _ANSI.sub("", raw.decode("utf-8", "replace"))',
-       '    text = raw.decode("utf-8", "replace")')),
+      (HJ, '    text = _ANSI.sub("", text)\n', "")),
     m("S9-withheld-text-returned-with-omission", SANITIZE,
-      (HJ, "        return WITHHELD_MARKER, WITHHELD_OMISSION", "        return text, WITHHELD_OMISSION")),
+      (HJ, "        return marker, OMISSIONS[marker]", "        return text, OMISSIONS[marker]")),
     m("S10-shared-sanitizer-output-ignored", SANITIZE,
       (INC, "            safe = list(sanitized[offset:offset + len(entry_lines)])",
        "            safe = list(entry_lines)")),
     m("S11-withheld-message-searchable", SANITIZE,
-      (INC, '"search": ((fields["process"] or "") + ": " + ("" if omission else body)).casefold(),',
-       '"search": ((fields["process"] or "") + ": " + (item.record.message or b"").decode()).casefold(),')),
+      (INC, '"search": "" if withheld else ((fields["process"] or "") + ": " + body).casefold(),',
+       '"search": ((fields["process"] or "") + ": "'
+       ' + (item.record.message or b"").decode("utf-8", "replace")).casefold(),')),
+    # -- H: one screen, before any cut (HAMCP-224 review 1 H1/H2)
+    m("H1-truncated-before-screening", SANITIZE,
+      (INC, 'hj.screen_text(record.message or b"", self.known_secrets, record.message_truncated)',
+       'hj.screen_text((record.message or b"")[:c.MAX_MESSAGE_CHARS], self.known_secrets)')),
+    m("H2-journal-specific-screen", SANITIZE,
+      (HJ, "    marker = credentials.screen(text, known_secrets, labelled=True)",
+       '    marker = WITHHELD_MARKER if re.search(r"(?i)\\b(?:password|token|api_key)\\s*[:=]", text) else None')),
+    m("H3-squashed-form-removed", SANITIZE,
+      (CRED, "    squashed = squash(text)\n", "    squashed = text\n")),
     # -- T: text timestamps
     m("T1-text-prefix-time-used", TEXT_TIME,
       (INC, TS,
        '                found = re.search(rb"(\\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d)\\.(\\d{3})",'
        ' record.message or b"")\n'
        '                ts = (int(datetime.strptime(found[1].decode(), "%Y-%m-%d %H:%M:%S")'
-       '.replace(tzinfo=timezone.utc).timestamp()) * 1000 + int(found[2])) if found else record.rt_us // 1000\n')),
+       '.replace(tzinfo=timezone.utc).timestamp()) * 1000 + int(found[2])) if found else record.rt_us // 1000\n'
+       '                entry = RawEntry(ts_ms=ts,')),
     m("T2-epoch-prefix-time-used", TEXT_TIME,
       (INC, TS,
        '                found = re.match(rb"(\\d{10}): ", record.message or b"")\n'
-       '                ts = int(found[1]) * 1000 if found else record.rt_us // 1000\n')),
+       '                ts = int(found[1]) * 1000 if found else record.rt_us // 1000\n'
+       '                entry = RawEntry(ts_ms=ts,')),
     # -- O: journald off or unreadable
     m("O1-journald-off-not-detected", OFF,
       (HJ, '    if not present:\n        return "journald_not_enabled"\n', '    if not present:\n        return None\n')),
@@ -152,10 +176,10 @@ MUTATIONS = [
     m("B2-truncation-not-reported", BOUND,
       (HJ, "        return raw[len(prefix):], size.value > take", "        return raw[len(prefix):], False")),
     m("B3-resume-walk-uncounted", BOUND,
-      (HJ, "        if scan.scanned + scan.resume_walked >= MAX_SCAN_ENTRIES:",
-       "        if scan.scanned >= MAX_SCAN_ENTRIES:")),
+      (HJ, "        if scan.scanned + scan.resume_walked + scan.probed >= MAX_SCAN_ENTRIES:",
+       "        if scan.scanned + scan.probed >= MAX_SCAN_ENTRIES:")),
     m("B4-field-bytes-uncounted", BOUND,
-      (HJ, "            self.result.field_bytes += take\n", "            pass\n")),
+      (HJ, "        self.result.field_bytes += take\n", "        pass\n")),
     m("B5-deadline-ignored", BOUND,
       (HJ, '        if time.monotonic() >= self.deadline:\n            return "deadline_reached"\n', "")),
     m("B6-deadline-not-reserved", BOUND,
@@ -201,13 +225,42 @@ MUTATIONS = [
     m("E2-retention-edge-gap-dropped", DISCLOSE,
       (INC, "                if read.cutoff_from_us is not None and read.cutoff_from_us > start_us:",
        "                if False:")),
+    # -- W: completeness of a withheld read (HAMCP-224 review 1 M1)
+    m("W1-final-envelope-scan-removed", WITHHELD,
+      (INC, "                items = credentials.withheld_items(result.value)\n", "                items = []\n")),
+    m("W2-withheld-field-not-reported", WITHHELD,
+      (INC, "            withheld = omission or next(iter(fields_withheld.values()), None)\n",
+       "            withheld = omission\n")),
+    m("W3-filtered-withheld-uncounted", WITHHELD,
+      (INC, "                    unsearched[position] += 1\n", "                    pass\n")),
+    # -- U: microsecond order (HAMCP-224 review 1 M2)
+    m("U1-merge-precision-dropped", ORDER,
+      (INC, "                running = max(running, record.rt_us)\n",
+       "                running = max(running, record.rt_us // 1000 * 1000)\n")),
+    m("U2-continuation-key-in-milliseconds", ORDER,
+      (INC, '"t": item.key_us}', '"t": item.key_us // 1000 * 1000}')),
+    # -- L: shared bounds on every path (HAMCP-224 review 1 M3)
+    m("L1-edge-probe-unbounded", BOUND,
+      (HJ, "            stop = self._bounded(scan)\n            if stop is not None:\n"
+           "                raise _Bound(stop)\n            if not self._check(step(",
+       "            if not self._check(step(")),
+    m("L2-edge-probe-uncounted", BOUND,
+      (HJ, "            scan.probed += 1\n", "            pass\n")),
+    m("L3-field-copy-unchecked", BOUND,
+      (HJ, '        if self.result.field_bytes + take > MAX_CALL_FIELD_BYTES:\n'
+           '            raise _Bound("field_bytes_limit")\n', "")),
+    m("L4-field-read-after-deadline", BOUND,
+      (HJ, '        if time.monotonic() >= self.deadline:\n            raise _Bound("deadline_reached")\n', "")),
     m("E3-unreadable-entries-complete", DISCLOSE,
       (INC, "        elif (stopped or rejected or unreadable or withheld[scan.position]",
        "        elif (stopped or rejected or withheld[scan.position]")),
 ]
 
-base.MODULES = ("test_hamcp224_host_journal", "test_hamcp131_incident_logs",
-                "test_hamcp220_incident_log_timestamps", "test_hamcp191_shared_sanitizer")
+base.MODULES = ("test_hamcp224_host_journal", "test_hamcp224_review1_corrections",
+                "test_pr313_independent_review", "test_hamcp131_incident_logs",
+                "test_hamcp220_incident_log_timestamps", "test_hamcp191_shared_sanitizer",
+                "test_hamcp132_configuration_definitions", "test_pr294_delta_review",
+                "test_pr294_corr2_extra", "test_pr294_final32_review")
 base.MUTATIONS = MUTATIONS
 
 
