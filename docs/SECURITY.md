@@ -613,6 +613,43 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.39` trace snapshot slice (HAMCP-225) adds four
+Engineering-native tools and one Engineering-local store. It adds no Home
+Assistant write, permission, add-on option, Core capability profile,
+delegated provider or fallback.
+
+- **Reads.** Only `trace/list` and `trace/get` with `domain: "automation"`,
+  the shapes `list_automation_traces` and `get_automation_trace` already
+  send. Tests assert no other command and no `domain: "script"`.
+- **Sanitization.** `get_automation_trace` output and every captured trace
+  pass the shared trace sanitizer before they leave Engineering or reach the
+  store; capture runs one more strict pass over the complete record, and
+  read-back re-sanitizes each page. Withheld content makes the result
+  `partial`. Before the strict sanitizer, every string and every dictionary
+  key at every depth passes the shared `credentials.screen` used by HAMCP-132
+  and HAMCP-224 (no trace-specific screen); a flagged key withholds its whole
+  entry, and nesting beyond 64 levels is withheld as unverifiable. PEM
+  private-key blocks with a header are withheld whole.
+- **Identifiers.** Home Assistant's own identifiers and names are screened
+  in the default mode (owner decision, as in HAMCP-226); trace values keep
+  the labelled mode. An automation or run ID the screen flags is persisted,
+  audited and returned only as `withheld_` plus a per-process HMAC digest;
+  refusals never echo it, and the gateway audit records it as `null`. A PEM
+  block in an identity field is not withheld.
+- **Store.** `trace-snapshots-v1/` under the governance path: `flock`,
+  `O_NOFOLLOW`, `0600`, atomic rename, digest-checked loads, at most 20
+  content-free quarantine stubs, fail-closed index, fixed diagnostics,
+  bounded size, count and age. Manual
+  captures are refused at capacity; a watch evicts only its own snapshots.
+- **Watch poller.** The only periodic Core read: bounded to 10 watches every
+  30 seconds, under its own Core authority lease, paused while authority is
+  unavailable or the version is not admitted, and re-checked before each
+  watch's reads are stored and again under the store lock, immediately
+  before the first write. Watch changes need no approval but write a
+  required, caller-attributed audit row.
+- **Caller binding.** List and read cursors are HMAC-bound to the caller
+  with a per-process key.
+
 The `2.4.1-beta.33` configuration-definition slice (HAMCP-132 slice 2) adds
 the read-only `get_configuration_definitions` tool. It adds no permission,
 add-on option, HTTP client, Supervisor call, route template, batch-allowlist

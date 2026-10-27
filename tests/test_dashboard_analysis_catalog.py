@@ -54,6 +54,25 @@ def _without_hamcp171_deep_storage_audit(case, descriptor):
     return descriptor
 
 
+# HAMCP-225 (2.4.1-beta.39) sanitizes get_automation_trace output and adds
+# one disclosure to its description; its input schema is unchanged. Strip only
+# that reviewed text before comparing with the historical baseline.
+HAMCP225_TRACE_DESCRIPTION = (
+    " Engineering withholds credential-like and\n"
+    "    known-secret values and shortens strings over 2,000 characters; such a\n"
+    "    trace is marked partial and names the withheld categories. A value an\n"
+    "    automation resolved from !secret is withheld only when it matches a\n"
+    "    credential pattern."
+)
+
+
+def _without_hamcp225_trace_disclosure(case, descriptor):
+    descriptor = json.loads(json.dumps(descriptor))
+    case.assertEqual(descriptor["description"].count(HAMCP225_TRACE_DESCRIPTION), 1)
+    descriptor["description"] = descriptor["description"].replace(HAMCP225_TRACE_DESCRIPTION, "")
+    return descriptor
+
+
 class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
     async def test_old_native_descriptors_are_identical_and_only_one_is_added(self):
         from ha_mcp_engineering.tools import get_registered_server
@@ -69,6 +88,10 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "create_entity_availability_exposure_plan",
                           "create_label_plan",
                           "create_configuration_delete_plan",
+                          "capture_automation_trace",
+                          "list_trace_snapshots",
+                          "get_trace_snapshot",
+                          "set_automation_trace_watch",
                           "compare_automation_baselines"})
         current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
         from hamcp226_228_descriptor_changes import (without_hamcp226_descriptor_change,
@@ -78,6 +101,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         current["capture_automation_baseline"] = without_hamcp228_capture_changes(
             self, current["capture_automation_baseline"],
             baseline["descriptors"]["capture_automation_baseline"]["description"])
+        current["get_automation_trace"] = _without_hamcp225_trace_disclosure(self, current["get_automation_trace"])
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])
 
     async def test_old_delegated_descriptors_are_identical(self):

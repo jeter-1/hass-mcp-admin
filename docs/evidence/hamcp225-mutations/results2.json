@@ -1,0 +1,61 @@
+[
+  {
+    "id": "baseline",
+    "returncode": 0,
+    "result": "PASS",
+    "seconds": 101.0,
+    "log": "/var/tmp/hamcp225-mut/logs2/baseline.log"
+  },
+  {
+    "id": "R1-identifiers-labelled",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_normalization.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_a_benign_watch_survives_a_restart (tests.test_hamcp225_trace_snapshots.IdentifierModeTests.test_a_benign_watch_survives_a_restart)",
+      "FAIL: test_benign_identifiers_are_shown_in_every_sink (tests.test_hamcp225_trace_snapshots.IdentifierModeTests.test_benign_identifiers_are_shown_in_every_sink)",
+      "FAIL: test_ha_names_are_shown_and_trace_values_stay_labelled (tests.test_hamcp225_trace_snapshots.IdentifierModeTests.test_ha_names_are_shown_and_trace_values_stay_labelled)",
+      "FAIL: test_benign_alias_preserved_in_trace (tests.test_hamcp225_review2_delta_extra.Mode.test_benign_alias_preserved_in_trace)",
+      "FAIL: test_benign_identifier_preserved_everywhere (tests.test_hamcp225_review2_delta_extra.Mode.test_benign_identifier_preserved_everywhere)"
+    ],
+    "killing_count": 5,
+    "seconds": 87.6,
+    "log": "/var/tmp/hamcp225-mut/logs2/R1-identifiers-labelled.log"
+  },
+  {
+    "id": "R1-identity-lists-labelled",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_normalization.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_ha_names_are_shown_and_trace_values_stay_labelled (tests.test_hamcp225_trace_snapshots.IdentifierModeTests.test_ha_names_are_shown_and_trace_values_stay_labelled)"
+    ],
+    "killing_count": 1,
+    "seconds": 88.1,
+    "log": "/var/tmp/hamcp225-mut/logs2/R1-identity-lists-labelled.log"
+  },
+  {
+    "id": "R2-no-post-lock-recheck",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_audit_fallback_commit_also_rechecks (tests.test_hamcp225_trace_snapshots.QueuedCommitTests.test_audit_fallback_commit_also_rechecks)",
+      "FAIL: test_queued_manual_capture_is_refused_after_retirement (tests.test_hamcp225_trace_snapshots.QueuedCommitTests.test_queued_manual_capture_is_refused_after_retirement)",
+      "FAIL: test_queued_watch_commit_writes_nothing_after_retirement (tests.test_hamcp225_trace_snapshots.QueuedCommitTests.test_queued_watch_commit_writes_nothing_after_retirement) (retired='generation')",
+      "FAIL: test_queued_watch_commit_writes_nothing_after_retirement (tests.test_hamcp225_trace_snapshots.QueuedCommitTests.test_queued_watch_commit_writes_nothing_after_retirement) (retired='lease')",
+      "FAIL: test_retirement_while_commit_waits_for_service_lock (tests.test_hamcp225_review2_delta_extra.Race.test_retirement_while_commit_waits_for_service_lock)"
+    ],
+    "killing_count": 5,
+    "seconds": 88.1,
+    "log": "/var/tmp/hamcp225-mut/logs2/R2-no-post-lock-recheck.log"
+  },
+  {
+    "id": "R2-guard-fails-open",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_unanswered_or_failing_check_refuses (tests.test_hamcp225_trace_snapshots.QueuedCommitTests.test_unanswered_or_failing_check_refuses)"
+    ],
+    "killing_count": 1,
+    "seconds": 87.9,
+    "log": "/var/tmp/hamcp225-mut/logs2/R2-guard-fails-open.log"
+  }
+]

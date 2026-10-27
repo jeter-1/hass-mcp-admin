@@ -46,6 +46,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.UNREGISTERED_ENTITIES,
     ProviderCapability.CONFIGURATION_DEFINITIONS,
     ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
+    ProviderCapability.TRACE_SNAPSHOTS,
     ProviderCapability.AUTOMATION_BASELINE_COMPARE,
     ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     ProviderCapability.TYPED_FAN_EXECUTION,
@@ -135,6 +136,10 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
+    "capture_automation_trace": ProviderCapability.TRACE_SNAPSHOTS,
+    "list_trace_snapshots": ProviderCapability.TRACE_SNAPSHOTS,
+    "get_trace_snapshot": ProviderCapability.TRACE_SNAPSHOTS,
+    "set_automation_trace_watch": ProviderCapability.TRACE_SNAPSHOTS,
     "compare_automation_baselines": ProviderCapability.AUTOMATION_BASELINE_COMPARE,
     "dashboard_integrity_analysis": ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
@@ -236,6 +241,11 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "capture_automation_baseline": {
         "policy_id": "loaded_automation_entities-v1", "access": "read", "orchestrator": "engineering",
         "scope": "bounded loaded-automation inventory and exact configuration hashes; stored caller-bound export",
+        "writes_allowed": "engineering_local_evidence_only", "fallback_policy": "none",
+    },
+    "capture_automation_trace": {
+        "policy_id": "automation-trace-snapshot-v1", "access": "read", "orchestrator": "engineering",
+        "scope": "trace/list and trace/get for one automation (domain automation only); sanitized before an Engineering-local store",
         "writes_allowed": "engineering_local_evidence_only", "fallback_policy": "none",
     },
     "get_integration_inspection": {

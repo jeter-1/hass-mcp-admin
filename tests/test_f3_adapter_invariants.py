@@ -85,8 +85,8 @@ class F3AdapterIsolationTests(unittest.TestCase):
         local_tools = registered_tools(get_registered_server())
         self.assertEqual(len(CAPABILITIES), 25)
         # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
-        self.assertEqual(len(local_tools) - len(CAPABILITIES), 44)
-        self.assertEqual(len(local_tools), 69)
+        self.assertEqual(len(local_tools) - len(CAPABILITIES), 48)
+        self.assertEqual(len(local_tools), 73)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(
