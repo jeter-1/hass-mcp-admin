@@ -79,6 +79,7 @@ base.MODULES = (
     "test_hamcp232_script_traces",
     "test_hamcp232_script_trace_cross_path",
     "test_pr314_independent_review",
+    "test_hamcp232_review1_superseded",
     "test_seq15_contract_acceptance",
     "test_f3_configuration_identity",
 )

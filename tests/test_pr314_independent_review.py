@@ -70,14 +70,10 @@ class FlowReview(HelperOptionsServiceTestCase):
    prepared=await original(*args,**kwargs)
    del prepared.items[0].intent[contract.INTENT_KEY]['submit']['precision']
    return prepared
-  # HAMCP-232/145 H3 adaptation: the incomplete intent is now refused at
-  # create, before apply; the reviewer's assertions below are unchanged.
   with patch.object(planning,'prepare',omit_one_field):
-   try:created=await self.create_options(TIME_CONSTANT_20)
-   except GovernanceError:created=None
-  if created is not None:
-   await self.approve(created)
-   await self.apply(created)
+   created=await self.create_options(TIME_CONSTANT_20)
+  await self.approve(created)
+  result=await self.apply(created)
   self.assertEqual(self.options_rest.visible('filterentry01')['precision'],7,
    'unrequested precision reset by accepted incomplete internal intent')
   self.assertEqual(self.options_rest.submits(),[])
