@@ -201,14 +201,20 @@ class StorageBoundaryScreenTests(Base):
         before = files(service)
         entries = self.entries(service)
 
-        def change(report):
-            report['diagnostics']['future_field'] = {'nested': [CREDENTIAL_URL]}
-        with self.injected(service, change), patch.object(storage_screen, 'screen_report', lambda report, known: report):
-            error = await self.reason(self.capture(service))
-        self.assertEqual(error.reason, 'redacted_identity')
-        self.assertEqual(files(service), before)
-        self.assertEqual(self.entries(service), entries)
+        # A known secret is only credential-shaped to the store when the
+        # service passes the capture's known secrets on to it.
+        for label, value in (('credential_url', CREDENTIAL_URL), ('known_secret', 'prefix ' + b.KNOWN)):
+            with self.subTest(case=label):
+                def change(report, value=value):
+                    report['diagnostics']['future_field'] = {'nested': [value]}
+                with self.injected(service, change), patch.object(storage_screen, 'screen_report',
+                                                                  lambda report, known: report):
+                    error = await self.reason(self.capture(service))
+                self.assertEqual(error.reason, 'redacted_identity')
+                self.assertEqual(files(service), before)
+                self.assertEqual(self.entries(service), entries)
         self.assertNotIn(NEEDLE.encode(), disk(service))
+        self.assertNotIn(b.KNOWN.encode(), disk(service))
 
     async def test_store_put_refuses_a_withheld_value_or_key_before_opening_a_file(self):
         service, _ = self.service()

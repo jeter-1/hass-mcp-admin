@@ -48,8 +48,28 @@ Review 1 (HAMCP-226/228) adds:
 Runs: ``run1.log`` stopped at its baseline (a wrong suite name);
 ``results-run2.json`` and ``results-run3.json`` keep runs 2 and 3;
 ``results-run4.json`` is run 4 (44 of 44 killed); ``results-run5.json`` and
-``run5.log`` are the first review 1 run (71 of 75 killed); ``results.json``
-and ``run6.log`` are run 6, after the run 5 corrections below.
+``run5.log`` are the first review 1 run (71 of 75 killed);
+``results-run6.json`` and ``run6.log`` are run 6, after the run 5
+corrections below; ``run7.log`` is the first review 2 run, stopped at 80 of
+111 once ``SB-05`` survived (no results file); ``results.json`` and
+``run8.log`` are run 8, after the ``SB-05`` correction below.
+
+Run 7 showed ``SB-05`` (the store's guard called without the known secrets)
+masked by the capture's own storage screen and a credential-shaped probe;
+the review 2 suite now patches that screen out and plants a known secret,
+which only the store's guard, given the known secrets, can refuse.
+
+Review 2 (HAMCP-226/228) adds:
+- ``SB-*`` (finding R1): a record or diagnostic reaching the hash or the
+  store unscreened (the capture's storage screen, its known secrets, the
+  store's own guard, each part of the report, the header refusal);
+- ``W-*``: the owner decision (Josh, 2026-10-27) broken: a hit refusing the
+  capture instead of a stub, or a withheld field or identity without its
+  partial marks, counts, listed stubs or warning, at the screen, the
+  projector or the tool;
+- ``IX-*`` (finding R2): an unreadable index or namespace refused instead of
+  rebuilt, a rebuild on a namespace it cannot commit to, an unreadable record
+  quarantined, or the ``store_condition`` detail lost or widened.
 
 Equivalent mutants, analysed and left out after run 2:
 - the resumed baseline inheriting the base's ``unestablished`` identity or a
@@ -106,6 +126,8 @@ STORE = f"{AB}/store.py"
 COMP = f"{AB}/comparison.py"
 VAL = f"{AB}/validation.py"
 TOOL = f"{E}/tools/audit_baseline.py"
+SS = f"{AB}/storage_screen.py"
+CONTRACTS = f"{AB}/capture_contracts.py"
 UT = f"{E}/untrusted_text.py"
 INTEG = f"{E}/integrity/provider.py"
 DEPP = f"{E}/dependency/provider.py"
@@ -128,6 +150,10 @@ H2 = "a missing or unreadable index deleting or dropping committed baselines"
 M1 = "a resume not bound to the base capture's Core version"
 M2 = "compare output truncated or its cursor unbound"
 M3 = "over-bound accounting inexact at the production limits"
+# Review 2 (HAMCP-226/228) classes.
+SB = "a record or diagnostic reaching the hash or the store unscreened"
+W = "a credential hit refusing a capture, or withheld without its stub, count or partial"
+IX = "an unreadable index or namespace deleting baselines or misreported"
 FENCE_HEAD = '                if (prior["installation"]["installation_id"] != first["identity"]\n'
 GENERATION = '                        or prior["authority"]["generation"] != authority[0]\n'
 DECLARED = ('                        or prior["inventory"]["declared_count"] != len(states)'
@@ -141,16 +167,14 @@ MUTATIONS = [
       (PROV, "        return value if untrusted_text.screen(value, tuple(self.known_secrets)) is None else None",
        "        return value")),
     m("S2-identifier-known-secrets-dropped", SCREEN,
-      (PROV, "untrusted_text.screen(value, tuple(self.known_secrets))", "untrusted_text.screen(value, ())")),
+      (PROV, "return value if untrusted_text.screen(value, tuple(self.known_secrets))",
+       "return value if untrusted_text.screen(value, ())")),
     m("S3-pem-header-check-removed", SCREEN,
       (UT, "    if marker is None and credentials.private_key_header(value):", "    if False:")),
     m("S4-compare-output-unscreened", SCREEN,
-      (SERV, '        value, withheld = untrusted_text.screen_tree(value, tuple(getattr(getattr(self.provider, '
-             '"projector", None), "known_secrets", ())))',
-       "        withheld = 0")),
+      (SERV, "        value, withheld = untrusted_text.screen_tree(value, self.known_secrets())", "        withheld = 0")),
     m("S5-compare-screen-without-known-secrets", SCREEN,
-      (SERV, 'untrusted_text.screen_tree(value, tuple(getattr(getattr(self.provider, "projector", None), '
-             '"known_secrets", ())))', "untrusted_text.screen_tree(value, ())")),
+      (SERV, "untrusted_text.screen_tree(value, self.known_secrets())", "untrusted_text.screen_tree(value, ())")),
     # -- P: prefix-only reporting
     m("P1-prefix-match-counted-unchanged", PREFIX,
       (COMP, "            elif len(recorded) == len(digest):", "            elif True:")),
@@ -179,7 +203,7 @@ MUTATIONS = [
       (PROV, '                or (row["configuration"]["status"] == "unreadable"\n'
              '                    and outcomes.get(row["configuration_id"]) == "timeout")}',
        "                or False}")),
-    m("R3-carried-records-re-read", RESUME,
+    m("R2-carried-records-re-read", RESUME,
       (PROV, '                pending = [index for index, row in enumerate(records) if row["configuration_id"] in retry]',
        "                pending = list(range(len(records)))")),
     m("R4-carried-records-not-copied", RESUME,
@@ -345,11 +369,100 @@ MUTATIONS = [
       (BOUNDED, "listed = tuple(entries[:MAX_BOUNDED_SOURCES])", "listed = tuple(entries[:MAX_BOUNDED_SOURCES - 1])")),
     m("M3-04-bounded-overflow-not-counted", M3,
       (BOUNDED, "listed, len(entries) - len(listed), withheld,", "listed, 0, withheld,")),
+    # -- SB (review 2 R1): the storage boundary screens every record and diagnostic
+    m("SB-01-service-storage-screen-removed", SB,
+      (SERV, "            report = await c.worker(storage_screen.screen_report, report, self.known_secrets())\n", "")),
+    m("SB-02-service-storage-screen-without-known-secrets", SB,
+      (SERV, "storage_screen.screen_report, report, self.known_secrets())", "storage_screen.screen_report, report, ())")),
+    m("SB-03-store-put-guard-removed", SB,
+      (STORE, '        if hits:\n            raise StoreError("unscreened_content")\n', "")),
+    m("SB-04-store-put-guard-ignores-withheld-key", SB,
+      (STORE, "            hits = 1\n", "            hits = 0\n")),
+    m("SB-05-store-put-without-known-secrets", SB,
+      (SERV, "now_ms=self.now_ms(), known_secrets=self.known_secrets())", "now_ms=self.now_ms())")),
+    m("SB-06-records-not-screened", SB,
+      (SS, "        if _hits(row, known)[1] == 0:\n", "        if True:\n")),
+    m("SB-07-diagnostics-not-screened", SB,
+      (SS, '    rest, hits = _tree({key: value for key, value in diagnostics.items() if key != "record_outcomes"}, known)\n',
+       '    rest, hits = {key: value for key, value in diagnostics.items() if key != "record_outcomes"}, 0\n')),
+    m("SB-08-record-outcomes-not-screened", SB,
+      (SS, "    outcomes, hits = _tree(outcomes, known)\n", "    hits = 0\n")),
+    m("SB-09-withheld-diagnostic-key-kept", SB,
+      (SS, "                count += 1\n                continue\n", "                pass\n")),
+    m("SB-10-header-hit-not-refused", SB,
+      (SS, '    if _hits(header, known)[1] != 0:\n        raise c.CaptureError("redacted_identity")\n', "")),
+    m("SB-11-stubbed-record-outcome-kept", SB,
+      (SS, "outcomes.items() if key not in removed}", "outcomes.items()}")),
+    # -- W: withheld, not refused (owner decision, Josh, 2026-10-27)
+    m("W-01-stub-refuses-capture", W,
+      (SS, "        if screened is None:\n", '        if screened is None:\n            raise c.CaptureError("redacted_identity")\n')),
+    m("W-02-stub-inventory-not-partial", W,
+      (SS, 'dict(baseline["inventory"], completeness="partial")', 'dict(baseline["inventory"])')),
+    m("W-03-stub-omitted-count-not-raised", W,
+      (SS, '        inventory["omitted_count"] = (inventory["omitted_count"] or 0) + len(stubs)\n', "")),
+    m("W-04-partial-record-not-redacted", W,
+      (SS, '        coverage["redacted"] = True\n', "")),
+    m("W-05-partial-record-warning-not-counted", W,
+      (SS, '        coverage["warning_count"] += 1\n', "")),
+    m("W-06-partial-record-complete", W,
+      (SS, '            coverage["completeness"] = "partial"\n', "            pass\n")),
+    m("W-07-withheld-entity-id-kept", W,
+      (SS, '            screened["entity_id"] = None\n            screened["mapping_status"] = "missing"\n', "            pass\n")),
+    m("W-08-stub-record-count-dropped", W,
+      (SS, '"withheld_record_count": prior_records + len(stubs)', '"withheld_record_count": prior_records')),
+    m("W-09-withheld-field-count-dropped", W,
+      (SS, "        records.append(screened)\n        fields += hits\n", "        records.append(screened)\n")),
+    m("W-10-listed-stubs-unbounded", W,
+      (SS, '"withheld_records": (prior + stubs)[:LISTED_STUBS]}', '"withheld_records": prior + stubs}')),
+    m("W-11-prior-summary-dropped", W,
+      (SS, '    prior, prior_records, prior_fields = _prior_summary(rest.pop("credential_screen", None))\n',
+       '    rest.pop("credential_screen", None)\n    prior, prior_records, prior_fields = [], 0, 0\n')),
+    m("W-12-tool-not-partial-for-withheld", W,
+      (TOOL, "                   or withheld_records > 0 or withheld_fields > 0)", ")")),
+    m("W-13-tool-warning-dropped", W,
+      (TOOL, "        if withheld_records or withheld_fields:\n", "        if False:\n")),
+    m("W-14-projector-identity-stub-dropped", W,
+      (PROV, '                    if state["id_withheld"] or (mapped and mapped["id_withheld"]):', "                    if False:")),
+    m("W-15-projector-registry-withheld-ignored", W,
+      (PROV, '(mapped and mapped["id_withheld"])', "False")),
+    m("W-16-projector-entity-withheld-not-counted", W,
+      (PROV, "                withheld += entity_withheld\n", "")),
+    m("W-17-projector-withheld-flag-false", W,
+      (PROV, "        return identifier, (identifier is None and type(value) is str",
+       "        return identifier, (False and type(value) is str")),
+    m("W-18-projector-summary-not-reported", W,
+      (PROV, '            "final_fence": "complete" if last else "unavailable",\n            "credential_screen": storage_screen.summary(withheld)}}',
+       '            "final_fence": "complete" if last else "unavailable"}}')),
+    # -- IX (review 2 R2): an unreadable index or namespace never deletes baselines
+    m("IX-01-unreadable-index-refused", IX,
+      (STORE, '            # R2): rebuilt from the records, never treated as an empty store.\n            index, reason = None, "index_unreadable"\n',
+       '            raise StoreError("store_unavailable") from None\n')),
+    m("IX-02-namespace-writability-unchecked", IX,
+      (STORE, "        if not (os.access(self.root, os.W_OK | os.X_OK)\n"
+              "                and os.access(self.records, os.R_OK | os.W_OK | os.X_OK)):\n",
+       "        if False:\n")),
+    m("IX-03-records-directory-writability-unchecked", IX,
+      (STORE, "\n                and os.access(self.records, os.R_OK | os.W_OK | os.X_OK)):\n", "):\n")),
+    m("IX-04-unreadable-record-quarantined", IX,
+      (STORE, '                # (that would remove it): the rebuild stops with nothing changed.\n'
+              '                raise StoreError("store_unavailable", condition="record_unreadable") from None\n',
+       '                # (that would remove it): the rebuild stops with nothing changed.\n'
+       '                damage = {"reason": "unreadable", "observed_bytes": None, "observed_sha256": None}\n')),
+    m("IX-05-unlistable-namespace-condition-dropped", IX,
+      (STORE, 'raise StoreError("store_unavailable", condition="namespace_unreadable")', 'raise StoreError("store_unavailable")')),
+    m("IX-06-store-condition-detail-dropped", IX,
+      (CONTRACTS, '            details["store_condition"] = store_condition\n', "            pass\n")),
+    m("IX-07-store-condition-not-passed", IX,
+      (SERV, ", store_condition=exc.condition) from None", ") from None")),
+    m("IX-08-store-condition-on-every-reason", IX,
+      (CONTRACTS, 'if reason == "store_unavailable" and store_condition in STORE_CONDITIONS:', "if store_condition is not None:")),
 ]
 
 # Review 1 adds the HAMCP-226 suites and the review 1 corrections and probes
 # (the probes last: they run in child interpreters and are the slowest).
+# Review 2 adds its corrections and the reviewer's unchanged delta tests.
 base.MODULES = ("test_hamcp228_baseline_store", "test_hamcp226_228_review1_corrections",
+                "test_hamcp226_228_review2_corrections", "test_hamcp226_228_review2_delta_extra",
                 "test_automation_baseline_capture", "test_automation_audit_baseline",
                 "test_hamcp226_named_sources", "test_configuration_integrity_analysis",
                 "test_entity_dependency_analysis", "test_hamcp226_228_review1_probes")

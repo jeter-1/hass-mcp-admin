@@ -68,7 +68,7 @@ The review needs a security section covering:
   but unreadable (permission denied) is rebuilt the same way; a namespace
   that cannot be written, listed or read is `store_unavailable` with a fixed
   `store_condition`, and no baseline file is deleted or overwritten
-  (review 2, R3).
+  (review 2, R2).
   Hashes detect damage, not a writer able to rewrite record and index.
 - **Capacity.** At 12 a capture is refused before any Home Assistant read;
   nothing is evicted.

@@ -221,7 +221,7 @@ Engineering governance disk boundary, beside the other governance records; not
   caller, creation time and resume origin, `report_sha256`, `report`). A
   missing or unreadable index (including a symlinked index file, which is
   never followed, and an index present but unreadable, such as permission
-  denied, review 2 R3) never deletes a committed baseline (review 1, H2): the index
+  denied, review 2, R2) never deletes a committed baseline (review 1, H2): the index
   is rebuilt from the record files, each verified from its own envelope and
   its file name. A file that fails verification is quarantined as a stub
   (`unreadable` or `invalid_record`), never silently deleted; the stubs are
