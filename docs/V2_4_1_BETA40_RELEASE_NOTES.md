@@ -1,22 +1,16 @@
 # Engineering 2.4.1-beta.40 release notes
 
-Beta 40 stages HAMCP-226 (named bounded sources and unavailable entity
-references in the integrity, dependency and helper scans) and HAMCP-228 (a
-durable automation baseline store, resume of timed-out records, and
-`compare_automation_baselines`). It is staged, not materialized:
-Engineering remains advertised as 2.4.1-beta.38 on this branch, and
-`.release/next-version` declares `2.4.1-beta.40`.
-
-It follows 2.4.1-beta.39 (HAMCP-225, PR #315), which merges first. Until
-then this branch's base is beta.38; materialization waits for a base that
-carries beta.39 (merged in, never rebased) and then updates the counts below
-by #315's four tools. It adds no dependency, Dockerfile, add-on
-configuration, workflow, profile, fingerprint or signed-registry change.
+Engineering 2.4.1-beta.40 adds HAMCP-226 (named bounded sources and
+unavailable entity references in the integrity, dependency and helper scans)
+and HAMCP-228 (a durable automation baseline store, resume of timed-out
+records, and `compare_automation_baselines`). It follows 2.4.1-beta.39
+(HAMCP-225, PR #315) and includes it. It adds no Home Assistant write,
+dependency, Dockerfile, add-on configuration, workflow, profile, fingerprint
+or signed-registry change.
 
 Acceptance: [`V2_4_1_BETA40_ACCEPTANCE.md`](V2_4_1_BETA40_ACCEPTANCE.md).
 Design and owner decisions S, T, B and P:
-`docs/HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md` (added by #315; on `main`
-once it merges).
+[`HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md`](HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md).
 
 ## HAMCP-226: named bounds and unavailable references
 
@@ -72,5 +66,5 @@ See [`AUTOMATION_BASELINE_CAPTURE.md`](AUTOMATION_BASELINE_CAPTURE.md).
 
 ## Counts
 
-On this branch's beta.38 base: static tools 69, advertised catalog 97 (98
-with the optional YAML reader). After #315 merges in: 73, 101 (102).
+Static tools 73 (beta.39's 72 plus `compare_automation_baselines`);
+advertised catalog 101 (102 with the optional YAML reader).

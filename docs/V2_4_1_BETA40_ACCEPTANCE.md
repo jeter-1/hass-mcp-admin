@@ -1,15 +1,16 @@
 # Engineering 2.4.1-beta.40 acceptance
 
-Beta 40 stages HAMCP-226 and HAMCP-228. Engineering continues to advertise
-2.4.1-beta.38 on this branch; `.release/next-version` declares
-`2.4.1-beta.40` and is not materialized.
+This contract covers HAMCP-226 and HAMCP-228. It follows 2.4.1-beta.39
+(HAMCP-225, #315) and includes it. It adds one Engineering-native tool and
+one Engineering-local store, and no Home Assistant write.
 
 See also:
 - Release notes:
   [`V2_4_1_BETA40_RELEASE_NOTES.md`](V2_4_1_BETA40_RELEASE_NOTES.md).
 - Design and owner decisions:
-  `docs/HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md` (added by #315; on
-  `main` once it merges).
+  [`HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md`](HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md).
+- The beta.39 contract this release keeps:
+  [`V2_4_1_BETA39_ACCEPTANCE.md`](V2_4_1_BETA39_ACCEPTANCE.md).
 - Feature contracts:
   [`AUTOMATION_BASELINE_CAPTURE.md`](AUTOMATION_BASELINE_CAPTURE.md),
   [`AUTOMATION_AUDIT_BASELINE.md`](AUTOMATION_AUDIT_BASELINE.md),
@@ -19,9 +20,9 @@ See also:
 
 **Release target.** `2.4.1-beta.40` is materialized by one owner-authorized
 run of `scripts/promote_next_release.py --apply` on a base that carries
-2.4.1-beta.39 (#315). Merge `origin/main` in first (never rebase), update the
-tool-count pins by #315's tools, and rerun Evidence. If another release
-merges first, restage at the next free version and rename these documents.
+2.4.1-beta.39 (#315, merged in, never rebased). The run consumes the
+declaration. Static tools 73; advertised catalog 101 (102 with the optional
+YAML reader).
 
 The contract separates four stages:
 1. source and offline acceptance;

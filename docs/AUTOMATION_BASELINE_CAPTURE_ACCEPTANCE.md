@@ -84,8 +84,7 @@ retry, restart, configuration write, forced refresh or manufactured event.
 The sections above are the beta.14 contract and stay unchanged. The HAMCP-228
 store, `resume_capture_id`, the `timed_out` status and
 `compare_automation_baselines` are accepted under the version acceptance
-document that releases them ([2.4.1-beta.40](V2_4_1_BETA40_ACCEPTANCE.md) as
-staged). That installed capture also proves one stored baseline under
+document that releases them ([2.4.1-beta.40](V2_4_1_BETA40_ACCEPTANCE.md)). That installed capture also proves one stored baseline under
 `<governance_path>/audit-baselines-v1/` (modes, index entry, no configuration
 body), one `compare_automation_baselines` call comparing it with
 `recorded_fingerprints` taken from its own exported digests (full and 16-character
