@@ -45,9 +45,9 @@ Bind the following:
 
   | Profile | sha256 |
   |---|---|
-  | `core.config_entry_helper_options_operation` | `581234deff89b489c620c8d9143da6a654781431d5a84086cd3f48c072ff5b9e` |
+  | `core.config_entry_helper_options_operation` | `ce2765dc5caf616ae199fdccf64ce6ec68e1386bb0949099d1896bcb50dd98d8` |
   | `core.typed_input_select_option_operation` | `e2240555fb35042e47e7ee7afb7f5552977d019a27058fb2c2c5802674fee38d` |
-  | `core.script_trace_read` | `abf10d9b5599991aa1ef439e1525f51ee184136671f88a1266bcd43a7c665789` |
+  | `core.script_trace_read` | `749904fe40b13db4289301d24b958836fc72c810829611729d8c26080f06ca03` |
 
 The review needs a security section covering:
 - **New reachability, gated.** New write paths: one options-flow submit per

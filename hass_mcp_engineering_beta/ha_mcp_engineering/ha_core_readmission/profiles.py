@@ -636,7 +636,11 @@ CORE_NOVEMBER_BATCH_PROFILES = (
             "domains": ["filter", "statistics", "template"],
             "template_types": ["binary_sensor", "sensor"],
             "fields": "closed_per_type_allowlist_pinned_fields_equal_baseline",
+            # Review 1 H3: Core replaces the options with the submitted dict.
+            "submit": "complete_intended_set_baseline_plus_approved_changes_at_create_and_apply",
             "baseline": "options_flow_open_read_suggested_values_then_abort",
+            # Review 1 H2: no exit, a cancelled caller included, leaves a flow open.
+            "flow_release": "held_flow_bounded_abort_on_every_exit_404_gone_lost_open_disclosed",
             "dispatch": "at_most_once_options_flow_step_submit_per_config_entry",
             "never_sent": [
                 "rest_config_entries_flow_start",
@@ -705,7 +709,8 @@ CORE_NOVEMBER_BATCH_PROFILES = (
                     "message": "The trace could not be found",
                 },
             },
-            "sanitization": "shared_untrusted_data_sanitizer_before_output",
+            # Review 1 H1: the one HAMCP-225 trace exit, no screen of its own.
+            "sanitization": "hamcp225_trace_exit_shared_credential_screen_then_strict_sanitizer_truncation_last",
             "item_id": "always_exact_script_key_never_list_all",
             "never_sent": [
                 "trace/contexts",
