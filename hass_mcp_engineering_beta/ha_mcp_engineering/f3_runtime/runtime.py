@@ -4060,6 +4060,22 @@ class F3RuntimeIntegration:
                     },
                 )
 
+    def _pre_intent_task(self, task: Any) -> bool:
+        """Whether no child of ``task`` holds a durable dispatch intent."""
+
+        for declaration in self.children.declarations_for_task(task.task_id):
+            record = self.children.get(declaration["child_id"])
+            if record is not None and record.dispatch_intent is not None:
+                return False
+        return True
+
+    def _entry_admitted(self, plan: Any) -> bool:
+        try:
+            self._refuse_unadmitted_entry(plan)
+        except GovernanceError:
+            return False
+        return True
+
     def _core_admits_profile(self, profile: str) -> bool:
         """Whether Core currently admits ``profile``; any doubt is refusal."""
 
@@ -4105,6 +4121,12 @@ class F3RuntimeIntegration:
             # as the first apply and the legacy path, before any state change.
             if not expected_plan_hash or expected_plan_hash != task.plan_hash:
                 raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
+            # HAMCP-232/145 M1: a retained task with no dispatch intent is
+            # refused like a first apply, before preparation, preflight or
+            # any store changes.  A terminal task still returns its recorded
+            # result; a task with a durable intent keeps its recovery path.
+            if task.state not in TERMINAL_TASK_STATES and self._pre_intent_task(task):
+                self._refuse_unadmitted_entry(plan)
             prepared, requests = await self._load_prepared(plan, task)
         task = self._enter_public_preflight(task)
         if task.state in TERMINAL_TASK_STATES:
@@ -7338,6 +7360,15 @@ class F3RuntimeIntegration:
                         processed += 1
                         settled.append(declaration["child_id"])
                         self._clear_readiness_fault(fault_key, fault_revision)
+                        continue
+                    if (
+                        not post_intent_readback
+                        and self._pre_intent_task(task)
+                        and not self._entry_admitted(plan)
+                    ):
+                        # HAMCP-232/145 M1: pre-intent recovery of an
+                        # unadmitted plan waits, unchanged, for admission.
+                        retry.append(declaration["child_id"])
                         continue
                     if post_intent_readback:
                         prepared, requests = await self._load_prepared(

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import hashlib
 from copy import deepcopy
 from pathlib import Path
 import sys
@@ -48,6 +49,7 @@ from tests.hamcp232_helper_options_fixtures import (  # noqa: E402
     FILTER_LOWPASS,
     STATISTICS_INIT,
     STEP_PREFIX,
+    PROFILES_232,
     HelperOptionsServiceTestCase,
     flow_form,
 )
@@ -1183,6 +1185,78 @@ class PartialIntentServiceTests(HelperOptionsServiceTestCase):
         self.assertEqual(self.options_rest.submits(), [])
         self.assertEqual(self.options_rest.flows, {})
         self.assertEqual(self.options_rest.visible("filterentry01")["precision"], 7)
+
+
+class RetainedTaskAdmissionTests(HelperOptionsServiceTestCase):
+    """Review M1: a retained task with no dispatch intent is admitted like a
+    first apply, before any store changes and before any Home Assistant
+    request, on apply and on recovery."""
+
+    def stores(self):
+        return {
+            str(path.relative_to(self.root)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in self.root.rglob("*") if path.is_file()
+        }
+
+    async def retained(self):
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        plan = self.service._load(created["plan_id"])
+        await self.runtime._initialize(plan, self.service.plan_hash(plan))
+        return created
+
+    async def test_a_retained_pre_intent_task_is_refused_before_persistence(self):
+        created = await self.retained()
+        before, calls = self.stores(), self.ha_calls()
+        self.core.withdraw()
+        with self.assertRaises(GovernanceError) as raised:
+            await self.apply(created)
+        self.assertEqual(raised.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+        self.assertEqual(raised.exception.details["reason_code"], PENDING)
+        self.assertIs(raised.exception.details["execution_state_persisted"], False)
+        self.assertIs(raised.exception.details["provider_dispatch_occurred"], False)
+        self.assertEqual(self.ha_calls(), calls)
+        self.assertEqual(self.stores(), before)
+
+    async def test_recovery_of_an_unadmitted_pre_intent_task_changes_nothing(self):
+        created = await self.retained()
+        self.core.withdraw()
+        await self.restart_runtime()
+        before, calls = self.stores(), self.ha_calls()
+        await self.runtime.recover_once("synthetic_restart")
+        self.assertEqual(self.ha_calls(), calls)
+        self.assertEqual(self.stores(), before)
+        self.assertEqual(self.options_rest.submits(), [])
+        # Re-admitted, the same retained task completes.
+        self.core.admitted |= set(PROFILES_232)
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertEqual(len(self.options_rest.submits()), 1)
+        self.assertEqual(self.options_rest.visible("filterentry01")["time_constant"], 20)
+
+    async def test_a_readmitted_retained_task_completes(self):
+        created = await self.retained()
+        self.core.withdraw()
+        with self.assertRaises(GovernanceError):
+            await self.apply(created)
+        self.core.admitted |= set(PROFILES_232)
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertEqual(len(self.options_rest.submits()), 1)
+        self.assertEqual(self.options_rest.flows, {})
+
+    async def test_a_terminal_task_still_returns_its_recorded_result(self):
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        first = await self.apply(created)
+        self.assertEqual(first["task_state"], "succeeded_verified", first)
+        self.core.withdraw()
+        calls = self.ha_calls()
+        again = await self.apply(created)
+        self.assertEqual(again["task_state"], "succeeded_verified", again)
+        self.assertEqual(again["task_id"], first["task_id"])
+        self.assertEqual(self.ha_calls(), calls)
+        self.assertEqual(len(self.options_rest.submits()), 1)
 
 
 class ReadbackRuleTests(HelperOptionsServiceTestCase):
