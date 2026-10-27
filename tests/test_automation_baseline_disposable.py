@@ -445,13 +445,17 @@ class FixtureTests(unittest.TestCase):
 
     def test_existing_alarmo_predecessor_stays_nineteen_plus_one(self):
         from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
-        # HAMCP-069A/069B/155/165: the dormant entity, delete and label profiles are outside both lanes.
+        # HAMCP-069A/069B/155/165/232/145: the dormant entity, delete, label and November-batch
+        # (seq 15+) profiles are outside both lanes.
         refs=[p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES
               if p.capability_id not in {c.CAPABILITY,'core.entity_registry_metadata_operation',
                                          'core.entity_registry_availability_operation',
                                          'core.entity_assistant_exposure_operation',
                                          'core.configuration_delete_operation',
-                                         'core.label_registry_operation'}]
+                                         'core.label_registry_operation',
+                                         'core.config_entry_helper_options_operation',
+                                         'core.typed_input_select_option_operation',
+                                         'core.script_trace_read'}]
         self.assertEqual(len(refs),20)
         self.assertEqual(len([r for r in refs if r!='core.integration_inspection_metadata_read']),19)
 

@@ -51,6 +51,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_hamcp189_expired_pre_intent_deadline.py",
     "tests/test_hamcp189_expired_unclaimed_declaration.py",
     "tests/test_hamcp192_observing_fix.py",
+    # HAMCP-145: input_select option lock-mode coverage.
+    "tests/test_hamcp145_input_select_option.py",
     "tests/test_f3_tokenless_lock_recovery.py",
     "tests/fixtures/f3_lock_recovery/generate.py",
     "tests/f3_configuration_fixtures.py",
@@ -61,6 +63,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
     # HAMCP-155: the configuration delete strategy and adapter.
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/delete.py",
+    # HAMCP-232: the config-entry helper-options strategy.
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/locks.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/models.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/outcomes.py",
@@ -243,6 +247,7 @@ class BuiltImageImportClosureTests(unittest.TestCase):
             {
                 "adapter.py",
                 "delete.py",  # HAMCP-155
+                "helper_options.py",  # HAMCP-232
                 "locks.py",
                 "models.py",
                 "outcomes.py",

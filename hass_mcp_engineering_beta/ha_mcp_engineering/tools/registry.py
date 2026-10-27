@@ -38,6 +38,8 @@ _PROPOSAL_TOOLS = {
     "create_entity_availability_exposure_plan",
     "create_label_plan",
     "create_configuration_delete_plan",
+    "create_input_select_option_plan",
+    "create_helper_options_plan",
     "create_addon_restart_plan",
     "create_home_assistant_restart_plan",
     "create_change_plan",
@@ -160,6 +162,8 @@ from .governance import (
     registered_configuration_delete_tool,
     registered_entity_availability_exposure_tool,
     registered_entity_metadata_tool,
+    registered_helper_options_tool,
+    registered_input_select_option_tool,
     registered_label_plan_tool,
     registered_reverification_tool,
 )
@@ -175,6 +179,12 @@ _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_core_log_history": core_log_to
                     "create_label_plan": registered_label_plan_tool(),
                     "create_configuration_delete_plan": (
                         registered_configuration_delete_tool()
+                    ),
+                    "create_input_select_option_plan": (
+                        registered_input_select_option_tool()
+                    ),
+                    "create_helper_options_plan": (
+                        registered_helper_options_tool()
                     )})
 
 from .audit_baseline import registered_tool as baseline_capture_tool
@@ -185,6 +195,8 @@ from .backup_inventory import registered_tool as backup_inventory_tool
 from .recorder_settings import registered_tool as recorder_settings_tool
 from .entity_reconciliation import registered_tool as entity_reconciliation_tool
 from .configuration_definitions import registered_tool as configuration_definitions_tool
+from .script_traces import registered_get_tool as script_trace_get_tool
+from .script_traces import registered_list_tool as script_trace_list_tool
 from .trace_snapshots import registered_tools as trace_snapshot_tools
 
 _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integration_inspection_tool(),
@@ -195,6 +207,8 @@ _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integ
                     "get_recorder_settings": recorder_settings_tool(),
                     "get_unregistered_entities": entity_reconciliation_tool(),
                     "get_configuration_definitions": configuration_definitions_tool(),
+                    "list_script_traces": script_trace_list_tool(),
+                    "get_script_trace": script_trace_get_tool(),
                     **trace_snapshot_tools()})
 
 

@@ -26,6 +26,7 @@ from ..f3.executor import (
 )
 from ..ha_core_readmission.routes import (
     CORE_REQUIREMENT_UNMAPPED,
+    INPUT_SELECT_PROFILE,
     f3_entry_admission_profiles,
     f3_requirements,
 )
@@ -86,6 +87,7 @@ from ..f3_configuration.adapter import (
     PredispatchAuthorityRefused,
 )
 from ..f3_configuration.delete import ConfigurationDeleteAdapter
+from ..f3_configuration.helper_options import HelperOptionsAdapter
 from ..f3_configuration.gateway import ExistingConfigurationGatewayBridge
 from ..f3_configuration.locks import lock_set_hash, resource_lock_key
 from ..f3_configuration.migration import (
@@ -107,6 +109,8 @@ from ..governance.models import (
     PlanStatus,
     StepExecutionStatus,
 )
+from ..governance import helper_options as helper_options_contract
+from ..governance import input_select_option as input_select_contract
 from ..governance.helper_state import (
     HELPER_STATE_PROVIDER_SLUG,
     helper_state_provider_evidence,
@@ -128,6 +132,8 @@ from ..governance.entity_metadata import (
 from ..governance import entity_metadata_planning
 from ..governance import entity_availability_exposure_planning
 from ..governance import configuration_delete_planning
+from ..governance import helper_options_planning
+from ..governance.helper_options_flows import HelperOptionsFlowLedger
 from ..governance.entity_availability_exposure import (
     BINDINGS_KEY as AVAILABILITY_EXPOSURE_BINDINGS_KEY,
     CAPABILITY_IDENTITIES as AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES,
@@ -824,6 +830,8 @@ _UNSIGNED_PROFILE_HOLD_CODES = frozenset(
 UNSIGNED_PROFILE_REQUIREMENTS = MappingProxyType(
     {
         LABEL_RESOURCE_TYPE: LABEL_CORE_CAPABILITY,
+        # HAMCP-232: options edits are admitted only by their own profile.
+        helper_options_contract.RESOURCE_TYPE: helper_options_contract.PROFILE,
         **{
             resource_type: requirements[-1]
             for resource_type, requirements in (
@@ -834,18 +842,27 @@ UNSIGNED_PROFILE_REQUIREMENTS = MappingProxyType(
 )
 
 
+# HAMCP-145: a dormant operational profile keyed by the plan's operation.
+# Entry, every dispatch and every readback are gated on its admission.
+UNSIGNED_OPERATIONAL_PROFILE_REQUIREMENTS = MappingProxyType(
+    {ChangeOperation.SET_INPUT_SELECT_OPTION: INPUT_SELECT_PROFILE}
+)
+
+
 def _unsigned_profiles(plan: Any) -> tuple[str, ...]:
     """Return the dormant Core profiles any child of ``plan`` depends on."""
 
-    return tuple(
-        sorted(
-            {
-                UNSIGNED_PROFILE_REQUIREMENTS[operation.resource_type]
-                for operation in plan.operations
-                if operation.resource_type in UNSIGNED_PROFILE_REQUIREMENTS
-            }
-        )
+    profiles = {
+        UNSIGNED_PROFILE_REQUIREMENTS[operation.resource_type]
+        for operation in plan.operations
+        if operation.resource_type in UNSIGNED_PROFILE_REQUIREMENTS
+    }
+    operational = UNSIGNED_OPERATIONAL_PROFILE_REQUIREMENTS.get(
+        getattr(plan, "operation", None)
     )
+    if operational is not None:
+        profiles.add(operational)
+    return tuple(sorted(profiles))
 
 
 def _unsigned_profile_refusal(
@@ -862,6 +879,30 @@ def _unsigned_profile_refusal(
     except Exception:
         admitted = False
     return None if admitted else UNSIGNED_PROFILE_PENDING_ADMISSION
+
+
+_DIRECT_HELPER_OPERATIONS = frozenset(
+    {
+        ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+        ChangeOperation.SET_INPUT_SELECT_OPTION,
+    }
+)
+
+
+def _direct_helper_identity(operation: Any) -> dict[str, str]:
+    """The code-owned direct-provider identity of one helper value operation."""
+
+    if operation is ChangeOperation.SET_INPUT_SELECT_OPTION:
+        return {
+            "slug": input_select_contract.PROVIDER_SLUG,
+            "evidence_hash": stable_hash(
+                input_select_contract.provider_evidence()
+            ),
+        }
+    return {
+        "slug": HELPER_STATE_PROVIDER_SLUG,
+        "evidence_hash": stable_hash(helper_state_provider_evidence()),
+    }
 
 
 class _UnsignedProfileAdmissionAdapter:
@@ -1393,6 +1434,36 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
+    # HAMCP-232: options reads, the held flow and its abort pass through;
+    # only the one step submit is the audited send.
+    async def options_entry(self, entry_id):
+        return await self.delegate.options_entry(entry_id)
+
+    async def options_entry_entities(self, entry_id):
+        return await self.delegate.options_entry_entities(entry_id)
+
+    async def options_consumer_fingerprint(self, entity_ids):
+        return await self.delegate.options_consumer_fingerprint(entity_ids)
+
+    async def options_read_visible(self, entry_id, *, domain, expected_step_id):
+        return await self.delegate.options_read_visible(
+            entry_id, domain=domain, expected_step_id=expected_step_id
+        )
+
+    async def options_open_held(self, entry_id, *, domain, expected_step_id):
+        return await self.delegate.options_open_held(
+            entry_id, domain=domain, expected_step_id=expected_step_id
+        )
+
+    async def options_abort(self, flow_id):
+        return await self.delegate.options_abort(flow_id)
+
+    def options_flow_unreleased(self, flow_id):
+        self.delegate.options_flow_unreleased(flow_id)
+
+    async def options_submit(self, flow_id, submit):
+        return await self._audited(self.delegate.options_submit(flow_id, submit))
+
     async def write(self, action, resource_type, target_id, proposed_config):
         return await self._audited(
             self.delegate.write(
@@ -1484,6 +1555,63 @@ class _AuditedHelperStateGateway:
                 entity_id,
                 desired_state,
                 before_dispatch=boundary,
+            )
+        except Exception as exc:
+            self.auditor(
+                "provider_response_lost"
+                if getattr(exc, "dispatched", False)
+                else "provider_call_not_sent"
+                if getattr(exc, "call_not_sent", False) is True
+                else "provider_invocation_refused"
+            )
+            raise
+        self.auditor("provider_response_received")
+        return result
+
+
+class _AuditedInputSelectGateway:
+    """HAMCP-145: the same audited boundary for exact ``select_option``."""
+
+    def __init__(
+        self,
+        delegate: Any,
+        auditor: Callable[[str], None],
+        send_recorder: Callable[[], None],
+    ):
+        self.delegate = delegate
+        self.auditor = auditor
+        self.send_recorder = send_recorder
+
+    async def _readback(self, read: Callable[[], Awaitable[Any]]):
+        self.auditor("provider_readback_started")
+        try:
+            result = await read()
+        except Exception:
+            self.auditor("provider_readback_failed")
+            raise
+        self.auditor("provider_readback_received")
+        return result
+
+    async def planning_evidence(self, entity_id: str):
+        return await self._readback(
+            lambda: self.delegate.planning_evidence(entity_id)
+        )
+
+    async def read_state(self, entity_id: str):
+        return await self._readback(lambda: self.delegate.read_state(entity_id))
+
+    async def select_option(
+        self, entity_id: str, option: str, *, before_dispatch
+    ):
+        async def boundary():
+            await before_dispatch()
+            self.auditor("provider_invocation_started")
+            # OD-6(ii): the provider sends immediately after this callback.
+            self.send_recorder()
+
+        try:
+            result = await self.delegate.select_option(
+                entity_id, option, before_dispatch=boundary
             )
         except Exception as exc:
             self.auditor(
@@ -1655,6 +1783,7 @@ class F3RuntimeIntegration:
         helper_state_gateway: Any = None,
         dashboard_gateway: Any | None = None,
         core_runtime: Any | None = None,
+        input_select_gateway: Any = None,
     ):
         self.service = service
         self.core_runtime = core_runtime
@@ -1718,6 +1847,25 @@ class F3RuntimeIntegration:
                 admission=self._configuration_delete_admitted,
                 now=service.now,
             )
+        # HAMCP-232 H2-R1: every options flow is recorded under this storage
+        # root before it is opened, so an unconfirmed abort survives a
+        # restart and is retried by the recovery sweep.  The gateway opens
+        # no flow without it.
+        self.helper_options_gateway = getattr(configuration_gateway, "helper_options", None)
+        self.helper_options_flows: HelperOptionsFlowLedger | None = None
+        self._helper_options_flow_sweep: dict[str, int] | None = None
+        if self.helper_options_gateway is not None:
+            self.helper_options_flows = HelperOptionsFlowLedger(storage_root, now=service.now)
+            self.helper_options_gateway.flow_ledger = self.helper_options_flows
+        # HAMCP-232: the options-flow edit is a separate adapter class with
+        # the same self-checked admission, read again before every readback.
+        configuration_adapters[
+            helper_options_contract.CAPABILITY_IDENTITY
+        ] = HelperOptionsAdapter(
+            config_gateway,
+            admission=self._helper_options_admitted,
+            now=service.now,
+        )
         self.evidence_reader = _OperationalEvidenceReader(self)
         captured_backup = (
             None
@@ -1753,6 +1901,18 @@ class F3RuntimeIntegration:
             ),
             helper_dependency_risk_reader=(
                 service.helper_dependency_risk_reader
+            ),
+            input_select_gateway=(
+                _AuditedInputSelectGateway(
+                    input_select_gateway,
+                    self._audit_provider_boundary,
+                    self._record_provider_send,
+                )
+                if input_select_gateway is not None
+                else None
+            ),
+            input_select_dependency_risk_reader=getattr(
+                service, "input_select_dependency_risk_reader", None
             ),
             evidence_reader=self.evidence_reader,
             authority_reader=self._operational_authority,
@@ -2140,6 +2300,63 @@ class F3RuntimeIntegration:
             return False
         return isinstance(status, dict) and status.get("available") is True
 
+    def _helper_options_admitted(self) -> bool:
+        """Whether a signed registry admits the HAMCP-232 options profile."""
+
+        core = self.core_runtime
+        if core is None:
+            return False
+        try:
+            status = core.route_status((helper_options_contract.PROFILE,))
+        except Exception:
+            return False
+        return isinstance(status, dict) and status.get("available") is True
+
+    async def _retry_helper_options_flows(self, stop: Callable[[], bool]) -> None:
+        """HAMCP-232 H2-R1: retry each recorded options-flow abort not yet confirmed.
+
+        Inert unless a recorded flow awaits its abort and a signed registry
+        admits the options profile: then no Home Assistant call and no write.
+        Each abort is the reviewed DELETE of a flow this gateway opened, by
+        its recorded id, in an exact-target Core authority window.  Never
+        raises into the sweep.
+        """
+
+        ledger, gateway = self.helper_options_flows, self.helper_options_gateway
+        if ledger is None or gateway is None:
+            return
+        try:
+            if not ledger.retry_candidates() or not self._helper_options_admitted():
+                return
+            core = self.core_runtime
+
+            def lease(entry_id: str) -> _rollback_planning_lease:
+                return _rollback_planning_lease(
+                    core,
+                    (helper_options_contract.PROFILE,),
+                    target={
+                        "target_type": helper_options_contract.RESOURCE_TYPE,
+                        "target_id": entry_id,
+                    },
+                )
+
+            self._helper_options_flow_sweep = await gateway.retry_unconfirmed_aborts(
+                lease, stop=stop
+            )
+        except Exception:  # noqa: BLE001 - reported by the ledger's health
+            return
+
+    def _helper_options_flow_health(self) -> dict[str, Any]:
+        ledger = self.helper_options_flows
+        if ledger is None:
+            return {"status": "not_composed"}
+        summary = ledger.health_summary()
+        summary["last_sweep"] = (
+            None if self._helper_options_flow_sweep is None
+            else dict(self._helper_options_flow_sweep)
+        )
+        return summary
+
     def _emit_lock_cleanup_audit_event(self, event: dict[str, object]) -> bool:
         # This sole repository callback is emitted after its transaction exits.
         # Other repository events keep the existing durable replay path.
@@ -2231,6 +2448,7 @@ class F3RuntimeIntegration:
                 ChangeOperation.RESTART_ADDON,
                 ChangeOperation.RESTART_HOME_ASSISTANT,
                 ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+                ChangeOperation.SET_INPUT_SELECT_OPTION,
                 ChangeOperation.UPDATE_DASHBOARD,
             }
         )
@@ -2400,13 +2618,8 @@ class F3RuntimeIntegration:
             sequence = prepare_configuration_sequence((prepared,))
             return (prepared,), sequence.lock_requests, sequence.sequence_hash
 
-        if plan.operation is ChangeOperation.SET_INPUT_BOOLEAN_STATE:
-            identity = {
-                "slug": HELPER_STATE_PROVIDER_SLUG,
-                "evidence_hash": stable_hash(
-                    helper_state_provider_evidence()
-                ),
-            }
+        if plan.operation in _DIRECT_HELPER_OPERATIONS:
+            identity = _direct_helper_identity(plan.operation)
         elif plan.operation is ChangeOperation.UPDATE_DASHBOARD:
             identity = provider_identity or self._dashboard_provider_identity(
                 plan
@@ -2537,8 +2750,7 @@ class F3RuntimeIntegration:
                     provider_dependency_key=(
                         (
                             "home_assistant:core"
-                            if plan.operation
-                            is ChangeOperation.SET_INPUT_BOOLEAN_STATE
+                            if plan.operation in _DIRECT_HELPER_OPERATIONS
                             else f"addon:{operation.authoritative_provider_slug}"
                         )
                         if plan.contract_version == 3
@@ -2603,13 +2815,8 @@ class F3RuntimeIntegration:
         if plan.contract_version == 3:
             provider_key = declarations[0]["provider_dependency_key"]
             provider_identity = (
-                {
-                    "slug": HELPER_STATE_PROVIDER_SLUG,
-                    "evidence_hash": stable_hash(
-                        helper_state_provider_evidence()
-                    ),
-                }
-                if plan.operation is ChangeOperation.SET_INPUT_BOOLEAN_STATE
+                _direct_helper_identity(plan.operation)
+                if plan.operation in _DIRECT_HELPER_OPERATIONS
                 else self._dashboard_provider_identity(plan)
                 if plan.operation is ChangeOperation.UPDATE_DASHBOARD
                 else {
@@ -2635,6 +2842,7 @@ class F3RuntimeIntegration:
                     if plan.operation
                     in {
                         ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+                        ChangeOperation.SET_INPUT_SELECT_OPTION,
                         ChangeOperation.UPDATE_DASHBOARD,
                     }
                     else await self._provider_identity()
@@ -2899,6 +3107,17 @@ class F3RuntimeIntegration:
             self._merge_lock_mode(
                 values,
                 "reload:input_boolean",
+                LockMode.SHARED,
+            )
+        elif plan.operation == ChangeOperation.SET_INPUT_SELECT_OPTION:
+            self._merge_lock_mode(
+                values,
+                resource_lock_key("input_select", plan.target_id),
+                LockMode.EXCLUSIVE,
+            )
+            self._merge_lock_mode(
+                values,
+                "reload:input_select",
                 LockMode.SHARED,
             )
         return values
@@ -3900,6 +4119,22 @@ class F3RuntimeIntegration:
                     },
                 )
 
+    def _pre_intent_task(self, task: Any) -> bool:
+        """Whether no child of ``task`` holds a durable dispatch intent."""
+
+        for declaration in self.children.declarations_for_task(task.task_id):
+            record = self.children.get(declaration["child_id"])
+            if record is not None and record.dispatch_intent is not None:
+                return False
+        return True
+
+    def _entry_admitted(self, plan: Any) -> bool:
+        try:
+            self._refuse_unadmitted_entry(plan)
+        except GovernanceError:
+            return False
+        return True
+
     def _core_admits_profile(self, profile: str) -> bool:
         """Whether Core currently admits ``profile``; any doubt is refusal."""
 
@@ -3945,6 +4180,12 @@ class F3RuntimeIntegration:
             # as the first apply and the legacy path, before any state change.
             if not expected_plan_hash or expected_plan_hash != task.plan_hash:
                 raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
+            # HAMCP-232/145 M1: a retained task with no dispatch intent is
+            # refused like a first apply, before preparation, preflight or
+            # any store changes.  A terminal task still returns its recorded
+            # result; a task with a durable intent keeps its recovery path.
+            if task.state not in TERMINAL_TASK_STATES and self._pre_intent_task(task):
+                self._refuse_unadmitted_entry(plan)
             prepared, requests = await self._load_prepared(plan, task)
         task = self._enter_public_preflight(task)
         if task.state in TERMINAL_TASK_STATES:
@@ -4567,6 +4808,15 @@ class F3RuntimeIntegration:
         calculated = self.service.plan_hash(source_plan)
         if expected_plan_hash and expected_plan_hash != calculated:
             raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
+        if (
+            source_plan.contract_version == 3
+            and source_plan.operation == ChangeOperation.SET_INPUT_SELECT_OPTION
+        ):
+            # HAMCP-145 OD-12: a separately approved return to the captured
+            # prior option.  Admission is checked first, before any read.
+            return await self.service.create_input_select_rollback_plan(
+                source_plan
+            )
         if source_plan.contract_version == 3:
             raise GovernanceError(ErrorCode.ROLLBACK_NOT_AVAILABLE)
         if any(
@@ -4598,6 +4848,12 @@ class F3RuntimeIntegration:
                     "plan_hash": self.service.plan_hash(existing),
                 }
         task = self.service.task_repository.get_for_plan(source_plan.plan_id)
+        if source_plan.contract_version == 2 and any(
+            operation.resource_type == helper_options_contract.RESOURCE_TYPE
+            for operation in source_plan.operations
+        ):
+            # HAMCP-232 OD-12: admission first, then its own exact lease.
+            return await self._create_helper_options_rollback(source_plan, task)
         entity_metadata = source_plan.contract_version == 2 and any(
             operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE
             for operation in source_plan.operations
@@ -4922,6 +5178,171 @@ class F3RuntimeIntegration:
             "plan_hash": self.service.plan_hash(rollback_plan),
             "operations_to_restore": [item["operation_id"] for item in operations],
             "operations_excluded": excluded,
+            "provider_dispatch_occurred": False,
+        }
+
+    async def _create_helper_options_rollback(
+        self, source_plan: Any, task: Any
+    ) -> dict[str, Any]:
+        """Plan the separately approved restore of verified options (OD-12).
+
+        Admission is checked before any read.  Each child that dispatched once
+        and verified exactly contributes the reverse of its requested fields
+        (in reverse order); defaults Home Assistant injected are disclosed as
+        not restored.  Fresh planning re-reads every entry by opening and
+        aborting its options flow, and the whole rollback is refused unless
+        each entry's live options and ``modified_at`` still equal the
+        verified result.  Nothing is dispatched.
+        """
+
+        self.service._helper_options_core()
+
+        def refuse(reason: str, **extra: Any) -> GovernanceError:
+            return GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": reason,
+                    "reason_code": reason,
+                    **extra,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+
+        if task is None or task.state not in {
+            ExecutionTaskState.SUCCEEDED_VERIFIED,
+            ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
+            ExecutionTaskState.FAILED_POST_DISPATCH,
+        }:
+            raise refuse("forward_not_verified")
+        records = {
+            item["operation_id"]: self.children.get(item["child_id"])
+            for item in self.children.declarations_for_task(task.task_id)
+        }
+        changes: list[dict[str, Any]] = []
+        expected: dict[str, str] = {}
+        excluded: list[str] = []
+        not_restored: list[dict[str, Any]] = []
+        for operation in reversed(source_plan.operations):
+            record = records.get(operation.operation_id)
+            try:
+                intent = helper_options_contract.intent(operation.proposed_config)
+            except (TypeError, KeyError, ValueError, AttributeError):
+                intent = None
+            resulting = (
+                record.evidence.get("resulting_state_fingerprint")
+                if record is not None and isinstance(record.evidence, dict)
+                else None
+            )
+            if (
+                operation.resource_type != helper_options_contract.RESOURCE_TYPE
+                or intent is None
+                or record is None
+                or not record.terminal
+                or record.normalized_outcome != "succeeded_verified"
+                or record.dispatch_intent is None
+                or record.dispatch_count != 1
+                or not isinstance(resulting, str)
+            ):
+                excluded.append(operation.operation_id)
+                continue
+            baseline = intent["baseline"]
+            restore: dict[str, Any] = {}
+            clear: list[str] = []
+            for name in intent["requested"]:
+                if name in baseline:
+                    value = baseline[name]
+                    if (
+                        type(value) is float
+                        and value.is_integer()
+                        and getattr(
+                            helper_options_contract.field_spec(
+                                intent["domain"], intent["step_id"], name
+                            ),
+                            "kind",
+                            None,
+                        )
+                        == helper_options_contract.KIND_INT
+                    ):
+                        value = int(value)
+                    restore[name] = deepcopy(value)
+                else:
+                    clear.append(name)
+            not_restored.extend(
+                {"operation_id": operation.operation_id, "field": item["field"]}
+                for item in intent["normalization_changes"]
+            )
+            entity_id = intent["entity_ids"][0]
+            changes.append(
+                {"entity_id": entity_id, "set": restore, "clear": clear}
+            )
+            expected[entity_id] = resulting
+        if not changes:
+            raise refuse(
+                "no_verified_options_change", operations_excluded=excluded[:8]
+            )
+        lease = self.service._helper_options_planning_lease(
+            ",".join(sorted(expected))
+        )
+        async with lease:
+            try:
+                request = helper_options_planning.validate_request(
+                    {
+                        "changes": changes,
+                        "reason": f"Rollback governed change {source_plan.plan_id}",
+                    }
+                )
+                gateway = self.service.helper_options_gateway
+                if gateway is None:
+                    raise helper_options_planning.Refusal(
+                        "helper_options_provider_unavailable", kind="unavailable"
+                    )
+                prepared = await helper_options_planning.prepare(gateway, request)
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise refuse(
+                    "helper_options_rollback_baseline_drift"
+                    if exc.reason_code == "helper_options_already_desired"
+                    else exc.reason_code
+                ) from None
+            for item in prepared.items:
+                intent = item.intent[helper_options_contract.INTENT_KEY]
+                live = helper_options_contract.applied_state_fingerprint(
+                    intent["baseline"], intent["modified_at"]
+                )
+                if live != expected.get(item.entity_id):
+                    raise refuse("helper_options_rollback_baseline_drift")
+            lease.require_current()
+            created = await self.service._create_helper_options_plan(
+                prepared,
+                caller_context={
+                    "rollback_source_plan_id": source_plan.plan_id,
+                    "rollback_model": "hamcp232-helper-options-restore-v1",
+                    "excluded_operation_ids": excluded[:8],
+                    "defaults_not_restored": not_restored[:16],
+                },
+                _before_persist=lease.require_current,
+            )
+        rollback_plan = self.service._load(created["plan_id"])
+        partial = bool(excluded)
+        source_plan.rollback.available = True
+        source_plan.rollback.status = (
+            "partial_governed_plan_created" if partial else "governed_plan_created"
+        )
+        source_plan.rollback.requested_at = self.service._timestamp()
+        source_plan.rollback.request_id = rollback_plan.plan_id
+        self.service._record(source_plan, "rollback_plan_created", "success")
+        return {
+            "status": (
+                "rollback_partial_plan_created" if partial else "rollback_plan_created"
+            ),
+            "source_plan_id": source_plan.plan_id,
+            "rollback_plan_id": rollback_plan.plan_id,
+            "approval_required": True,
+            "plan_hash": self.service.plan_hash(rollback_plan),
+            "operations_to_restore": [item.operation_id for item in prepared.items],
+            "operations_excluded": excluded,
+            "defaults_not_restored": not_restored[:16],
             "provider_dispatch_occurred": False,
         }
 
@@ -5875,6 +6296,7 @@ class F3RuntimeIntegration:
             },
             "recovery_cadence_seconds": RECOVERY_CADENCE_SECONDS,
             "recovery_batch_size": RECOVERY_BATCH_SIZE,
+            "helper_options_flows": self._helper_options_flow_health(),
             "lock_profile": {
                 "lease_seconds": 120,
                 "renewal_interval_seconds": 20,
@@ -6999,6 +7421,15 @@ class F3RuntimeIntegration:
                         settled.append(declaration["child_id"])
                         self._clear_readiness_fault(fault_key, fault_revision)
                         continue
+                    if (
+                        not post_intent_readback
+                        and self._pre_intent_task(task)
+                        and not self._entry_admitted(plan)
+                    ):
+                        # HAMCP-232/145 M1: pre-intent recovery of an
+                        # unadmitted plan waits, unchanged, for admission.
+                        retry.append(declaration["child_id"])
+                        continue
                     if post_intent_readback:
                         prepared, requests = await self._load_prepared(
                             plan,
@@ -7586,6 +8017,8 @@ class F3RuntimeIntegration:
         active_transitions = (
             priority_recovery["transitions"] + pre_intent["transitions"]
         )
+        if not deadline_reached():
+            await self._retry_helper_options_flows(deadline_reached)
         self._last_sweep_complete = not deadline_reached()
         return {
             "processed": processed,

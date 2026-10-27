@@ -2,6 +2,24 @@
 
 Date: 2026-07-10
 
+## November Core batch built inactive (2.4.1-beta.41, HAMCP-232, HAMCP-145)
+
+Four `engineering_native` tools, each requiring a new runtime-only Core
+profile that the signed registry (sequence 14) does not name, so each
+refuses `pending_signed_registry_admission` before any read, request or
+persistence. `create_helper_options_plan` (governed write plan,
+`core.config_entry_helper_options_operation`) edits existing UI-created
+template, filter and statistics helpers through their config-entry options
+flow: one held submit per child of the complete intended options set, and
+every flow it opens is aborted on every exit. `create_input_select_option_plan`
+(governed write plan, `core.typed_input_select_option_operation`) sends one
+`input_select.select_option` for one exact entity. `list_script_traces` and
+`get_script_trace` (reads, `core.script_trace_read`) send only `trace/list`
+and `trace/get` with `domain: "script"` and leave through the HAMCP-225
+trace exit. No delegated provider and no fallback. The catalog is 77 static
++ 28 delegated = 105 (106 with the optional YAML reader). See
+[HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md](docs/HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md).
+
 ## Automation trace snapshots (2.4.1-beta.39, HAMCP-225)
 
 Four `engineering_native` tools, no delegated provider, no fallback, no Home

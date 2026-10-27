@@ -632,6 +632,7 @@ class DependencyIndex:
             source_epoch=source_epoch,
             semantic_evidence=scan.semantic_evidence,
             script_diagnostics=(scan.script_diagnostics.visible() if scan.script_diagnostics is not None else None),
+            state_trigger_values=tuple(scan.state_trigger_values),
             sanitizer_registry=registry,
         )
         # Revalidate after the last read and all parsing, before publishing.

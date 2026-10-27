@@ -407,11 +407,15 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
     probe_profile = probe_profile_for(core_version)
     added = source_profile()
     refs = [{k: p.to_mapping()[k] for k in REFERENCE_KEYS} for p in CORE_RUNTIME_CAPABILITY_PROFILES
-            # HAMCP-069B/155/165: the dormant availability/exposure, delete and label profiles are not signed here.
+            # HAMCP-069B/155/165/232/145: the dormant availability/exposure, delete, label and
+            # November-batch (seq 15+) profiles are not signed here.
             if p.capability_id not in {"core.entity_registry_availability_operation",
                                        "core.entity_assistant_exposure_operation",
                                        "core.configuration_delete_operation",
-                                       "core.label_registry_operation"}]
+                                       "core.label_registry_operation",
+                                       "core.config_entry_helper_options_operation",
+                                       "core.typed_input_select_option_operation",
+                                       "core.script_trace_read"}]
     old = [r for r in refs if r["capability_id"] != CAPABILITY]
     new = old + [added]
     assert len(old) == 21 and len(new) == 22 and len({r["capability_id"] for r in new}) == 22

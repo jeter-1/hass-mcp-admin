@@ -291,6 +291,10 @@ def capability_evidence_for_probes(
                 "core.entity_assistant_exposure_operation",
                 "core.label_registry_operation",
                 "core.configuration_delete_operation",
+                # HAMCP-232/145 November batch (dormant until signed).
+                "core.config_entry_helper_options_operation",
+                "core.typed_input_select_option_operation",
+                "core.script_trace_read",
             ):
                 add(capability_id, rest_ok and websocket_ok, semantic=True)
     return evidence

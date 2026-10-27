@@ -25,6 +25,7 @@ from ..governance.helper_state import (
     validate_input_boolean_entity_id,
 )
 from ..f3_configuration.locks import resource_lock_key
+from ..governance import input_select_option as input_select_contract
 
 from ha_mcp_engineering.f3.contracts import (
     AdapterCapabilityDescriptor,
@@ -60,6 +61,9 @@ CONTROLLED_RELOAD = "controlled_reload"
 RESTART_ADDON = "restart_addon"
 RESTART_HOME_ASSISTANT = "restart_home_assistant"
 SET_INPUT_BOOLEAN_STATE = "set_input_boolean_state"
+# HAMCP-145: runtime-only, pending signed admission of
+# ``core.typed_input_select_option_operation``.
+SET_INPUT_SELECT_OPTION = "set_input_select_option"
 
 SUPPORTED_OPERATIONS = (
     CREATE_FULL_BACKUP,
@@ -67,6 +71,12 @@ SUPPORTED_OPERATIONS = (
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
     SET_INPUT_BOOLEAN_STATE,
+    SET_INPUT_SELECT_OPTION,
+)
+#: Exact helper state/option operations: direct provider, no add-on lock,
+#: dependency-bound lock graph.
+HELPER_VALUE_OPERATIONS = frozenset(
+    {SET_INPUT_BOOLEAN_STATE, SET_INPUT_SELECT_OPTION}
 )
 
 CAPABILITY_IDENTITIES = {
@@ -75,6 +85,7 @@ CAPABILITY_IDENTITIES = {
     RESTART_ADDON: "restart_installed_home_assistant_addon",
     RESTART_HOME_ASSISTANT: "restart_home_assistant_core",
     SET_INPUT_BOOLEAN_STATE: "set_exact_input_boolean_state",
+    SET_INPUT_SELECT_OPTION: input_select_contract.PROVIDER_OPERATION,
 }
 
 TARGET_TYPES = {
@@ -83,6 +94,7 @@ TARGET_TYPES = {
     RESTART_ADDON: "addon",
     RESTART_HOME_ASSISTANT: "home_assistant",
     SET_INPUT_BOOLEAN_STATE: "input_boolean",
+    SET_INPUT_SELECT_OPTION: input_select_contract.TARGET_TYPE,
 }
 
 TARGET_CLASSES = {
@@ -91,6 +103,7 @@ TARGET_CLASSES = {
     RESTART_ADDON: "installed_home_assistant_addon",
     RESTART_HOME_ASSISTANT: "home_assistant_core",
     SET_INPUT_BOOLEAN_STATE: "exact_input_boolean_entity",
+    SET_INPUT_SELECT_OPTION: "exact_input_select_entity",
 }
 
 PROVIDER_OPERATIONS = {
@@ -99,6 +112,7 @@ PROVIDER_OPERATIONS = {
     RESTART_ADDON: "ha_manage_addon",
     RESTART_HOME_ASSISTANT: "ha_restart",
     SET_INPUT_BOOLEAN_STATE: HELPER_STATE_PROVIDER_OPERATION,
+    SET_INPUT_SELECT_OPTION: input_select_contract.PROVIDER_OPERATION,
 }
 
 PROVIDER_IDENTITIES = {
@@ -107,6 +121,7 @@ PROVIDER_IDENTITIES = {
     RESTART_ADDON: "upstream_operational_lifecycle",
     RESTART_HOME_ASSISTANT: "upstream_operational_lifecycle",
     SET_INPUT_BOOLEAN_STATE: HELPER_STATE_PROVIDER,
+    SET_INPUT_SELECT_OPTION: input_select_contract.PROVIDER,
 }
 
 PROVIDER_CONTRACT_MODELS = {
@@ -115,6 +130,7 @@ PROVIDER_CONTRACT_MODELS = {
     RESTART_ADDON: OPERATIONAL_PROVIDER_CONTRACT_MODEL,
     RESTART_HOME_ASSISTANT: OPERATIONAL_PROVIDER_CONTRACT_MODEL,
     SET_INPUT_BOOLEAN_STATE: HELPER_STATE_PROVIDER_CONTRACT,
+    SET_INPUT_SELECT_OPTION: input_select_contract.PROVIDER_CONTRACT,
 }
 
 VERIFICATION_MODELS = {
@@ -123,6 +139,7 @@ VERIFICATION_MODELS = {
     RESTART_ADDON: "f3-addon-restart-exact-readback-v1",
     RESTART_HOME_ASSISTANT: "f3-home-assistant-restart-outage-recovery-v1",
     SET_INPUT_BOOLEAN_STATE: "f3-input-boolean-exact-state-readback-v1",
+    SET_INPUT_SELECT_OPTION: "f3-input-select-exact-option-readback-v1",
 }
 
 EVIDENCE_DEADLINE_CLASSES = {
@@ -131,6 +148,7 @@ EVIDENCE_DEADLINE_CLASSES = {
     RESTART_ADDON: "addon_restart_evidence",
     RESTART_HOME_ASSISTANT: "home_assistant_restart_evidence",
     SET_INPUT_BOOLEAN_STATE: "short_helper_state_evidence",
+    SET_INPUT_SELECT_OPTION: "short_helper_state_evidence",
 }
 
 EXPECTED_EFFECT_CODES = {
@@ -139,6 +157,7 @@ EXPECTED_EFFECT_CODES = {
     RESTART_ADDON: ("installed_addon_restarted",),
     RESTART_HOME_ASSISTANT: ("home_assistant_core_restarted",),
     SET_INPUT_BOOLEAN_STATE: ("input_boolean_exact_state_set",),
+    SET_INPUT_SELECT_OPTION: ("input_select_exact_option_selected",),
 }
 
 POLICY_EXPECTATIONS = {
@@ -147,6 +166,7 @@ POLICY_EXPECTATIONS = {
     RESTART_ADDON: ("elevated_admin", "high", "indirect"),
     RESTART_HOME_ASSISTANT: ("elevated_admin", "high", "indirect"),
     SET_INPUT_BOOLEAN_STATE: ("standard_admin", "low", "none"),
+    SET_INPUT_SELECT_OPTION: ("standard_admin", "low", "none"),
 }
 
 RISK_LEVEL_EXPECTATIONS = {
@@ -155,6 +175,7 @@ RISK_LEVEL_EXPECTATIONS = {
     RESTART_ADDON: "high",
     RESTART_HOME_ASSISTANT: "high",
     SET_INPUT_BOOLEAN_STATE: "low",
+    SET_INPUT_SELECT_OPTION: "low",
 }
 
 
@@ -165,7 +186,7 @@ def operational_policy_expectation_is_valid(
 ) -> bool:
     """Validate the fixed policy families and dependency-aware helper cases."""
 
-    if operation != SET_INPUT_BOOLEAN_STATE:
+    if operation not in HELPER_VALUE_OPERATIONS:
         return bool(
             policy == POLICY_EXPECTATIONS[operation]
             and risk_level == RISK_LEVEL_EXPECTATIONS[operation]
@@ -184,6 +205,7 @@ EVIDENCE_DEADLINE_SECONDS = {
     RESTART_ADDON: 1_800,
     RESTART_HOME_ASSISTANT: 1_800,
     SET_INPUT_BOOLEAN_STATE: 120,
+    SET_INPUT_SELECT_OPTION: 120,
 }
 
 RELOAD_PROVIDER_TARGETS = {
@@ -521,6 +543,16 @@ def provider_arguments(
             "service": "turn_on" if desired_state == "on" else "turn_off",
             "target": {"entity_id": target_id},
         }
+    if operation == SET_INPUT_SELECT_OPTION:
+        payload = input_select_contract.select_option_payload(
+            target_id, requested_name
+        )
+        return {
+            "domain": payload["domain"],
+            "service": payload["service"],
+            "service_data": payload["service_data"],
+            "target": payload["target"],
+        }
     raise ValueError("unknown operational operation")
 
 
@@ -548,6 +580,9 @@ def operational_escalation_policy(
     elif operation == SET_INPUT_BOOLEAN_STATE:
         validate_input_boolean_entity_id(target_id)
         keys = (resource_lock_key("input_boolean", target_id),)
+    elif operation == SET_INPUT_SELECT_OPTION:
+        input_select_contract.validate_entity_id(target_id)
+        keys = (resource_lock_key("input_select", target_id),)
     else:
         raise ValueError("unknown operational hold model")
     return keys, EVIDENCE_DEADLINE_SECONDS[operation]
@@ -749,6 +784,14 @@ def validate_prepared_operational_authority(
     if expected_operation == SET_INPUT_BOOLEAN_STATE and (
         operation.authoritative_provider_slug != HELPER_STATE_PROVIDER_SLUG
         or provider_evidence != helper_state_provider_evidence()
+        or operation.provider_identity_evidence_hash
+        != stable_hash(provider_evidence)
+    ):
+        raise ValueError("prepared direct provider evidence is invalid")
+    if expected_operation == SET_INPUT_SELECT_OPTION and (
+        operation.authoritative_provider_slug
+        != input_select_contract.PROVIDER_SLUG
+        or provider_evidence != input_select_contract.provider_evidence()
         or operation.provider_identity_evidence_hash
         != stable_hash(provider_evidence)
     ):

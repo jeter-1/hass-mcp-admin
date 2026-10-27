@@ -400,6 +400,14 @@ NON_IDENTIFIER_INPUTS: dict[str, frozenset[str]] = {
     ),
     # HAMCP-155: deletions[].* are identifiers; reason is screened text.
     "create_configuration_delete_plan": frozenset({"reason", "expiration_minutes"}),
+    # HAMCP-145: option is the exact, schema-bounded option text; reason is
+    # screened text.
+    "create_input_select_option_plan": frozenset({"option", "reason", "expiration_minutes"}),
+    # HAMCP-232: changes[].entity_id is an identifier; set and clear name
+    # only the closed editable field vocabulary and its validated values.
+    "create_helper_options_plan": frozenset(
+        {"changes[].set", "changes[].clear", "reason", "expiration_minutes"}
+    ),
     "create_addon_restart_plan": frozenset({"expiration_minutes"}),
     "create_home_assistant_restart_plan": frozenset({"expiration_minutes"}),
     "create_change_plan": frozenset(
@@ -433,10 +441,22 @@ class _ServedDeletionItem:
     )
 
 
+class _ServedHelperOptionsChange:
+    """HAMCP-232 serves an explicit closed item schema; mirror its keys."""
+
+    __annotations__ = dict.fromkeys(
+        governance_tools.HELPER_OPTIONS_INPUT_SCHEMA["properties"]["changes"]["items"][
+            "properties"
+        ],
+        str,
+    )
+
+
 ITEM_TYPES = {
     "operations": governance_tools.ConfigurationOperation,
     "patch_operations": governance_tools.DashboardPatchOperation,
     "deletions": _ServedDeletionItem,
+    "changes": _ServedHelperOptionsChange,
 }
 
 PLAN_ID = "0123456789abcdef" * 2
@@ -462,6 +482,13 @@ ORDINARY_ARGUMENTS: dict[str, dict] = {
     "create_configuration_delete_plan": {
         "deletions": [{"resource_type": "automation", "target_id": "porch_light"}],
         "reason": "cleanup",
+    },
+    "create_input_select_option_plan": {
+        "entity_id": "input_select.porch_mode", "option": "Away", "reason": "ordinary",
+    },
+    "create_helper_options_plan": {
+        "changes": [{"entity_id": "sensor.porch_filtered", "set": {"precision": 1}}],
+        "reason": "ordinary",
     },
     "create_addon_restart_plan": {"addon_slug": "core_mosquitto"},
     "create_home_assistant_restart_plan": {},
@@ -567,6 +594,14 @@ class IdentifierBoundaryEnumerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(governance_tools.CONFIGURATION_DELETE_INPUT_SCHEMA["properties"]),
             set(inspect.signature(tools["create_configuration_delete_plan"]).parameters),
+        )
+        self.assertEqual(
+            set(governance_tools.INPUT_SELECT_OPTION_INPUT_SCHEMA["properties"]),
+            set(inspect.signature(tools["create_input_select_option_plan"]).parameters),
+        )
+        self.assertEqual(
+            set(governance_tools.HELPER_OPTIONS_INPUT_SCHEMA["properties"]),
+            set(inspect.signature(tools["create_helper_options_plan"]).parameters),
         )
 
     def service(self, secret):

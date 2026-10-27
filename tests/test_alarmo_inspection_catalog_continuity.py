@@ -61,6 +61,9 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
                                                           "create_entity_availability_exposure_plan",
                                                           "create_label_plan",
                                                           "create_configuration_delete_plan",
+                                                          "create_helper_options_plan",
+                                                          "create_input_select_option_plan",
+                                                          "list_script_traces", "get_script_trace",
                                                           "capture_automation_trace",
                                                           "list_trace_snapshots",
                                                           "get_trace_snapshot",
@@ -74,7 +77,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual["get_automation_trace"] = _without_hamcp225_trace_disclosure(self, actual["get_automation_trace"])
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 73)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 77)
         tool = actual["get_integration_inspection"]
         self.assertFalse(tool["inputSchema"]["additionalProperties"])
         self.assertEqual(set(tool["inputSchema"]["properties"]), {"alarm_entity_id", "integration", "limit", "cursor"})

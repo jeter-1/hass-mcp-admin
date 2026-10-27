@@ -45,6 +45,7 @@ from .extraction import (
     resolve_blueprint_roles,
     valid_entity_id,
 )
+from .state_trigger_values import extract_state_trigger_values
 from .models import (
     AutomationReadFailure,
     AutomationActionRiskProfile,
@@ -1189,6 +1190,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         unreconciled_writes = pending_not_loaded
 
         profile_inputs: list[tuple[str, str | None, Any, dict[str, Any]]] = []
+        state_trigger_values: list[Any] = []
         failed = 0
         automation_call_documents = []
         blueprint_failures = 0
@@ -1377,6 +1379,15 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             findings.extend(extracted)
             dynamic.extend(unresolved)
             obligations.extend(extracted_obligations)
+            state_trigger_values.extend(
+                extract_state_trigger_values(
+                    action_config,
+                    source_id=internal_id,
+                    source_entity_id=source_entity_id,
+                    secret=self.secret,
+                    source_state=state.get("state"),
+                )
+            )
             consequence = automation_action_consequence_profile(
                 action_config
             )
@@ -1914,6 +1925,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             home_assistant_version_status=home_assistant_version_status,
             semantic_evidence=semantic_evidence,
             script_diagnostics=script_diagnostics,
+            state_trigger_values=state_trigger_values,
             automation_action_profiles=automation_action_profiles,
             automation_read_failures=automation_read_failures,
             label_memberships=label_memberships,

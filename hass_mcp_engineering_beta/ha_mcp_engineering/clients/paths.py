@@ -53,6 +53,8 @@ ROUTE_TEMPLATES = frozenset({
     "/addons/self/logs",
     "/config",
     "/config/automation/config/{}",
+    "/config/config_entries/options/flow",
+    "/config/config_entries/options/flow/{}",
     "/config/core/check_config",
     "/config/script/config/{}",
     "/core/logs",
@@ -287,15 +289,37 @@ def _encode(
     return encoded
 
 
-def require_route(path: Any) -> Route:
-    """Return ``path`` if ``rest_path`` issued it; refuse anything else."""
+def _route_methods(route: Route) -> frozenset[str] | None:
+    """HAMCP-232: the reviewed methods of a method-bound route, else ``None``.
 
-    if is_route(path):
-        return path
-    raise UnsafeRequestPathError("unbound_request_path")
+    The transport refuses any other method before a credential or session
+    exists. The options-flow routes are reached only by the helper-options
+    gateway.
+    """
+
+    if route.template == "/config/config_entries/options/flow":
+        return frozenset({"POST"})
+    if route.template == "/config/config_entries/options/flow/{}":
+        return frozenset({"DELETE", "POST"})
+    return None
 
 
-def request_url(api_url: str, path: Any) -> URL:
+def require_route(path: Any, method: Any = None) -> Route:
+    """Return ``path`` if ``rest_path`` issued it; refuse anything else.
+
+    A method-bound route (``_route_methods``) is refused for any other
+    method, including when no method is named.
+    """
+
+    if not is_route(path):
+        raise UnsafeRequestPathError("unbound_request_path")
+    allowed = _route_methods(path)
+    if allowed is not None and method not in allowed:
+        raise UnsafeRequestPathError("route_method_not_allowed")
+    return path
+
+
+def request_url(api_url: str, path: Any, method: Any = None) -> URL:
     """Return the exact URL for ``path`` after re-verifying its fixed route.
 
     Only an issued ``Route`` is accepted. Its template, every bound value
@@ -303,10 +327,10 @@ def request_url(api_url: str, path: Any) -> URL:
     client parses a string (requoting and dot-segment normalization). The
     request is refused unless that normalized URL keeps the base origin,
     the base path plus exactly the template's segments, the template's
-    query, and no fragment.
+    query, and no fragment. A method-bound route needs its reviewed method.
     """
 
-    route = require_route(path)
+    route = require_route(path, method)
     # Central guard: re-check the template, every bound value and the
     # encoding, however the route object came to hold them.
     if str.__str__(route) != _encode(route.template, route.values, route.kinds, route.query):

@@ -1188,6 +1188,44 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                 }
                 self.assertEqual(key in keys, expected)
 
+    async def test_input_boolean_disjoint_call_service_filters_guard_input_select(self):
+        # HAMCP-145: the extractor proves call_service filters disjoint for
+        # input_boolean only.  A filter that can still observe the
+        # input_select operation's select_option event holds the guard; one
+        # disjoint from both keeps the historical lock set.
+        guard = unconstrained_helper_dependency_lock_key()
+        base = valid_config("automation")
+        cases = (
+            ({"domain": "input_select", "service": "select_option"}, True),
+            ({"domain": "input_select"}, True),
+            ({"service": "select_option"}, True),
+            ({"domain": ["light", "{{ d }}"], "service": "select_option"}, True),
+            ({"domain": "input_select", "service": "{{ s }}"}, True),
+            ({"domain": "input_select", "service": "select_next"}, False),
+            ({"domain": ["light", "switch"]}, False),
+            ({"domain": "{{ d }}", "service": "toggle"}, False),
+        )
+        for index, (event_data, expected) in enumerate(cases):
+            for event_type in ("call_service", ["call_service", "other"]):
+                with self.subTest(index=index, event_type=event_type):
+                    proposed = valid_config("automation")
+                    proposed["trigger"] = [{
+                        "platform": "event",
+                        "event_type": event_type,
+                        "event_data": event_data,
+                    }]
+                    prepared = await self._prepared(
+                        "automation",
+                        "update",
+                        operation_id=f"input_select_call_service_{index}",
+                        current_config=base,
+                        proposed_config=proposed,
+                    )
+                    keys = {
+                        item.key for item in operation_lock_requests(prepared)
+                    }
+                    self.assertEqual(guard in keys, expected)
+
     async def test_filter_test_and_domain_collection_dependency_locks(self):
         helper = "input_boolean.synthetic_exact"
         exact_key = helper_dependency_lock_key(helper)

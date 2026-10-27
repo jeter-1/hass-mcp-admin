@@ -1300,10 +1300,14 @@ HARNESS_BINDERS = frozenset({"rest_path", "state_path"})
 # the disposable-Core onboarding bootstrap and the 850 relay passthrough, and
 # the seq-13 lane's config-entry setup and cleanup (HAMCP-165 review1 M4),
 # which ``LaneRaw.rest`` closes to ``CONFIG_ENTRY_ROUTE`` on a loopback Core
-# (pinned in tests/test_seq13_contract_acceptance.py ``LaneRawRouteTests``).
+# (pinned in tests/test_seq13_contract_acceptance.py ``LaneRawRouteTests``),
+# and the seq-15 lane's setup, raw drift, readback and cleanup (HAMCP-232),
+# which ``LaneRaw.status`` closes to ``RAW_ROUTE`` on a loopback Core
+# (pinned in tests/test_seq15_contract_acceptance.py ``LaneRawRouteTests``).
 HARNESS_EXEMPTIONS = frozenset({
     ("real_ha_contract_tests.py", "f'{HA_URL}{path}'"),
     ("seq13_contract_acceptance.py", "self.api_url + path"),
+    ("seq15_contract_acceptance.py", "self.api_url + path"),
 })
 
 

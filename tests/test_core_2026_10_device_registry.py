@@ -28,6 +28,7 @@ from ha_mcp_engineering.ha_core_readmission.probe_profiles import (
 )
 from ha_mcp_engineering.ha_core_readmission.profiles import (
     CORE_CONFIGURATION_DELETE_PROFILES, CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES, CORE_LABEL_REGISTRY_PROFILES,
+    CORE_NOVEMBER_BATCH_PROFILES,
     CORE_RUNTIME_CAPABILITY_PROFILES, compiled_exact_authority,
 )
 from ha_mcp_engineering.ha_core_readmission.models import CORE_IDENTITY
@@ -103,7 +104,7 @@ class OctoberDeviceShapeTests(unittest.TestCase):
         self.assertFalse(assess_device_registry(self.records).complete)
         self.assertFalse(assess_device_registry(self.records, schema=SEPTEMBER.device_registry_schema).complete)
         ids = {e['capability_id'] for e in capability_evidence_for_probes(**probe_inputs(SEPTEMBER))}
-        self.assertEqual(len(ids), 23)  # +2 HAMCP-069B, +1 HAMCP-165, +1 HAMCP-155 transport evidence (not admission)
+        self.assertEqual(len(ids), 26)  # +2 HAMCP-069B, +1 HAMCP-165, +1 HAMCP-155, +3 HAMCP-232/145 transport evidence (not admission)
         self.assertTrue(DEVICE_CAPABILITIES.isdisjoint(ids))
 
     def test_october_profile_restores_all_required_probe_evidence(self):
@@ -229,7 +230,9 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
                               # 165 label nor 155 delete profiles.
                               if p not in CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
                               + CORE_LABEL_REGISTRY_PROFILES
-                              and p not in CORE_CONFIGURATION_DELETE_PROFILES])
+                              and p not in CORE_CONFIGURATION_DELETE_PROFILES
+                              # HAMCP-232/145: nor the dormant November batch.
+                              and p not in CORE_NOVEMBER_BATCH_PROFILES])
         self.now = NOW
         self.raw = None
         async def fetch(*_args):

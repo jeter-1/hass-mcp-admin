@@ -119,6 +119,48 @@ class ExistingConfigurationGatewayBridge:
             resource_type, target_id
         )
 
+    # HAMCP-232: the closed options-flow reads, the held flow, its abort and
+    # the one step submit, routed only to the dedicated options gateway.
+
+    async def options_entry(self, entry_id: str) -> Any:
+        return await self._gateway.helper_options.entry(entry_id)
+
+    async def options_entry_entities(self, entry_id: str) -> list[str]:
+        return await self._gateway.helper_options.entry_entities(entry_id)
+
+    async def options_consumer_fingerprint(
+        self, entity_ids: list[str]
+    ) -> str | None:
+        from ..governance.helper_options import consumer_fingerprint
+
+        evidence = await self._gateway.helper_options.entry_consumer_evidence(
+            list(entity_ids)
+        )
+        return None if evidence is None else consumer_fingerprint(evidence)
+
+    async def options_read_visible(
+        self, entry_id: str, *, domain: str, expected_step_id: str
+    ) -> tuple[str, dict[str, Any], bool]:
+        return await self._gateway.helper_options.read_visible(
+            entry_id, domain=domain, expected_step_id=expected_step_id
+        )
+
+    async def options_open_held(
+        self, entry_id: str, *, domain: str, expected_step_id: str
+    ) -> Any:
+        return await self._gateway.helper_options.open_held(
+            entry_id, domain=domain, expected_step_id=expected_step_id
+        )
+
+    async def options_abort(self, flow_id: str) -> bool:
+        return await self._gateway.helper_options.abort_flow(flow_id)
+
+    def options_flow_unreleased(self, flow_id: str) -> None:
+        self._gateway.helper_options.flow_unreleased(flow_id)
+
+    async def options_submit(self, flow_id: str, submit: dict[str, Any]) -> Any:
+        return await self._gateway.helper_options.submit_dispatch(flow_id, submit)
+
     async def write(
         self,
         action: str,
