@@ -24,6 +24,7 @@ service, generate a cleanup command, or create a governance plan.
     "missing_entity_reference",
     "disabled_entity_reference",
     "registry_only_entity_reference",
+    "unavailable_entity_reference",
     "orphan_registry_candidate",
     "unresolved_dynamic_reference"
   ],
@@ -124,6 +125,17 @@ claim that the reference is broken.
 entry with no current state and no explicit disabled classification. It may be
 unloaded, temporarily absent, or stale; the evidence cannot decide safely.
 
+`unavailable_entity_reference` (HAMCP-226) is an exact static reference to
+an entity that exists in the state machine, is not registry-disabled, and whose
+current state is `unavailable` or `unknown`. The finding carries
+`target_state` (`unavailable` or `unknown`) and `target_last_changed`, the
+state's ISO 8601 `last_changed` when Home Assistant reports a well-formed one
+(omitted otherwise; a malformed value is never shown). Precedence is
+deterministic: an absent target is `missing_entity_reference`, a
+registry-disabled target is `disabled_entity_reference`, a registry entry with
+no state is `registry_only_entity_reference`, and an available target creates
+no finding. One finding is reported per source object and target.
+
 `orphan_registry_candidate` is a registry entry with no state and no exact
 inbound reference in the inspected full dependency scope. It is only a manual
 review candidate. A state value of `unavailable` still means the entity exists
@@ -139,10 +151,14 @@ never invents a target entity ID.
 
 - High: an exact missing reference from an enabled consumer.
 - Medium: a missing reference from a disabled or unknown-state consumer; a
-  disabled or registry-only target; an unresolved requested-scope dynamic
-  reference; or incomplete required coverage.
-- Low: a conservative orphan-registry candidate.
-- Info: reserved for useful non-defect relationships.
+  disabled or registry-only target; an `unavailable` target referenced by an
+  enabled consumer; an unresolved requested-scope dynamic reference; or
+  incomplete required coverage.
+- Low: a conservative orphan-registry candidate; an `unavailable` target
+  referenced by a disabled consumer; an `unknown` target referenced by an
+  enabled consumer.
+- Info: an `unknown` target referenced by a disabled consumer; otherwise
+  reserved for useful non-defect relationships.
 
 Repeated paths do not increase severity. Final assessments are
 `review_required`, `no_confirmed_integrity_findings`, or
@@ -168,6 +184,59 @@ Whole-analysis fields are:
 Severity and type totals each sum to `finding_count`. Source totals cover only
 findings that have a source object; orphan candidates intentionally have none.
 Pagination never changes whole-analysis totals.
+
+## Named bound overruns
+
+A source whose configuration exceeded a dependency-analysis bound (for example
+a template over `MAX_TEMPLATE_SOURCE_CHARS`, or more than
+`MAX_DOCUMENT_OBLIGATIONS` obligations) could reference any target, so it is
+named (HAMCP-226). `bounded_sources` lists at most 50 entries
+`{source_type, source_id, source_entity_id, reason_code, bound, bound_value}`
+in deterministic order, one per source and reason code. `bound` and
+`bound_value` are the name and value of the enforcing constant; an unknown
+reason code is listed with `bound: "unclassified"` and `bound_value: null`.
+Read failures are coverage failures, not bounds, and are not listed.
+`bounded_sources_omitted` counts entries after the first 50,
+`bounded_sources_withheld` counts sources whose identifier the credential
+screen withheld (counted, never named), and `bounded_source_total` is the
+whole count. The accounting is exact at the production limits (review 1,
+M3): scripts keep one coverage-failure terminal per distinct source and reason
+code, so a scan of `MAX_SCRIPT_SOURCES` scripts is never cut before naming,
+and the listed, omitted and withheld entries always sum to the total. A
+non-zero total adds a fixed warning and makes the result partial. The same fields appear in `entity_dependency_analysis` (for every
+requested-scope bounded source, whatever the target) and in the helper
+dependency binding, where they are disclosure only and outside
+`evidence_fingerprint`.
+
+## Credential screen for Home Assistant names
+
+Home Assistant's own identifiers and names (automation and script IDs and
+aliases, entity IDs and names, configuration paths, excerpts) are screened
+with the shared configuration-definitions screen in its default mode, the
+HAMCP-132 shape-based checks: a credential URL, a known secret, a PEM
+private-key header, and invisible or format characters, in the decoded, NFKC,
+confusable-folded and squashed forms. The screen reads the complete original
+value before any redaction or bound; a screened value is replaced whole by
+`[withheld:credential_text]` or `[withheld:unverifiable_text]`. The journal's
+labelled keyword mode (HAMCP-224) is for third-party log text only, so an
+ordinary name such as `Token refresh` is shown (owner direction, Josh,
+2026-10-26). A withheld name keeps its finding; a withheld source identifier
+fails closed as a sanitization or coverage failure, so the result is partial
+and nothing is ruled out.
+
+The screen also covers every registry- and state-derived value the analysis
+reads (review 1, H1), including the registry `platform` and `disabled_by`
+values and the state `state` and `last_changed` values, screened when the
+inventory is collected. A withheld text value is replaced whole and adds a
+fixed warning; a withheld entity ID drops that inventory record, counts it as
+a failed item and makes that inventory partial. As a backstop, each analysis
+tool's final response envelope (`configuration_integrity_analysis`,
+`entity_dependency_analysis`, and the helper dependency's named bounded
+sources) passes the same screen again, so a field added later cannot return
+Home Assistant text unscreened: a withheld value adds the warning
+"N response field(s) were withheld whole by the final credential screen." and
+makes the result partial; a withheld mapping key refuses the response
+(`analysis_unavailable`).
 
 ## Dynamic references and orphan safeguards
 

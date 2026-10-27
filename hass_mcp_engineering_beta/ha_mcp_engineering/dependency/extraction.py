@@ -10,6 +10,7 @@ import re
 from typing import Any, Iterable
 
 from ..logging_config import redact_data
+from ..untrusted_text import screen
 from .dynamic_resolution import (
     BoundedTemplateContext,
     CandidateResolution,
@@ -4540,6 +4541,7 @@ def _summary(relation: str) -> str:
 
 # The exact object is the only form a re-scan keeps by identity.
 _BOUNDED_REDACTED = "<redacted>"
+_SCREEN_MARGIN = 1024
 
 
 def _bounded(value: Any, limit: int = 160, secret: str = "") -> str | None:
@@ -4548,6 +4550,16 @@ def _bounded(value: Any, limit: int = 160, secret: str = "") -> str | None:
     # HAMCP-191 D4: Engineering's truncation and markers join the bound
     # identity record (the index build's, else the request's).
     registry = extraction_registry()
+    # HAMCP-226: the default-mode credential screen reads the original text
+    # first; a screened value is replaced whole, never redacted in part or cut
+    # by the bound below. Only a prefix can be shown, so the screen reads the
+    # shown prefix plus a margin that holds any credential crossing the cut,
+    # which keeps the scan of a template up to 64 KiB bounded.
+    marker = screen(str(value)[:limit + _SCREEN_MARGIN], (secret,) if secret else ())
+    if marker is not None:
+        if registry is not None:
+            registry.register_output(marker)
+        return marker
     safe = redact_data(str(value), secret=secret, max_string=limit, registry=registry)
     text = str(safe)
     for marker in ("authorization:", "bearer ", "/mcp"):

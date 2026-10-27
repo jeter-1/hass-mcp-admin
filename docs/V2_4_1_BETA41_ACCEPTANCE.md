@@ -121,9 +121,8 @@ Preserve the following:
 - persisted formats of every existing family (new enum values are written
   only after signed admission);
 - every existing descriptor and input schema, including
-  `create_helper_state_plan`; static tools **76** (72 + 4) on the beta.39
-  base, **77** once beta.40 merges in; the catalog is **104 tools, 105 with
-  the optional YAML reader admitted** (105 and 106 with beta.40);
+  `create_helper_state_plan`; static tools **77** (73 + 4); the catalog
+  is **105 tools, 106 with the optional YAML reader admitted**;
 - probe fingerprints, the signed Core capability profiles, the owner-signed
   Core registry (sequence 14 at base, unchanged), the signed ha-mcp registry
   and the delete profile's contract fingerprint
@@ -210,9 +209,8 @@ Separately authorize installation. All checks are read-only.
 
 1. **Installed-image binding.** Bind the running add-on to the published
    image index digest, the release tag and the protected `main` merge commit.
-2. **Catalog.** `tools/list` shows the materialized release's catalog (104
-   tools, 105 with the YAML reader admitted, on the beta.39 base; one more
-   each with beta.40), including the four new tools.
+2. **Catalog.** `tools/list` shows the materialized release's catalog (105
+   tools, 106 with the YAML reader admitted), including the four new tools.
 3. **Pending admission.** `list_capabilities` lists each new tool with its
    new profile in `core_capabilities` and a `core_admission` other than
    `admitted`, because sequence 14 names none of the three profiles. This

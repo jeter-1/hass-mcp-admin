@@ -37,39 +37,107 @@ READ_SECONDS = 5
 CONCURRENCY = 4
 SNAPSHOT_BYTES = 2 * 1024 * 1024
 SNAPSHOT_TTL = 600
-MAX_SNAPSHOTS = 2
+# HAMCP-228 decision S: a durable bounded store; refuse at capacity, never evict.
+STORE_MODEL = "audit-baselines-v1"
+STORE_BASELINES = 12
+STORE_RETENTION_SECONDS = 180 * 86_400
+STORE_INDEX_BYTES = 65_536
+QUARANTINE_MAX = 32
 PAGE_BYTES = 48_000
 ID = re.compile(r"[A-Za-z0-9_.:-]{1,256}\Z")
 ENTITY = re.compile(r"automation\.[a-z0-9_]{1,220}\Z")
 CURSOR = re.compile(r"[0-9a-f]{32}:[0-9]{1,4}:[0-9a-f]{64}\Z")
+CAPTURE_ID = re.compile(r"[0-9a-f]{32}\Z")
 REASONS = frozenset({"invalid_arguments", "invalid_cursor", "snapshot_expired", "capacity_busy",
     "authority_unavailable", "authority_drift", "identity_unverified", "identity_drift", "access_denied",
     "source_unavailable", "malformed_response", "response_limit", "structural_limit", "timeout",
-    "output_limit", "configuration_unavailable", "configuration_identity_mismatch", "redacted_identity"})
+    "output_limit", "configuration_unavailable", "configuration_identity_mismatch", "redacted_identity",
+    "store_full", "store_unavailable", "baseline_not_found", "baseline_damaged", "resume_inventory_changed",
+    "resume_not_needed", "resume_core_changed"})
+
+
+# Why the store is unavailable, when it is known (HAMCP-226/228 review 2, R2).
+STORE_CONDITIONS = frozenset({"namespace_unreadable", "namespace_not_writable", "record_unreadable"})
 
 
 class CaptureError(GovernanceError):
-    def __init__(self, reason):
+    def __init__(self, reason, *, oldest_age_seconds=None, store_condition=None):
         if reason not in REASONS:
             reason = "source_unavailable"
         code = (ErrorCode.INVALID_REQUEST if reason == "invalid_arguments" else
                 ErrorCode.INVALID_CURSOR if reason in {"invalid_cursor", "snapshot_expired"} else
                 ErrorCode.PROVIDER_UNAVAILABLE if reason in {"authority_unavailable", "authority_drift"} else
                 ErrorCode.ANALYSIS_UNAVAILABLE)
-        super().__init__(code, details={"reason": reason})
+        details = {"reason": reason}
+        if reason == "store_full" and type(oldest_age_seconds) is int and oldest_age_seconds >= 0:
+            # Only the fixed capacity and the oldest age; never a stored payload.
+            details.update(stored_baselines=STORE_BASELINES, oldest_age_seconds=oldest_age_seconds,
+                           retention_seconds=STORE_RETENTION_SECONDS)
+        if reason == "store_unavailable" and store_condition in STORE_CONDITIONS:
+            # Review 2 (R2): the fixed condition, never a path or an OS message.
+            details["store_condition"] = store_condition
+        super().__init__(code, details=details)
         self.reason = reason
 
     @property
     def retryable(self) -> bool:
-        return self.reason in {"capacity_busy", "timeout", "source_unavailable"}
+        return self.reason in {"capacity_busy", "timeout", "source_unavailable", "store_unavailable"}
 
 
 def validate_arguments(arguments):
-    if (type(arguments) is not dict or set(arguments) - {"limit", "cursor"}
+    resume = arguments.get("resume_capture_id", "") if type(arguments) is dict else ""
+    if (type(arguments) is not dict or set(arguments) - {"limit", "cursor", "resume_capture_id"}
             or type(arguments.get("limit", 25)) is not int or not 1 <= arguments.get("limit", 25) <= 100
             or type(arguments.get("cursor", "")) is not str
-            or (arguments.get("cursor") and not CURSOR.fullmatch(arguments["cursor"]))):
+            or (arguments.get("cursor") and not CURSOR.fullmatch(arguments["cursor"]))
+            or type(resume) is not str or (resume and not CAPTURE_ID.fullmatch(resume))
+            or (resume and arguments.get("cursor"))):
         raise CaptureError("invalid_arguments")
+
+
+# HAMCP-228 compare_automation_baselines: stored/stored or stored/recorded.
+COMPARE_KEYS = frozenset({"earlier_capture_id", "later_capture_id", "recorded_fingerprints",
+                          "fingerprint_model", "cursor"})
+# Review 1 (M2): rows per comparison page, under the page byte bound too.
+COMPARE_PAGE_ROWS = 100
+MAX_FINGERPRINTS = MAX_RECORDS
+FINGERPRINT = re.compile(r"[0-9a-f]{16,64}\Z")
+
+
+def validate_compare_arguments(arguments):
+    """Exact closed compare arguments; the later side is a capture XOR fingerprints."""
+
+    if type(arguments) is not dict or set(arguments) - COMPARE_KEYS:
+        raise CaptureError("invalid_arguments")
+    earlier = arguments.get("earlier_capture_id")
+    later = arguments.get("later_capture_id", "")
+    rows = arguments.get("recorded_fingerprints")
+    model = arguments.get("fingerprint_model", "")
+    cursor = arguments.get("cursor", "")
+    if type(cursor) is not str or (cursor and not CURSOR.fullmatch(cursor)):
+        raise CaptureError("invalid_arguments")
+    if (type(earlier) is not str or not CAPTURE_ID.fullmatch(earlier)
+            or type(later) is not str or (later and not CAPTURE_ID.fullmatch(later))
+            or type(model) is not str or len(model) > 64):
+        raise CaptureError("invalid_arguments")
+    if rows is None:
+        if not later or model:
+            raise CaptureError("invalid_arguments")
+        return None
+    if (later or type(rows) is not list or len(rows) > MAX_FINGERPRINTS
+            or not ID.fullmatch(model)):
+        raise CaptureError("invalid_arguments")
+    fingerprints = {}
+    for row in rows:
+        if (type(row) is not dict or set(row) != {"configuration_id", "fingerprint"}
+                or type(row["configuration_id"]) is not str or not ID.fullmatch(row["configuration_id"])
+                or type(row["fingerprint"]) is not str
+                or not row["fingerprint"].startswith("sha256:")
+                or not FINGERPRINT.fullmatch(row["fingerprint"][7:])
+                or row["configuration_id"] in fingerprints):
+            raise CaptureError("invalid_arguments")
+        fingerprints[row["configuration_id"]] = row["fingerprint"][7:]
+    return fingerprints
 
 
 def canonical(value):

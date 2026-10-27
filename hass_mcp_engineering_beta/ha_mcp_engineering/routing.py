@@ -938,10 +938,12 @@ class AuthenticatedMcpGateway:
                         send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
                     )
                     return
-            if tool_name == "capture_automation_baseline":
-                from .audit_baseline.capture_contracts import validate_arguments, CaptureError
+            # Equality, not set membership (HAMCP-189 non-string names).
+            if tool_name == "capture_automation_baseline" or tool_name == "compare_automation_baselines":
+                from .audit_baseline.capture_contracts import CaptureError
+                from .tools.audit_baseline import validate_raw_arguments
                 try:
-                    validate_arguments(raw_parameters)
+                    validate_raw_arguments(tool_name, raw_parameters)
                 except CaptureError:
                     telemetry.error_code = ErrorCode.INVALID_REQUEST.value
                     failure = FailureResponse(
@@ -1260,7 +1262,7 @@ class AuthenticatedMcpGateway:
                         "upstream_attempted": False,
                     }
                     resource_ids = {}
-                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "capture_automation_baseline", "dashboard_integrity_analysis", *TRACE_SNAPSHOT_TOOLS} and telemetry.error_code in {
+                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "capture_automation_baseline", "compare_automation_baselines", "dashboard_integrity_analysis", *TRACE_SNAPSHOT_TOOLS} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -1439,6 +1441,20 @@ class AuthenticatedMcpGateway:
                     audit_parameters = {
                         "scope": "loaded_automation_entities-v1",
                         "limit": parameters.get("limit", 25) if type(parameters.get("limit", 25)) is int and 1 <= parameters.get("limit", 25) <= 100 else None,
+                        "cursor_present": bool(parameters.get("cursor")),
+                        "resume_present": bool(parameters.get("resume_capture_id")),
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
+                elif tool_name == "compare_automation_baselines":
+                    # HAMCP-228: presence and counts only; no capture id,
+                    # configuration id or fingerprint value is copied.
+                    fingerprints = parameters.get("recorded_fingerprints")
+                    audit_parameters = {
+                        "model": "automation-baseline-compare-v1",
+                        "later_capture_present": bool(parameters.get("later_capture_id")),
+                        "recorded_fingerprint_count": len(fingerprints) if type(fingerprints) is list and len(fingerprints) <= 1000 else None,
+                        "fingerprint_model_present": bool(parameters.get("fingerprint_model")),
                         "cursor_present": bool(parameters.get("cursor")),
                         "provider": "engineering", "fallback": "none",
                     }
@@ -1622,6 +1638,7 @@ class AuthenticatedMcpGateway:
                             "get_unregistered_entities",
                             "get_configuration_definitions",
                             "capture_automation_baseline",
+                            "compare_automation_baselines",
                             "dashboard_integrity_analysis",
                             *TRACE_SNAPSHOT_TOOLS,
                         }

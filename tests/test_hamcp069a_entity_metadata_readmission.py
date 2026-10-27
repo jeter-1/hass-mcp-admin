@@ -167,6 +167,7 @@ REVIEWED_EMPTY_STATIC_ROUTES = frozenset(
         "approve_change_plan",
         "call_service",
         "cancel_execution_task",
+        "compare_automation_baselines",
         "control_fan",
         "control_power",
         "delete_automation",

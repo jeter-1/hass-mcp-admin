@@ -1,0 +1,861 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp228_baseline_store",
+   "test_automation_baseline_capture",
+   "test_automation_audit_baseline"
+  ],
+  "returncode": 0,
+  "tests": 129,
+  "seconds": 9.4,
+  "summary": "OK"
+ },
+ "mutation_count": 44,
+ "killed": 44,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "S1-identifier-default-screen-removed",
+   "class": "the credential screen bypassed before a write or a returned comparison",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "        return value if untrusted_text.screen(value, tuple(self.known_secrets)) is None else None",
+     "        return value"
+    ]
+   ],
+   "log_path": "mutation-logs/S1-identifier-default-screen-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_capture_drops_a_credential_shaped_identifier_and_stores_no_needle (test_hamcp228_baseline_store.CredentialScreenTests.test_capture_drops_a_credential_shaped_identifier_and_stores_no_needle)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "S2-identifier-known-secrets-dropped",
+   "class": "the credential screen bypassed before a write or a returned comparison",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "untrusted_text.screen(value, tuple(self.known_secrets))",
+     "untrusted_text.screen(value, ())"
+    ]
+   ],
+   "log_path": "mutation-logs/S2-identifier-known-secrets-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_capture_drops_a_credential_shaped_identifier_and_stores_no_needle (test_hamcp228_baseline_store.CredentialScreenTests.test_capture_drops_a_credential_shaped_identifier_and_stores_no_needle)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "S3-pem-header-check-removed",
+   "class": "the credential screen bypassed before a write or a returned comparison",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/untrusted_text.py",
+     "    if marker is None and credentials.private_key_header(value):",
+     "    if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/S3-pem-header-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_pem_header_identifiers_are_withheld_by_the_pem_addition_alone (test_hamcp228_baseline_store.CredentialScreenTests.test_pem_header_identifiers_are_withheld_by_the_pem_addition_alone)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "S4-compare-output-unscreened",
+   "class": "the credential screen bypassed before a write or a returned comparison",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "        value, withheld = untrusted_text.screen_tree(value, tuple(getattr(getattr(self.provider, \"projector\", None), \"known_secrets\", ())))",
+     "        withheld = 0"
+    ]
+   ],
+   "log_path": "mutation-logs/S4-compare-output-unscreened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_compare_output_withholds_recorded_credential_shaped_ids (test_hamcp228_baseline_store.CredentialScreenTests.test_compare_output_withholds_recorded_credential_shaped_ids)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "S5-compare-screen-without-known-secrets",
+   "class": "the credential screen bypassed before a write or a returned comparison",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "untrusted_text.screen_tree(value, tuple(getattr(getattr(self.provider, \"projector\", None), \"known_secrets\", ())))",
+     "untrusted_text.screen_tree(value, ())"
+    ]
+   ],
+   "log_path": "mutation-logs/S5-compare-screen-without-known-secrets.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_compare_output_withholds_recorded_credential_shaped_ids (test_hamcp228_baseline_store.CredentialScreenTests.test_compare_output_withholds_recorded_credential_shaped_ids)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "P1-prefix-match-counted-unchanged",
+   "class": "prefix-only evidence reported as verified or complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "            elif len(recorded) == len(digest):",
+     "            elif True:"
+    ]
+   ],
+   "log_path": "mutation-logs/P1-prefix-match-counted-unchanged.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_v1_loads_and_compares_with_a_current_v2_capture (test_hamcp228_baseline_store.BetaThirtySevenV1FixtureTests.test_v1_loads_and_compares_with_a_current_v2_capture)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "P2-differing-prefix-not-changed",
+   "class": "prefix-only evidence reported as verified or complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "            if not digest.startswith(recorded):",
+     "            if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/P2-differing-prefix-not-changed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_bounded_output_keeps_attention_rows_first_and_reports_omissions (test_hamcp228_baseline_store.CompareTests.test_bounded_output_keeps_attention_rows_first_and_reports_omissions)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "P3-prefix-match-reason-dropped",
+   "class": "prefix-only evidence reported as verified or complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "                reasons.append(f\"prefix_match:{len(recorded)}\")\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/P3-prefix-match-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_prefix_lengths_are_reported_and_only_64_is_unchanged (test_hamcp228_baseline_store.CompareTests.test_prefix_lengths_are_reported_and_only_64_is_unchanged)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "P4-stored-pair-prefix-count-dropped",
+   "class": "prefix-only evidence reported as verified or complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "            value[\"counts\"] = {**value[\"counts\"], PREFIX_MATCH: 0}\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/P4-stored-pair-prefix-count-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_stored_captures_compare_without_any_home_assistant_read (test_hamcp228_baseline_store.CompareTests.test_stored_captures_compare_without_any_home_assistant_read)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "P5-partial-ignores-withheld",
+   "class": "prefix-only evidence reported as verified or complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/audit_baseline.py",
+     "partial = result[\"details_truncated\"] or result[\"screened_withheld_count\"] > 0",
+     "partial = result[\"details_truncated\"]"
+    ]
+   ],
+   "log_path": "mutation-logs/P5-partial-ignores-withheld.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_withheld_values_make_the_result_partial (test_hamcp228_baseline_store.PublicToolTests.test_withheld_values_make_the_result_partial)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "P6-attention-rows-not-first",
+   "class": "prefix-only evidence reported as verified or complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "row[\"classification\"] in {\"UNCHANGED\", PREFIX_MATCH},",
+     "False,"
+    ]
+   ],
+   "log_path": "mutation-logs/P6-attention-rows-not-first.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_bounded_output_keeps_attention_rows_first_and_reports_omissions (test_hamcp228_baseline_store.CompareTests.test_bounded_output_keeps_attention_rows_first_and_reports_omissions)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "P7-one-side-only-not-unknown",
+   "class": "prefix-only evidence reported as verified or complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "        elif recorded is None:\n            reasons.append(\"absent_from_recorded_fingerprints\")\n",
+     "        elif recorded is None:\n            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/P7-one-side-only-not-unknown.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_v1_loads_and_compares_with_a_current_v2_capture (test_hamcp228_baseline_store.BetaThirtySevenV1FixtureTests.test_v1_loads_and_compares_with_a_current_v2_capture)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "P8-fingerprint-timed-out-reason-dropped",
+   "class": "prefix-only evidence reported as verified or complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "            if record.configuration_status == \"timed_out\":\n                reasons.append(\"timed_out\")\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/P8-fingerprint-timed-out-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_comparator_timed_out_is_unknown_with_reason (test_hamcp228_baseline_store.ValidationTests.test_comparator_timed_out_is_unknown_with_reason)"
+   ],
+   "seconds": 4.8
+  },
+  {
+   "id": "R1-every-unreadable-retried",
+   "class": "the resume record filter widened or narrowed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                or (row[\"configuration\"][\"status\"] == \"unreadable\"\n                    and outcomes.get(row[\"configuration_id\"]) == \"timeout\")}",
+     "                or row[\"configuration\"][\"status\"] == \"unreadable\"}"
+    ]
+   ],
+   "log_path": "mutation-logs/R1-every-unreadable-retried.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_retries_only_timeouts_and_records_lineage (test_hamcp228_baseline_store.ResumeTests.test_resume_retries_only_timeouts_and_records_lineage)"
+   ],
+   "seconds": 3.7
+  },
+  {
+   "id": "R2-timeout-outcome-not-retried",
+   "class": "the resume record filter widened or narrowed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                or (row[\"configuration\"][\"status\"] == \"unreadable\"\n                    and outcomes.get(row[\"configuration_id\"]) == \"timeout\")}",
+     "                or False}"
+    ]
+   ],
+   "log_path": "mutation-logs/R2-timeout-outcome-not-retried.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_resume_retries_only_timeouts_and_records_lineage (test_hamcp228_baseline_store.ResumeTests.test_resume_retries_only_timeouts_and_records_lineage)"
+   ],
+   "seconds": 3.6
+  },
+  {
+   "id": "R3-carried-records-re-read",
+   "class": "the resume record filter widened or narrowed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                pending = [index for index, row in enumerate(records) if row[\"configuration_id\"] in retry]",
+     "                pending = list(range(len(records)))"
+    ]
+   ],
+   "log_path": "mutation-logs/R3-carried-records-re-read.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_retries_only_timeouts_and_records_lineage (test_hamcp228_baseline_store.ResumeTests.test_resume_retries_only_timeouts_and_records_lineage)"
+   ],
+   "seconds": 3.7
+  },
+  {
+   "id": "R4-carried-records-not-copied",
+   "class": "the resume record filter widened or narrowed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                        records[index] = copy.deepcopy(row)",
+     "                        pass"
+    ]
+   ],
+   "log_path": "mutation-logs/R4-carried-records-not-copied.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_retries_only_timeouts_and_records_lineage (test_hamcp228_baseline_store.ResumeTests.test_resume_retries_only_timeouts_and_records_lineage)"
+   ],
+   "seconds": 3.7
+  },
+  {
+   "id": "R5-resume-not-needed-skipped",
+   "class": "the resume record filter widened or narrowed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "                if not self.provider.retry_ids(base[\"baseline\"], base[\"diagnostics\"][\"record_outcomes\"]):",
+     "                if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/R5-resume-not-needed-skipped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_resume_not_needed_other_caller_and_damage_refuse_before_any_read (test_hamcp228_baseline_store.ResumeTests.test_resume_not_needed_other_caller_and_damage_refuse_before_any_read)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "R6-resumed-count-all-records",
+   "class": "the resume record filter widened or narrowed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "\"resumed_count\": len(pending)}",
+     "\"resumed_count\": len(records)}"
+    ]
+   ],
+   "log_path": "mutation-logs/R6-resumed-count-all-records.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_retries_only_timeouts_and_records_lineage (test_hamcp228_baseline_store.ResumeTests.test_resume_retries_only_timeouts_and_records_lineage)"
+   ],
+   "seconds": 3.9
+  },
+  {
+   "id": "R8-base-start-not-inherited",
+   "class": "the resume record filter widened or narrowed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "            started_at = prior[\"capture\"][\"started_at\"]\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/R8-base-start-not-inherited.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_resume_retries_only_timeouts_and_records_lineage (test_hamcp228_baseline_store.ResumeTests.test_resume_retries_only_timeouts_and_records_lineage)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "R10-base-outcomes-not-carried",
+   "class": "the resume record filter widened or narrowed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                outcomes.update({key: value for key, value in prior_outcomes.items() if key not in retry})\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/R10-base-outcomes-not-carried.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_retries_only_timeouts_and_records_lineage (test_hamcp228_baseline_store.ResumeTests.test_resume_retries_only_timeouts_and_records_lineage)"
+   ],
+   "seconds": 3.7
+  },
+  {
+   "id": "F1-installation-not-fenced",
+   "class": "the resume inventory fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                if (prior[\"installation\"][\"installation_id\"] != first[\"identity\"]\n                        or prior[\"authority\"][\"generation\"] != authority[0]\n",
+     "                if (prior[\"authority\"][\"generation\"] != authority[0]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F1-installation-not-fenced.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_refusals_happen_before_a_store_write (test_hamcp228_baseline_store.ResumeTests.test_resume_refusals_happen_before_a_store_write)"
+   ],
+   "seconds": 3.6
+  },
+  {
+   "id": "F2-generation-not-fenced",
+   "class": "the resume inventory fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                        or prior[\"authority\"][\"generation\"] != authority[0]\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/F2-generation-not-fenced.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_refusals_happen_before_a_store_write (test_hamcp228_baseline_store.ResumeTests.test_resume_refusals_happen_before_a_store_write)"
+   ],
+   "seconds": 3.6
+  },
+  {
+   "id": "F3-declared-count-not-fenced",
+   "class": "the resume inventory fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                        or prior[\"inventory\"][\"declared_count\"] != len(states) + first[\"states\"][\"invalid_count\"]\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/F3-declared-count-not-fenced.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_refusals_happen_before_a_store_write (test_hamcp228_baseline_store.ResumeTests.test_resume_refusals_happen_before_a_store_write)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "F4-mapping-by-configuration-id-only",
+   "class": "the resume inventory fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                        or [(r[\"configuration_id\"], r[\"entity_id\"]) for r in prior[\"records\"]]\n                        != [(r[\"configuration_id\"], r[\"entity_id\"]) for r in records]):\n",
+     "                        or [r[\"configuration_id\"] for r in prior[\"records\"]]\n                        != [r[\"configuration_id\"] for r in records]):\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F4-mapping-by-configuration-id-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_refusals_happen_before_a_store_write (test_hamcp228_baseline_store.ResumeTests.test_resume_refusals_happen_before_a_store_write)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "C1-capacity-off-by-one",
+   "class": "the store capacity or retention boundary moved",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/store.py",
+     "        if len(index[\"baselines\"]) >= c.STORE_BASELINES:",
+     "        if len(index[\"baselines\"]) > c.STORE_BASELINES:"
+    ]
+   ],
+   "log_path": "mutation-logs/C1-capacity-off-by-one.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_capacity_refuses_before_any_read_with_oldest_age_and_never_evicts (test_hamcp228_baseline_store.StoreTests.test_capacity_refuses_before_any_read_with_oldest_age_and_never_evicts)"
+   ],
+   "seconds": 4.1
+  },
+  {
+   "id": "C2-capacity-checked-after-reads",
+   "class": "the store capacity or retention boundary moved",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "            await self.stored(\"check_capacity\", self.now_ms())\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/C2-capacity-checked-after-reads.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_capture_that_does_not_finish_writes_nothing (test_hamcp228_baseline_store.StoreTests.test_a_capture_that_does_not_finish_writes_nothing)"
+   ],
+   "seconds": 3.8
+  },
+  {
+   "id": "C3-retention-boundary-inclusive",
+   "class": "the store capacity or retention boundary moved",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/store.py",
+     "if entry[\"created_at_ms\"] > horizon]",
+     "if entry[\"created_at_ms\"] >= horizon]"
+    ]
+   ],
+   "log_path": "mutation-logs/C3-retention-boundary-inclusive.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_retention_sweep_expires_records_temporaries_and_orphans (test_hamcp228_baseline_store.StoreTests.test_retention_sweep_expires_records_temporaries_and_orphans)"
+   ],
+   "seconds": 4.6
+  },
+  {
+   "id": "C4-retention-not-swept",
+   "class": "the store capacity or retention boundary moved",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/store.py",
+     "if entry[\"created_at_ms\"] > horizon]",
+     "]"
+    ]
+   ],
+   "log_path": "mutation-logs/C4-retention-not-swept.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_retention_sweep_expires_records_temporaries_and_orphans (test_hamcp228_baseline_store.StoreTests.test_retention_sweep_expires_records_temporaries_and_orphans)"
+   ],
+   "seconds": 4.5
+  },
+  {
+   "id": "C5-quarantine-unbounded",
+   "class": "the store capacity or retention boundary moved",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/store.py",
+     "        if len(stubs) > c.QUARANTINE_MAX:",
+     "        if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/C5-quarantine-unbounded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_damage_quarantines_with_bounded_content_free_stubs (test_hamcp228_baseline_store.StoreTests.test_damage_quarantines_with_bounded_content_free_stubs)"
+   ],
+   "seconds": 4.4
+  },
+  {
+   "id": "C6-full-store-age-dropped",
+   "class": "the store capacity or retention boundary moved",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/store.py",
+     "            raise StoreError(\"store_full\", max(0, (now_ms - oldest) // 1000))",
+     "            raise StoreError(\"store_full\")"
+    ]
+   ],
+   "log_path": "mutation-logs/C6-full-store-age-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_capacity_refuses_before_any_read_with_oldest_age_and_never_evicts (test_hamcp228_baseline_store.StoreTests.test_capacity_refuses_before_any_read_with_oldest_age_and_never_evicts)"
+   ],
+   "seconds": 4.0
+  },
+  {
+   "id": "A1-other-caller-baseline-returned",
+   "class": "the caller binding skipped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/store.py",
+     "            if entry is None or entry[\"caller\"] != caller:",
+     "            if entry is None:"
+    ]
+   ],
+   "log_path": "mutation-logs/A1-other-caller-baseline-returned.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_caller_binding_anonymous_and_damage (test_hamcp228_baseline_store.CompareTests.test_caller_binding_anonymous_and_damage)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "A2-anonymous-compare-allowed",
+   "class": "the caller binding skipped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "        caller = current_caller_id()\n        if caller == \"anonymous\":\n            raise c.CaptureError(\"access_denied\")\n        earlier, _ =",
+     "        caller = current_caller_id()\n        earlier, _ ="
+    ]
+   ],
+   "log_path": "mutation-logs/A2-anonymous-compare-allowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_caller_binding_anonymous_and_damage (test_hamcp228_baseline_store.CompareTests.test_caller_binding_anonymous_and_damage)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "A3-cursor-other-caller-accepted",
+   "class": "the caller binding skipped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "(value + \":\" + caller).encode()",
+     "(value + \":\").encode()"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "        if cursor[1] != caller:",
+     "        if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/A3-cursor-other-caller-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_cursor_from_another_caller_is_refused_by_the_cursor_itself (test_hamcp228_baseline_store.StoreTests.test_cursor_from_another_caller_is_refused_by_the_cursor_itself)"
+   ],
+   "seconds": 4.3
+  },
+  {
+   "id": "A4-cursor-stored-caller-unchecked",
+   "class": "the caller binding skipped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "        if cursor[1] != caller:",
+     "        if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/A4-cursor-stored-caller-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_cursor_from_another_caller_is_refused_by_the_cursor_itself (test_hamcp228_baseline_store.StoreTests.test_cursor_from_another_caller_is_refused_by_the_cursor_itself)"
+   ],
+   "seconds": 4.0
+  },
+  {
+   "id": "D1-stored-digest-not-checked",
+   "class": "a stored baseline's integrity check skipped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/store.py",
+     "                    if len(raw) != entry[\"bytes\"] or observed[\"observed_sha256\"] != entry[\"sha256\"]:",
+     "                    if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/D1-stored-digest-not-checked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_damage_quarantines_with_bounded_content_free_stubs (test_hamcp228_baseline_store.StoreTests.test_damage_quarantines_with_bounded_content_free_stubs)"
+   ],
+   "seconds": 4.1
+  },
+  {
+   "id": "D2-stored-report-not-validated",
+   "class": "a stored baseline's integrity check skipped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/store.py",
+     "                        report = validate_report(raw, entry)",
+     "                        report = json.loads(raw)"
+    ]
+   ],
+   "log_path": "mutation-logs/D2-stored-report-not-validated.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_damage_quarantines_with_bounded_content_free_stubs (test_hamcp228_baseline_store.StoreTests.test_damage_quarantines_with_bounded_content_free_stubs)"
+   ],
+   "seconds": 4.2
+  },
+  {
+   "id": "V1-v1-accepts-timed-out",
+   "class": "v2 timed_out or resume validation weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/validation.py",
+     "    if schema == BASELINE_SCHEMA_V2:\n        # HAMCP-228: a record",
+     "    if True:\n        # HAMCP-228: a record"
+    ]
+   ],
+   "log_path": "mutation-logs/V1-v1-accepts-timed-out.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_v2_validator_negatives (test_hamcp228_baseline_store.ValidationTests.test_v2_validator_negatives)"
+   ],
+   "seconds": 4.6
+  },
+  {
+   "id": "V2-timed-out-digest-accepted",
+   "class": "v2 timed_out or resume validation weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/validation.py",
+     "    if config_status == \"timed_out\" and digest is not None:",
+     "    if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/V2-timed-out-digest-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_v2_validator_negatives (test_hamcp228_baseline_store.ValidationTests.test_v2_validator_negatives)"
+   ],
+   "seconds": 4.6
+  },
+  {
+   "id": "V3-resumed-count-zero-accepted",
+   "class": "v2 timed_out or resume validation weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/validation.py",
+     "_require_int(resume[\"resumed_count\"], \"resumed_count_invalid\", minimum=1)",
+     "_require_int(resume[\"resumed_count\"], \"resumed_count_invalid\", minimum=0)"
+    ]
+   ],
+   "log_path": "mutation-logs/V3-resumed-count-zero-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_v2_validator_negatives (test_hamcp228_baseline_store.ValidationTests.test_v2_validator_negatives)"
+   ],
+   "seconds": 5.1
+  },
+  {
+   "id": "T1-comparator-timed-out-reason-dropped",
+   "class": "v2 timed_out or resume validation weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "    if \"timed_out\" in (earlier.configuration_status, later.configuration_status):\n        reasons.append(\"timed_out\")\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/T1-comparator-timed-out-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_comparator_timed_out_is_unknown_with_reason (test_hamcp228_baseline_store.ValidationTests.test_comparator_timed_out_is_unknown_with_reason)"
+   ],
+   "seconds": 4.9
+  },
+  {
+   "id": "T2-unscheduled-record-unreadable",
+   "class": "v2 timed_out or resume validation weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                        config[\"status\"] = \"timed_out\"",
+     "                        config[\"status\"] = \"unreadable\""
+    ]
+   ],
+   "log_path": "mutation-logs/T2-unscheduled-record-unreadable.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_of_scheduler_bound_timeouts_completes (test_hamcp228_baseline_store.ResumeTests.test_resume_of_scheduler_bound_timeouts_completes)"
+   ],
+   "seconds": 3.4
+  },
+  {
+   "id": "O1-compare-not-read-only",
+   "class": "a public output field or annotation changed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/audit_baseline.py",
+     "    return _tool(compare_automation_baselines, read_only=True)",
+     "    return _tool(compare_automation_baselines, read_only=False)"
+    ]
+   ],
+   "log_path": "mutation-logs/O1-compare-not-read-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_descriptor_is_read_only_closed_and_local (test_hamcp228_baseline_store.PublicToolTests.test_descriptor_is_read_only_closed_and_local)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "O2-page-resumed-from-dropped",
+   "class": "a public output field or annotation changed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "\"resumed_from\": resumed_from, \"provider_reads_for_continuation\": 0}}",
+     "\"resumed_from\": None, \"provider_reads_for_continuation\": 0}}"
+    ]
+   ],
+   "log_path": "mutation-logs/O2-page-resumed-from-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_retries_only_timeouts_and_records_lineage (test_hamcp228_baseline_store.ResumeTests.test_resume_retries_only_timeouts_and_records_lineage)"
+   ],
+   "seconds": 3.5
+  }
+ ]
+}

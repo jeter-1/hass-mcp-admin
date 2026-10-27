@@ -188,6 +188,7 @@ _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_core_log_history": core_log_to
                     )})
 
 from .audit_baseline import registered_tool as baseline_capture_tool
+from .audit_baseline import registered_compare_tool as baseline_compare_tool
 from .integration_inspection import registered_tool as integration_inspection_tool
 from .dashboard import registered_analysis_tool
 from .backup_inventory import registered_tool as backup_inventory_tool
@@ -200,6 +201,7 @@ from .trace_snapshots import registered_tools as trace_snapshot_tools
 
 _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integration_inspection_tool(),
                     "capture_automation_baseline": baseline_capture_tool(),
+                    "compare_automation_baselines": baseline_compare_tool(),
                     "dashboard_integrity_analysis": registered_analysis_tool(),
                     "get_backup_inventory": backup_inventory_tool(),
                     "get_recorder_settings": recorder_settings_tool(),

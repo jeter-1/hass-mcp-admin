@@ -11,6 +11,8 @@ from typing import Any
 
 from ..errors import EngineeringServerError, ErrorCode, GovernanceError, InvalidRequestError
 from ..observability import METRICS
+from ..untrusted_text import screen_tree
+from .bounded_sources import EMPTY as EMPTY_BOUNDED, bounded_source_entries, screening_warnings, target_availability
 from .extraction import valid_entity_id
 from .index import DependencyIndex
 from .models import DependencyFinding, SOURCE_TYPES, SourceCoverageItem
@@ -28,6 +30,10 @@ class AnalysisOutput:
 class EntityDependencyAnalysisService:
     def __init__(self, index: DependencyIndex):
         self.index = index
+
+    def known_secrets(self) -> tuple[str, ...]:
+        secret = getattr(self.index.provider, "secret", "")
+        return (secret,) if isinstance(secret, str) and secret else ()
 
     async def analyze(
         self,
@@ -150,6 +156,7 @@ class EntityDependencyAnalysisService:
         metadata.setdefault("entity_exists", False)
         metadata.setdefault("registry_entry_exists", False)
         metadata.setdefault("domain", target.split(".", 1)[0])
+        availability = target_availability(metadata)
         metadata = _safe_target_metadata(metadata)
 
         coverage = _coverage_for(
@@ -174,6 +181,19 @@ class EntityDependencyAnalysisService:
             ])
             warnings.extend(graph_gaps)
         warnings.extend(item.warning + f" Source: {item.source_type}/{item.source_id}, path {item.config_path}." for item in dynamic)
+        # HAMCP-226: every requested-scope source that hit a bound is named,
+        # whatever the target: any of them could reference it (HAAC-E002a).
+        bounded = bounded_source_entries(
+            (*snapshot.obligations, *(diagnostic.bounded_obligations if diagnostic else ())),
+            known_secrets=self.known_secrets(),
+            source_types=requested,
+        )
+        if bounded.total:
+            partial = True
+        # Ahead of the per-coverage warnings, so the 20-warning bound cannot drop them.
+        warnings[:0] = screening_warnings(bounded)
+        if availability["state"] in {"unavailable", "unknown"}:
+            warnings.append(f"The target entity exists but its current state is {availability['state']}.")
         if has_more:
             warnings.append("Findings were truncated; continue with the returned cursor.")
         possible_stale = not metadata["entity_exists"] and bool(direct)
@@ -197,6 +217,7 @@ class EntityDependencyAnalysisService:
         ]
         data = {
             "target": metadata,
+            "target_availability": availability,
             "overview": {
                 "dependency_status": "referenced" if findings else "not_detected",
                 "direct_reference_count": len(direct),
@@ -214,6 +235,7 @@ class EntityDependencyAnalysisService:
                 for item in page
             ],
             "source_coverage": [item.public() for item in coverage],
+            **bounded.public(),
             "pagination": {
                 "requested_limit": requested_limit,
                 "effective_limit": effective_limit,
@@ -256,6 +278,12 @@ class EntityDependencyAnalysisService:
                 **self.index.evidence_metadata(snapshot),
             },
         }
+        # HAMCP-226: Home Assistant's names, IDs, paths and excerpts leave
+        # through the default-mode screen. A withheld field keeps its finding,
+        # so a reference is never hidden by withholding its name.
+        data, screened = screen_tree(data, self.known_secrets())
+        warnings, screened_warnings = screen_tree(list(dict.fromkeys(warnings)), self.known_secrets())
+        warnings[:0] = screening_warnings(EMPTY_BOUNDED, screened + screened_warnings)
         METRICS.record_dependency_analysis_success()
         if partial:
             METRICS.record_dependency_analysis_partial()

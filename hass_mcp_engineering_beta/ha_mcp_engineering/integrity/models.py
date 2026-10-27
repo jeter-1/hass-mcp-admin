@@ -14,6 +14,7 @@ FINDING_TYPES = (
     "missing_entity_reference",
     "disabled_entity_reference",
     "registry_only_entity_reference",
+    "unavailable_entity_reference",
     "orphan_registry_candidate",
     "unresolved_dynamic_reference",
 )
@@ -91,6 +92,8 @@ class IntegrityEvidenceReference:
     registry_platform: str | None = None
     disabled_by: str | None = None
     excerpt: str | None = None
+    target_state: str | None = None
+    target_last_changed: str | None = None
 
     def public(self, *, detail_level: str = "standard") -> dict[str, Any]:
         value = asdict(self)
@@ -138,6 +141,8 @@ class IntegrityFinding:
     registry_platform: str | None = None
     disabled_by: str | None = None
     disabled_classification: str | None = None
+    target_state: str | None = None
+    target_last_changed: str | None = None
 
     def public(self, *, include_evidence: bool = True) -> dict[str, Any]:
         value = asdict(self)
@@ -165,6 +170,8 @@ class IntegrityEvidenceBundle:
     evidence_collection_duration_ms: float
     dynamic_outside_requested_scope_count: int = 0
     orphan_scope_complete: bool = False
+    screened_text_count: int = 0
+    bounded_sources: Any = None
 
     @property
     def required_coverage_complete(self) -> bool:
@@ -195,7 +202,18 @@ class IntegrityEvidenceBundle:
                 )
                 for item in self.dynamic_references
             ],
-            "states": sorted(self.current_states),
+            # HAMCP-226: a state's availability decides a finding, so a
+            # cursor must not continue across an availability change.
+            "states": sorted(
+                (
+                    entity_id,
+                    str(item.get("state") or "")
+                    if str(item.get("state") or "") in {"unavailable", "unknown"}
+                    else "available",
+                    item.get("last_changed"),
+                )
+                for entity_id, item in self.current_states.items()
+            ),
             "registry": sorted(
                 (
                     entity_id,

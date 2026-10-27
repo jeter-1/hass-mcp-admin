@@ -16,8 +16,8 @@ every flow it opens is aborted on every exit. `create_input_select_option_plan`
 `input_select.select_option` for one exact entity. `list_script_traces` and
 `get_script_trace` (reads, `core.script_trace_read`) send only `trace/list`
 and `trace/get` with `domain: "script"` and leave through the HAMCP-225
-trace exit. No delegated provider and no fallback. The catalog is 76 static
-+ 28 delegated = 104 (105 with the optional YAML reader). See
+trace exit. No delegated provider and no fallback. The catalog is 77 static
++ 28 delegated = 105 (106 with the optional YAML reader). See
 [HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md](docs/HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md).
 
 ## Automation trace snapshots (2.4.1-beta.39, HAMCP-225)

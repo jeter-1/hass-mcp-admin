@@ -11,11 +11,24 @@ activates nothing new: `create_helper_options_plan`,
 Assistant request or persistence until a signed Core registry sequence names
 their runtime-only profiles. The dormant sequence-15 evidence lanes are wired
 but do not run. No signed registry, signed profile, existing fingerprint or
-existing schema change; static tools 76, advertised catalog 104 (105 with the
-optional YAML reader) on the beta.39 base; 77 / 105 (106) once beta.40 (#317)
-merges in. Read the
+existing schema change; static tools 77, advertised catalog 105 (106 with the
+optional YAML reader). Read the
 [2.4.1-beta.41 release notes](docs/V2_4_1_BETA41_RELEASE_NOTES.md) and
 [2.4.1-beta.41 acceptance contract](docs/V2_4_1_BETA41_ACCEPTANCE.md).
+
+Engineering **2.4.1-beta.40** (HAMCP-226, HAMCP-228) names each source that
+reached a scan bound and reports unavailable entity references in the
+integrity, dependency and helper scans;
+stores each finished `capture_automation_baseline` durably (12 baselines,
+180 days, under the governance path); resumes a capture's timed-out records;
+and adds `compare_automation_baselines`, which compares stored captures or
+recorded fingerprints with no Home Assistant read (a matching 16-character
+prefix is `PREFIX_MATCH`, never `UNCHANGED`). No Home Assistant write; static
+tools 73, advertised catalog 101 (102 with the optional YAML reader). Read the
+[2.4.1-beta.40 release notes](docs/V2_4_1_BETA40_RELEASE_NOTES.md) and
+[2.4.1-beta.40 acceptance contract](docs/V2_4_1_BETA40_ACCEPTANCE.md).
+
+It builds on beta.39 and the releases below.
 
 Engineering **2.4.1-beta.39** adds automation trace snapshots (HAMCP-225).
 `capture_automation_trace` stores sanitized copies of an automation's

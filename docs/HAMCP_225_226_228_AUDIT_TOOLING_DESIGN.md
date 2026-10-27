@@ -377,11 +377,14 @@ A new read tool exposes the existing offline comparator
   `recorded_fingerprints`: a list (at most 1,000) of
   `{configuration_id, fingerprint}` with `fingerprint_model`.
 - Output: the existing classifications (`UNCHANGED`, `CHANGED`, `ADDED`,
-  `REMOVED`, `UNKNOWN`) with reasons, rendered within the response bound with
-  the existing omitted-detail count.
+  `REMOVED`, `UNKNOWN`) with reasons, plus `PREFIX_MATCH` (below). As built,
+  every record is paged with a bound continuation cursor instead of an
+  omitted-detail cut (HAMCP-226/228 review 1, M2).
 - Recorded fingerprints may be prefixes of at least 16 hex characters (the
-  register records 16). A prefix match is reported as
-  `UNCHANGED (prefix_match: 16)`, never as a full-digest match. A
+  register records 16). As built, a prefix match is its own `PREFIX_MATCH`
+  classification with reason `prefix_match:<n>` and its own count, never
+  `UNCHANGED` and never a full-digest match (architect direction, Josh
+  agrees; this supersedes the earlier `UNCHANGED (prefix_match: 16)` draft). A
   `fingerprint_model` that differs from the baseline's
   (`automation-audit-config-json-python-v1`) makes every record `UNKNOWN`
   with reason `fingerprint_model_mismatch`.

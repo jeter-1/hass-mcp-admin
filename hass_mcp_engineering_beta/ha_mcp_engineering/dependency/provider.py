@@ -21,6 +21,7 @@ from ..clients.websocket import batch_command_allowed
 from ..facilitation import EvidenceReference
 from ..observability import METRICS
 from ..logging_config import redact_data
+from ..untrusted_text import screen
 from ..providers import (
     EngineeringEvidenceProvider,
     EvidenceRequest,
@@ -873,8 +874,19 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 "entity_exists": True,
                 "registry_entry_exists": False,
                 "domain": entity_id.split(".", 1)[0],
-                "friendly_name": redact_data(attrs.get("friendly_name"), secret=self.secret, max_string=160),
-                "state": redact_data(state.get("state"), secret=self.secret, max_string=128),
+                # HAMCP-226: screened whole on the original before redaction.
+                "friendly_name": (
+                    screen(attrs["friendly_name"], (self.secret,) if self.secret else ())
+                    if isinstance(attrs.get("friendly_name"), str) else None
+                ) or redact_data(attrs.get("friendly_name"), secret=self.secret, max_string=160),
+                # HAMCP-226 review 1 (H1): likewise, before the 128-character cut.
+                "state": (
+                    screen(state["state"], (self.secret,) if self.secret else ())
+                    if isinstance(state.get("state"), str) else None
+                ) or redact_data(state.get("state"), secret=self.secret, max_string=128),
+                # HAMCP-226: evidence for ``target_availability``; the service
+                # keeps it only as an ISO 8601 timestamp.
+                "last_changed": str(state.get("last_changed") or "")[:64],
             }
         for entry in semantic_registry:
             if not isinstance(entry, dict):

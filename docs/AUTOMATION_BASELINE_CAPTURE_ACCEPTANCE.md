@@ -78,3 +78,20 @@ Finish with existing no-probe health settlement; explain concurrent authorized
 work separately. Stop on authority/identity drift, transport failure, unexplained
 counts, hash mismatch or nonterminal work. Preserve failed evidence; no automatic
 retry, restart, configuration write, forced refresh or manufactured event.
+
+## HAMCP-228 additions (durable store, resume, compare)
+
+The sections above are the beta.14 contract and stay unchanged. The HAMCP-228
+store, `resume_capture_id`, the `timed_out` status and
+`compare_automation_baselines` are accepted under the version acceptance
+document that releases them ([2.4.1-beta.40](V2_4_1_BETA40_ACCEPTANCE.md)). That installed capture also proves one stored baseline under
+`<governance_path>/audit-baselines-v1/` (modes, index entry, no configuration
+body), one `compare_automation_baselines` call comparing it with
+`recorded_fingerprints` taken from its own exported digests (full and 16-character
+forms, so `UNCHANGED` and `PREFIX_MATCH` are both shown) with zero Home Assistant
+reads, `pagination.complete_export: true` with `store_status` showing
+`index_rebuilds: 0`, and `resume_not_needed` for a capture with no timeouts.
+Do not manufacture a timeout, a full store, a changed inventory, a Core
+version change, a missing index or more than one compare page on a live
+installation; those refusals and recoveries are proven by the offline tests
+in `tests/test_hamcp228_baseline_store.py`.

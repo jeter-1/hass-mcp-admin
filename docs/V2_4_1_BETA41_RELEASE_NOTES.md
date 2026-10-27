@@ -15,9 +15,8 @@ Part 2 build in section 6).
 
 ## What a client sees
 
-Four new tools appear in the catalog (static tools 72 → 76 on the beta.39
-base; advertised catalog 104, 105 with the optional YAML reader admitted;
-each count is one higher once beta.40 merges in). Each is listed with its
+Four new tools appear in the catalog (static tools 73 → 77; advertised
+catalog 105, 106 with the optional YAML reader admitted). Each is listed with its
 requirement and refuses until signed admission:
 
 | Tool | Profile (runtime-only) | Kind |

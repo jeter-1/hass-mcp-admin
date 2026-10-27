@@ -162,6 +162,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
     from ha_mcp_engineering.clients.audit_baseline import BaselineReadClient
     from ha_mcp_engineering.audit_baseline.capture_provider import BaselineCaptureProvider
     from ha_mcp_engineering.audit_baseline.capture_service import BaselineCaptureService
+    from ha_mcp_engineering.audit_baseline.store import BaselineStore
     from ha_mcp_engineering.audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
     from ha_mcp_engineering.audit_baseline import capture_contracts as c
     from ha_mcp_engineering.tools.audit_baseline import registered_tool
@@ -220,9 +221,12 @@ async def _run_disposable(configured, *, expected_image, core_version):
             await runtime.reconcile_once('startup')
             assert runtime.health_snapshot()['compatible_count']==len(references)
             return runtime
+        # HAMCP-228: one disposable durable store for the whole run, under
+        # this run's temporary directory (the runtime uses governance_path).
+        store=BaselineStore(Path(directory)/'governance')
         def service(runtime, options=configured):
             return BaselineCaptureService(BaselineCaptureProvider(BaselineReadClient(options),runtime,
-                known_secrets=(options.ha_token,options.access_secret)))
+                known_secrets=(options.ha_token,options.access_secret)),store)
         async def request(runtime, capture, arguments):
             telemetry, token=begin_request();telemetry.caller_id='synthetic-native-baseline-owner'
             lease=runtime.acquire(c.REQUIREMENTS)
@@ -251,6 +255,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
             assert first['success'], 'Baseline public call refused'
             page=first['data'];baseline={**page['baseline_header'],'records':list(page['records'])}
             artifact=page['artifact_sha256'];continuation_reads=0
+            assert page['snapshot']['storage']=='durable_engineering_store'
             while page['pagination']['next_cursor']:
                 result, count,_=await request(runtime,capture,{'limit':17,'cursor':page['pagination']['next_cursor']})
                 assert result['success']; page=result['data'];continuation_reads+=count

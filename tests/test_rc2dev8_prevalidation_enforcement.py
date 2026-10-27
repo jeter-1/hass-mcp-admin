@@ -522,14 +522,14 @@ class McpOutcomeClassificationTests(unittest.TestCase):
             tool.name: tool
             for tool in registered_tools(get_registered_server()).values()
         }
-        self.assertEqual(len(tools), 76)
+        self.assertEqual(len(tools), 77)
         # The counts below are the static catalog; start from the module's
         # initial empty dynamic snapshot rather than whatever an earlier test
         # module's gateway published in this process.
         replace_dynamic_upstream_capabilities((), {})
         self.addCleanup(replace_dynamic_upstream_capabilities, (), {})
         catalog = build_capability_catalog()
-        self.assertEqual(catalog["registered_count"], 76)
+        self.assertEqual(catalog["registered_count"], 77)
         self.assertEqual(catalog["count"], 25)
         self.assertEqual(catalog["planned"], [])
         self.assertEqual(
