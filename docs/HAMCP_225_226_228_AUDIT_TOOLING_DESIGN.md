@@ -601,8 +601,8 @@ architect's direction (owner approved) and what changed:
   raw automation ID is held only in memory to poll Core. The reserved form
   is refused as input. After a restart such a watch ends with an
   `identifier_unavailable` audit row. The gateway audit records a withheld ID
-  as `null` with `identifiers_withheld: true`. Identifiers that contain a
-  credential word (for example `rotate_api_token`) are over-withheld.
+  as `null` with `identifiers_withheld: true`. (Correction batch 2 below
+  narrows which identifiers the screen flags.)
 - **H3, bounded quarantine.** A damaged record is deleted; the index keeps
   at most `QUARANTINE_MAX = 20` content-free stubs (identity, observed
   length, digest), aged on the 90-day rule; the oldest is dropped and
@@ -614,3 +614,40 @@ architect's direction (owner approved) and what changed:
 - **M3.** Before a watch's reads are committed, the tick's lease and exact
   Core generation are re-checked; after retirement nothing is stored, the
   rest of the tick is skipped and the poller pauses.
+
+### Correction batch 2 (PR #315)
+
+The delta review of `d5e28a29` found two Medium issues. Josh's decision and
+what changed:
+
+- **R1, identifier mode (owner decision).** Home Assistant's own identifiers
+  and names use `credentials.screen`'s default mode (`labelled=False`), as in
+  HAMCP-226; trace values keep the labelled mode. In `screen_trace_value` a
+  string directly under one of `IDENTITY_KEYS` (`automation_id`,
+  `script_id`, `item_id`, `run_id`, `id`, `alias`, `entity_id`,
+  `friendly_name`), or a string in a list under one, is screened in default
+  mode; every other string and every dictionary key stays labelled. Because
+  the decision is made by the shared screen, it holds at every pass: capture,
+  the whole-record pass, read-back and the identifier decision
+  (`identifier_cleared`, which screens `{"automation_id": value}`) used for
+  the index, records, watch list, audit rows, refusals and the gateway audit.
+  `rotate_api_token`, `run-token-1` and the alias `Token refresh` are shown;
+  a credential URL, `password=` form or known secret in an identifier or name
+  is still withheld (as a keyed digest for an automation or run ID). The same
+  text in a non-identity value (for example a variable) is still withheld.
+  Residual: default mode does not flag a PEM block or a bare credential label
+  in an identity field. The strict sanitizer still redacts the value after a
+  `Bearer`, `token:` or `api_key=` label; a PEM block in an `alias`, `id`,
+  `entity_id` or `friendly_name` is shown.
+- **R2, authority under the store lock.** The pre-lock check stays. In
+  addition, `_commit` asks again after it holds the service lock and the
+  store `flock`, immediately before its first write. The store worker thread
+  asks the event loop (which owns the Core runtime) through
+  `call_soon_threadsafe` with the caller's context and waits at most 5
+  seconds; no answer, an exception or a non-`True` answer is a refusal.
+  Refused: the commit writes nothing (no record, index, watch state or
+  eviction) and releases the lock. A manual capture is then refused with
+  `authority_drift` and audits nothing; a watch commit, including the
+  audit-failure fallback commit, pauses the poller, and the unconsumed run is
+  read again once authority returns. The remaining watches in that tick are
+  counted as skipped polls, as before.

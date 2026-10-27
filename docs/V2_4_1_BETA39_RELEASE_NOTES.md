@@ -37,10 +37,13 @@ section 10).
 - **`get_automation_trace`.** Same input and data shape. Credential-like and
   known-secret values are now withheld and strings over 2,000 characters are
   shortened; such a trace is `partial` and names the withheld categories.
-- **Identifiers.** An automation ID or run ID the credential screen flags (for
-  example one containing `token`, `secret` or `password`) is stored, listed,
-  audited and returned only as `withheld_<32 hex>`, never as given. Input in
-  that reserved form is refused with `invalid_arguments`.
+- **Identifiers.** Home Assistant's own identifiers and names (automation,
+  script, run and entity IDs, aliases and friendly names) pass the credential
+  screen's default mode, as in the HAMCP-226 inventory, so `rotate_api_token`
+  or an alias `Token refresh` is shown. An automation ID or run ID that
+  carries a credential URL, a `password=` form or a known secret is stored,
+  listed, audited and returned only as `withheld_<32 hex>`, never as given.
+  Input in that reserved form is refused with `invalid_arguments`.
 
 ## Disclosures
 
@@ -55,7 +58,10 @@ section 10).
   anything is written and again on read (R1 strict). A flagged string is
   withheld whole; a flagged key withholds its whole entry. Nesting deeper than
   64 levels is withheld as unverifiable. The screen over-withholds ordinary
-  text that contains a credential word.
+  text that contains a credential word, except in identifiers and names.
+- **Identity fields use the default screen.** A PEM private-key block in an
+  `alias`, `id`, `entity_id` or `friendly_name` is not withheld. The value
+  after a `Bearer`, `token:` or `api_key=` label there is still redacted.
 - **Read-back fidelity (R1).** A withheld string stays withheld whole on read.
   HAMCP-207 could restore fidelity later.
 - **Undetectable resolved secrets.** Core returns `config` with `!secret`

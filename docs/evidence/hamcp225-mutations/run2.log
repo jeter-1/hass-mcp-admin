@@ -1,0 +1,6 @@
+baseline rc=0 PASS (101s)
+KILLED   R1-identifiers-labelled                  hass_mcp_engineering_beta/ha_mcp_engineering/trace_normalization.py  killing=5 first: FAIL: test_a_benign_watch_survives_a_restart (tests.test_hamcp225_trace_snapshots.IdentifierModeTests.test_a_benign_watch_survives_a_restart)
+KILLED   R1-identity-lists-labelled               hass_mcp_engineering_beta/ha_mcp_engineering/trace_normalization.py  killing=1 first: FAIL: test_ha_names_are_shown_and_trace_values_stay_labelled (tests.test_hamcp225_trace_snapshots.IdentifierModeTests.test_ha_names_are_shown_and_trace_values_stay_labelled)
+KILLED   R2-no-post-lock-recheck                  hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py  killing=5 first: FAIL: test_audit_fallback_commit_also_rechecks (tests.test_hamcp225_trace_snapshots.QueuedCommitTests.test_audit_fallback_commit_also_rechecks)
+KILLED   R2-guard-fails-open                      hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py  killing=1 first: FAIL: test_unanswered_or_failing_check_refuses (tests.test_hamcp225_trace_snapshots.QueuedCommitTests.test_unanswered_or_failing_check_refuses)
+SURVIVED: []

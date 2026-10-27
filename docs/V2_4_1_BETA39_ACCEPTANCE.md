@@ -64,6 +64,13 @@ The review needs a security section covering:
   such an ID as `null` with `identifiers_withheld: true`. The reserved form is
   refused as input. After a restart, a watch on a withheld ID ends with an
   `identifier_unavailable` audit row.
+- **Identifier mode (correction batch 2, owner decision).** Home Assistant's
+  own identifiers and names (`automation_id`, `script_id`, `item_id`,
+  `run_id`, `id`, `alias`, `entity_id`, `friendly_name`) use the screen's
+  default mode, as in HAMCP-226; trace values keep the labelled mode.
+  `rotate_api_token` and the alias `Token refresh` are shown; a credential URL
+  or known secret in an identifier is still withheld. A PEM block in an
+  identity field is not withheld (disclosed residual).
 - **Store integrity.** `<governance_path>/trace-snapshots-v1/`: `flock`,
   `O_NOFOLLOW`, mode `0600`, temporary file plus `fsync` plus `rename`,
   digest-checked loads, a fail-closed index, and fixed diagnostics with no
@@ -84,7 +91,9 @@ The review needs a security section covering:
   (review M1). Each watch gets an equal share of the remaining read time and
   the start order rotates every tick (M2). Authority is re-checked before a
   watch's reads are committed; after retirement nothing is stored and the
-  poller pauses (M3).
+  poller pauses (M3). It is checked once more after the store lock is held,
+  immediately before the first write; a commit that waited for the lock
+  across a retirement writes nothing (correction batch 2).
   Managing the list needs no plan or approval; every add and remove writes
   a required audit row with the caller, and every response returns the
   current list.
@@ -146,7 +155,12 @@ No test reaches a live system. Every transport is a synthetic fake.
   first-poll discard, no rotation, no per-watch budget, no authority recheck
   before commit, cross-watch eviction, and four design §7 mutants. Raw
   per-mutant logs are not committed because a surviving leak would print
-  planted values.
+  planted values. `run2.log` and `results2.json`: the correction batch 2
+  mutants (identifiers back to labelled mode, identifier lists labelled, no
+  post-lock re-check, a failing re-check treated as success).
+- `tests/test_hamcp225_review2_delta_extra.py`: the delta reviewer's six
+  probes, unchanged. `IdentifierModeTests` and `QueuedCommitTests` in
+  `tests/test_hamcp225_trace_snapshots.py` cover R1 and R2.
 
 ## 2. Release CI and publication
 

@@ -630,9 +630,12 @@ delegated provider or fallback.
   and HAMCP-224 (no trace-specific screen); a flagged key withholds its whole
   entry, and nesting beyond 64 levels is withheld as unverifiable. PEM
   private-key blocks with a header are withheld whole.
-- **Identifiers.** An automation or run ID the screen flags is persisted,
+- **Identifiers.** Home Assistant's own identifiers and names are screened
+  in the default mode (owner decision, as in HAMCP-226); trace values keep
+  the labelled mode. An automation or run ID the screen flags is persisted,
   audited and returned only as `withheld_` plus a per-process HMAC digest;
-  refusals never echo it, and the gateway audit records it as `null`.
+  refusals never echo it, and the gateway audit records it as `null`. A PEM
+  block in an identity field is not withheld.
 - **Store.** `trace-snapshots-v1/` under the governance path: `flock`,
   `O_NOFOLLOW`, `0600`, atomic rename, digest-checked loads, at most 20
   content-free quarantine stubs, fail-closed index, fixed diagnostics,
@@ -641,7 +644,8 @@ delegated provider or fallback.
 - **Watch poller.** The only periodic Core read: bounded to 10 watches every
   30 seconds, under its own Core authority lease, paused while authority is
   unavailable or the version is not admitted, and re-checked before each
-  watch's reads are stored. Watch changes need no approval but write a
+  watch's reads are stored and again under the store lock, immediately
+  before the first write. Watch changes need no approval but write a
   required, caller-attributed audit row.
 - **Caller binding.** List and read cursors are HMAC-bound to the caller
   with a per-process key.

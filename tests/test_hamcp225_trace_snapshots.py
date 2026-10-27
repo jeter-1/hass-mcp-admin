@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineeri
 
 import tests.hamcp162_synthetic as h  # noqa: E402
 
+from ha_mcp_engineering.configuration_definitions import credentials  # noqa: E402
 from ha_mcp_engineering.errors import HomeAssistantApiError  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     CORE_INDEPENDENT_STATIC_TOOLS, STATIC_TOOL_CORE_REQUIREMENTS,
@@ -580,8 +581,9 @@ class WatchTests(ServiceCase):
 class IdentifierTests(ServiceCase):
     """Review H2: a withheld identifier is persisted, audited and returned only as a digest."""
 
-    # A run ID the labelled screen withholds; still a valid Core run ID.
-    LABELLED_RUN = "run-token-1"
+    # A run ID the default screen withholds (it holds a known secret); still
+    # a valid Core run ID. ``run-token-1`` is shown (correction batch 2).
+    WITHHELD_RUN = "run-" + KNOWN
 
     def sinks(self, *responses):
         return {
@@ -597,8 +599,10 @@ class IdentifierTests(ServiceCase):
                 self.assertNotIn(raw.encode(), found)
 
     async def test_capture_persists_and_returns_only_digests(self):
-        self.core.add(self.LABELLED_RUN)
-        captured, _ = await self.service.capture(automation_id=KNOWN)
+        self.core.add(self.WITHHELD_RUN)
+        # Named explicitly: the HAMCP-191 list screen already redacts a listed
+        # run ID that holds a known secret, so it is never auto-selected.
+        captured, _ = await self.service.capture(automation_id=KNOWN, run_id=self.WITHHELD_RUN)
         stored_id = captured["automation_id"]
         self.assertRegex(stored_id, c.WITHHELD_ID)
         run = captured["runs"][0]
@@ -606,18 +610,18 @@ class IdentifierTests(ServiceCase):
         self.assertRegex(run["run_id"], c.WITHHELD_ID)
         # The raw IDs were still what Core was read with.
         self.assertEqual(self.core.sent[-1]["item_id"], KNOWN)
-        self.assertEqual(self.core.sent[-1]["run_id"], self.LABELLED_RUN)
+        self.assertEqual(self.core.sent[-1]["run_id"], self.WITHHELD_RUN)
         entry = self.index()["snapshots"][0]
         self.assertEqual((entry["automation_id"], entry["run_id"]), (stored_id, run["run_id"]))
         # The caller filters by the raw ID; the digest is stable in-process.
         listed, _ = await self.service.list(automation_id=KNOWN)
         self.assertEqual([e["snapshot_id"] for e in listed["snapshots"]], [run["snapshot_id"]])
         page, _ = await self.service.get(snapshot_id=run["snapshot_id"])
-        again, _ = await self.service.capture(automation_id=KNOWN, run_id=self.LABELLED_RUN)
+        again, _ = await self.service.capture(automation_id=KNOWN, run_id=self.WITHHELD_RUN)
         self.assertEqual((again["automation_id"], again["requested_run_id"], again["runs"][0]["outcome"]),
                          (stored_id, run["run_id"], "already_captured"))
         self.assert_absent(KNOWN, captured, listed, page, again)
-        self.assert_absent(self.LABELLED_RUN, captured, listed, page, again)
+        self.assert_absent(self.WITHHELD_RUN, captured, listed, page, again)
 
     async def test_clean_identifiers_are_kept(self):
         self.core.add("r1")
@@ -630,7 +634,7 @@ class IdentifierTests(ServiceCase):
         stored_id = added["watch"]["automation_id"]
         self.assertRegex(stored_id, c.WITHHELD_ID)
         await self.service.poll_once(authority=(7, VERSION))
-        self.core.add(self.LABELLED_RUN)
+        self.core.add("r1")
         await self.service.poll_once(authority=(7, VERSION))
         await self.service.poll_once(authority=(7, VERSION))
         self.assertEqual({p["item_id"] for p in self.core.sent}, {KNOWN})
@@ -645,7 +649,6 @@ class IdentifierTests(ServiceCase):
         self.assertEqual([r["automation_id"] for r in self.audit.rows],
                          [stored_id, stored_id, stored_id])
         self.assert_absent(KNOWN, added, listed, removed)
-        self.assert_absent(self.LABELLED_RUN, added, listed, removed)
 
     async def test_refusals_never_echo_a_withheld_identifier(self):
         await self.service.watch(action="add", automation_id=KNOWN)
@@ -708,7 +711,7 @@ class IdentifierTests(ServiceCase):
 
     def test_gateway_audit_parameters_never_copy_a_withheld_identifier(self):
         for tool, arguments in (
-                ("capture_automation_trace", {"automation_id": KNOWN, "run_id": self.LABELLED_RUN}),
+                ("capture_automation_trace", {"automation_id": KNOWN, "run_id": self.WITHHELD_RUN}),
                 ("list_trace_snapshots", {"automation_id": KNOWN}),
                 ("set_automation_trace_watch", {"action": "add", "automation_id": KNOWN})):
             with self.subTest(tool=tool):
@@ -716,11 +719,96 @@ class IdentifierTests(ServiceCase):
                 self.assertIsNone(audit["automation_id"])
                 self.assertTrue(audit["identifiers_withheld"])
                 self.assertNotIn(KNOWN, json.dumps(audit))
-                self.assertNotIn(self.LABELLED_RUN, json.dumps(audit))
+                self.assertNotIn(self.WITHHELD_RUN, json.dumps(audit))
         clean = _trace_snapshot_audit_parameters("capture_automation_trace",
                                                  {"automation_id": "a1", "run_id": "r1"}, (KNOWN,))
         self.assertEqual((clean["automation_id"], clean["run_id"], clean["identifiers_withheld"]),
                          ("a1", "r1", False))
+
+
+class IdentifierModeTests(ServiceCase):
+    """Correction batch 2 (owner decision): Home Assistant's own identifiers and
+    names use the shared screen's default mode; trace values stay labelled."""
+
+    BENIGN_ID = "rotate_api_token"
+    BENIGN_RUN = "run-token-1"
+    URI = "mqtt" + "://user:" + h.needle("identity") + "@host.invalid"
+
+    async def test_benign_identifiers_are_shown_in_every_sink(self):
+        self.assertIsNotNone(credentials.screen(self.BENIGN_ID, labelled=True))
+        self.core.add(self.BENIGN_RUN)
+        captured, _ = await self.service.capture(automation_id=self.BENIGN_ID)
+        run = captured["runs"][0]
+        self.assertEqual((captured["automation_id"], run["run_id"], run["outcome"]),
+                         (self.BENIGN_ID, self.BENIGN_RUN, "captured"))
+        entry = self.index()["snapshots"][0]
+        self.assertEqual((entry["automation_id"], entry["run_id"]), (self.BENIGN_ID, self.BENIGN_RUN))
+        listed, _ = await self.service.list(automation_id=self.BENIGN_ID)
+        self.assertEqual([e["automation_id"] for e in listed["snapshots"]], [self.BENIGN_ID])
+        page, partial = await self.service.get(snapshot_id=run["snapshot_id"])
+        self.assertFalse(partial)
+        self.assertEqual(page["snapshot"]["run_id"], self.BENIGN_RUN)
+        added, _ = await self.service.watch(action="add", automation_id=self.BENIGN_ID)
+        self.assertEqual(added["watch"]["automation_id"], self.BENIGN_ID)
+        self.assertEqual(self.service.watch_sources, {})
+        self.assertEqual(self.audit.rows[-1]["automation_id"], self.BENIGN_ID)
+        audit = _trace_snapshot_audit_parameters(
+            "capture_automation_trace", {"automation_id": self.BENIGN_ID, "run_id": self.BENIGN_RUN},
+            (KNOWN,))
+        self.assertEqual((audit["automation_id"], audit["run_id"], audit["identifiers_withheld"]),
+                         (self.BENIGN_ID, self.BENIGN_RUN, False))
+
+    async def test_ha_names_are_shown_and_trace_values_stay_labelled(self):
+        self.core.add("r1")
+        self.core.details["r1"] = {**header("r1"), "config": {
+            "id": self.BENIGN_ID, "alias": "Token refresh",
+            "triggers": [{"trigger": "state", "entity_id": ["sensor.api_token"], "id": "token_seen"}],
+            "variables": {"message": "Token refresh"}},
+            "context": {"id": "ctx"}, "trace": {"action/0": [{"path": "action/0", "variables": {
+                "trigger": {"entity_id": "sensor.api_token",
+                            "to_state": {"attributes": {"friendly_name": "API token"}}}}}]}}
+        captured, _ = await self.service.capture(automation_id="a1", run_id="r1")
+        page, partial = await self.service.get(snapshot_id=captured["runs"][0]["snapshot_id"])
+        units = {unit["kind"]: unit["value"] for unit in page["units"] if unit["kind"] != "step"}
+        step = next(unit["value"] for unit in page["units"] if unit["kind"] == "step")
+        config = units["config"]
+        self.assertEqual((config["id"], config["alias"], config["triggers"][0]["entity_id"],
+                          config["triggers"][0]["id"]),
+                         (self.BENIGN_ID, "Token refresh", ["sensor.api_token"], "token_seen"))
+        trigger = step["variables"]["trigger"]
+        self.assertEqual((trigger["entity_id"], trigger["to_state"]["attributes"]["friendly_name"]),
+                         ("sensor.api_token", "API token"))
+        # The same text outside an identifier or name keeps the labelled screen.
+        self.assertEqual(config["variables"]["message"], credentials.WITHHELD_MARKER)
+        self.assertTrue(partial)
+
+    async def test_credentials_in_identifiers_and_names_are_still_withheld(self):
+        self.core.add("r1")
+        self.core.details["r1"] = {**header("r1"), "config": {
+            "alias": self.URI, "id": KNOWN.upper(), "entity_id": ["sensor.ok", self.URI]},
+            "context": {"id": "ctx"}, "trace": {}}
+        captured, _ = await self.service.capture(automation_id="a1", run_id="r1")
+        page, partial = await self.service.get(snapshot_id=captured["runs"][0]["snapshot_id"])
+        config = next(unit["value"] for unit in page["units"] if unit["kind"] == "config")
+        self.assertEqual(config, {"alias": credentials.WITHHELD_MARKER, "id": credentials.WITHHELD_MARKER,
+                                  "entity_id": ["sensor.ok", credentials.WITHHELD_MARKER]})
+        self.assertTrue(partial)
+        for value in (self.URI, KNOWN, KNOWN.upper()):
+            with self.subTest(value=value[:12]):
+                self.assertRegex(self.service._persisted(value), c.WITHHELD_ID)
+        self.assertNotIn(h.needle("identity").encode(), all_store_bytes(self.root))
+        self.assertNotIn(KNOWN.upper().encode(), all_store_bytes(self.root))
+
+    async def test_a_benign_watch_survives_a_restart(self):
+        await self.service.watch(action="add", automation_id=self.BENIGN_ID, mode="executed")
+        restarted = TraceSnapshotService(self.root, self.core.command, self.runtime, self.audit,
+                                         known_secrets=(KNOWN,), clock=self.clock)
+        await restarted.poll_once(authority=(7, VERSION))
+        watches = self.index()["watches"]
+        self.assertEqual([(w["automation_id"], w["baseline_done"]) for w in watches],
+                         [(self.BENIGN_ID, True)])
+        self.assertEqual({p["item_id"] for p in self.core.sent}, {self.BENIGN_ID})
+        self.assertNotIn("identifier_unavailable", [r["result_status"] for r in self.audit.rows])
 
 
 class QuarantineTests(ServiceCase):
@@ -976,6 +1064,106 @@ class PollTests(ServiceCase):
         await self.poll()
         self.assertEqual(self.index()["snapshots"], [])
         self.assertTrue(self.service.paused)
+
+
+class QueuedCommitTests(ServiceCase):
+    """Correction batch 2: authority is checked again inside the store lock,
+    immediately before writing; a commit queued across retirement writes nothing."""
+
+    async def queue_behind_lock(self, call, retire):
+        """Run ``call``; ``retire()`` after its pre-lock checks passed, while its
+        commit waits for the store lock (another holder releases it after)."""
+
+        original = self.service._run
+
+        async def observe(function, *args, **kwargs):
+            if function == self.service._commit:
+                await self.service.lock.acquire()
+                try:
+                    blocked = asyncio.create_task(original(function, *args, **kwargs))
+                    await asyncio.sleep(0)
+                    retire()
+                finally:
+                    self.service.lock.release()
+                return await blocked
+            return await original(function, *args, **kwargs)
+
+        with patch.object(self.service, "_run", observe):
+            return await asyncio.gather(call(), return_exceptions=True)
+
+    async def watched(self):
+        await self.service.watch(action="add", automation_id="a1", mode="executed")
+        await self.service.poll_once(authority=(7, VERSION))
+        self.core.add("r1")
+        return self.index()["watches"][0]
+
+    def retire_generation(self):
+        self.runtime.generation += 1
+
+    def expire_lease(self):
+        self.telemetry.core_dispatch_authorizer = lambda: False
+
+    async def test_queued_watch_commit_writes_nothing_after_retirement(self):
+        for name, retire in (("generation", self.retire_generation), ("lease", self.expire_lease)):
+            with self.subTest(retired=name):
+                await self.asyncSetUp()
+                before = await self.watched()
+                audit_rows = len(self.audit.rows)
+                [polled] = await self.queue_behind_lock(
+                    lambda: self.service.poll_once(authority=(7, VERSION)), retire)
+                self.assertIsNone(polled)
+                self.assertEqual(self.index()["snapshots"], [])
+                self.assertTrue(self.service.paused)
+                after = self.index()["watches"][0]
+                # Not even poll state: the run is not consumed and is read again.
+                self.assertEqual(after, before)
+                self.assertEqual(len(self.audit.rows), audit_rows)
+                self.assertEqual(list((self.root / c.MODEL / "records").iterdir()), [])
+                await self.asyncTearDown()
+        await self.asyncSetUp()
+
+    async def test_retired_commit_is_read_again_once_authority_returns(self):
+        await self.watched()
+        await self.queue_behind_lock(lambda: self.service.poll_once(authority=(7, VERSION)),
+                                     self.retire_generation)
+        await self.service.poll_once(authority=(8, VERSION))
+        self.assertEqual([e["run_id"] for e in self.index()["snapshots"]], ["r1"])
+
+    async def test_audit_fallback_commit_also_rechecks(self):
+        before = await self.watched()
+
+        def fail_and_retire(entry):
+            self.runtime.generation += 1
+            return False
+
+        self.audit.write = fail_and_retire
+        polled = await self.service._poll_watch(before, (7, VERSION))
+        self.assertFalse(polled)
+        self.assertTrue(self.service.paused)
+        self.assertEqual(self.index()["snapshots"], [])
+        self.assertEqual(self.index()["watches"][0], before)
+
+    async def test_queued_manual_capture_is_refused_after_retirement(self):
+        self.core.add("r1")
+        [error] = await self.queue_behind_lock(
+            lambda: self.service.capture(automation_id="a1", run_id="r1"), self.retire_generation)
+        self.assertIsInstance(error, c.TraceSnapshotError)
+        self.assertEqual(error.reason, "authority_drift")
+        self.assertEqual(self.index()["snapshots"] if (self.root / c.MODEL / "index.json").exists()
+                         else [], [])
+        self.assertEqual(self.audit.rows, [])
+
+    async def test_unanswered_or_failing_check_refuses(self):
+        def broken():
+            raise RuntimeError("synthetic")
+
+        self.assertFalse(await asyncio.to_thread(self.service._on_loop(broken)))
+        self.assertFalse(await asyncio.to_thread(self.service._on_loop(lambda: "yes")))
+        self.assertTrue(await asyncio.to_thread(self.service._on_loop(lambda: True)))
+        with patch.object(service_module, "_GUARD_SECONDS", 0.05):
+            ask = self.service._on_loop(lambda: True)
+            # The loop is blocked by this synchronous call, so no answer comes.
+            self.assertFalse(ask())
 
 
 class PollerAuthorityTests(unittest.IsolatedAsyncioTestCase):

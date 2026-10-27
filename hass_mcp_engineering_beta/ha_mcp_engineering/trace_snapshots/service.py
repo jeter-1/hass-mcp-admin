@@ -13,6 +13,8 @@ so a string partly withheld at capture is withheld whole on read.
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import Future, TimeoutError as FutureTimeout
+import contextvars
 from dataclasses import replace
 import hashlib
 import hmac
@@ -41,6 +43,9 @@ _EVIDENCE_COUNTS = ("redacted_field_count", "category_count", "marker_collision_
 _CATEGORY = re.compile(r"[a-z][a-z_]{0,39}")
 _MAX_CATEGORIES = 32
 _NO_EVIDENCE = object()
+# The longest the store worker waits for the event loop to answer the
+# post-lock authority check; no answer refuses the commit.
+_GUARD_SECONDS = 5.0
 
 
 def _ms(epoch):
@@ -95,10 +100,15 @@ def _stored_evidence(value, known_secrets):
 
 
 def identifier_cleared(value, known_secrets):
-    """Whether the shared trace screen leaves an identifier unchanged (review H2)."""
+    """Whether the shared trace screen leaves an identifier unchanged (review H2).
 
-    result = sanitize_trace_detail(value, known_secrets=known_secrets)
-    return result.value == value and not trace_sanitization_partial(result)
+    Read as Home Assistant's own identifier (``IDENTITY_KEYS``, the default
+    mode; correction batch 2), exactly as the record and response passes
+    read it, so metadata, audit decisions, capture and readback agree.
+    """
+
+    result = sanitize_trace_detail({"automation_id": value}, known_secrets=known_secrets)
+    return result.value == {"automation_id": value} and not trace_sanitization_partial(result)
 
 
 def _caller():
@@ -380,7 +390,8 @@ class TraceSnapshotService:
         self._audit_watch_expiry(expired)
         return index
 
-    def _commit(self, prepared, now_ms, *, watch_id=None, update_watch=None, audit=None):
+    def _commit(self, prepared, now_ms, *, watch_id=None, update_watch=None, audit=None,
+                authorized=None):
         """Store ``prepared`` records in one transaction; return outcomes.
 
         A manual capture is refused at capacity (E1). A watch capture evicts
@@ -388,6 +399,11 @@ class TraceSnapshotService:
         bounds still refuse. ``update_watch(watch)`` applies poll state to
         the current watch row, which may have been replaced or removed since
         the poll began.
+
+        ``authorized()`` is the Core authority the records were read under,
+        checked again inside the store lock immediately before the first
+        write (correction batch 2). When it no longer holds, nothing is
+        written, not even the watch's poll state, and ``None`` is returned.
         """
 
         outcomes = {}
@@ -434,6 +450,9 @@ class TraceSnapshotService:
                 watch["evicted_count"] += len(evicted)
                 if update_watch is not None:
                     update_watch(watch, outcomes)
+            if authorized is not None and not authorized():
+                # Retired while this commit waited for the lock: write nothing.
+                return None
             if not stored and watch is None:
                 if removed or expired:
                     self.store.write_index(index)
@@ -466,6 +485,43 @@ class TraceSnapshotService:
         if removed or expired:
             self.store.write_index(index)
         self._tidy(index, removed)
+
+    @staticmethod
+    def _on_loop(check):
+        """``check`` as a callable the store worker runs on the event loop.
+
+        Core authority is the runtime's, which the loop owns; the worker
+        thread asks the loop and waits. An unanswered or failed check is a
+        refusal.
+        """
+
+        loop = asyncio.get_running_loop()
+        context = contextvars.copy_context()
+
+        def ask():
+            answer = Future()
+
+            def run():
+                try:
+                    answer.set_result(check() is True)
+                except Exception:
+                    answer.set_result(False)
+
+            try:
+                loop.call_soon_threadsafe(run, context=context)
+                return answer.result(timeout=_GUARD_SECONDS)
+            except (RuntimeError, FutureTimeout):
+                return False
+
+        return ask
+
+    def _authority_holds(self, authority):
+        """A request's authority is still the exact ``authority`` it captured under."""
+
+        try:
+            return self.authority() == authority
+        except c.TraceSnapshotError:
+            return False
 
     async def _run(self, function, *args, **kwargs):
         async with self.lock:
@@ -533,7 +589,11 @@ class TraceSnapshotService:
             del detail
         if self.authority() != authority:
             raise c.TraceSnapshotError("authority_drift")
-        outcomes, stored, _ = await self._run(self._commit, prepared, _ms(now))
+        committed = await self._run(self._commit, prepared, _ms(now), authorized=self._on_loop(
+            lambda: self._authority_holds(authority)))
+        if committed is None:
+            raise c.TraceSnapshotError("authority_drift")
+        outcomes, stored, _ = committed
         runs = [{"run_id": item.run_id, "outcome": outcomes[item.run_id],
                  **({"snapshot_id": item.entry["snapshot_id"], "completeness": item.entry["completeness"],
                      "bytes": item.entry["bytes"]} if outcomes[item.run_id] == "captured" else {})}
@@ -1006,17 +1066,27 @@ class TraceSnapshotService:
                 "evicted_snapshot_ids": evicted,
             }
 
+        # Checked again inside the store lock, immediately before writing:
+        # the commit may have waited behind another store operation while
+        # the generation retired (correction batch 2).
+        authorized = self._on_loop(lambda: self._still_authorized(authority))
         try:
-            await self._run(self._commit, prepared, _ms(self.clock()), watch_id=watch_id,
-                            update_watch=update, audit=audit)
+            committed = await self._run(self._commit, prepared, _ms(self.clock()),
+                                        watch_id=watch_id, update_watch=update, audit=audit,
+                                        authorized=authorized)
         except c.TraceSnapshotError as exc:
             if exc.reason != "audit_unavailable":
                 raise
             # Nothing was stored; the runs count as a gap and are not retried.
             for item in prepared:
                 item.outcome = "read_failed"
-            await self._run(self._commit, prepared, _ms(self.clock()), watch_id=watch_id,
-                            update_watch=update)
+            committed = await self._run(self._commit, prepared, _ms(self.clock()),
+                                        watch_id=watch_id, update_watch=update,
+                                        authorized=authorized)
+        if committed is None:
+            # Retired while queued: nothing written; the runs are read next time.
+            self.paused = True
+            return False
         return True
 
     @staticmethod

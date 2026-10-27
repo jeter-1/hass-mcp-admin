@@ -21,6 +21,16 @@ TRACE_STRING_LIMIT = 2_000
 # HAMCP-225 review 1 H1: deeper nesting than this is not screened; the
 # subtree is withheld whole and the result fails closed.
 TRACE_SCREEN_DEPTH = 64
+# Home Assistant's own identifiers and names (owner decision, HAMCP-225
+# correction batch 2, consistent with HAMCP-226): a string directly under one
+# of these keys, or in a list directly under one, is screened in the shared
+# screen's default (shape) mode, so ``rotate_api_token`` or ``Token refresh``
+# is shown while a credential URL or a known secret is still withheld. Every
+# other string, and every key, keeps the labelled forms.
+IDENTITY_KEYS = frozenset({
+    "automation_id", "script_id", "item_id", "run_id", "id", "alias", "entity_id",
+    "friendly_name",
+})
 SCREEN_CATEGORIES = {
     credentials.WITHHELD_MARKER: "credential_text",
     credentials.UNVERIFIABLE_MARKER: "unverifiable_text",
@@ -111,7 +121,9 @@ def sanitize_trace_detail(
     every depth. A string it withholds is replaced whole by its marker; a
     key it withholds drops its entry, key and value. Only then the strict
     sanitizer runs, and truncation comes last, after the text was cleared.
-    There is no trace-specific rule.
+    There is no trace-specific rule. Home Assistant's own identifiers and
+    names (``IDENTITY_KEYS``) use the screen's default mode instead, at
+    every pass, so capture, the stored record and every response agree.
     """
 
     screened, withheld, categories, failed = screen_trace_value(detail, known_secrets)
@@ -137,20 +149,22 @@ def screen_trace_value(
     """``(screened copy, strings and entries withheld, categories, failed closed)``.
 
     The shared screen alone, without the strict sanitizer: every string and
-    every dictionary key, compared whole and as originally given.
+    every dictionary key, compared whole and as originally given. A string
+    under an ``IDENTITY_KEYS`` key (or in a list directly under one) is an
+    identifier or name and is read in the default mode; the rest labelled.
     """
 
     withheld = 0
     categories: set[str] = set()
     failed = False
-    decided: dict[str, str | None] = {}
+    decided: dict[tuple[str, bool], str | None] = {}
 
-    def marker(text: str) -> str | None:
-        if text not in decided:
-            decided[text] = credentials.screen(text, known_secrets, labelled=True)
-        return decided[text]
+    def marker(text: str, labelled: bool = True) -> str | None:
+        if (text, labelled) not in decided:
+            decided[(text, labelled)] = credentials.screen(text, known_secrets, labelled=labelled)
+        return decided[(text, labelled)]
 
-    def walk(item: Any, depth: int) -> Any:
+    def walk(item: Any, depth: int, identity: bool = False) -> Any:
         nonlocal withheld, failed
         if depth > TRACE_SCREEN_DEPTH and type(item) in (dict, list, tuple):
             withheld += 1
@@ -158,7 +172,7 @@ def screen_trace_value(
             categories.add(SCREEN_CATEGORIES[credentials.UNVERIFIABLE_MARKER])
             return credentials.UNVERIFIABLE_MARKER
         if type(item) is str:
-            found = marker(item)
+            found = marker(item, not identity)
             if found is None:
                 return item
             withheld += 1
@@ -172,10 +186,10 @@ def screen_trace_value(
                     withheld += 1
                     categories.add(SCREEN_CATEGORIES[found])
                     continue
-                kept[key] = walk(child, depth + 1)
+                kept[key] = walk(child, depth + 1, type(key) is str and key in IDENTITY_KEYS)
             return kept
         if type(item) in (list, tuple):
-            return [walk(child, depth + 1) for child in item]
+            return [walk(child, depth + 1, identity and type(child) is str) for child in item]
         return item
 
     return walk(value, 0), withheld, categories, failed
