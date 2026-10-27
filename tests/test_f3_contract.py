@@ -397,6 +397,10 @@ class F3ContractDeclarationTests(unittest.TestCase):
         self.assertNotIn("class PreparedOperation", facade_source)
         definitions = []
         for path in ROOT.rglob("*.py"):
+            # Dot-prefixed parts (.git, .artifacts scratch, nested worktrees)
+            # hold no repository source.
+            if any(part.startswith(".") for part in path.relative_to(ROOT).parts):
+                continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in tree.body:
                 if isinstance(node, ast.ClassDef) and node.name in {

@@ -6,6 +6,7 @@ clone checks out). This is not a booted Supervisor or an installed store.
 """
 
 import asyncio
+import contextlib
 import errno
 import hashlib
 import json
@@ -81,21 +82,26 @@ class StableV1RetirementTests(unittest.TestCase):
         self.store = SimpleNamespace(sys_run_in_executor=self._executor)
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
+        self.base = Path(temp.name)
         # Supervisor clones under a hash-named, non-dot directory.
-        self.clones = Path(temp.name) / "data" / "addons" / "git"
-        # The exact rule drops any dot-prefixed path part, including the temp root.
+        self.clones = Path("data") / "addons" / "git"
+        # The exact rule drops any dot-prefixed path part, including the temp
+        # root, so discovery runs on a path relative to the temporary root. A
+        # scratch TMPDIR inside the worktree (.artifacts/tmp) then cannot leak
+        # a dot-prefixed part into the rule.
         self.assertFalse([p for p in self.clones.parts if p.startswith(".")],
-                         "temporary directory path contains a dot-prefixed part")
+                         "discovery path contains a dot-prefixed part")
 
     @staticmethod
     async def _executor(func, *args):
         return func(*args)
 
     def discover(self, paths):
-        clone = self.clones / f"clone{len(list(self.clones.glob('*')))}"
-        mirror(clone, paths)
-        found = asyncio.run(
-            self.ns["_find_app_configs"](self.store, clone, "a1b2c3d4"))
+        clone = self.clones / f"clone{len(list((self.base / self.clones).glob('*')))}"
+        mirror(self.base / clone, paths)
+        with contextlib.chdir(self.base):
+            found = asyncio.run(
+                self.ns["_find_app_configs"](self.store, clone, "a1b2c3d4"))
         return sorted(path.relative_to(clone).as_posix() for path in found)
 
     def test_repository_discovers_only_engineering(self):
@@ -131,7 +137,7 @@ class StableV1RetirementTests(unittest.TestCase):
         metadata = yaml.safe_load((ROOT / "repository.yaml").read_text())
         self.assertIn("name", metadata)
         self.assertLessEqual(set(metadata), schema.keys)
-        clone = self.clones / "metadata"
+        clone = self.base / self.clones / "metadata"
         mirror(clone, tracked_paths())
         found = self.ns["find_one_filetype"](
             clone, "repository", self.ns["FILE_SUFFIX_CONFIGURATION"])
