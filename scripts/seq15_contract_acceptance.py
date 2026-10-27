@@ -996,14 +996,21 @@ def _longest_string(value):
 
 
 async def _script_trace_scenarios(c):
-    from ha_mcp_engineering.script_traces import MAX_STRING
+    from ha_mcp_engineering.trace_normalization import TRACE_STRING_LIMIT
     stage, owned, raw, runtime, log = c["stage"], c["owned"], c["raw"], c["runtime"], c["log"]
     stage[0] = "fixture_setup"
     key = "seq15_" + secrets.token_hex(4)
     owned["script"] = key
+    # Review H1: the known lane secret plus credential shapes the shared
+    # screen must recognise without being told (a credential URI value and an
+    # encoded key=value dictionary key), assembled at run time.
+    shaped = "SEQ15" + secrets.token_hex(8)
     await raw.rest("POST", "/config/script/config/" + key, {
         "alias": "Seq15 Trace " + key[-8:], "mode": "single",
-        "sequence": [{"variables": {TRACE_SECRET_KEY: c["lane_secret"], "seq15_long": "x" * LONG_VALUE}}]})
+        "sequence": [{"variables": {
+            TRACE_SECRET_KEY: c["lane_secret"], "seq15_long": "x" * LONG_VALUE,
+            "seq15_uri": "postgresql" + "://seq15:" + shaped + "@seq15.invalid/db",
+            "seq15_nested": {"api%5f" + "key=" + shaped: "benign"}}}]})
     for _ in range(100):
         if (await raw.status("GET", "/states/script." + key))[0] == 200:
             break
@@ -1034,10 +1041,10 @@ async def _script_trace_scenarios(c):
                      lambda: service.get_trace(key, run_ids[0]))
     rendered = json.dumps(got, sort_keys=True)
     scenarios["get"] = {"result": "PASS", "run_matches": got["run_id"] == run_ids[0],
-                        "secret_absent": c["lane_secret"] not in rendered,
+                        "secret_absent": c["lane_secret"] not in rendered and shaped not in rendered,
                         "redacted": got["redaction"] is not None,
                         "long_value_bounded": _longest_string(got["trace"]) < LONG_VALUE
-                        and _longest_string(got["trace"]) <= MAX_STRING + 64}
+                        and _longest_string(got["trace"]) <= TRACE_STRING_LIMIT + 64}
 
     async def refusal(name, route_tool, arguments, method):
         commands = len(log.command_types)

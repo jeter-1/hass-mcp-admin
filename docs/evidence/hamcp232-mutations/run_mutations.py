@@ -20,8 +20,9 @@ inactive (design note section 6.1 item 9):
   send treated as never dispatched;
 - ``P*``: planning policy (target limit, one domain per plan, elevated
   classification, the OD-7 disclosure, injected defaults, closed vocabularies);
-- ``S*``: script-trace reads (sanitizer bypassed, known secrets dropped,
-  not-found mapping, the script-id shape);
+- ``S*``: script-trace reads (the HAMCP-225 trace exit bypassed for a
+  parallel screen or skipped, known secrets dropped, identifiers returned
+  unscreened, not-found mapping, the script-id shape);
 - ``L*``: the dormant seq-15 lanes (the enable switch and loopback gates,
   the raw-route allowlist);
 - ``K*``: automation lock projection for input_select (a select_option
@@ -64,11 +65,16 @@ TRACE = "script-trace read unsanitized or widened"
 LANE = "dormant lane gate opened"
 LOCK = "input_select lock projection loosened or widened"
 LOOPBACK = '{"127.0.0.1", "localhost", "::1"}'
+# Review H1 mutants S2/S6: the pre-correction parallel screen in place of the
+# HAMCP-225 trace exit.
+PARALLEL_SCREEN = '__import__("ha_mcp_engineering.sanitization", fromlist=["_"]).sanitize_untrusted_data'
 
 base.MODULES = (
     "test_hamcp232_helper_options",
     "test_hamcp145_input_select_option",
     "test_hamcp232_script_traces",
+    "test_hamcp232_script_trace_cross_path",
+    "test_pr314_independent_review",
     "test_seq15_contract_acceptance",
     "test_f3_configuration_identity",
 )
@@ -219,32 +225,39 @@ base.MUTATIONS = [
       (HOC, 'TEMPLATE_TYPES = ("binary_sensor", "sensor")',
        'TEMPLATE_TYPES = ("binary_sensor", "sensor", "switch")')),
     # --- script traces ---------------------------------------------------
-    m("S1-list-known-secrets-dropped", TRACE,
-      (TRC, '        if not isinstance(result, list):\n'
-            '            raise ScriptTraceError("invalid_provider_response")\n'
-            "        sanitation = sanitize_untrusted_data(\n"
-            "            result, known_secrets=self.known_secrets, max_string=MAX_STRING",
-       '        if not isinstance(result, list):\n'
-       '            raise ScriptTraceError("invalid_provider_response")\n'
-       "        sanitation = sanitize_untrusted_data(\n"
-       "            result, known_secrets=(), max_string=MAX_STRING")),
-    m("S2-get-known-secrets-dropped", TRACE,
-      (TRC, '        if not isinstance(result, dict):\n'
-            '            raise ScriptTraceError("invalid_provider_response")\n'
-            "        sanitation = sanitize_untrusted_data(\n"
-            "            result, known_secrets=self.known_secrets, max_string=MAX_STRING",
-       '        if not isinstance(result, dict):\n'
-       '            raise ScriptTraceError("invalid_provider_response")\n'
-       "        sanitation = sanitize_untrusted_data(\n"
-       "            result, known_secrets=(), max_string=MAX_STRING")),
+    m("S1-exit-known-secrets-dropped", TRACE,
+      (TRC, "        return sanitize_trace_detail(value, known_secrets=self.known_secrets)",
+       "        return sanitize_trace_detail(value, known_secrets=())")),
+    m("S2-list-bypasses-shared-sanitizer", TRACE,
+      (TRC, '        sanitation = self._exit({"script_id": payload["item_id"], "traces": result})',
+       f"        sanitation = {PARALLEL_SCREEN}(\n"
+       '            {"script_id": payload["item_id"], "traces": result},\n'
+       "            known_secrets=self.known_secrets, max_string=2000)")),
     m("S3-get-trace-unsanitized", TRACE,
-      (TRC, '            "trace": sanitation.value,', '            "trace": result,')),
+      (TRC, '            "trace": screened["trace"],', '            "trace": result,')),
     m("S4-trace-not-found-unmapped", TRACE,
       (TRC, '                if payload["type"] == GET_COMMAND and details.get("status") == 404',
        "                if False")),
     m("S5-script-id-shape-loosened", TRACE,
       (TRC, 'SCRIPT_ID_PATTERN = re.compile(r"[a-z0-9_]{1,128}\\Z")',
        'SCRIPT_ID_PATTERN = re.compile(r".{1,128}\\Z")')),
+    m("S6-get-bypasses-shared-sanitizer", TRACE,
+      (TRC, "        sanitation = self._exit(\n"
+            '            {"script_id": payload["item_id"], "run_id": payload["run_id"], "trace": result}\n'
+            "        )",
+       f"        sanitation = {PARALLEL_SCREEN}(\n"
+       '            {"script_id": payload["item_id"], "run_id": payload["run_id"], "trace": result},\n'
+       "            known_secrets=self.known_secrets, max_string=2000)")),
+    m("S7-get-identifiers-unscreened", TRACE,
+      (TRC, '            "script_id": screened.get("script_id"),\n'
+            '            "run_id": screened.get("run_id"),',
+       '            "script_id": payload["item_id"],\n'
+       '            "run_id": payload["run_id"],')),
+    m("S8-list-identifier-unscreened", TRACE,
+      (TRC, '            "script_id": screened.get("script_id"),\n'
+            '            "traces": [header.public() for header in normalized.headers],',
+       '            "script_id": payload["item_id"],\n'
+       '            "traces": [header.public() for header in normalized.headers],')),
     # --- dormant lanes ---------------------------------------------------
     m("L1-lanes-enabled-by-default", LANE,
       (LAN, "    return os.environ.get(ENABLE_FLAG) == ENABLED", "    return True")),
