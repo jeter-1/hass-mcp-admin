@@ -206,6 +206,18 @@ base.MUTATIONS = [
     m("O11-cancelled-abort-abandoned", ORPHAN,
       (HOC, "        try:\n            await asyncio.wait({task}, timeout=ABORT_TIMEOUT_SECONDS)\n        finally:",
        "        try:\n            pass\n        finally:")),
+    # --- review H3: the submit is the complete intended set ----------------
+    m("I1-intent-completeness-unchecked", CONTRACT,
+      (HOC, "    errors.extend(_completeness_errors(intent, step_fields(domain, step_id)))\n", "")),
+    m("I2-intent-submit-incomplete-accepted", CONTRACT,
+      (HOC, "    if not values_equal(intent[\"submit\"], nest(flat)):", "    if False:")),
+    m("I3-intent-unrequested-change-accepted", CONTRACT,
+      (HOC, "    if not visible_equal(proposed, {**flat, **defaults}):", "    if False:")),
+    m("I4-intent-normalization-forgery-accepted", CONTRACT,
+      (HOC, "    if set(injected) != set(defaults) or any(", "    if False and any(")),
+    m("I5-submit-only-the-requested-fields", CONTRACT,
+      (HOC, "    submit = nest(flat)\n    return Proposal(",
+       "    submit = nest({name: flat[name] for name in set_values if name in flat})\n    return Proposal(")),
     # --- readback --------------------------------------------------------
     m("R1-helper-readback-entry-unhealthy-accepted", READBACK,
       (HOA, "        if proposed and moved and loaded and registered:", "        if proposed and moved:")),

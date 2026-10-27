@@ -41,10 +41,12 @@ from ha_mcp_engineering.f3_configuration.helper_options import (  # noqa: E402
 from ha_mcp_engineering.governance import helper_options as contract  # noqa: E402
 from ha_mcp_engineering.governance import (  # noqa: E402
     helper_options_planning as planning,
+    policy,
 )
 
 from tests.hamcp232_helper_options_fixtures import (  # noqa: E402
     FILTER_LOWPASS,
+    STATISTICS_INIT,
     STEP_PREFIX,
     HelperOptionsServiceTestCase,
     flow_form,
@@ -149,6 +151,141 @@ class IntentContractTests(unittest.TestCase):
     def test_a_no_op_intent_is_refused(self):
         errors = contract.intent_errors("filterentry01", retarget(valid_intent(), FILTER_LOWPASS))
         self.assertEqual(errors, ["options intent is a no-op"])
+
+
+def built_intent(domain, step_id, baseline, set_values, clear=()) -> dict:
+    proposal = contract.build_proposal(domain, step_id, baseline, set_values, tuple(clear))
+    return contract.build_intent(
+        entity_ids=["sensor.synthetic_helper"],
+        entry_id="filterentry01",
+        domain=domain,
+        step_id=step_id,
+        modified_at=1_761_436_800.0,
+        baseline=deepcopy(baseline),
+        proposal=proposal,
+        consumer_evidence_fingerprint="0" * 64,
+        dependency_reasons=[],
+    )
+
+
+def refit(intent: dict, *, submit=None, proposed=None, changes=None) -> dict:
+    """Forge an intent field and keep the fingerprints consistent."""
+
+    intent = deepcopy(intent)
+    body = intent[contract.INTENT_KEY]
+    if submit is not None:
+        body["submit"] = submit
+    if proposed is not None:
+        body["proposed"] = proposed
+        body["proposed_fingerprint"] = contract.fingerprint(contract.INTENT_MODEL, proposed)
+    if changes is not None:
+        body["normalization_changes"] = changes
+    return intent
+
+
+INCOMPLETE = "options intent submit is not the complete intended set"
+NOT_DERIVED = "options intent proposed is not the baseline with the requested changes"
+BAD_NORMALIZATION = "options intent normalization_changes are invalid"
+TEMPLATE_WITH_SECTION = {
+    "state": "{{ 1 }}",
+    "unit_of_measurement": "W",
+    "additional_options.availability": "{{ true }}",
+}
+# Clearing ``precision`` injects Core's default, which differs from 5.
+FILTER_PRECISION_5 = dict(FILTER_LOWPASS, precision=5)
+
+
+class IntentCompletenessTests(unittest.TestCase):
+    """Review H3: Core replaces the options with the submitted dict, so the
+    submit must be the complete intended set; anything else is refused."""
+
+    def errors(self, intent):
+        return contract.intent_errors("filterentry01", intent)
+
+    def test_built_intents_are_complete_on_every_shape(self):
+        cases = {
+            "set": ("filter", "lowpass", FILTER_LOWPASS, {"time_constant": 20}, ()),
+            "clear_injects_default": ("filter", "lowpass", FILTER_PRECISION_5, {}, ("precision",)),
+            "statistics": ("statistics", "init", STATISTICS_INIT, {"percentile": 90.0}, ()),
+            "clear_optional": ("template", "sensor", TEMPLATE_WITH_SECTION, {}, ("unit_of_measurement",)),
+            "section_leaf": ("template", "sensor", TEMPLATE_WITH_SECTION,
+                             {"additional_options.availability": "{{ false }}"}, ()),
+        }
+        for name, case in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(self.errors(built_intent(*case)), [])
+        injected = built_intent(*cases["clear_injects_default"])[contract.INTENT_KEY]
+        self.assertEqual([item["field"] for item in injected["normalization_changes"]], ["precision"])
+        self.assertNotIn("precision", injected["submit"])
+
+    def test_a_dropped_field_is_refused(self):
+        intent = valid_intent()
+        for name in intent[contract.INTENT_KEY]["submit"]:
+            with self.subTest(field=name):
+                submit = deepcopy(intent[contract.INTENT_KEY]["submit"])
+                del submit[name]
+                self.assertIn(INCOMPLETE, self.errors(refit(intent, submit=submit)))
+
+    def test_a_field_dropped_from_submit_and_proposed_is_refused(self):
+        intent = valid_intent()
+        body = intent[contract.INTENT_KEY]
+        submit, proposed = deepcopy(body["submit"]), deepcopy(body["proposed"])
+        del submit["precision"], proposed["precision"]
+        errors = self.errors(refit(intent, submit=submit, proposed=proposed))
+        self.assertIn(INCOMPLETE, errors)
+        self.assertIn(NOT_DERIVED, errors)
+
+    def test_a_dropped_section_leaf_or_section_is_refused(self):
+        intent = built_intent("template", "sensor", TEMPLATE_WITH_SECTION, {"state": "{{ 2 }}"})
+        submit = deepcopy(intent[contract.INTENT_KEY]["submit"])
+        submit["additional_options"] = {}
+        self.assertIn(INCOMPLETE, self.errors(refit(intent, submit=submit)))
+        del submit["additional_options"]
+        self.assertIn(INCOMPLETE, self.errors(refit(intent, submit=submit)))
+
+    def test_submitting_only_the_requested_fields_is_refused(self):
+        intent = valid_intent()
+        body = intent[contract.INTENT_KEY]
+        submit = {name: body["proposed"][name] for name in body["requested"]}
+        self.assertIn(INCOMPLETE, self.errors(refit(intent, submit=submit)))
+
+    def test_a_pinned_field_dropped_from_the_submit_is_refused(self):
+        intent = valid_intent()
+        for name in ("entity_id", "filter"):
+            with self.subTest(field=name):
+                submit = deepcopy(intent[contract.INTENT_KEY]["submit"])
+                del submit[name]
+                self.assertIn(INCOMPLETE, self.errors(refit(intent, submit=submit)))
+
+    def test_an_injected_default_in_the_submit_is_refused(self):
+        intent = built_intent("filter", "lowpass", FILTER_PRECISION_5, {}, ("precision",))
+        submit = dict(intent[contract.INTENT_KEY]["submit"], precision=5)
+        self.assertIn(INCOMPLETE, self.errors(refit(intent, submit=submit)))
+
+    def test_an_unrequested_change_is_refused(self):
+        intent = valid_intent()
+        body = intent[contract.INTENT_KEY]
+        proposed = dict(body["proposed"], window_size=5)
+        submit = dict(body["submit"], window_size=5)
+        self.assertIn(NOT_DERIVED, self.errors(refit(intent, submit=submit, proposed=proposed)))
+
+    def test_forged_normalization_changes_are_refused(self):
+        cleared = built_intent("filter", "lowpass", FILTER_PRECISION_5, {}, ("precision",))
+        item = cleared[contract.INTENT_KEY]["normalization_changes"][0]
+        forged = {
+            # Without the entry the cleared field reads as set, so the
+            # submit that omits it is incomplete.
+            "missing": (cleared, [], INCOMPLETE),
+            "unexpected": (valid_intent(), [dict(item)], BAD_NORMALIZATION),
+            "wrong_default": (cleared, [dict(item, injected_default=7)], BAD_NORMALIZATION),
+            "baseline_set": (cleared, [dict(item, baseline=2)], BAD_NORMALIZATION),
+            "not_a_dict": (cleared, ["precision"], BAD_NORMALIZATION),
+            "duplicate": (cleared, [dict(item), dict(item)], BAD_NORMALIZATION),
+            "extra_key": (cleared, [dict(item, extra=True)], BAD_NORMALIZATION),
+        }
+        for name, (intent, changes, expected) in forged.items():
+            with self.subTest(case=name):
+                self.assertIn(expected, self.errors(refit(intent, changes=changes)))
 
 
 class RequestVocabularyTests(unittest.TestCase):
@@ -1002,6 +1139,50 @@ class FlowLifecycleTests(HelperOptionsServiceTestCase):
         # Core created the flow; its id never arrived, so it is disclosed,
         # not aborted.
         self.assertEqual(len(self.options_rest.flows), 1)
+
+
+class PartialIntentServiceTests(HelperOptionsServiceTestCase):
+    """Review H3: an incomplete internal intent is refused before any flow is
+    opened for it and is never submitted."""
+
+    def omit_from_submit(self, field):
+        original = planning.prepare
+
+        async def prepare(*args, **kwargs):
+            prepared = await original(*args, **kwargs)
+            del prepared.items[0].intent[contract.INTENT_KEY]["submit"][field]
+            return prepared
+
+        return mock.patch.object(planning, "prepare", prepare)
+
+    async def test_an_incomplete_intent_is_refused_at_create(self):
+        self.add_filter(precision=7)
+        with self.omit_from_submit("precision"), self.assertRaises(GovernanceError):
+            await self.create_options(TIME_CONSTANT_20)
+        self.assertEqual(self.options_rest.submits(), [])
+        self.assertEqual(self.options_rest.flows, {})
+        self.assertEqual(len(self.options_rest.opens()), len(self.options_rest.aborts()))
+        self.assertEqual(self.options_rest.visible("filterentry01")["precision"], 7)
+
+    async def test_an_incomplete_intent_that_passed_create_is_refused_before_a_flow_opens(self):
+        # Stand in for a plan admitted under an older, weaker validator.
+        self.add_filter(precision=7)
+        with self.omit_from_submit("precision"), \
+                mock.patch.object(contract, "intent_errors", lambda *args: []), \
+                mock.patch.object(policy, "helper_options_intent_errors", lambda *args: []):
+            created = await self.create_options(TIME_CONSTANT_20)
+            await self.approve(created)
+        opens = len(self.options_rest.opens())
+        try:
+            result = await self.apply(created)
+        except GovernanceError:
+            result = None
+        if result is not None:
+            self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
+        self.assertEqual(len(self.options_rest.opens()), opens)
+        self.assertEqual(self.options_rest.submits(), [])
+        self.assertEqual(self.options_rest.flows, {})
+        self.assertEqual(self.options_rest.visible("filterentry01")["precision"], 7)
 
 
 class ReadbackRuleTests(HelperOptionsServiceTestCase):

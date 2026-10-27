@@ -741,6 +741,7 @@ def intent_errors(target_id: str, proposed: Any) -> list[str]:
             for name, value in flat_submit.items()
         ):
             errors.append("options intent submit does not match proposed")
+    errors.extend(_completeness_errors(intent, step_fields(domain, step_id)))
     for spec in step_fields(domain, step_id):
         if spec.pinned and isinstance(intent["baseline"], dict) and isinstance(intent["proposed"], dict):
             if not values_equal(intent["baseline"].get(spec.name), intent["proposed"].get(spec.name)):
@@ -783,6 +784,59 @@ def intent_errors(target_id: str, proposed: Any) -> list[str]:
         or reasons != sorted(set(reasons))
     ):
         errors.append("options intent dependency_reasons are invalid")
+    return errors
+
+
+def _completeness_errors(intent: dict[str, Any], fields: tuple[FieldSpec, ...]) -> list[str]:
+    """The submit must be the complete intended set (review H3).
+
+    Re-derive what ``build_proposal`` produces from the bound baseline and
+    the requested fields: every unrequested field at its baseline value,
+    every requested field as proposed, nothing injected.  Core replaces the
+    entry's options with the submitted dict, so a dropped field would reset
+    an unrequested option; an intent that is not exactly this is refused.
+    """
+
+    baseline, proposed = intent["baseline"], intent["proposed"]
+    requested, changes = intent["requested"], intent["normalization_changes"]
+    if not all(isinstance(value, dict) for value in (baseline, proposed)) or not all(
+        isinstance(value, list) for value in (requested, changes)
+    ):
+        return []
+    injected: dict[str, Any] = {}
+    for item in changes:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"field", "baseline", "injected_default"}
+            or not isinstance(item["field"], str)
+            or item["field"] in injected
+            or item["baseline"] is not None
+        ):
+            return ["options intent normalization_changes are invalid"]
+        injected[item["field"]] = item["injected_default"]
+    flat: dict[str, Any] = {}
+    for spec in fields:
+        if spec.name in requested:
+            if spec.name in proposed and spec.name not in injected:
+                flat[spec.name] = proposed[spec.name]
+        elif spec.name in baseline:
+            flat[spec.name] = baseline[spec.name]
+    defaults = {
+        spec.name: core_default(spec)
+        for spec in fields
+        if spec.name not in flat and spec.has_default and spec.section is None
+    }
+    errors: list[str] = []
+    if any(spec.required and spec.name not in flat for spec in fields):
+        errors.append("options intent omits a required field")
+    if set(injected) != set(defaults) or any(
+        not values_equal(injected[name], defaults[name]) for name in injected
+    ):
+        errors.append("options intent normalization_changes are invalid")
+    if not visible_equal(proposed, {**flat, **defaults}):
+        errors.append("options intent proposed is not the baseline with the requested changes")
+    if not values_equal(intent["submit"], nest(flat)):
+        errors.append("options intent submit is not the complete intended set")
     return errors
 
 
