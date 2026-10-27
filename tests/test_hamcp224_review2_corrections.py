@@ -353,11 +353,15 @@ class LevelFilterTests(review1.Harness):
                 self.assertEqual((page["returned"], page["complete"]), (0, True))
 
     async def test_the_priority_field_sets_the_level(self):
+        # HAMCP-234 C: a container line in a known format takes its parsed
+        # level, so the PRIORITY case is a host source's (and a container
+        # line in no known format keeps its PRIORITY).
         library = review1.NativeFieldOverlay("PRIORITY", b"2")
         service = self.service(author.reader(self.helper.journal, library=lambda: library))
-        page = await self.helper.read(service=service, sources=["supervisor"], start=author.iso(0),
-                                      end=author.iso(1), min_level="critical")
-        self.assertEqual(page["entries"][0]["level"], "critical")
+        page = await self.helper.read(service=service, sources=["host:kernel"], start=author.iso(7),
+                                      end=author.iso(8), min_level="critical")
+        self.assertEqual((page["entries"][0]["level"], page["entries"][0]["level_basis"]),
+                         ("critical", hj.LEVEL_BASIS))
 
     async def test_a_withheld_entry_left_out_by_its_level_is_partial(self):
         page = await self.planted(("pass" + "word=" + NEEDLE).encode(), min_level="critical")

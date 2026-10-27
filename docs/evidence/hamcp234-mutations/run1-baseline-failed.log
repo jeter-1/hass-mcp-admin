@@ -1,0 +1,63 @@
+baseline rc=1 FAILED (failures=1, expected failures=1) (106s)
+t /usr/lib/python3.13/asyncio/runners.py:100> took 0.478 seconds
+.Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Executing <Task finished name='Task-8001' coro=<ExtraChecks.test_yaml_new_visible_confusables_withheld() done, defined at /var/tmp/hamcp234-mut/tree/tests/test_pr294_corr2_extra.py:52> result=None created at /usr/lib/python3.13/asyncio/runners.py:100> took 0.114 seconds
+..Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Authenticated MCP request started.
+MCP request completed.
+HTTP Request: POST http://127.0.0.1:8100/SYNTHaccesssecretQ7V/mcp "HTTP/1.1 200 OK"
+Executing <Task finished name='Task-8017' coro=<FinalChecks.test_control_character_passwords_through_real_reader_and_gateway() done, defined at /var/tmp/hamcp234-mut/tree/tests/test_pr294_final32_review.py:22> result=None created at /usr/lib/python3.13/asyncio/runners.py:100> took 0.346 seconds
+..Executing <Task finished name='Task-8037' coro=<FinalChecks.test_derived_outputs_have_no_withheld_input() done, defined at /var/tmp/hamcp234-mut/tree/tests/test_pr294_final32_review.py:71> result=None created at /usr/lib/python3.13/asyncio/runners.py:100> took 0.161 seconds
+..Executing <Task finished name='Task-8047' coro=<FinalChecks.test_unicode_categories_encoded_and_double_encoded() done, defined at /var/tmp/hamcp234-mut/tree/tests/test_pr294_final32_review.py:36> result=None created at /usr/lib/python3.13/asyncio/runners.py:100> took 0.608 seconds
+.
+======================================================================
+FAIL: test_every_sanitizer_call_site_is_in_the_committed_table (test_hamcp191_shared_sanitizer.CoverageTests.test_every_sanitizer_call_site_is_in_the_committed_table)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/var/tmp/hamcp234-mut/tree/tests/test_hamcp191_shared_sanitizer.py", line 724, in test_every_sanitizer_call_site_is_in_the_committed_table
+    self.assertEqual(
+    ~~~~~~~~~~~~~~~~^
+        found, {site: count for site, (count, _family) in SANITIZER_SITES.items()}
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+AssertionError: {('au[382 chars]1, ('configuration_definitions/credentials.py'[7021 chars]): 1} != {('au[382 chars]1, ('dashboard_analysis/models.py', '_scalar',[7021 chars]): 1}
+Diff is 7978 characters long. Set self.maxDiff to None to see it.
+
+----------------------------------------------------------------------
+Ran 548 tests in 103.966s
+
+FAILED (failures=1, expected failures=1)
+
+EXIT 2

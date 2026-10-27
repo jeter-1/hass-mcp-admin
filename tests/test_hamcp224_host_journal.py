@@ -432,6 +432,8 @@ class JournalServiceTests(Roots, unittest.IsolatedAsyncioTestCase):
                                 "ts", "ts_basis", "time_zone", "source", "process", "level", "level_basis",
                                 "message", "message_truncated", "withheld", "kernel_subsystem",
                                 "kernel_device", "boot_ref", "partial_line", "ordering_uncertain",
+                                # HAMCP-234: the fixed rule ids of a withheld entry.
+                                "withheld_rules",
                             }, set(entry))
 
     async def test_credential_messages_are_withheld_whole_and_never_searched(self):
@@ -787,12 +789,15 @@ class StaticBoundaryTests(unittest.TestCase):
         for function in ast.walk(tree):
             if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for node in ast.walk(function):
-                    if isinstance(node, ast.Call) and ast.unparse(node.func) == "hj.screen_text":
+                    # HAMCP-234: the rule-reporting forms of the same screen.
+                    if isinstance(node, ast.Call) and ast.unparse(node.func) in {
+                            "hj.screen_text", "hj.screen_text_rule", "hj.screen_text_rules"}:
                         callers.add(function.name)
-        self.assertEqual(callers, {"_journal_screen", "_journal_views"})
+        self.assertEqual(callers, {"_journal_screen", "_journal_views", "_calibration_envelope"})
         finish = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "_finish")
         called = {ast.unparse(node.func) for node in ast.walk(finish) if isinstance(node, ast.Call)}
-        self.assertTrue({"self._journal_screen", "self._journal_views", "sanitize_log_lines"} <= called)
+        self.assertTrue({"self._journal_screen", "self._journal_views", "self._calibration_envelope",
+                         "sanitize_log_lines"} <= called)
 
     def test_config_enables_journald_and_keeps_the_homeassistant_role(self):
         lines = (ROOT / "hass_mcp_engineering_beta" / "config.yaml").read_text(encoding="utf-8").splitlines()

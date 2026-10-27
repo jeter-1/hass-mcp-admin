@@ -2,6 +2,18 @@
 
 Date: 2026-07-10
 
+## Host journal rule names, calibration and levels (2.4.1-beta.42, HAMCP-234)
+
+`get_incident_logs` keeps its routing, provider, policy, `risk=read` and
+writes `none`. Its input schema gains one optional strict boolean,
+`calibration`. With it, the tool returns per-source counts only (scanned,
+shown, withheld, and withheld and matched per fixed rule id), for host
+journal sources only, and never an entry or text. A withheld journal row
+gains `withheld_rules`, with fixed rule ids. `supervisor` and `addon:<slug>`
+levels are parsed from known formats (`level_basis: parsed_text`). The
+description no longer says a manager role is needed. What is withheld is
+unchanged. No tool is added, so the catalog count is the base's.
+
 ## November Core batch built inactive (2.4.1-beta.41, HAMCP-232, HAMCP-145)
 
 Four `engineering_native` tools, each requiring a new runtime-only Core

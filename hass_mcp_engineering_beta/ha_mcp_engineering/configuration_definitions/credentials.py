@@ -199,6 +199,36 @@ _CONFUSABLE_POINTS = {
 _CONFUSABLES = str.maketrans({chr(point): target for target, points in _CONFUSABLE_POINTS.items()
                               for point in points})
 
+# Rule ids (HAMCP-234): the fixed, non-secret name of the screening rule
+# that withheld a value, reported beside the marker as data. An id is a
+# constant of this module (a keyword id is the group name in ``_KEYWORD``),
+# never derived from the text, its length or the matched substring. A rule
+# met in the squashed form only carries the ``.squashed`` suffix (a colon
+# there would read as a ``key: value`` to the strict sanitizer).
+RULE_INVISIBLE = "invisible_or_control"
+RULE_CANONICAL_REFUSED = "canonical_refused"
+RULE_KNOWN_SECRET = "known_secret"
+RULE_CREDENTIAL_URL = "credential_url"
+RULE_CONNECTION_URI = "connection_uri"
+RULE_USER_PASS_HOST = "user_pass_host"
+RULE_PASSWORD_FIELD = "password_field"
+RULE_MARKER_COLLISION = "marker_collision"
+RULE_LABELLED_KEYWORD = "labelled_keyword:"
+RULE_PASSWORD_OPTION = "password_option"
+RULE_PASSWORD_OPTION_SCAN_LIMIT = "password_option_scan_limit"
+RULE_LABELLED_FIELD = "value_shape:labelled_field"
+RULE_BEARER_TOKEN = "value_shape:bearer_token"
+RULE_PEM_HEADER = "pem_header"
+SQUASHED_FORM = ".squashed"
+_KEYWORD_NAMES = ("bearer", "password", "passwd", "pwd", "pw_option", "authorization", "api_key",
+                  "secret", "token", "private_key")
+_FORM_RULES = (RULE_KNOWN_SECRET, RULE_CREDENTIAL_URL, RULE_CONNECTION_URI, RULE_USER_PASS_HOST,
+               RULE_PASSWORD_FIELD, RULE_MARKER_COLLISION, RULE_LABELLED_FIELD, RULE_BEARER_TOKEN,
+               RULE_PEM_HEADER) + tuple(RULE_LABELLED_KEYWORD + name for name in _KEYWORD_NAMES)
+RULE_IDS = frozenset(
+    (RULE_INVISIBLE, RULE_CANONICAL_REFUSED, RULE_PASSWORD_OPTION, RULE_PASSWORD_OPTION_SCAN_LIMIT)
+    + _FORM_RULES + tuple(rule + SQUASHED_FORM for rule in _FORM_RULES))
+
 # Connection URI schemes whose value is a ``db_url``-shaped connection target,
 # with an optional SQLAlchemy driver suffix (``postgresql+psycopg2://``).
 _CONNECTION_SCHEME = re.compile(
@@ -233,8 +263,13 @@ _PEM_PRIVATE = re.compile(r"begin[a-z0-9 ]*private ?key")
 # the labelled forms a keyword alone withholds the value, whatever follows
 # it. Matched anywhere, with no word boundary, in both forms; the squashed
 # form has no whitespace left, so ``api key`` reads as ``apikey`` there.
-_KEYWORD = re.compile(r"bearer|password|passwd|pwd|--pw|authorization|api[\s_-]*key|secret|token|"
-                      r"private[\s_-]*key")
+#
+# Each alternative is a named group, so the rule id (``labelled_keyword:<group
+# name>``, HAMCP-234) names the keyword from this fixed pattern and never
+# carries the text it matched; the names change nothing in what matches.
+_KEYWORD = re.compile(r"(?P<bearer>bearer)|(?P<password>password)|(?P<passwd>passwd)|(?P<pwd>pwd)|"
+                      r"(?P<pw_option>--pw)|(?P<authorization>authorization)|(?P<api_key>api[\s_-]*key)|"
+                      r"(?P<secret>secret)|(?P<token>token)|(?P<private_key>private[\s_-]*key)")
 # Look-alikes of the hyphen-minus that NFKC leaves unchanged (a fixed table,
 # like ``_CONFUSABLE_POINTS``), folded in the labelled forms only so the
 # default screen is unchanged: ``\u2013P`` and ``\u2212\u2212pw`` read as ``-P`` and ``--pw``.
@@ -317,20 +352,47 @@ def credential_text(value: str, known_secrets: tuple[str, ...] = (), *, labelled
     labelled forms (HAMCP-224), read in the same forms.
     """
 
+    return credential_rule(value, known_secrets, labelled=labelled) is not None
+
+
+def credential_rule(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> str | None:
+    """The id of the first rule that withholds ``value`` (HAMCP-234), or ``None``.
+
+    The one ordered chain ``credential_text`` decides by, so the id never
+    changes what is withheld. The id is a fixed name from ``RULE_IDS``.
+    """
+
+    return next(_credential_rules(value, known_secrets, labelled), None)
+
+
+def credential_rules(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> tuple[str, ...]:
+    """Every rule of the chain that matches ``value``, in chain order, each once.
+
+    For the calibration counts (HAMCP-234): which rules a withheld entry
+    would still meet if its deciding rule were relaxed. The first is
+    ``credential_rule``. A canonicalization refusal ends the chain.
+    """
+
+    return tuple(dict.fromkeys(_credential_rules(value, known_secrets, labelled, every=True)))
+
+
+def _credential_rules(value: str, known_secrets: tuple[str, ...], labelled: bool, *, every: bool = False):
     if any(secret and secret in value for secret in known_secrets):
-        return True
+        yield RULE_KNOWN_SECRET
     try:
         text, _rounds = canonical(value)
     except Exception:
         # Text the canonicalization refuses cannot be screened (fail closed).
-        return True
+        yield RULE_CANONICAL_REFUSED
+        return
     text = fold_confusables(text)
     secrets = tuple(fold_confusables(secret.casefold()) for secret in known_secrets if secret)
     squashed = squash(text)
-    return (_credential_form(text, secrets, _PASSWORD_FIELD)
-            or _credential_form(squashed, tuple(squash(secret) for secret in secrets),
-                                _SQUASHED_PASSWORD_FIELD)
-            or (labelled and _labelled_form(value, text, squashed)))
+    yield from _credential_form_rules(text, secrets, _PASSWORD_FIELD, "")
+    yield from _credential_form_rules(squashed, tuple(squash(secret) for secret in secrets),
+                                      _SQUASHED_PASSWORD_FIELD, SQUASHED_FORM)
+    if labelled:
+        yield from _labelled_rules(value, text, squashed, every)
 
 
 def squash(text: str) -> str:
@@ -345,14 +407,22 @@ def squash(text: str) -> str:
 
 
 def _credential_form(text: str, secrets: tuple[str, ...], password_field: re.Pattern) -> bool:
-    return (
-        _userinfo(text)
-        or _CONNECTION_SCHEME.search(text) is not None
-        or _USER_PASS_HOST.search(text) is not None
-        or password_field.search(text) is not None
-        or _MARKER_FOLDED in text
-        or any(secret and secret in text for secret in secrets)
-    )
+    return next(_credential_form_rules(text, secrets, password_field, ""), None) is not None
+
+
+def _credential_form_rules(text: str, secrets: tuple[str, ...], password_field: re.Pattern, form: str):
+    if _userinfo(text):
+        yield RULE_CREDENTIAL_URL + form
+    if _CONNECTION_SCHEME.search(text) is not None:
+        yield RULE_CONNECTION_URI + form
+    if _USER_PASS_HOST.search(text) is not None:
+        yield RULE_USER_PASS_HOST + form
+    if password_field.search(text) is not None:
+        yield RULE_PASSWORD_FIELD + form
+    if _MARKER_FOLDED in text:
+        yield RULE_MARKER_COLLISION + form
+    if any(secret and secret in text for secret in secrets):
+        yield RULE_KNOWN_SECRET + form
 
 
 def password_option(decoded: str) -> bool:
@@ -395,19 +465,29 @@ def password_option(decoded: str) -> bool:
 
 
 def _labelled_form(value: str, text: str, squashed: str) -> bool:
+    return next(_labelled_rules(value, text, squashed, False), None) is not None
+
+
+def _labelled_rules(value: str, text: str, squashed: str, every: bool):
     try:
         _text, _rounds, decoded = canonical_forms(value)
     except Exception:
-        return True
+        yield RULE_CANONICAL_REFUSED
+        return
     text, squashed = text.translate(_DASHES), squashed.translate(_DASHES)
     decoded = fold_confusables(decoded).translate(_UPPER_P).translate(_DASHES)
-    return (
-        # The label itself (review 2): a strong keyword, in either form.
-        _KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None
-        or password_option(decoded)
-        # The value shapes, an additional layer.
-        or _value_shape(text, squashed)
-    )
+    # The label itself (review 2): a strong keyword, in either form. The id
+    # is the keyword's group name in ``_KEYWORD``, never the matched text.
+    for form_text, form in ((text, ""), (squashed, SQUASHED_FORM)):
+        matches = _KEYWORD.finditer(form_text) if every else filter(None, (_KEYWORD.search(form_text),))
+        for match in matches:
+            yield RULE_LABELLED_KEYWORD + match.lastgroup + form
+    if len(decoded) > MAX_OPTION_SCAN:
+        yield RULE_PASSWORD_OPTION_SCAN_LIMIT
+    elif password_option(decoded):
+        yield RULE_PASSWORD_OPTION
+    # The value shapes, an additional layer.
+    yield from _value_shape_rules(text, squashed)
 
 
 def _value_shape(text: str, squashed: str) -> bool:
@@ -416,12 +496,22 @@ def _value_shape(text: str, squashed: str) -> bool:
     A layer of its own, so it is tested apart from the keywords it overlaps.
     """
 
-    return (
-        _LABELLED_FIELD.search(text) is not None
-        or _SQUASHED_LABELLED_FIELD.search(squashed) is not None
-        or _BEARER.search(text) is not None or _SQUASHED_BEARER.search(squashed) is not None
-        or _PEM_PRIVATE.search(text) is not None or _PEM_PRIVATE.search(squashed) is not None
-    )
+    return next(_value_shape_rules(text, squashed), None) is not None
+
+
+def _value_shape_rules(text: str, squashed: str):
+    if _LABELLED_FIELD.search(text) is not None:
+        yield RULE_LABELLED_FIELD
+    if _SQUASHED_LABELLED_FIELD.search(squashed) is not None:
+        yield RULE_LABELLED_FIELD + SQUASHED_FORM
+    if _BEARER.search(text) is not None:
+        yield RULE_BEARER_TOKEN
+    if _SQUASHED_BEARER.search(squashed) is not None:
+        yield RULE_BEARER_TOKEN + SQUASHED_FORM
+    if _PEM_PRIVATE.search(text) is not None:
+        yield RULE_PEM_HEADER
+    if _PEM_PRIVATE.search(squashed) is not None:
+        yield RULE_PEM_HEADER + SQUASHED_FORM
 
 
 def private_key_header(value: str) -> bool:
@@ -447,11 +537,34 @@ def screen(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = 
     (``WITHHELD_MARKER``), always on the complete original ``value``.
     """
 
+    return screen_rule(value, known_secrets, labelled=labelled)[0]
+
+
+def screen_rule(value: str, known_secrets: tuple[str, ...] = (), *,
+                labelled: bool = False) -> tuple[str | None, str | None]:
+    """(``screen``'s marker, the id of the rule that decided it), or (``None``, ``None``).
+
+    The same decision as ``screen``: the id is data about it (HAMCP-234),
+    a fixed name from ``RULE_IDS`` that never carries any part of ``value``.
+    """
+
     if unverifiable_text(value):
-        return UNVERIFIABLE_MARKER
-    if credential_text(value, known_secrets, labelled=labelled):
-        return WITHHELD_MARKER
-    return None
+        return UNVERIFIABLE_MARKER, RULE_INVISIBLE
+    rule = credential_rule(value, known_secrets, labelled=labelled)
+    if rule is not None:
+        return WITHHELD_MARKER, rule
+    return None, None
+
+
+def screen_rules(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> tuple[str, ...]:
+    """Every rule that matches ``value``: ``invisible_or_control`` first, then the chain.
+
+    Empty exactly when ``screen`` shows ``value``; the first id is
+    ``screen_rule``'s. For the calibration counts only.
+    """
+
+    rules = credential_rules(value, known_secrets, labelled=labelled)
+    return ((RULE_INVISIBLE,) + rules) if unverifiable_text(value) else rules
 
 
 def withheld_at_exit(value: str, known_secrets: tuple[str, ...] = ()) -> bool:

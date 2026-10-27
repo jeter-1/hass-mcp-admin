@@ -33,6 +33,7 @@ from typing import Any, Callable
 from ..configuration_definitions import credentials
 from ..request_context import current_caller_id, current_telemetry
 from ..sanitization import ReferenceMarkerRegistry, sanitize_log_lines, sanitize_untrusted_data
+from . import container_levels as cl
 from . import contracts as c
 from . import host_journal as hj
 from .cursor import CursorCodec
@@ -74,8 +75,15 @@ LIMITATIONS = (
     "Around an unresolved local time, entries keep each source's journal order and are marked "
     "ordering_uncertain: their order against that entry and across sources is not established, on this "
     "page or the next.",
-    "Host journal sources (supervisor, host, host:<category>, addon:<slug>) need the add-on option journald; "
-    "without it, or when the journal cannot be read, each is unavailable with its reason, never empty.",
+    "Host journal sources (supervisor, host, host:<category>, addon:<slug>) are read from the host journal the "
+    "add-on option journald mounts read-only, never a Supervisor route, so no manager role is needed; without "
+    "the option, or when the journal cannot be read, each is unavailable with its reason, never empty.",
+    "Host journal host and host:<category> levels are the journal priority (level_basis journal_priority). "
+    "Supervisor and addon:<slug> lines are journaled at their stream's priority (stderr error, stdout info), so "
+    "their level is parsed from a known format (Supervisor, matter.js, Python logging, bashio; level_basis "
+    "parsed_text), else it is that priority (journal_priority); an unparsed line never inherits a level. A "
+    "withheld Supervisor or add-on message keeps its priority (priority_unverified) and min_level never passes "
+    "it: it is counted in withheld_level_filtered.",
     "Host journal times are the journal realtime in UTC as recorded by the host; a host clock step backwards "
     "is reported (clock_regression) and the rows after it are ordering_uncertain. A continuation across such a "
     "step may be stale and then has to restart.",
@@ -87,7 +95,20 @@ LIMITATIONS = (
     "Host journal entries are merged on their microsecond journal realtime; ts shows milliseconds. A Supervisor "
     "or gateway time has millisecond precision, so within one millisecond it is merged before a host journal "
     "entry and their order is not established.",
+    "A withheld host journal entry names the screen rule that withheld each part (withheld_rules): a fixed id "
+    "that never carries the text, its length or the matched part.",
     "An empty result never proves an event did not occur.",
+)
+
+CALIBRATION_LIMITATIONS = (
+    "A calibration returns counts only: no entry, message, field, identifier, cursor or text from the journal.",
+    "Each in-window entry is screened as a read screens it; withheld_by_rule counts each withheld part once by "
+    "the rule that withheld it, matched_by_rule by every rule that matches it.",
+    "At most max_calibration_entries_per_source entries per source are counted per call, within the call "
+    "deadline and journal field bounds; a source that stopped earlier is partial with its reason, and scanned_to "
+    "is the last counted entry's time.",
+    "Host journal sources need the add-on option journald; without it each is unavailable with its reason.",
+    "Counts never prove an event did not occur.",
 )
 
 _HEX32 = re.compile(r"[0-9a-f]{32}\Z")
@@ -350,7 +371,7 @@ class IncidentLogService:
         if not wanted:
             return
         target = args["limit"] if args["min_level"] is None and args["text"] is None \
-            else c.MAX_FILTER_SCAN_ENTRIES
+            and not args["calibration"] else c.MAX_FILTER_SCAN_ENTRIES
         start_us, end_us = args["start_ms"] * 1000, args["end_ms"] * 1000
         plans = [
             hj.Plan(scan.key, start_us, end_us, target,
@@ -729,7 +750,10 @@ class IncidentLogService:
             if cutoff is not None and ts > cutoff:
                 break
             item, view = scan.items[index], views[position][index]
-            if item.in_window and level_allows(view["level"], args["min_level"]) and (
+            # HAMCP-234: a withheld container message has only its journal
+            # priority, which is not its level, so a level filter never passes it.
+            level_known = args["min_level"] is None or view["level_basis"] != cl.UNVERIFIED_BASIS
+            if item.in_window and level_known and level_allows(view["level"], args["min_level"]) and (
                 args["text"] is None or args["text"].casefold() in view["search"]
             ):
                 if len(emitted) >= emit_cap:
@@ -739,14 +763,15 @@ class IncidentLogService:
             elif item.in_window:
                 skipped[position] += 1
                 withheld_entry = view.get("withheld") is not None
-                if withheld_entry and level_allows(view["level"], args["min_level"]):
+                if withheld_entry and level_known and level_allows(view["level"], args["min_level"]):
                     # HAMCP-224 M1: withheld text is never searched, so the
                     # filter cannot tell whether this entry matched.
                     unsearched[position] += 1
                 elif withheld_entry:
                     # Review 2 M1 residual: the level is the journal PRIORITY,
                     # never the text, but withholding is still disclosed when
-                    # the level filter leaves the entry out.
+                    # the level filter leaves the entry out (HAMCP-234: also
+                    # when that priority is not the entry's level).
                     level_filtered[position] += 1
             elif item.record is None or item.record.rejected is None:
                 # A rejected or unreadable host journal entry is counted apart.
@@ -770,6 +795,14 @@ class IncidentLogService:
         Nothing is added afterwards; a size change rebuilds and re-sanitizes.
         """
 
+        if args["calibration"]:
+            # HAMCP-234: counts, fixed ids and source names only; the strict
+            # sanitizer still runs, and any change it would make is a defect.
+            envelope = self._calibration_envelope(scans, args, budget)
+            result = sanitize_untrusted_data(envelope, known_secrets=self.known_secrets)
+            if result.failed_closed or result.redacted_field_count or result.value != envelope:
+                raise c.IncidentLogsError("sources_unavailable")
+            return result.value
         registry = ReferenceMarkerRegistry()
         views: list[list[dict]] = []
         redacted_entries: list[set[int]] = []
@@ -777,7 +810,7 @@ class IncidentLogService:
             if scan.journal:
                 # HAMCP-224: the credential screen runs first, here, on raw records.
                 screened = self._journal_screen(scan)
-                lines = [line for entry_lines, _omission in screened for line in entry_lines]
+                lines = [line for entry_lines, _omission, _rule in screened for line in entry_lines]
             else:
                 context = [scan.anchor_entry] if scan.anchor_entry is not None else []
                 window = context + [item.entry for item in scan.items]
@@ -872,6 +905,7 @@ class IncidentLogService:
                 if item.record is not None:
                     if view["withheld"] is not None:
                         row["withheld"] = view["withheld"]
+                        row["withheld_rules"] = dict(view["withheld_rules"])
                         withheld_reasons.append(view["withheld"])
                         withheld[scan.position] += view["message_withheld"]
                         withheld_fields[scan.position] += len(view["fields_withheld"])
@@ -1039,48 +1073,157 @@ class IncidentLogService:
         line, so it gives no context to its neighbours' sanitization.
         """
 
-        screened: list[tuple[list[str], str | None]] = []
+        screened: list[tuple[list[str], str | None, str | None]] = []
         for item in scan.items:
             record = item.record
             if record.rejected is not None:
-                screened.append(([""], None))
+                screened.append(([""], None, None))
                 continue
-            text, omission = hj.screen_text(record.message or b"", self.known_secrets, record.message_truncated)
-            screened.append(([""] if omission else text.split("\n"), omission))
+            text, omission, rule = hj.screen_text_rule(record.message or b"", self.known_secrets,
+                                                       record.message_truncated)
+            screened.append(([""] if omission else text.split("\n"), omission, rule))
         return screened
 
-    def _journal_views(self, scan: Scan, screened: list[tuple[list[str], str | None]],
+    def _journal_views(self, scan: Scan, screened: list[tuple[list[str], str | None, str | None]],
                        sanitized: list[str]) -> list[dict]:
         secrets = self.known_secrets
+        container = cl.container_source(scan.key)
         views, offset = [], 0
-        for item, (entry_lines, omission) in zip(scan.items, screened):
+        for item, (entry_lines, omission, rule) in zip(scan.items, screened):
             safe = list(sanitized[offset:offset + len(entry_lines)])
             offset += len(entry_lines)
             record = item.record
             # HAMCP-224 M1: every returned field passes the same screen as
             # the message, and one withheld makes the entry withheld.
+            # HAMCP-234: each withheld part names the rule that withheld it.
             fields, fields_withheld = {}, {}
+            rules = {} if omission is None else {"message": _rule_id(rule)}
             for name, raw in (("process", record.identifier), ("kernel_subsystem", record.kernel_subsystem),
                               ("kernel_device", record.kernel_device)):
                 if raw is None:
                     fields[name] = None
                     continue
-                fields[name], field_omission = hj.screen_text(raw, secrets, name in record.truncated_fields)
+                fields[name], field_omission, field_rule = hj.screen_text_rule(
+                    raw, secrets, name in record.truncated_fields)
                 if field_omission is not None:
                     fields_withheld[name] = field_omission
-            level = hj.LEVELS_BY_PRIORITY.get(record.priority)
+                    rules[name] = _rule_id(field_rule)
             body = (hj.UNVERIFIABLE_MARKER if omission == hj.UNVERIFIABLE_OMISSION else hj.WITHHELD_MARKER) \
                 if omission else "\n".join(safe)
+            level, basis = _journal_level(container, record.priority, None if omission else body)
             withheld = omission or next(iter(fields_withheld.values()), None)
             views.append({
                 **fields, "message": body, "level": level,
-                "level_basis": hj.LEVEL_BASIS if level else None, "withheld": withheld,
+                "level_basis": basis, "withheld": withheld, "withheld_rules": rules,
                 "message_withheld": omission is not None, "fields_withheld": fields_withheld,
                 "redacted": omission is None and safe != entry_lines,
                 # Withheld text is never searched.
                 "search": "" if withheld else ((fields["process"] or "") + ": " + body).casefold(),
             })
         return views
+
+    def _calibration_envelope(self, scans: list[Scan], args: dict, budget: Budget) -> dict:
+        """The calibration envelope (HAMCP-234, ``_finish`` only): per-source counts, never text.
+
+        Every in-window entry runs the same screen a read runs
+        (``screen_text_rule``) and is counted shown or withheld; a withheld
+        part is counted under the rule that withheld it and under every rule
+        that matches it. No message, field, identifier, cursor or entry is
+        built, so nothing read from the journal reaches the response but
+        these counts and the window coverage times.
+        """
+
+        secrets = self.known_secrets
+        rows, reasons = [], []
+        for scan in scans:
+            taken = scan.items
+            result = scan.journal_scan
+            in_window = [item for item in taken if item.in_window]
+            shown = withheld = messages = 0
+            fields: dict[str, int] = {}
+            deciding: dict[str, int] = {}
+            matching: dict[str, int] = {}
+            for item in in_window:
+                record = item.record
+                parts = [("message", record.message or b"", record.message_truncated)]
+                parts += [(name, raw, name in record.truncated_fields)
+                          for name, raw in (("process", record.identifier),
+                                            ("kernel_subsystem", record.kernel_subsystem),
+                                            ("kernel_device", record.kernel_device)) if raw is not None]
+                held = False
+                for name, raw, truncated in parts:
+                    _text, omission, rule = hj.screen_text_rule(raw, secrets, truncated)
+                    if omission is None:
+                        continue
+                    held = True
+                    if name == "message":
+                        messages += 1
+                    else:
+                        fields[name] = fields.get(name, 0) + 1
+                    rule = _rule_id(rule)
+                    deciding[rule] = deciding.get(rule, 0) + 1
+                    for match in dict.fromkeys(_rule_id(each) for each in hj.screen_text_rules(raw, secrets, truncated)):
+                        matching[match] = matching.get(match, 0) + 1
+                withheld += held
+                shown += not held
+            rejected = sum(1 for item in taken if item.record.rejected == "match_rejected")
+            unreadable = sum(1 for item in taken if item.record.rejected == "entry_unreadable") \
+                + (result.positionless if result is not None else 0)
+            stopped = None if result is None or scan.failure is not None or scan.finished else result.stopped
+            if scan.failure is not None:
+                status = "unavailable" if not taken else "failed"
+            elif stopped or rejected or unreadable or scan.start_location == "retention_edge":
+                status = "partial"
+            else:
+                status = "complete"
+            row = {
+                "source": scan.key, "status": status, "reason": scan.failure or scan.finished or stopped,
+                "reader": hj.READER, "start_location": scan.start_location,
+                "retention_edge_reached": scan.start_location == "retention_edge",
+                "scanned_from": c.format_ms(in_window[0].entry.ts_ms) if in_window else None,
+                "scanned_to": c.format_ms(in_window[-1].entry.ts_ms) if in_window else None,
+                "finished": scan.finished is not None,
+                "scanned": len(in_window), "shown": shown, "withheld_entries": withheld,
+                "withheld_messages": messages, "withheld_fields": dict(sorted(fields.items())),
+                "withheld_by_rule": dict(sorted(deciding.items())),
+                "matched_by_rule": dict(sorted(matching.items())),
+                "match_rejected": rejected, "entries_unreadable": unreadable,
+                "gaps": list(scan.gaps),
+            }
+            if scan.failure in hj.UNAVAILABLE_DETAIL:
+                row["detail"] = hj.UNAVAILABLE_DETAIL[scan.failure]
+            if scan.errno_name is not None:
+                row["errno"] = scan.errno_name
+            rows.append(row)
+            if status != "complete":
+                reasons.append(f"source_{status}:{scan.key}")
+            for gap in row["gaps"]:
+                reasons.append(f"{gap['reason']}:{scan.key}")
+            if row["reason"] in hj.BOUND_REASONS:
+                reasons.append(f"{row['reason']}:{scan.key}")
+            if rejected:
+                reasons.append(f"journal_match_rejected:{scan.key}")
+            if unreadable:
+                reasons.append(f"journal_entry_unreadable:{scan.key}")
+        rows.sort(key=lambda row: args["sources"].index(row["source"]))
+        reasons = list(dict.fromkeys(reasons))
+        envelope = {
+            "schema": c.SCHEMA, "mode": "calibration",
+            "window": {"start": c.format_ms(args["start_ms"]), "end": c.format_ms(args["end_ms"]),
+                       "end_defaulted": args["end_defaulted"], "end_exclusive": True},
+            "sources": rows,
+            "rule_ids": sorted(hj.RULE_IDS),
+            "truncated": False,
+            "omissions": reasons,
+            "complete": not reasons,
+            "completeness": "partial" if reasons else "complete",
+            "requests": budget.requests,
+            "journal_field_bytes": args.get("journal_field_bytes", 0),
+            "bounds": {**_BOUNDS, "max_calibration_entries_per_source": c.MAX_FILTER_SCAN_ENTRIES},
+            "pins": {"host_journal_library": hj.LIBSYSTEMD_PIN, "host_identifiers": hj.IDENTIFIERS_PIN},
+            "limitations": list(CALIBRATION_LIMITATIONS),
+        }
+        return envelope
 
     @staticmethod
     def _journal_next_state(scan: Scan, count: int) -> dict:
@@ -1234,6 +1377,32 @@ _BOUNDS = {
     "max_journal_field_bytes": hj.MAX_FIELD_BYTES,
     "max_call_journal_field_bytes": hj.MAX_CALL_FIELD_BYTES,
 }
+
+
+def _rule_id(rule: str | None) -> str:
+    """A screen rule id for the response: a fixed name of ``RULE_IDS``, never anything else."""
+
+    return rule if rule in hj.RULE_IDS else hj.RULE_UNLISTED
+
+
+def _journal_level(container: bool, priority: int | None, message: str | None) -> tuple[str | None, str | None]:
+    """A host journal entry's ``(level, level_basis)``; ``message`` is ``None`` when withheld.
+
+    Host and kernel sources keep the journal priority. A container source's
+    level is parsed from its screened, sanitized text in a known format
+    (``container_levels``), else it is the priority (``journal_priority``);
+    a withheld message keeps the priority as ``priority_unverified``.
+    """
+
+    level = hj.LEVELS_BY_PRIORITY.get(priority)
+    if not container:
+        return level, hj.LEVEL_BASIS if level else None
+    if message is None:
+        return level, cl.UNVERIFIED_BASIS if level else None
+    parsed = cl.parse_level(message)
+    if parsed is not None:
+        return parsed, cl.BASIS
+    return level, cl.PRIORITY_BASIS if level else None
 
 
 def _valid_journal_state(state: Any) -> bool:
