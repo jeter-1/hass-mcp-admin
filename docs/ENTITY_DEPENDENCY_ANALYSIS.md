@@ -311,6 +311,29 @@ Script entity identities longer than the existing 128-character evidence bound
 are refused as source-local gaps before dispatch; they are never truncated into
 exact findings. Canonical storage keys remain separately validated.
 
+### Target availability and named bound overruns — HAMCP-226
+
+`target_availability` reports the target's current state class: `available`,
+`unavailable`, `unknown`, or `absent` (no state), with `last_changed` when Home
+Assistant reports a well-formed ISO 8601 value (`null` otherwise). An
+`unavailable` or `unknown` target adds a fixed warning; availability never
+changes the reference assessment.
+
+Every requested-scope source whose configuration exceeded a dependency-analysis
+bound is named in `bounded_sources`, whatever the target, because such a
+source could reference any entity. The entries, the 50-entry bound,
+`bounded_sources_omitted`, `bounded_sources_withheld`, and
+`bounded_source_total` are described in
+[Configuration integrity analysis](CONFIGURATION_INTEGRITY_ANALYSIS.md#named-bound-overruns).
+A non-zero total makes the result partial, so
+`no_references_detected_within_coverage` cannot be returned.
+
+Home Assistant names, identifiers, paths, excerpts, and warnings in the result
+pass the default-mode credential screen on their original value
+([details](CONFIGURATION_INTEGRITY_ANALYSIS.md#credential-screen-for-home-assistant-names)).
+A withheld field keeps its finding, so withholding a name never hides a
+reference; the number of withheld fields is reported in a fixed warning.
+
 ## Index, pagination, and invalidation
 
 The process-local index stores bounded normalized edges and safe metadata, not raw

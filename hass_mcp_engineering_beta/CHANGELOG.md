@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.4.1-beta.40 - Named scan bounds and durable baselines (HAMCP-226, HAMCP-228)
+
+Builds on 2.4.1-beta.39. Adds no Home Assistant write.
+
+- `configuration_integrity_analysis`: new `unavailable_entity_reference`
+  finding. Integrity, dependency and helper scans name each source that hit a
+  bound in `bounded_sources` (at most 50). `entity_dependency_analysis` adds
+  `target_availability`. Home Assistant ids and names pass the default-mode
+  credential screen, now with the PEM private-key header check; long values
+  are screened over the shown part plus 1,024 characters. Registry- and
+  state-derived values are screened as well, and each tool's final response
+  envelope is screened again as a backstop. Named-bound accounting is exact
+  at the production limits.
+- `capture_automation_baseline` stores each finished capture under
+  `<governance_path>/audit-baselines-v1/` (12 baselines, 2 MiB, 180 days;
+  caller-bound, digest-verified, refused when full, never evicted; a missing
+  or unreadable index is rebuilt from the verified records, never emptied,
+  and reported in `store_status`; an unwritable namespace is
+  `store_unavailable` with a `store_condition`, nothing touched; records and
+  diagnostics are credential-screened before hashing and storage, a withheld
+  field making the capture partial and a withheld automation id a stub in
+  `diagnostics.credential_screen`) and writes
+  `automation-audit-baseline-v2` (`resume` header, `timed_out` status); v1
+  still loads. New `resume_capture_id` re-collects only timeouts and refuses
+  `resume_not_needed`, `resume_inventory_changed` or `resume_core_changed`.
+  Page `snapshot` gains `storage: durable_engineering_store`,
+  `retention_seconds`, `resumed_from` and `store_status`. The tool is now `readOnlyHint=false` (local evidence write).
+- New `compare_automation_baselines`: stored/stored through the existing
+  comparator, or stored/recorded fingerprints; a shorter matching prefix is
+  `PREFIX_MATCH` (`prefix_match:<n>`), counted apart from `UNCHANGED`; an id
+  on one side only is `UNKNOWN`. Every record is paged with a bound `cursor`,
+  never truncated. No Home Assistant read.
+- Static tools 73; catalog 101 (102 with the optional YAML reader).
+
 ## 2.4.1-beta.39 - Automation trace snapshots (HAMCP-225)
 
 Builds on 2.4.1-beta.38. Adds no Home Assistant write.

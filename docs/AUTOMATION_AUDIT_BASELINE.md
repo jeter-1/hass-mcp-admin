@@ -22,6 +22,9 @@ sequential capture as atomic.
 The validator accepts:
 
 - `automation-audit-baseline-v1` — the versioned offline comparison contract.
+- `automation-audit-baseline-v2` — HAMCP-228: v1 plus a required `resume`
+  header and the `timed_out` record status (see below). Native captures write
+  v2; v1 artifacts, including those written by 2.4.1-beta.37, still load.
 - `ha-automation-configuration-baseline-v1` — the retained October 1 legacy
   artifact, normalized conservatively in memory before comparison.
 
@@ -119,6 +122,24 @@ retained artifact. The validator can check digest syntax, record/accounting
 structure, the artifact's retained internal material hash and capture assertions;
 it cannot prove that each stored configuration digest was calculated from the
 claimed raw configuration.
+
+### `automation-audit-baseline-v2`
+
+v2 keeps every v1 field and adds:
+
+- `resume`: `null` for an ordinary capture, or `{resumed_from, resumed_count}`
+  (the earlier baseline's `baseline_id` and at least one re-collected record)
+  for a resumed capture;
+- configuration status `timed_out`: a record the capture never attempted
+  because the collection deadline reserve was reached. It has no digest.
+
+`timed_out` and `resume` are refused in v1 artifacts. The comparator reports a
+pair with a `timed_out` side as `UNKNOWN` with reason `timed_out`; a timed-out
+record is never absence or change evidence. The v1 compatibility fixture
+`tests/fixtures/hamcp228_beta37_v1_baseline.json` was written by the shipped
+2.4.1-beta.37 capture code (merge commit `06a28134`) through
+`scripts/generate_hamcp228_beta37_v1_baseline_fixture.py`; its provenance file
+records the source and generator digests.
 
 ## Comparison semantics
 
@@ -248,7 +269,9 @@ serialization above.
 Output accounting is deterministic. The summary always covers all comparison
 records. Detail rows may be omitted only when bounded output/detail limits are
 reached; `details_truncated` and `omitted_detail_count` then state exactly what
-was omitted. The renderer serializes the fixed header once, each candidate detail
+was omitted. (This bounds the offline report. The MCP tool
+`compare_automation_baselines` pages every record instead; see
+[`AUTOMATION_BASELINE_CAPTURE.md`](AUTOMATION_BASELINE_CAPTURE.md#compare_automation_baselines-hamcp-228).) The renderer serializes the fixed header once, each candidate detail
 once while fitting, and the selected final report once. It does not repeatedly
 serialize complete candidate reports to discover a fit.
 
@@ -272,9 +295,14 @@ The command reads only the two explicit local files and optionally writes one
 local report. It contains no network client, Home Assistant client, provider
 adapter, template execution or subprocess-based collection path.
 
-## Native integration boundary — not delivered here
+## Native integration boundary
 
-A later MCP/native implementation must be separately designed, reviewed,
+The native capture is [`capture_automation_baseline`](AUTOMATION_BASELINE_CAPTURE.md).
+HAMCP-228 adds its durable store and `compare_automation_baselines`, which
+reuses this comparator unchanged for two stored captures. The list below was the
+prerequisite for that native work; the durable storage item is answered by the
+[baseline store](AUTOMATION_BASELINE_CAPTURE.md#durable-baseline-store-hamcp-228).
+Each native implementation must still be separately designed, reviewed,
 released and accepted. At minimum it must:
 
 - reuse admitted automation-configuration readers instead of creating another
@@ -299,5 +327,5 @@ released and accepted. At minimum it must:
   of retained comparison baselines unless a separately reviewed requirement
   explicitly changes that boundary.
 
-This offline increment is not the native baseline/diff capability and must not be
-reported as such.
+The offline command itself remains offline: it is not the native capability and
+reads no store.

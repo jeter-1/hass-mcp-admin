@@ -13,7 +13,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'scripts'), str(ROOT / 'hass_mcp_engineering_beta')]
 import automation_baseline_contract_acceptance as lane
-from test_automation_baseline_capture import Client, Core, fixture, export
+from test_automation_baseline_capture import Client, Core, fixture, export, make_store
 from test_alarmo_interval_observer import CORE, NOT_SLOTS, NOT_STRINGS, OTHER_CORE, SLOT_VERSIONS, cleanup_value, receipt
 import alarmo_inspection_contract_acceptance as alarmo
 from ha_mcp_engineering.audit_baseline import capture_contracts as c, compare_baselines, load_baseline
@@ -47,7 +47,7 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
         telemetry.caller_id = 'synthetic-disposable-offline'
         telemetry.core_dispatch_authorizer = lambda: True
         client = Client(data())
-        service = BaselineCaptureService(BaselineCaptureProvider(client, Core()))
+        service = BaselineCaptureService(BaselineCaptureProvider(client, Core()), make_store(self))
         before, _ = await export(service, 17)
         client.data = data(True)
         after, _ = await export(service, 17)
@@ -454,3 +454,52 @@ class FixtureTests(unittest.TestCase):
                                          'core.label_registry_operation'}]
         self.assertEqual(len(refs),20)
         self.assertEqual(len([r for r in refs if r!='core.integration_inspection_metadata_read']),19)
+
+
+def service_constructions_without_store(source, name='<source>'):
+    """BaselineCaptureService(...) calls that do not pass the HAMCP-228 store."""
+    import ast
+    missing = []
+    for node in ast.walk(ast.parse(source)):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == 'BaselineCaptureService'):
+            store = node.args[1] if len(node.args) > 1 else next(
+                (k.value for k in node.keywords if k.arg == 'store'), None)
+            if store is None or (isinstance(store, ast.Constant) and store.value is None):
+                missing.append(f'{name}:{node.lineno}')
+    return missing
+
+
+class ServiceConstructionTests(unittest.TestCase):
+    # HAMCP-228: the disposable real-HA lane built the service without the
+    # durable store and failed only in CI with a TypeError (PR #317).
+    # This generator runs inside a beta.37 worktree against the shipped
+    # one-argument constructor, by design (the v1 compatibility fixture).
+    SHIPPED_CODE_GENERATORS = {'generate_hamcp228_beta37_v1_baseline_fixture.py'}
+
+    def test_every_script_passes_the_durable_store(self):
+        sites, missing = 0, []
+        for path in sorted((ROOT / 'scripts').glob('*.py')):
+            if path.name in self.SHIPPED_CODE_GENERATORS:
+                self.assertEqual(len(service_constructions_without_store(
+                    path.read_text(encoding='utf-8'), path.name)), 1)
+                continue
+            source = path.read_text(encoding='utf-8')
+            sites += source.count('BaselineCaptureService(')
+            missing += service_constructions_without_store(source, path.name)
+        self.assertGreaterEqual(sites, 1)
+        self.assertEqual(missing, [])
+
+    def test_the_proof_refuses_a_construction_without_a_store(self):
+        for source in ('BaselineCaptureService(provider)\n',
+                       'BaselineCaptureService(provider, None)\n',
+                       'BaselineCaptureService(provider, response_limit=1)\n'):
+            with self.subTest(source=source):
+                self.assertEqual(service_constructions_without_store(source), ['<source>:1'])
+        self.assertEqual(service_constructions_without_store('BaselineCaptureService(p, store)\n'), [])
+        self.assertEqual(service_constructions_without_store('BaselineCaptureService(p, store=s)\n'), [])
+
+    def test_the_lane_service_commits_to_its_disposable_store(self):
+        source = (ROOT / 'scripts/automation_baseline_contract_acceptance.py').read_text(encoding='utf-8')
+        self.assertIn("store=BaselineStore(Path(directory)/'governance')", source)
+        self.assertIn("assert page['snapshot']['storage']=='durable_engineering_store'", source)

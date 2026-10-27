@@ -161,6 +161,9 @@ class RC1PublicContractTests(unittest.TestCase):
         tools = registered_tools(get_registered_server()).values()
         names = tuple(sorted(tool.name for tool in tools))
         schemas = {tool.name: tool.parameters for tool in tools}
+        from hamcp226_228_descriptor_changes import without_hamcp226_finding_type
+        schemas["configuration_integrity_analysis"] = without_hamcp226_finding_type(
+            self, schemas["configuration_integrity_analysis"])
         beta26_schemas = {
             name: schemas[name]
             for name in BETA26_TOOL_NAMES
@@ -203,6 +206,7 @@ class RC1PublicContractTests(unittest.TestCase):
                         "list_trace_snapshots",
                         "get_trace_snapshot",
                         "set_automation_trace_watch",
+                        "compare_automation_baselines",
                     )
                 )
             ),
@@ -444,7 +448,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 72)
+        self.assertEqual(len(classifications), 73)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

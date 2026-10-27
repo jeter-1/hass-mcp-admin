@@ -70,7 +70,7 @@ SUPERVISOR = CORE_INDEPENDENT_SUPERVISOR_ONLY
 MOUNTED = CORE_INDEPENDENT_MOUNTED_SOURCE
 DOWNSTREAM = CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY
 
-# The reviewed HAMCP-164 inventory of all 72 static tools.  A new static tool
+# The reviewed HAMCP-164 inventory of all 74 static tools.  A new static tool
 # fails this test until it is reviewed and added as mapped or allowlisted.
 STATIC_CORE_TABLE = {
     "apply_change_plan": DOWNSTREAM,
@@ -82,6 +82,7 @@ STATIC_CORE_TABLE = {
     "capture_automation_trace": MAPPED,
     "change_impact_analysis": MAPPED,
     "check_config": MAPPED,
+    "compare_automation_baselines": LOCAL,
     "configuration_integrity_analysis": MAPPED,
     "control_fan": DOWNSTREAM,
     "control_power": DOWNSTREAM,
@@ -184,6 +185,7 @@ ALLOWLIST_ARGUMENTS = {
     },
     "get_trace_snapshot": {"snapshot_id": "a" * 32},
     "set_automation_trace_watch": {"action": "list"},
+    "compare_automation_baselines": {"earlier_capture_id": "a" * 32, "later_capture_id": "b" * 32},
 }
 
 
@@ -236,7 +238,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 72)
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 73)
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -261,7 +263,7 @@ class StaticCoreTableTests(unittest.TestCase):
 
     def test_allowlist_is_the_reviewed_closed_set(self):
         self.assertEqual(set(CORE_INDEPENDENT_STATIC_TOOLS), ALLOWLISTED)
-        self.assertEqual(len(ALLOWLISTED), 20)
+        self.assertEqual(len(ALLOWLISTED), 21)
         self.assertIsInstance(CORE_INDEPENDENT_STATIC_TOOLS, MappingProxyType)
         with self.assertRaises(TypeError):
             CORE_INDEPENDENT_STATIC_TOOLS["synthetic"] = CORE_INDEPENDENT_STATIC_TOOLS[

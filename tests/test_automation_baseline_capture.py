@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / 'hass_mcp_engineering_beta'))
 from ha_mcp_engineering.audit_baseline import capture_contracts as c
 from ha_mcp_engineering.audit_baseline.capture_provider import BaselineCaptureProvider, Projector
 from ha_mcp_engineering.audit_baseline.capture_service import BaselineCaptureService
+from ha_mcp_engineering.audit_baseline.store import BaselineStore
 from ha_mcp_engineering.audit_baseline import load_baseline, compare_baselines, canonical_configuration_digest
 from ha_mcp_engineering.request_context import begin_request, end_request
 
@@ -43,7 +44,24 @@ ERROR_EXPECTATIONS = {
     'configuration_unavailable': ('analysis_unavailable', False),
     'configuration_identity_mismatch': ('analysis_unavailable', False),
     'redacted_identity': ('analysis_unavailable', False),
+    # HAMCP-228 durable store, compare and resume.
+    'store_full': ('analysis_unavailable', False),
+    'store_unavailable': ('analysis_unavailable', True),
+    'baseline_not_found': ('analysis_unavailable', False),
+    'baseline_damaged': ('analysis_unavailable', False),
+    'resume_inventory_changed': ('analysis_unavailable', False),
+    'resume_not_needed': ('analysis_unavailable', False),
+    'resume_core_changed': ('analysis_unavailable', False),
 }
+
+def make_store(case):
+    """A disposable HAMCP-228 store under TMPDIR, removed after the test."""
+    directory = tempfile.TemporaryDirectory()
+    case.addCleanup(directory.cleanup)
+    return BaselineStore(directory.name)
+
+def stored(service):
+    return service.store.load_index()['baselines']
 
 def fixture(count=3):
     return {
@@ -126,7 +144,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         end_request(self.token)
     def setup_capture(self, data=None, **kwargs):
         client = Client(fixture() if data is None else data)
-        service = BaselineCaptureService(BaselineCaptureProvider(client, self.core, known_secrets=(SECRET,)), **kwargs)
+        service = BaselineCaptureService(BaselineCaptureProvider(client, self.core, known_secrets=(SECRET,)), make_store(self), **kwargs)
         return service, client
     def validate(self, baseline):
         with tempfile.TemporaryDirectory() as directory:
@@ -149,7 +167,8 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(SECRET, c.canonical(page).decode())
         self.assertNotIn(SECRET, c.canonical(baseline).decode())
         self.assertTrue(client.closed)
-        self.assertEqual(len(service.snapshots), 1)
+        self.assertEqual(len(service.cursors), 1)
+        self.assertEqual(len(stored(service)), 1)
 
     async def test_real_capture_pair_cli_all_classifications(self):
         first = fixture(5)
@@ -211,7 +230,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                 service,client=self.setup_capture(data)
                 with self.assertRaises(c.CaptureError): await service.capture()
                 self.assertFalse(any(isinstance(call,tuple) for call in client.calls))
-                self.assertEqual(service.snapshots,{})
+                self.assertEqual(service.cursors,{}); self.assertEqual(stored(service),[])
 
     async def test_recreated_anchor_changes_lineage_and_clone_limitation_explicit(self):
         service,client=self.setup_capture()
@@ -238,7 +257,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(response['retryable'], True)
         self.assertFalse(response['metadata']['fallback_occurred'])
         self.assertEqual(client.calls, ['principal', 'entries', 'devices', 'states'])
-        self.assertEqual(service.snapshots, {})
+        self.assertEqual(service.cursors, {}); self.assertEqual(stored(service), [])
         self.assertFalse(service.active)
         self.assertEqual(client.active, 0)
         self.assertTrue(client.closed)
@@ -288,7 +307,8 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(SECRET, raw)
                 self.assertTrue(client.closed)
                 self.assertFalse(service.active)
-                self.assertEqual(len(service.snapshots), 1)
+                self.assertEqual(len(service.cursors), 1)
+                self.assertEqual(len(stored(service)), 1)
                 self.assertEqual(self.telemetry.retry_count, 0)
 
     async def test_access_denial_at_each_stage_aborts_and_drains_owned_work(self):
@@ -322,7 +342,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                     await asyncio.wait_for(service.capture(), 3)
                 self.assertEqual(found.exception.reason, 'access_denied')
                 self.assertIs(found.exception.retryable, False)
-                self.assertEqual(service.snapshots, {})
+                self.assertEqual(service.cursors, {}); self.assertEqual(stored(service), [])
                 self.assertFalse(service.active)
                 self.assertEqual(client.active, 0)
                 self.assertTrue(client.closed)
@@ -357,7 +377,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                 client.hook=change
                 if scenario in ('authority','principal','anchor'):
                     with self.assertRaises(c.CaptureError): await service.capture()
-                    self.assertEqual(service.snapshots,{})
+                    self.assertEqual(service.cursors,{}); self.assertEqual(stored(service),[])
                 else:
                     baseline,_=await export(service)
                     self.validate(baseline)
@@ -379,9 +399,10 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(c.CaptureError): await service.capture(cursor=cursor)
         self.telemetry.caller_id='synthetic-owner'
         with self.assertRaises(c.CaptureError): await service.capture(cursor=cursor[:-1]+('1' if cursor[-1]!='1' else '0'))
-        await service.capture()
-        with self.assertRaises(c.CaptureError) as found: await service.capture()
-        self.assertEqual(found.exception.reason,'capacity_busy')
+        # HAMCP-228: the store keeps 12 (tests/test_hamcp228_baseline_store.py);
+        # one capture at a time is the cancel test's capacity_busy.
+        await service.capture(); await service.capture()
+        self.assertEqual(len(stored(service)),3)
         clock[0]=701
         with self.assertRaises(c.CaptureError) as found: await service.capture(cursor=cursor)
         self.assertEqual(found.exception.reason,'snapshot_expired')
@@ -404,7 +425,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError): await task
         calls=len(client.calls); await asyncio.sleep(.01)
         self.assertEqual(calls,len(client.calls)); self.assertEqual(client.active,0)
-        self.assertFalse(service.active); self.assertEqual(service.snapshots,{})
+        self.assertFalse(service.active); self.assertEqual(service.cursors,{}); self.assertEqual(stored(service),[])
         self.assertTrue(client.closed)
 
     def test_maximum_capture_bounded_pages_responsive(self):
@@ -539,7 +560,11 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         self.validate(baseline)
         self.assertEqual(client.requests,10)
         self.assertEqual(page['diagnostics']['configuration_incomplete_count'],3)
-        self.assertTrue(all(r['configuration']['status']=='omitted' for r in baseline['records']))
+        # HAMCP-228 schema v2: a record the 45 s bound never scheduled is
+        # timed_out (it was 'omitted' in v1), so resume can retry it.
+        self.assertEqual(baseline['schema'],'automation-audit-baseline-v2')
+        self.assertTrue(all(r['configuration']['status']=='timed_out' for r in baseline['records']))
+        self.assertEqual(set(page['record_outcomes'].values()),{'timeout'})
 
     async def test_dispatch_requires_admission_and_request_authority(self):
         for callback in (None,lambda:False):
@@ -591,7 +616,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(AUTOMATION_BASELINE_CAPTURE, 'service', service):
                     raw = await registered_tool().run({})
                 response = json.loads(raw)
-                service.capture.assert_awaited_once_with(limit=25, cursor='')
+                service.capture.assert_awaited_once_with(limit=25, cursor='', resume_capture_id='')
                 self.assertEqual(set(response), {
                     'operation', 'error', 'error_code', 'message', 'details', 'retryable',
                     'warnings', 'metadata', 'timing', 'request_id', 'success',
@@ -625,13 +650,15 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(response['retryable'], True)
         self.assertFalse(response['success'])
 
-    async def test_public_invalid_arguments_never_echo_and_catalog_route_is_read_only(self):
+    async def test_public_invalid_arguments_never_echo_and_catalog_route_reads_home_assistant_only(self):
         from ha_mcp_engineering.tools import get_registered_server,registered_tools
         from ha_mcp_engineering.providers.routing import routing_for_tool
         from ha_mcp_engineering.ha_core_readmission.routes import static_tool_requirements
         tools=registered_tools(get_registered_server()); tool=tools['capture_automation_baseline']
-        self.assertEqual(len(tools),72)
-        self.assertTrue(tool.annotations.readOnlyHint)
+        self.assertEqual(len(tools),73)
+        # HAMCP-228: a capture writes one Engineering-local stored baseline;
+        # its Home Assistant access stays read-only.
+        self.assertFalse(tool.annotations.readOnlyHint)
         self.assertFalse(tool.annotations.destructiveHint)
         self.assertFalse(tool.parameters['additionalProperties'])
         self.assertEqual(routing_for_tool('capture_automation_baseline').fallback_providers,())
@@ -690,7 +717,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                 telemetry,token=begin_request();telemetry.caller_id='synthetic-signed-capture'
                 telemetry.core_dispatch_authorizer=lambda:bool(lease and runtime.revalidate(lease,commits))
                 try:
-                    client=Client(fixture());service=BaselineCaptureService(BaselineCaptureProvider(client,runtime))
+                    client=Client(fixture());service=BaselineCaptureService(BaselineCaptureProvider(client,runtime),make_store(self))
                     if case=='exact':
                         baseline,_=await export(service);self.assertEqual(len(baseline['records']),3)
                     else:
@@ -717,7 +744,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         from ha_mcp_engineering.audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
         from ha_mcp_engineering.tools.audit_baseline import registered_tool
         telemetry,token=begin_request();telemetry.caller_id='synthetic-public';telemetry.core_dispatch_authorizer=lambda:True
-        client=Client(fixture(101));service=BaselineCaptureService(BaselineCaptureProvider(client,Core()))
+        client=Client(fixture(101));service=BaselineCaptureService(BaselineCaptureProvider(client,Core()),make_store(self))
         try:
             with patch.object(AUTOMATION_BASELINE_CAPTURE,'service',service):
                 tool=registered_tool(); response=json.loads(await tool.run({'limit':100}))

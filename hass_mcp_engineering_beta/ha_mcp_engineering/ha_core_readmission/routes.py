@@ -343,6 +343,11 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
             "Assistant call. The trace watch poller acquires its own "
             "core.automation_trace_read authority per tick.",
         ),
+        "compare_automation_baselines": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Compares the caller's stored, digest-verified automation "
+            "baselines (HAMCP-228); it makes no Home Assistant call.",
+        ),
         "get_change_plan": CoreIndependence(
             CORE_INDEPENDENT_LOCAL_STATE,
             "Reads one persisted Engineering change plan; it makes no Home "

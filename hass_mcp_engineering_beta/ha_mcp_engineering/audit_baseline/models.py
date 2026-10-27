@@ -8,6 +8,10 @@ from typing import Any
 
 
 BASELINE_SCHEMA = "automation-audit-baseline-v1"
+# HAMCP-228: v2 adds the ``timed_out`` configuration status and the
+# ``resume`` header; v1 and the legacy schema still load unchanged.
+BASELINE_SCHEMA_V2 = "automation-audit-baseline-v2"
+BASELINE_SCHEMAS = frozenset({BASELINE_SCHEMA, BASELINE_SCHEMA_V2})
 LEGACY_BASELINE_SCHEMA = "ha-automation-configuration-baseline-v1"
 COMPARISON_SCHEMA = "automation-audit-comparison-v1"
 FINGERPRINT_MODEL = "automation-audit-config-json-python-v1"
@@ -141,6 +145,8 @@ class Baseline:
     authority: dict[str, Any] = field(default_factory=dict)
     limitations: tuple[str, ...] = ()
     structural_assertions: dict[str, Any] = field(default_factory=dict)
+    resumed_from: str | None = None
+    resumed_count: int = 0
 
     @property
     def records_by_id(self) -> dict[str, AutomationRecord]:

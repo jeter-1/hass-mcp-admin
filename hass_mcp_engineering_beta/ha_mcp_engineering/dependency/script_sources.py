@@ -16,8 +16,9 @@ from typing import Any, Callable
 from ..sanitization import sanitize_untrusted_data
 from .extraction import extract_document_with_obligations
 from .script_calls import _refused, extract_script_calls, MAX_CALLS
+from .bounded_sources import MAX_SCRIPT_BOUNDED_OBLIGATIONS
 from .models import (
-    DependencyFinding, DynamicReference, SourceCoverageItem,
+    DependencyFinding, DependencyObligation, DynamicReference, SourceCoverageItem,
     dynamic_reference_fingerprint,
 )
 
@@ -109,6 +110,9 @@ class ScriptDiagnostics:
     call_gaps: tuple[str, ...] = ()
     # HAMCP-212: the provider each analyzed script's configuration came from.
     source_providers: tuple[tuple[str, str], ...] = ()
+    # HAMCP-226: coverage-failure terminals of analysed scripts, so the
+    # over-bound scripts can be named (``bounded_sources``).
+    bounded_obligations: tuple[DependencyObligation, ...] = ()
 
     def provider_for(self, script_id: str) -> str:
         return dict(self.source_providers).get(script_id, STORED_SCRIPT_PROVIDER)
@@ -298,6 +302,11 @@ async def collect_script_diagnostics(
     documents: list[tuple[str, str]] = []
     document_providers: dict[str, str] = {}
     completed: set[str] = set()
+    # One coverage-failure terminal per distinct (source, reason) pair: the
+    # named-source total is exact (review 1, M3). Pairs per scan are bounded
+    # by MAX_SCRIPT_SOURCES scripts times each script's distinct reasons.
+    bounded: dict[tuple[str, str, str, str], DependencyObligation] = {}
+    bounded_overflow = [False]
     successes = 0
     read_count = 0
     read_time_ms = 0.0
@@ -354,6 +363,20 @@ async def collect_script_diagnostics(
         successes += 1
         if any(item.outcome == "coverage_failure" for item in obligations):
             errors["script_extraction_coverage_failure"] += 1
+            pairs: dict[tuple[str, str, str, str], DependencyObligation] = {}
+            for item in obligations:
+                if item.outcome != "coverage_failure":
+                    continue
+                pair = (item.source_type, item.source_id, item.source_entity_id or "", item.reason_code)
+                if pair not in pairs or item.evidence_id < pairs[pair].evidence_id:
+                    pairs[pair] = item
+            if len(pairs) > MAX_SCRIPT_BOUNDED_OBLIGATIONS:
+                # A guard for one document, beyond any reason set it can yield.
+                bounded_overflow[0] = True
+                pairs = dict(heapq.nsmallest(MAX_SCRIPT_BOUNDED_OBLIGATIONS, pairs.items()))
+            for pair, item in pairs.items():
+                if pair not in bounded or item.evidence_id < bounded[pair].evidence_id:
+                    bounded[pair] = item
         if "use_blueprint" in config:
             errors["script_blueprint_body_unresolved"] += 1
         evidence_bounded |= len(findings) + len(extracted) > MAX_SCRIPT_FINDINGS
@@ -458,7 +481,7 @@ async def collect_script_diagnostics(
         errors[PENDING_WRITE_UNRECONCILED] += unreconciled + int(journal_overflow)
     if not registry_complete:
         errors["script_registry_incomplete"] += 1
-    if evidence_bounded:
+    if evidence_bounded or bounded_overflow[0]:
         errors["script_diagnostic_evidence_limit_exceeded"] += 1
     findings.sort(key=lambda item: item.evidence_id)
     calls.sort(key=lambda item: item.evidence_id)
@@ -522,5 +545,6 @@ async def collect_script_diagnostics(
          }},
         tuple(calls), tuple(f"{key}: {count}" for key, count in sorted(call_errors.items())),
         tuple(sorted(document_providers.items())),
+        tuple(item for _, item in sorted(bounded.items())),
     )
     return result.visible()

@@ -13,6 +13,7 @@ from typing import Any
 
 from .models import (
     BASELINE_SCHEMA,
+    BASELINE_SCHEMA_V2,
     FINGERPRINT_MODEL,
     FINGERPRINT_SERIALIZATION,
     LEGACY_BASELINE_SCHEMA,
@@ -374,7 +375,7 @@ def _record_coverage(value: Any) -> RecordCoverage:
     )
 
 
-def _record(value: Any) -> AutomationRecord:
+def _record(value: Any, schema: str = BASELINE_SCHEMA) -> AutomationRecord:
     raw = _require_dict(value, "record_invalid")
     required = {
         "configuration_id", "entity_id", "mapping_status",
@@ -400,12 +401,18 @@ def _record(value: Any) -> AutomationRecord:
     if set(config) != config_required:
         raise BaselineValidationError("record_configuration_fields_invalid")
     config_status = _require_str(config["status"], "configuration_status_invalid", safe_id=True)
-    if config_status not in {"readable", "partial", "unreadable", "omitted"}:
+    statuses = {"readable", "partial", "unreadable", "omitted"}
+    if schema == BASELINE_SCHEMA_V2:
+        # HAMCP-228: a record the capture did not attempt before its bound.
+        statuses = statuses | {"timed_out"}
+    if config_status not in statuses:
         raise BaselineValidationError("configuration_status_invalid")
     digest = _digest(config["digest"], "configuration_digest_invalid", nullable=True)
     model = config["fingerprint_model"]
     if model is not None:
         model = _require_str(model, "record_fingerprint_model_invalid", safe_id=True)
+    if config_status == "timed_out" and digest is not None:
+        raise BaselineValidationError("timed_out_configuration_digest_present")
     if config_status == "readable" and (digest is None or model is None):
         raise BaselineValidationError("readable_configuration_digest_missing")
     if digest is not None and model is None:
@@ -477,10 +484,20 @@ def _new_baseline(value: dict[str, Any]) -> Baseline:
         "inventory", "fingerprint_contract", "records", "consistency", "authority",
         "limitations", "structural_assertions",
     }
+    schema = value.get("schema") if type(value) is dict else None
+    if schema == BASELINE_SCHEMA_V2:
+        required = required | {"resume"}
     if set(value) != required:
         raise BaselineValidationError("baseline_fields_invalid")
-    if value.get("schema") != BASELINE_SCHEMA:
+    if schema not in (BASELINE_SCHEMA, BASELINE_SCHEMA_V2):
         raise BaselineValidationError("baseline_schema_unsupported")
+    resumed_from, resumed_count = None, 0
+    if schema == BASELINE_SCHEMA_V2 and value["resume"] is not None:
+        resume = _require_dict(value["resume"], "resume_invalid")
+        if set(resume) != {"resumed_from", "resumed_count"}:
+            raise BaselineValidationError("resume_fields_invalid")
+        resumed_from = _require_str(resume["resumed_from"], "resumed_from_invalid", safe_id=True)
+        resumed_count = _require_int(resume["resumed_count"], "resumed_count_invalid", minimum=1)
     baseline_id = _require_str(value["baseline_id"], "baseline_id_invalid", safe_id=True)
 
     source_artifact = value["source_artifact"]
@@ -576,7 +593,7 @@ def _new_baseline(value: dict[str, Any]) -> Baseline:
     raw_records = _require_list(value["records"], "records_invalid")
     if len(raw_records) > MAX_RECORDS:
         raise BaselineValidationError("record_limit_exceeded")
-    records = tuple(_record(item) for item in raw_records)
+    records = tuple(_record(item, schema) for item in raw_records)
     _validate_record_identities(records)
     for record in records:
         for observed_at in (record.collected_at, record.enabled_collected_at):
@@ -670,8 +687,10 @@ def _new_baseline(value: dict[str, Any]) -> Baseline:
         ),
     }
 
+    if resumed_from is not None and (resumed_from == baseline_id or resumed_count > len(records)):
+        raise BaselineValidationError("resume_contradiction")
     return Baseline(
-        schema=BASELINE_SCHEMA,
+        schema=schema,
         baseline_id=baseline_id,
         source_artifact_sha256=source_sha,
         source_baseline_id=source_baseline_id,
@@ -686,6 +705,8 @@ def _new_baseline(value: dict[str, Any]) -> Baseline:
         authority=authority,
         limitations=limitations,
         structural_assertions=dict(structural_assertions),
+        resumed_from=resumed_from,
+        resumed_count=resumed_count,
     )
 
 
@@ -1079,12 +1100,26 @@ def normalize_legacy_baseline(path: str | Path) -> dict[str, Any]:
     return normalized
 
 
+def baseline_from_value(value: Any) -> Baseline:
+    """Validate one current-schema baseline already parsed from a trusted store.
+
+    HAMCP-228: the Engineering store verified the bytes' digest; the value is
+    still validated in full, as a file would be.
+    """
+
+    value = _require_dict(value, "baseline_root_invalid")
+    _validate_json_limits(value)
+    if value.get("schema") not in (BASELINE_SCHEMA, BASELINE_SCHEMA_V2):
+        raise BaselineValidationError("baseline_schema_unsupported")
+    return _new_baseline(value)
+
+
 def load_baseline(path: str | Path) -> Baseline:
     raw = _read_input(path)
     value = _strict_loads(raw)
     value = _require_dict(value, "baseline_root_invalid")
     schema = value.get("schema")
-    if schema == BASELINE_SCHEMA:
+    if schema in (BASELINE_SCHEMA, BASELINE_SCHEMA_V2):
         return _new_baseline(value)
     if schema == LEGACY_BASELINE_SCHEMA:
         normalized = _legacy_normalized_dict(value, hashlib.sha256(raw).hexdigest())

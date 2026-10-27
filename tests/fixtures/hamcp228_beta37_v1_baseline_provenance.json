@@ -1,0 +1,40 @@
+{
+  "boundary": "Synthetic data only; no live Home Assistant. The fixture bytes are the shipped code's canonical export and must not be edited.",
+  "compatibility_model": "hamcp228-shipped-beta37-v1-baseline-v1",
+  "fixture": {
+    "artifact_sha256": "sha256:35375eb97be22b25d77dee57ca6cbbafab28b6dfd26d30b4eb15d2883d053026",
+    "path": "tests/fixtures/hamcp228_beta37_v1_baseline.json",
+    "record_count": 3,
+    "schema": "automation-audit-baseline-v1",
+    "sha256": "35375eb97be22b25d77dee57ca6cbbafab28b6dfd26d30b4eb15d2883d053026",
+    "statuses": [
+      "readable",
+      "unreadable"
+    ]
+  },
+  "generated_at": "2026-10-26T17:30:00Z",
+  "generator": "scripts/generate_hamcp228_beta37_v1_baseline_fixture.py",
+  "generator_command": "python3 scripts/generate_hamcp228_beta37_v1_baseline_fixture.py --source-root <exact-beta37-worktree> --output-dir tests/fixtures --generated-at 2026-10-26T17:30:00Z",
+  "generator_sha256": "b786bb7fd096fdb558298e24ea10d6af8833ae1649e21173d793c8b572af627b",
+  "input": {
+    "description": "synthetic Home Assistant reads replayed by the in-process peer",
+    "path": "tests/fixtures/hamcp228_beta37_v1_baseline_input.json",
+    "sha256": "081f00acd81b7d0b75a0b9df432e5b04776dce2e3a2ae5a7a83ef72d4b308f50"
+  },
+  "schema_version": 1,
+  "source": {
+    "audit_baseline_sources_sha256": {
+      "__init__.py": "ee3d5e66b2db0b4889123c1edb034476e63eecc0059556d666d686362464797c",
+      "capture_contracts.py": "aa004469e2b371830851338f5e57dd26948dc801cf3d3a7d752d0971735094b2",
+      "capture_provider.py": "2f686bd107d12ef3fe7b374cc520e5aae29e3f69f6a4c75fe398dbf32bdabd4e",
+      "capture_runtime.py": "7b2fe4339bc78d8f0eeeb410f9e7ffc6cd3e9976bcf2bef55727bb9b11575422",
+      "capture_service.py": "6aa1cce93d3831fb7966be25d4516c8b6bc931efaa5e7b529da86d47acba4733",
+      "comparison.py": "b69e01beec769398f4585a559865926b8a2fc1a99f46175faf6cc009e2364554",
+      "models.py": "55a1b02becab5fdbf380f9cf5f61b951069f7605fa9a2e7af55b7f3890a56564",
+      "validation.py": "49bebb9df801105f819df06670f28792f18329ef57ae588b89913e11b4466ead"
+    },
+    "commit": "06a28134f219244f258ab26307c1dfcb9e5d18cb",
+    "version": "2.4.1-beta.37"
+  },
+  "writer": "BaselineCaptureService.capture (exported pages assembled; artifact digest verified)"
+}

@@ -2,14 +2,17 @@
 
 import asyncio
 from collections import Counter
+import copy
 from datetime import datetime, timezone
 import time
 import uuid
 
 from ..request_context import current_telemetry
 from ..sanitization import sanitize_untrusted_data
+from .. import untrusted_text
 from . import capture_contracts as c
-from .models import BASELINE_SCHEMA, FINGERPRINT_MODEL
+from . import storage_screen
+from .models import BASELINE_SCHEMA_V2, FINGERPRINT_MODEL
 from .validation import canonical_configuration_digest, BaselineValidationError, _new_baseline
 
 
@@ -26,7 +29,22 @@ class Projector:
         if type(value) is not str or not pattern.fullmatch(value) or value in {".", ".."}:
             return None
         sanitized = sanitize_untrusted_data(value, known_secrets=self.known_secrets, max_string=256)
-        return value if sanitized.value == value and not sanitized.failed_closed else None
+        if sanitized.value != value or sanitized.failed_closed:
+            return None
+        # HAMCP-228: the HAMCP-226 default-mode credential screen too (owner
+        # direction, Josh, 2026-10-26); a withheld identifier is unusable.
+        return value if untrusted_text.screen(value, tuple(self.known_secrets)) is None else None
+
+    def screened_identifier(self, value, *, entity=False):
+        """``(identifier or None, withheld)``: ``withheld`` when the credential screen withholds the value.
+
+        Review 2 (owner decision, Josh, 2026-10-27): a withheld identifier is a
+        stub with a reason; any other unusable value stays unmapped.
+        """
+
+        identifier = self.identifier(value, entity=entity)
+        return identifier, (identifier is None and type(value) is str
+                            and untrusted_text.screen(value, tuple(self.known_secrets)) is not None)
 
     def project(self, kind, value):
         c.bounded(value)
@@ -61,32 +79,36 @@ class Projector:
             if len(matches) != 1:
                 raise c.CaptureError("identity_unverified")
             return matches[0]
-        result, seen, invalid = {}, set(), 0
+        result, seen, invalid, withheld = {}, set(), 0, 0
         for row in value:
             if type(row) is not dict or type(row.get("entity_id")) is not str:
                 raise c.CaptureError("malformed_response")
             raw_entity = row["entity_id"]
             if not raw_entity.startswith("automation."):
                 continue
-            entity = self.identifier(raw_entity, entity=True)
+            entity, entity_withheld = self.screened_identifier(raw_entity, entity=True)
             if not entity:
                 invalid += 1
+                withheld += entity_withheld
                 continue
             if entity in seen:
                 raise c.CaptureError("malformed_response")
             seen.add(entity)
             if kind == "states":
                 attributes = row.get("attributes")
-                config_id = self.identifier(attributes.get("id")) if type(attributes) is dict else None
+                config_id, id_withheld = (self.screened_identifier(attributes.get("id"))
+                                          if type(attributes) is dict else (None, False))
                 state = row.get("state")
-                result[entity] = {"id": config_id, "state": state if state in ("on", "off", "unknown", "unavailable") else None}
+                result[entity] = {"id": config_id, "id_withheld": id_withheld,
+                                  "state": state if state in ("on", "off", "unknown", "unavailable") else None}
             elif kind == "registry":
-                result[entity] = {"id": self.identifier(row.get("unique_id")),
+                unique_id, id_withheld = self.screened_identifier(row.get("unique_id"))
+                result[entity] = {"id": unique_id, "id_withheld": id_withheld,
                                   "platform_valid": row.get("platform") == "automation",
                                   "disabled": row.get("disabled_by") is not None}
             else:
                 raise c.CaptureError("invalid_arguments")
-        return {"records": result, "invalid_count": invalid}
+        return {"records": result, "invalid_count": invalid, "withheld_count": withheld}
 
     def hash_configuration(self, config_id, raw):
         if type(raw) is not dict or raw.get("id") != config_id:
@@ -125,7 +147,18 @@ class BaselineCaptureProvider:
                 "verification_failure_count": integer(counters.get("verification_failures")),
                 "retirement_count": integer(counters.get("retirements")), "limitations": []}
 
-    async def collect(self):
+    @staticmethod
+    def retry_ids(baseline, outcomes):
+        """HAMCP-228 decision T: resume retries timeouts only, never other failures."""
+
+        return {row["configuration_id"] for row in baseline["records"]
+                if row["configuration"]["status"] == "timed_out"
+                or (row["configuration"]["status"] == "unreadable"
+                    and outcomes.get(row["configuration_id"]) == "timeout")}
+
+    async def collect(self, base=None):
+        """Full capture, or with ``base`` (a stored report) a resume of its timeouts."""
+
         authority = self.authority()
         started, started_at = time.monotonic(), now()
         sources, outcomes = [], {}
@@ -156,13 +189,21 @@ class BaselineCaptureProvider:
             registry = first["registry"]["records"]
             config_counts = Counter(row["id"] for row in states.values() if row["id"])
             records, unmapped = [], []
+            # Review 2 (owner decision, Josh, 2026-10-27): an automation whose
+            # entity id or configuration id the credential screen withheld is
+            # a content-free stub with its reason, not an unmapped entity.
+            withheld = [storage_screen.stub(None, None, "entity_id_withheld")
+                        for _ in range(first["states"]["withheld_count"])]
             # Frozen identity/mapping order; no raw provider object crosses this point.
             for entity, state in sorted(states.items()):
                 config_id = state["id"]
                 mapped = registry.get(entity)
                 if (not config_id or config_counts[config_id] != 1 or not mapped or not mapped["platform_valid"]
                         or mapped["id"] != config_id or mapped["disabled"]):
-                    unmapped.append(entity)
+                    if state["id_withheld"] or (mapped and mapped["id_withheld"]):
+                        withheld.append(storage_screen.stub(None, entity, "configuration_id_withheld"))
+                    else:
+                        unmapped.append(entity)
                     continue
                 if len(records) == c.MAX_RECORDS:
                     continue
@@ -173,16 +214,41 @@ class BaselineCaptureProvider:
                                      "redacted": False, "truncated": False, "omitted": True}},
                     "enabled_state": {"state": state["state"], "collected_at": observed_at,
                                       "collection_time_status": "observed"}})
+            pending = list(range(len(records)))
+            if base is not None:
+                prior = base["baseline"]
+                prior_outcomes = base["diagnostics"]["record_outcomes"]
+                # Review 1 (M1): the authority generation restarts with each
+                # process, so it alone cannot prove the same Core; the base
+                # capture's Core version must match as well.
+                if prior["authority"]["home_assistant_core"] != authority[1]:
+                    raise c.CaptureError("resume_core_changed")
+                # The inventory fence: the same installation, Core authority
+                # generation and ordered automation mapping, or no resume.
+                if (prior["installation"]["installation_id"] != first["identity"]
+                        or prior["authority"]["generation"] != authority[0]
+                        or prior["inventory"]["declared_count"] != len(states) + first["states"]["invalid_count"]
+                        or [(r["configuration_id"], r["entity_id"]) for r in prior["records"]]
+                        != [(r["configuration_id"], r["entity_id"]) for r in records]):
+                    raise c.CaptureError("resume_inventory_changed")
+                retry = self.retry_ids(prior, prior_outcomes)
+                pending = [index for index, row in enumerate(records) if row["configuration_id"] in retry]
+                for index, row in enumerate(prior["records"]):
+                    if row["configuration_id"] not in retry:
+                        records[index] = copy.deepcopy(row)
+                outcomes.update({key: value for key, value in prior_outcomes.items() if key not in retry})
             position = 0
 
             async def collect_records():
                 nonlocal position
-                while position < len(records):
-                    index, position = position, position + 1
+                while position < len(pending):
+                    index, position = pending[position], position + 1
                     row = records[index]
                     config_id, config = row["configuration_id"], row["configuration"]
                     if time.monotonic() - started >= c.COLLECTION_SECONDS - 10:
+                        # HAMCP-228: never attempted before the bound; resume retries it.
                         outcomes[config_id] = "timeout"
+                        config["status"] = "timed_out"
                         continue
                     try:
                         authorize()
@@ -234,10 +300,23 @@ class BaselineCaptureProvider:
         mapping_drift = bool(last and any(registry.get(e) != last["registry"]["records"].get(e) for e in states))
         if mapping_drift:
             inventory_drift = "detected"
+        authority_drift = "none_observed_at_capture_fences" if identity_established else "unknown"
+        resume = None
+        if base is not None:
+            prior = base["baseline"]
+            # The non-atomic window spans the base capture and this resume.
+            started_at = prior["capture"]["started_at"]
+            if inventory_drift == "none_observed_at_capture_fences":
+                inventory_drift = prior["consistency"]["inventory_drift"]
+            if prior["consistency"]["authority_drift"] != "none_observed_at_capture_fences":
+                authority_drift = prior["consistency"]["authority_drift"]
+            identity_established = identity_established and prior["installation"]["status"] == "established"
+            resume = {"resumed_from": prior["baseline_id"], "resumed_count": len(pending)}
+        if mapping_drift:
             for record in records:
                 record["mapping_status"] = "contradictory"
         baseline = {
-            "schema": BASELINE_SCHEMA, "baseline_id": "aab-" + uuid.uuid4().hex, "source_artifact": None,
+            "schema": BASELINE_SCHEMA_V2, "baseline_id": "aab-" + uuid.uuid4().hex, "source_artifact": None,
             "capture": {"started_at": started_at, "ended_at": now(), "non_atomic": True},
             "installation": {"status": "established" if identity_established else "unestablished",
                 "installation_id": first["identity"] if identity_established else None, "method": c.IDENTITY_METHOD,
@@ -249,13 +328,14 @@ class BaselineCaptureProvider:
                 "limitations": ["loaded_scope_only_not_stored_yaml", "registry_only_discovery_partial"]},
             "fingerprint_contract": c.fingerprint_contract(), "records": records,
             "consistency": {"inventory_drift": inventory_drift,
-                "authority_drift": "none_observed_at_capture_fences" if identity_established else "unknown",
+                "authority_drift": authority_drift,
                 "limitations": ["non_atomic_changes_and_reversions_may_be_unobserved"]},
             "authority": authority_metadata,
             "limitations": ["blueprint_external_bodies_not_fingerprinted", "membership_removal_is_not_disk_deletion"],
             "structural_assertions": {"source_internal_material_digest_verified": None,
                 "configuration_hashes_recomputed": True, "record_count_verified": True,
                 "fingerprint_model_assignment": "native_full_configuration_data"},
+            "resume": resume,
         }
         await c.worker(_new_baseline, baseline)
         return {"baseline": baseline, "diagnostics": {
@@ -265,4 +345,5 @@ class BaselineCaptureProvider:
             "unmapped_entities": unmapped[:16], "unmapped_count": len(unmapped),
             "registry_only_entities": extras[:16], "registry_only_count": len(extras),
             "registry_only_count_precision": "lower_bound", "record_outcomes": outcomes,
-            "final_fence": "complete" if last else "unavailable"}}
+            "final_fence": "complete" if last else "unavailable",
+            "credential_screen": storage_screen.summary(withheld)}}
