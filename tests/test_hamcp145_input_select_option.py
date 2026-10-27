@@ -316,6 +316,123 @@ class InputSelectDependencyReaderTests(unittest.IsolatedAsyncioTestCase):
 # --------------------------------------------------------------------------
 
 
+class DisabledStatesRest(SyntheticDependencyRest):
+    def __init__(self, configs, off=()):
+        super().__init__(configs)
+        self.off = set(off)
+
+    async def request(self, method, path):
+        result = await super().request(method, path)
+        if path == "/states":
+            result = [
+                {**item, "state": "off"} if item["entity_id"] in self.off else item
+                for item in result
+            ]
+        return result
+
+
+class TriggerEnablementTests(unittest.IsolatedAsyncioTestCase):
+    """Review M2: disabled triggers are disclosed as disabled, never firing."""
+
+    def test_trigger_enablement_is_extracted(self):
+        cases = {
+            "enabled_default": ({}, "enabled", (), "fires"),
+            "enabled_true": ({"enabled": True}, "enabled", (), "fires"),
+            "disabled": ({"enabled": False}, "disabled", ("trigger_disabled",), "disabled"),
+            "templated": ({"enabled": "{{ is_state('input_boolean.guest', 'on') }}"},
+                          "unknown", ("trigger_enablement_not_literal",), "unknown"),
+            "not_bool": ({"enabled": 0}, "unknown", ("trigger_enablement_not_literal",),
+                         "unknown"),
+        }
+        for name, (fields, enablement, reasons, effect) in cases.items():
+            with self.subTest(case=name):
+                (record,) = extract({"trigger": "state", "entity_id": ENTITY,
+                                     "to": "Away", **fields})
+                self.assertEqual(record.enablement, enablement)
+                self.assertEqual(record.reason_codes, reasons)
+                self.assertEqual(option_effect(record, current="Home", option="Away"), effect)
+
+    def test_an_automation_that_is_off_disables_every_trigger(self):
+        for state, expected in (("off", "disabled"), ("on", "enabled"), (None, "enabled")):
+            with self.subTest(state=state):
+                records = extract_state_trigger_values(
+                    {"triggers": [
+                        {"trigger": "state", "entity_id": ENTITY, "to": "Away"},
+                        {"trigger": "state", "entity_id": ENTITY, "enabled": True},
+                    ]},
+                    source_id="a1", source_entity_id="automation.a1", secret=SECRET,
+                    source_state=state,
+                )
+                self.assertEqual([r.enablement for r in records], [expected] * 2)
+                for record in records:
+                    effect = option_effect(record, current="Home", option="Away")
+                    self.assertEqual(effect, "disabled" if expected == "disabled" else "fires")
+                    if expected == "disabled":
+                        self.assertIn("automation_disabled", record.reason_codes)
+
+    def test_a_disabled_trigger_never_fires_for_any_transition(self):
+        (record,) = extract({"trigger": "state", "entity_id": ENTITY, "enabled": False})
+        for current in OPTIONS:
+            for option in OPTIONS:
+                self.assertEqual(option_effect(record, current=current, option=option),
+                                 "disabled")
+
+    def test_a_record_without_a_literal_enablement_is_unknown(self):
+        record = trigger_record("automation.a1", to=["Away"])
+        for enablement in (None, "Enabled", "", 1):
+            with self.subTest(enablement=enablement):
+                altered = {**record, "enablement": enablement}
+                if enablement is None:
+                    del altered["enablement"]
+                (row,) = option_trigger_disclosure(
+                    {"option_trigger_records": [altered]}, current="Home", option="Away"
+                )["option_triggers"]
+                self.assertEqual(row["effect"], "unknown")
+
+    async def assess(self, configs, off=()):
+        index = DependencyIndex(DirectHaDependencyProvider(
+            DisabledStatesRest(configs, off), SyntheticDependencyWebSocket(), concurrency=2,
+        ))
+        service = HelperDependencyRiskService(
+            index, binding_builder=build_input_select_dependency_binding
+        )
+        return (await service.assess(ENTITY, refresh=True))["binding"]
+
+    async def test_reader_discloses_disabled_triggers_and_automations(self):
+        def away(**extra):
+            return {"alias": "Synthetic", "actions": [{"action": "notify.notify"}],
+                    "triggers": [{"trigger": "state", "entity_id": ENTITY, "to": "Away",
+                                  **extra}]}
+
+        binding = await self.assess(
+            {"away_on": away(), "away_trigger_off": away(enabled=False),
+             "away_automation_off": away()},
+            off={"automation.away_automation_off"},
+        )
+        rows = {
+            row["automation_id"]: row
+            for row in option_trigger_disclosure(
+                binding, current="Home", option="Away")["option_triggers"]
+        }
+        self.assertEqual(rows["automation.away_on"]["effect"], "fires")
+        self.assertNotIn("effect_meaning", rows["automation.away_on"])
+        for automation, reason in (("automation.away_trigger_off", "trigger_disabled"),
+                                   ("automation.away_automation_off", "automation_disabled")):
+            with self.subTest(automation=automation):
+                self.assertEqual(rows[automation]["effect"], "disabled")
+                self.assertEqual(rows[automation]["effect_meaning"],
+                                 "would not fire while disabled")
+                self.assertIn(reason, rows[automation]["reason_codes"])
+
+    async def test_disabling_an_automation_changes_the_fingerprint(self):
+        configs = {"away_on": {"alias": "Synthetic", "actions": [{"action": "notify.notify"}],
+                               "triggers": [{"trigger": "state", "entity_id": ENTITY,
+                                             "to": "Away"}]}}
+        enabled = await self.assess(configs)
+        disabled = await self.assess(configs, off={"automation.away_on"})
+        self.assertNotEqual(enabled["evidence_fingerprint"], disabled["evidence_fingerprint"])
+
+
 class GatewayTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.rest = SyntheticInputSelectRest()
@@ -617,6 +734,23 @@ class PlanningTests(InputSelectServiceTestCase):
         )
         self.assertEqual(dry_run["dependency_risk"]["model"], INPUT_SELECT_DEPENDENCY_MODEL)
         self.assertEqual(self.dependency.calls, [False], "planning read is not fenced")
+        self.assertEqual(self.sent(), [])
+
+    async def test_plan_discloses_disabled_triggers_as_disabled(self):
+        # Review M2: never "fires" for a disabled trigger or automation.
+        self.dependency.records = [
+            trigger_record("automation.away_lights", to=["Away"]),
+            trigger_record("automation.away_off", to=["Away"], enablement="disabled"),
+            trigger_record("automation.away_maybe", to=["Away"], enablement="unknown"),
+        ]
+        created = await self.create_select("Away")
+        rows = created["plan"]["dry_run_results"]["option_triggers"]["option_triggers"]
+        self.assertEqual(
+            [(t["automation_id"], t["effect"], t.get("effect_meaning")) for t in rows],
+            [("automation.away_lights", "fires", None),
+             ("automation.away_off", "disabled", "would not fire while disabled"),
+             ("automation.away_maybe", "unknown", None)],
+        )
         self.assertEqual(self.sent(), [])
 
     async def test_standard_policy_without_consequential_dependency(self):

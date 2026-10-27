@@ -176,7 +176,7 @@ class InputSelectDependencyReader(FakeDependencyRiskReader):
 
 def trigger_record(automation_id: str, *, to: list[str] | None = None,
                    from_: list[str] | None = None, complete: bool = True,
-                   path: str = "triggers[0]") -> dict[str, Any]:
+                   path: str = "triggers[0]", enablement: str = "enabled") -> dict[str, Any]:
     return {
         "automation_id": automation_id,
         "configuration_path": path,
@@ -185,6 +185,7 @@ def trigger_record(automation_id: str, *, to: list[str] | None = None,
         "not_to": [],
         "not_from": [],
         "complete": complete,
+        "enablement": enablement,
         "reason_codes": [] if complete else ["trigger_value_template"],
     }
 

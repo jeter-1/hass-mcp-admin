@@ -55,6 +55,9 @@ TRC = f"{E}/script_traces.py"
 LAN = "scripts/seq15_contract_acceptance.py"
 EXT = f"{E}/dependency/extraction.py"
 LCK = f"{E}/f3_configuration/locks.py"
+STV = f"{E}/dependency/state_trigger_values.py"
+ISD = f"{E}/governance/input_select_dependency.py"
+PRV = f"{E}/dependency/provider.py"
 ADMISSION = "admission removed"
 DRIFT = "drift accepted"
 CONTRACT = "contract rule loosened"
@@ -64,6 +67,7 @@ POLICY = "planning policy weakened"
 TRACE = "script-trace read unsanitized or widened"
 LANE = "dormant lane gate opened"
 LOCK = "input_select lock projection loosened or widened"
+TRIGGER = "disabled trigger disclosed as firing"
 LOOPBACK = '{"127.0.0.1", "localhost", "::1"}'
 # Review H1 mutants S2/S6: the pre-correction parallel screen in place of the
 # HAMCP-225 trace exit.
@@ -121,6 +125,13 @@ base.MUTATIONS = [
       (TRC, "        if self.authority() != generation:", "        if False:")),
     m("A12-script-trace-anonymous-caller", ADMISSION,
       (TRC, '        if current_caller_id() == "anonymous":', "        if False:")),
+    m("A13-retained-pre-intent-entry-admission", ADMISSION,
+      (RUN, "            if task.state not in TERMINAL_TASK_STATES and self._pre_intent_task(task):\n"
+            "                self._refuse_unadmitted_entry(plan)",
+       "            if False:\n                self._refuse_unadmitted_entry(plan)")),
+    m("A14-pre-intent-recovery-admission", ADMISSION,
+      (RUN, "                        and not self._entry_admitted(plan)\n",
+       "                        and False\n")),
     # --- drift -----------------------------------------------------------
     m("D1-entry-modified-at-moved", DRIFT,
       (HOA, '        if facts.modified_at != intent["modified_at"]:\n            # Core moves',
@@ -218,6 +229,24 @@ base.MUTATIONS = [
     m("I5-submit-only-the-requested-fields", CONTRACT,
       (HOC, "    submit = nest(flat)\n    return Proposal(",
        "    submit = nest({name: flat[name] for name in set_values if name in flat})\n    return Proposal(")),
+    # --- disabled-trigger disclosure -------------------------------------
+    m("T1-option-effect-ignores-enablement", TRIGGER,
+      (STV, "    if record.enablement == DISABLED:\n        return DISABLED_EFFECT\n"
+            "    if record.enablement != ENABLED or not record.complete:",
+       "    if not record.complete:")),
+    m("T2-disclosure-ignores-enablement", TRIGGER,
+      (ISD, '        if record.get("enablement") == "disabled":\n            effect = DISABLED_EFFECT\n'
+            '        elif record.get("complete") is True and record.get("enablement") == "enabled":',
+       '        if record.get("complete") is True:')),
+    m("T3-automation-off-not-disabling", TRIGGER,
+      (STV, '    automation_disabled = source_state == "off"', "    automation_disabled = False")),
+    m("T4-provider-drops-automation-state", TRIGGER,
+      (PRV, "                    secret=self.secret,\n"
+            '                    source_state=state.get("state"),\n                )\n            )\n',
+       "                    secret=self.secret,\n                )\n            )\n")),
+    m("T5-trigger-enabled-false-ignored", TRIGGER,
+      (STV, '    if enabled is False:\n        return DISABLED, "trigger_disabled"',
+       "    if enabled is False:\n        return ENABLED, None")),
     # --- readback --------------------------------------------------------
     m("R1-helper-readback-entry-unhealthy-accepted", READBACK,
       (HOA, "        if proposed and moved and loaded and registered:", "        if proposed and moved:")),

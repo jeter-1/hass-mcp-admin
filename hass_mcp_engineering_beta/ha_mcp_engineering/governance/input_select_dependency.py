@@ -20,7 +20,12 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from ..dependency.state_trigger_values import StateTriggerValues, option_effect
+from ..dependency.state_trigger_values import (
+    DISABLED_EFFECT,
+    DISABLED_EFFECT_MEANING,
+    StateTriggerValues,
+    option_effect,
+)
 from .helper_dependency import (
     HelperDependencyRiskService,
     _failed_binding,
@@ -71,6 +76,7 @@ def _trigger_records(snapshot: Any, entity_id: str) -> tuple[list[dict[str, Any]
             "not_to": list(item.not_to),
             "not_from": list(item.not_from),
             "complete": item.complete,
+            "enablement": item.enablement,
             "reason_codes": list(item.reason_codes),
         })
     records.sort(key=lambda value: (value["automation_id"], value["configuration_path"]))
@@ -159,7 +165,9 @@ def option_trigger_disclosure(
     triggers = []
     for record in records:
         effect = "unknown"
-        if record.get("complete") is True:
+        if record.get("enablement") == "disabled":
+            effect = DISABLED_EFFECT
+        elif record.get("complete") is True and record.get("enablement") == "enabled":
             effect = option_effect(
                 StateTriggerValues(
                     source_id="", source_entity_id=None,
@@ -176,6 +184,7 @@ def option_trigger_disclosure(
             "automation_id": record.get("automation_id"),
             "configuration_path": record.get("configuration_path"),
             "effect": effect,
+            **({"effect_meaning": DISABLED_EFFECT_MEANING} if effect == DISABLED_EFFECT else {}),
             "reason_codes": list(record.get("reason_codes") or []),
         })
     with_records = {item["automation_id"] for item in triggers}

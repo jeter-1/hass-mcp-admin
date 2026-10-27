@@ -8,6 +8,11 @@ dependency exists: the obligation ledger remains the only dependency
 authority.  A template, a non-string value, an ``attribute`` trigger, or a
 bound that clips evidence marks the record incomplete, which a reader must
 disclose as "per-option effect unknown", never as "does not fire".
+
+A trigger with ``enabled: false``, or any trigger of an automation whose
+state is ``off``, is recorded as disabled and disclosed as "would not fire
+while disabled", never as firing (review M2).  A non-literal ``enabled``
+value makes the enablement, and so the effect, unknown.
 """
 
 from __future__ import annotations
@@ -23,6 +28,11 @@ MAX_VALUES_PER_FIELD = 64
 MAX_ENTITIES_PER_TRIGGER = 32
 MAX_VALUE_CHARS = 255
 _FIELDS = (("to", "to"), ("from", "from"), ("not_to", "not_to"), ("not_from", "not_from"))
+ENABLED = "enabled"
+DISABLED = "disabled"
+UNKNOWN = "unknown"
+DISABLED_EFFECT = "disabled"
+DISABLED_EFFECT_MEANING = "would not fire while disabled"
 
 
 @dataclass(frozen=True)
@@ -38,6 +48,7 @@ class StateTriggerValues:
     not_from: tuple[str, ...]
     complete: bool
     reason_codes: tuple[str, ...] = ()
+    enablement: str = ENABLED
 
 
 def _values(raw: Any, *, secret: str) -> tuple[tuple[str, ...] | None, bool, str | None]:
@@ -62,17 +73,35 @@ def _values(raw: Any, *, secret: str) -> tuple[tuple[str, ...] | None, bool, str
     return tuple(sorted(set(values))), True, None
 
 
+def _enablement(trigger: dict[str, Any], automation_disabled: bool) -> tuple[str, str | None]:
+    if automation_disabled:
+        return DISABLED, "automation_disabled"
+    enabled = trigger.get("enabled", True)
+    if enabled is True:
+        return ENABLED, None
+    if enabled is False:
+        return DISABLED, "trigger_disabled"
+    # A template or any other value: Core decides at setup, the reader cannot.
+    return UNKNOWN, "trigger_enablement_not_literal"
+
+
 def extract_state_trigger_values(
     config: Any,
     *,
     source_id: str,
     source_entity_id: str | None,
     secret: str,
+    source_state: Any = None,
 ) -> tuple[StateTriggerValues, ...]:
-    """Extract literal option values of input_select state triggers."""
+    """Extract literal option values of input_select state triggers.
+
+    ``source_state`` is the automation entity's state; ``off`` disables
+    every trigger it has.
+    """
 
     if not isinstance(config, dict):
         return ()
+    automation_disabled = source_state == "off"
     records: list[StateTriggerValues] = []
     for key in ("triggers", "trigger"):
         triggers = config.get(key)
@@ -94,7 +123,8 @@ def extract_state_trigger_values(
             }))
             if not entities:
                 continue
-            reasons: list[str] = []
+            enablement, enablement_reason = _enablement(trigger, automation_disabled)
+            reasons: list[str] = [enablement_reason] if enablement_reason else []
             complete = len(raw_entities) <= MAX_ENTITIES_PER_TRIGGER
             if not complete:
                 reasons.append("trigger_entity_limit_exceeded")
@@ -115,6 +145,7 @@ def extract_state_trigger_values(
                     config_path=f"{key}[{position}]", entity_ids=entities,
                     to=(), from_=(), not_to=(), not_from=(),
                     complete=False, reason_codes=("trigger_record_limit_exceeded",),
+                    enablement=DISABLED if automation_disabled else UNKNOWN,
                 ))
                 return tuple(records)
             records.append(StateTriggerValues(
@@ -128,6 +159,7 @@ def extract_state_trigger_values(
                 not_from=parsed["not_from"] or (),
                 complete=complete,
                 reason_codes=tuple(sorted(set(reasons))),
+                enablement=enablement,
             ))
     return tuple(records)
 
@@ -135,9 +167,15 @@ def extract_state_trigger_values(
 def option_effect(
     record: StateTriggerValues, *, current: str, option: str
 ) -> str:
-    """Classify one ``current -> option`` transition: fires/does_not_fire/unknown."""
+    """Classify one ``current -> option`` transition.
 
-    if not record.complete:
+    ``disabled`` (would not fire while disabled), ``unknown``, ``fires`` or
+    ``does_not_fire``.  A disabled trigger is never classified as firing.
+    """
+
+    if record.enablement == DISABLED:
+        return DISABLED_EFFECT
+    if record.enablement != ENABLED or not record.complete:
         return "unknown"
     to_match = (record.to is None or option in record.to) and option not in record.not_to
     from_match = (
@@ -148,6 +186,8 @@ def option_effect(
 
 
 __all__ = [
+    "DISABLED_EFFECT",
+    "DISABLED_EFFECT_MEANING",
     "MAX_TRIGGERS_PER_AUTOMATION",
     "StateTriggerValues",
     "extract_state_trigger_values",

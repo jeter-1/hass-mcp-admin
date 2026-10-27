@@ -1373,6 +1373,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     source_id=internal_id,
                     source_entity_id=source_entity_id,
                     secret=self.secret,
+                    source_state=state.get("state"),
                 )
             )
             consequence = automation_action_consequence_profile(
