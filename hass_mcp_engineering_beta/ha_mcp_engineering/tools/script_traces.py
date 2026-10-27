@@ -14,6 +14,23 @@ _READ_ANNOTATIONS = ToolAnnotations(
     readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False,
 )
 _METADATA = {"provider": "engineering", "data_providers": ["direct_ha_api"], "fallback_occurred": False}
+_PARTIAL = ("Trace content is partial: Engineering withheld credential-like or unverifiable text, "
+            "shortened long strings, or failed closed on a field; see sanitization.")
+
+
+async def _respond(operation, summary, call):
+    metadata = dict(_METADATA)
+    warnings = []
+
+    async def action():
+        value = await call(SCRIPT_TRACES.require())
+        metadata["completeness"] = value["completeness"]
+        if value["completeness"] != "complete":
+            warnings.append(_PARTIAL)
+        return value
+
+    return await run_structured(operation, summary, action, warnings=warnings, metadata=metadata,
+                                response_limit=SETTINGS.response_size_limit)
 
 
 async def list_script_traces(
@@ -28,12 +45,8 @@ async def list_script_traces(
     and never uses the trace debugger.
     """
 
-    async def action():
-        return await SCRIPT_TRACES.require().list_traces(script_id)
-
-    return await run_structured("list_script_traces", "Returned sanitized script trace headers.",
-                                action, metadata=dict(_METADATA),
-                                response_limit=SETTINGS.response_size_limit)
+    return await _respond("list_script_traces", "Returned sanitized script trace headers.",
+                          lambda service: service.list_traces(script_id))
 
 
 async def get_script_trace(
@@ -43,17 +56,14 @@ async def get_script_trace(
     """Return one script run's step-by-step trace, sanitized. Read-only.
 
     ``script_id`` is the script's configuration key and ``run_id`` comes
-    from list_script_traces. Secrets are redacted and long strings bounded
-    before output. A trace Home Assistant no longer holds is reported as
+    from list_script_traces. Credential-like, known-secret and unverifiable
+    text is withheld whole and strings over 2,000 characters are shortened;
+    such a trace is marked partial and names the withheld categories. A trace Home Assistant no longer holds is reported as
     not found; there is no fallback.
     """
 
-    async def action():
-        return await SCRIPT_TRACES.require().get_trace(script_id, run_id)
-
-    return await run_structured("get_script_trace", "Returned one sanitized script trace.",
-                                action, metadata=dict(_METADATA),
-                                response_limit=SETTINGS.response_size_limit)
+    return await _respond("get_script_trace", "Returned one sanitized script trace.",
+                          lambda service: service.get_trace(script_id, run_id))
 
 
 def _validate(name: str, arguments) -> None:

@@ -9,9 +9,14 @@ profile is admitted and the request holds Core dispatch authority.
 Closed vocabulary: ``trace/list`` and ``trace/get``, both with
 ``domain: "script"`` and the exact, validated script key as ``item_id``.  The
 list-all form, ``trace/contexts`` and every ``trace/debug/*`` command are
-never built.  Every result passes through the shared untrusted-data sanitizer
-before output, exactly as the automation trace reads do.  A missing trace is
-reported as not found; there is no fallback.
+never built.  Every result, with the script and run identifiers it is
+returned under, leaves through the one HAMCP-225 trace exit
+(``trace_normalization.sanitize_trace_detail``): the shared credential
+screen on every complete original string and dictionary key at every depth,
+identifiers in the screen's default mode and values in its labelled mode,
+then the strict sanitizer, truncation last.  There is no script-trace
+screen of its own.  A missing trace is reported as not found; there is no
+fallback.
 """
 
 from __future__ import annotations
@@ -31,8 +36,13 @@ from .errors import (
 from .ha_core_readmission.routes import SCRIPT_TRACE_PROFILE
 from .observability import METRICS
 from .request_context import current_caller_id, current_telemetry
-from .sanitization import redaction_summary, sanitize_untrusted_data
-from .trace_normalization import normalize_trace_list
+from .sanitization import SanitizationResult, redaction_summary
+from .trace_normalization import (
+    normalize_trace_list,
+    sanitize_trace_detail,
+    trace_sanitization_evidence,
+    trace_sanitization_partial,
+)
 
 PROFILE = SCRIPT_TRACE_PROFILE
 CORE_REQUIREMENTS = (PROFILE,)
@@ -58,7 +68,6 @@ SCRIPT_ID_PATTERN = re.compile(r"[a-z0-9_]{1,128}\Z")
 # Core issues ``random_uuid_hex()``; a restored trace keeps its stored id,
 # so the charset is bounded rather than pinned to one generator.
 RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
-MAX_STRING = 2_000
 
 
 class ScriptTraceError(GovernanceError):
@@ -172,29 +181,48 @@ class ScriptTraceService:
             raise ScriptTraceError(failure)
         return result
 
+    def _exit(self, value: Any) -> SanitizationResult:
+        """The HAMCP-225 trace exit, once, over everything returned (review H1)."""
+
+        return sanitize_trace_detail(value, known_secrets=self.known_secrets)
+
+    @staticmethod
+    def _evidence(result: SanitizationResult, partial: bool) -> dict[str, Any]:
+        partial = partial or trace_sanitization_partial(result)
+        telemetry = current_telemetry()
+        if telemetry is not None:
+            telemetry.completeness = "partial" if partial else "complete"
+            telemetry.result_status = "partial" if partial else "success"
+        return {
+            "completeness": "partial" if partial else "complete",
+            "sanitization_failed_closed": result.failed_closed,
+            "redaction": redaction_summary(result),
+            "sanitization": trace_sanitization_evidence(result),
+        }
+
     async def list_traces(self, script_id: str) -> dict[str, Any]:
         payload = list_payload(script_id)
         result = await self._command(payload)
         if not isinstance(result, list):
             raise ScriptTraceError("invalid_provider_response")
-        sanitation = sanitize_untrusted_data(
-            result, known_secrets=self.known_secrets, max_string=MAX_STRING
-        )
-        if not isinstance(sanitation.value, list):
+        # Screened whole and as Core sent it, before normalization shortens
+        # any header field.
+        sanitation = self._exit({"script_id": payload["item_id"], "traces": result})
+        screened = sanitation.value
+        if not isinstance(screened, dict) or not isinstance(screened.get("traces"), list):
             raise ScriptTraceError("invalid_provider_response")
         normalized = normalize_trace_list(
-            sanitation.value, sanitization_failed_closed=sanitation.failed_closed
+            screened["traces"], sanitization_failed_closed=sanitation.failed_closed
         )
         return {
-            "script_id": payload["item_id"],
+            "script_id": screened.get("script_id"),
             "traces": [header.public() for header in normalized.headers],
             "upstream_runs_returned": normalized.upstream_runs_returned,
             "runs_parsed_successfully": normalized.runs_parsed_successfully,
             "malformed_entries": normalized.malformed_entries,
             "source_truncated": normalized.source_truncated,
-            "sanitization_failed_closed": normalized.sanitization_failed_closed,
-            "redaction": redaction_summary(sanitation),
             "warnings": list(normalized.warnings),
+            **self._evidence(sanitation, normalized.source_truncated),
         }
 
     async def get_trace(self, script_id: str, run_id: str) -> dict[str, Any]:
@@ -202,17 +230,17 @@ class ScriptTraceService:
         result = await self._command(payload)
         if not isinstance(result, dict):
             raise ScriptTraceError("invalid_provider_response")
-        sanitation = sanitize_untrusted_data(
-            result, known_secrets=self.known_secrets, max_string=MAX_STRING
+        sanitation = self._exit(
+            {"script_id": payload["item_id"], "run_id": payload["run_id"], "trace": result}
         )
-        if not isinstance(sanitation.value, dict):
+        screened = sanitation.value
+        if not isinstance(screened, dict) or not isinstance(screened.get("trace"), dict):
             raise ScriptTraceError("invalid_provider_response")
         return {
-            "script_id": payload["item_id"],
-            "run_id": payload["run_id"],
-            "trace": sanitation.value,
-            "sanitization_failed_closed": sanitation.failed_closed,
-            "redaction": redaction_summary(sanitation),
+            "script_id": screened.get("script_id"),
+            "run_id": screened.get("run_id"),
+            "trace": screened["trace"],
+            **self._evidence(sanitation, False),
         }
 
 
