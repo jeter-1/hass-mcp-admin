@@ -37,7 +37,9 @@ from ha_mcp_engineering.dependency.service import AnalysisOutput, EntityDependen
 from ha_mcp_engineering.integrity.service import ConfigurationIntegrityAnalysisService  # noqa: E402
 from ha_mcp_engineering.integrity.provider import DirectHaIntegrityProvider  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
+from ha_mcp_engineering.audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE  # noqa: E402
 from ha_mcp_engineering.tools import analysis  # noqa: E402
+from ha_mcp_engineering.tools import audit_baseline as audit_tool  # noqa: E402
 
 MARKERS = {credentials.WITHHELD_MARKER, credentials.UNVERIFIABLE_MARKER}
 # Fields each integrity inventory screens at the source, and its rows' fields
@@ -229,6 +231,40 @@ class FinalEnvelopeBackstopTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(needle, json.dumps(tree), "the input is not modified")
         with self.assertRaises(untrusted_text.EnvelopeKeyWithheld):
             untrusted_text.screen_envelope({"ok": {value: 1}})
+
+    async def test_capture_page_with_an_unscreened_field_is_refused_not_rewritten(self):
+        value, needle = cases.withheld_cases()["postgresql"]
+        page = {"baseline_header": {"inventory": {"completeness": "complete", "scope": "loaded"},
+                                    "installation": {"status": "established"},
+                                    "consistency": {"inventory_drift": "none_observed_at_capture_fences"}},
+                "diagnostics": {}, "snapshot": {"capture_id": "a" * 32, "resumed_from": None},
+                "records": [{"configuration_id": "1", "added_later": value}]}
+        service = SimpleNamespace(provider=None, capture=unittest.mock.AsyncMock(return_value=page))
+        with patch.object(AUTOMATION_BASELINE_CAPTURE, "require", return_value=service):
+            response = await audit_tool.capture_automation_baseline()
+        data = json.loads(response)
+        self.assertFalse(data["success"], data)
+        self.assertEqual(data["error_code"], "analysis_unavailable")
+        self.assertIn("redacted_identity", response)
+        self.assertNotIn(needle, response)
+
+    async def test_compare_result_with_an_unscreened_field_is_withheld_and_partial(self):
+        value, needle = cases.withheld_cases()["postgresql"]
+        result = {"mode": "capture", "counts": {"CHANGED": 1}, "screened_withheld_count": 0,
+                  "pagination": {"returned": 1, "total_records": 1},
+                  "records": [{"configuration_id": "1", "added_later": value, "already": credentials.WITHHELD_MARKER}]}
+        service = SimpleNamespace(provider=None, compare=unittest.mock.AsyncMock(return_value=result))
+        with patch.object(AUTOMATION_BASELINE_CAPTURE, "require", return_value=service):
+            response = await audit_tool.compare_automation_baselines(earlier_capture_id="a" * 32,
+                                                                     later_capture_id="b" * 32)
+        data = json.loads(response)
+        self.assertTrue(data["success"], data)
+        self.assertNotIn(needle, response)
+        self.assertEqual(data["data"]["records"], [{"configuration_id": "1", "added_later": credentials.WITHHELD_MARKER,
+                                                    "already": credentials.WITHHELD_MARKER}])
+        self.assertEqual(data["data"]["screened_withheld_count"], 1)
+        self.assertIn("Some values were withheld by the credential screen.", data["warnings"])
+        self.assertEqual((self.telemetry.completeness, self.telemetry.result_status), ("partial", "partial"))
 
     async def test_helper_bounded_sources_disclosure_has_its_own_backstop(self):
         value, needle = cases.withheld_cases()["postgresql"]

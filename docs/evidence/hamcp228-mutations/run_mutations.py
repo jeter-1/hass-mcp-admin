@@ -37,8 +37,8 @@ Review 1 (HAMCP-226/228) adds:
   final-envelope backstop's value and key screens and its partial flags, in
   every tool that carries one);
 - ``H2-*``: a missing or unreadable index deleting or dropping committed
-  baselines (emptied instead of rebuilt, stubs, over-capacity, persistence,
-  binding, expiry, the reported store status);
+  baselines (emptied instead of rebuilt, stubs, persistence, binding,
+  expiry, the reported store status);
 - ``M1-*``: a resume not bound to the base's Core version;
 - ``M2-*``: compare output truncated, or its cursor not bound to the
   arguments, the caller or the compare domain, or its page row cap;
@@ -47,8 +47,9 @@ Review 1 (HAMCP-226/228) adds:
 
 Runs: ``run1.log`` stopped at its baseline (a wrong suite name);
 ``results-run2.json`` and ``results-run3.json`` keep runs 2 and 3;
-``results-run4.json`` is run 4 (44 of 44 killed); ``results.json`` is the
-review 1 run.
+``results-run4.json`` is run 4 (44 of 44 killed); ``results-run5.json`` and
+``run5.log`` are the first review 1 run (71 of 75 killed); ``results.json``
+and ``run6.log`` are run 6, after the run 5 corrections below.
 
 Equivalent mutants, analysed and left out after run 2:
 - the resumed baseline inheriting the base's ``unestablished`` identity or a
@@ -59,6 +60,19 @@ Equivalent mutants, analysed and left out after run 2:
   then, so no resumable base reaches either inheritance;
 - the ordered mapping compared as an unordered set: both sides are built
   from ``sorted(states.items())``, so equal sets are equal sequences.
+
+Equivalent mutant, analysed and left out after run 5:
+- ``H2-03``, the rebuild's explicit over-capacity refusal removed: the rebuilt
+  index is committed only through ``_write_index``, whose ``validate_index``
+  refuses more than ``STORE_BASELINES`` baselines (``store_invalid``) before
+  the index is replaced and before any damaged file is removed, so nothing
+  observable changes. The explicit refusal stays as the first, readable guard.
+
+Run 5 also showed three suite gaps, now closed: ``D3`` (the record's own
+binding must be the indexed entry; the suite now rewrites only the index to
+another caller), ``H1-12`` and ``H1-13`` (the capture and compare final
+backstops were masked by the inner screens; the suite now returns a field the
+inner screens never see).
 
 Run 3 showed ``A3`` (both cursor bindings removed) masked by the store's own
 caller check; the HAMCP-228 suite now requires the cursor itself to refuse
@@ -289,8 +303,6 @@ MUTATIONS = [
     m("H2-02-rebuild-quarantine-without-stub", H2,
       (STORE, '            stubs.append({"capture_id": capture_id, "quarantined_at_ms": now_ms, **damage})\n',
        "            pass\n")),
-    m("H2-03-rebuild-over-capacity-not-refused", H2,
-      (STORE, "        if len(recovered) > c.STORE_BASELINES:", "        if False:")),
     m("H2-04-rebuild-not-committed", H2,
       (STORE, "        self._write_index(index)\n        for capture_id, _ in damaged:",
        "        for capture_id, _ in damaged:")),

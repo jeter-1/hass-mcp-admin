@@ -231,6 +231,24 @@ class StoreTests(Harness):
                 service.store.get(bad, OWNER, now_ms)
             self.assertEqual(caught.exception.reason, 'baseline_not_found')
 
+    async def test_an_index_rewritten_to_another_caller_is_caught_by_the_record_binding(self):
+        # Only the index changes: the record bytes still match its size and
+        # digest, but the record's own binding names the capturing caller.
+        service, key, entry, raw = await self.stored_record()
+        now_ms = entry['created_at_ms'] + 1
+        index = service.store.load_index()
+        index['baselines'][0]['caller'] = 'synthetic-other'
+        service.store._write_index(index)
+        with self.assertRaises(StoreError) as caught:
+            service.store.get(key, 'synthetic-other', now_ms)
+        self.assertEqual(caught.exception.reason, 'baseline_damaged')
+        self.assertFalse(self.record_path(service, key).exists())
+        index = service.store.load_index()
+        self.assertEqual(index['baselines'], [])
+        self.assertEqual(index['quarantine']['entries'], [{
+            'capture_id': key, 'quarantined_at_ms': now_ms, 'reason': 'invalid_record',
+            'observed_bytes': len(raw), 'observed_sha256': hashlib.sha256(raw).hexdigest()}])
+
     async def test_cursor_from_another_caller_is_refused_by_the_cursor_itself(self):
         # The cursor binds its caller twice (HMAC input and stored caller), in
         # front of the store's own caller check: the refusal is invalid_cursor,
