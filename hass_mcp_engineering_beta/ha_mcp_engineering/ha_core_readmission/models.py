@@ -69,6 +69,9 @@ class CoreCapabilityClass(str, Enum):
     ENTITY_ASSISTANT_EXPOSURE_OPERATION = "entity_assistant_exposure_operation"
     LABEL_REGISTRY_OPERATION = "label_registry_operation"
     CONFIGURATION_DELETE_OPERATION = "configuration_delete_operation"
+    CONFIG_ENTRY_HELPER_OPTIONS_OPERATION = "config_entry_helper_options_operation"
+    TYPED_INPUT_SELECT_OPTION_OPERATION = "typed_input_select_option_operation"
+    SCRIPT_TRACE_READ = "script_trace_read"
     UNCLASSIFIED = "unclassified"
 
     @property
@@ -83,6 +86,8 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.ENTITY_ASSISTANT_EXPOSURE_OPERATION,
             CoreCapabilityClass.LABEL_REGISTRY_OPERATION,
             CoreCapabilityClass.CONFIGURATION_DELETE_OPERATION,
+            CoreCapabilityClass.CONFIG_ENTRY_HELPER_OPTIONS_OPERATION,
+            CoreCapabilityClass.TYPED_INPUT_SELECT_OPTION_OPERATION,
             CoreCapabilityClass.UNCLASSIFIED,
         }
 
@@ -94,6 +99,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.DIRECT_DEVICE_REGISTRY_READ,
             CoreCapabilityClass.DELEGATED_DEVICE_EFFECTIVE_AREA,
             CoreCapabilityClass.AUTOMATION_TRACE_READ,
+            CoreCapabilityClass.SCRIPT_TRACE_READ,
             CoreCapabilityClass.TEMPLATE_SEMANTICS,
             CoreCapabilityClass.CONFIGURATION_VALIDATION,
             CoreCapabilityClass.DEPENDENCY_HELPER_PLANNING,
@@ -106,6 +112,8 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.ENTITY_ASSISTANT_EXPOSURE_OPERATION,
             CoreCapabilityClass.LABEL_REGISTRY_OPERATION,
             CoreCapabilityClass.CONFIGURATION_DELETE_OPERATION,
+            CoreCapabilityClass.CONFIG_ENTRY_HELPER_OPTIONS_OPERATION,
+            CoreCapabilityClass.TYPED_INPUT_SELECT_OPTION_OPERATION,
         }
 
 

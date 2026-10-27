@@ -613,6 +613,95 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.41` November Core batch (HAMCP-232, HAMCP-145) adds two
+governed write plan families and two script-trace reads, all built
+inactive. It adds three runtime-only Core capability profiles, none of them
+signed, and no permission, add-on option, delegated provider or fallback.
+
+- **Admission first.** Every entry point, the generic plan and resource
+  routes included, refuses `pending_signed_registry_admission` before any
+  read, validation read or persistence until a signed sequence names the
+  profile, and again at the persist boundary. A retained, non-terminal task
+  with no child dispatch intent is admitted before anything is persisted;
+  every F3 path re-checks dispatch admission.
+- **Writes, once admitted.** One options-flow step submit per helper entry
+  and one `input_select.select_option` call, each at most once and never
+  redispatched; `mark_provider_send()` marks the send boundary. The options
+  submit must be the complete intended set (baseline plus the approved
+  changes), checked at create and at apply, because Core replaces the
+  options with the submitted dict.
+- **No flow left open.** Every options flow this server opens is held,
+  registered and aborted on every exit, a cancelled caller included; a 404
+  counts as gone and a lost open is disclosed as
+  `options_flow_open_unconfirmed`.
+- **Durable flow ledger and abort retry (correction 2, H2-R1).** The open
+  intent (entry, plan, task, phase, time) is recorded in Engineering's own
+  storage before the open is sent, and the received flow id before any
+  abort; an open is refused, with nothing sent, when the record cannot be
+  written. A failed or unknown abort stays recorded across restarts and each
+  recovery sweep retries it, at most 10 times, until Core confirms the flow
+  gone (aborted, or a 404); after that it is reported orphaned in health.
+  The retry is the existing reviewed options-flow DELETE, by the recorded id
+  of a flow this server opened, only while a signed registry admits the
+  profile and inside an exact-target Core authority window for that entry.
+  It adds no Home Assistant write, no new Core command and no fallback; with
+  nothing recorded or no admission the sweep makes no call and no write.
+- **Accepted residual (owner decision (b)).** Pinned Core 2026.10.1 lists no
+  in-progress options flows (`flow/progress` and `flow/subscribe` cover
+  config flows only), so a flow whose open answer was lost cannot be found
+  or aborted. It is reported in health, and in the task when one exists, as
+  "options flow possibly left open on entry X (no flow id received); it
+  holds no configuration change and is discarded at the next Home Assistant
+  restart".
+- **Closed vocabularies.** Explicit never-sent lists: entry create, delete,
+  reload, update, disable and subentries; `set_options` and the relative
+  option moves; `trace/contexts`, every `trace/debug/*` command and the
+  list-all trace form.
+- **Trace sanitization.** Script traces, with the identifiers they are
+  returned under, leave through the one HAMCP-225 trace exit (the shared
+  `credentials.screen` first, then the strict sanitizer, truncation last).
+- **Disclosure.** A disabled dependent automation or trigger is disclosed as
+  not firing while disabled; enablement is part of the binding fingerprint,
+  so a toggle between plan and apply refuses the apply as stale. The OD-7
+  concurrency window is disclosed in the plan and the apply response.
+
+The `2.4.1-beta.39` trace snapshot slice (HAMCP-225) adds four
+Engineering-native tools and one Engineering-local store. It adds no Home
+Assistant write, permission, add-on option, Core capability profile,
+delegated provider or fallback.
+
+- **Reads.** Only `trace/list` and `trace/get` with `domain: "automation"`,
+  the shapes `list_automation_traces` and `get_automation_trace` already
+  send. Tests assert no other command and no `domain: "script"`.
+- **Sanitization.** `get_automation_trace` output and every captured trace
+  pass the shared trace sanitizer before they leave Engineering or reach the
+  store; capture runs one more strict pass over the complete record, and
+  read-back re-sanitizes each page. Withheld content makes the result
+  `partial`. Before the strict sanitizer, every string and every dictionary
+  key at every depth passes the shared `credentials.screen` used by HAMCP-132
+  and HAMCP-224 (no trace-specific screen); a flagged key withholds its whole
+  entry, and nesting beyond 64 levels is withheld as unverifiable. PEM
+  private-key blocks with a header are withheld whole.
+- **Identifiers.** Home Assistant's own identifiers and names are screened
+  in the default mode (owner decision, as in HAMCP-226); trace values keep
+  the labelled mode. An automation or run ID the screen flags is persisted,
+  audited and returned only as `withheld_` plus a per-process HMAC digest;
+  refusals never echo it, and the gateway audit records it as `null`. A PEM
+  block in an identity field is not withheld.
+- **Store.** `trace-snapshots-v1/` under the governance path: `flock`,
+  `O_NOFOLLOW`, `0600`, atomic rename, digest-checked loads, at most 20
+  content-free quarantine stubs, fail-closed index, fixed diagnostics,
+  bounded size, count and age. Manual
+  captures are refused at capacity; a watch evicts only its own snapshots.
+- **Watch poller.** The only periodic Core read: bounded to 10 watches every
+  30 seconds, under its own Core authority lease, paused while authority is
+  unavailable or the version is not admitted, and re-checked before each
+  watch's reads are stored and again under the store lock, immediately
+  before the first write. Watch changes need no approval but write a
+  required, caller-attributed audit row.
+- **Caller binding.** List and read cursors are HMAC-bound to the caller
+  with a per-process key.
+
 The `2.4.1-beta.33` configuration-definition slice (HAMCP-132 slice 2) adds
 the read-only `get_configuration_definitions` tool. It adds no permission,
 add-on option, HTTP client, Supervisor call, route template, batch-allowlist

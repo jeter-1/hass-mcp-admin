@@ -51,7 +51,14 @@ TOOLS = {
     "configuration_delete_provider": "create_configuration_delete_plan",
     "entity_availability_exposure_provider": "create_entity_availability_exposure_plan",
     "label_registry_provider": "create_label_plan",
+    # HAMCP-232/145: the three dormant providers project through the same snapshot.
+    "input_select_provider": "create_input_select_option_plan",
+    "script_trace_provider": "list_script_traces",
+    "helper_options_provider": "create_helper_options_plan",
 }
+# The script-trace provider backs a second tool, which must agree with the first.
+SECOND_SURFACES = {"get_script_trace": "script_trace_provider"}
+GOVERNED_TOOLS = (*TOOLS.values(), *SECOND_SURFACES)
 EVERY_PROFILE = {item for profiles, _ in PROVIDERS.values() for item in profiles}
 PENDING = {key: pending for key, (_, pending) in PROVIDERS.items()}
 
@@ -106,13 +113,15 @@ def health_and_catalog(service):
     catalog = result["data"]
     by_tool = {item["tool"]: item for item in catalog["beta_native"]}
     tools = {key: by_tool[tool]["core_admission"] for key, tool in TOOLS.items()}
+    second = {tool: by_tool[tool]["core_admission"] for tool in SECOND_SURFACES}
     return {
         "health": health,
         "health_generation": operational["core_admission_generation"],
         "catalog": tools,
+        "catalog_second_surfaces": second,
         "catalog_admission": catalog["core_admission"],
         "requirements": {
-            key: by_tool[tool]["core_admission_requirement"] for key, tool in TOOLS.items()
+            tool: by_tool[tool]["core_admission_requirement"] for tool in GOVERNED_TOOLS
         },
     }
 
@@ -130,6 +139,10 @@ class CatalogHealthAgreementTests(unittest.TestCase):
     def assert_agree(self, views, expected, generation, status="current"):
         self.assertEqual(views["health"], expected)
         self.assertEqual(views["catalog"], expected)
+        self.assertEqual(
+            views["catalog_second_surfaces"],
+            {tool: expected[key] for tool, key in SECOND_SURFACES.items()},
+        )
         self.assertEqual(views["health_generation"], generation)
         self.assertEqual(
             views["catalog_admission"], {"status": status, "generation": generation}
@@ -207,7 +220,7 @@ class StaticCatalogTests(unittest.TestCase):
     """Without a current read the catalog never presents a static pending."""
 
     def test_static_entries_state_the_requirement_and_not_evaluated(self):
-        for tool in TOOLS.values():
+        for tool in GOVERNED_TOOLS:
             with self.subTest(tool=tool):
                 entry = capability_for_tool(tool)
                 self.assertEqual(entry["core_admission"], CORE_ADMISSION_NOT_EVALUATED)
@@ -224,7 +237,7 @@ class StaticCatalogTests(unittest.TestCase):
             {"status": CORE_ADMISSION_NOT_EVALUATED, "generation": None},
         )
         by_tool = {item["tool"]: item for item in catalog["beta_native"]}
-        for tool in TOOLS.values():
+        for tool in GOVERNED_TOOLS:
             self.assertEqual(by_tool[tool]["core_admission"], CORE_ADMISSION_NOT_EVALUATED)
 
     def test_the_overlay_touches_only_governed_entries(self):
@@ -232,17 +245,17 @@ class StaticCatalogTests(unittest.TestCase):
             "status": "current",
             "generation": 4,
             "providers": {},
-            "tools": {tool: "admitted" for tool in TOOLS.values()},
+            "tools": {tool: "admitted" for tool in GOVERNED_TOOLS},
         }
         plain = build_capability_catalog()
         current = build_capability_catalog(core_admission=snapshot)
         for before, after in zip(plain["beta_native"], current["beta_native"]):
-            if before["tool"] in TOOLS.values():
+            if before["tool"] in GOVERNED_TOOLS:
                 self.assertEqual(after["core_admission"], "admitted")
                 before = {**before, "core_admission": "admitted"}
             self.assertEqual(after, before)
         # The overlay never mutates the shared static entries.
-        for tool in TOOLS.values():
+        for tool in GOVERNED_TOOLS:
             self.assertEqual(
                 capability_for_tool(tool)["core_admission"], CORE_ADMISSION_NOT_EVALUATED
             )

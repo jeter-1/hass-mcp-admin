@@ -42,10 +42,13 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.INTEGRATION_INSPECTION,
     ProviderCapability.BACKUP_INVENTORY,
     ProviderCapability.RECORDER_SETTINGS,
+    ProviderCapability.SCRIPT_TRACE,
     ProviderCapability.HISTORY_SLICES,
     ProviderCapability.UNREGISTERED_ENTITIES,
     ProviderCapability.CONFIGURATION_DEFINITIONS,
     ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
+    ProviderCapability.TRACE_SNAPSHOTS,
+    ProviderCapability.AUTOMATION_BASELINE_COMPARE,
     ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     ProviderCapability.TYPED_FAN_EXECUTION,
     ProviderCapability.TYPED_POWER_EXECUTION,
@@ -131,9 +134,16 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_integration_inspection": ProviderCapability.INTEGRATION_INSPECTION,
     "get_backup_inventory": ProviderCapability.BACKUP_INVENTORY,
     "get_recorder_settings": ProviderCapability.RECORDER_SETTINGS,
+    "list_script_traces": ProviderCapability.SCRIPT_TRACE,
+    "get_script_trace": ProviderCapability.SCRIPT_TRACE,
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
+    "capture_automation_trace": ProviderCapability.TRACE_SNAPSHOTS,
+    "list_trace_snapshots": ProviderCapability.TRACE_SNAPSHOTS,
+    "get_trace_snapshot": ProviderCapability.TRACE_SNAPSHOTS,
+    "set_automation_trace_watch": ProviderCapability.TRACE_SNAPSHOTS,
+    "compare_automation_baselines": ProviderCapability.AUTOMATION_BASELINE_COMPARE,
     "dashboard_integrity_analysis": ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
     "control_power": ProviderCapability.TYPED_POWER_EXECUTION,
@@ -187,6 +197,10 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "create_configuration_delete_plan": (
         ProviderCapability.OPERATIONAL_ADMINISTRATION
     ),
+    "create_helper_options_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
+    "create_input_select_option_plan": (
+        ProviderCapability.OPERATIONAL_ADMINISTRATION
+    ),
     "get_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "list_change_plans": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "get_execution_task": ProviderCapability.GOVERNANCE_PERSISTENCE,
@@ -233,8 +247,13 @@ ANALYTICAL_PROVIDER_POLICIES = {
     },
     "capture_automation_baseline": {
         "policy_id": "loaded_automation_entities-v1", "access": "read", "orchestrator": "engineering",
-        "scope": "bounded loaded-automation inventory and exact configuration hashes; frozen export",
-        "writes_allowed": "none", "fallback_policy": "none",
+        "scope": "bounded loaded-automation inventory and exact configuration hashes; stored caller-bound export",
+        "writes_allowed": "engineering_local_evidence_only", "fallback_policy": "none",
+    },
+    "capture_automation_trace": {
+        "policy_id": "automation-trace-snapshot-v1", "access": "read", "orchestrator": "engineering",
+        "scope": "trace/list and trace/get for one automation (domain automation only); sanitized before an Engineering-local store",
+        "writes_allowed": "engineering_local_evidence_only", "fallback_policy": "none",
     },
     "get_integration_inspection": {
         "policy_id": "alarmo_allowlist_v1", "access": "read", "orchestrator": "engineering",
@@ -249,6 +268,16 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "get_recorder_settings": {
         "policy_id": "recorder_settings_read_v1", "access": "read", "orchestrator": "engineering",
         "scope": "admitted YAML reader at fixed recorder/homeassistant paths, recorder/info and up to 50 recorder/entity_options/get; db_url withheld",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "list_script_traces": {
+        "policy_id": "script_trace_list_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "one exact script key; trace/list domain script only; shared sanitizer before normalization; admitted core.script_trace_read only",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_script_trace": {
+        "policy_id": "script_trace_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "one exact script key and run id; trace/get domain script only; shared sanitizer before output; admitted core.script_trace_read only",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "get_history_slices": {

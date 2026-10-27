@@ -22,6 +22,7 @@ from .entity_metadata_disclosure import (
     runtime_consumer_evidence,
 )
 from .operational import BackupAdministrationGateway
+from .input_select_option import InputSelectGateway
 from .helper_state import (
     HELPER_STATE_PROVIDER,
     HELPER_STATE_PROVIDER_CONTRACT,
@@ -160,6 +161,11 @@ class GovernanceRuntime:
             helper_state_gateway = HelperStateGateway(
                 rest_client, websocket_client
             )
+            # HAMCP-145: refused before any read until a signed registry
+            # admits core.typed_input_select_option_operation.
+            input_select_gateway = InputSelectGateway(
+                rest_client, websocket_client
+            )
             approval_notifications = ApprovalNotificationManager(
                 rest_client,
                 audit,
@@ -191,6 +197,10 @@ class GovernanceRuntime:
                 configuration_delete_gateway=(
                     resource_gateway.configuration_delete
                 ),
+                input_select_gateway=input_select_gateway,
+                # HAMCP-232: refused before any read until a signed registry
+                # admits core.config_entry_helper_options_operation.
+                helper_options_gateway=resource_gateway.helper_options,
             )
             from ..f3_runtime.runtime import F3RuntimeIntegration
 
@@ -205,6 +215,7 @@ class GovernanceRuntime:
                 provider_identity_reader=provider_identity_reader,
                 retention_days=settings.governance_retention_days,
                 core_runtime=core_runtime,
+                input_select_gateway=input_select_gateway,
             )
             self.storage_error = None
         except ChangePlanStorageError:

@@ -572,6 +572,7 @@ SANITIZER_SITES = {
     ("dashboard_analysis/models.py", "_scalar", "sanitize_untrusted_data"): (1, "identifier"),
     ("dashboard_analysis/models.py", "validate_projection", "sanitize_untrusted_data"): (1, "identifier"),
     ("dashboard_analysis/provider.py", "safe_entity", "sanitize_untrusted_data"): (1, "identifier"),
+    ("dependency/bounded_sources.py", "_shown", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/extraction.py", "_bounded", "redact_data"): (1, "analysis"),
     ("dependency/models.py", "_bounded_evidence_text", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/models.py", "_bounded_evidence_values", "sanitize_untrusted_data"): (1, "analysis"),
@@ -644,6 +645,7 @@ SANITIZER_SITES = {
     ("tools/compatibility.py", "get_error_log.action", "sanitize_untrusted_data"): (1, "logs"),
     ("tools/governance.py", "_identifier_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
     ("trace_normalization.py", "fetch_normalized_trace_list", "sanitize_untrusted_data"): (1, "analysis"),
+    ("trace_normalization.py", "sanitize_trace_detail", "sanitize_untrusted_data"): (1, "analysis"),
 }
 
 # D11: the only call sites allowed to use the stored-plan re-scan.

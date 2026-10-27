@@ -68,8 +68,8 @@ class HomeAssistantRestClient:
     ) -> Any:
         # HAMCP-200: the route is verified before a credential, telemetry
         # authorization or session exists. An unsafe path fails closed here.
-        route = require_route(path)
-        url = request_url(self.settings.api_url, route)
+        route = require_route(path, method)
+        url = request_url(self.settings.api_url, route, method)
         if logbook_read and (method != "GET" or route.template != "/logbook/{}"
                              or body is not None or not raw or expected_statuses):
             raise ValueError("invalid_internal_logbook_request")

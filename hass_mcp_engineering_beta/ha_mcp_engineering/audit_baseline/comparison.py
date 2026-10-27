@@ -66,6 +66,9 @@ def _shared_unknown_reasons(
         reasons.append("earlier_mapping_unverified")
     if not later.identity_verified:
         reasons.append("later_mapping_unverified")
+    # HAMCP-228: a record the capture never attempted is unknown, not changed.
+    if "timed_out" in (earlier.configuration_status, later.configuration_status):
+        reasons.append("timed_out")
     if earlier.configuration_status != "readable":
         reasons.append("earlier_configuration_not_readable")
     if later.configuration_status != "readable":
@@ -304,11 +307,29 @@ def render_bounded_report(
     max_bytes: int = MAX_OUTPUT_BYTES,
     max_details: int = MAX_OUTPUT_DETAILS,
 ) -> bytes:
-    """Render one deterministic report without repeated whole-report fitting.
+    """Render one deterministic report without repeated whole-report fitting."""
 
-    The fixed header is serialized once. Each record detail is serialized once
-    while accounting exact list bytes. The complete selected report is then
-    serialized once for a final defensive size check.
+    return _encoded(
+        bound_report_dict(
+            comparison_report_dict(report), max_bytes=max_bytes, max_details=max_details
+        )
+    )
+
+
+def bound_report_dict(
+    value: dict[str, Any],
+    *,
+    max_bytes: int = MAX_OUTPUT_BYTES,
+    max_details: int = MAX_OUTPUT_DETAILS,
+) -> dict[str, Any]:
+    """Select the leading ``records`` of ``value`` that fit ``max_bytes``.
+
+    ``value`` holds ``records``, ``details_truncated`` and
+    ``omitted_detail_count``. (``compare_automation_baselines`` pages its
+    records instead of truncating them.) The fixed header is serialized
+    once. Each record detail is serialized once while accounting exact list
+    bytes. The complete selected report is then serialized once for a final
+    defensive size check.
     """
 
     if type(max_bytes) is not int or max_bytes < 1_024 or max_bytes > MAX_OUTPUT_BYTES:
@@ -316,7 +337,7 @@ def render_bounded_report(
     if type(max_details) is not int or not 0 <= max_details <= MAX_OUTPUT_DETAILS:
         raise BaselineValidationError("output_detail_limit_invalid")
 
-    value = comparison_report_dict(report)
+    value = dict(value)
     all_details = value.pop("records")
     total = len(all_details)
     value["details_truncated"] = total > 0
@@ -345,9 +366,121 @@ def render_bounded_report(
     value["records"] = selected
     value["details_truncated"] = omitted > 0
     value["omitted_detail_count"] = omitted
-    rendered = _encoded(value)
-    if len(rendered) > max_bytes:
+    if len(_encoded(value)) > max_bytes:
         # Exact incremental sizing should make this only an implementation
         # regression guard, never a trigger for repeated whole-report fitting.
         raise BaselineValidationError("output_size_limit_exceeded")
-    return rendered
+    return value
+
+
+# HAMCP-228: recorded fingerprints (the register keeps 16-character prefixes).
+FINGERPRINT_COMPARISON_SCHEMA = "automation-audit-fingerprint-comparison-v1"
+PREFIX_MATCH = "PREFIX_MATCH"
+MIN_PREFIX = 16
+TOOL_COUNT_KEYS = ("UNCHANGED", PREFIX_MATCH, "CHANGED", "ADDED", "REMOVED", "UNKNOWN", "TOTAL")
+
+
+def compare_recorded_fingerprints(
+    capture: Baseline,
+    fingerprints: dict[str, str],
+    fingerprint_model: str,
+) -> dict[str, Any]:
+    """Compare one validated capture with caller-recorded fingerprints.
+
+    ``fingerprints`` maps a configuration id to 16..64 lowercase hex
+    characters (the leading part of the record's sha256 configuration
+    digest). A full 64-character match is ``UNCHANGED``; a shorter matching
+    prefix is ``PREFIX_MATCH`` (reason ``prefix_match:<n>``), never counted as
+    ``UNCHANGED``. A differing prefix proves a different digest: ``CHANGED``.
+    Recorded fingerprints carry no installation identity or inventory
+    authority, so an id on one side only is ``UNKNOWN``, never ``ADDED`` or
+    ``REMOVED``. A ``fingerprint_model`` other than the capture's makes every
+    record ``UNKNOWN`` (``fingerprint_model_mismatch``).
+    """
+
+    model_compatible = bool(
+        fingerprint_model == FINGERPRINT_MODEL
+        and capture.fingerprint_contract.model == FINGERPRINT_MODEL
+    )
+    authority_continuous = (
+        capture.consistency.get("authority_drift") == "none_observed_at_capture_fences"
+    )
+    by_id = capture.records_by_id
+    counts = {key: 0 for key in TOOL_COUNT_KEYS}
+    details: list[dict[str, Any]] = []
+    for configuration_id in sorted(set(by_id) | set(fingerprints)):
+        record = by_id.get(configuration_id)
+        recorded = fingerprints.get(configuration_id)
+        reasons: list[str] = []
+        if not model_compatible:
+            reasons.append("fingerprint_model_mismatch")
+        if record is None:
+            reasons.append("absent_from_capture")
+        elif recorded is None:
+            reasons.append("absent_from_recorded_fingerprints")
+        else:
+            if not capture.installation.established:
+                reasons.append("capture_installation_unestablished")
+            if not authority_continuous:
+                reasons.append("capture_authority_continuity_unestablished")
+            if not record.identity_verified:
+                reasons.append("capture_mapping_unverified")
+            if record.configuration_status == "timed_out":
+                reasons.append("timed_out")
+            if record.configuration_status != "readable":
+                reasons.append("capture_configuration_not_readable")
+            if not record.coverage.comparison_complete:
+                reasons.append("capture_configuration_coverage_incomplete")
+            if record.fingerprint_model != fingerprint_model:
+                reasons.append("fingerprint_model_mismatch")
+            if record.configuration_digest is None:
+                reasons.append("capture_configuration_digest_missing")
+        if reasons:
+            classification = "UNKNOWN"
+        else:
+            digest = record.configuration_digest.removeprefix("sha256:")
+            if not digest.startswith(recorded):
+                classification = "CHANGED"
+            elif len(recorded) == len(digest):
+                classification = "UNCHANGED"
+            else:
+                classification = PREFIX_MATCH
+                reasons.append(f"prefix_match:{len(recorded)}")
+        counts[classification] += 1
+        details.append({
+            "configuration_id": configuration_id,
+            "classification": classification,
+            "reasons": sorted(set(reasons)),
+            "entity_id": record.entity_id if record else None,
+            "enabled_state": record.enabled_state if record else None,
+            "configuration_digest": {
+                "capture": record.configuration_digest if record else None,
+                "recorded": recorded,
+            },
+        })
+    counts["TOTAL"] = len(details)
+    return {
+        "schema": FINGERPRINT_COMPARISON_SCHEMA,
+        "capture_baseline_id": capture.baseline_id,
+        "capture_interval": CaptureInterval(
+            capture.capture_start, capture.capture_end, capture.capture_non_atomic
+        ).public(),
+        "global": {
+            "fingerprint_model": fingerprint_model,
+            "fingerprint_model_compatible": model_compatible,
+            "capture_installation_established": capture.installation.established,
+            "capture_authority_continuous": authority_continuous,
+            "recorded_side_installation_identity": "not_recorded",
+            "recorded_side_inventory_authority": "not_recorded",
+        },
+        "counts": counts,
+        "limitations": [
+            "unchanged_counts_full_digest_matches_only_prefix_match_is_counted_separately",
+            "recorded_fingerprints_carry_no_installation_identity_or_inventory_authority",
+            "an_id_on_one_side_only_is_unknown_not_added_or_removed",
+            "configuration_digests_identify_captured_representation_changes_not_field_level_edits",
+        ],
+        "details_truncated": False,
+        "omitted_detail_count": 0,
+        "records": details,
+    }

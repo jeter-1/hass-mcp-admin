@@ -585,7 +585,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 68)
+        self.assertEqual(len(self.beta_tools), 77)
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -611,6 +611,15 @@ class ToolParityTests(unittest.TestCase):
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
                 "create_configuration_delete_plan",
+                "create_helper_options_plan",
+                "create_input_select_option_plan",
+                "list_script_traces",
+                "get_script_trace",
+                "capture_automation_trace",
+                "list_trace_snapshots",
+                "get_trace_snapshot",
+                "set_automation_trace_watch",
+                "compare_automation_baselines",
                 "create_addon_restart_plan",
                 "create_home_assistant_restart_plan",
                 "create_change_plan",
@@ -690,7 +699,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], SERVER_VERSION)
-        self.assertEqual(result["data"]["tool_count"], 68)
+        self.assertEqual(result["data"]["tool_count"], 77)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -698,7 +707,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 68)
+        self.assertEqual(catalog["registered_count"], 77)
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
@@ -706,6 +715,11 @@ class ToolParityTests(unittest.TestCase):
                 "dashboard_integrity_analysis",
                 "reverify_configuration_task",
                 "capture_automation_baseline",
+                "compare_automation_baselines",
+                "capture_automation_trace",
+                "list_trace_snapshots",
+                "get_trace_snapshot",
+                "set_automation_trace_watch",
                 "get_integration_inspection",
                 "get_backup_inventory",
                 "get_recorder_settings",
@@ -725,6 +739,10 @@ class ToolParityTests(unittest.TestCase):
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
                 "create_configuration_delete_plan",
+                "create_helper_options_plan",
+                "create_input_select_option_plan",
+                "list_script_traces",
+                "get_script_trace",
                 "create_home_assistant_restart_plan",
                 "get_server_health",
                 "list_dashboards",
@@ -752,7 +770,7 @@ class ToolParityTests(unittest.TestCase):
             Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(catalog["provider_matrix"]), 28)
+        self.assertEqual(len(catalog["provider_matrix"]), 33)
         self.assertEqual(
             {item["selected_provider"] for item in catalog["provider_matrix"]},
             {"direct_ha_api", "supervisor_core_logs", "supervisor_incident_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power", "upstream_platform_reads", "ha_mcp_delegated"},
@@ -869,7 +887,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 68)
+        self.assertEqual(len(names), 77)
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]
@@ -950,6 +968,11 @@ class BetaApplicationTests(unittest.TestCase):
             "create_entity_availability_exposure_plan",
             "create_label_plan",
             "create_configuration_delete_plan",
+            "capture_automation_trace",
+            "list_trace_snapshots",
+            "get_trace_snapshot",
+            "set_automation_trace_watch",
+            "compare_automation_baselines",
             "create_addon_restart_plan",
             "create_home_assistant_restart_plan",
             "list_dashboards",

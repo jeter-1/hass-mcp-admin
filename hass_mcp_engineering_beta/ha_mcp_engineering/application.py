@@ -44,6 +44,7 @@ from .providers.operational_lifecycle import (
 from .providers.upstream_registry import RegistryValidationError, UpstreamTrustRegistry
 from .ha_mcp_readmission.registry import TRUST_ANCHOR_KEY_ID
 from .ha_core_readmission.runtime import CORE_READMISSION
+from .trace_snapshots.runtime import TRACE_SNAPSHOTS
 from .signed_registry import (
     RegistryValidationError as SignedRegistryValidationError,
     TrustAnchorStore,
@@ -186,6 +187,7 @@ def create_application(
     from .integration_inspection.runtime import INTEGRATION_INSPECTION
     from .backup_inventory.service import BACKUP_INVENTORY
     from .recorder_settings.service import RECORDER_SETTINGS
+    from .script_traces import SCRIPT_TRACES
     from .entity_reconciliation.service import ENTITY_RECONCILIATION
     from .configuration_definitions.service import CONFIGURATION_DEFINITIONS
     from .incident_logs.service import INCIDENT_LOGS
@@ -210,6 +212,8 @@ def create_application(
         HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings,
         yaml_reader_factory=lambda: UPSTREAM_READ_GATEWAY.yaml_config_reader(audit=audit),
     )
+    # HAMCP-232/145 §4b: dormant until a signed registry admits the profile.
+    SCRIPT_TRACES.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
     ENTITY_RECONCILIATION.configure(HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings),
                                     CORE_READMISSION, settings)
     CONFIGURATION_DEFINITIONS.configure(
@@ -218,6 +222,10 @@ def create_application(
             audit=audit, purpose="configuration_definitions"),
     )
     AUTOMATION_BASELINE_CAPTURE.configure(settings, CORE_READMISSION)
+    # HAMCP-225: no I/O here; the trace watch poller starts with the listeners
+    # and reads Core only under its own exact automation-trace lease.
+    TRACE_SNAPSHOTS.configure(settings, CORE_READMISSION, audit=audit,
+                              command=HomeAssistantWebSocketClient(settings).command)
     # HAMCP-131: no I/O here; the add-on credential is read per request.
     # HAMCP-220: Home Assistant's time zone is read per call from Core
     # /api/config under the tool's own core.basic_rest_read lease.
@@ -573,6 +581,11 @@ async def _serve(settings: Settings) -> None:
             if settings.prewarm_enabled and DEPENDENCY_ANALYSIS.service is not None
             else None
         )
+        trace_watch_task = (
+            TRACE_SNAPSHOTS.start_poller()
+            if isinstance(gateway, AuthenticatedMcpGateway)
+            else None
+        )
         try:
             supervised_tasks = {
                 mcp_task,
@@ -620,6 +633,8 @@ async def _serve(settings: Settings) -> None:
             if POWER_OPERATIONS.service is not None:
                 await POWER_OPERATIONS.service.close()
             await DEPENDENCY_ANALYSIS.shutdown()
+            if trace_watch_task is not None:
+                await TRACE_SNAPSHOTS.shutdown()
     finally:
         finish_mcp_observation(mcp_server)
 

@@ -162,6 +162,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
     from ha_mcp_engineering.clients.audit_baseline import BaselineReadClient
     from ha_mcp_engineering.audit_baseline.capture_provider import BaselineCaptureProvider
     from ha_mcp_engineering.audit_baseline.capture_service import BaselineCaptureService
+    from ha_mcp_engineering.audit_baseline.store import BaselineStore
     from ha_mcp_engineering.audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
     from ha_mcp_engineering.audit_baseline import capture_contracts as c
     from ha_mcp_engineering.tools.audit_baseline import registered_tool
@@ -184,12 +185,16 @@ async def _run_disposable(configured, *, expected_image, core_version):
             and image['core_version']==core_version and image['support_slot']==binding['slot'])
     refs = [{k:p.to_mapping()[k] for k in ('capability_id','profile_id','profile_version','adapter_id','contract_fingerprint')}
             for p in CORE_RUNTIME_CAPABILITY_PROFILES
-            # HAMCP-069A/069B/155/165: the dormant entity, delete and label profiles are not signed here.
+            # HAMCP-069A/069B/155/165/232/145: the dormant entity, delete, label and November-batch
+            # (seq 15+) profiles are not signed here.
             if p.capability_id not in {'core.entity_registry_metadata_operation',
                                        'core.entity_registry_availability_operation',
                                        'core.entity_assistant_exposure_operation',
                                        'core.configuration_delete_operation',
-                                       'core.label_registry_operation'}]
+                                       'core.label_registry_operation',
+                                       'core.config_entry_helper_options_operation',
+                                       'core.typed_input_select_option_operation',
+                                       'core.script_trace_read'}]
     old = [r for r in refs if r['capability_id'] != c.CAPABILITY]
     assert len(old)==20 and len(refs)==21
     key=Ed25519PrivateKey.generate(); now=datetime.now(timezone.utc)
@@ -216,9 +221,12 @@ async def _run_disposable(configured, *, expected_image, core_version):
             await runtime.reconcile_once('startup')
             assert runtime.health_snapshot()['compatible_count']==len(references)
             return runtime
+        # HAMCP-228: one disposable durable store for the whole run, under
+        # this run's temporary directory (the runtime uses governance_path).
+        store=BaselineStore(Path(directory)/'governance')
         def service(runtime, options=configured):
             return BaselineCaptureService(BaselineCaptureProvider(BaselineReadClient(options),runtime,
-                known_secrets=(options.ha_token,options.access_secret)))
+                known_secrets=(options.ha_token,options.access_secret)),store)
         async def request(runtime, capture, arguments):
             telemetry, token=begin_request();telemetry.caller_id='synthetic-native-baseline-owner'
             lease=runtime.acquire(c.REQUIREMENTS)
@@ -247,6 +255,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
             assert first['success'], 'Baseline public call refused'
             page=first['data'];baseline={**page['baseline_header'],'records':list(page['records'])}
             artifact=page['artifact_sha256'];continuation_reads=0
+            assert page['snapshot']['storage']=='durable_engineering_store'
             while page['pagination']['next_cursor']:
                 result, count,_=await request(runtime,capture,{'limit':17,'cursor':page['pagination']['next_cursor']})
                 assert result['success']; page=result['data'];continuation_reads+=count

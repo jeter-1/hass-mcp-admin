@@ -233,7 +233,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         await gateway.initialize(server)
         baseline = {tool.name: tool.model_dump(mode="json")
                     for tool in await server.list_tools()}
-        self.assertEqual(len(baseline), 96)  # HAMCP-165 + HAMCP-155: +2 inactive planners
+        self.assertEqual(len(baseline), 105)  # HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners
         self.assertNotIn("ha_get_operation_status", baseline)
         cases = {"ha_get_device": {"device_id": "parent-garage"},
                  "ha_get_entity": {"entity_id": "cover.synthetic_garage_door"},
@@ -255,7 +255,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.network.records[2]["identifiers"] = [["test", 1]]
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)
-        self.assertEqual(len(postcore.registered_tools(server)), 91)  # HAMCP-165 + HAMCP-155: +2 static
+        self.assertEqual(len(postcore.registered_tools(server)), 100)  # HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4
         self.assertEqual(len(transport.calls), calls)
         result = json.loads(await postcore.registered_tools(server)["ha_get_state"].run(
             {"entity_id": "sensor.synthetic"}))

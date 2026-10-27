@@ -319,6 +319,8 @@ class F3ContractDeclarationTests(unittest.TestCase):
                 "restart_addon",
                 "restart_home_assistant",
                 "set_input_boolean_state",
+                # HAMCP-145: runtime-only, pending signed admission.
+                "set_input_select_option",
             },
         )
         self.assertEqual(
@@ -342,7 +344,7 @@ class F3ContractDeclarationTests(unittest.TestCase):
             },
         )
         # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
-        self.assertEqual(len(registered_tools(get_registered_server())), 68)
+        self.assertEqual(len(registered_tools(get_registered_server())), 77)
 
     def test_canonical_contract_has_only_standard_library_imports(self):
         contract = (

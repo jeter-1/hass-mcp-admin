@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ..dependency.bounded_sources import bounded_source_entries
+from ..untrusted_text import screen_envelope
 from ..dependency.index import DependencyIndex
 from ..dependency.models import (
     DependencyObligation,
@@ -230,7 +232,8 @@ def _resolved_dynamic_reference_evidence(
     proven_other_domain = bool(
         not limit_exceeded
         and exact_domains
-        and "input_boolean" not in exact_domains
+        # HAMCP-145: the target's own domain; identical for input_boolean.
+        and entity_id.split(".", 1)[0] not in exact_domains
     )
     if proven_other_domain and not labels:
         complete = True
@@ -1201,6 +1204,30 @@ def _build_obligation_binding(
     }
 
 
+def _bounded_sources(
+    snapshot: DependencyIndexSnapshot, known_secrets: tuple[str, ...]
+) -> dict[str, Any]:
+    """Every automation, blueprint and script whose analysis hit a bound.
+
+    HAMCP-226 (HAAC-E002a): listed whatever the target, because any of them
+    could write the helper. Disclosure only: the entries are not approval
+    material and are outside ``evidence_fingerprint``. Each entry is screened
+    as it is built; the whole disclosure is screened again as a backstop
+    (HAMCP-226/228 review 1, H1).
+    """
+
+    scripts = getattr(snapshot, "script_diagnostics", None)
+    visible = scripts.visible() if scripts is not None else None
+    public = bounded_source_entries(
+        (
+            *snapshot.obligations,
+            *(getattr(visible, "bounded_obligations", ()) if visible is not None else ()),
+        ),
+        known_secrets=known_secrets,
+    ).public()
+    return screen_envelope(public, known_secrets)[0]
+
+
 # B39-136-R3b: reason codes for the runtime version admission gate.  Three
 # situations are distinguishable because they call for different operator
 # action: upgrade/downgrade Home Assistant, restore connectivity, or
@@ -1675,8 +1702,17 @@ def build_helper_dependency_risk_binding(
 class HelperDependencyRiskService:
     """Read target-specific risk from the shared dependency index."""
 
-    def __init__(self, index: DependencyIndex):
+    def __init__(
+        self,
+        index: DependencyIndex,
+        *,
+        binding_builder: Any = None,
+    ):
         self.index = index
+        # HAMCP-145: a domain reader supplies its own builder; without one
+        # the unchanged input_boolean v13 builder is resolved at each call,
+        # exactly as before.
+        self.binding_builder = binding_builder
 
     async def assess(
         self,
@@ -1754,7 +1790,7 @@ class HelperDependencyRiskService:
                     "fallback_occurred": False,
                 },
             }
-        binding = build_helper_dependency_risk_binding(
+        binding = (self.binding_builder or build_helper_dependency_risk_binding)(
             snapshot,
             entity_id=entity_id,
             index_metadata=metadata,
@@ -1767,6 +1803,12 @@ class HelperDependencyRiskService:
         binding["dependency_index_generation"] = snapshot.generation
         binding["dependency_index_fingerprint"] = snapshot.fingerprint
         binding["dependency_index_source_epoch"] = snapshot.source_epoch
+        secret = getattr(getattr(self.index, "provider", None), "secret", "")
+        binding.update(
+            _bounded_sources(
+                snapshot, (secret,) if isinstance(secret, str) and secret else ()
+            )
+        )
         return {
             "binding": binding,
             "provenance": {

@@ -14,6 +14,42 @@ levels are parsed from known formats (`level_basis: parsed_text`). The
 description no longer says a manager role is needed. What is withheld is
 unchanged. No tool is added, so the catalog count is the base's.
 
+## November Core batch built inactive (2.4.1-beta.41, HAMCP-232, HAMCP-145)
+
+Four `engineering_native` tools, each requiring a new runtime-only Core
+profile that the signed registry (sequence 14) does not name, so each
+refuses `pending_signed_registry_admission` before any read, request or
+persistence. `create_helper_options_plan` (governed write plan,
+`core.config_entry_helper_options_operation`) edits existing UI-created
+template, filter and statistics helpers through their config-entry options
+flow: one held submit per child of the complete intended options set, and
+every flow it opens is aborted on every exit. `create_input_select_option_plan`
+(governed write plan, `core.typed_input_select_option_operation`) sends one
+`input_select.select_option` for one exact entity. `list_script_traces` and
+`get_script_trace` (reads, `core.script_trace_read`) send only `trace/list`
+and `trace/get` with `domain: "script"` and leave through the HAMCP-225
+trace exit. No delegated provider and no fallback. The catalog is 77 static
++ 28 delegated = 105 (106 with the optional YAML reader). See
+[HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md](docs/HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md).
+
+## Automation trace snapshots (2.4.1-beta.39, HAMCP-225)
+
+Four `engineering_native` tools, no delegated provider, no fallback, no Home
+Assistant write. `capture_automation_trace` (risk
+`engineering_evidence_write`) sends only `trace/list` and `trace/get` with
+`domain: "automation"` and requires `core.automation_trace_read`; it writes
+sanitized snapshots to the Engineering-local `trace-snapshots-v1` store.
+`list_trace_snapshots` and `get_trace_snapshot` are core-independent local
+reads with caller-bound cursors. `set_automation_trace_watch` (`add`,
+`remove`, `list`) is core-independent local state: no plan or approval, an
+audited add or remove, at most 10 watches; the separately gated poller
+issues the same two read commands every 30 seconds. `get_automation_trace`
+keeps its input schema and now passes the shared trace sanitizer, which
+applies the shared `credentials.screen` to every string and key first. The
+catalog is 72 static + 28 delegated = 100 (101 with the optional YAML
+reader). See
+[HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md](docs/HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md).
+
 ## Host journal incident-log sources (2.4.1-beta.38, HAMCP-224)
 
 `get_incident_logs` keeps its routing (`engineering_native`), provider

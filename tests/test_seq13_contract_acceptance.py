@@ -130,7 +130,9 @@ class LaneDefinitionTests(unittest.TestCase):
         self.assertEqual(len(refs), 22)
         self.assertFalse(ids & seq13.SEQ13_DORMANT)
         self.assertIn(seq13.METADATA, ids)
-        self.assertEqual(ids | seq13.SEQ13_DORMANT, {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES})
+        self.assertEqual(ids | seq13.SEQ13_DORMANT | seq13.NOVEMBER_DORMANT,
+                         {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES})
+        self.assertFalse(ids & seq13.NOVEMBER_DORMANT)
 
     def test_no_lane_reviews_a_deletion_or_never_sent_command(self):
         for key, lane in seq13.LANES.items():

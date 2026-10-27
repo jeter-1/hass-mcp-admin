@@ -22,6 +22,114 @@ Builds on 2.4.1-beta.41. Nothing withheld is relaxed.
   policy, profile, fingerprint, signed registry, persisted format,
   workflow, Dockerfile, dependency or stable-v1 change.
 
+## 2.4.1-beta.41 - November Core batch built inactive (HAMCP-232, HAMCP-145) (staged)
+
+Follows 2.4.1-beta.40 (#317). Activates nothing new.
+
+- New tools `create_helper_options_plan`, `create_input_select_option_plan`,
+  `list_script_traces` and `get_script_trace` (static tools 73 -> 77). Each refuses
+  `pending_signed_registry_admission` before any read, request or
+  persistence (a retained or resumed task included) until a signed Core
+  registry sequence names its runtime-only profile:
+  `core.config_entry_helper_options_operation`,
+  `core.typed_input_select_option_operation` or `core.script_trace_read`.
+- Helper options (OD-1 to OD-8): template (sensor, binary_sensor), filter and
+  statistics; one helper domain and 1-8 entries per plan; baseline and
+  readback by opening and aborting the options flow for the plan's exact
+  entries only; one held, guarded submit per child of the complete intended
+  options set (an incomplete or malformed intent is refused before any flow
+  opens); every flow this server opens is aborted on every outcome, including
+  a lost response, a timeout and cancellation; drift refused as
+  `stale_target_state`; pinned `read_only` fields; injected defaults
+  disclosed as `normalization_changes`; the accepted OD-7 window disclosed in
+  the plan and the apply response; separately approved rollback.
+- input_select option (OD-9 to OD-12): one exact `select_option` call;
+  per-option trigger disclosure (a disabled automation or trigger is
+  disclosed as not firing while disabled); drift refused; a Core error after
+  the send decided by readback; separately approved rollback.
+  `create_helper_state_plan` and the input_boolean path are unchanged.
+- Script-trace reads: `trace/list` and `trace/get` with `domain: script`
+  only, through the HAMCP-225 trace sanitizer (every string and key at every
+  depth through `credentials.screen`; identifiers in default mode, values in
+  labelled mode); no fallback.
+- Dormant sequence-15 evidence lanes and additive `ci.yml` wiring (OD-14).
+  Post-signing canaries defined, not run.
+- No signed registry, signed profile, existing fingerprint or existing
+  persisted format change. Rollback is reinstalling 2.4.1-beta.40.
+
+## 2.4.1-beta.40 - Named scan bounds and durable baselines (HAMCP-226, HAMCP-228)
+
+Builds on 2.4.1-beta.39. Adds no Home Assistant write.
+
+- `configuration_integrity_analysis`: new `unavailable_entity_reference`
+  finding. Integrity, dependency and helper scans name each source that hit a
+  bound in `bounded_sources` (at most 50). `entity_dependency_analysis` adds
+  `target_availability`. Home Assistant ids and names pass the default-mode
+  credential screen, now with the PEM private-key header check; long values
+  are screened over the shown part plus 1,024 characters. Registry- and
+  state-derived values are screened as well, and each tool's final response
+  envelope is screened again as a backstop. Named-bound accounting is exact
+  at the production limits.
+- `capture_automation_baseline` stores each finished capture under
+  `<governance_path>/audit-baselines-v1/` (12 baselines, 2 MiB, 180 days;
+  caller-bound, digest-verified, refused when full, never evicted; a missing
+  or unreadable index is rebuilt from the verified records, never emptied,
+  and reported in `store_status`; an unwritable namespace is
+  `store_unavailable` with a `store_condition`, nothing touched; records and
+  diagnostics are credential-screened before hashing and storage, a withheld
+  field making the capture partial and a withheld automation id a stub in
+  `diagnostics.credential_screen`) and writes
+  `automation-audit-baseline-v2` (`resume` header, `timed_out` status); v1
+  still loads. New `resume_capture_id` re-collects only timeouts and refuses
+  `resume_not_needed`, `resume_inventory_changed` or `resume_core_changed`.
+  Page `snapshot` gains `storage: durable_engineering_store`,
+  `retention_seconds`, `resumed_from` and `store_status`. The tool is now `readOnlyHint=false` (local evidence write).
+- New `compare_automation_baselines`: stored/stored through the existing
+  comparator, or stored/recorded fingerprints; a shorter matching prefix is
+  `PREFIX_MATCH` (`prefix_match:<n>`), counted apart from `UNCHANGED`; an id
+  on one side only is `UNKNOWN`. Every record is paged with a bound `cursor`,
+  never truncated. No Home Assistant read.
+- Static tools 73; catalog 101 (102 with the optional YAML reader).
+
+## 2.4.1-beta.39 - Automation trace snapshots (HAMCP-225)
+
+Builds on 2.4.1-beta.38. Adds no Home Assistant write.
+
+- New `capture_automation_trace`: stores sanitized copies of an automation's
+  retained Core traces (exactly `run_id`, or up to 5 retained runs skipping
+  `not_triggered` and, by default, `failed_conditions`), with a per-run
+  outcome. Reads only `trace/list` and `trace/get` for the automation domain;
+  requires `core.automation_trace_read`.
+- New `list_trace_snapshots` and `get_trace_snapshot` (paged): no Home
+  Assistant call; caller-bound cursors that end at a restart; read-back is
+  re-screened and a withheld string stays withheld whole (R1 strict).
+- New `set_automation_trace_watch` (`add`, `remove`, `list`): no plan or
+  approval; every add and remove is audited with the caller and every
+  response returns the list. At most 10 watches, 168 hours each. A bounded
+  poller lists each watched automation's traces every 30 seconds and
+  captures new stopped runs matching the mode; it pauses without Core
+  authority and counts missed runs. The first poll captures runs finished
+  after the watch was created; each watch gets an equal, rotating share of
+  the tick; authority is re-checked before a watch's reads are stored and
+  again under the store lock, immediately before the first write.
+- Store `trace-snapshots-v1` under the governance path: 200 snapshots,
+  256 KiB each, 32 MiB, 90 days. A manual capture at capacity is refused
+  (E1); a watch evicts only its own oldest snapshot beyond 20 (E2, new
+  behavior, audited); manual snapshots are never evicted. A damaged record
+  is deleted and leaves a content-free stub; at most 20 stubs.
+- `get_automation_trace` passes the shared trace sanitizer once (HAMCP-194
+  trace-read part, O2): credential-like and known-secret values withheld,
+  strings over 2,000 characters shortened, result `partial` with
+  categories. Input schema unchanged; description gains one disclosure.
+- Every trace string and dictionary key, at every depth, passes the shared
+  `credentials.screen` (the HAMCP-132 and HAMCP-224 pipeline) before storage
+  and on read; a flagged key withholds its whole entry. No trace-specific
+  screen. Home Assistant's own identifiers and names use the screen's
+  default mode (as in HAMCP-226), trace values the labelled mode. An
+  automation or run ID the screen flags is stored, audited and returned only
+  as `withheld_<32 hex>` (per-process key); that form is refused as input.
+- Static tools 72; catalog 100 (101 with the optional YAML reader).
+
 ## 2.4.1-beta.38 - Host journal sources for get_incident_logs (HAMCP-224)
 
 Builds on 2.4.1-beta.37.

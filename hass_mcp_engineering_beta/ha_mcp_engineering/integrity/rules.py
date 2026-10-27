@@ -7,6 +7,7 @@ from dataclasses import asdict, replace
 import json
 from typing import Any
 
+from ..dependency.bounded_sources import availability, last_changed
 from ..dependency.extraction import valid_entity_id
 from .models import (
     IntegrityEvidenceBundle,
@@ -45,7 +46,11 @@ def classify_integrity(
         if registry is not None and registry.get("disabled_by"):
             finding_type = "disabled_entity_reference"
         elif state_exists:
-            continue
+            # HAMCP-226: a present state still fails the reference when Home
+            # Assistant reports it unavailable or unknown (HAAC-E002).
+            if _availability(bundle.current_states[target]) == "available":
+                continue
+            finding_type = "unavailable_entity_reference"
         elif registry is not None and bundle.states_available:
             finding_type = "registry_only_entity_reference"
         elif (
@@ -105,8 +110,26 @@ def classify_integrity(
                 registry_platform=_optional(registry.get("platform"), 128),
                 disabled_by=_optional(registry.get("disabled_by"), 64),
                 excerpt=_optional(item.get("excerpt"), 300),
+                target_state=(
+                    _availability(bundle.current_states[target])
+                    if finding_type == "unavailable_entity_reference"
+                    else None
+                ),
+                target_last_changed=(
+                    _last_changed(
+                        bundle.current_states[target].get("last_changed")
+                    )
+                    if finding_type == "unavailable_entity_reference"
+                    else None
+                ),
             )
         disabled_by = _optional(registry.get("disabled_by"), 64)
+        state = bundle.current_states.get(target) or {}
+        availability = (
+            _availability(state)
+            if finding_type == "unavailable_entity_reference"
+            else None
+        )
         findings.append(
             IntegrityFinding(
                 finding_id=stable_id(
@@ -114,11 +137,8 @@ def classify_integrity(
                 ),
                 rule_id=finding_type,
                 finding_type=finding_type,
-                severity=(
-                    "high"
-                    if finding_type == "missing_entity_reference"
-                    and source_enabled is True
-                    else "medium"
+                severity=_reference_severity(
+                    finding_type, availability, source_enabled
                 ),
                 confidence="exact",
                 target_entity_id=target,
@@ -131,13 +151,19 @@ def classify_integrity(
                 disabled_by=disabled_by,
                 disabled_classification=_disabled_classification(disabled_by),
                 explanation=_reference_explanation(
-                    finding_type, source_type, source_enabled
+                    finding_type, source_type, source_enabled, availability
                 ),
-                consequence=_reference_consequence(finding_type),
+                consequence=_reference_consequence(finding_type, availability),
                 configuration_paths=paths,
                 evidence_references=tuple(sorted(set(references))),
                 manual_review_required=True,
                 remediation_required=finding_type == "missing_entity_reference",
+                target_state=availability,
+                target_last_changed=(
+                    _last_changed(state.get("last_changed"))
+                    if availability
+                    else None
+                ),
             )
         )
 
@@ -325,11 +351,43 @@ def _disabled_classification(value: str | None) -> str:
     return "not_disabled"
 
 
+def _availability(state: dict[str, Any] | None) -> str:
+    """The target's availability from its current state-machine entry."""
+
+    return availability(None if state is None else state.get("state") or "")
+
+
+def _last_changed(value: Any) -> str | None:
+    return last_changed(value)
+
+
+def _reference_severity(
+    finding_type: str, availability: str | None, source_enabled: bool | None
+) -> str:
+    if finding_type == "unavailable_entity_reference":
+        # An unknown state is often legitimate before the first value; a
+        # consumer that is not enabled lowers either by one step, as for
+        # missing references.
+        if availability == "unavailable":
+            return "medium" if source_enabled is True else "low"
+        return "low" if source_enabled is True else "info"
+    if finding_type == "missing_entity_reference" and source_enabled is True:
+        return "high"
+    return "medium"
+
+
 def _reference_explanation(
-    finding_type: str, source_type: str, source_enabled: bool | None
+    finding_type: str,
+    source_type: str,
+    source_enabled: bool | None,
+    availability: str | None = None,
 ) -> str:
     state = "enabled " if source_enabled is True else "disabled " if source_enabled is False else ""
     article = _article(state + source_type)
+    if finding_type == "unavailable_entity_reference":
+        return (
+            f"{article} {state}{source_type} contains an exact static reference to an entity whose current state is {availability}."
+        )
     if finding_type == "missing_entity_reference":
         return (
             f"{article} {state}{source_type} contains an exact static reference to an entity absent from the state machine and entity registry."
@@ -343,7 +401,17 @@ def _reference_explanation(
     )
 
 
-def _reference_consequence(finding_type: str) -> str:
+def _reference_consequence(
+    finding_type: str, availability: str | None = None
+) -> str:
+    if finding_type == "unavailable_entity_reference":
+        if availability == "unknown":
+            return (
+                "The target exists but has reported no value; triggers, conditions, or actions using it may not behave as intended until it does."
+            )
+        return (
+            "The target exists but its integration reports it unavailable; triggers, conditions, or actions using it may not behave as intended."
+        )
     if finding_type == "missing_entity_reference":
         return (
             "The referenced trigger, condition, or action may not behave as intended."

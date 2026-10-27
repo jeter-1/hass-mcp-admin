@@ -514,6 +514,22 @@ def _value_shape_rules(text: str, squashed: str):
         yield RULE_PEM_HEADER + SQUASHED_FORM
 
 
+def private_key_header(value: str) -> bool:
+    """Whether ``value`` holds a PEM private-key header, in the screen's forms.
+
+    The labelled value shape (HAMCP-224) that Home Assistant's own names are
+    also screened for (HAMCP-226, owner direction, Josh, 2026-10-26). The
+    default mode of ``screen`` is unchanged by it.
+    """
+
+    try:
+        text, _rounds = canonical(value)
+    except Exception:
+        return True
+    text = fold_confusables(text).translate(_DASHES)
+    return _PEM_PRIVATE.search(text) is not None or _PEM_PRIVATE.search(squash(text)) is not None
+
+
 def screen(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> str | None:
     """The marker that replaces ``value`` whole, or ``None`` when it is shown.
 

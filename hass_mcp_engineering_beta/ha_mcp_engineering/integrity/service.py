@@ -26,6 +26,8 @@ from ..providers import (
     ProviderFailureCategory,
 )
 from ..request_context import current_telemetry
+from ..dependency.bounded_sources import EMPTY as EMPTY_BOUNDED_SOURCES
+from ..dependency.bounded_sources import screening_warnings
 from .models import (
     FINDING_TYPES,
     SEVERITIES,
@@ -292,6 +294,8 @@ class ConfigurationIntegrityAnalysisService:
             warnings.append(
                 "The bounded whole-analysis finding cap was reached; assessment is incomplete."
             )
+        bounded = bundle.bounded_sources or EMPTY_BOUNDED_SOURCES
+        warnings.extend(screening_warnings(bounded, bundle.screened_text_count))
         snapshot_warnings = tuple(warnings)
         if has_more:
             warnings.append(
@@ -322,6 +326,7 @@ class ConfigurationIntegrityAnalysisService:
             ],
             "evidence_references": public_evidence,
             "source_coverage_matrix": coverage,
+            **bounded.public(),
             "dynamic_reference_summary": {
                 "unresolved_in_requested_scope_count": in_scope_dynamic_count,
                 "reported_finding_count": unresolved_count,

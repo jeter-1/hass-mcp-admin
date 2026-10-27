@@ -52,6 +52,7 @@ OPERATIONAL_OPERATIONS = frozenset(
         ChangeOperation.RESTART_ADDON,
         ChangeOperation.RESTART_HOME_ASSISTANT,
         ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+        ChangeOperation.SET_INPUT_SELECT_OPTION,
     }
 )
 V3_NAMESPACED_OPERATIONS = OPERATIONAL_OPERATIONS | frozenset(

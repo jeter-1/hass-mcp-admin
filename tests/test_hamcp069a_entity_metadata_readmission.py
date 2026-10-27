@@ -167,6 +167,7 @@ REVIEWED_EMPTY_STATIC_ROUTES = frozenset(
         "approve_change_plan",
         "call_service",
         "cancel_execution_task",
+        "compare_automation_baselines",
         "control_fan",
         "control_power",
         "delete_automation",
@@ -176,13 +177,16 @@ REVIEWED_EMPTY_STATIC_ROUTES = frozenset(
         "get_core_log_history",
         "get_execution_task",
         "get_incident_logs",
+        "get_trace_snapshot",
         "list_capabilities",
         "list_change_plans",
         "list_execution_tasks",
+        "list_trace_snapshots",
         "reload_domain",
         "reverify_configuration_task",
         "rollback_change",
         "run_held_read_canary",
+        "set_automation_trace_watch",
         "upsert_automation",
     }
 )
@@ -224,7 +228,7 @@ class DormantProfileTests(unittest.TestCase):
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
         # 22 through 069A, plus the two dormant 069B profiles, the dormant
         # 165 label profile and the dormant HAMCP-155 deletion profile.
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 26)
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 29)  # + HAMCP-232/145 November batch
         (profile,) = CORE_ENTITY_METADATA_PROFILES
         mapping = profile.to_mapping()
         self.assertEqual(
@@ -568,6 +572,9 @@ class StaticToolCompletenessTests(unittest.TestCase):
                 "create_label_plan",
                 # HAMCP-155 binds its own exact deletion targets (its tests cover it).
                 "create_configuration_delete_plan",
+                # HAMCP-232/145 bind their own exact targets (their tests cover them).
+                "create_helper_options_plan",
+                "create_input_select_option_plan",
             },
         )
         self.assertEqual(static_tool_target("create_entity_metadata_plan", ARGUMENTS), TARGET)
@@ -586,6 +593,8 @@ class StaticToolCompletenessTests(unittest.TestCase):
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
                 "create_configuration_delete_plan",
+                "create_helper_options_plan",
+                "create_input_select_option_plan",
             }:
                 for arguments in shapes:
                     with self.subTest(tool=name, arguments=repr(arguments)[:40]):
@@ -675,6 +684,13 @@ class OtherToolGatewayCallShapeTests(unittest.IsolatedAsyncioTestCase):
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
                 "create_configuration_delete_plan",
+                # HAMCP-232/145 and the script-trace reads: refused pending
+                # signed-registry admission before any acquisition (their
+                # tests cover it).
+                "create_helper_options_plan",
+                "create_input_select_option_plan",
+                "list_script_traces",
+                "get_script_trace",
             }:
                 continue
             for arguments in ({}, {"entity_id": "LIGHT.PORCH"}, {"entity_id": "light.porch"}):

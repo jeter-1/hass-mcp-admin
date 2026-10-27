@@ -32,11 +32,7 @@ from .ha_core_readmission.routes import (
     StaticCoreRoute,
     AVAILABILITY_EXPOSURE_OPERATIONS,
     AVAILABILITY_EXPOSURE_TOOL,
-    LABEL_PROFILE,
-    LABEL_RESOURCE_TYPE,
-    LABEL_TOOL,
-    CONFIGURATION_DELETE_PROFILE,
-    CONFIGURATION_DELETE_TOOL,
+    PENDING_ADMISSION_TOOLS,
     StaticToolTargetRefused,
     static_tool_core_route,
     static_tool_target,
@@ -46,6 +42,9 @@ from .models import FailureResponse, Timing
 from .observability import METRICS
 from .providers.dispatch import CANONICAL_DISPATCHER
 from .providers.routing import requires_prevalidation_enforcement
+from .identifiers import AUTOMATION_CONFIG_ID_PATTERN
+from .trace_snapshots import contracts as trace_contracts
+from .trace_snapshots.service import identifier_cleared as trace_identifier_cleared
 from .request_context import (
     RequestTelemetry,
     begin_request,
@@ -149,6 +148,78 @@ def install_sdk_request_diagnostic_filter() -> None:
         isinstance(item, SdkRequestDiagnosticFilter) for item in root.filters
     ):
         root.addFilter(SdkRequestDiagnosticFilter())
+
+
+TRACE_SNAPSHOT_TOOLS = frozenset({
+    "capture_automation_trace", "list_trace_snapshots", "get_trace_snapshot",
+    "set_automation_trace_watch",
+})
+
+
+def _trace_snapshot_audit_parameters(tool_name, parameters, known_secrets=()):
+    """Bounded HAMCP-225 audit shape; a value is kept only when it is valid.
+
+    An identifier the shared trace screen withholds is never copied; its
+    field is ``None`` and ``identifiers_withheld`` is set (review H2).
+    """
+
+    withheld = False
+
+    def matched(key, pattern):
+        nonlocal withheld
+        value = parameters.get(key)
+        if type(value) is not str or not pattern.fullmatch(value):
+            return None
+        if not trace_identifier_cleared(value, known_secrets):
+            withheld = True
+            return None
+        return value
+
+    def bounded_int(key, default, low, high):
+        value = parameters.get(key, default)
+        return value if type(value) is int and low <= value <= high else None
+
+    audit = {"profile": "automation-trace-snapshot-v1", "provider": "engineering", "fallback": "none"}
+    if tool_name == "capture_automation_trace":
+        flag = parameters.get("include_condition_failures", False)
+        note = parameters.get("note", "")
+        audit.update(
+            automation_id=matched("automation_id", AUTOMATION_CONFIG_ID_PATTERN),
+            run_id_present=bool(parameters.get("run_id")),
+            run_id=matched("run_id", trace_contracts.RUN_ID),
+            include_condition_failures=flag if type(flag) is bool else None,
+            note_present=bool(note),
+        )
+    elif tool_name == "list_trace_snapshots":
+        audit.update(
+            automation_id=matched("automation_id", AUTOMATION_CONFIG_ID_PATTERN),
+            limit=bounded_int("limit", 20, 1, trace_contracts.LIST_LIMIT),
+            cursor_present=bool(parameters.get("cursor")),
+        )
+    elif tool_name == "get_trace_snapshot":
+        audit.update(snapshot_id=matched("snapshot_id", trace_contracts.SNAPSHOT_ID),
+                     cursor_present=bool(parameters.get("cursor")))
+    else:
+        action, mode = parameters.get("action"), parameters.get("mode", "failures")
+        audit.update(
+            action=action if type(action) is str and action in trace_contracts.WATCH_ACTIONS else None,
+            automation_id=matched("automation_id", AUTOMATION_CONFIG_ID_PATTERN),
+            mode=mode if type(mode) is str and mode in trace_contracts.WATCH_MODES else None,
+            duration_hours=bounded_int("duration_hours", 24, 1, trace_contracts.WATCH_MAX_HOURS),
+        )
+    audit["identifiers_withheld"] = withheld
+    audit["argument_fields"] = sorted(str(key)[:64] for key in parameters
+                                      if key in _TRACE_SNAPSHOT_FIELDS[tool_name])
+    audit["unknown_fields_present"] = any(key not in _TRACE_SNAPSHOT_FIELDS[tool_name] for key in parameters)
+    return audit
+
+
+_TRACE_SNAPSHOT_FIELDS = {
+    "capture_automation_trace": frozenset({"automation_id", "run_id", "include_condition_failures", "note"}),
+    "list_trace_snapshots": frozenset({"automation_id", "limit", "cursor"}),
+    "get_trace_snapshot": frozenset({"snapshot_id", "cursor"}),
+    "set_automation_trace_watch": frozenset({"action", "automation_id", "mode", "duration_hours"}),
+}
 
 
 def _delegated_audit_attribution(
@@ -391,18 +462,18 @@ class AuthenticatedMcpGateway:
         await send({"type": "http.response.body", "body": body})
 
     def _pending_admission_details(self, tool_name, parameters) -> dict:
-        """Name a 069B, 165 or 155 profile that no owner-signed registry admits yet.
+        """Name a runtime-only profile that no owner-signed registry admits yet.
 
-        Only the selected profile's own admission state is reported; any other
-        Core unavailability keeps the generic refusal with empty details.
+        Covers 069B, and every ``PENDING_ADMISSION_TOOLS`` tool (165, 155,
+        232, 145 and the script-trace reads).  Only the selected profile's
+        own admission state is reported; any other Core unavailability keeps
+        the generic refusal with empty details.
         """
 
         if self._core_runtime is None:
             return {}
-        if tool_name == LABEL_TOOL:
-            selected = (LABEL_RESOURCE_TYPE, LABEL_PROFILE)
-        elif tool_name == CONFIGURATION_DELETE_TOOL:
-            selected = ("configuration_deletion", CONFIGURATION_DELETE_PROFILE)
+        if tool_name in PENDING_ADMISSION_TOOLS:
+            selected = PENDING_ADMISSION_TOOLS[tool_name]
         elif tool_name != AVAILABILITY_EXPOSURE_TOOL or not isinstance(
             parameters, dict
         ):
@@ -867,10 +938,12 @@ class AuthenticatedMcpGateway:
                         send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
                     )
                     return
-            if tool_name == "capture_automation_baseline":
-                from .audit_baseline.capture_contracts import validate_arguments, CaptureError
+            # Equality, not set membership (HAMCP-189 non-string names).
+            if tool_name == "capture_automation_baseline" or tool_name == "compare_automation_baselines":
+                from .audit_baseline.capture_contracts import CaptureError
+                from .tools.audit_baseline import validate_raw_arguments
                 try:
-                    validate_arguments(raw_parameters)
+                    validate_raw_arguments(tool_name, raw_parameters)
                 except CaptureError:
                     telemetry.error_code = ErrorCode.INVALID_REQUEST.value
                     failure = FailureResponse(
@@ -880,6 +953,25 @@ class AuthenticatedMcpGateway:
                     )
                     await self._respond_mcp_tool_result(
                         send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
+                    )
+                    return
+            # Equality, not set membership (HAMCP-189 non-string names).
+            if (tool_name == "capture_automation_trace" or tool_name == "list_trace_snapshots"
+                    or tool_name == "get_trace_snapshot" or tool_name == "set_automation_trace_watch"):
+                from .tools.trace_snapshots import validate_raw_arguments
+                from .trace_snapshots.contracts import TraceSnapshotError
+                try:
+                    validate_raw_arguments(tool_name, raw_parameters)
+                except TraceSnapshotError:
+                    telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                    failure = FailureResponse(
+                        operation=tool_name, error="InvalidTraceSnapshotRequest",
+                        error_code=telemetry.error_code, message="Invalid trace snapshot arguments.",
+                        retryable=False, request_id=request_id,
+                    )
+                    await self._respond_mcp_tool_result(
+                        send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit),
+                        request_id=request_id,
                     )
                     return
             if tool_name == "dashboard_integrity_analysis":
@@ -968,26 +1060,16 @@ class AuthenticatedMcpGateway:
                 core_route.requirements if core_route is not None else ()
             )
             if self._core_runtime is not None and core_requirements:
-                # HAMCP-165: an unadmitted label profile is refused before the
-                # request is even validated; nothing is read or stored.
-                pending_label_admission = tool_name == LABEL_TOOL and bool(
+                # HAMCP-165/155/232/145: an unadmitted runtime-only profile
+                # is refused before the request is even validated; nothing is
+                # read or stored and no Core authority is acquired.
+                pending_admission = tool_name in PENDING_ADMISSION_TOOLS and bool(
                     self._pending_admission_details(tool_name, parameters)
-                )
-                # HAMCP-155: an unadmitted delete profile is refused before
-                # the request is even validated; nothing is read or stored
-                # and no Core authority is acquired.
-                pending_delete_admission = (
-                    tool_name == CONFIGURATION_DELETE_TOOL
-                    and bool(
-                        self._pending_admission_details(tool_name, parameters)
-                    )
                 )
                 try:
                     core_target = (
                         static_tool_target(tool_name, parameters)
-                        if isinstance(tool_name, str)
-                        and not pending_label_admission
-                        and not pending_delete_admission
+                        if isinstance(tool_name, str) and not pending_admission
                         else None
                     )
                 except StaticToolTargetRefused as refusal:
@@ -1024,7 +1106,7 @@ class AuthenticatedMcpGateway:
                         request_id=request_id,
                     )
                     return
-                if pending_label_admission or pending_delete_admission:
+                if pending_admission:
                     core_authority = None
                 elif core_target is None:
                     core_authority = self._core_runtime.acquire(
@@ -1180,7 +1262,7 @@ class AuthenticatedMcpGateway:
                         "upstream_attempted": False,
                     }
                     resource_ids = {}
-                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
+                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "capture_automation_baseline", "compare_automation_baselines", "dashboard_integrity_analysis", *TRACE_SNAPSHOT_TOOLS} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -1348,10 +1430,31 @@ class AuthenticatedMcpGateway:
                         "provider": "engineering", "fallback": "none",
                     }
                     resource_ids = {}
+                elif tool_name in TRACE_SNAPSHOT_TOOLS:
+                    # HAMCP-225: pattern-checked identifiers and bounded flags
+                    # only; note text, cursors and rejected values are never
+                    # copied into the audit.
+                    audit_parameters = _trace_snapshot_audit_parameters(
+                        tool_name, parameters, self._known_secrets)
+                    resource_ids = {}
                 elif tool_name == "capture_automation_baseline":
                     audit_parameters = {
                         "scope": "loaded_automation_entities-v1",
                         "limit": parameters.get("limit", 25) if type(parameters.get("limit", 25)) is int and 1 <= parameters.get("limit", 25) <= 100 else None,
+                        "cursor_present": bool(parameters.get("cursor")),
+                        "resume_present": bool(parameters.get("resume_capture_id")),
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
+                elif tool_name == "compare_automation_baselines":
+                    # HAMCP-228: presence and counts only; no capture id,
+                    # configuration id or fingerprint value is copied.
+                    fingerprints = parameters.get("recorded_fingerprints")
+                    audit_parameters = {
+                        "model": "automation-baseline-compare-v1",
+                        "later_capture_present": bool(parameters.get("later_capture_id")),
+                        "recorded_fingerprint_count": len(fingerprints) if type(fingerprints) is list and len(fingerprints) <= 1000 else None,
+                        "fingerprint_model_present": bool(parameters.get("fingerprint_model")),
                         "cursor_present": bool(parameters.get("cursor")),
                         "provider": "engineering", "fallback": "none",
                     }
@@ -1535,7 +1638,9 @@ class AuthenticatedMcpGateway:
                             "get_unregistered_entities",
                             "get_configuration_definitions",
                             "capture_automation_baseline",
+                            "compare_automation_baselines",
                             "dashboard_integrity_analysis",
+                            *TRACE_SNAPSHOT_TOOLS,
                         }
                         else {
                             "operation_class": (

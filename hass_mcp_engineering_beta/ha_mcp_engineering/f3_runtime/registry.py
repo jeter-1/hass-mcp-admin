@@ -97,6 +97,18 @@ CONFIGURATION_DELETE_PROVIDER_MODEL = (
     "compiled-core-configuration-delete-operation-v1"
 )
 
+# HAMCP-232: the exact options-flow update of one UI-managed template,
+# filter, or statistics helper config entry.  Admitted only by the dormant
+# ``core.config_entry_helper_options_operation`` profile.
+HELPER_OPTIONS_REGISTRATION = (
+    "update_config_entry_helper_options_configuration",
+    "config_entry_helper_options",
+    "update",
+)
+HELPER_OPTIONS_PROVIDER_MODEL = (
+    "compiled-core-config-entry-helper-options-operation-v1"
+)
+
 OPERATIONAL_REGISTRATIONS = (
     ("create_full_home_assistant_backup", "create_full_backup", "backup"),
     (
@@ -116,6 +128,14 @@ HELPER_STATE_REGISTRATION = (
     "set_exact_input_boolean_state",
     "set_input_boolean_state",
     "input_boolean",
+)
+
+# HAMCP-145: the exact input_select option, admitted only by the dormant
+# ``core.typed_input_select_option_operation`` profile.
+INPUT_SELECT_REGISTRATION = (
+    "set_exact_input_select_option",
+    "set_input_select_option",
+    "input_select",
 )
 
 DASHBOARD_REGISTRATION = (
@@ -267,6 +287,30 @@ class ClosedAdapterRegistry:
             )
             for capability, target, action in CONFIGURATION_DELETE_REGISTRATIONS
         )
+        capability, target, action = HELPER_OPTIONS_REGISTRATION
+        entries.append(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="configuration_operation",
+                operation_family="configuration",
+                plan_operation="configuration_plan",
+                target_type=target,
+                action=action,
+                provider_model=HELPER_OPTIONS_PROVIDER_MODEL,
+                resource_lock_model="f3-configuration-lock-set-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="exact_options_flow_readback",
+                recovery_model="exact_options_flow_readback_no_redispatch",
+                rollback_declaration="separate_governed_reverse_update_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+        )
         entries.extend(
             AdapterRegistration(
                 capability_id=capability,
@@ -317,6 +361,31 @@ class ClosedAdapterRegistry:
             )
         )
         adapters[capability] = operational_adapter
+        capability, operation, target = INPUT_SELECT_REGISTRATION
+        entries.append(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="operational_administration",
+                operation_family="operational_administration",
+                plan_operation=operation,
+                target_type=target,
+                action=operation,
+                provider_model="direct-ha-exact-input-select-option-v1",
+                resource_lock_model="f3-operational-complete-lock-graph-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="f3-input-select-exact-option-readback-v1",
+                recovery_model="exact_state_readback_only",
+                rollback_declaration="separate_governed_reverse_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+        )
+        adapters[capability] = operational_adapter
         capability, operation, target = DASHBOARD_REGISTRATION
         entries.append(
             AdapterRegistration(
@@ -350,10 +419,12 @@ class ClosedAdapterRegistry:
                 *CONFIGURATION_REGISTRATIONS,
                 *OPERATIONAL_REGISTRATIONS,
                 HELPER_STATE_REGISTRATION,
+                INPUT_SELECT_REGISTRATION,
                 ENTITY_METADATA_REGISTRATION,
                 *AVAILABILITY_EXPOSURE_REGISTRATIONS,
                 *LABEL_REGISTRATIONS,
                 *CONFIGURATION_DELETE_REGISTRATIONS,
+                HELPER_OPTIONS_REGISTRATION,
                 DASHBOARD_REGISTRATION,
             )
         }
@@ -367,10 +438,12 @@ class ClosedAdapterRegistry:
                 raise AdapterRegistryError("F3 adapter model is unsupported")
             direct_helper = entry.capability_id in {
                 HELPER_STATE_REGISTRATION[0],
+                INPUT_SELECT_REGISTRATION[0],
                 ENTITY_METADATA_REGISTRATION[0],
                 *(item[0] for item in AVAILABILITY_EXPOSURE_REGISTRATIONS),
                 *(item[0] for item in LABEL_REGISTRATIONS),
                 *(item[0] for item in CONFIGURATION_DELETE_REGISTRATIONS),
+                HELPER_OPTIONS_REGISTRATION[0],
             }
             if (
                 (
@@ -410,14 +483,22 @@ class ClosedAdapterRegistry:
                         != CONFIGURATION_DELETE_PROVIDER_MODEL
                     )
                 )
+                or (
+                    entry.target_type == "config_entry_helper_options"
+                    and (
+                        entry.capability_id != HELPER_OPTIONS_REGISTRATION[0]
+                        or entry.action != "update"
+                        or entry.provider_model != HELPER_OPTIONS_PROVIDER_MODEL
+                    )
+                )
                 or not entry.resource_lock_model
                 or not entry.provider_dependency_lock_model
                 or entry.target_type not in {
                     "automation", "script", "input_boolean", "input_number",
-                    "backup", "reload_domain", "addon", "home_assistant",
+                    "input_select", "backup", "reload_domain", "addon", "home_assistant",
                     "dashboard", "entity_registry_metadata",
                     "entity_registry_availability", "entity_assistant_exposure",
-                    "label_registry_entry",
+                    "label_registry_entry", "config_entry_helper_options",
                 }
             ):
                 raise AdapterRegistryError("F3 route admission binding is invalid")

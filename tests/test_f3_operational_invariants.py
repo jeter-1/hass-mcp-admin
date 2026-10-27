@@ -24,6 +24,7 @@ from ha_mcp_engineering.f3.operational_models import (  # noqa: E402
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
     SET_INPUT_BOOLEAN_STATE,
+    SET_INPUT_SELECT_OPTION,
     SUPPORTED_OPERATIONS,
     canonical_json,
     operational_prepared_authority_payload,
@@ -89,7 +90,9 @@ class RuntimeInertAndSchemaTests(unittest.TestCase):
 
     def test_public_tools_and_persisted_schema_vocabulary_are_current(self):
         # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
-        self.assertEqual(len(registered_tools(get_registered_server())), 68)
+        # HAMCP-232/145: +4 inactive (create_helper_options_plan,
+        # create_input_select_option_plan, list_script_traces, get_script_trace).
+        self.assertEqual(len(registered_tools(get_registered_server())), 77)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         service_tree = ast.parse(
             (BETA / "ha_mcp_engineering/governance/service.py").read_text(
@@ -127,6 +130,7 @@ class RuntimeInertAndSchemaTests(unittest.TestCase):
                 "restart_addon",
                 "restart_home_assistant",
                 "set_input_boolean_state",
+                "set_input_select_option",
             },
         )
 
@@ -183,6 +187,14 @@ class ExactReleaseAndMigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase)
                         self.assertEqual(
                             evidence["provider_contract_model"],
                             "direct-ha-exact-input-boolean-v1",
+                        )
+                        self.assertEqual(evidence["fallback"], "none")
+                        continue
+                    if operation == SET_INPUT_SELECT_OPTION:
+                        # A direct Core provider: no upstream version binds it.
+                        self.assertEqual(
+                            evidence["provider_contract_model"],
+                            "direct-ha-exact-input-select-option-v1",
                         )
                         self.assertEqual(evidence["fallback"], "none")
                         continue
@@ -268,6 +280,7 @@ class ExactReleaseAndMigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase)
                 RESTART_ADDON: "ha_manage_addon",
                 RESTART_HOME_ASSISTANT: "ha_restart",
                 SET_INPUT_BOOLEAN_STATE: "set_exact_input_boolean_state",
+                SET_INPUT_SELECT_OPTION: "set_exact_input_select_option",
             }[operation])
             requests = context.adapter.lock_requests(prepared)
             lock_projection = [
@@ -396,7 +409,7 @@ class ExactReleaseAndMigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase)
 
     def test_capability_and_operation_sets_are_bijective(self):
         self.assertEqual(set(CAPABILITY_IDENTITIES), set(SUPPORTED_OPERATIONS))
-        self.assertEqual(len(set(CAPABILITY_IDENTITIES.values())), 5)
+        self.assertEqual(len(set(CAPABILITY_IDENTITIES.values())), 6)
 
 
 class OperationalObservabilityTests(unittest.TestCase):

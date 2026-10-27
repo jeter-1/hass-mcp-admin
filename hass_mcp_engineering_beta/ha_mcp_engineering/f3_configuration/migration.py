@@ -50,6 +50,7 @@ def proposal_from_configuration_operation(
         "entity_registry_availability",
         "entity_assistant_exposure",
         "label_registry_entry",
+        "config_entry_helper_options",
     }:
         raise ValueError("configuration resource type is not reviewed")
     if plan.policy_decision is None:

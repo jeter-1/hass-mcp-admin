@@ -10,6 +10,7 @@ import re
 from typing import Any, Iterable
 
 from ..logging_config import redact_data
+from ..untrusted_text import screen
 from .dynamic_resolution import (
     BoundedTemplateContext,
     CandidateResolution,
@@ -443,44 +444,7 @@ def extract_document_obligation_evidence(
             )
         )
 
-    def bounded_event_scalars(
-        value: Any,
-        *,
-        key: str,
-    ) -> tuple[set[str], bool, bool]:
-        """Return finite scalar selectors without materializing overflow.
-
-        Duplicate values remain complete; only malformed, templated, or
-        bounded-overflow inputs make the selector non-conclusive.
-        """
-
-        if isinstance(value, str):
-            raw_values = (value,)
-            collection_complete = True
-            limit_exceeded = len(value) > 256
-        elif isinstance(value, list):
-            raw_values = value[:MAX_EVENT_SELECTOR_VALUES]
-            collection_complete = bool(value)
-            limit_exceeded = len(value) > MAX_EVENT_SELECTOR_VALUES
-        else:
-            raw_values = ()
-            collection_complete = False
-            limit_exceeded = False
-        values: set[str] = set()
-        for item in raw_values:
-            if (
-                not isinstance(item, str)
-                or len(item) > 256
-                or _is_template(item, key)
-            ):
-                collection_complete = False
-                if isinstance(item, str) and len(item) > 256:
-                    limit_exceeded = True
-                continue
-            values.add(item)
-        return values, bool(
-            collection_complete and not limit_exceeded
-        ), limit_exceeded
+    bounded_event_scalars = _bounded_event_scalars
 
     def add_state_changed_event_obligation(
         trigger_config: dict[str, Any],
@@ -643,12 +607,10 @@ def extract_document_obligation_evidence(
                 event_data.get("service"), key="event_data"
             )
         )
-        disjoint = bool(
-            (domains_complete and "input_boolean" not in domains)
-            or (
-                services_complete
-                and not services.intersection({"turn_on", "turn_off"})
-            )
+        disjoint = _call_service_filter_disjoint(
+            trigger_config,
+            domain="input_boolean",
+            services=INPUT_BOOLEAN_EVENT_SERVICES,
         )
         service_data = event_data.get("service_data")
         entity_value = (
@@ -3369,6 +3331,121 @@ def _contains_template_value(value: Any) -> bool:
     return visit(value, 0)
 
 
+def _bounded_event_scalars(
+    value: Any,
+    *,
+    key: str,
+) -> tuple[set[str], bool, bool]:
+    """Return finite scalar selectors without materializing overflow.
+
+    Duplicate values remain complete; only malformed, templated, or
+    bounded-overflow inputs make the selector non-conclusive.
+    """
+
+    if isinstance(value, str):
+        raw_values = (value,)
+        collection_complete = True
+        limit_exceeded = len(value) > 256
+    elif isinstance(value, list):
+        raw_values = value[:MAX_EVENT_SELECTOR_VALUES]
+        collection_complete = bool(value)
+        limit_exceeded = len(value) > MAX_EVENT_SELECTOR_VALUES
+    else:
+        raw_values = ()
+        collection_complete = False
+        limit_exceeded = False
+    values: set[str] = set()
+    for item in raw_values:
+        if (
+            not isinstance(item, str)
+            or len(item) > 256
+            or _is_template(item, key)
+        ):
+            collection_complete = False
+            if isinstance(item, str) and len(item) > 256:
+                limit_exceeded = True
+            continue
+        values.add(item)
+    return values, bool(
+        collection_complete and not limit_exceeded
+    ), limit_exceeded
+
+
+def _call_service_filter_disjoint(
+    trigger_config: dict[str, Any],
+    *,
+    domain: str,
+    services: frozenset[str],
+) -> bool:
+    """Whether an event filter provably ignores ``domain``'s ``services``."""
+
+    event_data = trigger_config.get("event_data")
+    event_data = event_data if isinstance(event_data, dict) else {}
+    domains, domains_complete, _ = _bounded_event_scalars(
+        event_data.get("domain"), key="event_data"
+    )
+    found, services_complete, _ = _bounded_event_scalars(
+        event_data.get("service"), key="event_data"
+    )
+    return bool(
+        (domains_complete and domain not in domains)
+        or (services_complete and not found.intersection(services))
+    )
+
+
+INPUT_BOOLEAN_EVENT_SERVICES = frozenset({"turn_on", "turn_off"})
+#: HAMCP-145: the only service the input_select operation sends.
+INPUT_SELECT_EVENT_SERVICES = frozenset({"select_option"})
+
+
+def call_service_exclusions_cover_input_select(config: Any) -> bool:
+    """HAMCP-145: whether every input_boolean-disjoint call_service filter
+    is also disjoint from the input_select operation's service event.
+
+    The extractor proves call_service event triggers disjoint for
+    input_boolean only, and drops a proven trigger from lock projection.
+    This re-walks the same dictionaries with the same selector rules and
+    returns False when any such trigger could still observe
+    ``input_select.select_option``, or when the walk exceeds its bounds.
+    """
+
+    nodes = 0
+    stack: list[tuple[Any, int]] = [(config, 0)]
+    while stack:
+        value, depth = stack.pop()
+        nodes += 1
+        if nodes > MAX_CONFIGURATION_NODES or depth > MAX_CONFIGURATION_DEPTH:
+            return False
+        if isinstance(value, dict):
+            kind = value.get("platform", value.get("trigger"))
+            if kind == "event":
+                event_types, types_complete, types_limit = (
+                    _bounded_event_scalars(
+                        value.get("event_type"), key="event_type"
+                    )
+                )
+                if types_limit:
+                    return False
+                if (
+                    ("call_service" in event_types or not types_complete)
+                    and _call_service_filter_disjoint(
+                        value,
+                        domain="input_boolean",
+                        services=INPUT_BOOLEAN_EVENT_SERVICES,
+                    )
+                    and not _call_service_filter_disjoint(
+                        value,
+                        domain="input_select",
+                        services=INPUT_SELECT_EVENT_SERVICES,
+                    )
+                ):
+                    return False
+            stack.extend((item, depth + 1) for item in value.values())
+        elif isinstance(value, list):
+            stack.extend((item, depth + 1) for item in value)
+    return True
+
+
 def _is_template(value: str, key: str) -> bool:
     return "{{" in value or "{%" in value or key in TEMPLATE_KEYS
 
@@ -4464,6 +4541,7 @@ def _summary(relation: str) -> str:
 
 # The exact object is the only form a re-scan keeps by identity.
 _BOUNDED_REDACTED = "<redacted>"
+_SCREEN_MARGIN = 1024
 
 
 def _bounded(value: Any, limit: int = 160, secret: str = "") -> str | None:
@@ -4472,6 +4550,16 @@ def _bounded(value: Any, limit: int = 160, secret: str = "") -> str | None:
     # HAMCP-191 D4: Engineering's truncation and markers join the bound
     # identity record (the index build's, else the request's).
     registry = extraction_registry()
+    # HAMCP-226: the default-mode credential screen reads the original text
+    # first; a screened value is replaced whole, never redacted in part or cut
+    # by the bound below. Only a prefix can be shown, so the screen reads the
+    # shown prefix plus a margin that holds any credential crossing the cut,
+    # which keeps the scan of a template up to 64 KiB bounded.
+    marker = screen(str(value)[:limit + _SCREEN_MARGIN], (secret,) if secret else ())
+    if marker is not None:
+        if registry is not None:
+            registry.register_output(marker)
+        return marker
     safe = redact_data(str(value), secret=secret, max_string=limit, registry=registry)
     text = str(safe)
     for marker in ("authorization:", "bearer ", "/mcp"):

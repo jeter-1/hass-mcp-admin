@@ -20,6 +20,18 @@ from ..governance.helper_state import (
     HelperStateGateway,
     HelperStateGatewayError,
 )
+from ..governance.input_select_dependency import (
+    read_input_select_dependency_risk,
+)
+from ..governance.input_select_option import (
+    InputSelectGateway,
+    InputSelectGatewayError,
+)
+from ..f3_configuration.adapter import (
+    PREDISPATCH_AUTHORITY_UNAVAILABLE,
+    PREDISPATCH_READ_WINDOW,
+    PredispatchAuthorityRefused,
+)
 from .operational_models import (
     CAPABILITY_IDENTITIES,
     CONTROLLED_RELOAD,
@@ -31,6 +43,7 @@ from .operational_models import (
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
     SET_INPUT_BOOLEAN_STATE,
+    SET_INPUT_SELECT_OPTION,
     TARGET_CLASSES,
     VERIFICATION_MODELS,
     OperationalCapabilityDescriptor,
@@ -53,6 +66,9 @@ class StrategyDispatch:
     # HAMCP-181 b5 (helper state only): the gateway declared that its
     # dispatch callback raised before the command was sent.
     call_not_sent: bool = False
+    # HAMCP-145: a final pre-intent read refused; nothing was recorded or
+    # sent.  Only the input_select strategy sets this.
+    predispatch_refusal: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -920,6 +936,251 @@ class InputBooleanStateOperationStrategy(OperationalStrategy):
         )
 
 
+_INPUT_SELECT_STATE_FIELDS = ("entity_id", "state", "options", "last_changed")
+
+
+def _input_select_state(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    return {key: value.get(key) for key in _INPUT_SELECT_STATE_FIELDS}
+
+
+class InputSelectOptionOperationStrategy(OperationalStrategy):
+    """HAMCP-145: one exact ``input_select.select_option`` (OD-9/OD-11).
+
+    Preflight runs under the held complete lock set with a fenced
+    input_select dependency read.  Any change of the current option, the
+    ordered options list or ``last_changed`` since planning is refused
+    ``stale_target_state``; a requested option that is no longer offered is
+    refused ``option_not_available``.  The final pre-intent drift read runs
+    inside its own short Core-authority window and refuses with no durable
+    intent and no send.
+    """
+
+    operation = SET_INPUT_SELECT_OPTION
+    capability = _capability(
+        SET_INPUT_SELECT_OPTION,
+        argument_surface=(
+            "domain=input_select",
+            "service=select_option",
+            "service_data=option",
+            "target=exact_entity_id",
+        ),
+        limitations=(
+            "input_select_only",
+            "relative_moves_unavailable",
+            "options_list_never_changed",
+            "separate_reverse_plan_required",
+        ),
+    )
+
+    def __init__(
+        self,
+        gateway: InputSelectGateway,
+        *,
+        dependency_risk_reader: Callable[..., Awaitable[
+            dict[str, Any]
+        ]],
+        metrics: OperationalMetrics,
+    ) -> None:
+        super().__init__(metrics=metrics)
+        self.gateway = gateway
+        self.dependency_risk_reader = dependency_risk_reader
+
+    def _drift(self, prepared, current: dict[str, Any]) -> str | None:
+        option = prepared.requested_name
+        options = current.get("options")
+        if not isinstance(options, list) or option not in options:
+            return "option_not_available"
+        if current != _input_select_state(prepared.baseline):
+            return "stale_target_state"
+        return None
+
+    async def preflight_evidence(self, prepared):
+        if self.gateway is None:
+            return False, "provider_unavailable", ("provider_contract",), None
+        self.metrics.increment(self.operation, "state_reads")
+        try:
+            fresh = await self.gateway.planning_evidence(
+                prepared.target.target_id
+            )
+        except InputSelectGatewayError as exc:
+            return False, exc.category, ("entity_state",), None
+        provider = fresh.get("provider")
+        state_baseline = _input_select_state(fresh.get("baseline"))
+        if not isinstance(provider, dict) or not _provider_matches(
+            prepared.provider_evidence,
+            provider,
+            HELPER_STATE_PROVIDER_FIELDS,
+        ):
+            return False, "exact_contract_mismatch", ("provider_contract",), fresh
+        if state_baseline is None:
+            return False, "invalid_provider_response", ("entity_state",), fresh
+        try:
+            # Fenced: only a scan whose source read began after the complete
+            # lock set was taken may decide execution eligibility.
+            dependency = await self.dependency_risk_reader(
+                prepared.target.target_id, refresh=True, fenced=True
+            )
+        except Exception:
+            dependency = None
+        binding = (
+            dependency.get("binding")
+            if isinstance(dependency, dict)
+            else None
+        )
+        if not isinstance(binding, dict):
+            return (
+                False,
+                "dependency_evidence_unavailable",
+                ("dependency_risk",),
+                fresh,
+            )
+        combined = {
+            "provider": provider,
+            "baseline": {**state_baseline, "dependency_risk": binding},
+        }
+        planned_dependency = prepared.baseline.get("dependency_risk")
+        if (
+            binding.get("execution_contract_complete") is not True
+            or binding.get("execution_eligible") is not True
+            or binding.get("execution_block_reason_codes") != []
+        ):
+            return (
+                False,
+                "dependency_coverage_failure",
+                ("dependency_risk_execution_eligibility",),
+                combined,
+            )
+        if (
+            not isinstance(planned_dependency, dict)
+            or binding.get("evidence_fingerprint")
+            != planned_dependency.get("evidence_fingerprint")
+        ):
+            return (
+                False,
+                "dependency_risk_drift",
+                ("dependency_risk_fingerprint",),
+                combined,
+            )
+        if (
+            state_baseline.get("state") == prepared.requested_name
+            and isinstance(state_baseline.get("options"), list)
+            and prepared.requested_name in state_baseline["options"]
+        ):
+            return False, "already_desired", (), combined
+        drift = self._drift(prepared, state_baseline)
+        if drift is not None:
+            return False, drift, ("entity_state",), fresh
+        return True, "eligible", (), combined
+
+    async def _predispatch_refusal(self, prepared) -> tuple[str, ...]:
+        self.metrics.increment(self.operation, "state_reads")
+        try:
+            current = await self.gateway.read_state(prepared.target.target_id)
+        except InputSelectGatewayError as exc:
+            return (exc.category,)
+        drift = self._drift(prepared, _input_select_state(current) or {})
+        return () if drift is None else (drift,)
+
+    async def _windowed_predispatch_refusal(self, prepared) -> tuple[str, ...]:
+        window = PREDISPATCH_READ_WINDOW.get()
+        if window is None:
+            return await self._predispatch_refusal(prepared)
+        try:
+            async with window():
+                refusal = await self._predispatch_refusal(prepared)
+        except PredispatchAuthorityRefused:
+            # The read result is not evidence and nothing is sent.
+            return (PREDISPATCH_AUTHORITY_UNAVAILABLE,)
+        return refusal
+
+    async def dispatch(self, prepared, *, before_dispatch):
+        refusal = await self._windowed_predispatch_refusal(prepared)
+        if refusal:
+            return StrategyDispatch(
+                response_received=False,
+                response_evidence_hash=None,
+                diagnostic_code=refusal[0],
+                predispatch_refusal=refusal,
+            )
+        try:
+            result = await self.gateway.select_option(
+                prepared.target.target_id,
+                prepared.requested_name,
+                before_dispatch=before_dispatch,
+            )
+        except InputSelectGatewayError as exc:
+            if exc.call_not_sent:
+                return StrategyDispatch(
+                    response_received=False,
+                    response_evidence_hash=None,
+                    diagnostic_code="before_dispatch_failed",
+                    call_not_sent=True,
+                )
+            if not exc.dispatched:
+                raise
+            # Design §4.2: a Core error after the send (an option removed in
+            # between) is never proof of failure.  It is not a confirmed
+            # failure; the exact-state readback decides.
+            responded = exc.category == "provider_rejected"
+            return StrategyDispatch(
+                response_received=responded,
+                response_evidence_hash=stable_hash(
+                    {"category": exc.category, "responded": responded}
+                ),
+                diagnostic_code=(
+                    "provider_rejection_readback_decides"
+                    if responded
+                    else "provider_response_lost"
+                ),
+            )
+        return StrategyDispatch(
+            response_received=result.provider_response_received,
+            response_evidence_hash=stable_hash(
+                {
+                    "provider_response_received": (
+                        result.provider_response_received
+                    )
+                }
+            ),
+        )
+
+    async def observe(
+        self,
+        prepared,
+        *,
+        provider_response_received,
+        recovering,
+        evidence,
+    ):
+        del provider_response_received, recovering, evidence
+        self.metrics.increment(self.operation, "state_reads")
+        try:
+            state = await self.gateway.read_state(prepared.target.target_id)
+        except InputSelectGatewayError as exc:
+            status = "failed" if exc.category == "entity_not_found" else "pending"
+            return StrategyObservation(
+                status=status,
+                mismatch_fields=("entity_state",),
+                evidence_hash=stable_hash({"category": exc.category}),
+                diagnostic_codes=(f"input_select_option_{status}",),
+                provider_reachable=(False if status == "pending" else True),
+                target_reachable=(False if status == "failed" else None),
+            )
+        # An error result is never proof: this exact readback decides.
+        verified = state.get("state") == prepared.requested_name
+        status = "verified" if verified else "failed"
+        return StrategyObservation(
+            status=status,
+            mismatch_fields=() if verified else ("entity_state",),
+            evidence_hash=stable_hash(state),
+            diagnostic_codes=(f"input_select_option_{status}",),
+            provider_reachable=True,
+            target_reachable=True,
+        )
+
+
 def default_strategies(
     *,
     backup_gateway: BackupAdministrationGateway,
@@ -929,6 +1190,11 @@ def default_strategies(
         dict[str, Any]
     ]],
     metrics: OperationalMetrics,
+    input_select_gateway: InputSelectGateway | None = None,
+    input_select_dependency_risk_reader: Callable[..., Awaitable[
+        dict[str, Any]
+    ]]
+    | None = None,
 ) -> dict[str, OperationalStrategy]:
     strategies: tuple[OperationalStrategy, ...] = (
         FullBackupOperationStrategy(
@@ -946,6 +1212,15 @@ def default_strategies(
         InputBooleanStateOperationStrategy(
             helper_state_gateway,
             dependency_risk_reader=helper_dependency_risk_reader,
+            metrics=metrics,
+        ),
+        InputSelectOptionOperationStrategy(
+            input_select_gateway,
+            dependency_risk_reader=(
+                input_select_dependency_risk_reader
+                if input_select_dependency_risk_reader is not None
+                else read_input_select_dependency_risk
+            ),
             metrics=metrics,
         ),
     )

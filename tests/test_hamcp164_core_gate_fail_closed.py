@@ -70,7 +70,7 @@ SUPERVISOR = CORE_INDEPENDENT_SUPERVISOR_ONLY
 MOUNTED = CORE_INDEPENDENT_MOUNTED_SOURCE
 DOWNSTREAM = CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY
 
-# The reviewed HAMCP-164 inventory of all 67 static tools.  A new static tool
+# The reviewed HAMCP-164 inventory of all 77 static tools.  A new static tool
 # fails this test until it is reviewed and added as mapped or allowlisted.
 STATIC_CORE_TABLE = {
     "apply_change_plan": DOWNSTREAM,
@@ -79,8 +79,10 @@ STATIC_CORE_TABLE = {
     "call_service": REFUSED,
     "cancel_execution_task": LOCAL,
     "capture_automation_baseline": MAPPED,
+    "capture_automation_trace": MAPPED,
     "change_impact_analysis": MAPPED,
     "check_config": MAPPED,
+    "compare_automation_baselines": LOCAL,
     "configuration_integrity_analysis": MAPPED,
     "control_fan": DOWNSTREAM,
     "control_power": DOWNSTREAM,
@@ -93,6 +95,9 @@ STATIC_CORE_TABLE = {
     "create_entity_availability_exposure_plan": MAPPED,
     "create_label_plan": MAPPED,
     "create_entity_metadata_plan": MAPPED,
+    # HAMCP-232/145: runtime-only profiles, refused pending signed admission.
+    "create_helper_options_plan": MAPPED,
+    "create_input_select_option_plan": MAPPED,
     "create_helper_state_plan": MAPPED,
     "create_home_assistant_restart_plan": MAPPED,
     "create_reload_plan": MAPPED,
@@ -104,6 +109,8 @@ STATIC_CORE_TABLE = {
     "get_automation_trace": MAPPED,
     "get_backup_inventory": MAPPED,
     "get_recorder_settings": MAPPED,
+    # HAMCP-232: runtime-only script-trace reads, refused pending signed admission.
+    "get_script_trace": MAPPED,
     "get_unregistered_entities": MAPPED,
     "get_configuration_definitions": MAPPED,
     "get_history_slices": MAPPED,
@@ -119,6 +126,7 @@ STATIC_CORE_TABLE = {
     "get_integration_inspection": MAPPED,
     "get_logbook": MAPPED,
     "get_server_health": CONDITIONAL,
+    "get_trace_snapshot": LOCAL,
     "handoff_generation": MAPPED,
     "incident_correlation": MAPPED,
     "list_areas": MAPPED,
@@ -131,13 +139,16 @@ STATIC_CORE_TABLE = {
     "list_devices": MAPPED,
     "list_entity_registry": MAPPED,
     "list_execution_tasks": LOCAL,
+    "list_script_traces": MAPPED,
     "list_services": MAPPED,
+    "list_trace_snapshots": LOCAL,
     "reload_domain": REFUSED,
     "render_template": MAPPED,
     "reverify_configuration_task": DOWNSTREAM,
     "rollback_change": DOWNSTREAM,
     "run_held_read_canary": DOWNSTREAM,
     "search_entities": MAPPED,
+    "set_automation_trace_watch": LOCAL,
     "search_services": MAPPED,
     "server_info": CONDITIONAL,
     "upsert_automation": REFUSED,
@@ -178,6 +189,9 @@ ALLOWLIST_ARGUMENTS = {
     "control_power": {
         "entity_id": "light.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
     },
+    "get_trace_snapshot": {"snapshot_id": "a" * 32},
+    "set_automation_trace_watch": {"action": "list"},
+    "compare_automation_baselines": {"earlier_capture_id": "a" * 32, "later_capture_id": "b" * 32},
 }
 
 
@@ -230,7 +244,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 68)
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 77)
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -255,7 +269,7 @@ class StaticCoreTableTests(unittest.TestCase):
 
     def test_allowlist_is_the_reviewed_closed_set(self):
         self.assertEqual(set(CORE_INDEPENDENT_STATIC_TOOLS), ALLOWLISTED)
-        self.assertEqual(len(ALLOWLISTED), 17)
+        self.assertEqual(len(ALLOWLISTED), 21)
         self.assertIsInstance(CORE_INDEPENDENT_STATIC_TOOLS, MappingProxyType)
         with self.assertRaises(TypeError):
             CORE_INDEPENDENT_STATIC_TOOLS["synthetic"] = CORE_INDEPENDENT_STATIC_TOOLS[
@@ -474,12 +488,19 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
     async def test_mapped_tools_still_acquire_their_exact_requirements(self):
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             # Both entity planners and the deletion planner bind an exact
-            # target, which {} lacks.
+            # target, which {} lacks.  The HAMCP-232/145 planners also bind
+            # exact targets, and they and the script-trace reads are refused
+            # pending signed admission before any acquisition (their tests
+            # cover it).
             if expected not in {MAPPED, CONDITIONAL} or name in {
                 "create_entity_metadata_plan",
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
                 "create_configuration_delete_plan",
+                "create_helper_options_plan",
+                "create_input_select_option_plan",
+                "list_script_traces",
+                "get_script_trace",
             }:
                 continue
             with self.subTest(tool=name):

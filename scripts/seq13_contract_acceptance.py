@@ -44,6 +44,9 @@ DELETE = "core.configuration_delete_operation"
 # The HAMCP-155 delete profile has its own lane and stays unsigned in these.
 SEQ13_DORMANT = frozenset({LABEL, AVAILABILITY, EXPOSURE, DELETE})
 SHIPPED_SIGNED_COUNT = 22
+# HAMCP-232/145 November batch: compiled, never in a predecessor (seq 15+).
+NOVEMBER_DORMANT = frozenset({"core.config_entry_helper_options_operation",
+                              "core.typed_input_select_option_operation", "core.script_trace_read"})
 ENTITY_GET, ENTITY_UPDATE = "config/entity_registry/get", "config/entity_registry/update"
 LABEL_LIST = "config/label_registry/list"
 LABEL_CREATE, LABEL_UPDATE = "config/label_registry/create", "config/label_registry/update"
@@ -123,7 +126,7 @@ def shipped_references():
     """The predecessor: every compiled profile except the seq-13 dormant set."""
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
     refs = [{k: p.to_mapping()[k] for k in REFERENCE_KEYS} for p in CORE_RUNTIME_CAPABILITY_PROFILES
-            if p.capability_id not in SEQ13_DORMANT]
+            if p.capability_id not in SEQ13_DORMANT | NOVEMBER_DORMANT]
     assert len(refs) == SHIPPED_SIGNED_COUNT and len({r["capability_id"] for r in refs}) == len(refs)
     assert METADATA in {r["capability_id"] for r in refs}
     return refs
