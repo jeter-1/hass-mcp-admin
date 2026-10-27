@@ -70,7 +70,7 @@ SUPERVISOR = CORE_INDEPENDENT_SUPERVISOR_ONLY
 MOUNTED = CORE_INDEPENDENT_MOUNTED_SOURCE
 DOWNSTREAM = CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY
 
-# The reviewed HAMCP-164 inventory of all 72 static tools.  A new static tool
+# The reviewed HAMCP-164 inventory of all 76 static tools.  A new static tool
 # fails this test until it is reviewed and added as mapped or allowlisted.
 STATIC_CORE_TABLE = {
     "apply_change_plan": DOWNSTREAM,
@@ -242,7 +242,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 72)
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 76)
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
