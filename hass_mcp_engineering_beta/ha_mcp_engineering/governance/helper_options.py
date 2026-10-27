@@ -36,6 +36,7 @@ from ..clients.paths import rest_path
 from ..entity_ids import validate_entity_id
 from ..errors import AuthorizationError, HomeAssistantApiError
 from ..request_context import mark_provider_send
+from . import helper_options_flows as flows
 from .normalize import stable_hash
 
 PROFILE = "core.config_entry_helper_options_operation"
@@ -100,6 +101,9 @@ ABORT_TIMEOUT_SECONDS = 10.0
 # id is unknown, so it cannot be aborted: Core holds it in memory until it
 # times out or Core restarts.  Disclosed, never treated as "no flow".
 FLOW_OPEN_UNCONFIRMED = "options_flow_open_unconfirmed"
+# No open is sent unless its intent, and then its flow id, are recorded
+# durably first (``helper_options_flows``).
+FLOW_LEDGER_UNAVAILABLE = "options_flow_ledger_unavailable"
 
 
 def open_unconfirmed(exc: BaseException) -> bool:
@@ -939,6 +943,9 @@ class HelperOptionsGateway:
     def __init__(self, rest_client: Any, websocket_client: Any) -> None:
         self.rest_client = rest_client
         self.websocket_client = websocket_client
+        # Attached by the F3 runtime over its storage root.  Without it no
+        # flow is opened; an abort or submit of a known flow still runs.
+        self.flow_ledger: flows.HelperOptionsFlowLedger | None = None
 
     async def _command(self, command: dict[str, Any]) -> Any:
         if command.get("type") not in READ_COMMANDS:
@@ -1041,13 +1048,54 @@ class HelperOptionsGateway:
         return state[:255] if isinstance(state, str) else None
 
     async def open_flow(self, entry_id: str) -> Any:
-        """Start an options flow for the exact entry (a read; aborted after)."""
+        """Start an options flow for the exact entry (a read; aborted after).
+
+        The open intent is recorded durably before the open is sent, and the
+        received flow id before any abort, so a failed or unknown abort is
+        retried by the recovery sweep, also after a restart.  A failed open
+        with no received answer stays recorded as possibly open.
+        """
 
         if not ENTRY_ID_PATTERN.fullmatch(entry_id):
             raise HelperOptionsContractError("options_entry_id_invalid")
-        return await self.rest_client.request(
-            "POST", rest_path("/config/config_entries/options/flow"), {"handler": entry_id}
-        )
+        ledger = self.flow_ledger
+        if ledger is None:
+            raise HelperOptionsProviderError(FLOW_LEDGER_UNAVAILABLE)
+        try:
+            record_id = ledger.begin_open(entry_id)
+        except flows.FlowLedgerError:
+            raise HelperOptionsProviderError(FLOW_LEDGER_UNAVAILABLE) from None
+        try:
+            response = await self.rest_client.request(
+                "POST", rest_path("/config/config_entries/options/flow"), {"handler": entry_id}
+            )
+        except BaseException as exc:
+            try:
+                ledger.open_failed(record_id, unconfirmed=open_unconfirmed(exc))
+            except flows.FlowLedgerError:
+                pass  # still recorded as opening: reported as possibly open
+            raise
+        finished = isinstance(response, dict) and response.get("type") in ("abort", "create_entry")
+        flow_id = response.get("flow_id") if isinstance(response, dict) else None
+        try:
+            ledger.opened(record_id, flow_id, finished=finished)
+        except flows.FlowLedgerError:
+            # The flow id cannot be recorded before an abort: abort it now and
+            # refuse.  The open intent stays recorded unless the abort is
+            # confirmed.
+            ledger.live.discard(record_id)
+            if (
+                not finished
+                and isinstance(flow_id, str)
+                and FLOW_ID_PATTERN.fullmatch(flow_id)
+                and await _settle(asyncio.ensure_future(self._delete_flow(flow_id)))
+            ):
+                try:
+                    ledger.open_failed(record_id, unconfirmed=False)
+                except flows.FlowLedgerError:
+                    pass
+            raise HelperOptionsProviderError(FLOW_LEDGER_UNAVAILABLE) from None
+        return response
 
     async def abort_flow(self, flow_id: str) -> bool:
         """Abort a flow this gateway opened; False when the abort failed.
@@ -1061,7 +1109,72 @@ class HelperOptionsGateway:
 
         if not isinstance(flow_id, str) or not FLOW_ID_PATTERN.fullmatch(flow_id):
             raise HelperOptionsContractError("options_flow_id_malformed")
-        return await _settle(asyncio.ensure_future(self._delete_flow(flow_id)))
+        gone = False
+        try:
+            gone = await _settle(asyncio.ensure_future(self._delete_flow(flow_id)))
+        finally:
+            # A failed, unknown or cancelled abort stays recorded for the
+            # recovery sweep; only Core's confirmation removes the record.
+            self._record_flow(flow_id, gone=gone)
+        return gone
+
+    def _record_flow(self, flow_id: str, *, gone: bool) -> None:
+        ledger = self.flow_ledger
+        if ledger is None:
+            return
+        try:
+            if gone:
+                ledger.flow_gone(flow_id)
+            else:
+                ledger.abort_failed(flow_id)
+        except flows.FlowLedgerError:
+            # The record stays as it was, no longer live: an open flow is
+            # retried by the sweep, and a 404 there settles one already gone.
+            pass
+
+    def flow_unreleased(self, flow_id: str) -> None:
+        """A held flow whose abort was refused before any send: retry later."""
+
+        self._record_flow(flow_id, gone=False)
+
+    async def retry_unconfirmed_aborts(
+        self, lease: Any, *, stop: Any
+    ) -> dict[str, int]:
+        """One recovery sweep's retry of every recorded, unconfirmed abort.
+
+        ``lease(entry_id)`` is the exact-target Core authority window the
+        abort runs in; a refused lease skips the flow without counting a
+        retry.  Only flows this gateway opened and recorded are aborted,
+        each by its recorded flow id, through the reviewed DELETE route.
+        """
+
+        ledger = self.flow_ledger
+        result = {"retried": 0, "confirmed_gone": 0, "orphaned": 0, "skipped": 0}
+        if ledger is None:
+            return result
+        for record in ledger.retry_candidates():
+            if stop():
+                break
+            gone: bool | None = None
+            try:
+                async with lease(record["entry_id"]):
+                    try:
+                        gone = await _settle(
+                            asyncio.ensure_future(self._delete_flow(record["flow_id"]))
+                        )
+                    except AuthorizationError:
+                        gone = False
+            except Exception:  # noqa: BLE001 - a refused lease is retried next sweep
+                if gone is None:
+                    result["skipped"] += 1
+                    continue
+            result["retried"] += 1
+            status = ledger.sweep_attempted(record["record_id"], gone=gone)
+            if status is None:
+                result["confirmed_gone"] += 1
+            elif status == flows.STATUS_ORPHANED:
+                result["orphaned"] += 1
+        return result
 
     async def _delete_flow(self, flow_id: str) -> bool:
         try:
@@ -1189,6 +1302,11 @@ class HelperOptionsGateway:
         from .resources import ConfigurationMutationNotDispatchedError
 
         outcome = await self.submit(flow_id, submit)
+        # A finished or aborted flow, or a 404, proves Core holds nothing.
+        if outcome.category in ("options_flow_finished", "options_flow_aborted") or (
+            outcome.provider_status == 404
+        ):
+            self._record_flow(flow_id, gone=True)
         if outcome.applied is True:
             return outcome
         if outcome.applied is False:
@@ -1280,6 +1398,7 @@ __all__ = [
     "ENTITY_DOMAINS",
     "ENTRY_UNHEALTHY",
     "EXPECTED_EFFECT",
+    "FLOW_LEDGER_UNAVAILABLE",
     "EntryFacts",
     "FieldSpec",
     "HelperOptionsContractError",

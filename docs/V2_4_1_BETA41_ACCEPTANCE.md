@@ -93,6 +93,24 @@ The review needs a security section covering:
   part of the profile material, so two fingerprints above changed at review 1
   (helper options `581234de…5b9e`, script trace `abf10d9b…5789`);
   input_select is unchanged.
+- **Correction 2 (H2-R1).** Each options flow's open intent is recorded
+  durably before the open, and its flow id before any abort; each recovery
+  sweep retries a failed or unknown abort, at most 10 times, until Core
+  confirms the flow gone, then reports it orphaned in health. The retry is
+  the reviewed DELETE, admitted, in an exact-target Core window. No profile
+  command changed, so no fingerprint changed (helper options stays
+  `ce2765dc…d98d8`; signed profiles match 22/26/26).
+- **Accepted residual (owner decision (b)).** Pinned Core 2026.10.1 has no
+  read-only command that lists in-progress options flows:
+  `config_entries.py:384-404` (`flow/progress`) and `:407-466`
+  (`flow/subscribe`) list config flows only, the options views
+  (`:277-318`, `helpers/data_entry_flow.py:104` and `:131`) need a known
+  flow id, and `data_entry_flow.py` `async_progress*` is Python-only. A flow
+  whose open answer was lost is therefore reported, in server health
+  (`helper_options_flows`) and in the task when one exists
+  (`options_flow_open_unconfirmed`), as "options flow possibly left open on
+  entry X (no flow id received); it holds no configuration change and is
+  discarded at the next Home Assistant restart".
 - **Dormant lanes.** The seq-15 lanes run only with
   `REAL_HA_SEQ15_LANES` explicitly enabled on the candidate support slot;
   the harness sender is loopback-only and refuses routes outside its closed
@@ -142,6 +160,20 @@ enforces the real clients' Core-authority check
   expected failure (owner decision: create refuses an incomplete intent).
   It proves no other reviewer method is an expected failure and that the
   superseded one still runs and fails at the create refusal.
+- `tests/test_pr314_delta_cleanup.py`: the reviewer's delta cleanup probes,
+  byte for byte (sha256
+  `e29c568e691e5634cfbd98266cabc5dce7f7fb32cd58e377991e7aaf2a78cfd8`).
+  `tests/test_pr314_delta_cleanup_accepted.py` pins that hash and registers
+  the two lost-open probes as the only expected failures (owner decision
+  (b)); it proves they still fail only at the surviving-flow assertion and
+  that the failed-abort probe passes.
+- `tests/test_hamcp232_options_flow_ledger.py`: the record before the open
+  and before the abort, restart survival, bounded retries to orphaned with
+  the health disclosure, confirmation by abort or 404, inert sweeps (no
+  record, no admission, a live flow), a refused release handed to the
+  sweep, possibly-open disclosure in each phase, refusal with nothing sent
+  when the ledger is missing, corrupt or full, eviction, and strict storage
+  validation.
 - `tests/test_seq15_contract_acceptance.py`: lane definitions, receipts and
   their mutations, fixture cleanup, the loopback route gate, dormancy and the
   lane guard.
@@ -154,7 +186,8 @@ enforces the real clients' Core-authority check
 
 Rollback is reinstalling **2.4.1-beta.40**. Under the current signed
 registry (sequence 14) beta.41 writes no new record shape, because every new
-family refuses before persistence. After a future signed sequence admits a
+family refuses before persistence, and the options-flow ledger is written
+only while an admitted flow is open or unconfirmed. After a future signed sequence admits a
 family, a downgrade below beta.41 must be re-evaluated before it is
 supported; that is not covered here. Never clear F3 journals, task files or
 locks.

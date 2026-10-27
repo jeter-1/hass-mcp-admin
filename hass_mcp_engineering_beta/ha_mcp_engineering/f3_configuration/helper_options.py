@@ -31,6 +31,7 @@ from ha_mcp_engineering.f3.contracts import NormalizedOperationOutcome
 
 from ..errors import AuthorizationError
 from ..governance import helper_options as contract
+from ..governance import helper_options_flows as flows
 from ..governance.normalize import stable_hash
 from ..governance.resources import ConfigurationMutationNotDispatchedError
 from .adapter import (
@@ -435,6 +436,9 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
         )
         if not aborted:
             self._orphaned.add(key)
+            # Also when the abort was refused before any send: the flow stays
+            # recorded for the recovery sweep to retry.
+            self.gateway.options_flow_unreleased(held.flow_id)
         return aborted
 
     async def dispatch(self, operation, preflight, *, before_dispatch):
@@ -465,6 +469,15 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
         return super()._dispatch_result(operation, outcome, codes=codes, **kwargs)
 
     async def _predispatch_refusal(
+        self, operation: PreparedConfigurationOperation
+    ) -> tuple[str, ...]:
+        # Every flow opened here is recorded with its plan and task.
+        with flows.flow_context(
+            plan_id=operation.plan_id, task_id=operation.task_id, phase="dispatch"
+        ):
+            return await self._held_predispatch_refusal(operation)
+
+    async def _held_predispatch_refusal(
         self, operation: PreparedConfigurationOperation
     ) -> tuple[str, ...]:
         if not self._admitted():
@@ -569,6 +582,20 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
         poll_attempts: int | None = None,
     ) -> ConfigurationObservationResult:
         del error_result_sent
+        with flows.flow_context(
+            plan_id=operation.plan_id, task_id=operation.task_id, phase="readback"
+        ):
+            return await self._observe_options(
+                operation, attempt_count=attempt_count, poll_attempts=poll_attempts
+            )
+
+    async def _observe_options(
+        self,
+        operation: PreparedConfigurationOperation,
+        *,
+        attempt_count: int,
+        poll_attempts: int | None,
+    ) -> ConfigurationObservationResult:
         self._increment("readbacks")
         if not self._admitted():
             return self._incomplete_observation(

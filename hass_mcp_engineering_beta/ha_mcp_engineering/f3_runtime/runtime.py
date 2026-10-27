@@ -133,6 +133,7 @@ from ..governance import entity_metadata_planning
 from ..governance import entity_availability_exposure_planning
 from ..governance import configuration_delete_planning
 from ..governance import helper_options_planning
+from ..governance.helper_options_flows import HelperOptionsFlowLedger
 from ..governance.entity_availability_exposure import (
     BINDINGS_KEY as AVAILABILITY_EXPOSURE_BINDINGS_KEY,
     CAPABILITY_IDENTITIES as AVAILABILITY_EXPOSURE_CAPABILITY_IDENTITIES,
@@ -1457,6 +1458,9 @@ class _AuditedConfigurationGateway:
     async def options_abort(self, flow_id):
         return await self.delegate.options_abort(flow_id)
 
+    def options_flow_unreleased(self, flow_id):
+        self.delegate.options_flow_unreleased(flow_id)
+
     async def options_submit(self, flow_id, submit):
         return await self._audited(self.delegate.options_submit(flow_id, submit))
 
@@ -1843,6 +1847,16 @@ class F3RuntimeIntegration:
                 admission=self._configuration_delete_admitted,
                 now=service.now,
             )
+        # HAMCP-232 H2-R1: every options flow is recorded under this storage
+        # root before it is opened, so an unconfirmed abort survives a
+        # restart and is retried by the recovery sweep.  The gateway opens
+        # no flow without it.
+        self.helper_options_gateway = getattr(configuration_gateway, "helper_options", None)
+        self.helper_options_flows: HelperOptionsFlowLedger | None = None
+        self._helper_options_flow_sweep: dict[str, int] | None = None
+        if self.helper_options_gateway is not None:
+            self.helper_options_flows = HelperOptionsFlowLedger(storage_root, now=service.now)
+            self.helper_options_gateway.flow_ledger = self.helper_options_flows
         # HAMCP-232: the options-flow edit is a separate adapter class with
         # the same self-checked admission, read again before every readback.
         configuration_adapters[
@@ -2297,6 +2311,51 @@ class F3RuntimeIntegration:
         except Exception:
             return False
         return isinstance(status, dict) and status.get("available") is True
+
+    async def _retry_helper_options_flows(self, stop: Callable[[], bool]) -> None:
+        """HAMCP-232 H2-R1: retry each recorded options-flow abort not yet confirmed.
+
+        Inert unless a recorded flow awaits its abort and a signed registry
+        admits the options profile: then no Home Assistant call and no write.
+        Each abort is the reviewed DELETE of a flow this gateway opened, by
+        its recorded id, in an exact-target Core authority window.  Never
+        raises into the sweep.
+        """
+
+        ledger, gateway = self.helper_options_flows, self.helper_options_gateway
+        if ledger is None or gateway is None:
+            return
+        try:
+            if not ledger.retry_candidates() or not self._helper_options_admitted():
+                return
+            core = self.core_runtime
+
+            def lease(entry_id: str) -> _rollback_planning_lease:
+                return _rollback_planning_lease(
+                    core,
+                    (helper_options_contract.PROFILE,),
+                    target={
+                        "target_type": helper_options_contract.RESOURCE_TYPE,
+                        "target_id": entry_id,
+                    },
+                )
+
+            self._helper_options_flow_sweep = await gateway.retry_unconfirmed_aborts(
+                lease, stop=stop
+            )
+        except Exception:  # noqa: BLE001 - reported by the ledger's health
+            return
+
+    def _helper_options_flow_health(self) -> dict[str, Any]:
+        ledger = self.helper_options_flows
+        if ledger is None:
+            return {"status": "not_composed"}
+        summary = ledger.health_summary()
+        summary["last_sweep"] = (
+            None if self._helper_options_flow_sweep is None
+            else dict(self._helper_options_flow_sweep)
+        )
+        return summary
 
     def _emit_lock_cleanup_audit_event(self, event: dict[str, object]) -> bool:
         # This sole repository callback is emitted after its transaction exits.
@@ -6237,6 +6296,7 @@ class F3RuntimeIntegration:
             },
             "recovery_cadence_seconds": RECOVERY_CADENCE_SECONDS,
             "recovery_batch_size": RECOVERY_BATCH_SIZE,
+            "helper_options_flows": self._helper_options_flow_health(),
             "lock_profile": {
                 "lease_seconds": 120,
                 "renewal_interval_seconds": 20,
@@ -7957,6 +8017,8 @@ class F3RuntimeIntegration:
         active_transitions = (
             priority_recovery["transitions"] + pre_intent["transitions"]
         )
+        if not deadline_reached():
+            await self._retry_helper_options_flows(deadline_reached)
         self._last_sweep_complete = not deadline_reached()
         return {
             "processed": processed,

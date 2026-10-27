@@ -155,6 +155,9 @@ class ExistingConfigurationGatewayBridge:
     async def options_abort(self, flow_id: str) -> bool:
         return await self._gateway.helper_options.abort_flow(flow_id)
 
+    def options_flow_unreleased(self, flow_id: str) -> None:
+        self._gateway.helper_options.flow_unreleased(flow_id)
+
     async def options_submit(self, flow_id: str, submit: dict[str, Any]) -> Any:
         return await self._gateway.helper_options.submit_dispatch(flow_id, submit)
 

@@ -26,7 +26,12 @@ inactive (design note section 6.1 item 9):
 - ``L*``: the dormant seq-15 lanes (the enable switch and loopback gates,
   the raw-route allowlist);
 - ``K*``: automation lock projection for input_select (a select_option
-  observer losing the guard, or an unrelated filter gaining it).
+  observer losing the guard, or an unrelated filter gaining it);
+- ``F*``: the durable options-flow ledger and its recovery sweep (correction
+  2, H2-R1): a failed abort's record dropped or treated as gone, a lost open
+  forgotten, an open sent without its recorded intent, the sweep unadmitted,
+  unwindowed, unbounded, never run, or reaching a live flow, and a refused
+  release never handed to the sweep.
 
 Usage:
     python docs/evidence/hamcp232-mutations/run_mutations.py \\
@@ -47,6 +52,7 @@ E = base.E
 HOA = f"{E}/f3_configuration/helper_options.py"
 HOC = f"{E}/governance/helper_options.py"
 HOP = f"{E}/governance/helper_options_planning.py"
+HOF = f"{E}/governance/helper_options_flows.py"
 SVC = f"{E}/governance/service.py"
 ISO = f"{E}/governance/input_select_option.py"
 OPS = f"{E}/f3/operational_strategies.py"
@@ -68,6 +74,7 @@ TRACE = "script-trace read unsanitized or widened"
 LANE = "dormant lane gate opened"
 LOCK = "input_select lock projection loosened or widened"
 TRIGGER = "disabled trigger disclosed as firing"
+FLOWS = "options-flow record dropped or sweep widened"
 LOOPBACK = '{"127.0.0.1", "localhost", "::1"}'
 # Review H1 mutants S2/S6: the pre-correction parallel screen in place of the
 # HAMCP-225 trace exit.
@@ -80,6 +87,9 @@ base.MODULES = (
     "test_hamcp232_script_trace_cross_path",
     "test_pr314_independent_review",
     "test_hamcp232_review1_superseded",
+    "test_hamcp232_options_flow_ledger",
+    "test_pr314_delta_cleanup",
+    "test_pr314_delta_cleanup_accepted",
     "test_seq15_contract_acceptance",
     "test_f3_configuration_identity",
 )
@@ -336,6 +346,40 @@ base.MUTATIONS = [
     m("K3-every-exclusion-guarded", LOCK,
       (LCK, "                if not call_service_exclusions_cover_input_select(config):",
        "                if True:")),
+    # --- correction 2 (H2-R1): the durable options-flow ledger ---------------
+    m("F1-failed-abort-record-dropped", FLOWS,
+      (HOF, '            if record["status"] == STATUS_OPEN:\n'
+            '                record["status"] = STATUS_ABORT_FAILED\n            return True',
+       '            return False')),
+    m("F2-failed-abort-recorded-as-gone", FLOWS,
+      (HOC, "            if gone:\n                ledger.flow_gone(flow_id)",
+       "            if True:\n                ledger.flow_gone(flow_id)")),
+    m("F3-lost-open-intent-forgotten", FLOWS,
+      (HOC, "ledger.open_failed(record_id, unconfirmed=open_unconfirmed(exc))",
+       "ledger.open_failed(record_id, unconfirmed=False)")),
+    m("F4-open-sent-without-recorded-intent", FLOWS,
+      (HOC, "        except flows.FlowLedgerError:\n"
+            "            raise HelperOptionsProviderError(FLOW_LEDGER_UNAVAILABLE) from None\n"
+            "        try:\n            response = await",
+       "        except flows.FlowLedgerError:\n            record_id = \"\"\n"
+       "        try:\n            response = await")),
+    m("F5-sweep-admission-skipped", FLOWS,
+      (RUN, "            if not ledger.retry_candidates() or not self._helper_options_admitted():",
+       "            if not ledger.retry_candidates():")),
+    m("F6-sweep-abort-unwindowed", FLOWS,
+      (HOC, '                async with lease(record["entry_id"]):',
+       '                async with __import__("contextlib").nullcontext():')),
+    m("F7-sweep-retries-unbounded", FLOWS,
+      (HOF, '                if record["attempts"] >= MAX_SWEEP_ABORT_ATTEMPTS',
+       "                if False")),
+    m("F8-sweep-never-runs", FLOWS,
+      (RUN, "            await self._retry_helper_options_flows(deadline_reached)",
+       "            pass")),
+    m("F9-sweep-reaches-a-live-flow", FLOWS,
+      (HOF, '            if record["status"] in RETRY_STATUSES and record["record_id"] not in self.live',
+       '            if record["status"] in RETRY_STATUSES')),
+    m("F10-refused-release-not-handed-to-sweep", FLOWS,
+      (HOA, "            self.gateway.options_flow_unreleased(held.flow_id)\n", "")),
 ]
 
 _run_tests = base.run_tests

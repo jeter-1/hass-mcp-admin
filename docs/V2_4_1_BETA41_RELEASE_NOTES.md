@@ -83,6 +83,28 @@ byte-identical.
   part of the binding fingerprint, so enabling or disabling a dependent
   automation between plan and apply refuses the apply as stale.
 
+### Correction 2 (delta review H2-R1)
+
+- **Failed abort.** Every options flow is recorded in a durable
+  Engineering-local ledger (`helper-options-flows-v1`) before its open is
+  sent, with its flow id before any abort. A failed or unknown abort is
+  retried by each recovery sweep, also after a restart, until Core confirms
+  the flow gone (aborted, or a 404); after 10 retries it is reported
+  orphaned, with its entry and flow id, in server health
+  (`helper_options_flows`). An open whose record cannot be written is
+  refused before anything is sent.
+- **Lost open (owner decision (b), accepted residual).** Pinned Core
+  2026.10.1 has no read-only command that lists in-progress options flows,
+  so a flow whose open answer was lost cannot be found. It is reported, in
+  health and in the task (`options_flow_open_unconfirmed`), as "options flow
+  possibly left open on entry X (no flow id received); it holds no
+  configuration change and is discarded at the next Home Assistant
+  restart". The reviewer's two lost-open probes are registered as expected
+  failures in `tests/test_pr314_delta_cleanup_accepted.py`.
+- The retry is the existing reviewed DELETE, admitted and in an
+  exact-target Core window: no new Core command, write or fallback, and no
+  profile fingerprint change.
+
 Every write path uses the built-in lessons (design section 6.1): admission
 first at the service layer and again at the persist boundary; dispatch
 admission on every F3 path (first apply, retained approved plan, resume,
@@ -104,6 +126,10 @@ exact send boundary.
 - No F3 persisted-format change for any existing family. New enum values
   (`set_input_select_option`, the `config_entry_helper_options` resource type)
   can be written only after signed admission, so a beta.41 install under the
-  current signed registry (sequence 14) writes no new record shape.
+  current signed registry (sequence 14) writes no new record shape. The new
+  options-flow ledger (`helper-options-flows-v1/flows.json` under the plan
+  storage) is written only while an options flow is open or unconfirmed, so
+  also only after admission, and is removed when empty.
+- Server health gains one additive `helper_options_flows` section.
 - Rollback is reinstalling 2.4.1-beta.40.
 - Stable v1.1.2 is unchanged.

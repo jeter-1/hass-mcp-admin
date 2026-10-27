@@ -634,6 +634,25 @@ signed, and no permission, add-on option, delegated provider or fallback.
   registered and aborted on every exit, a cancelled caller included; a 404
   counts as gone and a lost open is disclosed as
   `options_flow_open_unconfirmed`.
+- **Durable flow ledger and abort retry (correction 2, H2-R1).** The open
+  intent (entry, plan, task, phase, time) is recorded in Engineering's own
+  storage before the open is sent, and the received flow id before any
+  abort; an open is refused, with nothing sent, when the record cannot be
+  written. A failed or unknown abort stays recorded across restarts and each
+  recovery sweep retries it, at most 10 times, until Core confirms the flow
+  gone (aborted, or a 404); after that it is reported orphaned in health.
+  The retry is the existing reviewed options-flow DELETE, by the recorded id
+  of a flow this server opened, only while a signed registry admits the
+  profile and inside an exact-target Core authority window for that entry.
+  It adds no Home Assistant write, no new Core command and no fallback; with
+  nothing recorded or no admission the sweep makes no call and no write.
+- **Accepted residual (owner decision (b)).** Pinned Core 2026.10.1 lists no
+  in-progress options flows (`flow/progress` and `flow/subscribe` cover
+  config flows only), so a flow whose open answer was lost cannot be found
+  or aborted. It is reported in health, and in the task when one exists, as
+  "options flow possibly left open on entry X (no flow id received); it
+  holds no configuration change and is discarded at the next Home Assistant
+  restart".
 - **Closed vocabularies.** Explicit never-sent lists: entry create, delete,
   reload, update, disable and subentries; `set_options` and the relative
   option moves; `trace/contexts`, every `trace/debug/*` command and the
