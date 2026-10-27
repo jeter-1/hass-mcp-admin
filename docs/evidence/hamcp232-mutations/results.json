@@ -5,16 +5,19 @@
    "test_hamcp232_helper_options",
    "test_hamcp145_input_select_option",
    "test_hamcp232_script_traces",
+   "test_hamcp232_script_trace_cross_path",
+   "test_pr314_independent_review",
+   "test_hamcp232_review1_superseded",
    "test_seq15_contract_acceptance",
    "test_f3_configuration_identity"
   ],
   "returncode": 0,
-  "tests": 208,
-  "seconds": 95.1,
-  "summary": "OK"
+  "tests": 269,
+  "seconds": 124.2,
+  "summary": "OK (expected failures=1)"
  },
- "mutation_count": 57,
- "killed": 57,
+ "mutation_count": 77,
+ "killed": 77,
  "survived": [],
  "python": "3.12.14",
  "results": [
@@ -35,7 +38,7 @@
    "first_failures": [
     "FAIL test_refuses_before_validation_and_any_read (test_hamcp232_helper_options.ServiceAdmissionTests.test_refuses_before_validation_and_any_read)"
    ],
-   "seconds": 45.6
+   "seconds": 62.6
   },
   {
    "id": "A2-helper-options-persist-admission",
@@ -54,7 +57,7 @@
    "first_failures": [
     "ERROR test_internal_builder_refuses_without_admission (test_hamcp232_helper_options.ServiceAdmissionTests.test_internal_builder_refuses_without_admission)"
    ],
-   "seconds": 48.0
+   "seconds": 63.0
   },
   {
    "id": "A3-helper-options-apply-context-admission",
@@ -73,7 +76,7 @@
    "first_failures": [
     "FAIL test_generic_builder_refuses_a_raw_options_operation_first (test_hamcp232_helper_options.ServiceAdmissionTests.test_generic_builder_refuses_a_raw_options_operation_first)"
    ],
-   "seconds": 46.4
+   "seconds": 66.2
   },
   {
    "id": "A4-adapter-preflight-admission",
@@ -92,7 +95,7 @@
    "first_failures": [
     "FAIL test_preflight_refuses_before_any_read (test_hamcp232_helper_options.AdapterAdmissionTests.test_preflight_refuses_before_any_read)"
    ],
-   "seconds": 4.9
+   "seconds": 5.7
   },
   {
    "id": "A5-adapter-predispatch-admission",
@@ -111,7 +114,7 @@
    "first_failures": [
     "FAIL test_predispatch_refuses_before_opening_a_flow (test_hamcp232_helper_options.AdapterAdmissionTests.test_predispatch_refuses_before_opening_a_flow)"
    ],
-   "seconds": 3.9
+   "seconds": 4.4
   },
   {
    "id": "A6-adapter-readback-admission",
@@ -130,7 +133,7 @@
    "first_failures": [
     "FAIL test_readback_refuses_after_the_submit (test_hamcp232_helper_options.AdapterAdmissionTests.test_readback_refuses_after_the_submit)"
    ],
-   "seconds": 6.7
+   "seconds": 7.5
   },
   {
    "id": "A7-runtime-helper-options-admitted-always",
@@ -149,7 +152,7 @@
    "first_failures": [
     "FAIL test_adapter_admission_follows_the_live_core_status (test_hamcp232_helper_options.AdmittedServiceBoundaryTests.test_adapter_admission_follows_the_live_core_status)"
    ],
-   "seconds": 6.9
+   "seconds": 7.4
   },
   {
    "id": "A8-runtime-operational-profile-seam",
@@ -168,7 +171,7 @@
    "first_failures": [
     "FAIL test_admission_withdrawn_after_approval_refuses_at_entry (test_hamcp145_input_select_option.ExecutionTests.test_admission_withdrawn_after_approval_refuses_at_entry)"
    ],
-   "seconds": 60.0
+   "seconds": 83.5
   },
   {
    "id": "A9-input-select-entry-admission",
@@ -187,7 +190,7 @@
    "first_failures": [
     "FAIL test_every_entry_refuses_before_validation_and_any_read (test_hamcp145_input_select_option.UnadmittedServiceTests.test_every_entry_refuses_before_validation_and_any_read)"
    ],
-   "seconds": 96.2
+   "seconds": 108.5
   },
   {
    "id": "A10-script-trace-profile-authority",
@@ -206,7 +209,7 @@
    "first_failures": [
     "FAIL test_unadmitted_profile_refuses_even_with_dispatch_authority (test_hamcp232_script_traces.ServiceAdmissionTests.test_unadmitted_profile_refuses_even_with_dispatch_authority)"
    ],
-   "seconds": 90.5
+   "seconds": 109.4
   },
   {
    "id": "A11-script-trace-generation-recheck",
@@ -225,7 +228,7 @@
    "first_failures": [
     "FAIL test_admission_withdrawn_across_the_read_refuses (test_hamcp232_script_traces.ServiceAdmissionTests.test_admission_withdrawn_across_the_read_refuses)"
    ],
-   "seconds": 91.6
+   "seconds": 108.0
   },
   {
    "id": "A12-script-trace-anonymous-caller",
@@ -244,7 +247,45 @@
    "first_failures": [
     "FAIL test_anonymous_caller_refuses (test_hamcp232_script_traces.ServiceAdmissionTests.test_anonymous_caller_refuses)"
    ],
-   "seconds": 91.2
+   "seconds": 114.4
+  },
+  {
+   "id": "A13-retained-pre-intent-entry-admission",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "            if task.state not in TERMINAL_TASK_STATES and self._pre_intent_task(task):\n                self._refuse_unadmitted_entry(plan)",
+     "            if False:\n                self._refuse_unadmitted_entry(plan)"
+    ]
+   ],
+   "log_path": "mutation-logs/A13-retained-pre-intent-entry-admission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_readmitted_retained_task_completes (test_hamcp232_helper_options.RetainedTaskAdmissionTests.test_a_readmitted_retained_task_completes)"
+   ],
+   "seconds": 41.9
+  },
+  {
+   "id": "A14-pre-intent-recovery-admission",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "                        and not self._entry_admitted(plan)\n",
+     "                        and False\n"
+    ]
+   ],
+   "log_path": "mutation-logs/A14-pre-intent-recovery-admission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recovery_of_an_unadmitted_pre_intent_task_changes_nothing (test_hamcp232_helper_options.RetainedTaskAdmissionTests.test_recovery_of_an_unadmitted_pre_intent_task_changes_nothing)"
+   ],
+   "seconds": 45.5
   },
   {
    "id": "D1-entry-modified-at-moved",
@@ -263,7 +304,7 @@
    "first_failures": [
     "FAIL test_drift_before_apply_is_stale_with_no_flow (test_hamcp232_helper_options.ExecutionTests.test_drift_before_apply_is_stale_with_no_flow)"
    ],
-   "seconds": 15.4
+   "seconds": 15.1
   },
   {
    "id": "D2-held-flow-form-differs",
@@ -271,8 +312,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
-     "            return await refuse(STALE)\n        # ``modified_at`` read after the open",
-     "            pass\n        # ``modified_at`` read after the open"
+     "                return await refuse(STALE)\n            # ``modified_at`` read after the open",
+     "                pass\n            # ``modified_at`` read after the open"
     ]
    ],
    "log_path": "mutation-logs/D2-held-flow-form-differs.log",
@@ -282,7 +323,7 @@
    "first_failures": [
     "FAIL test_failed_abort_of_a_drifted_flow_is_an_orphan (test_hamcp232_helper_options.ExecutionTests.test_failed_abort_of_a_drifted_flow_is_an_orphan)"
    ],
-   "seconds": 18.9
+   "seconds": 17.9
   },
   {
    "id": "D3-post-open-entry-check",
@@ -290,8 +331,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
-     "        code = await self._entry_code(operation, intent)\n        if code != \"state_matches_plan\":\n            return await refuse(code)",
-     "        code = await self._entry_code(operation, intent)\n        if False:\n            return await refuse(code)"
+     "        if code != \"state_matches_plan\":\n            return await refuse(code)\n        return ()",
+     "        if False:\n            return await refuse(code)\n        return ()"
     ]
    ],
    "log_path": "mutation-logs/D3-post-open-entry-check.log",
@@ -301,7 +342,7 @@
    "first_failures": [
     "FAIL test_entry_moved_after_the_open_is_stale_and_aborted (test_hamcp232_helper_options.ExecutionTests.test_entry_moved_after_the_open_is_stale_and_aborted)"
    ],
-   "seconds": 17.1
+   "seconds": 16.3
   },
   {
    "id": "D4-planning-entry-moved",
@@ -320,7 +361,7 @@
    "first_failures": [
     "FAIL test_change_while_the_flow_is_open_refuses (test_hamcp232_helper_options.PlanningTests.test_change_while_the_flow_is_open_refuses)"
    ],
-   "seconds": 23.8
+   "seconds": 36.0
   },
   {
    "id": "D5-input-select-option-removed",
@@ -339,7 +380,7 @@
    "first_failures": [
     "FAIL test_drift_before_apply_is_refused_with_no_send (test_hamcp145_input_select_option.ExecutionTests.test_drift_before_apply_is_refused_with_no_send)"
    ],
-   "seconds": 65.9
+   "seconds": 75.7
   },
   {
    "id": "D6-input-select-state-moved",
@@ -358,7 +399,7 @@
    "first_failures": [
     "FAIL test_a_restamped_but_equal_state_is_stale (test_hamcp145_input_select_option.ExecutionTests.test_a_restamped_but_equal_state_is_stale)"
    ],
-   "seconds": 60.3
+   "seconds": 68.7
   },
   {
    "id": "D7-input-select-plan-option-unoffered",
@@ -377,7 +418,7 @@
    "first_failures": [
     "FAIL test_option_comparison_is_exact (test_hamcp145_input_select_option.PlanningTests.test_option_comparison_is_exact)"
    ],
-   "seconds": 76.7
+   "seconds": 84.4
   },
   {
    "id": "D8-input-select-predispatch-refusal-ignored",
@@ -396,7 +437,7 @@
    "first_failures": [
     "FAIL test_drift_in_the_predispatch_read_is_refused_with_no_intent (test_hamcp145_input_select_option.ExecutionTests.test_drift_in_the_predispatch_read_is_refused_with_no_intent)"
    ],
-   "seconds": 68.2
+   "seconds": 79.7
   },
   {
    "id": "C1-pinned-field-value-accepted",
@@ -415,7 +456,7 @@
    "first_failures": [
     "FAIL test_every_pinned_field_is_refused_at_coercion (test_hamcp232_helper_options.PinnedFieldContractTests.test_every_pinned_field_is_refused_at_coercion)"
    ],
-   "seconds": 24.4
+   "seconds": 37.6
   },
   {
    "id": "C2-intent-pinned-change-accepted",
@@ -434,7 +475,7 @@
    "first_failures": [
     "FAIL test_an_intent_changing_a_pinned_field_is_refused (test_hamcp232_helper_options.IntentContractTests.test_an_intent_changing_a_pinned_field_is_refused)"
    ],
-   "seconds": 21.0
+   "seconds": 33.8
   },
   {
    "id": "C3-intent-no-op-accepted",
@@ -453,7 +494,7 @@
    "first_failures": [
     "FAIL test_a_no_op_intent_is_refused (test_hamcp232_helper_options.IntentContractTests.test_a_no_op_intent_is_refused)"
    ],
-   "seconds": 21.2
+   "seconds": 31.7
   },
   {
    "id": "C4-flow-id-shape-loosened",
@@ -472,7 +513,7 @@
    "first_failures": [
     "FAIL test_malformed_flow_ids_never_reach_core (test_hamcp232_helper_options.GatewayContractTests.test_malformed_flow_ids_never_reach_core)"
    ],
-   "seconds": 21.1
+   "seconds": 30.1
   },
   {
    "id": "C5-visible-equal-subset",
@@ -489,9 +530,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "ERROR test_template_binary_sensor_section_field (test_hamcp232_helper_options.PlanningTests.test_template_binary_sensor_section_field)"
+    "FAIL test_a_field_dropped_from_submit_and_proposed_is_refused (test_hamcp232_helper_options.IntentCompletenessTests.test_a_field_dropped_from_submit_and_proposed_is_refused)"
    ],
-   "seconds": 24.6
+   "seconds": 30.2
   },
   {
    "id": "C6-submit-4xx-accepted",
@@ -510,7 +551,7 @@
    "first_failures": [
     "FAIL test_a_raised_client_error_is_a_confirmed_rejection (test_hamcp232_helper_options.GatewayContractTests.test_a_raised_client_error_is_a_confirmed_rejection)"
    ],
-   "seconds": 20.6
+   "seconds": 30.7
   },
   {
    "id": "C7-helper-options-send-boundary-unmarked",
@@ -529,7 +570,7 @@
    "first_failures": [
     "FAIL test_submit_marks_the_provider_send_boundary (test_hamcp232_helper_options.ReachabilityTests.test_submit_marks_the_provider_send_boundary)"
    ],
-   "seconds": 25.9
+   "seconds": 35.7
   },
   {
    "id": "C8-input-select-send-boundary-unmarked",
@@ -548,7 +589,7 @@
    "first_failures": [
     "FAIL test_select_option_gateway_marks_the_send_boundary (test_hamcp145_input_select_option.ReachabilityTests.test_select_option_gateway_marks_the_send_boundary)"
    ],
-   "seconds": 72.5
+   "seconds": 82.1
   },
   {
    "id": "O1-release-orphan-unrecorded",
@@ -567,7 +608,7 @@
    "first_failures": [
     "FAIL test_failed_release_after_a_before_dispatch_failure_is_disclosed (test_hamcp232_helper_options.OrphanDisclosureTests.test_failed_release_after_a_before_dispatch_failure_is_disclosed)"
    ],
-   "seconds": 23.3
+   "seconds": 31.6
   },
   {
    "id": "O2-before-dispatch-failure-flow-kept",
@@ -586,7 +627,7 @@
    "first_failures": [
     "FAIL test_failed_release_after_a_before_dispatch_failure_is_disclosed (test_hamcp232_helper_options.OrphanDisclosureTests.test_failed_release_after_a_before_dispatch_failure_is_disclosed)"
    ],
-   "seconds": 22.3
+   "seconds": 33.2
   },
   {
    "id": "O3-before-dispatch-release-unwindowed",
@@ -605,7 +646,7 @@
    "first_failures": [
     "FAIL test_before_dispatch_failure_releases_the_held_flow (test_hamcp232_helper_options.ExecutionTests.test_before_dispatch_failure_releases_the_held_flow)"
    ],
-   "seconds": 12.8
+   "seconds": 13.8
   },
   {
    "id": "O4-dispatch-orphan-disclosure-dropped",
@@ -622,9 +663,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_failed_release_after_a_before_dispatch_failure_is_disclosed (test_hamcp232_helper_options.OrphanDisclosureTests.test_failed_release_after_a_before_dispatch_failure_is_disclosed)"
+    "FAIL test_lost_submit_with_a_failed_abort_is_disclosed_as_an_orphan (test_hamcp232_helper_options.FlowLifecycleTests.test_lost_submit_with_a_failed_abort_is_disclosed_as_an_orphan)"
    ],
-   "seconds": 22.5
+   "seconds": 30.9
   },
   {
    "id": "O5-readback-orphan-disclosure-dropped",
@@ -643,7 +684,7 @@
    "first_failures": [
     "FAIL test_failed_abort_of_the_readback_flow_is_disclosed (test_hamcp232_helper_options.OrphanDisclosureTests.test_failed_abort_of_the_readback_flow_is_disclosed)"
    ],
-   "seconds": 21.1
+   "seconds": 34.9
   },
   {
    "id": "O6-planning-orphan-count-dropped",
@@ -662,7 +703,297 @@
    "first_failures": [
     "FAIL test_failed_abort_at_planning_is_disclosed_as_an_orphan (test_hamcp232_helper_options.PlanningTests.test_failed_abort_at_planning_is_disclosed_as_an_orphan)"
    ],
-   "seconds": 22.5
+   "seconds": 37.5
+  },
+  {
+   "id": "O7-submit-abort-guard-skips-cancellation",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        except BaseException:\n            # A lost or uncertain response",
+     "        except Exception:\n            # A lost or uncertain response"
+    ]
+   ],
+   "log_path": "mutation-logs/O7-submit-abort-guard-skips-cancellation.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_cancellation_during_the_submit_aborts_the_flow (test_hamcp232_helper_options.FlowLifecycleTests.test_cancellation_during_the_submit_aborts_the_flow)"
+   ],
+   "seconds": 21.8
+  },
+  {
+   "id": "O8-held-flow-registered-after-checks",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "        self._held[key] = held\n\n        async def refuse",
+     "\n        async def refuse"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "            return await refuse(code)\n        return ()",
+     "            return await refuse(code)\n        self._held[key] = held\n        return ()"
+    ]
+   ],
+   "log_path": "mutation-logs/O8-held-flow-registered-after-checks.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_entry_moved_after_the_open_is_stale_and_aborted (test_hamcp232_helper_options.ExecutionTests.test_entry_moved_after_the_open_is_stale_and_aborted)"
+   ],
+   "seconds": 16.8
+  },
+  {
+   "id": "O9-abort-404-not-gone",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "                details.get(\"status\") == 404\n                and",
+     "                False\n                and"
+    ]
+   ],
+   "log_path": "mutation-logs/O9-abort-404-not-gone.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_abort_answers (test_hamcp232_helper_options.AbortSettleTests.test_abort_answers)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "O10-lost-open-undisclosed",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/helper_options.py",
+     "                *((contract.FLOW_OPEN_UNCONFIRMED,) if contract.open_unconfirmed(exc) else ()),",
+     "                *(),"
+    ]
+   ],
+   "log_path": "mutation-logs/O10-lost-open-undisclosed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_lost_open_response_is_disclosed_and_never_submits (test_hamcp232_helper_options.FlowLifecycleTests.test_lost_open_response_is_disclosed_and_never_submits)"
+   ],
+   "seconds": 26.8
+  },
+  {
+   "id": "O11-cancelled-abort-abandoned",
+   "class": "orphaned flow hidden or not released",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "        try:\n            await asyncio.wait({task}, timeout=ABORT_TIMEOUT_SECONDS)\n        finally:",
+     "        try:\n            pass\n        finally:"
+    ]
+   ],
+   "log_path": "mutation-logs/O11-cancelled-abort-abandoned.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_cancelled_caller_still_completes_the_abort (test_hamcp232_helper_options.AbortSettleTests.test_a_cancelled_caller_still_completes_the_abort)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "I1-intent-completeness-unchecked",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "    errors.extend(_completeness_errors(intent, step_fields(domain, step_id)))\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/I1-intent-completeness-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_dropped_field_is_refused (test_hamcp232_helper_options.IntentCompletenessTests.test_a_dropped_field_is_refused)"
+   ],
+   "seconds": 31.6
+  },
+  {
+   "id": "I2-intent-submit-incomplete-accepted",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "    if not values_equal(intent[\"submit\"], nest(flat)):",
+     "    if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/I2-intent-submit-incomplete-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_dropped_field_is_refused (test_hamcp232_helper_options.IntentCompletenessTests.test_a_dropped_field_is_refused)"
+   ],
+   "seconds": 32.0
+  },
+  {
+   "id": "I3-intent-unrequested-change-accepted",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "    if not visible_equal(proposed, {**flat, **defaults}):",
+     "    if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/I3-intent-unrequested-change-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_field_dropped_from_submit_and_proposed_is_refused (test_hamcp232_helper_options.IntentCompletenessTests.test_a_field_dropped_from_submit_and_proposed_is_refused)"
+   ],
+   "seconds": 31.0
+  },
+  {
+   "id": "I4-intent-normalization-forgery-accepted",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "    if set(injected) != set(defaults) or any(",
+     "    if False and any("
+    ]
+   ],
+   "log_path": "mutation-logs/I4-intent-normalization-forgery-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_forged_normalization_changes_are_refused (test_hamcp232_helper_options.IntentCompletenessTests.test_forged_normalization_changes_are_refused)"
+   ],
+   "seconds": 29.7
+  },
+  {
+   "id": "I5-submit-only-the-requested-fields",
+   "class": "contract rule loosened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_options.py",
+     "    submit = nest(flat)\n    return Proposal(",
+     "    submit = nest({name: flat[name] for name in set_values if name in flat})\n    return Proposal("
+    ]
+   ],
+   "log_path": "mutation-logs/I5-submit-only-the-requested-fields.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_predispatch_refuses_before_opening_a_flow (test_hamcp232_helper_options.AdapterAdmissionTests.test_predispatch_refuses_before_opening_a_flow)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "T1-option-effect-ignores-enablement",
+   "class": "disabled trigger disclosed as firing",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/state_trigger_values.py",
+     "    if record.enablement == DISABLED:\n        return DISABLED_EFFECT\n    if record.enablement != ENABLED or not record.complete:",
+     "    if not record.complete:"
+    ]
+   ],
+   "log_path": "mutation-logs/T1-option-effect-ignores-enablement.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_disabled_trigger_never_fires_for_any_transition (test_hamcp145_input_select_option.TriggerEnablementTests.test_a_disabled_trigger_never_fires_for_any_transition)"
+   ],
+   "seconds": 102.2
+  },
+  {
+   "id": "T2-disclosure-ignores-enablement",
+   "class": "disabled trigger disclosed as firing",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/input_select_dependency.py",
+     "        if record.get(\"enablement\") == \"disabled\":\n            effect = DISABLED_EFFECT\n        elif record.get(\"complete\") is True and record.get(\"enablement\") == \"enabled\":",
+     "        if record.get(\"complete\") is True:"
+    ]
+   ],
+   "log_path": "mutation-logs/T2-disclosure-ignores-enablement.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_plan_discloses_disabled_triggers_as_disabled (test_hamcp145_input_select_option.PlanningTests.test_plan_discloses_disabled_triggers_as_disabled)"
+   ],
+   "seconds": 85.8
+  },
+  {
+   "id": "T3-automation-off-not-disabling",
+   "class": "disabled trigger disclosed as firing",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/state_trigger_values.py",
+     "    automation_disabled = source_state == \"off\"",
+     "    automation_disabled = False"
+    ]
+   ],
+   "log_path": "mutation-logs/T3-automation-off-not-disabling.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_automation_that_is_off_disables_every_trigger (test_hamcp145_input_select_option.TriggerEnablementTests.test_an_automation_that_is_off_disables_every_trigger)"
+   ],
+   "seconds": 101.0
+  },
+  {
+   "id": "T4-provider-drops-automation-state",
+   "class": "disabled trigger disclosed as firing",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+     "                    secret=self.secret,\n                    source_state=state.get(\"state\"),\n                )\n            )\n",
+     "                    secret=self.secret,\n                )\n            )\n"
+    ]
+   ],
+   "log_path": "mutation-logs/T4-provider-drops-automation-state.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_disabling_an_automation_changes_the_fingerprint (test_hamcp145_input_select_option.TriggerEnablementTests.test_disabling_an_automation_changes_the_fingerprint)"
+   ],
+   "seconds": 100.1
+  },
+  {
+   "id": "T5-trigger-enabled-false-ignored",
+   "class": "disabled trigger disclosed as firing",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/state_trigger_values.py",
+     "    if enabled is False:\n        return DISABLED, \"trigger_disabled\"",
+     "    if enabled is False:\n        return ENABLED, None"
+    ]
+   ],
+   "log_path": "mutation-logs/T5-trigger-enabled-false-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_disabled_trigger_never_fires_for_any_transition (test_hamcp145_input_select_option.TriggerEnablementTests.test_a_disabled_trigger_never_fires_for_any_transition)"
+   ],
+   "seconds": 99.1
   },
   {
    "id": "R1-helper-readback-entry-unhealthy-accepted",
@@ -681,7 +1012,7 @@
    "first_failures": [
     "FAIL test_entry_not_reloaded_is_manual_review (test_hamcp232_helper_options.SubmitOutcomeTests.test_entry_not_reloaded_is_manual_review)"
    ],
-   "seconds": 47.1
+   "seconds": 63.8
   },
   {
    "id": "R2-helper-readback-unmoved-accepted",
@@ -700,7 +1031,7 @@
    "first_failures": [
     "FAIL test_proposed_options_without_a_stored_update_are_not_verified (test_hamcp232_helper_options.ReadbackRuleTests.test_proposed_options_without_a_stored_update_are_not_verified)"
    ],
-   "seconds": 26.2
+   "seconds": 38.8
   },
   {
    "id": "R3-input-select-readback-unverified",
@@ -719,7 +1050,7 @@
    "first_failures": [
     "FAIL test_responses_that_did_not_apply_fail_without_a_resend (test_hamcp145_input_select_option.ExecutionTests.test_responses_that_did_not_apply_fail_without_a_resend)"
    ],
-   "seconds": 65.8
+   "seconds": 81.6
   },
   {
    "id": "R4-input-select-rejection-treated-unsent",
@@ -738,7 +1069,7 @@
    "first_failures": [
     "FAIL test_rejection_that_applied_is_decided_by_readback (test_hamcp145_input_select_option.ExecutionTests.test_rejection_that_applied_is_decided_by_readback)"
    ],
-   "seconds": 63.8
+   "seconds": 82.3
   },
   {
    "id": "P1-target-limit-widened",
@@ -757,7 +1088,7 @@
    "first_failures": [
     "FAIL test_one_to_eight_targets (test_hamcp232_helper_options.RequestVocabularyTests.test_one_to_eight_targets)"
    ],
-   "seconds": 27.2
+   "seconds": 37.7
   },
   {
    "id": "P2-mixed-domains-accepted",
@@ -776,7 +1107,7 @@
    "first_failures": [
     "FAIL test_one_domain_per_plan (test_hamcp232_helper_options.PlanningTests.test_one_domain_per_plan)"
    ],
-   "seconds": 23.3
+   "seconds": 35.4
   },
   {
    "id": "P3-classification-not-elevated",
@@ -795,7 +1126,7 @@
    "first_failures": [
     "ERROR test_predispatch_refuses_before_opening_a_flow (test_hamcp232_helper_options.AdapterAdmissionTests.test_predispatch_refuses_before_opening_a_flow)"
    ],
-   "seconds": 2.4
+   "seconds": 2.8
   },
   {
    "id": "P4-od7-disclosure-dropped",
@@ -814,7 +1145,7 @@
    "first_failures": [
     "FAIL test_apply_verifies_and_offers_a_separately_approved_rollback (test_hamcp232_helper_options.ExecutionTests.test_apply_verifies_and_offers_a_separately_approved_rollback)"
    ],
-   "seconds": 9.4
+   "seconds": 9.5
   },
   {
    "id": "P5-injected-defaults-undisclosed",
@@ -833,7 +1164,7 @@
    "first_failures": [
     "FAIL test_injected_default_is_disclosed_separately (test_hamcp232_helper_options.PlanningTests.test_injected_default_is_disclosed_separately)"
    ],
-   "seconds": 22.3
+   "seconds": 33.1
   },
   {
    "id": "P6-domain-vocabulary-widened",
@@ -852,7 +1183,7 @@
    "first_failures": [
     "FAIL test_entry_refusals (test_hamcp232_helper_options.PlanningTests.test_entry_refusals)"
    ],
-   "seconds": 22.4
+   "seconds": 32.5
   },
   {
    "id": "P7-template-type-vocabulary-widened",
@@ -871,45 +1202,45 @@
    "first_failures": [
     "FAIL test_template_types_are_the_closed_catalog (test_hamcp232_helper_options.RequestVocabularyTests.test_template_types_are_the_closed_catalog)"
    ],
-   "seconds": 26.0
+   "seconds": 36.6
   },
   {
-   "id": "S1-list-known-secrets-dropped",
+   "id": "S1-exit-known-secrets-dropped",
    "class": "script-trace read unsanitized or widened",
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
-     "        if not isinstance(result, list):\n            raise ScriptTraceError(\"invalid_provider_response\")\n        sanitation = sanitize_untrusted_data(\n            result, known_secrets=self.known_secrets, max_string=MAX_STRING",
-     "        if not isinstance(result, list):\n            raise ScriptTraceError(\"invalid_provider_response\")\n        sanitation = sanitize_untrusted_data(\n            result, known_secrets=(), max_string=MAX_STRING"
+     "        return sanitize_trace_detail(value, known_secrets=self.known_secrets)",
+     "        return sanitize_trace_detail(value, known_secrets=())"
     ]
    ],
-   "log_path": "mutation-logs/S1-list-known-secrets-dropped.log",
+   "log_path": "mutation-logs/S1-exit-known-secrets-dropped.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_list_is_exact_sanitized_and_normalized (test_hamcp232_script_traces.ServiceReadTests.test_list_is_exact_sanitized_and_normalized)"
+    "FAIL test_identifier_header_fields_follow_the_shared_default_mode (test_hamcp232_script_trace_cross_path.ScriptTraceCrossPathTests.test_identifier_header_fields_follow_the_shared_default_mode)"
    ],
-   "seconds": 82.4
+   "seconds": 106.9
   },
   {
-   "id": "S2-get-known-secrets-dropped",
+   "id": "S2-list-bypasses-shared-sanitizer",
    "class": "script-trace read unsanitized or widened",
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
-     "        if not isinstance(result, dict):\n            raise ScriptTraceError(\"invalid_provider_response\")\n        sanitation = sanitize_untrusted_data(\n            result, known_secrets=self.known_secrets, max_string=MAX_STRING",
-     "        if not isinstance(result, dict):\n            raise ScriptTraceError(\"invalid_provider_response\")\n        sanitation = sanitize_untrusted_data(\n            result, known_secrets=(), max_string=MAX_STRING"
+     "        sanitation = self._exit({\"script_id\": payload[\"item_id\"], \"traces\": result})",
+     "        sanitation = __import__(\"ha_mcp_engineering.sanitization\", fromlist=[\"_\"]).sanitize_untrusted_data(\n            {\"script_id\": payload[\"item_id\"], \"traces\": result},\n            known_secrets=self.known_secrets, max_string=2000)"
     ]
    ],
-   "log_path": "mutation-logs/S2-get-known-secrets-dropped.log",
+   "log_path": "mutation-logs/S2-list-bypasses-shared-sanitizer.log",
    "returncode": 1,
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_get_is_exact_and_sanitized_before_output (test_hamcp232_script_traces.ServiceReadTests.test_get_is_exact_and_sanitized_before_output)"
+    "FAIL test_both_reads_use_the_one_hamcp225_exit (test_hamcp232_script_trace_cross_path.ScriptTraceCrossPathTests.test_both_reads_use_the_one_hamcp225_exit)"
    ],
-   "seconds": 81.7
+   "seconds": 108.8
   },
   {
    "id": "S3-get-trace-unsanitized",
@@ -917,7 +1248,7 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
-     "            \"trace\": sanitation.value,",
+     "            \"trace\": screened[\"trace\"],",
      "            \"trace\": result,"
     ]
    ],
@@ -928,7 +1259,7 @@
    "first_failures": [
     "FAIL test_get_is_exact_and_sanitized_before_output (test_hamcp232_script_traces.ServiceReadTests.test_get_is_exact_and_sanitized_before_output)"
    ],
-   "seconds": 80.8
+   "seconds": 103.1
   },
   {
    "id": "S4-trace-not-found-unmapped",
@@ -947,7 +1278,7 @@
    "first_failures": [
     "FAIL test_not_found_is_reported_without_fallback (test_hamcp232_script_traces.ServiceReadTests.test_not_found_is_reported_without_fallback)"
    ],
-   "seconds": 80.5
+   "seconds": 103.6
   },
   {
    "id": "S5-script-id-shape-loosened",
@@ -966,7 +1297,64 @@
    "first_failures": [
     "FAIL test_payloads_are_the_closed_vocabulary (test_hamcp232_script_traces.ContractTests.test_payloads_are_the_closed_vocabulary)"
    ],
-   "seconds": 80.7
+   "seconds": 100.0
+  },
+  {
+   "id": "S6-get-bypasses-shared-sanitizer",
+   "class": "script-trace read unsanitized or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "        sanitation = self._exit(\n            {\"script_id\": payload[\"item_id\"], \"run_id\": payload[\"run_id\"], \"trace\": result}\n        )",
+     "        sanitation = __import__(\"ha_mcp_engineering.sanitization\", fromlist=[\"_\"]).sanitize_untrusted_data(\n            {\"script_id\": payload[\"item_id\"], \"run_id\": payload[\"run_id\"], \"trace\": result},\n            known_secrets=self.known_secrets, max_string=2000)"
+    ]
+   ],
+   "log_path": "mutation-logs/S6-get-bypasses-shared-sanitizer.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_both_reads_use_the_one_hamcp225_exit (test_hamcp232_script_trace_cross_path.ScriptTraceCrossPathTests.test_both_reads_use_the_one_hamcp225_exit)"
+   ],
+   "seconds": 106.0
+  },
+  {
+   "id": "S7-get-identifiers-unscreened",
+   "class": "script-trace read unsanitized or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "            \"script_id\": screened.get(\"script_id\"),\n            \"run_id\": screened.get(\"run_id\"),",
+     "            \"script_id\": payload[\"item_id\"],\n            \"run_id\": payload[\"run_id\"],"
+    ]
+   ],
+   "log_path": "mutation-logs/S7-get-identifiers-unscreened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_known_secret_identifiers_are_withheld_in_every_response (test_hamcp232_script_trace_cross_path.ScriptTraceCrossPathTests.test_known_secret_identifiers_are_withheld_in_every_response)"
+   ],
+   "seconds": 115.7
+  },
+  {
+   "id": "S8-list-identifier-unscreened",
+   "class": "script-trace read unsanitized or widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/script_traces.py",
+     "            \"script_id\": screened.get(\"script_id\"),\n            \"traces\": [header.public() for header in normalized.headers],",
+     "            \"script_id\": payload[\"item_id\"],\n            \"traces\": [header.public() for header in normalized.headers],"
+    ]
+   ],
+   "log_path": "mutation-logs/S8-list-identifier-unscreened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_known_secret_identifiers_are_withheld_in_every_response (test_hamcp232_script_trace_cross_path.ScriptTraceCrossPathTests.test_known_secret_identifiers_are_withheld_in_every_response)"
+   ],
+   "seconds": 117.3
   },
   {
    "id": "L1-lanes-enabled-by-default",
@@ -985,7 +1373,7 @@
    "first_failures": [
     "FAIL test_lanes_refuse_unless_exactly_enabled (test_seq15_contract_acceptance.DormancyTests.test_lanes_refuse_unless_exactly_enabled)"
    ],
-   "seconds": 81.4
+   "seconds": 124.7
   },
   {
    "id": "L2-raw-client-loopback-dropped",
@@ -1004,7 +1392,7 @@
    "first_failures": [
     "FAIL test_only_a_loopback_core_is_accepted (test_seq15_contract_acceptance.LaneRawRouteTests.test_only_a_loopback_core_is_accepted)"
    ],
-   "seconds": 81.3
+   "seconds": 130.2
   },
   {
    "id": "L3-lane-guard-loopback-dropped",
@@ -1023,7 +1411,7 @@
    "first_failures": [
     "ERROR test_lane_refuses_unextended_slot_wrong_image_or_remote_host_before_any_client (test_seq15_contract_acceptance.LaneGuardTests.test_lane_refuses_unextended_slot_wrong_image_or_remote_host_before_any_client)"
    ],
-   "seconds": 82.6
+   "seconds": 146.2
   },
   {
    "id": "L4-raw-route-state-widened",
@@ -1042,7 +1430,7 @@
    "first_failures": [
     "ERROR test_routes_outside_the_closed_set_are_refused_before_sending (test_seq15_contract_acceptance.LaneRawRouteTests.test_routes_outside_the_closed_set_are_refused_before_sending)"
    ],
-   "seconds": 82.5
+   "seconds": 141.7
   },
   {
    "id": "K1-select-option-observer-unguarded",
@@ -1061,7 +1449,7 @@
    "first_failures": [
     "FAIL test_input_boolean_disjoint_call_service_filters_guard_input_select (test_f3_configuration_identity.LockSetTests.test_input_boolean_disjoint_call_service_filters_guard_input_select)"
    ],
-   "seconds": 87.3
+   "seconds": 147.8
   },
   {
    "id": "K2-select-option-service-dropped",
@@ -1080,7 +1468,7 @@
    "first_failures": [
     "FAIL test_the_service_names_are_confined (test_hamcp145_input_select_option.ReachabilityTests.test_the_service_names_are_confined)"
    ],
-   "seconds": 67.8
+   "seconds": 107.5
   },
   {
    "id": "K3-every-exclusion-guarded",
@@ -1099,7 +1487,7 @@
    "first_failures": [
     "FAIL test_call_service_event_triggers_take_exact_or_conservative_locks (test_f3_configuration_identity.LockSetTests.test_call_service_event_triggers_take_exact_or_conservative_locks)"
    ],
-   "seconds": 85.6
+   "seconds": 146.5
   }
  ]
 }
