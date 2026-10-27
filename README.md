@@ -1,5 +1,21 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.39** adds automation trace snapshots (HAMCP-225).
+`capture_automation_trace` stores sanitized copies of an automation's
+retained traces before Core rotates them; `list_trace_snapshots` and
+`get_trace_snapshot` read them back with no Home Assistant call; and
+`set_automation_trace_watch` keeps up to 10 automations watched, capturing
+their new runs every 30 seconds with no plan or approval (read-only toward
+Home Assistant; every change is audited). Manual captures are refused at
+capacity; a watch evicts only its own oldest snapshot beyond 20.
+`get_automation_trace` is now sanitized and can be `partial`. No Home
+Assistant write; static tools 72, advertised catalog 100 (101 with the
+optional YAML reader). Read the
+[2.4.1-beta.39 release notes](docs/V2_4_1_BETA39_RELEASE_NOTES.md) and
+[2.4.1-beta.39 acceptance contract](docs/V2_4_1_BETA39_ACCEPTANCE.md).
+
+It builds on beta.38 and the releases below.
+
 Engineering **2.4.1-beta.38** lets `get_incident_logs` read the
 `supervisor`, `host`, `host:<category>` and `addon:<slug>` sources
 (HAMCP-224). Engineering keeps role `homeassistant`; with the new add-on

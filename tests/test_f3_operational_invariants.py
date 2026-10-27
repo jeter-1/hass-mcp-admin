@@ -89,7 +89,7 @@ class RuntimeInertAndSchemaTests(unittest.TestCase):
 
     def test_public_tools_and_persisted_schema_vocabulary_are_current(self):
         # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
-        self.assertEqual(len(registered_tools(get_registered_server())), 68)
+        self.assertEqual(len(registered_tools(get_registered_server())), 72)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         service_tree = ast.parse(
             (BETA / "ha_mcp_engineering/governance/service.py").read_text(

@@ -46,6 +46,9 @@ from .models import FailureResponse, Timing
 from .observability import METRICS
 from .providers.dispatch import CANONICAL_DISPATCHER
 from .providers.routing import requires_prevalidation_enforcement
+from .identifiers import AUTOMATION_CONFIG_ID_PATTERN
+from .trace_snapshots import contracts as trace_contracts
+from .trace_snapshots.service import identifier_cleared as trace_identifier_cleared
 from .request_context import (
     RequestTelemetry,
     begin_request,
@@ -149,6 +152,78 @@ def install_sdk_request_diagnostic_filter() -> None:
         isinstance(item, SdkRequestDiagnosticFilter) for item in root.filters
     ):
         root.addFilter(SdkRequestDiagnosticFilter())
+
+
+TRACE_SNAPSHOT_TOOLS = frozenset({
+    "capture_automation_trace", "list_trace_snapshots", "get_trace_snapshot",
+    "set_automation_trace_watch",
+})
+
+
+def _trace_snapshot_audit_parameters(tool_name, parameters, known_secrets=()):
+    """Bounded HAMCP-225 audit shape; a value is kept only when it is valid.
+
+    An identifier the shared trace screen withholds is never copied; its
+    field is ``None`` and ``identifiers_withheld`` is set (review H2).
+    """
+
+    withheld = False
+
+    def matched(key, pattern):
+        nonlocal withheld
+        value = parameters.get(key)
+        if type(value) is not str or not pattern.fullmatch(value):
+            return None
+        if not trace_identifier_cleared(value, known_secrets):
+            withheld = True
+            return None
+        return value
+
+    def bounded_int(key, default, low, high):
+        value = parameters.get(key, default)
+        return value if type(value) is int and low <= value <= high else None
+
+    audit = {"profile": "automation-trace-snapshot-v1", "provider": "engineering", "fallback": "none"}
+    if tool_name == "capture_automation_trace":
+        flag = parameters.get("include_condition_failures", False)
+        note = parameters.get("note", "")
+        audit.update(
+            automation_id=matched("automation_id", AUTOMATION_CONFIG_ID_PATTERN),
+            run_id_present=bool(parameters.get("run_id")),
+            run_id=matched("run_id", trace_contracts.RUN_ID),
+            include_condition_failures=flag if type(flag) is bool else None,
+            note_present=bool(note),
+        )
+    elif tool_name == "list_trace_snapshots":
+        audit.update(
+            automation_id=matched("automation_id", AUTOMATION_CONFIG_ID_PATTERN),
+            limit=bounded_int("limit", 20, 1, trace_contracts.LIST_LIMIT),
+            cursor_present=bool(parameters.get("cursor")),
+        )
+    elif tool_name == "get_trace_snapshot":
+        audit.update(snapshot_id=matched("snapshot_id", trace_contracts.SNAPSHOT_ID),
+                     cursor_present=bool(parameters.get("cursor")))
+    else:
+        action, mode = parameters.get("action"), parameters.get("mode", "failures")
+        audit.update(
+            action=action if type(action) is str and action in trace_contracts.WATCH_ACTIONS else None,
+            automation_id=matched("automation_id", AUTOMATION_CONFIG_ID_PATTERN),
+            mode=mode if type(mode) is str and mode in trace_contracts.WATCH_MODES else None,
+            duration_hours=bounded_int("duration_hours", 24, 1, trace_contracts.WATCH_MAX_HOURS),
+        )
+    audit["identifiers_withheld"] = withheld
+    audit["argument_fields"] = sorted(str(key)[:64] for key in parameters
+                                      if key in _TRACE_SNAPSHOT_FIELDS[tool_name])
+    audit["unknown_fields_present"] = any(key not in _TRACE_SNAPSHOT_FIELDS[tool_name] for key in parameters)
+    return audit
+
+
+_TRACE_SNAPSHOT_FIELDS = {
+    "capture_automation_trace": frozenset({"automation_id", "run_id", "include_condition_failures", "note"}),
+    "list_trace_snapshots": frozenset({"automation_id", "limit", "cursor"}),
+    "get_trace_snapshot": frozenset({"snapshot_id", "cursor"}),
+    "set_automation_trace_watch": frozenset({"action", "automation_id", "mode", "duration_hours"}),
+}
 
 
 def _delegated_audit_attribution(
@@ -882,6 +957,25 @@ class AuthenticatedMcpGateway:
                         send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
                     )
                     return
+            # Equality, not set membership (HAMCP-189 non-string names).
+            if (tool_name == "capture_automation_trace" or tool_name == "list_trace_snapshots"
+                    or tool_name == "get_trace_snapshot" or tool_name == "set_automation_trace_watch"):
+                from .tools.trace_snapshots import validate_raw_arguments
+                from .trace_snapshots.contracts import TraceSnapshotError
+                try:
+                    validate_raw_arguments(tool_name, raw_parameters)
+                except TraceSnapshotError:
+                    telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                    failure = FailureResponse(
+                        operation=tool_name, error="InvalidTraceSnapshotRequest",
+                        error_code=telemetry.error_code, message="Invalid trace snapshot arguments.",
+                        retryable=False, request_id=request_id,
+                    )
+                    await self._respond_mcp_tool_result(
+                        send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit),
+                        request_id=request_id,
+                    )
+                    return
             if tool_name == "dashboard_integrity_analysis":
                 from .dashboard_analysis.contracts import validate_arguments, AnalysisError
                 try:
@@ -1180,7 +1274,7 @@ class AuthenticatedMcpGateway:
                         "upstream_attempted": False,
                     }
                     resource_ids = {}
-                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
+                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "capture_automation_baseline", "dashboard_integrity_analysis", *TRACE_SNAPSHOT_TOOLS} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -1347,6 +1441,13 @@ class AuthenticatedMcpGateway:
                         "cursor_present": bool(parameters.get("cursor")),
                         "provider": "engineering", "fallback": "none",
                     }
+                    resource_ids = {}
+                elif tool_name in TRACE_SNAPSHOT_TOOLS:
+                    # HAMCP-225: pattern-checked identifiers and bounded flags
+                    # only; note text, cursors and rejected values are never
+                    # copied into the audit.
+                    audit_parameters = _trace_snapshot_audit_parameters(
+                        tool_name, parameters, self._known_secrets)
                     resource_ids = {}
                 elif tool_name == "capture_automation_baseline":
                     audit_parameters = {
@@ -1536,6 +1637,7 @@ class AuthenticatedMcpGateway:
                             "get_configuration_definitions",
                             "capture_automation_baseline",
                             "dashboard_integrity_analysis",
+                            *TRACE_SNAPSHOT_TOOLS,
                         }
                         else {
                             "operation_class": (

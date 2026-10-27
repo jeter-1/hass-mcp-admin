@@ -252,12 +252,16 @@ class CanonicalProviderDispatcher:
             if inspect.isawaitable(value):
                 value = await value
             data, warnings, metadata = _normalize_payload(value)
+            bounded = isinstance(data, dict) and data.get("truncated") is True
+            # HAMCP-225: a direct tool that withheld content itself says so in
+            # its envelope metadata; it carries its own warning.
+            withheld = metadata.get("completeness") == "partial"
             completeness = (
                 ProviderCompleteness.PARTIAL
-                if isinstance(data, dict) and data.get("truncated") is True
+                if bounded or withheld
                 else ProviderCompleteness.COMPLETE
             )
-            if completeness == ProviderCompleteness.PARTIAL:
+            if bounded:
                 warnings = [*warnings, "The provider response was safely bounded; inspect truncation metadata."]
             result = ProviderResult(
                 provider_id="direct_ha_api",
