@@ -22,6 +22,7 @@ opened itself.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import math
 import re
@@ -93,6 +94,25 @@ EXPECTED_EFFECT = "config_entry_helper_options_updated"
 SUBMIT_REJECTED_REASON = "options_flow_submit_rejected"
 ENTRY_UNHEALTHY = "applied_entry_unhealthy"
 SUBMIT_UNCERTAIN = "options_submit_uncertain"
+# One flow abort (DELETE) waits at most this long, also after a cancellation.
+ABORT_TIMEOUT_SECONDS = 10.0
+# A failed open with no received answer may still have created a flow whose
+# id is unknown, so it cannot be aborted: Core holds it in memory until it
+# times out or Core restarts.  Disclosed, never treated as "no flow".
+FLOW_OPEN_UNCONFIRMED = "options_flow_open_unconfirmed"
+
+
+def open_unconfirmed(exc: BaseException) -> bool:
+    """True when a failed flow open may have created a flow (id unknown)."""
+
+    if isinstance(
+        exc, (AuthorizationError, HelperOptionsContractError, HelperOptionsProviderError)
+    ):
+        return False
+    details = getattr(exc, "details", None)
+    return not (
+        isinstance(details, dict) and details.get("provider_response_received") is True
+    )
 #: Confirmed non-application categories of a received submit response.
 SUBMIT_REJECTION_CATEGORIES = (
     "options_flow_aborted",
@@ -976,16 +996,32 @@ class HelperOptionsGateway:
         )
 
     async def abort_flow(self, flow_id: str) -> bool:
-        """Abort a flow this gateway opened; False when the abort failed."""
+        """Abort a flow this gateway opened; False when the abort failed.
+
+        True means Core no longer holds the flow: aborted now, or already
+        gone (a 404: finished, aborted, or discarded by a Core restart).
+        The DELETE runs to completion, bounded, even when the caller is
+        cancelled, which is then re-raised: a cancellation never strands
+        the flow it was releasing.
+        """
 
         if not isinstance(flow_id, str) or not FLOW_ID_PATTERN.fullmatch(flow_id):
             raise HelperOptionsContractError("options_flow_id_malformed")
+        return await _settle(asyncio.ensure_future(self._delete_flow(flow_id)))
+
+    async def _delete_flow(self, flow_id: str) -> bool:
         try:
             await self.rest_client.request(
                 "DELETE", rest_path("/config/config_entries/options/flow/{}", flow_id)
             )
         except AuthorizationError:
             raise
+        except HomeAssistantApiError as exc:
+            details = exc.details if isinstance(exc.details, dict) else {}
+            return (
+                details.get("status") == 404
+                and details.get("provider_response_received") is True
+            )
         except Exception:  # noqa: BLE001 - an orphan is disclosed, never fatal
             return False
         return True
@@ -1108,15 +1144,41 @@ class HelperOptionsGateway:
                     "provider_response_received": True,
                     "reason": SUBMIT_REJECTED_REASON,
                     "category": outcome.category,
-                    # A form with errors, or a 400, leaves the flow open.
-                    "flow_open": outcome.category == "options_flow_validation_error"
-                    or outcome.provider_status == 400,
+                    # Only a finished/aborted flow or a 404 (no such flow)
+                    # proves Core holds nothing; any other rejection is
+                    # treated as leaving the flow open, so it is aborted.
+                    "flow_open": not (
+                        outcome.category == "options_flow_aborted"
+                        or outcome.provider_status == 404
+                    ),
                 },
             )
         raise HelperOptionsSubmitUncertain(
             "options flow submit result is uncertain",
             details={"reason": SUBMIT_UNCERTAIN},
         )
+
+
+async def _settle(task: asyncio.Future) -> bool:
+    """Await one flow abort; a caller's cancellation waits for it, bounded."""
+
+    try:
+        await asyncio.wait({task}, timeout=ABORT_TIMEOUT_SECONDS)
+    except asyncio.CancelledError:
+        try:
+            await asyncio.wait({task}, timeout=ABORT_TIMEOUT_SECONDS)
+        finally:
+            if task.done() and not task.cancelled():
+                task.exception()  # retrieved: the cancellation propagates
+            else:
+                task.cancel()
+        raise
+    if not task.done():
+        task.cancel()
+        return False
+    if task.cancelled():
+        return False
+    return task.result() is True
 
 
 class HelperOptionsSubmitUncertain(HomeAssistantApiError):

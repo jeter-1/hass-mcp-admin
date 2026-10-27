@@ -422,10 +422,12 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
         except PredispatchAuthorityRefused:
             return False
 
-    async def _release(self, key: str, *, windowed: bool = False) -> None:
+    async def _release(self, key: str, *, windowed: bool = False) -> bool:
+        """Abort the flow held for ``key``; False discloses an orphan."""
+
         held = self._held.pop(key, None)
         if held is None:
-            return
+            return True
         aborted = (
             await self._windowed_abort(held.flow_id)
             if windowed
@@ -433,6 +435,7 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
         )
         if not aborted:
             self._orphaned.add(key)
+        return aborted
 
     async def dispatch(self, operation, preflight, *, before_dispatch):
         key = operation.prepared_operation_hash
@@ -481,22 +484,33 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
                 *((FLOW_ORPHANED,) if exc.orphaned else ()),
             )
         except Exception as exc:
-            return (self.strategy.read_error_code(exc),)
+            return (
+                self.strategy.read_error_code(exc),
+                *((contract.FLOW_OPEN_UNCONFIRMED,) if contract.open_unconfirmed(exc) else ()),
+            )
+        # Held from the moment it is open: every exit below, and the
+        # dispatch safety net, finds and aborts it by flow id.
+        self._held[key] = held
 
         async def refuse(code: str) -> tuple[str, ...]:
-            aborted = await self._abort(held.flow_id)
+            aborted = await self._release(key)
             return (code, *(() if aborted else (FLOW_ORPHANED,)))
 
-        if held.step_id != intent["step_id"] or not contract.visible_equal(
-            held.visible, intent["baseline"]
-        ):
-            return await refuse(STALE)
-        # ``modified_at`` read after the open: unchanged proves the held
-        # flow's snapshot is the baseline this plan binds.
-        code = await self._entry_code(operation, intent)
+        try:
+            if held.step_id != intent["step_id"] or not contract.visible_equal(
+                held.visible, intent["baseline"]
+            ):
+                return await refuse(STALE)
+            # ``modified_at`` read after the open: unchanged proves the held
+            # flow's snapshot is the baseline this plan binds.
+            code = await self._entry_code(operation, intent)
+        except BaseException:
+            # An error, timeout or cancellation during the checks: the flow
+            # is aborted here, inside the read window, then re-raised.
+            await self._release(key)
+            raise
         if code != "state_matches_plan":
             return await refuse(code)
-        self._held[key] = held
         return ()
 
     async def _send(
@@ -522,6 +536,15 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
             if details.get("flow_open") is True and not await self._abort(
                 held.flow_id
             ):
+                self._orphaned.add(operation.prepared_operation_hash)
+            raise
+        except BaseException:
+            # A lost or uncertain response, a timeout or a cancellation:
+            # the flow may still be open.  Abort it by flow id (a flow the
+            # submit finished, or a Core restart discarded, is already
+            # gone); a failed abort is disclosed as an orphan.  Readback
+            # still decides whether the submit applied.
+            if not await self._abort(held.flow_id):
                 self._orphaned.add(operation.prepared_operation_hash)
             raise
 

@@ -14,6 +14,7 @@ double admits it here only where a test says so.
 from __future__ import annotations
 
 import ast
+import asyncio
 from copy import deepcopy
 from pathlib import Path
 import sys
@@ -27,9 +28,11 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.clients.rest import ExpectedHttpStatus  # noqa: E402
 from ha_mcp_engineering.errors import (  # noqa: E402
+    AuthorizationError,
     ErrorCode,
     GovernanceError,
     HomeAssistantApiError,
+    HomeAssistantTimeoutError,
 )
 from ha_mcp_engineering.f3_configuration.helper_options import (  # noqa: E402
     CORE_ADMISSION_UNAVAILABLE,
@@ -42,6 +45,7 @@ from ha_mcp_engineering.governance import (  # noqa: E402
 
 from tests.hamcp232_helper_options_fixtures import (  # noqa: E402
     FILTER_LOWPASS,
+    STEP_PREFIX,
     HelperOptionsServiceTestCase,
     flow_form,
 )
@@ -267,6 +271,89 @@ class ServiceAdmissionTests(HelperOptionsServiceTestCase):
         self.assertEqual(raised.exception.details, PENDING_DETAILS)
         self.assertEqual(self.ha_calls(), 0)
         self.assertEqual(self.repository.list(), [])
+
+
+class AbortSettleTests(unittest.IsolatedAsyncioTestCase):
+    """Review H2: the gateway's flow abort is truthful, bounded and survives
+    the caller's cancellation."""
+
+    async def test_abort_answers(self):
+        received_404 = HomeAssistantApiError(
+            details={"status": 404, "provider_response_received": True}
+        )
+        cases = {
+            "aborted": (None, True),
+            "already_gone": (received_404, True),
+            "unanswered_404": (HomeAssistantApiError(details={"status": 404}), False),
+            "server_error": (HomeAssistantApiError(
+                details={"status": 500, "provider_response_received": True}), False),
+            "timeout": (HomeAssistantTimeoutError(details={}), False),
+        }
+        for name, (failure, expected) in cases.items():
+            with self.subTest(case=name):
+                rest = StubRest(failure)
+                gateway = contract.HelperOptionsGateway(rest, None)
+                self.assertIs(await gateway.abort_flow("0" * 32), expected)
+                self.assertEqual([method for method, _ in rest.requests], ["DELETE"])
+        with self.assertRaises(AuthorizationError):
+            await contract.HelperOptionsGateway(
+                StubRest(AuthorizationError()), None
+            ).abort_flow("0" * 32)
+
+    async def test_a_cancelled_caller_still_completes_the_abort(self):
+        class GatedRest:
+            def __init__(self):
+                self.started = asyncio.Event()
+                self.gate = asyncio.Event()
+                self.completed = False
+
+            async def request(self, method, path, body=None, **kwargs):
+                self.started.set()
+                await self.gate.wait()
+                self.completed = True
+                return {"message": "Flow aborted"}
+
+        rest = GatedRest()
+        task = asyncio.ensure_future(
+            contract.HelperOptionsGateway(rest, None).abort_flow("0" * 32)
+        )
+        await rest.started.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        self.assertFalse(task.done(), "the cancelled caller waits for the abort")
+        rest.gate.set()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertTrue(rest.completed, "the DELETE ran to completion")
+
+    async def test_an_abort_that_never_answers_is_bounded(self):
+        class SilentRest:
+            cancelled = False
+
+            async def request(self, method, path, body=None, **kwargs):
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    SilentRest.cancelled = True
+                    raise
+
+        with mock.patch.object(contract, "ABORT_TIMEOUT_SECONDS", 0.05):
+            aborted = await contract.HelperOptionsGateway(SilentRest(), None).abort_flow(
+                "0" * 32
+            )
+            await asyncio.sleep(0)
+        self.assertFalse(aborted, "an unanswered abort is an orphan, never success")
+        self.assertTrue(SilentRest.cancelled)
+
+    def test_open_unconfirmed_is_only_an_unanswered_open(self):
+        self.assertTrue(contract.open_unconfirmed(HomeAssistantTimeoutError(details={})))
+        self.assertTrue(contract.open_unconfirmed(
+            HomeAssistantApiError(details={"provider_response_received": False})))
+        self.assertFalse(contract.open_unconfirmed(
+            HomeAssistantApiError(details={"status": 500, "provider_response_received": True})))
+        self.assertFalse(contract.open_unconfirmed(AuthorizationError()))
+        self.assertFalse(contract.open_unconfirmed(
+            contract.HelperOptionsProviderError("options_form_malformed")))
 
 
 class AdmittedServiceBoundaryTests(HelperOptionsServiceTestCase):
@@ -756,6 +843,164 @@ class OrphanDisclosureTests(HelperOptionsServiceTestCase):
         result = await self.apply(created)
         self.assertEqual(result["task_state"], "succeeded_verified", result)
         self.assertIn("options_flow_orphaned", self.child_codes(result["task_id"]))
+        self.assertEqual(len(self.options_rest.flows), 1)
+
+
+class FlowLifecycleTests(HelperOptionsServiceTestCase):
+    """Review H2: every dispatch path leaves no options flow open, and
+    reports a flow it could not abort truthfully."""
+
+    def gateway(self):
+        return self.runtime._configuration_adapters[contract.CAPABILITY_IDENTITY].gateway
+
+    async def test_core_restart_after_the_open_refuses_with_no_false_orphan(self):
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        planning_opens = len(self.options_rest.opens())
+
+        def restart(entry_id, flow_id, ordinal):
+            if ordinal == planning_opens + 1:
+                # Core restarted: its in-memory flows are gone, the entry
+                # was set up again.
+                self.options_rest.flows.clear()
+                self.options_rest.touch(entry_id)
+
+        self.options_rest.after_open = restart
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
+        codes = self.child_codes(result["task_id"])
+        self.assertIn(STALE, codes)
+        self.assertNotIn(ORPHANED, codes, "a flow Core no longer holds is not an orphan")
+        self.assertEqual(self.options_rest.submits(), [])
+        self.assertEqual(self.options_rest.flows, {})
+
+    async def test_core_restart_before_the_submit_is_not_applied(self):
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        gateway = self.gateway()
+        original = gateway.options_submit
+
+        async def restart_then_submit(flow_id, submit):
+            self.options_rest.flows.clear()
+            return await original(flow_id, submit)
+
+        with mock.patch.object(gateway, "options_submit", restart_then_submit):
+            result = await self.apply(created)
+        self.assertEqual(result["task_state"], "failed_post_dispatch", result)
+        self.assertNotIn(ORPHANED, self.child_codes(result["task_id"]))
+        self.assertEqual(len(self.options_rest.submits()), 1, "never resubmitted")
+        self.assertEqual(self.options_rest.visible("filterentry01"), FILTER_LOWPASS)
+        self.assertEqual(self.options_rest.flows, {})
+
+    async def test_lost_submit_response_aborts_the_flow_by_id(self):
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        self.options_rest.submit_failure = HomeAssistantTimeoutError(details={})
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "failed_post_dispatch", result)
+        self.assertNotIn(ORPHANED, self.child_codes(result["task_id"]))
+        self.assertEqual(len(self.options_rest.submits()), 1, "never resubmitted")
+        self.assertEqual(self.options_rest.flows, {})
+
+    async def test_lost_submit_that_applied_leaves_no_flow_and_no_orphan(self):
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        self.options_rest.submit_failure = HomeAssistantTimeoutError(details={})
+        self.options_rest.submit_failure_applies = True
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertNotIn(ORPHANED, self.child_codes(result["task_id"]))
+        self.assertEqual(self.options_rest.flows, {})
+
+    async def test_lost_submit_with_a_failed_abort_is_disclosed_as_an_orphan(self):
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        planning_opens = len(self.options_rest.opens())
+        self.options_rest.submit_failure = HomeAssistantApiError(
+            details={"provider_response_received": False}
+        )
+        abort_failure = HomeAssistantApiError(
+            details={"status": 500, "provider_response_received": True}
+        )
+
+        def fail_only_the_held_abort(entry_id, flow_id, ordinal):
+            self.options_rest.abort_failure = (
+                abort_failure if ordinal == planning_opens + 1 else None
+            )
+
+        self.options_rest.after_open = fail_only_the_held_abort
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "failed_post_dispatch", result)
+        self.assertIn(ORPHANED, self.child_codes(result["task_id"]))
+        self.assertEqual(len(self.options_rest.flows), 1, "only the held flow, disclosed")
+        self.assertEqual(len(self.options_rest.submits()), 1)
+
+    async def test_cancellation_during_the_submit_aborts_the_flow(self):
+        """Mutation O-H2a: the submit's abort guard narrowed to ``Exception``."""
+
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        rest = self.options_rest
+        original = rest.request
+        submitting = asyncio.Event()
+
+        async def hang_on_submit(method, path, body=None, **kwargs):
+            if method == "POST" and str(path).startswith(STEP_PREFIX):
+                submitting.set()
+                await asyncio.Event().wait()
+            return await original(method, path, body, **kwargs)
+
+        rest.request = hang_on_submit
+        task = asyncio.ensure_future(self.apply(created))
+        await submitting.wait()
+        self.assertEqual(len(rest.flows), 1)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(rest.flows, {}, "the cancelled submit's flow is aborted")
+        self.assertEqual(getattr(rest, "authority_refusals", []), [])
+
+    async def test_cancellation_during_the_window_checks_aborts_the_flow(self):
+        """Mutation O-H2b: the held flow registered only after the checks."""
+
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        gateway = self.gateway()
+        original = gateway.options_entry
+        planning_opens = len(self.options_rest.opens())
+
+        async def cancel_after_the_open(*args, **kwargs):
+            if len(self.options_rest.opens()) > planning_opens:
+                raise asyncio.CancelledError()
+            return await original(*args, **kwargs)
+
+        with mock.patch.object(gateway, "options_entry", cancel_after_the_open):
+            with self.assertRaises(asyncio.CancelledError):
+                await self.apply(created)
+        self.assertEqual(self.options_rest.submits(), [])
+        self.assertEqual(self.options_rest.flows, {})
+
+    async def test_lost_open_response_is_disclosed_and_never_submits(self):
+        self.add_filter()
+        created = await self.approved_options(TIME_CONSTANT_20)
+        rest = self.options_rest
+        original = rest.request
+
+        async def lose_the_open(method, path, body=None, **kwargs):
+            response = await original(method, path, body, **kwargs)
+            if method == "POST" and str(path) == STEP_PREFIX.rstrip("/"):
+                raise HomeAssistantTimeoutError(details={})
+            return response
+
+        rest.request = lose_the_open
+        result = await self.apply(created)
+        rest.request = original
+        self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
+        codes = self.child_codes(result["task_id"])
+        self.assertIn(contract.FLOW_OPEN_UNCONFIRMED, codes)
+        self.assertEqual(self.options_rest.submits(), [])
+        # Core created the flow; its id never arrived, so it is disclosed,
+        # not aborted.
         self.assertEqual(len(self.options_rest.flows), 1)
 
 
