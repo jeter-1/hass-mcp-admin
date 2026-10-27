@@ -169,7 +169,8 @@ enforces the real clients' Core-authority check
 - `tests/test_hamcp232_options_flow_ledger.py`: the record before the open
   and before the abort, restart survival, bounded retries to orphaned with
   the health disclosure, confirmation by abort or 404, inert sweeps (no
-  record, no admission, a live flow), a refused release handed to the
+  record, no admission, a live flow), a refused exact-target window that
+  sends nothing and counts no attempt, a refused release handed to the
   sweep, possibly-open disclosure in each phase, refusal with nothing sent
   when the ledger is missing, corrupt or full, eviction, and strict storage
   validation.
