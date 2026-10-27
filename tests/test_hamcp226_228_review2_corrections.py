@@ -90,6 +90,9 @@ class StorageBoundaryScreenTests(Base):
 
         def change(report):
             report['baseline']['records'][0]['future_field'] = {'nested': [CREDENTIAL_URL]}
+            # The stub's outcome goes with its record, or resume would retry an
+            # identifier the stored baseline no longer holds.
+            report['diagnostics']['record_outcomes']['0'] = 'timeout'
         with self.injected(service, change):
             response = await self.tool_capture(service)
         self.assertTrue(response['success'], response)
@@ -106,7 +109,7 @@ class StorageBoundaryScreenTests(Base):
         self.assertTrue(any('credential screen withheld 1 record(s)' in item for item in response['warnings']))
         self.assertNotIn(NEEDLE.encode(), disk(service))
         self.assertNotIn(NEEDLE, json.dumps(response))
-        self.stored_report(service, response)
+        self.assertEqual(self.stored_report(service, response)['diagnostics']['record_outcomes'], {})
 
     async def test_an_optional_record_field_is_withheld_and_its_record_kept_partial(self):
         service, _ = self.service()
@@ -269,6 +272,22 @@ class WithheldIdentityTests(Base):
                 self.assertNotIn(value.encode(), disk(service))
                 self.assertNotIn(value, json.dumps(response))
 
+    async def test_a_registry_unique_id_withheld_alone_is_a_stub_not_unmapped(self):
+        # The state's configuration id is clean; only the registry's copy is withheld.
+        data = b.fixture(3)
+        data['registry'][0]['unique_id'] = KEY_HEADER
+        service, _ = self.service(data)
+        response = await self.tool_capture(service)
+        self.assertTrue(response['success'], response)
+        self.assertEqual(response['metadata']['completeness'], 'partial')
+        diagnostics = response['data']['diagnostics']
+        self.assertEqual(diagnostics['credential_screen']['withheld_records'],
+                         [{'configuration_id': None, 'entity_id': 'automation.a0',
+                           'reason': 'configuration_id_withheld'}])
+        self.assertEqual((diagnostics['unmapped_count'], diagnostics['unmapped_entities']), (0, []))
+        self.assertEqual([row['configuration_id'] for row in response['data']['records']], ['1', '2'])
+        self.assertNotIn(KEY_HEADER.encode(), disk(service))
+
     async def test_an_unusable_but_clean_configuration_id_stays_unmapped(self):
         data = b.fixture(3)
         data['states'][0]['attributes']['id'] = 'not valid/id'
@@ -307,6 +326,29 @@ class WithheldIdentityTests(Base):
         self.assertEqual((screen['withheld_record_count'], len(screen['withheld_records'])),
                          (18, storage_screen.LISTED_STUBS))
         self.assertEqual(len(response['data']['records']), 2)
+
+    async def test_more_records_stubbed_at_the_storage_screen_than_listed_are_all_counted(self):
+        # The storage screen's own stubs, after the projector's, are bounded too.
+        data = b.fixture(20)
+        data['states'][19]['attributes']['id'] = KEY_HEADER + '19'
+        data['registry'][19]['unique_id'] = KEY_HEADER + '19'
+        service, _ = self.service(data)
+
+        def change(report):
+            for row in report['baseline']['records'][:17]:
+                row['future_field'] = {'nested': [CREDENTIAL_URL]}
+        with self.injected(service, change):
+            response = await self.tool_capture(service)
+        self.assertTrue(response['success'], response)
+        screen = response['data']['diagnostics']['credential_screen']
+        self.assertEqual((screen['withheld_record_count'], len(screen['withheld_records'])),
+                         (18, storage_screen.LISTED_STUBS))
+        self.assertEqual(screen['withheld_records'][0]['reason'], 'configuration_id_withheld')
+        self.assertEqual(len(response['data']['records']), 2)
+        self.assertEqual(response['data']['baseline_header']['inventory']['omitted_count'], 18)
+        self.assertNotIn(NEEDLE.encode(), disk(service))
+        stored = self.stored_report(service, response)['diagnostics']['credential_screen']
+        self.assertEqual(len(stored['withheld_records']), storage_screen.LISTED_STUBS)
 
     async def test_a_clean_capture_reports_nothing_withheld_and_stays_complete(self):
         service, _ = self.service()

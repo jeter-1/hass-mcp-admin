@@ -61,9 +61,9 @@ async def capture_automation_baseline(
         validate_arguments({"limit": limit, "cursor": cursor, "resume_capture_id": resume_capture_id})
         service = AUTOMATION_BASELINE_CAPTURE.require()
         result = await service.capture(limit=limit, cursor=cursor, resume_capture_id=resume_capture_id)
-        # The storage screen already withheld what it must (review 2, R1). An
-        # exported page must match artifact_sha256 exactly, so this backstop
-        # refuses a page instead of replacing a value.
+        # The storage screen already withheld what it must (review 2, R1). A
+        # page is the stored report (its baseline under artifact_sha256), so
+        # this backstop refuses a page instead of replacing a value.
         if _final_screen(service, result)[1]:
             raise CaptureError("redacted_identity")
         header = result["baseline_header"]

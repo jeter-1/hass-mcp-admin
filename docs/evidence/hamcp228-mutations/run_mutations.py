@@ -51,13 +51,22 @@ Runs: ``run1.log`` stopped at its baseline (a wrong suite name);
 ``run5.log`` are the first review 1 run (71 of 75 killed);
 ``results-run6.json`` and ``run6.log`` are run 6, after the run 5
 corrections below; ``run7.log`` is the first review 2 run, stopped at 80 of
-111 once ``SB-05`` survived (no results file); ``results.json`` and
-``run8.log`` are run 8, after the ``SB-05`` correction below.
+111 once ``SB-05`` survived (no results file); ``results-run8.json`` and
+``run8.log`` are run 8, after the ``SB-05`` correction (108 of 111 killed);
+``results.json`` and ``run9.log`` are run 9, after the run 8 corrections.
 
 Run 7 showed ``SB-05`` (the store's guard called without the known secrets)
 masked by the capture's own storage screen and a credential-shaped probe;
 the review 2 suite now patches that screen out and plants a known secret,
 which only the store's guard, given the known secrets, can refuse.
+
+Run 8 showed three suite gaps, now closed: ``SB-11`` (a stubbed record's
+outcome kept: it never reaches a page, so the suite now reads the stored
+report, which resume reads), ``W-10`` (the listed stubs unbounded: every
+stub came from the projector, already bounded, so the suite now stubs 17
+records at the storage screen) and ``W-15`` (the registry's withheld unique
+id ignored: the suite withheld both copies, so it now withholds the
+registry's alone).
 
 Review 2 (HAMCP-226/228) adds:
 - ``SB-*`` (finding R1): a record or diagnostic reaching the hash or the

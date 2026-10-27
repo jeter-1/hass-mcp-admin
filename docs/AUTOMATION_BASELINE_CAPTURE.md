@@ -313,8 +313,10 @@ echoed.
   mode), and every response then passes a final-envelope screen as a backstop
   (review 1, H1), so a field added later cannot return Home Assistant text
   unscreened; `screened_withheld_count` makes a withheld value a partial
-  result. A capture page must match `artifact_sha256` exactly, so a capture
-  the backstop would change is refused (`redacted_identity`) instead; because
+  result. A capture page is the stored, already-screened report (its header
+  and records under `artifact_sha256`, which covers the baseline; its
+  diagnostics as stored), so the backstop does not rewrite a page: a capture
+  it would change is refused (`redacted_identity`) instead; because
   the storage-boundary screen runs first, that refusal can only follow a
   screen defect, and nothing unscreened has been stored.
 - Audit records carry the mode, the counts, whether a cursor was supplied and
