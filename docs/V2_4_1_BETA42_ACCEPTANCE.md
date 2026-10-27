@@ -160,7 +160,9 @@ synthetic.
   test (`run1-baseline-failed.log`): the calibration exit's sanitizer call
   was not yet listed. With it listed, run 2 killed 22 of 22 (`results.json`,
   `run2.log`); `results.json` records each mutant and the tests that killed
-  it.
+  it. After the merge of `main` at 2.4.1-beta.41 (which changed
+  `credentials.py`), run 3 on Python 3.12.14 killed 22 of 22 again
+  (`results-run3.json`, `run3.log`).
 
 ## 2. Release CI and publication
 
