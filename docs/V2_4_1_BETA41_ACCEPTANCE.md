@@ -80,9 +80,19 @@ The review needs a security section covering:
   equals the plan. The residual window between the final read and the submit
   is accepted (OD-7) and disclosed in the plan and in the apply response's
   embedded plan.
-- **Sanitized trace reads.** Both script-trace results pass through the
-  shared untrusted-data sanitizer before output; both call sites are in the
-  HAMCP-191 sanitizer-site inventory.
+- **Sanitized trace reads.** Both script-trace results, with the identifiers
+  they are returned under, leave through the one HAMCP-225 trace exit
+  (`trace_normalization.sanitize_trace_detail`, review 1 H1): the shared
+  `credentials.screen` first, then the strict sanitizer, truncation last;
+  both call sites are in the HAMCP-191 sanitizer-site inventory.
+- **Review 1 corrections.** H2 (no options flow left open, cancellation
+  included), H3 (complete intended submit at create and apply), M1 (retained
+  pre-intent tasks admitted before persistence) and M2 (disabled triggers
+  disclosed as disabled; enablement in the binding fingerprint, so a toggle
+  between plan and apply refuses as stale). The H1, H2 and H3 contracts are
+  part of the profile material, so two fingerprints above changed at review 1
+  (helper options `581234de…5b9e`, script trace `abf10d9b…5789`);
+  input_select is unchanged.
 - **Dormant lanes.** The seq-15 lanes run only with
   `REAL_HA_SEQ15_LANES` explicitly enabled on the candidate support slot;
   the harness sender is loopback-only and refuses routes outside its closed
@@ -93,8 +103,9 @@ Preserve the following:
 - persisted formats of every existing family (new enum values are written
   only after signed admission);
 - every existing descriptor and input schema, including
-  `create_helper_state_plan`; static tools **72** (68 + 4); the catalog is
-  **100 tools, 101 with the optional YAML reader admitted**;
+  `create_helper_state_plan`; static tools **76** (72 + 4) on the beta.39
+  base, **77** once beta.40 merges in; the catalog is **104 tools, 105 with
+  the optional YAML reader admitted** (105 and 106 with beta.40);
 - probe fingerprints, the signed Core capability profiles, the owner-signed
   Core registry (sequence 14 at base, unchanged), the signed ha-mcp registry
   and the delete profile's contract fingerprint
@@ -120,8 +131,17 @@ enforces the real clients' Core-authority check
   `tests/hamcp145_input_select_fixtures.py`: admission, per-option trigger
   disclosure, apply, verify, rollback, drift, an option not in the list, lost
   responses and Core errors decided by readback, and input_boolean unchanged.
-- `tests/test_hamcp232_script_traces.py`: pending admission with zero
-  requests, the closed vocabulary, sanitization and not-found.
+- `tests/test_hamcp232_script_traces.py` and
+  `tests/test_hamcp232_script_trace_cross_path.py`: pending admission with
+  zero requests, the closed vocabulary, the shared trace exit on both script
+  and automation paths, and not-found.
+- `tests/test_pr314_independent_review.py`: the reviewer's suite, byte for
+  byte (sha256 `b5f8dc94ea9114518f2fedcd44ad303764436b8f038b5f61dd5ab375e41b341b`).
+  `tests/test_hamcp232_review1_superseded.py` pins that hash and registers
+  `FlowReview.test_partial_internal_intent_never_submitted` as the one
+  expected failure (owner decision: create refuses an incomplete intent).
+  It proves no other reviewer method is an expected failure and that the
+  superseded one still runs and fails at the create refusal.
 - `tests/test_seq15_contract_acceptance.py`: lane definitions, receipts and
   their mutations, fixture cleanup, the loopback route gate, dormancy and the
   lane guard.
@@ -157,8 +177,9 @@ Separately authorize installation. All checks are read-only.
 
 1. **Installed-image binding.** Bind the running add-on to the published
    image index digest, the release tag and the protected `main` merge commit.
-2. **Catalog.** `tools/list` shows 100 tools (101 with the YAML reader
-   admitted), including the four new tools.
+2. **Catalog.** `tools/list` shows the materialized release's catalog (104
+   tools, 105 with the YAML reader admitted, on the beta.39 base; one more
+   each with beta.40), including the four new tools.
 3. **Pending admission.** `list_capabilities` lists each new tool with its
    new profile in `core_capabilities` and a `core_admission` other than
    `admitted`, because sequence 14 names none of the three profiles. This

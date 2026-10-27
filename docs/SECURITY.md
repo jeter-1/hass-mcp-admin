@@ -613,6 +613,39 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.41` November Core batch (HAMCP-232, HAMCP-145) adds two
+governed write plan families and two script-trace reads, all built
+inactive. It adds three runtime-only Core capability profiles, none of them
+signed, and no permission, add-on option, delegated provider or fallback.
+
+- **Admission first.** Every entry point, the generic plan and resource
+  routes included, refuses `pending_signed_registry_admission` before any
+  read, validation read or persistence until a signed sequence names the
+  profile, and again at the persist boundary. A retained, non-terminal task
+  with no child dispatch intent is admitted before anything is persisted;
+  every F3 path re-checks dispatch admission.
+- **Writes, once admitted.** One options-flow step submit per helper entry
+  and one `input_select.select_option` call, each at most once and never
+  redispatched; `mark_provider_send()` marks the send boundary. The options
+  submit must be the complete intended set (baseline plus the approved
+  changes), checked at create and at apply, because Core replaces the
+  options with the submitted dict.
+- **No flow left open.** Every options flow this server opens is held,
+  registered and aborted on every exit, a cancelled caller included; a 404
+  counts as gone and a lost open is disclosed as
+  `options_flow_open_unconfirmed`.
+- **Closed vocabularies.** Explicit never-sent lists: entry create, delete,
+  reload, update, disable and subentries; `set_options` and the relative
+  option moves; `trace/contexts`, every `trace/debug/*` command and the
+  list-all trace form.
+- **Trace sanitization.** Script traces, with the identifiers they are
+  returned under, leave through the one HAMCP-225 trace exit (the shared
+  `credentials.screen` first, then the strict sanitizer, truncation last).
+- **Disclosure.** A disabled dependent automation or trigger is disclosed as
+  not firing while disabled; enablement is part of the binding fingerprint,
+  so a toggle between plan and apply refuses the apply as stale. The OD-7
+  concurrency window is disclosed in the plan and the apply response.
+
 The `2.4.1-beta.39` trace snapshot slice (HAMCP-225) adds four
 Engineering-native tools and one Engineering-local store. It adds no Home
 Assistant write, permission, add-on option, Core capability profile,

@@ -15,8 +15,9 @@ Part 2 build in section 6).
 
 ## What a client sees
 
-Four new tools appear in the catalog (static tools 68 → 72; advertised catalog
-100, 101 with the optional YAML reader admitted). Each is listed with its
+Four new tools appear in the catalog (static tools 72 → 76 on the beta.39
+base; advertised catalog 104, 105 with the optional YAML reader admitted;
+each count is one higher once beta.40 merges in). Each is listed with its
 requirement and refuses until signed admission:
 
 | Tool | Profile (runtime-only) | Kind |
@@ -52,10 +53,35 @@ byte-identical.
   `stale_target_state`. A Core error after the send is decided by readback,
   never assumed to be a failure. Rollback is a separately approved plan.
 - **Script-trace reads (owner addition).** `trace/list` and `trace/get` with
-  `domain: script` and an exact validated script key, sanitized through the
-  shared untrusted-data sanitizer before output, like the automation trace
-  reads. `trace/contexts`, `trace/debug/*` and the list-all form are never
+  `domain: script` and an exact validated script key. Every result, with the
+  identifiers it is returned under, leaves through the one HAMCP-225 trace
+  exit (`trace_normalization.sanitize_trace_detail`): the shared
+  `credentials.screen` on every string and key at every depth (identifiers
+  in default mode, values in labelled mode), then the strict sanitizer,
+  truncation last. There is no script-trace screen of its own. `trace/contexts`, `trace/debug/*` and the list-all form are never
   sent. Not-found is reported as not-found, without fallback.
+
+### Review 1 corrections
+
+- **H1.** Script traces use the HAMCP-225 trace exit above instead of a
+  parallel screen.
+- **H2.** No options flow is left open: the held flow is registered at the
+  open, its bounded abort completes even when the caller is cancelled, a 404
+  counts as gone, and a lost open is disclosed as
+  `options_flow_open_unconfirmed`.
+- **H3.** The submit must be the complete intended set (baseline plus the
+  approved changes), checked at create and again at apply. An incomplete
+  intent is refused at create, before any flow opens (owner decision: this
+  stricter refusal supersedes one reviewer test, registered as the one
+  expected failure in `tests/test_hamcp232_review1_superseded.py`).
+- **M1.** A retained, non-terminal task with no child dispatch intent is
+  admitted before anything is persisted; the recovery sweep retries an
+  unadmitted pre-intent task without persisting, until admission or expiry.
+- **M2.** Trigger records carry their automation's enablement: an automation
+  that is off, or `enabled: false`, is disclosed as `disabled`, "would not
+  fire while disabled"; a non-literal `enabled` is unknown. Enablement is
+  part of the binding fingerprint, so enabling or disabling a dependent
+  automation between plan and apply refuses the apply as stale.
 
 Every write path uses the built-in lessons (design section 6.1): admission
 first at the service layer and again at the persist boundary; dispatch
