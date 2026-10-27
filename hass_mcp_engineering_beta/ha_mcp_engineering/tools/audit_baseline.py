@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..audit_baseline.capture_contracts import (validate_arguments, validate_compare_arguments,
                                                 CaptureError)
 from ..audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
+from ..audit_baseline.storage_screen import withheld_counts
 from ..request_context import current_telemetry
 from ..tool_framework import run_structured
 from ..untrusted_text import EnvelopeKeyWithheld, screen_envelope
@@ -55,19 +56,26 @@ async def capture_automation_baseline(
     """
     metadata = {"provider": "engineering", "data_providers": ["direct_ha_api"],
                 "fallback_occurred": False, "upstream_calls": 0}
+    warnings = []
     async def action():
         validate_arguments({"limit": limit, "cursor": cursor, "resume_capture_id": resume_capture_id})
         service = AUTOMATION_BASELINE_CAPTURE.require()
         result = await service.capture(limit=limit, cursor=cursor, resume_capture_id=resume_capture_id)
-        # An exported page must match artifact_sha256 exactly, so the final
-        # screen refuses it instead of replacing a value.
+        # The storage screen already withheld what it must (review 2, R1). An
+        # exported page must match artifact_sha256 exactly, so this backstop
+        # refuses a page instead of replacing a value.
         if _final_screen(service, result)[1]:
             raise CaptureError("redacted_identity")
         header = result["baseline_header"]
+        withheld_records, withheld_fields = withheld_counts(result["diagnostics"])
         partial = (header["inventory"]["completeness"] != "complete"
                    or header["installation"]["status"] != "established"
                    or result["diagnostics"].get("configuration_incomplete_count", 0) > 0
-                   or header["consistency"]["inventory_drift"] != "none_observed_at_capture_fences")
+                   or header["consistency"]["inventory_drift"] != "none_observed_at_capture_fences"
+                   or withheld_records > 0 or withheld_fields > 0)
+        if withheld_records or withheld_fields:
+            warnings.append(f"The credential screen withheld {withheld_records} record(s) and "
+                            f"{withheld_fields} field(s) before storage; see diagnostics.credential_screen.")
         metadata["completeness"] = "partial" if partial else "complete"
         telemetry = current_telemetry()
         if telemetry:
@@ -79,7 +87,7 @@ async def capture_automation_baseline(
                 returned_records=len(result["records"]), fallback="none")
         return result
     return await run_structured("capture_automation_baseline", "Returned frozen loaded-automation baseline evidence.",
-        action, metadata=metadata, response_limit=min(60_000, SETTINGS.response_size_limit))
+        action, warnings=warnings, metadata=metadata, response_limit=min(60_000, SETTINGS.response_size_limit))
 
 
 class RecordedFingerprint(BaseModel):

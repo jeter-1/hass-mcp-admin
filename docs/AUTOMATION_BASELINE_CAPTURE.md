@@ -82,12 +82,42 @@ retention or hashing. Retained identifiers must pass the existing sanitizer unch
 even when optional redaction is disabled. HAMCP-228 also applies the HAMCP-226
 default-mode credential screen (`untrusted_text.screen`: `credentials.screen`
 in default mode plus the PEM private-key header check) to every retained
-identifier (owner direction, Josh, 2026-10-26). A withheld identifier is
-unusable, so its object is omitted with a counted limitation exactly like a
-sanitizer change; no credential-shaped identifier reaches a stored baseline. Fixed diagnostic reasons never reflect
+identifier (owner direction, Josh, 2026-10-26). An identifier the sanitizer
+changes is unusable, so its object is omitted with a counted limitation. An
+identifier the credential screen withholds is never stored either; it is
+reported as a content-free stub (below). Fixed diagnostic reasons never reflect
 rejected keys, exception text, payloads or cursor values. Audit records contain only
 scope, bounded limit, continuation presence and bounded capture summaries; no raw
 configuration, auth identity or cursor is recorded.
+
+Storage-boundary screen (review 2, R1): after collection and before the
+report is hashed (`artifact_sha256`) or stored, every baseline record and every
+capture diagnostic is screened (`audit_baseline/storage_screen.py`), so no
+unscreened Home Assistant text reaches disk, including a field added later. The
+store screens the encoded report again before its transaction and refuses
+anything unscreened (`redacted_identity`) without touching a file. The final
+response screen stays as a backstop behind both. A credential hit is withheld,
+not refused (owner decision, Josh, 2026-10-27):
+
+- an optional field (a diagnostic leaf, a record field other than the
+  automation configuration id, such as the nullable `entity_id`) becomes the
+  withheld marker; a withheld diagnostic key drops its entry. The record keeps
+  its place with `coverage.redacted: true`, one more warning and `partial`
+  completeness, and the capture is `partial` with a warning;
+- the required identity, the automation configuration id (or an entity id the
+  projector cannot join), withholds its record as a content-free stub
+  `{configuration_id, entity_id, reason}`, where `reason` is
+  `configuration_id_withheld`, `entity_id_withheld` or
+  `record_unrepresentable` (a withheld value the record schema cannot hold),
+  and only a clean id is named. The inventory is `partial` and
+  `omitted_count` grows by the stub count; the capture continues;
+- the baseline header holds only fixed, validated fields, which a marker cannot
+  represent, so a hit there refuses the capture (`redacted_identity`) before
+  anything is hashed or stored.
+
+`diagnostics.credential_screen: {withheld_field_count, withheld_record_count,
+withheld_records}` lists the first 16 stubs. Nothing is derived from a withheld
+value: a stub carries no digest of it (owner decision, 2026-10-22).
 
 Capture failures preserve the existing error codes and response envelope.
 Only `capacity_busy`, `timeout`, `source_unavailable` and (HAMCP-228)
@@ -190,7 +220,8 @@ Engineering governance disk boundary, beside the other governance records; not
 - Each record is a self-binding envelope (`model`, `binding`: its capture id,
   caller, creation time and resume origin, `report_sha256`, `report`). A
   missing or unreadable index (including a symlinked index file, which is
-  never followed) never deletes a committed baseline (review 1, H2): the index
+  never followed, and an index present but unreadable, such as permission
+  denied, review 2 R3) never deletes a committed baseline (review 1, H2): the index
   is rebuilt from the record files, each verified from its own envelope and
   its file name. A file that fails verification is quarantined as a stub
   (`unreadable` or `invalid_record`), never silently deleted; the stubs are
@@ -198,6 +229,13 @@ Engineering governance disk boundary, beside the other governance records; not
   not re-indexed and is removed by the next sweep. More verified records than
   the store admits fails closed (`store_invalid`) with no file touched. Files
   that are not store names are never touched.
+- A rebuild needs a readable and writable namespace. When the namespace or
+  its records directory cannot be written, listed or read, or a record file
+  cannot be read, nothing is deleted or overwritten: the operation reports
+  `store_unavailable` (retryable) with a fixed `store_condition`
+  (`namespace_not_writable`, `namespace_unreadable` or `record_unreadable`)
+  in the error details, and the next operation after the permissions are
+  repaired rebuilds normally.
 - The rebuild is reported content-free as `store_status: {index_rebuilds,
   last_index_rebuild: {at_ms, reason: index_missing|index_unreadable,
   recovered, quarantined}}` (`{0, null}` before any rebuild) in the capture
@@ -276,7 +314,9 @@ echoed.
   (review 1, H1), so a field added later cannot return Home Assistant text
   unscreened; `screened_withheld_count` makes a withheld value a partial
   result. A capture page must match `artifact_sha256` exactly, so a capture
-  the backstop would change is refused (`redacted_identity`) instead.
+  the backstop would change is refused (`redacted_identity`) instead; because
+  the storage-boundary screen runs first, that refusal can only follow a
+  screen defect, and nothing unscreened has been stored.
 - Audit records carry the mode, the counts, whether a cursor was supplied and
   the returned/total record counts, plus the withheld count; never capture
   ids, configuration ids, cursors or digests.

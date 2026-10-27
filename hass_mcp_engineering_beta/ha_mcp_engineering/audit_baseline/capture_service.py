@@ -15,13 +15,15 @@ import time
 from .. import untrusted_text
 from ..request_context import current_caller_id
 from . import capture_contracts as c
+from . import storage_screen
 from .comparison import (PREFIX_MATCH, compare_baselines, compare_recorded_fingerprints,
                          comparison_report_dict)
 from .store import StoreError
 from .validation import BaselineValidationError, baseline_from_value
 
 _STORE_REASONS = {"store_busy": "capacity_busy", "store_full": "store_full",
-                  "baseline_not_found": "baseline_not_found", "baseline_damaged": "baseline_damaged"}
+                  "baseline_not_found": "baseline_not_found", "baseline_damaged": "baseline_damaged",
+                  "unscreened_content": "redacted_identity"}
 
 
 class BaselineCaptureService:
@@ -43,7 +45,10 @@ class BaselineCaptureService:
             return await c.worker(functools.partial(getattr(self.store, method), *args, **kwargs))
         except StoreError as exc:
             raise c.CaptureError(_STORE_REASONS.get(exc.reason, "store_unavailable"),
-                                 oldest_age_seconds=exc.oldest_age_seconds) from None
+                                 oldest_age_seconds=exc.oldest_age_seconds, store_condition=exc.condition) from None
+
+    def known_secrets(self):
+        return tuple(getattr(getattr(self.provider, "projector", None), "known_secrets", ()))
 
     def store_status(self):
         """The content-free store status after the latest store call (review 1, H2)."""
@@ -152,6 +157,9 @@ class BaselineCaptureService:
                     raise c.CaptureError("resume_not_needed")
             await self.stored("check_capacity", self.now_ms())
             report = await (self.provider.collect(base) if base is not None else self.provider.collect())
+            # Review 2 (R1): the storage boundary. Every record and diagnostic
+            # is screened before the report is hashed or stored.
+            report = await c.worker(storage_screen.screen_report, report, self.known_secrets())
             encoded, artifact = await c.worker(self._encode, report)
             key = secrets.token_hex(16)
             expires = self.clock() + c.SNAPSHOT_TTL
@@ -160,7 +168,7 @@ class BaselineCaptureService:
                                   resumed_from, limit)
             await self.stored("put", capture_id=key, caller=caller, encoded=encoded, artifact_sha256=artifact,
                               baseline_id=report["baseline"]["baseline_id"], resumed_from=resumed_from,
-                              now_ms=self.now_ms())
+                              now_ms=self.now_ms(), known_secrets=self.known_secrets())
             self.cursors[key] = (expires, caller)
             return page
         finally:
@@ -262,7 +270,7 @@ class BaselineCaptureService:
         value["records"].sort(key=lambda row: (row["classification"] in {"UNCHANGED", PREFIX_MATCH},
                                                row["configuration_id"]))
         value["record_order"] = "not_unchanged_or_prefix_match_first_then_configuration_id"
-        value, withheld = untrusted_text.screen_tree(value, tuple(getattr(getattr(self.provider, "projector", None), "known_secrets", ())))
+        value, withheld = untrusted_text.screen_tree(value, self.known_secrets())
         value["screened_withheld_count"] = withheld
         value.pop("details_truncated", None)
         return value

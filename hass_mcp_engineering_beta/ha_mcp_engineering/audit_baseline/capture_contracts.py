@@ -56,8 +56,12 @@ REASONS = frozenset({"invalid_arguments", "invalid_cursor", "snapshot_expired", 
     "resume_not_needed", "resume_core_changed"})
 
 
+# Why the store is unavailable, when it is known (HAMCP-226/228 review 2, R2).
+STORE_CONDITIONS = frozenset({"namespace_unreadable", "namespace_not_writable", "record_unreadable"})
+
+
 class CaptureError(GovernanceError):
-    def __init__(self, reason, *, oldest_age_seconds=None):
+    def __init__(self, reason, *, oldest_age_seconds=None, store_condition=None):
         if reason not in REASONS:
             reason = "source_unavailable"
         code = (ErrorCode.INVALID_REQUEST if reason == "invalid_arguments" else
@@ -69,6 +73,9 @@ class CaptureError(GovernanceError):
             # Only the fixed capacity and the oldest age; never a stored payload.
             details.update(stored_baselines=STORE_BASELINES, oldest_age_seconds=oldest_age_seconds,
                            retention_seconds=STORE_RETENTION_SECONDS)
+        if reason == "store_unavailable" and store_condition in STORE_CONDITIONS:
+            # Review 2 (R2): the fixed condition, never a path or an OS message.
+            details["store_condition"] = store_condition
         super().__init__(code, details=details)
         self.reason = reason
 

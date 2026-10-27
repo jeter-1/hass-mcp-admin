@@ -17,7 +17,11 @@ Builds on 2.4.1-beta.39. Adds no Home Assistant write.
   `<governance_path>/audit-baselines-v1/` (12 baselines, 2 MiB, 180 days;
   caller-bound, digest-verified, refused when full, never evicted; a missing
   or unreadable index is rebuilt from the verified records, never emptied,
-  and reported in `store_status`) and writes
+  and reported in `store_status`; an unwritable namespace is
+  `store_unavailable` with a `store_condition`, nothing touched; records and
+  diagnostics are credential-screened before hashing and storage, a withheld
+  field making the capture partial and a withheld automation id a stub in
+  `diagnostics.credential_screen`) and writes
   `automation-audit-baseline-v2` (`resume` header, `timed_out` status); v1
   still loads. New `resume_capture_id` re-collects only timeouts and refuses
   `resume_not_needed`, `resume_inventory_changed` or `resume_core_changed`.

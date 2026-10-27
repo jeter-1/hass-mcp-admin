@@ -11,6 +11,7 @@ from ..request_context import current_telemetry
 from ..sanitization import sanitize_untrusted_data
 from .. import untrusted_text
 from . import capture_contracts as c
+from . import storage_screen
 from .models import BASELINE_SCHEMA_V2, FINGERPRINT_MODEL
 from .validation import canonical_configuration_digest, BaselineValidationError, _new_baseline
 
@@ -33,6 +34,17 @@ class Projector:
         # HAMCP-228: the HAMCP-226 default-mode credential screen too (owner
         # direction, Josh, 2026-10-26); a withheld identifier is unusable.
         return value if untrusted_text.screen(value, tuple(self.known_secrets)) is None else None
+
+    def screened_identifier(self, value, *, entity=False):
+        """``(identifier or None, withheld)``: ``withheld`` when the credential screen withholds the value.
+
+        Review 2 (owner decision, Josh, 2026-10-27): a withheld identifier is a
+        stub with a reason; any other unusable value stays unmapped.
+        """
+
+        identifier = self.identifier(value, entity=entity)
+        return identifier, (identifier is None and type(value) is str
+                            and untrusted_text.screen(value, tuple(self.known_secrets)) is not None)
 
     def project(self, kind, value):
         c.bounded(value)
@@ -67,32 +79,36 @@ class Projector:
             if len(matches) != 1:
                 raise c.CaptureError("identity_unverified")
             return matches[0]
-        result, seen, invalid = {}, set(), 0
+        result, seen, invalid, withheld = {}, set(), 0, 0
         for row in value:
             if type(row) is not dict or type(row.get("entity_id")) is not str:
                 raise c.CaptureError("malformed_response")
             raw_entity = row["entity_id"]
             if not raw_entity.startswith("automation."):
                 continue
-            entity = self.identifier(raw_entity, entity=True)
+            entity, entity_withheld = self.screened_identifier(raw_entity, entity=True)
             if not entity:
                 invalid += 1
+                withheld += entity_withheld
                 continue
             if entity in seen:
                 raise c.CaptureError("malformed_response")
             seen.add(entity)
             if kind == "states":
                 attributes = row.get("attributes")
-                config_id = self.identifier(attributes.get("id")) if type(attributes) is dict else None
+                config_id, id_withheld = (self.screened_identifier(attributes.get("id"))
+                                          if type(attributes) is dict else (None, False))
                 state = row.get("state")
-                result[entity] = {"id": config_id, "state": state if state in ("on", "off", "unknown", "unavailable") else None}
+                result[entity] = {"id": config_id, "id_withheld": id_withheld,
+                                  "state": state if state in ("on", "off", "unknown", "unavailable") else None}
             elif kind == "registry":
-                result[entity] = {"id": self.identifier(row.get("unique_id")),
+                unique_id, id_withheld = self.screened_identifier(row.get("unique_id"))
+                result[entity] = {"id": unique_id, "id_withheld": id_withheld,
                                   "platform_valid": row.get("platform") == "automation",
                                   "disabled": row.get("disabled_by") is not None}
             else:
                 raise c.CaptureError("invalid_arguments")
-        return {"records": result, "invalid_count": invalid}
+        return {"records": result, "invalid_count": invalid, "withheld_count": withheld}
 
     def hash_configuration(self, config_id, raw):
         if type(raw) is not dict or raw.get("id") != config_id:
@@ -173,13 +189,21 @@ class BaselineCaptureProvider:
             registry = first["registry"]["records"]
             config_counts = Counter(row["id"] for row in states.values() if row["id"])
             records, unmapped = [], []
+            # Review 2 (owner decision, Josh, 2026-10-27): an automation whose
+            # entity id or configuration id the credential screen withheld is
+            # a content-free stub with its reason, not an unmapped entity.
+            withheld = [storage_screen.stub(None, None, "entity_id_withheld")
+                        for _ in range(first["states"]["withheld_count"])]
             # Frozen identity/mapping order; no raw provider object crosses this point.
             for entity, state in sorted(states.items()):
                 config_id = state["id"]
                 mapped = registry.get(entity)
                 if (not config_id or config_counts[config_id] != 1 or not mapped or not mapped["platform_valid"]
                         or mapped["id"] != config_id or mapped["disabled"]):
-                    unmapped.append(entity)
+                    if state["id_withheld"] or (mapped and mapped["id_withheld"]):
+                        withheld.append(storage_screen.stub(None, entity, "configuration_id_withheld"))
+                    else:
+                        unmapped.append(entity)
                     continue
                 if len(records) == c.MAX_RECORDS:
                     continue
@@ -321,4 +345,5 @@ class BaselineCaptureProvider:
             "unmapped_entities": unmapped[:16], "unmapped_count": len(unmapped),
             "registry_only_entities": extras[:16], "registry_only_count": len(extras),
             "registry_only_count_precision": "lower_bound", "record_outcomes": outcomes,
-            "final_fence": "complete" if last else "unavailable"}}
+            "final_fence": "complete" if last else "unavailable",
+            "credential_screen": storage_screen.summary(withheld)}}

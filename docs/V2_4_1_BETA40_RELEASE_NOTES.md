@@ -52,7 +52,12 @@ See [`AUTOMATION_BASELINE_CAPTURE.md`](AUTOMATION_BASELINE_CAPTURE.md).
   record envelope. A missing or unreadable index is rebuilt from the
   verified record files and never deletes a committed baseline; a file that
   fails verification is quarantined as a content-free stub, and the rebuild
-  is reported in `store_status`. Continuations page
+  is reported in `store_status`; a namespace that cannot be written or read
+  is `store_unavailable` with a fixed `store_condition` and no file is
+  touched. Every record and diagnostic is credential-screened before it is
+  hashed or stored: a withheld optional field makes the capture partial, a
+  withheld automation id becomes a content-free stub in
+  `diagnostics.credential_screen`, and the capture continues. Continuations page
   the stored copy. The capture tool is now Engineering local evidence capture
   (`readOnlyHint=false`); it still writes nothing to Home Assistant.
 - **Schema v2.** Captures write `automation-audit-baseline-v2`: a `resume`

@@ -64,7 +64,11 @@ The review needs a security section covering:
   rebuilt from the records, each verified from its self-binding envelope; a
   file that fails is quarantined (stub committed before removal); more
   verified records than capacity fails closed with nothing touched; the
-  rebuild is reported in `store_status` (review 1, H2).
+  rebuild is reported in `store_status` (review 1, H2). An index present
+  but unreadable (permission denied) is rebuilt the same way; a namespace
+  that cannot be written, listed or read is `store_unavailable` with a fixed
+  `store_condition`, and no baseline file is deleted or overwritten
+  (review 2, R3).
   Hashes detect damage, not a writer able to rewrite record and index.
 - **Capacity.** At 12 a capture is refused before any Home Assistant read;
   nothing is evicted.
@@ -74,6 +78,14 @@ The review needs a security section covering:
   integrity and dependency analyses return is screened, and each tool's
   final response envelope is screened again as a backstop (review 1, H1). The HAMCP-226 margin property: a value is
   screened over its shown part plus 1,024 characters before any cut.
+- **Storage-boundary screen.** Every baseline record and capture diagnostic
+  is screened before hashing and storage, and the store refuses unscreened
+  content before its transaction (review 2, R1). A hit in an optional field
+  withholds that field and makes the record and capture partial; a hit in
+  the automation configuration id withholds the record as a content-free
+  stub with a reason in `diagnostics.credential_screen` and the capture
+  continues, partial (owner decision, Josh, 2026-10-27). Only a hit in the
+  fixed baseline header refuses (`redacted_identity`).
 - **Compare semantics.** `PREFIX_MATCH` never counts as `UNCHANGED`;
   recorded fingerprints carry no inventory authority. Every record is paged
   with a cursor bound to the caller, the exact arguments and the offset;
@@ -99,6 +111,10 @@ Required offline evidence:
   (every HAMCP-132 corpus case planted in each registry and state field,
   the final-envelope backstop, exact named-bound accounting at the
   production limits ±1);
+- `tests/test_hamcp226_228_review2_delta_extra.py` (the review 2 probes,
+  unchanged) and `tests/test_hamcp226_228_review2_corrections.py`
+  (storage-boundary screen, withheld fields and identities, unreadable
+  index and namespace conditions);
 - the existing capture, transport, comparator and catalog suites;
 - the complete repository suite in the Evidence tier.
 

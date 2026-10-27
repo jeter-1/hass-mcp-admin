@@ -32,6 +32,7 @@ import stat
 import time
 import uuid
 
+from .. import untrusted_text
 from . import capture_contracts as c
 from .validation import BaselineValidationError, _new_baseline
 
@@ -53,10 +54,12 @@ _SHA = frozenset("0123456789abcdef")
 class StoreError(RuntimeError):
     """Fixed diagnostic only; no storage payload or exception reflection."""
 
-    def __init__(self, reason, oldest_age_seconds=None):
+    def __init__(self, reason, oldest_age_seconds=None, condition=None):
         super().__init__(reason)
         self.reason = reason
         self.oldest_age_seconds = oldest_age_seconds
+        # One of ``c.STORE_CONDITIONS`` for ``store_unavailable``, when known.
+        self.condition = condition
 
 
 def empty_index():
@@ -260,7 +263,9 @@ class BaselineStore:
         except (StoreError, ValueError, TypeError, RecursionError, OverflowError):
             index, reason = None, "index_unreadable"
         except OSError:
-            raise StoreError("store_unavailable") from None
+            # Present but not readable, such as permission denied (review 2,
+            # R2): rebuilt from the records, never treated as an empty store.
+            index, reason = None, "index_unreadable"
         if index is None:
             index = self._rebuild(reason, int(time.time() * 1000) if now_ms is None else now_ms)
         self.status = copy_status(index)
@@ -272,7 +277,7 @@ class BaselineStore:
         except FileNotFoundError:
             return []
         except OSError:
-            raise StoreError("store_unavailable") from None
+            raise StoreError("store_unavailable", condition="namespace_unreadable") from None
 
     def _rebuild(self, reason, now_ms):
         """Re-index every record file that verifies from its own envelope (review 1, H2).
@@ -287,6 +292,11 @@ class BaselineStore:
         if reason == "index_missing" and not names:
             # A store in first use: nothing to recover and nothing to report.
             return index
+        if not (os.access(self.root, os.W_OK | os.X_OK)
+                and os.access(self.records, os.R_OK | os.W_OK | os.X_OK)):
+            # Review 2 (R2): the rebuilt index could not be committed, so
+            # nothing is rebuilt, quarantined or removed.
+            raise StoreError("store_unavailable", condition="namespace_not_writable")
         horizon = now_ms - c.STORE_RETENTION_SECONDS * 1000
         recovered, damaged = [], []
         for name in names:
@@ -296,7 +306,9 @@ class BaselineStore:
             except StoreError:
                 damage = {"reason": "unreadable", "observed_bytes": None, "observed_sha256": None}
             except OSError:
-                raise StoreError("store_unavailable") from None
+                # A record that exists but cannot be read is never quarantined
+                # (that would remove it): the rebuild stops with nothing changed.
+                raise StoreError("store_unavailable", condition="record_unreadable") from None
             else:
                 if raw is None:
                     continue
@@ -409,11 +421,23 @@ class BaselineStore:
             if changed:
                 self._write_index(index)
 
-    def put(self, *, capture_id, caller, encoded, artifact_sha256, baseline_id, resumed_from, now_ms):
-        """Commit one report under ``capture_id``. Refuses at capacity."""
+    def put(self, *, capture_id, caller, encoded, artifact_sha256, baseline_id, resumed_from, now_ms,
+            known_secrets=()):
+        """Commit one report under ``capture_id``. Refuses at capacity, and unscreened content."""
 
         if not _caller(caller) or len(encoded) > c.SNAPSHOT_BYTES:
             raise StoreError("store_invalid")
+        # Review 2 (R1): the store's own guard behind the capture's storage
+        # screen. A report holding text the credential screen would withhold
+        # is refused before any file is opened.
+        try:
+            _, hits = untrusted_text.screen_envelope(json.loads(encoded), tuple(known_secrets))
+        except untrusted_text.EnvelopeKeyWithheld:
+            hits = 1
+        except (ValueError, TypeError, RecursionError):
+            raise StoreError("store_invalid") from None
+        if hits:
+            raise StoreError("unscreened_content")
         with self.transaction():
             index = self.load_index(now_ms)
             changed = self._sweep(index, now_ms)
@@ -457,7 +481,7 @@ class BaselineStore:
             except StoreError:
                 damage = {"reason": "unreadable", "observed_bytes": None, "observed_sha256": None}
             except OSError:
-                raise StoreError("store_unavailable") from None
+                raise StoreError("store_unavailable", condition="record_unreadable") from None
             else:
                 if raw is None:
                     damage = {"reason": "missing", "observed_bytes": None, "observed_sha256": None}
