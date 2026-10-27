@@ -196,15 +196,60 @@ class InertSweepTests(LedgerTestCase):
         self.assertFalse(self.ledger.path.exists())
         self.assertEqual(self.flow_health()["status"], "clear")
 
+    def sweep_leases(self) -> list:
+        return [
+            target for requirements, target in self.core.planning_leases
+            if requirements == (contract.PROFILE,)
+            and isinstance(target, dict) and target.get("target_type") == contract.RESOURCE_TYPE
+        ]
+
     async def test_without_admission_a_recorded_flow_is_not_touched(self):
         _result, _flow_id = await self.strand_held_flow()
         self.core.withdraw()
+        leases = len(self.sweep_leases())
         await self.restart_runtime()
         stored, calls = self.ledger.path.read_bytes(), self.ha_calls()
         for _ in range(3):
             await self.runtime.recover_once("ledger_unadmitted")
         self.assertEqual(self.ha_calls(), calls)
         self.assertEqual(self.ledger.path.read_bytes(), stored)
+        # Unadmitted, the sweep does not even ask Core for a window, and
+        # health reports no sweep rather than a skipped one.
+        self.assertEqual(len(self.sweep_leases()), leases)
+        self.assertIsNone(self.flow_health()["last_sweep"])
+        self.assertEqual(self.flow_health()["status"], "retrying_abort")
+
+    async def test_a_refused_exact_target_window_sends_nothing_and_counts_nothing(self):
+        _result, flow_id = await self.strand_held_flow()
+        self.options_rest.abort_failure = None
+        granted = self.core.acquire
+        exact = {"target_type": contract.RESOURCE_TYPE, "target_id": ENTRY}
+
+        def refuse_entry(capability_ids, *, target=None, **kwargs):
+            authority = granted(capability_ids, target=target, **kwargs)
+            return None if target == exact else authority
+
+        self.core.acquire = refuse_entry
+        await self.restart_runtime()
+        before = len(self.deletes())
+        for _ in range(3):
+            await self.runtime.recover_once("ledger_window_refused_by_core")
+        # Admitted, but Core refuses the exact-target window: no DELETE, no
+        # attempt counted, the flow still awaits its abort.
+        self.assertEqual(len(self.deletes()), before)
+        self.assertEqual(self.options_rest.flows, {flow_id: ENTRY})
+        (candidate,) = self.ledger.retry_candidates()
+        self.assertEqual((candidate["flow_id"], candidate["attempts"]), (flow_id, 0))
+        self.assertEqual(self.flow_health()["last_sweep"],
+                         {"retried": 0, "confirmed_gone": 0, "orphaned": 0, "skipped": 1})
+        self.assertEqual(self.sweep_leases()[-1], exact)
+        # Once Core grants the window for that entry, the abort runs in it.
+        self.core.acquire = granted
+        await self.runtime.recover_once("ledger_window_granted")
+        self.assertEqual(self.deletes()[-1], STEP_PREFIX + flow_id)
+        self.assertEqual(self.options_rest.flows, {})
+        self.assertEqual(self.sweep_leases()[-1], exact)
+        self.assertFalse(self.ledger.path.exists())
 
     async def test_a_live_record_is_never_swept(self):
         self.add_filter()
