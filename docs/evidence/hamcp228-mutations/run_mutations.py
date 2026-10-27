@@ -31,9 +31,24 @@ The task's classes each have mutations:
 - ``O*``: public output (the compare tool's read-only annotation and the
   page's ``resumed_from``).
 
+Review 1 (HAMCP-226/228) adds:
+- ``H1-*``: a registry, state or response field returned unscreened (each
+  inventory screen, the withheld-row rule, the dependency target state, the
+  final-envelope backstop's value and key screens and its partial flags, in
+  every tool that carries one);
+- ``H2-*``: a missing or unreadable index deleting or dropping committed
+  baselines (emptied instead of rebuilt, stubs, over-capacity, persistence,
+  binding, expiry, the reported store status);
+- ``M1-*``: a resume not bound to the base's Core version;
+- ``M2-*``: compare output truncated, or its cursor not bound to the
+  arguments, the caller or the compare domain, or its page row cap;
+- ``M3-*``: over-bound accounting (the old cap before deduplication, the
+  total, the listed bound, the overflow count).
+
 Runs: ``run1.log`` stopped at its baseline (a wrong suite name);
 ``results-run2.json`` and ``results-run3.json`` keep runs 2 and 3;
-``results.json`` is the final run 4 (44 of 44 killed).
+``results-run4.json`` is run 4 (44 of 44 killed); ``results.json`` is the
+review 1 run.
 
 Equivalent mutants, analysed and left out after run 2:
 - the resumed baseline inheriting the base's ``unestablished`` identity or a
@@ -78,6 +93,12 @@ COMP = f"{AB}/comparison.py"
 VAL = f"{AB}/validation.py"
 TOOL = f"{E}/tools/audit_baseline.py"
 UT = f"{E}/untrusted_text.py"
+INTEG = f"{E}/integrity/provider.py"
+DEPP = f"{E}/dependency/provider.py"
+SCRIPTS = f"{E}/dependency/script_sources.py"
+BOUNDED = f"{E}/dependency/bounded_sources.py"
+HELPER = f"{E}/governance/helper_dependency.py"
+ANALYSIS = f"{E}/tools/analysis.py"
 SCREEN = "the credential screen bypassed before a write or a returned comparison"
 PREFIX = "prefix-only evidence reported as verified or complete"
 RESUME = "the resume record filter widened or narrowed"
@@ -87,6 +108,12 @@ CALLER = "the caller binding skipped"
 DIGEST = "a stored baseline's integrity check skipped"
 SCHEMA = "v2 timed_out or resume validation weakened"
 OUTPUT = "a public output field or annotation changed"
+# Review 1 (HAMCP-226/228) classes.
+H1 = "a registry, state or response field returned unscreened"
+H2 = "a missing or unreadable index deleting or dropping committed baselines"
+M1 = "a resume not bound to the base capture's Core version"
+M2 = "compare output truncated or its cursor unbound"
+M3 = "over-bound accounting inexact at the production limits"
 FENCE_HEAD = '                if (prior["installation"]["installation_id"] != first["identity"]\n'
 GENERATION = '                        or prior["authority"]["generation"] != authority[0]\n'
 DECLARED = ('                        or prior["inventory"]["declared_count"] != len(states)'
@@ -120,8 +147,7 @@ MUTATIONS = [
     m("P4-stored-pair-prefix-count-dropped", PREFIX,
       (SERV, '            value["counts"] = {**value["counts"], PREFIX_MATCH: 0}\n', "")),
     m("P5-partial-ignores-withheld", PREFIX,
-      (TOOL, 'partial = result["details_truncated"] or result["screened_withheld_count"] > 0',
-       'partial = result["details_truncated"]')),
+      (TOOL, 'partial = result["screened_withheld_count"] > 0', "partial = False")),
     m("P6-attention-rows-not-first", PREFIX,
       (SERV, 'row["classification"] in {"UNCHANGED", PREFIX_MATCH},', "False,")),
     m("P7-one-side-only-not-unknown", PREFIX,
@@ -182,8 +208,8 @@ MUTATIONS = [
       (STORE, '            if entry is None or entry["caller"] != caller:', "            if entry is None:")),
     m("A2-anonymous-compare-allowed", CALLER,
       (SERV, '        caller = current_caller_id()\n        if caller == "anonymous":\n'
-             '            raise c.CaptureError("access_denied")\n        earlier, _ =',
-       "        caller = current_caller_id()\n        earlier, _ =")),
+             '            raise c.CaptureError("access_denied")\n        request =',
+       "        caller = current_caller_id()\n        request =")),
     m("A3-cursor-other-caller-accepted", CALLER,
       (SERV, '(value + ":" + caller).encode()', '(value + ":").encode()'),
       (SERV, "        if cursor[1] != caller:", "        if False:")),
@@ -194,7 +220,10 @@ MUTATIONS = [
       (STORE, '                    if len(raw) != entry["bytes"] or observed["observed_sha256"] != entry["sha256"]:',
        "                    if False:")),
     m("D2-stored-report-not-validated", DIGEST,
-      (STORE, "                        report = validate_report(raw, entry)", "                        report = json.loads(raw)")),
+      (STORE, "        report = validate_report(report_bytes, entry)", "        report = json.loads(report_bytes)")),
+    m("D3-stored-binding-not-the-indexed-one", DIGEST,
+      (STORE, "                        if verified is None or verified[1] != entry:",
+       "                        if verified is None:")),
     # -- V/T: v2 validation and the comparator
     m("V1-v1-accepts-timed-out", SCHEMA,
       (VAL, "    if schema == BASELINE_SCHEMA_V2:\n        # HAMCP-228: a record",
@@ -214,12 +243,104 @@ MUTATIONS = [
       (TOOL, "    return _tool(compare_automation_baselines, read_only=True)",
        "    return _tool(compare_automation_baselines, read_only=False)")),
     m("O2-page-resumed-from-dropped", OUTPUT,
-      (SERV, '"resumed_from": resumed_from, "provider_reads_for_continuation": 0}}',
-       '"resumed_from": None, "provider_reads_for_continuation": 0}}')),
+      (SERV, '"resumed_from": resumed_from, "provider_reads_for_continuation": 0,',
+       '"resumed_from": None, "provider_reads_for_continuation": 0,')),
+    # -- H1: every returned string screened, with a final-envelope backstop
+    m("H1-01-registry-inventory-unscreened", H1,
+      (INTEG, "        value, withheld_rows, withheld_text = self._screen_inventory(\n"
+              "            value, REGISTRY_TEXT_KEYS\n        )\n", "        withheld_rows, withheld_text = 0, 0\n")),
+    m("H1-02-registry-platform-unscreened", H1,
+      (INTEG, 'REGISTRY_TEXT_KEYS = ("platform", "disabled_by")', 'REGISTRY_TEXT_KEYS = ("disabled_by",)')),
+    m("H1-03-state-inventory-unscreened", H1,
+      (INTEG, "        value, withheld_rows, withheld_text = self._screen_inventory(\n"
+              "            value, STATE_TEXT_KEYS\n        )\n", "        withheld_rows, withheld_text = 0, 0\n")),
+    m("H1-04-withheld-entity-id-row-kept", H1,
+      (INTEG, "            if withheld_ids:\n                withheld_rows += 1\n                continue\n", "")),
+    m("H1-05-dependency-target-state-unscreened", H1,
+      (DEPP, '                    screen(state["state"], (self.secret,) if self.secret else ())\n'
+             '                    if isinstance(state.get("state"), str) else None\n', "                    None\n")),
+    m("H1-06-envelope-value-screen-removed", H1,
+      (UT, "            return value, 0\n        marker = screen(value, known_secrets)\n"
+           "        return (value, 0) if marker is None else (marker, 1)\n",
+       "            return value, 0\n        return value, 0\n")),
+    m("H1-07-envelope-key-screen-removed", H1,
+      (UT, "if isinstance(key, str) and key not in MARKERS and screen(key, known_secrets) is not None:",
+       "if False:")),
+    m("H1-08-analysis-backstop-data-unscreened", H1,
+      (ANALYSIS, "        data, data_hits = screen_envelope(output.data, known)\n",
+       "        data, data_hits = output.data, 0\n")),
+    m("H1-09-integrity-backstop-not-partial", H1,
+      (ANALYSIS, "            # Envelope withholds of the accepted page make it partial too.\n"
+                 "            partial = output.partial or screened > 0\n",
+       "            partial = output.partial\n")),
+    m("H1-10-dependency-backstop-not-partial", H1,
+      (ANALYSIS, "        if telemetry:\n            partial = output.partial or screened > 0\n",
+       "        if telemetry:\n            partial = output.partial\n")),
+    m("H1-11-helper-bounded-sources-backstop-removed", H1,
+      (HELPER, "    return screen_envelope(public, known_secrets)[0]", "    return public")),
+    m("H1-12-capture-backstop-removed", H1,
+      (TOOL, "        if _final_screen(service, result)[1]:", "        if False:")),
+    m("H1-13-compare-backstop-removed", H1,
+      (TOOL, "        result, hits = _final_screen(service, result)\n", "        hits = 0\n")),
+    # -- H2: a lost index never deletes committed baselines
+    m("H2-01-missing-index-emptied", H2,
+      (STORE, "            index = self._rebuild(reason, int(time.time() * 1000) if now_ms is None else now_ms)",
+       "            index = empty_index()")),
+    m("H2-02-rebuild-quarantine-without-stub", H2,
+      (STORE, '            stubs.append({"capture_id": capture_id, "quarantined_at_ms": now_ms, **damage})\n',
+       "            pass\n")),
+    m("H2-03-rebuild-over-capacity-not-refused", H2,
+      (STORE, "        if len(recovered) > c.STORE_BASELINES:", "        if False:")),
+    m("H2-04-rebuild-not-committed", H2,
+      (STORE, "        self._write_index(index)\n        for capture_id, _ in damaged:",
+       "        for capture_id, _ in damaged:")),
+    m("H2-05-rebuild-binding-not-checked", H2,
+      (STORE, ' or binding["capture_id"] != capture_id:', ":")),
+    m("H2-06-rebuild-reindexes-expired", H2,
+      (STORE, '                    if verified[1]["created_at_ms"] > horizon:\n', "                    if True:\n")),
+    m("H2-07-store-status-not-reported", H2,
+      (SERV, '        value["store_status"] = self.store_status()\n', "")),
+    # -- M1: the resume binds the base's Core version
+    m("M1-01-resume-core-version-unbound", M1,
+      (PROV, '                if prior["authority"]["home_assistant_core"] != authority[1]:', "                if False:")),
+    # -- M2: compare fully paged, cursor bound
+    m("M2-01-compare-truncated-reported-complete", M2,
+      (SERV, "        more = offset + count < total", "        more = False")),
+    m("M2-02-compare-cursor-not-bound-to-arguments", M2,
+      (SERV, "        if key != request or not hmac.compare_digest(token, self._compare_token(request, offset, caller)):",
+       "        if not hmac.compare_digest(token, self._compare_token(key, offset, caller)):")),
+    m("M2-03-compare-cursor-not-bound-to-caller", M2,
+      (SERV, '("compare:" + value + ":" + caller).encode()', '("compare:" + value + ":").encode()')),
+    m("M2-04-compare-cursor-not-domain-separated", M2,
+      (SERV, '("compare:" + value + ":" + caller)', '(value + ":" + caller)')),
+    m("M2-05-compare-page-row-cap-removed", M2,
+      (SERV, "records[offset:offset + c.COMPARE_PAGE_ROWS]", "records[offset:]")),
+    # -- M3: exact over-bound accounting
+    m("M3-01-script-terminals-capped-before-dedupe", M3,
+      (SCRIPTS, 'pair = (item.source_type, item.source_id, item.source_entity_id or "", item.reason_code)',
+       'pair = (item.source_type, item.source_id, item.source_entity_id or "", item.reason_code, item.evidence_id)'),
+      (SCRIPTS, "                if pair not in bounded or item.evidence_id < bounded[pair].evidence_id:\n"
+                "                    bounded[pair] = item\n",
+       "                if pair not in bounded or item.evidence_id < bounded[pair].evidence_id:\n"
+       "                    bounded[pair] = item\n"
+       "            while len(bounded) > MAX_SCRIPT_BOUNDED_OBLIGATIONS:\n"
+       "                bounded_overflow[0] = True\n"
+       "                bounded.pop(max(bounded))\n")),
+    m("M3-02-bounded-total-excludes-withheld", M3,
+      (BOUNDED, "listed, len(entries) - len(listed), withheld, len(entries) + withheld",
+       "listed, len(entries) - len(listed), withheld, len(entries)")),
+    m("M3-03-bounded-listed-off-by-one", M3,
+      (BOUNDED, "listed = tuple(entries[:MAX_BOUNDED_SOURCES])", "listed = tuple(entries[:MAX_BOUNDED_SOURCES - 1])")),
+    m("M3-04-bounded-overflow-not-counted", M3,
+      (BOUNDED, "listed, len(entries) - len(listed), withheld,", "listed, 0, withheld,")),
 ]
 
-base.MODULES = ("test_hamcp228_baseline_store", "test_automation_baseline_capture",
-                "test_automation_audit_baseline")
+# Review 1 adds the HAMCP-226 suites and the review 1 corrections and probes
+# (the probes last: they run in child interpreters and are the slowest).
+base.MODULES = ("test_hamcp228_baseline_store", "test_hamcp226_228_review1_corrections",
+                "test_automation_baseline_capture", "test_automation_audit_baseline",
+                "test_hamcp226_named_sources", "test_configuration_integrity_analysis",
+                "test_entity_dependency_analysis", "test_hamcp226_228_review1_probes")
 base.MUTATIONS = MUTATIONS
 
 _run_tests = base.run_tests

@@ -194,6 +194,11 @@ class BaselineCaptureProvider:
             if base is not None:
                 prior = base["baseline"]
                 prior_outcomes = base["diagnostics"]["record_outcomes"]
+                # Review 1 (M1): the authority generation restarts with each
+                # process, so it alone cannot prove the same Core; the base
+                # capture's Core version must match as well.
+                if prior["authority"]["home_assistant_core"] != authority[1]:
+                    raise c.CaptureError("resume_core_changed")
                 # The inventory fence: the same installation, Core authority
                 # generation and ordered automation mapping, or no resume.
                 if (prior["installation"]["installation_id"] != first["identity"]

@@ -29,7 +29,14 @@ Design and owner decisions S, T, B and P:
   include). A withheld name keeps its finding with a marker; a withheld
   source id fails closed as a coverage failure. Long template values are
   screened over the shown part plus a 1,024-character margin before any cut,
-  and a hit withholds the whole value.
+  and a hit withholds the whole value. Registry- and state-derived values
+  (registry `platform` and `disabled_by`, state `state` and `last_changed`)
+  are screened too; a withheld entity id drops that inventory record and
+  makes the inventory partial. Each tool's final response envelope passes the
+  screen again as a backstop, so a field added later cannot bypass it.
+- Named-bound accounting is exact at the production limits: scripts keep one
+  terminal per source and reason code, so listed, omitted and withheld
+  entries always sum to `bounded_source_total`.
   See [`CONFIGURATION_INTEGRITY_ANALYSIS.md`](CONFIGURATION_INTEGRITY_ANALYSIS.md)
   and [`ENTITY_DEPENDENCY_ANALYSIS.md`](ENTITY_DEPENDENCY_ANALYSIS.md).
 
@@ -41,7 +48,11 @@ See [`AUTOMATION_BASELINE_CAPTURE.md`](AUTOMATION_BASELINE_CAPTURE.md).
   `<governance_path>/audit-baselines-v1/`: 12 baselines, 2 MiB each, 180 days,
   bound to the capturing caller, digest-verified on every read, refused at
   capacity (`store_full` with the oldest age), never evicted. Only the
-  validated report is stored, never a configuration body. Continuations page
+  validated report is stored, never a configuration body, in a self-binding
+  record envelope. A missing or unreadable index is rebuilt from the
+  verified record files and never deletes a committed baseline; a file that
+  fails verification is quarantined as a content-free stub, and the rebuild
+  is reported in `store_status`. Continuations page
   the stored copy. The capture tool is now Engineering local evidence capture
   (`readOnlyHint=false`); it still writes nothing to Home Assistant.
 - **Schema v2.** Captures write `automation-audit-baseline-v2`: a `resume`
@@ -50,19 +61,23 @@ See [`AUTOMATION_BASELINE_CAPTURE.md`](AUTOMATION_BASELINE_CAPTURE.md).
   the shipped beta.37 code).
 - **Resume.** `resume_capture_id` re-collects only a stored capture's
   timeouts into a new baseline. It refuses `resume_not_needed` before any
-  Home Assistant read and `resume_inventory_changed` when the installation,
-  authority generation, declared count or ordered mapping changed.
+  Home Assistant read, `resume_inventory_changed` when the installation,
+  authority generation, declared count or ordered mapping changed, and
+  `resume_core_changed` when the Core version changed (a restart can reuse
+  the generation).
 - **Compare.** New `compare_automation_baselines`: two stored captures
   through the existing comparator, or one stored capture against recorded
   fingerprints. A 16..63-character matching prefix is `PREFIX_MATCH`
   (`prefix_match:<n>`), counted separately from `UNCHANGED`; an id on one
   side only is `UNKNOWN`. No Home Assistant read; the output is
-  credential-screened and bounded.
+  credential-screened, and every record is paged (at most 100 per page, a
+  `cursor` bound to the caller, arguments and offset), never truncated; the
+  counts cover every record.
 - New capture page fields: `snapshot.storage` is
-  `durable_engineering_store`, plus `retention_seconds` and `resumed_from`.
-  New capture reasons: `store_full`, `store_unavailable`,
+  `durable_engineering_store`, plus `retention_seconds`, `resumed_from` and
+  `store_status`. New capture reasons: `store_full`, `store_unavailable`,
   `baseline_not_found`, `baseline_damaged`, `resume_inventory_changed`,
-  `resume_not_needed`.
+  `resume_core_changed`, `resume_not_needed`.
 
 ## Counts
 

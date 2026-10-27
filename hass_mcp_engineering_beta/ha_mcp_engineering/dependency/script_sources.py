@@ -302,7 +302,10 @@ async def collect_script_diagnostics(
     documents: list[tuple[str, str]] = []
     document_providers: dict[str, str] = {}
     completed: set[str] = set()
-    bounded: list[DependencyObligation] = []
+    # One coverage-failure terminal per distinct (source, reason) pair: the
+    # named-source total is exact (review 1, M3). Pairs per scan are bounded
+    # by MAX_SCRIPT_SOURCES scripts times each script's distinct reasons.
+    bounded: dict[tuple[str, str, str, str], DependencyObligation] = {}
     bounded_overflow = [False]
     successes = 0
     read_count = 0
@@ -360,15 +363,20 @@ async def collect_script_diagnostics(
         successes += 1
         if any(item.outcome == "coverage_failure" for item in obligations):
             errors["script_extraction_coverage_failure"] += 1
-            bounded.extend(
-                item for item in obligations if item.outcome == "coverage_failure"
-            )
-            if len(bounded) > MAX_SCRIPT_BOUNDED_OBLIGATIONS:
+            pairs: dict[tuple[str, str, str, str], DependencyObligation] = {}
+            for item in obligations:
+                if item.outcome != "coverage_failure":
+                    continue
+                pair = (item.source_type, item.source_id, item.source_entity_id or "", item.reason_code)
+                if pair not in pairs or item.evidence_id < pairs[pair].evidence_id:
+                    pairs[pair] = item
+            if len(pairs) > MAX_SCRIPT_BOUNDED_OBLIGATIONS:
+                # A guard for one document, beyond any reason set it can yield.
                 bounded_overflow[0] = True
-                bounded[:] = heapq.nsmallest(
-                    MAX_SCRIPT_BOUNDED_OBLIGATIONS, bounded,
-                    key=lambda item: (item.source_id, item.reason_code, item.evidence_id),
-                )
+                pairs = dict(heapq.nsmallest(MAX_SCRIPT_BOUNDED_OBLIGATIONS, pairs.items()))
+            for pair, item in pairs.items():
+                if pair not in bounded or item.evidence_id < bounded[pair].evidence_id:
+                    bounded[pair] = item
         if "use_blueprint" in config:
             errors["script_blueprint_body_unresolved"] += 1
         evidence_bounded |= len(findings) + len(extracted) > MAX_SCRIPT_FINDINGS
@@ -537,6 +545,6 @@ async def collect_script_diagnostics(
          }},
         tuple(calls), tuple(f"{key}: {count}" for key, count in sorted(call_errors.items())),
         tuple(sorted(document_providers.items())),
-        tuple(sorted(bounded, key=lambda item: (item.source_id, item.reason_code, item.evidence_id))),
+        tuple(item for _, item in sorted(bounded.items())),
     )
     return result.visible()

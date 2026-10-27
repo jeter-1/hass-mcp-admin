@@ -269,7 +269,9 @@ serialization above.
 Output accounting is deterministic. The summary always covers all comparison
 records. Detail rows may be omitted only when bounded output/detail limits are
 reached; `details_truncated` and `omitted_detail_count` then state exactly what
-was omitted. The renderer serializes the fixed header once, each candidate detail
+was omitted. (This bounds the offline report. The MCP tool
+`compare_automation_baselines` pages every record instead; see
+[`AUTOMATION_BASELINE_CAPTURE.md`](AUTOMATION_BASELINE_CAPTURE.md#compare_automation_baselines-hamcp-228).) The renderer serializes the fixed header once, each candidate detail
 once while fitting, and the selected final report once. It does not repeatedly
 serialize complete candidate reports to discover a fit.
 

@@ -89,7 +89,9 @@ document that releases them ([2.4.1-beta.40](V2_4_1_BETA40_ACCEPTANCE.md)). That
 body), one `compare_automation_baselines` call comparing it with
 `recorded_fingerprints` taken from its own exported digests (full and 16-character
 forms, so `UNCHANGED` and `PREFIX_MATCH` are both shown) with zero Home Assistant
-reads, and `resume_not_needed` for a capture with no timeouts. Do not
-manufacture a timeout, a full store or a changed inventory on a live
-installation; those refusals are proven by the offline tests in
-`tests/test_hamcp228_baseline_store.py`.
+reads, `pagination.complete_export: true` with `store_status` showing
+`index_rebuilds: 0`, and `resume_not_needed` for a capture with no timeouts.
+Do not manufacture a timeout, a full store, a changed inventory, a Core
+version change, a missing index or more than one compare page on a live
+installation; those refusals and recoveries are proven by the offline tests
+in `tests/test_hamcp228_baseline_store.py`.

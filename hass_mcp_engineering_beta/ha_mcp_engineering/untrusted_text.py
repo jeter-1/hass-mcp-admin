@@ -104,6 +104,51 @@ def screen_tree(value: Any, known_secrets: tuple[str, ...] = ()) -> tuple[Any, i
     return value, 0
 
 
+class EnvelopeKeyWithheld(ValueError):
+    """A response mapping key failed the screen; the response is refused whole."""
+
+
+def screen_envelope(value: Any, known_secrets: tuple[str, ...] = ()) -> tuple[Any, int]:
+    """``(copy, newly withheld count)``: the final-envelope backstop.
+
+    HAMCP-226/228 review 1 (H1): each tool of these scans screens its whole
+    response once more just before it is returned, so a field added later
+    cannot bypass the screens at the sources. Every string leaf is screened;
+    a leaf that already is a marker is kept and not counted again. Mapping
+    keys are screened too: they are fixed field names, so a withheld key
+    means the response shape itself carries Home Assistant text, and
+    ``EnvelopeKeyWithheld`` refuses the response instead of renaming it.
+    """
+
+    if isinstance(value, str):
+        if value in MARKERS:
+            return value, 0
+        marker = screen(value, known_secrets)
+        return (value, 0) if marker is None else (marker, 1)
+    if isinstance(value, dict):
+        output, count = {}, 0
+        for key, item in value.items():
+            if isinstance(key, str) and key not in MARKERS and screen(key, known_secrets) is not None:
+                raise EnvelopeKeyWithheld("a response key failed the credential screen")
+            output[key], hits = screen_envelope(item, known_secrets)
+            count += hits
+        return output, count
+    if isinstance(value, (list, tuple)):
+        items, count = [], 0
+        for item in value:
+            screened, hits = screen_envelope(item, known_secrets)
+            items.append(screened)
+            count += hits
+        return (tuple(items) if isinstance(value, tuple) else items), count
+    return value, 0
+
+
+def envelope_warning(count: int) -> str:
+    """The fixed warning for fields only the final-envelope screen withheld."""
+
+    return f"{count} response field(s) were withheld whole by the final credential screen."
+
+
 def withheld(value: Any) -> bool:
     """Whether ``value`` is (or holds) a screen marker."""
 

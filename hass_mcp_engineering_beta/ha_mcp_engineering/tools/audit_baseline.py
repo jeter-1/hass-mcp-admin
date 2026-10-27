@@ -11,7 +11,26 @@ from ..audit_baseline.capture_contracts import (validate_arguments, validate_com
 from ..audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
 from ..request_context import current_telemetry
 from ..tool_framework import run_structured
+from ..untrusted_text import EnvelopeKeyWithheld, screen_envelope
 from .compatibility import SETTINGS
+
+
+def _final_screen(service, result):
+    """``(result, newly withheld count)``: the final-envelope backstop (HAMCP-226/228 review 1, H1).
+
+    Behind the projector's and the comparison's own screens, so a field added
+    later cannot return Home Assistant text unscreened. A withheld mapping key
+    refuses the response.
+    """
+
+    projector = getattr(getattr(service, "provider", None), "projector", None)
+    known = tuple(dict.fromkeys(
+        item for item in (*getattr(projector, "known_secrets", ()), getattr(SETTINGS, "access_secret", ""),
+                          getattr(SETTINGS, "ha_token", "")) if isinstance(item, str) and item))
+    try:
+        return screen_envelope(result, known)
+    except EnvelopeKeyWithheld:
+        raise CaptureError("redacted_identity") from None
 
 
 async def capture_automation_baseline(
@@ -38,8 +57,12 @@ async def capture_automation_baseline(
                 "fallback_occurred": False, "upstream_calls": 0}
     async def action():
         validate_arguments({"limit": limit, "cursor": cursor, "resume_capture_id": resume_capture_id})
-        result = await AUTOMATION_BASELINE_CAPTURE.require().capture(
-            limit=limit, cursor=cursor, resume_capture_id=resume_capture_id)
+        service = AUTOMATION_BASELINE_CAPTURE.require()
+        result = await service.capture(limit=limit, cursor=cursor, resume_capture_id=resume_capture_id)
+        # An exported page must match artifact_sha256 exactly, so the final
+        # screen refuses it instead of replacing a value.
+        if _final_screen(service, result)[1]:
+            raise CaptureError("redacted_identity")
         header = result["baseline_header"]
         partial = (header["inventory"]["completeness"] != "complete"
                    or header["installation"]["status"] != "established"
@@ -71,6 +94,7 @@ async def compare_automation_baselines(
     later_capture_id: Annotated[str, Field(max_length=32)] = "",
     recorded_fingerprints: Annotated[list[RecordedFingerprint] | None, Field(max_length=1000)] = None,
     fingerprint_model: Annotated[str, Field(max_length=64)] = "",
+    cursor: Annotated[str, Field(max_length=102)] = "",
 ) -> str:
     """Compare your stored automation baseline with a later capture or recorded fingerprints.
 
@@ -81,28 +105,31 @@ async def compare_automation_baselines(
     shorter matching prefix is PREFIX_MATCH (reason prefix_match:<n>), counted
     separately. Recorded fingerprints carry no inventory authority: an id on
     one side only is UNKNOWN, never ADDED/REMOVED. Rows needing attention come
-    first; omitted_detail_count reports rows cut by the response bound.
+    first. Counts cover every row; records are paged (up to 100): repeat the
+    same arguments with pagination.next_cursor until it is null.
     """
     metadata = {"provider": "engineering", "data_providers": [],
                 "fallback_occurred": False, "upstream_calls": 0}
     warnings = []
     rows = None if recorded_fingerprints is None else [row.model_dump() for row in recorded_fingerprints]
     async def action():
-        result = await AUTOMATION_BASELINE_CAPTURE.require().compare(
+        service = AUTOMATION_BASELINE_CAPTURE.require()
+        result = await service.compare(
             earlier_capture_id=earlier_capture_id, later_capture_id=later_capture_id,
-            recorded_fingerprints=rows, fingerprint_model=fingerprint_model)
-        partial = result["details_truncated"] or result["screened_withheld_count"] > 0
+            recorded_fingerprints=rows, fingerprint_model=fingerprint_model, cursor=cursor)
+        result, hits = _final_screen(service, result)
+        result["screened_withheld_count"] += hits
+        partial = result["screened_withheld_count"] > 0
         metadata["completeness"] = "partial" if partial else "complete"
         if result["screened_withheld_count"]:
             warnings.append("Some values were withheld by the credential screen.")
-        if result["details_truncated"]:
-            warnings.append("Record details were bounded; see omitted_detail_count.")
         telemetry = current_telemetry()
         if telemetry:
             telemetry.completeness = metadata["completeness"]
             telemetry.result_status = "partial" if partial else "success"
             telemetry.audit_context.update(mode=result["mode"], counts=dict(result["counts"]),
-                omitted_detail_count=result["omitted_detail_count"],
+                continuation=bool(cursor), returned_records=result["pagination"]["returned"],
+                total_records=result["pagination"]["total_records"],
                 screened_withheld_count=result["screened_withheld_count"], fallback="none")
         return result
     return await run_structured("compare_automation_baselines", "Compared stored automation baseline evidence.",

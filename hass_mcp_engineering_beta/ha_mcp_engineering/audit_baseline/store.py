@@ -6,11 +6,17 @@ It follows the HAMCP-225 trace snapshot store and the
 directories, temporary file plus ``fsync`` plus ``rename``, and fixed
 diagnostics with no payload reflection. Only the validated baseline report
 (identities, digests, statuses, outcomes; never a configuration body) is
-stored. Every load checks the file digest, the ``artifact_sha256`` and the
-baseline validator; a damaged record is deleted and the index keeps a bounded,
-content-free quarantine stub. At capacity the store refuses; it never evicts.
-Hashes detect accidental damage, not an attacker able to rewrite both a
-record and the index.
+stored, in a self-binding record envelope (its capture id, caller, creation
+time and resume origin plus the report digest). Every load checks the file
+digest, the binding, the ``artifact_sha256`` and the baseline validator; a
+damaged record is deleted and the index keeps a bounded, content-free
+quarantine stub. At capacity the store refuses; it never evicts.
+
+A missing or unreadable index never deletes a committed record (HAMCP-226/228
+review 1, H2): the index is rebuilt from the record files, each verified from
+its own envelope; a file that fails is quarantined as a stub, and the rebuild
+is reported in the store status. Hashes detect accidental damage, not an
+attacker able to rewrite both a record and the index.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import time
 import uuid
 
 from . import capture_contracts as c
@@ -33,6 +40,13 @@ ENTRY_KEYS = frozenset({"capture_id", "baseline_id", "caller", "created_at_ms", 
                         "artifact_sha256", "resumed_from"})
 QUARANTINE_KEYS = frozenset({"capture_id", "quarantined_at_ms", "reason", "observed_bytes", "observed_sha256"})
 DAMAGE_REASONS = frozenset({"missing", "unreadable", "digest_mismatch", "invalid_record"})
+RECOVERY_KEYS = frozenset({"index_rebuilds", "last_index_rebuild"})
+REBUILD_KEYS = frozenset({"at_ms", "reason", "recovered", "quarantined"})
+REBUILD_REASONS = frozenset({"index_missing", "index_unreadable"})
+BINDING_KEYS = ("capture_id", "baseline_id", "caller", "created_at_ms", "artifact_sha256", "resumed_from")
+RECORD_KEYS = frozenset({"model", "binding", "report_sha256", "report"})
+# The envelope adds the binding and the report digest to the report bound.
+RECORD_BYTES = c.SNAPSHOT_BYTES + 4096
 _SHA = frozenset("0123456789abcdef")
 
 
@@ -46,7 +60,8 @@ class StoreError(RuntimeError):
 
 
 def empty_index():
-    return {"model": c.STORE_MODEL, "baselines": [], "quarantine": {"entries": [], "dropped": 0}}
+    return {"model": c.STORE_MODEL, "baselines": [], "quarantine": {"entries": [], "dropped": 0},
+            "recovery": {"index_rebuilds": 0, "last_index_rebuild": None}}
 
 
 def sha256(raw):
@@ -73,7 +88,7 @@ def _valid_entry(entry):
     return (type(entry) is dict and set(entry) == ENTRY_KEYS and _capture_id(entry["capture_id"])
             and type(entry["baseline_id"]) is str and c.ID.fullmatch(entry["baseline_id"]) is not None
             and _caller(entry["caller"]) and _count(entry["created_at_ms"])
-            and type(entry["bytes"]) is int and 0 < entry["bytes"] <= c.SNAPSHOT_BYTES
+            and type(entry["bytes"]) is int and 0 < entry["bytes"] <= RECORD_BYTES
             and _hex64(entry["sha256"])
             and type(entry["artifact_sha256"]) is str and entry["artifact_sha256"].startswith("sha256:")
             and _hex64(entry["artifact_sha256"][7:])
@@ -87,8 +102,16 @@ def _valid_stub(stub):
             and (stub["observed_sha256"] is None or _hex64(stub["observed_sha256"])))
 
 
+def _valid_recovery(value):
+    last = value.get("last_index_rebuild") if type(value) is dict else None
+    return (type(value) is dict and set(value) == RECOVERY_KEYS and _count(value["index_rebuilds"])
+            and (last is None or (type(last) is dict and set(last) == REBUILD_KEYS and _count(last["at_ms"])
+                                  and last["reason"] in REBUILD_REASONS and _count(last["recovered"])
+                                  and _count(last["quarantined"]))))
+
+
 def validate_index(value):
-    if (type(value) is not dict or set(value) != {"model", "baselines", "quarantine"}
+    if (type(value) is not dict or set(value) != {"model", "baselines", "quarantine", "recovery"}
             or value["model"] != c.STORE_MODEL or type(value["baselines"]) is not list
             or len(value["baselines"]) > c.STORE_BASELINES
             or not all(_valid_entry(entry) for entry in value["baselines"])
@@ -96,12 +119,46 @@ def validate_index(value):
             or type(value["quarantine"]["entries"]) is not list
             or len(value["quarantine"]["entries"]) > c.QUARANTINE_MAX
             or not all(_valid_stub(stub) for stub in value["quarantine"]["entries"])
-            or not _count(value["quarantine"]["dropped"])):
+            or not _count(value["quarantine"]["dropped"]) or not _valid_recovery(value["recovery"])):
         raise StoreError("store_invalid")
     ids = [entry["capture_id"] for entry in value["baselines"]]
     if len(set(ids)) != len(ids):
         raise StoreError("store_invalid")
     return value
+
+
+def encode_record(entry, report_bytes):
+    """The self-binding record envelope for a canonical report."""
+
+    return c.canonical({"model": c.STORE_MODEL, "binding": {key: entry[key] for key in BINDING_KEYS},
+                        "report_sha256": sha256(report_bytes), "report": json.loads(report_bytes)})
+
+
+def verify_record(raw, capture_id):
+    """``(report, entry)`` from a record verified by its own envelope, or ``None``.
+
+    The bytes must be the exact canonical envelope; the binding must name this
+    capture id; the report must match its digest, its ``artifact_sha256`` and
+    the baseline validator.
+    """
+
+    try:
+        record = json.loads(raw)
+        if type(record) is not dict or set(record) != RECORD_KEYS or record["model"] != c.STORE_MODEL:
+            return None
+        binding = record["binding"]
+        if type(binding) is not dict or set(binding) != set(BINDING_KEYS) or binding["capture_id"] != capture_id:
+            return None
+        entry = dict(binding, bytes=len(raw), sha256=sha256(raw))
+        if not _valid_entry(entry) or c.canonical(record) != raw:
+            return None
+        report_bytes = c.canonical(record["report"])
+        if record["report_sha256"] != sha256(report_bytes):
+            return None
+        report = validate_report(report_bytes, entry)
+    except (ValueError, TypeError, RecursionError, OverflowError):
+        return None
+    return None if report is None else (report, entry)
 
 
 def validate_report(raw, entry):
@@ -132,6 +189,7 @@ class BaselineStore:
         self.index_path = self.root / "index.json"
         self.fault_hook = None
         self.commit_unknown = False
+        self.status = {"index_rebuilds": 0, "last_index_rebuild": None}
 
     def _inject(self, stage):
         if self.fault_hook is not None:
@@ -192,18 +250,81 @@ class BaselineStore:
             raise StoreError("store_invalid")
         return raw
 
-    def load_index(self):
+    def load_index(self, now_ms=None):
+        """The index; a missing or unreadable one is rebuilt from the records, never emptied."""
+
         try:
             raw = self._read_regular(self.index_path, c.STORE_INDEX_BYTES)
-            if raw is None:
-                return empty_index()
-            return validate_index(json.loads(raw))
-        except StoreError:
-            raise
-        except (ValueError, TypeError, RecursionError, OverflowError):
-            raise StoreError("store_invalid") from None
+            index = None if raw is None else validate_index(json.loads(raw))
+            reason = "index_missing"
+        except (StoreError, ValueError, TypeError, RecursionError, OverflowError):
+            index, reason = None, "index_unreadable"
         except OSError:
             raise StoreError("store_unavailable") from None
+        if index is None:
+            index = self._rebuild(reason, int(time.time() * 1000) if now_ms is None else now_ms)
+        self.status = copy_status(index)
+        return index
+
+    def _record_names(self):
+        try:
+            return sorted(os.listdir(self.records))
+        except FileNotFoundError:
+            return []
+        except OSError:
+            raise StoreError("store_unavailable") from None
+
+    def _rebuild(self, reason, now_ms):
+        """Re-index every record file that verifies from its own envelope (review 1, H2).
+
+        A file that fails verification is quarantined as a content-free stub,
+        as on a damaged load. Only age expiry, through the ordinary sweep, may
+        later remove a verified record.
+        """
+
+        index = empty_index()
+        names = [name for name in self._record_names() if name.endswith(".json") and _capture_id(name[:-5])]
+        if reason == "index_missing" and not names:
+            # A store in first use: nothing to recover and nothing to report.
+            return index
+        horizon = now_ms - c.STORE_RETENTION_SECONDS * 1000
+        recovered, damaged = [], []
+        for name in names:
+            capture_id = name[:-5]
+            try:
+                raw = self._read_regular(self.records / name, RECORD_BYTES)
+            except StoreError:
+                damage = {"reason": "unreadable", "observed_bytes": None, "observed_sha256": None}
+            except OSError:
+                raise StoreError("store_unavailable") from None
+            else:
+                if raw is None:
+                    continue
+                verified = verify_record(raw, capture_id)
+                if verified is not None:
+                    if verified[1]["created_at_ms"] > horizon:
+                        recovered.append(verified[1])
+                    continue
+                damage = {"reason": "invalid_record", "observed_bytes": len(raw), "observed_sha256": sha256(raw)}
+            damaged.append((capture_id, damage))
+        if len(recovered) > c.STORE_BASELINES:
+            # More verified records than the store admits: fail closed before
+            # any file is touched.
+            raise StoreError("store_invalid")
+        index["baselines"] = sorted(recovered, key=lambda entry: (entry["created_at_ms"], entry["capture_id"]))
+        stubs = index["quarantine"]["entries"]
+        for capture_id, damage in damaged:
+            stubs.append({"capture_id": capture_id, "quarantined_at_ms": now_ms, **damage})
+        index["quarantine"]["dropped"] = max(0, len(stubs) - c.QUARANTINE_MAX)
+        del stubs[:index["quarantine"]["dropped"]]
+        index["recovery"] = {"index_rebuilds": 1, "last_index_rebuild": {
+            "at_ms": now_ms, "reason": reason, "recovered": len(recovered), "quarantined": len(damaged)}}
+        # The stubs are committed before a damaged file is removed; a removal
+        # interrupted here is finished by the next sweep (an unindexed name).
+        self._write_index(index)
+        for capture_id, _ in damaged:
+            self._remove(capture_id + ".json")
+        return index
 
     def _replace(self, raw, target, stage):
         temporary = target.parent / (".pending-" + uuid.uuid4().hex)
@@ -238,6 +359,7 @@ class BaselineStore:
         if len(raw) > c.STORE_INDEX_BYTES:
             raise StoreError("store_invalid")
         self._replace(raw, self.index_path, "index")
+        self.status = copy_status(index)
 
     def _remove(self, name):
         try:
@@ -252,15 +374,12 @@ class BaselineStore:
         kept = [entry for entry in index["baselines"] if entry["created_at_ms"] > horizon]
         changed = len(kept) != len(index["baselines"])
         index["baselines"] = kept
-        try:
-            names = os.listdir(self.records)
-        except FileNotFoundError:
-            names = []
-        except OSError:
-            raise StoreError("store_unavailable") from None
         live = {entry["capture_id"] + ".json" for entry in kept}
-        for name in names:
-            if name.startswith(".pending-") or (name.endswith(".json") and name not in live):
+        # Only the store's own names. With a valid index, an unindexed record
+        # is an uncommitted put or an expired baseline.
+        for name in self._record_names():
+            if name.startswith(".pending-") or (name.endswith(".json") and _capture_id(name[:-5])
+                                                and name not in live):
                 self._remove(name)
         return changed
 
@@ -284,7 +403,7 @@ class BaselineStore:
         """Sweep, then refuse at capacity before any Home Assistant read."""
 
         with self.transaction():
-            index = self.load_index()
+            index = self.load_index(now_ms)
             changed = self._sweep(index, now_ms)
             self._require_capacity(index, now_ms, changed)
             if changed:
@@ -296,7 +415,7 @@ class BaselineStore:
         if not _caller(caller) or len(encoded) > c.SNAPSHOT_BYTES:
             raise StoreError("store_invalid")
         with self.transaction():
-            index = self.load_index()
+            index = self.load_index(now_ms)
             changed = self._sweep(index, now_ms)
             self._require_capacity(index, now_ms, changed)
             if any(entry["capture_id"] == capture_id for entry in index["baselines"]):
@@ -304,11 +423,16 @@ class BaselineStore:
             entry = {"capture_id": capture_id, "baseline_id": baseline_id, "caller": caller,
                      "created_at_ms": now_ms, "bytes": len(encoded), "sha256": sha256(encoded),
                      "artifact_sha256": artifact_sha256, "resumed_from": resumed_from}
+            try:
+                record = encode_record(entry, encoded)
+            except (ValueError, TypeError, RecursionError, OverflowError):
+                raise StoreError("store_invalid") from None
+            entry.update(bytes=len(record), sha256=sha256(record))
             if not _valid_entry(entry):
                 raise StoreError("store_invalid")
             # Record first: an index write that fails leaves an unindexed
             # record, which the next sweep removes; nothing partial is listed.
-            self._replace(encoded, self.records / (capture_id + ".json"), "record")
+            self._replace(record, self.records / (capture_id + ".json"), "record")
             index["baselines"].append(entry)
             self._write_index(index)
             return capture_id
@@ -319,7 +443,7 @@ class BaselineStore:
         if not _capture_id(capture_id):
             raise StoreError("baseline_not_found")
         with self.transaction():
-            index = self.load_index()
+            index = self.load_index(now_ms)
             changed = self._sweep(index, now_ms)
             entry = next((item for item in index["baselines"] if item["capture_id"] == capture_id), None)
             # Another caller's baseline is indistinguishable from a missing one.
@@ -329,7 +453,7 @@ class BaselineStore:
                 raise StoreError("baseline_not_found")
             damage, report = None, None
             try:
-                raw = self._read_regular(self.records / (capture_id + ".json"), c.SNAPSHOT_BYTES)
+                raw = self._read_regular(self.records / (capture_id + ".json"), RECORD_BYTES)
             except StoreError:
                 damage = {"reason": "unreadable", "observed_bytes": None, "observed_sha256": None}
             except OSError:
@@ -342,9 +466,12 @@ class BaselineStore:
                     if len(raw) != entry["bytes"] or observed["observed_sha256"] != entry["sha256"]:
                         damage = {"reason": "digest_mismatch", **observed}
                     else:
-                        report = validate_report(raw, entry)
-                        if report is None:
+                        verified = verify_record(raw, capture_id)
+                        # The record's own binding must be the indexed one.
+                        if verified is None or verified[1] != entry:
                             damage = {"reason": "invalid_record", **observed}
+                        else:
+                            report = verified[0]
             if damage is not None:
                 self._quarantine(index, entry, damage, now_ms)
                 self._write_index(index)
@@ -352,3 +479,11 @@ class BaselineStore:
             if changed:
                 self._write_index(index)
             return report, dict(entry)
+
+
+def copy_status(index):
+    """The content-free store status: index rebuilds only (review 1, H2)."""
+
+    recovery = index["recovery"]
+    last = recovery["last_index_rebuild"]
+    return {"index_rebuilds": recovery["index_rebuilds"], "last_index_rebuild": None if last is None else dict(last)}

@@ -53,7 +53,7 @@ REASONS = frozenset({"invalid_arguments", "invalid_cursor", "snapshot_expired", 
     "source_unavailable", "malformed_response", "response_limit", "structural_limit", "timeout",
     "output_limit", "configuration_unavailable", "configuration_identity_mismatch", "redacted_identity",
     "store_full", "store_unavailable", "baseline_not_found", "baseline_damaged", "resume_inventory_changed",
-    "resume_not_needed"})
+    "resume_not_needed", "resume_core_changed"})
 
 
 class CaptureError(GovernanceError):
@@ -90,7 +90,9 @@ def validate_arguments(arguments):
 
 # HAMCP-228 compare_automation_baselines: stored/stored or stored/recorded.
 COMPARE_KEYS = frozenset({"earlier_capture_id", "later_capture_id", "recorded_fingerprints",
-                          "fingerprint_model"})
+                          "fingerprint_model", "cursor"})
+# Review 1 (M2): rows per comparison page, under the page byte bound too.
+COMPARE_PAGE_ROWS = 100
 MAX_FINGERPRINTS = MAX_RECORDS
 FINGERPRINT = re.compile(r"[0-9a-f]{16,64}\Z")
 
@@ -104,6 +106,9 @@ def validate_compare_arguments(arguments):
     later = arguments.get("later_capture_id", "")
     rows = arguments.get("recorded_fingerprints")
     model = arguments.get("fingerprint_model", "")
+    cursor = arguments.get("cursor", "")
+    if type(cursor) is not str or (cursor and not CURSOR.fullmatch(cursor)):
+        raise CaptureError("invalid_arguments")
     if (type(earlier) is not str or not CAPTURE_ID.fullmatch(earlier)
             or type(later) is not str or (later and not CAPTURE_ID.fullmatch(later))
             or type(model) is not str or len(model) > 64):

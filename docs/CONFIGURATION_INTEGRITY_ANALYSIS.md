@@ -199,8 +199,11 @@ Read failures are coverage failures, not bounds, and are not listed.
 `bounded_sources_omitted` counts entries after the first 50,
 `bounded_sources_withheld` counts sources whose identifier the credential
 screen withheld (counted, never named), and `bounded_source_total` is the
-whole count. A non-zero total adds a fixed warning and makes the result
-partial. The same fields appear in `entity_dependency_analysis` (for every
+whole count. The accounting is exact at the production limits (review 1,
+M3): scripts keep one coverage-failure terminal per distinct source and reason
+code, so a scan of `MAX_SCRIPT_SOURCES` scripts is never cut before naming,
+and the listed, omitted and withheld entries always sum to the total. A
+non-zero total adds a fixed warning and makes the result partial. The same fields appear in `entity_dependency_analysis` (for every
 requested-scope bounded source, whatever the target) and in the helper
 dependency binding, where they are disclosure only and outside
 `evidence_fingerprint`.
@@ -220,6 +223,20 @@ ordinary name such as `Token refresh` is shown (owner direction, Josh,
 2026-10-26). A withheld name keeps its finding; a withheld source identifier
 fails closed as a sanitization or coverage failure, so the result is partial
 and nothing is ruled out.
+
+The screen also covers every registry- and state-derived value the analysis
+reads (review 1, H1), including the registry `platform` and `disabled_by`
+values and the state `state` and `last_changed` values, screened when the
+inventory is collected. A withheld text value is replaced whole and adds a
+fixed warning; a withheld entity ID drops that inventory record, counts it as
+a failed item and makes that inventory partial. As a backstop, each analysis
+tool's final response envelope (`configuration_integrity_analysis`,
+`entity_dependency_analysis`, and the helper dependency's named bounded
+sources) passes the same screen again, so a field added later cannot return
+Home Assistant text unscreened: a withheld value adds the warning
+"N response field(s) were withheld whole by the final credential screen." and
+makes the result partial; a withheld mapping key refuses the response
+(`analysis_unavailable`).
 
 ## Dynamic references and orphan safeguards
 

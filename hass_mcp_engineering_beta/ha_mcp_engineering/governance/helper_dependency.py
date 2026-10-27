@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from ..dependency.bounded_sources import bounded_source_entries
+from ..untrusted_text import screen_envelope
 from ..dependency.index import DependencyIndex
 from ..dependency.models import (
     DependencyObligation,
@@ -1209,18 +1210,21 @@ def _bounded_sources(
 
     HAMCP-226 (HAAC-E002a): listed whatever the target, because any of them
     could write the helper. Disclosure only: the entries are not approval
-    material and are outside ``evidence_fingerprint``.
+    material and are outside ``evidence_fingerprint``. Each entry is screened
+    as it is built; the whole disclosure is screened again as a backstop
+    (HAMCP-226/228 review 1, H1).
     """
 
     scripts = getattr(snapshot, "script_diagnostics", None)
     visible = scripts.visible() if scripts is not None else None
-    return bounded_source_entries(
+    public = bounded_source_entries(
         (
             *snapshot.obligations,
             *(getattr(visible, "bounded_obligations", ()) if visible is not None else ()),
         ),
         known_secrets=known_secrets,
     ).public()
+    return screen_envelope(public, known_secrets)[0]
 
 
 # B39-136-R3b: reason codes for the runtime version admission gate.  Three

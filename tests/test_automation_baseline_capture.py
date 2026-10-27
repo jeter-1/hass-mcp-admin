@@ -51,6 +51,7 @@ ERROR_EXPECTATIONS = {
     'baseline_damaged': ('analysis_unavailable', False),
     'resume_inventory_changed': ('analysis_unavailable', False),
     'resume_not_needed': ('analysis_unavailable', False),
+    'resume_core_changed': ('analysis_unavailable', False),
 }
 
 def make_store(case):

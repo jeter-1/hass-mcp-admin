@@ -1469,6 +1469,7 @@ class AuthenticatedMcpGateway:
                         "later_capture_present": bool(parameters.get("later_capture_id")),
                         "recorded_fingerprint_count": len(fingerprints) if type(fingerprints) is list and len(fingerprints) <= 1000 else None,
                         "fingerprint_model_present": bool(parameters.get("fingerprint_model")),
+                        "cursor_present": bool(parameters.get("cursor")),
                         "provider": "engineering", "fallback": "none",
                     }
                     resource_ids = {}

@@ -31,8 +31,9 @@ from ..sanitization import sanitize_untrusted_data
 from ..untrusted_text import screen
 
 MAX_BOUNDED_SOURCES = 50
-# Obligations retained per script scan for naming (scripts are not in the
-# shared obligation ledger; HAMCP-226 keeps their coverage-failure terminals).
+# Distinct (source, reason) pairs kept from one script document (scripts are
+# not in the shared obligation ledger; HAMCP-226 keeps one coverage-failure
+# terminal per pair, so the named-source total is exact: review 1, M3).
 MAX_SCRIPT_BOUNDED_OBLIGATIONS = 1_000
 UNCLASSIFIED = "unclassified"
 # Reported by the read-failure fields of each output, not as bound overruns.

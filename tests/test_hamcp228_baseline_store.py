@@ -87,7 +87,15 @@ class StoreTests(Harness):
         entry = self.entries(service)[0]
         return service, key, entry, self.record_path(service, key).read_bytes()
 
+    @staticmethod
+    def report_bytes(raw):
+        """The canonical report inside a stored record envelope (put's input)."""
+
+        return c.canonical(json.loads(raw)['report'])
+
     def put(self, store, key, raw, entry, now_ms, caller=OWNER):
+        if set(json.loads(raw)) == {'model', 'binding', 'report_sha256', 'report'}:
+            raw = self.report_bytes(raw)
         return store.put(capture_id=key, caller=caller, encoded=raw, artifact_sha256=entry['artifact_sha256'],
                          baseline_id=entry['baseline_id'], resumed_from=None, now_ms=now_ms)
 
@@ -99,7 +107,13 @@ class StoreTests(Harness):
                            (root / 'records' / (key + '.json'), 0o600)):
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode, path)
         self.assertEqual(sorted(p.name for p in (root / 'records').iterdir()), [key + '.json'])
-        self.assertEqual(set(json.loads(raw)), {'baseline', 'diagnostics'})
+        # Review 1 (H2): a self-binding envelope around the report alone.
+        record = json.loads(raw)
+        self.assertEqual(set(record), {'model', 'binding', 'report_sha256', 'report'})
+        self.assertEqual(set(record['report']), {'baseline', 'diagnostics'})
+        self.assertEqual(record['binding'], {key_: entry[key_] for key_ in (
+            'capture_id', 'baseline_id', 'caller', 'created_at_ms', 'artifact_sha256', 'resumed_from')})
+        self.assertEqual(record['report_sha256'], hashlib.sha256(self.report_bytes(raw)).hexdigest())
         self.assertNotIn(SECRET.encode(), raw)
         self.assertEqual(entry['bytes'], len(raw))
         self.assertEqual(entry['sha256'], hashlib.sha256(raw).hexdigest())
@@ -186,7 +200,8 @@ class StoreTests(Harness):
         with self.assertRaises(StoreError):
             service.store.get('d' * 32, OWNER, now_ms)
         stub = service.store.load_index()['quarantine']['entries'][-1]
-        self.assertEqual((stub['reason'], stub['observed_bytes']), ('invalid_record', len(bogus)))
+        self.assertEqual(stub['reason'], 'invalid_record')
+        self.assertGreater(stub['observed_bytes'], len(bogus))
 
         index = service.store.load_index()
         index['quarantine']['entries'] = [dict(stub, capture_id=f'{n:032x}') for n in range(c.QUARANTINE_MAX)]
@@ -233,25 +248,28 @@ class StoreTests(Harness):
         self.telemetry.caller_id = OWNER
         self.assertEqual((await service.capture(limit=1, cursor=cursor))['pagination']['offset'], 1)
 
-    async def test_symlinked_namespace_index_and_invalid_index_refused(self):
+    async def test_symlinked_namespace_refused_and_unreadable_index_rebuilt(self):
+        # Review 1 (H2): an index that cannot be read is rebuilt from the
+        # verified records; it never refuses into deletion or empties the store.
         service, key, entry, raw = await self.stored_record()
         now_ms = entry['created_at_ms'] + 1
         index = service.store.index_path
         saved = index.read_bytes()
         index.unlink()
         target = self.governance / 'elsewhere.json'
-        target.write_bytes(saved)
+        target.write_bytes(b'{}')
         index.symlink_to(target)
-        with self.assertRaises(StoreError) as caught:
-            service.store.get(key, OWNER, now_ms)
-        self.assertEqual(caught.exception.reason, 'store_invalid')
-        index.unlink()
+        self.assertEqual(service.store.get(key, OWNER, now_ms)[1], entry)
+        self.assertFalse(index.is_symlink())
+        self.assertEqual(target.read_bytes(), b'{}')
         for garbage in (b'not json', b'{}', c.canonical({'model': 'audit-baselines-v1', 'baselines': [{}],
                                                           'quarantine': {'entries': [], 'dropped': 0}})):
-            index.write_bytes(garbage)
-            with self.assertRaises(StoreError) as caught:
-                service.store.get(key, OWNER, now_ms)
-            self.assertEqual(caught.exception.reason, 'store_invalid')
+            with self.subTest(garbage=garbage[:12]):
+                index.write_bytes(garbage)
+                self.assertEqual(service.store.get(key, OWNER, now_ms)[1], entry)
+                self.assertEqual(self.record_path(service, key).read_bytes(), raw)
+                self.assertEqual(service.store.status['last_index_rebuild'], {
+                    'at_ms': now_ms, 'reason': 'index_unreadable', 'recovered': 1, 'quarantined': 0})
         index.write_bytes(saved)
         moved = self.governance / 'moved'
         service.store.root.rename(moved)
@@ -260,6 +278,90 @@ class StoreTests(Harness):
             service.store.get(key, OWNER, now_ms)
         self.assertEqual(caught.exception.reason, 'store_invalid')
         self.assertEqual(self.governance.joinpath('moved', 'index.json').read_bytes(), saved)
+
+    async def test_missing_index_rebuilds_valid_records_and_quarantines_a_corrupt_one(self):
+        # Review 1 (H2): a lost index never deletes a committed baseline. Each
+        # record verifies from its own envelope; one that does not is
+        # quarantined as a content-free stub, never silently dropped.
+        service, _ = self.service()
+        keys = [capture_id(await self.capture(service)) for _ in range(4)]
+        entries = {entry['capture_id']: entry for entry in self.entries(service)}
+        raws = {key: self.record_path(service, key).read_bytes() for key in keys}
+        corrupt, valid = keys[1], [keys[0], keys[2], keys[3]]
+        self.record_path(service, corrupt).write_bytes(raws[corrupt][:-9] + b'"garbage"')
+        misbound = 'f' * 32
+        self.record_path(service, misbound).write_bytes(raws[keys[0]])
+        foreign = service.store.records / 'notes.txt'
+        foreign.write_bytes(b'not a store name')
+        service.store.index_path.unlink()
+        now_ms = service.now_ms()
+        index = service.store.load_index(now_ms)
+        self.assertEqual(sorted(index['baselines'], key=lambda e: e['capture_id']),
+                         sorted((entries[key] for key in valid), key=lambda e: e['capture_id']))
+        self.assertEqual(sorted((stub['capture_id'], stub['reason']) for stub in index['quarantine']['entries']),
+                         sorted([(corrupt, 'invalid_record'), (misbound, 'invalid_record')]))
+        for stub in index['quarantine']['entries']:
+            self.assertEqual(set(stub), {'capture_id', 'quarantined_at_ms', 'reason', 'observed_bytes',
+                                         'observed_sha256'})
+        self.assertEqual(index['recovery'], {'index_rebuilds': 1, 'last_index_rebuild': {
+            'at_ms': now_ms, 'reason': 'index_missing', 'recovered': 3, 'quarantined': 2}})
+        for key in valid:
+            self.assertEqual(self.record_path(service, key).read_bytes(), raws[key])
+            self.assertEqual(service.store.get(key, OWNER, now_ms)[1], entries[key])
+        self.assertFalse(self.record_path(service, corrupt).exists())
+        self.assertFalse(self.record_path(service, misbound).exists())
+        self.assertEqual(foreign.read_bytes(), b'not a store name')
+        # The rebuilt index, stubs included, is committed: the next load reads it.
+        self.assertEqual(service.store.load_index(now_ms + 1), index)
+        # Every recovered baseline remains listable and comparable; both
+        # surfaces report the rebuild, content-free.
+        status = {'index_rebuilds': 1, 'last_index_rebuild': index['recovery']['last_index_rebuild']}
+        result = await service.compare(earlier_capture_id=valid[0], later_capture_id=valid[1])
+        self.assertEqual(result['store_status'], status)
+        self.assertEqual((await self.reason(service.compare(earlier_capture_id=corrupt, later_capture_id=valid[0]))
+                          ).reason, 'baseline_not_found')
+        page = await self.capture(service)
+        self.assertEqual(page['snapshot']['store_status'], status)
+        self.assertEqual(len(self.entries(service)), 4)
+
+    async def test_first_use_reports_no_rebuild_and_expired_records_are_not_reindexed(self):
+        service, _ = self.service()
+        self.assertFalse(service.store.index_path.exists())
+        page = await self.capture(service)
+        self.assertEqual(page['snapshot']['store_status'], {'index_rebuilds': 0, 'last_index_rebuild': None})
+        key = capture_id(page)
+        entry = self.entries(service)[0]
+        later = entry['created_at_ms'] + c.STORE_RETENTION_SECONDS * 1000
+        service.store.index_path.unlink()
+        index = service.store.load_index(later)
+        self.assertEqual(index['baselines'], [])
+        self.assertEqual(index['recovery']['last_index_rebuild'],
+                         {'at_ms': later, 'reason': 'index_missing', 'recovered': 0, 'quarantined': 0})
+        # Retention, not the rebuild, removes it: on the next sweep.
+        self.assertTrue(self.record_path(service, key).exists())
+        with self.assertRaises(StoreError):
+            service.store.get(key, OWNER, later)
+        self.assertFalse(self.record_path(service, key).exists())
+
+    async def test_more_verified_records_than_capacity_fail_closed_and_delete_nothing(self):
+        service, _ = self.service()
+        over = c.STORE_BASELINES + 1
+        with patch.object(c, 'STORE_BASELINES', over):
+            for _ in range(over):
+                await self.capture(service)
+        records = sorted(service.store.records.iterdir())
+        self.assertEqual(len(records), over)
+        # A corrupt record beside them is not quarantined either: nothing is touched.
+        self.record_path(service, 'e' * 32).write_bytes(b'{"garbage": true}')
+        records = sorted(service.store.records.iterdir())
+        before = {path.name: path.read_bytes() for path in records}
+        service.store.index_path.unlink()
+        for _ in range(2):
+            with self.assertRaises(StoreError) as caught:
+                service.store.load_index(service.now_ms())
+            self.assertEqual(caught.exception.reason, 'store_invalid')
+        self.assertEqual({path.name: path.read_bytes() for path in service.store.records.iterdir()}, before)
+        self.assertFalse(service.store.index_path.exists())
 
     async def test_a_second_owner_is_refused_not_queued(self):
         service, key, entry, raw = await self.stored_record()
@@ -386,6 +488,23 @@ class ResumeTests(Harness):
                 self.assertEqual(len(self.entries(service)), 1)
                 self.assertFalse(service.active)
 
+    async def test_resume_refuses_a_new_core_version_under_the_same_generation(self):
+        # Review 1 (M1): a restart can reuse the generation; the base
+        # capture's Core version binds the resume as well.
+        service, client, first = await self.timed_out()
+        version = self.core.current_observation.version
+        self.core.current_observation.version = '2099.1.0'
+        client.calls.clear()
+        error = await self.reason(self.capture(service, resume_capture_id=capture_id(first)))
+        self.assertEqual(error.reason, 'resume_core_changed')
+        self.assertFalse(error.retryable)
+        self.assertEqual([call for call in client.calls if type(call) is tuple], [], 'no configuration read')
+        self.assertEqual(len(self.entries(service)), 1)
+        self.assertFalse(service.active)
+        self.core.current_observation.version = version
+        resumed = await self.capture(service, resume_capture_id=capture_id(first))
+        self.assertEqual(resumed['baseline_header']['resume']['resumed_count'], 3)
+
     async def test_resume_not_needed_other_caller_and_damage_refuse_before_any_read(self):
         service, client = self.service()
         first = await self.capture(service)
@@ -505,7 +624,11 @@ class CompareTests(Harness):
                                             'UNKNOWN': 0, 'PREFIX_MATCH': 0, 'TOTAL': 3})
         self.assertEqual([r['configuration_id'] for r in result['records']], ['1', '0', '2'])
         self.assertEqual(result['record_order'], 'not_unchanged_or_prefix_match_first_then_configuration_id')
-        self.assertEqual((result['screened_withheld_count'], result['details_truncated']), (0, False))
+        self.assertEqual(result['screened_withheld_count'], 0)
+        self.assertNotIn('details_truncated', result)
+        self.assertEqual(result['pagination'], {'offset': 0, 'returned': 3, 'total_records': 3,
+                                                'next_cursor': None, 'complete_export': True})
+        self.assertEqual(result['store_status'], {'index_rebuilds': 0, 'last_index_rebuild': None})
         # The unchanged comparator: one capture with itself, or in reverse
         # order, proves nothing.
         same = await service.compare(earlier_capture_id=first, later_capture_id=first)
@@ -611,18 +734,96 @@ class CompareTests(Harness):
                     c.validate_compare_arguments(arguments)
                 self.assertEqual(caught.exception.reason, 'invalid_arguments')
 
-    async def test_bounded_output_keeps_attention_rows_first_and_reports_omissions(self):
+    async def page_all(self, service, **arguments):
+        pages, cursor = [], ''
+        while True:
+            page = await service.compare(**arguments, cursor=cursor)
+            pages.append(page)
+            cursor = page['pagination']['next_cursor']
+            if cursor is None:
+                return pages
+            self.assertLessEqual(len(pages), 300)
+
+    async def test_bounded_output_keeps_attention_rows_first_and_pages_every_row(self):
+        # Review 1 (M2): a byte-bounded page is followed by next_cursor until
+        # every row has been returned exactly once; counts cover all rows.
         service, _, key, digests = await self.stored(fixture(60))
         rows = [{'configuration_id': i, 'fingerprint': 'sha256:' + d} for i, d in digests.items()]
         rows[-1] = {'configuration_id': rows[-1]['configuration_id'], 'fingerprint': 'sha256:' + 'f' * 16}
         service.page_limit = 6_000
-        result = await service.compare(earlier_capture_id=key, recorded_fingerprints=rows,
-                                       fingerprint_model=FINGERPRINT_MODEL)
-        self.assertTrue(result['details_truncated'])
-        self.assertEqual(result['omitted_detail_count'] + len(result['records']), 60)
-        self.assertEqual(result['counts']['TOTAL'], 60)
-        self.assertNotEqual(result['records'][0]['classification'], 'UNCHANGED')
-        self.assertLessEqual(len(c.canonical(result)), 6_000)
+        arguments = dict(earlier_capture_id=key, recorded_fingerprints=rows, fingerprint_model=FINGERPRINT_MODEL)
+        pages = await self.page_all(service, **arguments)
+        self.assertGreater(len(pages), 1)
+        returned = [r for page in pages for r in page['records']]
+        self.assertEqual(sorted(r['configuration_id'] for r in returned), sorted(digests))
+        self.assertEqual(len(returned), 60)
+        self.assertNotEqual(returned[0]['classification'], 'UNCHANGED')
+        self.assertEqual(returned[-1]['classification'], 'UNCHANGED')
+        offset = 0
+        for page in pages:
+            self.assertEqual(page['counts']['TOTAL'], 60)
+            self.assertEqual(page['pagination']['offset'], offset)
+            self.assertEqual(page['pagination']['total_records'], 60)
+            self.assertEqual(page['pagination']['returned'], len(page['records']))
+            self.assertEqual(page['omitted_detail_count'], 60 - len(page['records']))
+            self.assertLessEqual(len(c.canonical(page)), 6_000)
+            offset += len(page['records'])
+            self.assertEqual(page['pagination']['complete_export'], offset == 60)
+        self.assertNotIn('details_truncated', json.dumps(pages))
+
+    async def test_more_rows_than_one_page_page_at_the_production_row_cap(self):
+        service, client, key, digests = await self.stored(fixture(250))
+        rows = [{'configuration_id': i, 'fingerprint': 'sha256:' + d} for i, d in digests.items()]
+        arguments = dict(earlier_capture_id=key, recorded_fingerprints=rows, fingerprint_model=FINGERPRINT_MODEL)
+        pages = await self.page_all(service, **arguments)
+        self.assertEqual([len(page['records']) for page in pages], [c.COMPARE_PAGE_ROWS, c.COMPARE_PAGE_ROWS, 50])
+        returned = [r['configuration_id'] for page in pages for r in page['records']]
+        self.assertEqual(len(returned), len(set(returned)))
+        self.assertEqual(set(returned), set(digests))
+        self.assertEqual({page['counts']['UNCHANGED'] for page in pages}, {250})
+        # Stored captures page the same way.
+        changed = fixture(250)
+        changed['configs']['7']['mode'] = 'restart'
+        _, _, second, _ = await self.stored(changed, service, client)
+        pages = await self.page_all(service, earlier_capture_id=key, later_capture_id=second)
+        self.assertEqual(sum(len(page['records']) for page in pages), 250)
+        self.assertEqual(pages[0]['records'][0]['configuration_id'], '7')
+
+    async def test_compare_cursor_binds_caller_arguments_and_offset(self):
+        service, _, key, digests = await self.stored(fixture(150))
+        rows = [{'configuration_id': i, 'fingerprint': 'sha256:' + d} for i, d in digests.items()]
+        arguments = dict(earlier_capture_id=key, recorded_fingerprints=rows, fingerprint_model=FINGERPRINT_MODEL)
+        cursor = (await service.compare(**arguments))['pagination']['next_cursor']
+        request, offset, mac = cursor.split(':')
+        self.assertEqual(offset, str(c.COMPARE_PAGE_ROWS))
+        refused = [dict(arguments, recorded_fingerprints=rows[1:]),
+                   dict(arguments, fingerprint_model=FINGERPRINT_MODEL + 'x'),
+                   dict(arguments, cursor=f'{request}:1:{mac}'),
+                   dict(arguments, cursor=f'{request}:{offset}:{"0" * 64}'),
+                   dict(arguments, cursor=f'{"0" * 32}:{offset}:{mac}')]
+        for candidate in refused:
+            candidate.setdefault('cursor', cursor)
+            with self.subTest(candidate=str(candidate)[-90:]):
+                self.assertEqual((await self.reason(service.compare(**candidate))).reason, 'invalid_cursor')
+        # A capture cursor of the same shape is not a compare cursor.
+        page = await service.capture(limit=1)
+        capture_cursor = page['pagination']['next_cursor']
+        self.assertEqual((await self.reason(service.compare(**arguments, cursor=capture_cursor))).reason,
+                         'invalid_cursor')
+        # Nor is one the capture signer made over this very request and offset.
+        forged = service._token(request, c.COMPARE_PAGE_ROWS, OWNER)
+        self.assertEqual(forged.split(':')[:2], [request, offset])
+        self.assertEqual((await self.reason(service.compare(**arguments, cursor=forged))).reason, 'invalid_cursor')
+        self.telemetry.caller_id = 'synthetic-other'
+        self.assertEqual((await self.reason(service.compare(**arguments, cursor=cursor))).reason, 'invalid_cursor')
+        self.telemetry.caller_id = OWNER
+        second = await service.compare(**arguments, cursor=cursor)
+        self.assertEqual((second['pagination']['offset'], second['pagination']['returned'],
+                          second['pagination']['next_cursor']), (c.COMPARE_PAGE_ROWS, 50, None))
+        for bad in ('x', '0' * 32 + ':0:' + '0' * 63, 7):
+            with self.subTest(bad=bad):
+                self.assertEqual((await self.reason(service.compare(**arguments, cursor=bad))).reason,
+                                 'invalid_arguments')
 
 
 class CredentialScreenTests(Harness):
@@ -814,7 +1015,8 @@ class PublicToolTests(Harness):
         self.assertFalse(tool.parameters['additionalProperties'])
         self.assertEqual(routing_for_tool('compare_automation_baselines').fallback_providers, ())
         self.assertEqual(set(tool.parameters['properties']),
-                         {'earlier_capture_id', 'later_capture_id', 'recorded_fingerprints', 'fingerprint_model'})
+                         {'earlier_capture_id', 'later_capture_id', 'recorded_fingerprints', 'fingerprint_model',
+                          'cursor'})
         for arguments in ({'earlier_capture_id': SECRET}, {'earlier_capture_id': 'a' * 32, 'PRIVATE_KEY': SECRET},
                           {'earlier_capture_id': 'a' * 32, 'recorded_fingerprints': [{'configuration_id': SECRET,
                                                                                       'fingerprint': SECRET}],
@@ -841,7 +1043,7 @@ class PublicToolTests(Harness):
                       if json.loads(r).get('tool_name') == 'compare_automation_baselines')
         self.assertEqual(record['parameters'], {
             'model': 'automation-baseline-compare-v1', 'later_capture_present': False,
-            'recorded_fingerprint_count': 2, 'fingerprint_model_present': True,
+            'recorded_fingerprint_count': 2, 'fingerprint_model_present': True, 'cursor_present': False,
             'provider': 'engineering', 'fallback': 'none'})
         self.assertEqual(record['resource_ids'], {})
         for value in (key, 'ghost_id', digest[7:23], '1' * 16):
@@ -862,7 +1064,8 @@ class PublicToolTests(Harness):
                                                          'fingerprint_model': FINGERPRINT_MODEL})
                 data = json.loads(json.loads(response)['result']['content'][0]['text'])
                 self.assertTrue(data['success'], data)
-                self.assertFalse(data['data']['details_truncated'])
+                self.assertNotIn('details_truncated', data['data'])
+                self.assertTrue(data['data']['pagination']['complete_export'])
                 self.assertEqual(data['metadata']['completeness'], completeness)
                 self.assertEqual(data['data']['screened_withheld_count'], int(completeness == 'partial'))
                 self.assertNotIn('BEGINPRIVATEKEY', response)

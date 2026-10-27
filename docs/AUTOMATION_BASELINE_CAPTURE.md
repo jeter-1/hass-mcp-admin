@@ -186,16 +186,31 @@ Engineering governance disk boundary, beside the other governance records; not
   baseline validator. A damaged record (`missing`, `unreadable`,
   `digest_mismatch`, `invalid_record`) is deleted and reported as
   `baseline_damaged`; the index keeps a content-free quarantine stub (at most
-  32, older stubs counted as `dropped`). An invalid or symlinked index or
-  namespace is refused, never rebuilt.
+  32, older stubs counted as `dropped`). A symlinked namespace is refused.
+- Each record is a self-binding envelope (`model`, `binding`: its capture id,
+  caller, creation time and resume origin, `report_sha256`, `report`). A
+  missing or unreadable index (including a symlinked index file, which is
+  never followed) never deletes a committed baseline (review 1, H2): the index
+  is rebuilt from the record files, each verified from its own envelope and
+  its file name. A file that fails verification is quarantined as a stub
+  (`unreadable` or `invalid_record`), never silently deleted; the stubs are
+  committed before the file is removed. A verified record past retention is
+  not re-indexed and is removed by the next sweep. More verified records than
+  the store admits fails closed (`store_invalid`) with no file touched. Files
+  that are not store names are never touched.
+- The rebuild is reported content-free as `store_status: {index_rebuilds,
+  last_index_rebuild: {at_ms, reason: index_missing|index_unreadable,
+  recovered, quarantined}}` (`{0, null}` before any rebuild) in the capture
+  page `snapshot` and in every comparison. A store in first use (no index and
+  no records) is not a rebuild.
 - Each store operation sweeps expired entries, abandoned temporaries and
   unindexed records.
 - Hashes detect accidental damage, not an attacker able to rewrite both a
   record and the index.
 
 The capture page `snapshot` block reports `storage:
-"durable_engineering_store"`, `retention_seconds` and `resumed_from` (the
-resumed `capture_id`, or `null`). Because a capture now writes this
+"durable_engineering_store"`, `retention_seconds`, `resumed_from` (the
+resumed `capture_id`, or `null`) and `store_status`. Because a capture now writes this
 Engineering-local record, the tool is classified as Engineering local evidence
 capture with `readOnlyHint=false`; it still performs no Home Assistant write.
 
@@ -211,7 +226,10 @@ verified) and `resume_not_needed` is refused if it has nothing to retry, and
 capacity is checked. The resume then runs both capture fences again and
 refuses `resume_inventory_changed` unless the installation identity, the Core
 authority generation, the declared inventory count and the ordered
-`(configuration_id, entity_id)` mapping all equal the base's. Retried records
+`(configuration_id, entity_id)` mapping all equal the base's. A restart can
+reuse the authority generation, so the base's Core version binds the resume
+too: a different version is refused as `resume_core_changed` (not retryable)
+before any configuration read (review 1, M1). Retried records
 are collected fresh; all others are copied verbatim from the base. The result
 is a new stored baseline with `resume: {resumed_from: <base baseline_id>,
 resumed_count}`; its capture interval starts at the base's start, and drift or
@@ -221,7 +239,7 @@ unestablished identity in the base is inherited. The base is never changed.
 ## `compare_automation_baselines` (HAMCP-228)
 
 `compare_automation_baselines(earlier_capture_id, later_capture_id="",
-recorded_fingerprints=None, fingerprint_model="")` compares the caller's stored
+recorded_fingerprints=None, fingerprint_model="", cursor="")` compares the caller's stored
 capture with either a later stored capture or caller-recorded fingerprints. It
 makes no Home Assistant read, is read-only and idempotent, and has a closed
 argument contract; invalid arguments are refused without dispatch and never
@@ -245,12 +263,23 @@ echoed.
 - Counts are `UNCHANGED`, `PREFIX_MATCH`, `CHANGED`, `ADDED`, `REMOVED`,
   `UNKNOWN` and `TOTAL`; stored/stored comparisons report `PREFIX_MATCH: 0`.
 - Rows other than `UNCHANGED`/`PREFIX_MATCH` come first, then by
-  configuration id, so a bounded result keeps the rows needing attention. The
-  output is credential-screened (`untrusted_text.screen_tree`, default mode),
-  then bounded to the page budget; `omitted_detail_count` and
-  `screened_withheld_count` make a cut or a withheld value a partial result.
-- Audit records carry the mode, the counts and the omitted/withheld counts;
-  never capture ids, configuration ids or digests.
+  configuration id. The counts always cover every row. Records are fully
+  paged, never truncated (review 1, M2): each page holds at most 100 records
+  within the page budget, and `pagination: {offset, returned, total_records,
+  next_cursor, complete_export}` continues it. `next_cursor` is bound to this
+  caller, the exact arguments and the offset (HMAC under a process secret);
+  any other use is `invalid_cursor`. Repeat the same arguments with the
+  cursor until it is `null`. `omitted_detail_count` is the number of records
+  not on this page.
+- The output is credential-screened (`untrusted_text.screen_tree`, default
+  mode), and every response then passes a final-envelope screen as a backstop
+  (review 1, H1), so a field added later cannot return Home Assistant text
+  unscreened; `screened_withheld_count` makes a withheld value a partial
+  result. A capture page must match `artifact_sha256` exactly, so a capture
+  the backstop would change is refused (`redacted_identity`) instead.
+- Audit records carry the mode, the counts, whether a cursor was supplied and
+  the returned/total record counts, plus the withheld count; never capture
+  ids, configuration ids, cursors or digests.
 
 ## Exact Core source evidence and validation stages
 

@@ -15,8 +15,8 @@ import time
 from .. import untrusted_text
 from ..request_context import current_caller_id
 from . import capture_contracts as c
-from .comparison import (PREFIX_MATCH, bound_report_dict, compare_baselines,
-                         compare_recorded_fingerprints, comparison_report_dict)
+from .comparison import (PREFIX_MATCH, compare_baselines, compare_recorded_fingerprints,
+                         comparison_report_dict)
 from .store import StoreError
 from .validation import BaselineValidationError, baseline_from_value
 
@@ -44,6 +44,14 @@ class BaselineCaptureService:
         except StoreError as exc:
             raise c.CaptureError(_STORE_REASONS.get(exc.reason, "store_unavailable"),
                                  oldest_age_seconds=exc.oldest_age_seconds) from None
+
+    def store_status(self):
+        """The content-free store status after the latest store call (review 1, H2)."""
+
+        status = getattr(self.store, "status", None) or {}
+        last = status.get("last_index_rebuild")
+        return {"index_rebuilds": status.get("index_rebuilds", 0),
+                "last_index_rebuild": dict(last) if isinstance(last, dict) else None}
 
     async def load(self, capture_id, caller):
         """The caller's own stored report and index entry (HAMCP-228 compare and resume)."""
@@ -92,7 +100,8 @@ class BaselineCaptureService:
                 "snapshot": {"capture_id": key, "ttl_seconds": c.SNAPSHOT_TTL,
                     "remaining_seconds": max(0, int(expires-self.clock())),
                     "storage": "durable_engineering_store", "retention_seconds": c.STORE_RETENTION_SECONDS,
-                    "resumed_from": resumed_from, "provider_reads_for_continuation": 0}}
+                    "resumed_from": resumed_from, "provider_reads_for_continuation": 0,
+                    "store_status": self.store_status()}}
         # Reserve the maximal bounded footer and size each row once.
         reserve = dict(page["pagination"], next_cursor=self._token(key, c.MAX_RECORDS, caller),
                        returned=1000, offset=1000)
@@ -158,25 +167,83 @@ class BaselineCaptureService:
             self.active = False
 
     async def compare(self, *, earlier_capture_id, later_capture_id="", recorded_fingerprints=None,
-                      fingerprint_model=""):
+                      fingerprint_model="", cursor=""):
         """HAMCP-228: compare the caller's stored capture with a later capture or recorded fingerprints.
 
         Reads only the caller's own digest-verified stored baselines; no Home
-        Assistant read. The result is credential-screened, then bounded.
+        Assistant read. The result is credential-screened, then paged
+        (review 1, M2): the counts cover every row, and ``next_cursor`` with
+        the same arguments returns the next page. Stored baselines never
+        change, so each page is recomputed from them; the cursor binds the
+        caller, the exact arguments and the offset.
         """
 
         arguments = {"earlier_capture_id": earlier_capture_id, "later_capture_id": later_capture_id,
-                     "fingerprint_model": fingerprint_model}
+                     "fingerprint_model": fingerprint_model, "cursor": cursor}
         if recorded_fingerprints is not None:
             arguments["recorded_fingerprints"] = recorded_fingerprints
         fingerprints = c.validate_compare_arguments(arguments)
         caller = current_caller_id()
         if caller == "anonymous":
             raise c.CaptureError("access_denied")
+        request = self._compare_request(earlier_capture_id, later_capture_id, fingerprints, fingerprint_model)
+        offset = self._compare_offset(cursor, request, caller) if cursor else 0
         earlier, _ = await self.load(earlier_capture_id, caller)
         later = (await self.load(later_capture_id, caller))[0] if later_capture_id else None
-        return await c.worker(self._compare, earlier_capture_id, earlier, later_capture_id or None, later,
-                              fingerprints, fingerprint_model)
+        value = await c.worker(self._compare, earlier_capture_id, earlier, later_capture_id or None, later,
+                               fingerprints, fingerprint_model)
+        value["store_status"] = self.store_status()
+        return await c.worker(self._compare_page, value, offset, request, caller)
+
+    @staticmethod
+    def _compare_request(earlier_id, later_id, fingerprints, model):
+        """32 hex characters naming the exact comparison arguments."""
+
+        return hashlib.sha256(c.canonical([earlier_id, later_id, fingerprints, model])).hexdigest()[:32]
+
+    def _compare_token(self, request, offset, caller):
+        value = f"{request}:{offset}"
+        # Domain-separated from capture cursors, which share the shape.
+        mac = hmac.new(self.secret, ("compare:" + value + ":" + caller).encode(), hashlib.sha256).hexdigest()
+        return value + ":" + mac
+
+    def _compare_offset(self, token, request, caller):
+        key, raw_offset, _ = token.split(":")
+        offset = int(raw_offset)
+        if key != request or not hmac.compare_digest(token, self._compare_token(request, offset, caller)):
+            raise c.CaptureError("invalid_cursor")
+        return offset
+
+    def _compare_page(self, value, offset, request, caller):
+        records = value.pop("records")
+        total = len(records)
+        if offset > total or (offset == total and offset != 0):
+            raise c.CaptureError("invalid_cursor")
+        page = dict(value, records=[], omitted_detail_count=0,
+                    pagination={"offset": offset, "returned": 0, "total_records": total,
+                                "next_cursor": None, "complete_export": True})
+        # Reserve the maximal bounded footer and size each row once.
+        reserve = dict(page, omitted_detail_count=c.MAX_RECORDS * 2,
+                       pagination=dict(page["pagination"], offset=c.MAX_RECORDS * 2, returned=c.MAX_RECORDS * 2,
+                                       total_records=c.MAX_RECORDS * 2,
+                                       next_cursor=self._compare_token(request, c.MAX_RECORDS * 2, caller)))
+        used = len(c.canonical(reserve))
+        for row in records[offset:offset + c.COMPARE_PAGE_ROWS]:
+            cost = len(c.canonical(row)) + 1
+            if used + cost > self.page_limit:
+                break
+            page["records"].append(row)
+            used += cost
+        count = len(page["records"])
+        if offset < total and not count:
+            raise c.CaptureError("output_limit")
+        more = offset + count < total
+        page["omitted_detail_count"] = total - count
+        page["pagination"].update(returned=count, complete_export=not more,
+                                  next_cursor=self._compare_token(request, offset + count, caller) if more else None)
+        if len(c.canonical(page)) > self.page_limit:
+            raise c.CaptureError("output_limit")
+        return page
 
     def _compare(self, earlier_id, earlier, later_id, later, fingerprints, model):
         try:
@@ -197,4 +264,5 @@ class BaselineCaptureService:
         value["record_order"] = "not_unchanged_or_prefix_match_first_then_configuration_id"
         value, withheld = untrusted_text.screen_tree(value, tuple(getattr(getattr(self.provider, "projector", None), "known_secrets", ())))
         value["screened_withheld_count"] = withheld
-        return bound_report_dict(value, max_bytes=self.page_limit)
+        value.pop("details_truncated", None)
+        return value

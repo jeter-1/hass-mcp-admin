@@ -17,7 +17,37 @@ from ..models import FailureResponse, SuccessResponse
 from ..observability import METRICS
 from ..request_context import current_request_id, current_telemetry
 from ..tool_framework import timing_since
+from ..untrusted_text import EnvelopeKeyWithheld, envelope_warning, screen_envelope
 from .compatibility import SETTINGS
+
+
+def _known_secrets(*values) -> tuple[str, ...]:
+    """The configured secrets plus a provider's own, for the final screen."""
+
+    found = [getattr(SETTINGS, "access_secret", ""), getattr(SETTINGS, "ha_token", "")]
+    for value in values:
+        found.extend(getattr(value, name, "") for name in ("secret", "ha_token"))
+    return tuple(dict.fromkeys(item for item in found if isinstance(item, str) and item))
+
+
+def _final_screen(output, *providers):
+    """``(data, warnings, metadata, newly withheld)`` through the final-envelope screen.
+
+    HAMCP-226/228 review 1 (H1): the backstop behind the source screens, so a
+    field added later cannot return Home Assistant text unscreened. A
+    withheld value keeps its record with the marker (the caller reports the
+    result partial); a withheld mapping key refuses the response.
+    """
+
+    known = _known_secrets(*providers)
+    try:
+        data, data_hits = screen_envelope(output.data, known)
+        warnings, warning_hits = screen_envelope(list(output.warnings), known)
+        metadata, metadata_hits = screen_envelope(output.metadata, known)
+    except EnvelopeKeyWithheld:
+        raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE) from None
+    hits = data_hits + warning_hits + metadata_hits
+    return data, [*warnings, envelope_warning(hits)] if hits else warnings, metadata, hits
 
 
 async def entity_dependency_analysis(
@@ -44,7 +74,8 @@ async def entity_dependency_analysis(
     started = time.perf_counter()
     telemetry = current_telemetry()
     try:
-        output = await DEPENDENCY_ANALYSIS.require().analyze(
+        service = DEPENDENCY_ANALYSIS.require()
+        output = await service.analyze(
             entity_id=entity_id,
             detail_level=detail_level,
             include_indirect=include_indirect,
@@ -54,9 +85,13 @@ async def entity_dependency_analysis(
             cursor=cursor,
             refresh_index=refresh_index,
         )
+        data, warnings, metadata, screened = _final_screen(
+            output, getattr(getattr(service, "index", None), "provider", None)
+        )
         if telemetry:
-            telemetry.result_status = "partial" if output.partial else "success"
-            telemetry.completeness = "partial" if output.partial else "complete"
+            partial = output.partial or screened > 0
+            telemetry.result_status = "partial" if partial else "success"
+            telemetry.completeness = "partial" if partial else "complete"
         return SuccessResponse(
             operation="entity_dependency_analysis",
             summary=(
@@ -64,9 +99,9 @@ async def entity_dependency_analysis(
                 if output.data["findings"]
                 else "No dependencies were detected within the reported source coverage."
             ),
-            data=output.data,
-            warnings=output.warnings,
-            metadata=output.metadata,
+            data=data,
+            warnings=warnings,
+            metadata=metadata,
             timing=timing_since(started),
             request_id=current_request_id(),
         ).to_json(SETTINGS.response_size_limit)
@@ -303,9 +338,11 @@ async def configuration_integrity_analysis(
     started = time.perf_counter()
     telemetry = current_telemetry()
     rendered = None
+    screened = 0
+    service = None
 
     def page_fits(output):
-        nonlocal rendered
+        nonlocal rendered, screened
         assessment = output.data.get("final_assessment")
         summary = (
             "Completed bounded configuration-integrity analysis; review is required."
@@ -314,13 +351,16 @@ async def configuration_integrity_analysis(
             if assessment == "assessment_incomplete"
             else "No confirmed integrity findings were detected within the reported coverage."
         )
+        data, warnings, metadata, hits = _final_screen(
+            output, getattr(service, "provider", None)
+        )
         try:
             candidate = SuccessResponse(
                 operation="configuration_integrity_analysis",
                 summary=summary,
-                data=output.data,
-                warnings=output.warnings,
-                metadata=output.metadata,
+                data=data,
+                warnings=warnings,
+                metadata=metadata,
                 timing=timing_since(started),
                 request_id=current_request_id(),
             ).to_json(SETTINGS.response_size_limit)
@@ -328,11 +368,12 @@ async def configuration_integrity_analysis(
             return False
         if json.loads(candidate).get("response_completeness", {}).get("truncated"):
             return False
-        rendered = candidate
+        rendered, screened = candidate, hits
         return True
 
     try:
-        output = await CONFIGURATION_INTEGRITY_ANALYSIS.require().analyze(
+        service = CONFIGURATION_INTEGRITY_ANALYSIS.require()
+        output = await service.analyze(
             source_types=source_types,
             finding_types=finding_types,
             include_orphan_candidates=include_orphan_candidates,
@@ -345,8 +386,10 @@ async def configuration_integrity_analysis(
         if rendered is None and not page_fits(output):
             raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE)
         if telemetry:
-            telemetry.result_status = "partial" if output.partial else "success"
-            telemetry.completeness = "partial" if output.partial else "complete"
+            # Envelope withholds of the accepted page make it partial too.
+            partial = output.partial or screened > 0
+            telemetry.result_status = "partial" if partial else "success"
+            telemetry.completeness = "partial" if partial else "complete"
         # Return exactly the complete envelope accepted before snapshot retirement.
         return rendered
     except Exception as exc:

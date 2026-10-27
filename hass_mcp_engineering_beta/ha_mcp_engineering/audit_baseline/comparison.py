@@ -325,8 +325,8 @@ def bound_report_dict(
     """Select the leading ``records`` of ``value`` that fit ``max_bytes``.
 
     ``value`` holds ``records``, ``details_truncated`` and
-    ``omitted_detail_count`` (HAMCP-228 reuses this for the
-    ``compare_automation_baselines`` tool). The fixed header is serialized
+    ``omitted_detail_count``. (``compare_automation_baselines`` pages its
+    records instead of truncating them.) The fixed header is serialized
     once. Each record detail is serialized once while accounting exact list
     bytes. The complete selected report is then serialized once for a final
     defensive size check.
