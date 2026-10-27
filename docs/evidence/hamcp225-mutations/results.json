@@ -1,0 +1,292 @@
+[
+  {
+    "id": "baseline",
+    "returncode": 0,
+    "result": "PASS",
+    "seconds": 91.3,
+    "log": "logs/baseline.log (local, not committed)"
+  },
+  {
+    "id": "H1-shared-screen-skipped",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_normalization.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_live_trace_read_is_sanitized_and_marked_partial (tests.test_hamcp225_trace_snapshots.GetAutomationTraceTests.test_live_trace_read_is_sanitized_and_marked_partial)",
+      "FAIL: test_capture_persists_and_returns_only_digests (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_capture_persists_and_returns_only_digests)",
+      "FAIL: test_gateway_audit_parameters_never_copy_a_withheld_identifier (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_gateway_audit_parameters_never_copy_a_withheld_identifier) (tool='capture_automation_trace')",
+      "FAIL: test_watch_rows_audit_and_polls_use_the_digest (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_watch_rows_audit_and_polls_use_the_digest) (sink='store')",
+      "FAIL: test_needles_never_reach_store_or_any_response (tests.test_hamcp225_trace_snapshots.SanitizationTests.test_needles_never_reach_store_or_any_response) (kind='pem')",
+      "FAIL: test_string_with_a_known_secret_is_withheld_whole_at_capture (tests.test_hamcp225_trace_snapshots.SanitizationTests.test_string_with_a_known_secret_is_withheld_whole_at_capture)",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='disk', form='split', position='variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='readback', form='split', position='variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='split', position='variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='disk', form='split', position='context')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='readback', form='split', position='context')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='split', position='context')"
+    ],
+    "killing_count": 2682,
+    "seconds": 91.5,
+    "log": "logs/H1-shared-screen-skipped.log (local, not committed)"
+  },
+  {
+    "id": "H1-trace-specific-screen",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_normalization.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_live_trace_read_is_sanitized_and_marked_partial (tests.test_hamcp225_trace_snapshots.GetAutomationTraceTests.test_live_trace_read_is_sanitized_and_marked_partial)",
+      "FAIL: test_needles_never_reach_store_or_any_response (tests.test_hamcp225_trace_snapshots.SanitizationTests.test_needles_never_reach_store_or_any_response) (kind='pem')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='disk', form='split', position='variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='readback', form='split', position='variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='split', position='variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='disk', form='split', position='context')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='readback', form='split', position='context')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='split', position='context')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='disk', form='split', position='changed_variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='readback', form='split', position='changed_variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='split', position='changed_variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='disk', form='split', position='service_data')"
+    ],
+    "killing_count": 2116,
+    "seconds": 78.3,
+    "log": "logs/H1-trace-specific-screen.log (local, not committed)"
+  },
+  {
+    "id": "H1-keys-not-screened",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_normalization.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_pem_key_and_truncation_boundary (tests.test_hamcp225_review1_reviewer_probes.Security.test_pem_key_and_truncation_boundary) (case='key')",
+      "FAIL: test_pem_dictionary_key_not_on_wire (tests.test_hamcp225_review1_wire_probes.Wire.test_pem_dictionary_key_not_on_wire)",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_delta.forms:postgresql', position='variables_key')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_delta.forms:postgresql', position='context_key')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_delta.forms:postgresql', position='changed_variables_key')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_delta.forms:postgresql', position='deep_key')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_delta.forms:postgresql', sink='store')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_delta.forms:mysql', position='variables_key')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_delta.forms:mysql', position='context_key')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_delta.forms:mysql', position='changed_variables_key')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_delta.forms:mysql', position='deep_key')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_delta.forms:mysql', sink='store')"
+    ],
+    "killing_count": 931,
+    "seconds": 78.8,
+    "log": "logs/H1-keys-not-screened.log (local, not committed)"
+  },
+  {
+    "id": "H1-screen-after-storage",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_corr2.title_truncation:bare:trace', sink='store')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr294_corr2.title_truncation:anything+driver://:trace', sink='store')",
+      "FAIL: test_every_case_in_every_position_is_withheld_on_the_capture_path (tests.test_hamcp225_cross_path_credentials.CapturePathTests.test_every_case_in_every_position_is_withheld_on_the_capture_path) (case='pr313_independent.truncated_uri:PLANTEDUSER', sink='store')"
+    ],
+    "killing_count": 3,
+    "seconds": 98.7,
+    "log": "logs/H1-screen-after-storage.log (local, not committed)"
+  },
+  {
+    "id": "H1-get-automation-trace-unscreened",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_live_trace_read_is_sanitized_and_marked_partial (tests.test_hamcp225_trace_snapshots.GetAutomationTraceTests.test_live_trace_read_is_sanitized_and_marked_partial)",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='split', position='variables')",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='split', position='context')",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='split', position='changed_variables')",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='split', position='service_data')",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='split', position='error')",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='percent', position='variables')",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='percent', position='context')",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='percent', position='changed_variables')",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='percent', position='service_data')",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='percent', position='error')",
+      "FAIL: test_live_trace_tool_hardened_screen (tests.test_hamcp225_review1_reviewer_probes.Security.test_live_trace_tool_hardened_screen) (form='confusable', position='variables')"
+    ],
+    "killing_count": 1492,
+    "seconds": 93.9,
+    "log": "logs/H1-get-automation-trace-unscreened.log (local, not committed)"
+  },
+  {
+    "id": "H2-identifier-kept-raw",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_a_restart_ends_a_watch_whose_identifier_was_withheld (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_a_restart_ends_a_watch_whose_identifier_was_withheld)",
+      "FAIL: test_capture_persists_and_returns_only_digests (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_capture_persists_and_returns_only_digests)",
+      "FAIL: test_quarantine_stub_keeps_only_the_digest (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_quarantine_stub_keeps_only_the_digest)",
+      "FAIL: test_refusals_never_echo_a_withheld_identifier (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_refusals_never_echo_a_withheld_identifier) (reason='watch_limit')",
+      "FAIL: test_refusals_never_echo_a_withheld_identifier (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_refusals_never_echo_a_withheld_identifier) (reason='watch_not_found')",
+      "FAIL: test_refusals_never_echo_a_withheld_identifier (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_refusals_never_echo_a_withheld_identifier) (reason='audit_unavailable')",
+      "FAIL: test_watch_rows_audit_and_polls_use_the_digest (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_watch_rows_audit_and_polls_use_the_digest)",
+      "FAIL: test_known_identifier_cannot_reach_watch_storage (tests.test_hamcp225_review1_reviewer_probes.Gateway.test_known_identifier_cannot_reach_watch_storage) (sink='store')",
+      "FAIL: test_watch_limit_failure_is_sanitized (tests.test_hamcp225_review1_reviewer_probes.Gateway.test_watch_limit_failure_is_sanitized)",
+      "FAIL: test_index_does_not_restore_sanitized_caller_identifiers (tests.test_hamcp225_review1_reviewer_probes.Security.test_index_does_not_restore_sanitized_caller_identifiers) (field='automation_id')",
+      "FAIL: test_index_does_not_restore_sanitized_caller_identifiers (tests.test_hamcp225_review1_reviewer_probes.Security.test_index_does_not_restore_sanitized_caller_identifiers) (field='run_id')"
+    ],
+    "killing_count": 11,
+    "seconds": 9.1,
+    "log": "logs/H2-identifier-kept-raw.log (local, not committed)"
+  },
+  {
+    "id": "H2-gateway-audit-copies-raw",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/routing.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_gateway_audit_parameters_never_copy_a_withheld_identifier (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_gateway_audit_parameters_never_copy_a_withheld_identifier) (tool='capture_automation_trace')",
+      "FAIL: test_gateway_audit_parameters_never_copy_a_withheld_identifier (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_gateway_audit_parameters_never_copy_a_withheld_identifier) (tool='list_trace_snapshots')",
+      "FAIL: test_gateway_audit_parameters_never_copy_a_withheld_identifier (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_gateway_audit_parameters_never_copy_a_withheld_identifier) (tool='set_automation_trace_watch')",
+      "FAIL: test_known_identifier_cannot_reach_watch_storage (tests.test_hamcp225_review1_reviewer_probes.Gateway.test_known_identifier_cannot_reach_watch_storage) (sink='audit')"
+    ],
+    "killing_count": 4,
+    "seconds": 9.3,
+    "log": "logs/H2-gateway-audit-copies-raw.log (local, not committed)"
+  },
+  {
+    "id": "H2-digest-form-accepted",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/contracts.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_digest_shaped_input_is_refused (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_digest_shaped_input_is_refused)"
+    ],
+    "killing_count": 1,
+    "seconds": 9.4,
+    "log": "logs/H2-digest-form-accepted.log (local, not committed)"
+  },
+  {
+    "id": "H3-quarantine-unbounded",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_repeated_corruption_cannot_grow_storage_past_the_bound (tests.test_hamcp225_trace_snapshots.QuarantineTests.test_repeated_corruption_cannot_grow_storage_past_the_bound)"
+    ],
+    "killing_count": 1,
+    "seconds": 9.1,
+    "log": "logs/H3-quarantine-unbounded.log (local, not committed)"
+  },
+  {
+    "id": "M1-first-poll-discards",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_first_poll_captures_runs_finished_after_the_watch_was_created (tests.test_hamcp225_trace_snapshots.PollTests.test_first_poll_captures_runs_finished_after_the_watch_was_created)",
+      "FAIL: test_run_after_watch_creation_before_first_tick_is_captured (tests.test_hamcp225_review1_reviewer_probes.Polling.test_run_after_watch_creation_before_first_tick_is_captured)"
+    ],
+    "killing_count": 2,
+    "seconds": 9.1,
+    "log": "logs/M1-first-poll-discards.log (local, not committed)"
+  },
+  {
+    "id": "M2-no-rotation",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_slow_first_watch_cannot_starve_the_next_and_the_start_rotates (tests.test_hamcp225_trace_snapshots.PollTests.test_slow_first_watch_cannot_starve_the_next_and_the_start_rotates)"
+    ],
+    "killing_count": 1,
+    "seconds": 9.2,
+    "log": "logs/M2-no-rotation.log (local, not committed)"
+  },
+  {
+    "id": "M2-no-per-watch-budget",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_slow_first_watch_cannot_starve_the_next_and_the_start_rotates (tests.test_hamcp225_trace_snapshots.PollTests.test_slow_first_watch_cannot_starve_the_next_and_the_start_rotates)"
+    ],
+    "killing_count": 1,
+    "seconds": 10.3,
+    "log": "logs/M2-no-per-watch-budget.log (local, not committed)"
+  },
+  {
+    "id": "M3-no-recheck-before-commit",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_authority_retired_before_commit_stores_nothing_and_pauses (tests.test_hamcp225_trace_snapshots.PollTests.test_authority_retired_before_commit_stores_nothing_and_pauses)",
+      "FAIL: test_generation_change_before_commit_stores_nothing (tests.test_hamcp225_trace_snapshots.PollTests.test_generation_change_before_commit_stores_nothing)",
+      "FAIL: test_authority_loss_after_last_read_stores_nothing (tests.test_hamcp225_review1_reviewer_probes.Polling.test_authority_loss_after_last_read_stores_nothing)"
+    ],
+    "killing_count": 3,
+    "seconds": 11.6,
+    "log": "logs/M3-no-recheck-before-commit.log (local, not committed)"
+  },
+  {
+    "id": "R-cross-watch-eviction",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_cross_watch_quota_never_evicts_other_watch_or_manual (tests.test_hamcp225_review1_store_probes.Storage.test_cross_watch_quota_never_evicts_other_watch_or_manual)"
+    ],
+    "killing_count": 1,
+    "seconds": 11.5,
+    "log": "logs/R-cross-watch-eviction.log (local, not committed)"
+  },
+  {
+    "id": "D-partial-flag",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='split', position='variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='split', position='context')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='split', position='changed_variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='split', position='service_data')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='split', position='error')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='percent', position='variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='percent', position='context')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='percent', position='changed_variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='percent', position='service_data')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='percent', position='error')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='confusable', position='variables')",
+      "FAIL: test_hardened_screen_applies_before_storage_and_readback (tests.test_hamcp225_review1_reviewer_probes.Security.test_hardened_screen_applies_before_storage_and_readback) (sink='completeness', form='confusable', position='context')"
+    ],
+    "killing_count": 25,
+    "seconds": 11.8,
+    "log": "logs/D-partial-flag.log (local, not committed)"
+  },
+  {
+    "id": "D-domain-literal",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_authority_drift_aborts_and_stores_nothing (tests.test_hamcp225_trace_snapshots.CaptureTests.test_authority_drift_aborts_and_stores_nothing)",
+      "FAIL: test_capture_bound_reports_omitted_runs_as_partial (tests.test_hamcp225_trace_snapshots.CaptureTests.test_capture_bound_reports_omitted_runs_as_partial)",
+      "FAIL: test_capture_selects_stored_runs_and_reads_only_automation_traces (tests.test_hamcp225_trace_snapshots.CaptureTests.test_capture_selects_stored_runs_and_reads_only_automation_traces)",
+      "FAIL: test_condition_failures_are_opt_in (tests.test_hamcp225_trace_snapshots.CaptureTests.test_condition_failures_are_opt_in)",
+      "FAIL: test_every_per_run_outcome (tests.test_hamcp225_trace_snapshots.CaptureTests.test_every_per_run_outcome)",
+      "FAIL: test_manual_capture_is_refused_at_capacity_and_evicts_nothing (tests.test_hamcp225_trace_snapshots.CaptureTests.test_manual_capture_is_refused_at_capacity_and_evicts_nothing)",
+      "FAIL: test_unexpected_caller_shape_is_never_persisted (tests.test_hamcp225_trace_snapshots.CaptureTests.test_unexpected_caller_shape_is_never_persisted)",
+      "FAIL: test_capture_persists_and_returns_only_digests (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_capture_persists_and_returns_only_digests)",
+      "FAIL: test_clean_identifiers_are_kept (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_clean_identifiers_are_kept)",
+      "FAIL: test_quarantine_stub_keeps_only_the_digest (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_quarantine_stub_keeps_only_the_digest)",
+      "FAIL: test_watch_rows_audit_and_polls_use_the_digest (tests.test_hamcp225_trace_snapshots.IdentifierTests.test_watch_rows_audit_and_polls_use_the_digest)",
+      "FAIL: test_commit_failure_after_index_replace_blocks_the_store (tests.test_hamcp225_trace_snapshots.ListAndGetTests.test_commit_failure_after_index_replace_blocks_the_store)"
+    ],
+    "killing_count": 72,
+    "seconds": 5.0,
+    "log": "logs/D-domain-literal.log (local, not committed)"
+  },
+  {
+    "id": "D-quota-boundary",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_watch_quota_evicts_only_its_own_oldest (tests.test_hamcp225_trace_snapshots.PollTests.test_watch_quota_evicts_only_its_own_oldest)"
+    ],
+    "killing_count": 1,
+    "seconds": 11.3,
+    "log": "logs/D-quota-boundary.log (local, not committed)"
+  },
+  {
+    "id": "D-cursor-caller-unbound",
+    "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/service.py",
+    "result": "KILLED",
+    "killing_tests": [
+      "FAIL: test_get_pages_steps_in_order_and_refuses_foreign_cursors (tests.test_hamcp225_trace_snapshots.ListAndGetTests.test_get_pages_steps_in_order_and_refuses_foreign_cursors)",
+      "FAIL: test_list_pages_newest_first_with_a_caller_bound_cursor (tests.test_hamcp225_trace_snapshots.ListAndGetTests.test_list_pages_newest_first_with_a_caller_bound_cursor)"
+    ],
+    "killing_count": 2,
+    "seconds": 11.6,
+    "log": "logs/D-cursor-caller-unbound.log (local, not committed)"
+  }
+]

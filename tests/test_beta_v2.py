@@ -615,6 +615,10 @@ class ToolParityTests(unittest.TestCase):
                 "create_input_select_option_plan",
                 "list_script_traces",
                 "get_script_trace",
+                "capture_automation_trace",
+                "list_trace_snapshots",
+                "get_trace_snapshot",
+                "set_automation_trace_watch",
                 "create_addon_restart_plan",
                 "create_home_assistant_restart_plan",
                 "create_change_plan",
@@ -710,6 +714,10 @@ class ToolParityTests(unittest.TestCase):
                 "dashboard_integrity_analysis",
                 "reverify_configuration_task",
                 "capture_automation_baseline",
+                "capture_automation_trace",
+                "list_trace_snapshots",
+                "get_trace_snapshot",
+                "set_automation_trace_watch",
                 "get_integration_inspection",
                 "get_backup_inventory",
                 "get_recorder_settings",
@@ -760,7 +768,7 @@ class ToolParityTests(unittest.TestCase):
             Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(catalog["provider_matrix"]), 28)
+        self.assertEqual(len(catalog["provider_matrix"]), 32)
         self.assertEqual(
             {item["selected_provider"] for item in catalog["provider_matrix"]},
             {"direct_ha_api", "supervisor_core_logs", "supervisor_incident_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power", "upstream_platform_reads", "ha_mcp_delegated"},
@@ -958,6 +966,10 @@ class BetaApplicationTests(unittest.TestCase):
             "create_entity_availability_exposure_plan",
             "create_label_plan",
             "create_configuration_delete_plan",
+            "capture_automation_trace",
+            "list_trace_snapshots",
+            "get_trace_snapshot",
+            "set_automation_trace_watch",
             "create_addon_restart_plan",
             "create_home_assistant_restart_plan",
             "list_dashboards",

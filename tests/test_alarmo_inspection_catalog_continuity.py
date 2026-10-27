@@ -30,6 +30,25 @@ def _without_hamcp171_deep_storage_audit(case, descriptor):
     return descriptor
 
 
+# HAMCP-225 (2.4.1-beta.39) sanitizes get_automation_trace output and adds
+# one disclosure to its description; its input schema is unchanged. Strip only
+# that reviewed text before comparing with the historical baseline.
+HAMCP225_TRACE_DESCRIPTION = (
+    " Engineering withholds credential-like and\n"
+    "    known-secret values and shortens strings over 2,000 characters; such a\n"
+    "    trace is marked partial and names the withheld categories. A value an\n"
+    "    automation resolved from !secret is withheld only when it matches a\n"
+    "    credential pattern."
+)
+
+
+def _without_hamcp225_trace_disclosure(case, descriptor):
+    descriptor = json.loads(json.dumps(descriptor))
+    case.assertEqual(descriptor["description"].count(HAMCP225_TRACE_DESCRIPTION), 1)
+    descriptor["description"] = descriptor["description"].replace(HAMCP225_TRACE_DESCRIPTION, "")
+    return descriptor
+
+
 class CatalogTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_55_existing_descriptors_identical_exactly_one_added(self):
         expected = json.loads((FIXTURES / "beta10_catalog_baseline.json").read_text())["baseline_descriptors_sha256"]
@@ -44,9 +63,14 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
                                                           "create_configuration_delete_plan",
                                                           "create_helper_options_plan",
                                                           "create_input_select_option_plan",
-                                                          "list_script_traces", "get_script_trace"})
+                                                          "list_script_traces", "get_script_trace",
+                                                          "capture_automation_trace",
+                                                          "list_trace_snapshots",
+                                                          "get_trace_snapshot",
+                                                          "set_automation_trace_watch"})
         self.assertEqual(set(expected) - set(actual), set())
         actual["get_server_health"] = _without_hamcp171_deep_storage_audit(self, actual["get_server_health"])
+        actual["get_automation_trace"] = _without_hamcp225_trace_disclosure(self, actual["get_automation_trace"])
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 72)

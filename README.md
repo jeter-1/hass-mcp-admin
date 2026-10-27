@@ -1,17 +1,48 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.38** builds the November Core batch inactive
-(HAMCP-232, HAMCP-145): governed edits of existing template (sensor,
-binary_sensor), filter and statistics helpers through their options flow,
-governed input_select option selection, and sanitized script-trace reads. It
+Staged, not yet released: Engineering **2.4.1-beta.41** builds the November
+Core batch inactive (HAMCP-232, HAMCP-145): governed edits of existing
+template (sensor, binary_sensor), filter and statistics helpers through their
+options flow, governed input_select option selection, and script-trace reads
+sanitized by the same trace sanitizer as the HAMCP-225 automation traces. It
 activates nothing new: `create_helper_options_plan`,
 `create_input_select_option_plan`, `list_script_traces` and
 `get_script_trace` refuse `pending_signed_registry_admission` before any Home
-Assistant request until a signed Core registry sequence names their
-runtime-only profiles. The dormant sequence-15 evidence lanes are wired but
-do not run. No signed registry, signed profile, fingerprint or existing
-schema change; static tools 72, advertised catalog 100 (101 with the
+Assistant request or persistence until a signed Core registry sequence names
+their runtime-only profiles. The dormant sequence-15 evidence lanes are wired
+but do not run. No signed registry, signed profile, existing fingerprint or
+existing schema change; static tools 76, advertised catalog 104 (105 with the
+optional YAML reader) on the beta.39 base; 77 / 105 (106) once beta.40 (#317)
+merges in. Read the
+[2.4.1-beta.41 release notes](docs/V2_4_1_BETA41_RELEASE_NOTES.md) and
+[2.4.1-beta.41 acceptance contract](docs/V2_4_1_BETA41_ACCEPTANCE.md).
+
+Engineering **2.4.1-beta.39** adds automation trace snapshots (HAMCP-225).
+`capture_automation_trace` stores sanitized copies of an automation's
+retained traces before Core rotates them; `list_trace_snapshots` and
+`get_trace_snapshot` read them back with no Home Assistant call; and
+`set_automation_trace_watch` keeps up to 10 automations watched, capturing
+their new runs every 30 seconds with no plan or approval (read-only toward
+Home Assistant; every change is audited). Manual captures are refused at
+capacity; a watch evicts only its own oldest snapshot beyond 20.
+`get_automation_trace` is now sanitized and can be `partial`. No Home
+Assistant write; static tools 72, advertised catalog 100 (101 with the
 optional YAML reader). Read the
+[2.4.1-beta.39 release notes](docs/V2_4_1_BETA39_RELEASE_NOTES.md) and
+[2.4.1-beta.39 acceptance contract](docs/V2_4_1_BETA39_ACCEPTANCE.md).
+
+It builds on beta.38 and the releases below.
+
+Engineering **2.4.1-beta.38** lets `get_incident_logs` read the
+`supervisor`, `host`, `host:<category>` and `addon:<slug>` sources
+(HAMCP-224). Engineering keeps role `homeassistant`; with the new add-on
+option `journald: true` the Supervisor mounts the host journal read-only,
+and a fixed read-only `libsystemd` reader takes those sources from it with
+journal timestamps. A credential-looking journal field is withheld whole by
+the same screen as the configuration-definitions report,
+and journald off or unreadable is reported unavailable with its reason.
+Rollback is reinstalling beta.37. Static tools 68, advertised catalog 96 (97
+with the optional YAML reader). Read the
 [2.4.1-beta.38 release notes](docs/V2_4_1_BETA38_RELEASE_NOTES.md) and
 [2.4.1-beta.38 acceptance contract](docs/V2_4_1_BETA38_ACCEPTANCE.md).
 

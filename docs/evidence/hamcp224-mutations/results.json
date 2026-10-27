@@ -1,0 +1,1513 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp224_host_journal",
+   "test_hamcp224_review1_corrections",
+   "test_hamcp224_review2_corrections",
+   "test_hamcp224_review3_corrections",
+   "test_pr313_delta_residuals",
+   "test_pr313_independent_review",
+   "test_review2_ansi_residual",
+   "test_hamcp131_incident_logs",
+   "test_hamcp220_incident_log_timestamps",
+   "test_hamcp191_shared_sanitizer",
+   "test_hamcp132_configuration_definitions",
+   "test_pr294_delta_review",
+   "test_pr294_corr2_extra",
+   "test_pr294_final32_review"
+  ],
+  "returncode": 0,
+  "tests": 524,
+  "seconds": 72.9,
+  "summary": "OK (expected failures=1)"
+ },
+ "mutation_count": 78,
+ "killed": 78,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "F1-machine-id-read",
+   "class": "a non-allowlisted field read or returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "boot, _ = self._field(\"_BOOT_ID\")",
+     "boot, _ = self._field(\"_MACHINE_ID\")"
+    ]
+   ],
+   "log_path": "mutation-logs/F1-machine-id-read.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_only_allowlisted_fields_and_bound_symbols_are_used (test_hamcp224_host_journal.HostJournalReaderTests.test_only_allowlisted_fields_and_bound_symbols_are_used)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "F2-raw-boot-id-returned",
+   "class": "a non-allowlisted field read or returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "boot_ref=None if boot is None else self.digest(\"journal_boot\", boot)[:12],",
+     "boot_ref=None if boot is None else boot.decode(\"ascii\"),"
+    ]
+   ],
+   "log_path": "mutation-logs/F2-raw-boot-id-returned.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_runtime_and_persistent_journals_merge_in_one_order (test_hamcp224_host_journal.HostJournalReaderTests.test_runtime_and_persistent_journals_merge_in_one_order)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "F3-raw-journal-cursor-kept",
+   "class": "a non-allowlisted field read or returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "            return self.digest(\"journal_cursor\", ctypes.string_at(pointer.value))",
+     "            return ctypes.string_at(pointer.value).decode(\"ascii\")"
+    ]
+   ],
+   "log_path": "mutation-logs/F3-raw-journal-cursor-kept.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_continuation_resumes_after_the_digested_entry_even_within_one_microsecond (test_hamcp224_host_journal.HostJournalReaderTests.test_continuation_resumes_after_the_digested_entry_even_within_one_microsecond)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "F4-entry-key-outside-allowlist",
+   "class": "a non-allowlisted field read or returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                    row[\"boot_ref\"] = item.record.boot_ref\n",
+     "                    row[\"boot_ref\"] = item.record.boot_ref\n                    row[\"journal_entry\"] = item.digest\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F4-entry-key-outside-allowlist.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_no_planted_value_or_unlisted_field_is_ever_returned (test_hamcp224_host_journal.JournalServiceTests.test_no_planted_value_or_unlisted_field_is_ever_returned)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "F5-process-returned-unscreened",
+   "class": "a non-allowlisted field read or returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                fields[name], field_omission = hj.screen_text(raw, secrets, name in record.truncated_fields)",
+     "                fields[name], field_omission = raw.decode(\"utf-8\", \"replace\"), None"
+    ]
+   ],
+   "log_path": "mutation-logs/F5-process-returned-unscreened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_screening_is_called_only_at_the_single_exit (test_hamcp224_host_journal.StaticBoundaryTests.test_screening_is_called_only_at_the_single_exit)"
+   ],
+   "seconds": 6.6
+  },
+  {
+   "id": "S1-credential-screen-skipped",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    marker = credentials.screen(text, known_secrets, labelled=True)",
+     "    marker = None"
+    ]
+   ],
+   "log_path": "mutation-logs/S1-credential-screen-skipped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "S2-labelled-forms-not-opted-in",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    marker = credentials.screen(text, known_secrets, labelled=True)",
+     "    marker = credentials.screen(text, known_secrets)"
+    ]
+   ],
+   "log_path": "mutation-logs/S2-labelled-forms-not-opted-in.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "S3-squashed-labelled-form-dropped",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "        or _SQUASHED_LABELLED_FIELD.search(squashed) is not None\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/S3-squashed-labelled-form-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_withholds_the_whole_message_for_credential_forms (test_hamcp224_host_journal.ScreenTextTests.test_withholds_the_whole_message_for_credential_forms)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "S4-confusables-not-folded",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    text = fold_confusables(text)\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/S4-confusables-not-folded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_withholds_the_whole_message_for_credential_forms (test_hamcp224_host_journal.ScreenTextTests.test_withholds_the_whole_message_for_credential_forms)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "S5-pem-private-key-kept",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "        or _PEM_PRIVATE.search(text) is not None or _PEM_PRIVATE.search(squashed) is not None\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/S5-pem-private-key-kept.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_value_shapes_remain_a_layer_of_their_own (test_hamcp224_review2_corrections.LabelKeyedTests.test_the_value_shapes_remain_a_layer_of_their_own)"
+   ],
+   "seconds": 25.2
+  },
+  {
+   "id": "S6-mosquitto-password-option-kept",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "        or password_option(decoded)\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/S6-mosquitto-password-option-kept.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "S7-unverifiable-text-kept",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    if unverifiable_text(value):\n        return UNVERIFIABLE_MARKER\n    if credential_text(value, known_secrets, labelled=labelled):",
+     "    if credential_text(value, known_secrets, labelled=labelled):"
+    ]
+   ],
+   "log_path": "mutation-logs/S7-unverifiable-text-kept.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_invisible_characters_are_unverifiable (test_hamcp224_host_journal.ScreenTextTests.test_invisible_characters_are_unverifiable)"
+   ],
+   "seconds": 5.4
+  },
+  {
+   "id": "S8-ansi-not-stripped",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    text = _SGR.sub(\"\", original)\n",
+     "    text = original\n"
+    ]
+   ],
+   "log_path": "mutation-logs/S8-ansi-not-stripped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_credential_messages_are_withheld_whole_and_never_searched (test_hamcp224_host_journal.JournalServiceTests.test_credential_messages_are_withheld_whole_and_never_searched)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "S9-withheld-text-returned-with-omission",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "        return marker, OMISSIONS[marker]",
+     "        return text, OMISSIONS[marker]"
+    ]
+   ],
+   "log_path": "mutation-logs/S9-withheld-text-returned-with-omission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_bearer_tokens_are_withheld_whole (test_hamcp224_host_journal.ScreenTextTests.test_bearer_tokens_are_withheld_whole)"
+   ],
+   "seconds": 5.2
+  },
+  {
+   "id": "S10-shared-sanitizer-output-ignored",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            safe = list(sanitized[offset:offset + len(entry_lines)])",
+     "            safe = list(entry_lines)"
+    ]
+   ],
+   "log_path": "mutation-logs/S10-shared-sanitizer-output-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_token_forms_the_screen_keeps_are_redacted_by_the_shared_sanitizer (test_hamcp224_host_journal.JournalServiceTests.test_token_forms_the_screen_keeps_are_redacted_by_the_shared_sanitizer)"
+   ],
+   "seconds": 4.9
+  },
+  {
+   "id": "S11-withheld-message-searchable",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "\"search\": \"\" if withheld else ((fields[\"process\"] or \"\") + \": \" + body).casefold(),",
+     "\"search\": ((fields[\"process\"] or \"\") + \": \" + (item.record.message or b\"\").decode(\"utf-8\", \"replace\")).casefold(),"
+    ]
+   ],
+   "log_path": "mutation-logs/S11-withheld-message-searchable.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_credential_messages_are_withheld_whole_and_never_searched (test_hamcp224_host_journal.JournalServiceTests.test_credential_messages_are_withheld_whole_and_never_searched)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "H1-truncated-before-screening",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "hj.screen_text(record.message or b\"\", self.known_secrets, record.message_truncated)",
+     "hj.screen_text((record.message or b\"\")[:c.MAX_MESSAGE_CHARS], self.known_secrets)"
+    ]
+   ],
+   "log_path": "mutation-logs/H1-truncated-before-screening.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_levels_text_filter_and_kernel_fields (test_hamcp224_host_journal.JournalServiceTests.test_levels_text_filter_and_kernel_fields)"
+   ],
+   "seconds": 3.4
+  },
+  {
+   "id": "H2-journal-specific-screen",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    marker = credentials.screen(text, known_secrets, labelled=True)",
+     "    marker = WITHHELD_MARKER if re.search(r\"(?i)\\b(?:password|token|api_key)\\s*[:=]\", text) else None"
+    ]
+   ],
+   "log_path": "mutation-logs/H2-journal-specific-screen.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "H3-squashed-form-removed",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    squashed = squash(text)\n",
+     "    squashed = text\n"
+    ]
+   ],
+   "log_path": "mutation-logs/H3-squashed-form-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_withholds_the_whole_message_for_credential_forms (test_hamcp224_host_journal.ScreenTextTests.test_withholds_the_whole_message_for_credential_forms)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "T1-text-prefix-time-used",
+   "class": "text timestamps used instead of the journal realtime",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                entry = RawEntry(ts_ms=record.rt_us // 1000,",
+     "                found = re.search(rb\"(\\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d)\\.(\\d{3})\", record.message or b\"\")\n                ts = (int(datetime.strptime(found[1].decode(), \"%Y-%m-%d %H:%M:%S\").replace(tzinfo=timezone.utc).timestamp()) * 1000 + int(found[2])) if found else record.rt_us // 1000\n                entry = RawEntry(ts_ms=ts,"
+    ]
+   ],
+   "log_path": "mutation-logs/T1-text-prefix-time-used.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_core_and_supervisor_journal_entries_interleave_by_time (test_hamcp224_host_journal.MixedSourceTests.test_core_and_supervisor_journal_entries_interleave_by_time)"
+   ],
+   "seconds": 5.5
+  },
+  {
+   "id": "T2-epoch-prefix-time-used",
+   "class": "text timestamps used instead of the journal realtime",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                entry = RawEntry(ts_ms=record.rt_us // 1000,",
+     "                found = re.match(rb\"(\\d{10}): \", record.message or b\"\")\n                ts = int(found[1]) * 1000 if found else record.rt_us // 1000\n                entry = RawEntry(ts_ms=ts,"
+    ]
+   ],
+   "log_path": "mutation-logs/T2-epoch-prefix-time-used.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "O1-journald-off-not-detected",
+   "class": "journald off or unreadable reported as complete or empty",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    if not present:\n        return \"journald_not_enabled\"\n",
+     "    if not present:\n        return None\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O1-journald-off-not-detected.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unavailability_comes_from_the_mount_table_and_the_open (test_hamcp224_host_journal.HostJournalReaderTests.test_unavailability_comes_from_the_mount_table_and_the_open)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "O2-empty-journal-read-as-empty",
+   "class": "journald off or unreadable reported as complete or empty",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "            self.result.unavailable = \"journal_empty_or_unsupported\"\n            return\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O2-empty-journal-read-as-empty.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unavailability_comes_from_the_mount_table_and_the_open (test_hamcp224_host_journal.HostJournalReaderTests.test_unavailability_comes_from_the_mount_table_and_the_open)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "O3-unavailable-read-finished",
+   "class": "journald off or unreadable reported as complete or empty",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                scan.failure = read.unavailable or \"journal_read_failed\"\n",
+     "                scan.finished = \"tail_reached\"\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O3-unavailable-read-finished.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_reader_exception_fails_closed_per_source (test_hamcp224_host_journal.JournalServiceTests.test_a_reader_exception_fails_closed_per_source)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "O4-unavailable-row-complete",
+   "class": "journald off or unreadable reported as complete or empty",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            status = \"unavailable\" if not taken else \"failed\"",
+     "            status = \"complete\""
+    ]
+   ],
+   "log_path": "mutation-logs/O4-unavailable-row-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_reader_exception_fails_closed_per_source (test_hamcp224_host_journal.JournalServiceTests.test_a_reader_exception_fails_closed_per_source)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "O5-failed-source-cursor-done",
+   "class": "journald off or unreadable reported as complete or empty",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            return {\"failed\": 1}\n        if scan.finished is not None and count == len(scan.items):",
+     "            return {\"done\": 1}\n        if scan.finished is not None and count == len(scan.items):"
+    ]
+   ],
+   "log_path": "mutation-logs/O5-failed-source-cursor-done.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_journal_failure_stays_failed_on_later_pages (test_hamcp224_host_journal.MixedSourceTests.test_a_journal_failure_stays_failed_on_later_pages)"
+   ],
+   "seconds": 5.2
+  },
+  {
+   "id": "O6-reader-exception-escapes",
+   "class": "journald off or unreadable reported as complete or empty",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "        except Exception:\n            read = hj.JournalRead(unavailable=\"journal_read_failed\")\n",
+     "        except ZeroDivisionError:\n            read = hj.JournalRead(unavailable=\"journal_read_failed\")\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O6-reader-exception-escapes.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_reader_exception_fails_closed_per_source (test_hamcp224_host_journal.JournalServiceTests.test_a_reader_exception_fails_closed_per_source)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "M1-read-write-mount-accepted",
+   "class": "a journal mount not verified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    if any(\"ro\" not in mounts[point] for point in present):\n        return \"journal_mount_not_read_only\"\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/M1-read-write-mount-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unavailability_comes_from_the_mount_table_and_the_open (test_hamcp224_host_journal.HostJournalReaderTests.test_unavailability_comes_from_the_mount_table_and_the_open)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "M2-incomplete-mount-accepted",
+   "class": "a journal mount not verified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    if len(present) != len(MOUNT_POINTS):\n        return \"journal_mount_incomplete\"\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/M2-incomplete-mount-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_mount_table_parsing (test_hamcp224_host_journal.HostJournalReaderTests.test_mount_table_parsing)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "M3-lowest-mount-wins",
+   "class": "a journal mount not verified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "        mounts[point] = frozenset(parts[5].split(\",\"))",
+     "        mounts.setdefault(point, frozenset(parts[5].split(\",\")))"
+    ]
+   ],
+   "log_path": "mutation-logs/M3-lowest-mount-wins.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unavailability_comes_from_the_mount_table_and_the_open (test_hamcp224_host_journal.HostJournalReaderTests.test_unavailability_comes_from_the_mount_table_and_the_open)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "M4-mount-escapes-not-decoded",
+   "class": "a journal mount not verified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "        point = _MOUNT_ESCAPE.sub(lambda m: chr(int(m.group(1), 8)), parts[4])",
+     "        point = parts[4]"
+    ]
+   ],
+   "log_path": "mutation-logs/M4-mount-escapes-not-decoded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_mount_table_parsing (test_hamcp224_host_journal.HostJournalReaderTests.test_mount_table_parsing)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "M5-symlinks-followed",
+   "class": "a journal mount not verified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "OPEN_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC",
+     "OPEN_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC"
+    ]
+   ],
+   "log_path": "mutation-logs/M5-symlinks-followed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unavailability_comes_from_the_mount_table_and_the_open (test_hamcp224_host_journal.HostJournalReaderTests.test_unavailability_comes_from_the_mount_table_and_the_open)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "M6-journal-directories-not-opened",
+   "class": "a journal mount not verified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "                    os.close(os.open(point.lstrip(\"/\"), OPEN_FLAGS, dir_fd=root))",
+     "                    pass"
+    ]
+   ],
+   "log_path": "mutation-logs/M6-journal-directories-not-opened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_unreadable_mount_directory_reports_its_errno (test_hamcp224_host_journal.HostJournalReaderTests.test_an_unreadable_mount_directory_reports_its_errno)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "B1-field-cap-ignored",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "        take = min(size.value, len(prefix) + MAX_FIELD_BYTES)",
+     "        take = size.value"
+    ]
+   ],
+   "log_path": "mutation-logs/B1-field-cap-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_field_cap_truncates_the_message_and_marks_it (test_hamcp224_host_journal.HostJournalReaderTests.test_field_cap_truncates_the_message_and_marks_it)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "B2-truncation-not-reported",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "        return raw[len(prefix):], size.value > take",
+     "        return raw[len(prefix):], False"
+    ]
+   ],
+   "log_path": "mutation-logs/B2-truncation-not-reported.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_field_cap_truncates_the_message_and_marks_it (test_hamcp224_host_journal.HostJournalReaderTests.test_field_cap_truncates_the_message_and_marks_it)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "B3-resume-walk-uncounted",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "        if scan.scanned + scan.resume_walked + scan.probed >= MAX_SCAN_ENTRIES:",
+     "        if scan.scanned + scan.probed >= MAX_SCAN_ENTRIES:"
+    ]
+   ],
+   "log_path": "mutation-logs/B3-resume-walk-uncounted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_bound_stops_the_scan_with_its_reason (test_hamcp224_host_journal.HostJournalReaderTests.test_each_bound_stops_the_scan_with_its_reason)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "B4-field-bytes-uncounted",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "        self.result.field_bytes += take\n",
+     "        pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/B4-field-bytes-uncounted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_bound_stops_the_scan_with_its_reason (test_hamcp224_host_journal.HostJournalReaderTests.test_each_bound_stops_the_scan_with_its_reason)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "B5-deadline-ignored",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "        if time.monotonic() >= self.deadline:\n            return \"deadline_reached\"\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/B5-deadline-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_expired_deadline_takes_no_step_and_reads_no_field (test_hamcp224_review1_corrections.SharedBoundTests.test_an_expired_deadline_takes_no_step_and_reads_no_field)"
+   ],
+   "seconds": 23.4
+  },
+  {
+   "id": "B6-deadline-not-reserved",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                                           budget.deadline - 1.0)",
+     "                                           budget.deadline)"
+    ]
+   ],
+   "log_path": "mutation-logs/B6-deadline-not-reserved.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_journal_read_runs_in_one_worker_thread_with_the_call_deadline (test_hamcp224_host_journal.JournalServiceTests.test_the_journal_read_runs_in_one_worker_thread_with_the_call_deadline)"
+   ],
+   "seconds": 4.9
+  },
+  {
+   "id": "B7-bound-stop-not-disclosed",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "        stopped = None if result is None or scan.failure is not None or scan.finished else result.stopped",
+     "        stopped = None"
+    ]
+   ],
+   "log_path": "mutation-logs/B7-bound-stop-not-disclosed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_scan_bound_is_disclosed_and_resumes (test_hamcp224_host_journal.JournalServiceTests.test_scan_bound_is_disclosed_and_resumes)"
+   ],
+   "seconds": 5.0
+  },
+  {
+   "id": "B8-read-on-the-event-loop",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "read = await asyncio.to_thread(self.journal_reader.read, plans, self.codec.digest,",
+     "read = await asyncio.sleep(0) or self.journal_reader.read(plans, self.codec.digest,"
+    ]
+   ],
+   "log_path": "mutation-logs/B8-read-on-the-event-loop.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_journal_read_runs_in_one_worker_thread_with_the_call_deadline (test_hamcp224_host_journal.JournalServiceTests.test_the_journal_read_runs_in_one_worker_thread_with_the_call_deadline)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "C1-resume-without-digest-match",
+   "class": "a continuation not bound to the consumed entry",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "            if self._cursor_digest() == wanted:",
+     "            if True:"
+    ]
+   ],
+   "log_path": "mutation-logs/C1-resume-without-digest-match.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_unknown_digest_is_stale (test_hamcp224_host_journal.HostJournalReaderTests.test_an_unknown_digest_is_stale)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "C2-stale-continuation-restarted",
+   "class": "a continuation not bound to the consumed entry",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                # The consumed entry is gone, or a clock step hides it.\n                raise c.cursor_error(True, \"journal_continuity_broken\")\n",
+     "                scan.journal_state = None\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C2-stale-continuation-restarted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_vanished_entry_breaks_continuity (test_hamcp224_host_journal.JournalServiceTests.test_a_vanished_entry_breaks_continuity)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "C3-state-names-the-wrong-entry",
+   "class": "a continuation not bound to the consumed entry",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            item = scan.items[count - 1]\n            # The entry's realtime",
+     "            item = scan.items[0]\n            # The entry's realtime"
+    ]
+   ],
+   "log_path": "mutation-logs/C3-state-names-the-wrong-entry.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_pages_continue_without_loss_or_repeat (test_hamcp224_host_journal.JournalServiceTests.test_pages_continue_without_loss_or_repeat)"
+   ],
+   "seconds": 5.4
+  },
+  {
+   "id": "C4-state-digest-unchecked",
+   "class": "a continuation not bound to the consumed entry",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "        and type(state[\"jd\"]) is str and _HEX32.match(state[\"jd\"]) is not None\n",
+     "        and type(state[\"jd\"]) is str\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C4-state-digest-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_signed_state_with_a_malformed_digest_is_refused (test_hamcp224_host_journal.JournalServiceTests.test_a_signed_state_with_a_malformed_digest_is_refused)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "A1-addon-equality-unchecked",
+   "class": "an entry outside its source's match returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    if match.equal and len({values.get(name) for name in match.equal}) != 1:\n        return False\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/A1-addon-equality-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_addon_match_requires_container_transport_and_equal_names (test_hamcp224_host_journal.HostJournalReaderTests.test_addon_match_requires_container_transport_and_equal_names)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "A2-addon-transport-unchecked",
+   "class": "an entry outside its source's match returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "CONTAINER_NAME=names, _TRANSPORT=\"journal\"),),",
+     "CONTAINER_NAME=names),),"
+    ]
+   ],
+   "log_path": "mutation-logs/A2-addon-transport-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_addon_match_requires_container_transport_and_equal_names (test_hamcp224_host_journal.HostJournalReaderTests.test_addon_match_requires_container_transport_and_equal_names)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "A3-rejected-entries-in-window",
+   "class": "an entry outside its source's match returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                in_window = record.rejected is None and start_us <= record.rt_us < end_us",
+     "                in_window = start_us <= record.rt_us < end_us"
+    ]
+   ],
+   "log_path": "mutation-logs/A3-rejected-entries-in-window.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_unreadable_entry_alone_makes_the_source_partial (test_hamcp224_host_journal.JournalServiceTests.test_an_unreadable_entry_alone_makes_the_source_partial)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "A4-addon-self-as-journal-source",
+   "class": "an entry outside its source's match returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/contracts.py",
+     "    return source_key not in READABLE_ROUTES",
+     "    return source_key != SOURCE_CORE"
+    ]
+   ],
+   "log_path": "mutation-logs/A4-addon-self-as-journal-source.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_addon_match_requires_container_transport_and_equal_names (test_hamcp224_host_journal.HostJournalReaderTests.test_addon_match_requires_container_transport_and_equal_names)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "A5-sshd-in-host-set",
+   "class": "an entry outside its source's match returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    \"wpa_supplicant\",\n})",
+     "    \"wpa_supplicant\", \"sshd\",\n})"
+    ]
+   ],
+   "log_path": "mutation-logs/A5-sshd-in-host-set.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_host_categories_follow_their_pinned_matches (test_hamcp224_host_journal.HostJournalReaderTests.test_host_categories_follow_their_pinned_matches)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "A6-error-read-as-warning",
+   "class": "an entry outside its source's match returned",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "b\"3\": \"error\"",
+     "b\"3\": \"warning\""
+    ]
+   ],
+   "log_path": "mutation-logs/A6-error-read-as-warning.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_levels_text_filter_and_kernel_fields (test_hamcp224_host_journal.JournalServiceTests.test_levels_text_filter_and_kernel_fields)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "E1-clock-regression-uncounted",
+   "class": "a clock or retention disclosure dropped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "            scan.clock_regressions += 1\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/E1-clock-regression-uncounted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_both_fixture_variants_read_the_addon_from_its_container_only (test_hamcp224_host_journal.HostJournalReaderTests.test_both_fixture_variants_read_the_addon_from_its_container_only)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "E2-retention-edge-gap-dropped",
+   "class": "a clock or retention disclosure dropped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                if read.cutoff_from_us is not None and read.cutoff_from_us > start_us:",
+     "                if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/E2-retention-edge-gap-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_window_before_retention_is_a_gap_never_complete (test_hamcp224_host_journal.JournalServiceTests.test_window_before_retention_is_a_gap_never_complete)"
+   ],
+   "seconds": 5.0
+  },
+  {
+   "id": "W1-final-envelope-scan-removed",
+   "class": "a withheld entry or field reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                items = credentials.withheld_items(result.value)\n",
+     "                items = []\n"
+    ]
+   ],
+   "log_path": "mutation-logs/W1-final-envelope-scan-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_returned_field_is_reported (test_hamcp224_review1_corrections.CompletenessTests.test_a_withheld_returned_field_is_reported)"
+   ],
+   "seconds": 8.6
+  },
+  {
+   "id": "W2-withheld-field-not-reported",
+   "class": "a withheld entry or field reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            withheld = omission or next(iter(fields_withheld.values()), None)\n",
+     "            withheld = omission\n"
+    ]
+   ],
+   "log_path": "mutation-logs/W2-withheld-field-not-reported.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_cut_returned_field_is_unverifiable (test_hamcp224_review1_corrections.CompletenessTests.test_a_cut_returned_field_is_unverifiable)"
+   ],
+   "seconds": 9.3
+  },
+  {
+   "id": "W3-filtered-withheld-uncounted",
+   "class": "a withheld entry or field reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                    unsearched[position] += 1\n",
+     "                    pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/W3-filtered-withheld-uncounted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_entry_the_filter_left_out_is_reported (test_hamcp224_review1_corrections.CompletenessTests.test_a_withheld_entry_the_filter_left_out_is_reported)"
+   ],
+   "seconds": 9.5
+  },
+  {
+   "id": "W4-level-filtered-withheld-uncounted",
+   "class": "a withheld entry or field reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                    level_filtered[position] += 1\n",
+     "                    pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/W4-level-filtered-withheld-uncounted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_entry_the_filter_left_out_is_reported (test_hamcp224_review1_corrections.CompletenessTests.test_a_withheld_entry_the_filter_left_out_is_reported)"
+   ],
+   "seconds": 9.4
+  },
+  {
+   "id": "W5-level-filtered-withheld-complete",
+   "class": "a withheld entry or field reported as complete",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "              or unsearched[scan.position] or level_filtered[scan.position]\n",
+     "              or unsearched[scan.position]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/W5-level-filtered-withheld-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_entry_the_filter_left_out_is_reported (test_hamcp224_review1_corrections.CompletenessTests.test_a_withheld_entry_the_filter_left_out_is_reported)"
+   ],
+   "seconds": 9.4
+  },
+  {
+   "id": "K1-keyword-normal-form-only",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "_KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None",
+     "_KEYWORD.search(text) is not None"
+    ]
+   ],
+   "log_path": "mutation-logs/K1-keyword-normal-form-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_keyword_alone_is_enough (test_hamcp224_review2_corrections.LabelKeyedTests.test_a_keyword_alone_is_enough)"
+   ],
+   "seconds": 22.1
+  },
+  {
+   "id": "K2-option-tokenizer-ignores-quotes",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "_OPTION_QUOTES = frozenset(\"'\\\"`\\\\\")",
+     "_OPTION_QUOTES = frozenset()"
+    ]
+   ],
+   "log_path": "mutation-logs/K2-option-tokenizer-ignores-quotes.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_password_option_form_is_withheld_in_every_field (test_hamcp224_review2_corrections.LabelKeyedTests.test_every_password_option_form_is_withheld_in_every_field)"
+   ],
+   "seconds": 23.0
+  },
+  {
+   "id": "K3-option-split-dash-ignored",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "        if word != \"-\" or index + 1 == len(tokens):",
+     "        if True:"
+    ]
+   ],
+   "log_path": "mutation-logs/K3-option-split-dash-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_password_option_form_is_withheld_in_every_field (test_hamcp224_review2_corrections.LabelKeyedTests.test_every_password_option_form_is_withheld_in_every_field)"
+   ],
+   "seconds": 23.2
+  },
+  {
+   "id": "K4-dash-fold-removed",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    text, squashed = text.translate(_DASHES), squashed.translate(_DASHES)\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/K4-dash-fold-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_keyword_alone_is_enough (test_hamcp224_review2_corrections.LabelKeyedTests.test_a_keyword_alone_is_enough)"
+   ],
+   "seconds": 22.0
+  },
+  {
+   "id": "K5-labelled-mode-shape-only",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "        _KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None\n        or password_option(decoded)\n        # The value shapes, an additional layer.\n        or _value_shape(text, squashed)\n",
+     "        _value_shape(text, squashed)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/K5-labelled-mode-shape-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_addon_source_returns_its_container_lines_with_journal_times (test_hamcp224_host_journal.JournalServiceTests.test_addon_source_returns_its_container_lines_with_journal_times)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "A1-stripped-text-only-screened",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    if marker is None and text != original:\n        marker = credentials.screen(_SGR_ESCAPE.sub(\"\", original), known_secrets, labelled=True)\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/A1-stripped-text-only-screened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_original_form_is_still_screened (test_hamcp224_review3_corrections.SgrOnlyTests.test_the_original_form_is_still_screened)"
+   ],
+   "seconds": 27.2
+  },
+  {
+   "id": "A2-original-text-only-screened",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    marker = credentials.screen(text, known_secrets, labelled=True)\n    if marker is None and text != original:\n",
+     "    marker = None\n    if True:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/A2-original-text-only-screened.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_journal_screen_is_the_configuration_definitions_screen (test_hamcp224_review1_corrections.CrossPathCredentialTests.test_the_journal_screen_is_the_configuration_definitions_screen)"
+   ],
+   "seconds": 16.4
+  },
+  {
+   "id": "A3-csi-sequence-alone-withholds",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "credentials.screen(_SGR_ESCAPE.sub(\"\", original), known_secrets",
+     "credentials.screen(original, known_secrets"
+    ]
+   ],
+   "log_path": "mutation-logs/A3-csi-sequence-alone-withholds.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_credential_messages_are_withheld_whole_and_never_searched (test_hamcp224_host_journal.JournalServiceTests.test_credential_messages_are_withheld_whole_and_never_searched)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "N1-any-csi-stripped",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "_SGR = re.compile(r\"\\x1b\\[[0-9;]{0,32}m\")\n_SGR_ESCAPE = re.compile(r\"\\x1b(?=\\[[0-9;]{0,32}m)\")\n",
+     "_SGR = re.compile(r\"\\x1b\\[[0-?]{0,32}[ -/]{0,4}[@-~]\")\n_SGR_ESCAPE = re.compile(r\"\\x1b(?=\\[[0-?]{0,32}[ -/]{0,4}[@-~])\")\n"
+    ]
+   ],
+   "log_path": "mutation-logs/N1-any-csi-stripped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_label_spelled_by_the_sequence_is_withheld (test_hamcp224_review2_corrections.AnsiScreeningTests.test_a_label_spelled_by_the_sequence_is_withheld)"
+   ],
+   "seconds": 21.6
+  },
+  {
+   "id": "N2-sgr-pattern-allows-letters",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "_SGR = re.compile(r\"\\x1b\\[[0-9;]{0,32}m\")",
+     "_SGR = re.compile(r\"\\x1b\\[[0-9;A-Za-z]{0,32}m\")"
+    ]
+   ],
+   "log_path": "mutation-logs/N2-sgr-pattern-allows-letters.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_label_behind_a_refused_escape_is_unverifiable_not_matched (test_hamcp224_review3_corrections.SgrOnlyTests.test_a_label_behind_a_refused_escape_is_unverifiable_not_matched)"
+   ],
+   "seconds": 25.0
+  },
+  {
+   "id": "N3-original-form-stripped-first",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "credentials.screen(_SGR_ESCAPE.sub(\"\", original), known_secrets",
+     "credentials.screen(_SGR.sub(\"\", original), known_secrets"
+    ]
+   ],
+   "log_path": "mutation-logs/N3-original-form-stripped-first.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_original_form_is_still_screened (test_hamcp224_review3_corrections.SgrOnlyTests.test_the_original_form_is_still_screened)"
+   ],
+   "seconds": 27.6
+  },
+  {
+   "id": "N4-sgr-removed-repeatedly",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    text = _SGR.sub(\"\", original)\n",
+     "    text = original\n    while _SGR.search(text):\n        text = _SGR.sub(\"\", text)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/N4-sgr-removed-repeatedly.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_label_behind_a_refused_escape_is_unverifiable_not_matched (test_hamcp224_review3_corrections.SgrOnlyTests.test_a_label_behind_a_refused_escape_is_unverifiable_not_matched)"
+   ],
+   "seconds": 25.2
+  },
+  {
+   "id": "N5-sgr-length-unbounded",
+   "class": "the sanitizer or whole-message withholding bypassed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "_SGR = re.compile(r\"\\x1b\\[[0-9;]{0,32}m\")",
+     "_SGR = re.compile(r\"\\x1b\\[[0-9;]*m\")"
+    ]
+   ],
+   "log_path": "mutation-logs/N5-sgr-length-unbounded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_label_behind_a_refused_escape_is_unverifiable_not_matched (test_hamcp224_review3_corrections.SgrOnlyTests.test_a_label_behind_a_refused_escape_is_unverifiable_not_matched)"
+   ],
+   "seconds": 25.1
+  },
+  {
+   "id": "U1-merge-precision-dropped",
+   "class": "the merge not on the full microsecond realtime",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                running = max(running, record.rt_us)\n",
+     "                running = max(running, record.rt_us // 1000 * 1000)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/U1-merge-precision-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_sub_millisecond_order_across_sources (test_hamcp224_review1_corrections.MicrosecondOrderTests.test_sub_millisecond_order_across_sources)"
+   ],
+   "seconds": 16.3
+  },
+  {
+   "id": "U2-continuation-key-in-milliseconds",
+   "class": "the merge not on the full microsecond realtime",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "\"t\": item.key_us}",
+     "\"t\": item.key_us // 1000 * 1000}"
+    ]
+   ],
+   "log_path": "mutation-logs/U2-continuation-key-in-milliseconds.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_continuation_keeps_the_microsecond_key (test_hamcp224_review1_corrections.MicrosecondOrderTests.test_the_continuation_keeps_the_microsecond_key)"
+   ],
+   "seconds": 16.8
+  },
+  {
+   "id": "L1-edge-probe-unbounded",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "            stop = self._bounded(scan)\n            if stop is not None:\n                raise _Bound(stop)\n            if not self._check(step(",
+     "            if not self._check(step("
+    ]
+   ],
+   "log_path": "mutation-logs/L1-edge-probe-unbounded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_expired_deadline_takes_no_step_and_reads_no_field (test_hamcp224_review1_corrections.SharedBoundTests.test_an_expired_deadline_takes_no_step_and_reads_no_field)"
+   ],
+   "seconds": 21.5
+  },
+  {
+   "id": "L2-edge-probe-uncounted",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "            scan.probed += 1\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/L2-edge-probe-uncounted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_bound_stops_the_scan_with_its_reason (test_hamcp224_host_journal.HostJournalReaderTests.test_each_bound_stops_the_scan_with_its_reason)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "L3-field-copy-unchecked",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "        if self.result.field_bytes + take > MAX_CALL_FIELD_BYTES:\n            raise _Bound(\"field_bytes_limit\")\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/L3-field-copy-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_bound_stops_the_scan_with_its_reason (test_hamcp224_host_journal.HostJournalReaderTests.test_each_bound_stops_the_scan_with_its_reason)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "L4-field-read-after-deadline",
+   "class": "a scan or field bound not enforced",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "        if time.monotonic() >= self.deadline:\n            raise _Bound(\"deadline_reached\")\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/L4-field-read-after-deadline.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_no_field_is_read_once_the_deadline_passes_mid_entry (test_hamcp224_review1_corrections.SharedBoundTests.test_no_field_is_read_once_the_deadline_passes_mid_entry)"
+   ],
+   "seconds": 21.5
+  },
+  {
+   "id": "E3-unreadable-entries-complete",
+   "class": "a clock or retention disclosure dropped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "        elif (stopped or rejected or unreadable or withheld[scan.position]",
+     "        elif (stopped or rejected or withheld[scan.position]"
+    ]
+   ],
+   "log_path": "mutation-logs/E3-unreadable-entries-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_unreadable_entry_alone_makes_the_source_partial (test_hamcp224_host_journal.JournalServiceTests.test_an_unreadable_entry_alone_makes_the_source_partial)"
+   ],
+   "seconds": 2.9
+  }
+ ]
+}

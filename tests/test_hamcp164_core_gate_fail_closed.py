@@ -79,6 +79,7 @@ STATIC_CORE_TABLE = {
     "call_service": REFUSED,
     "cancel_execution_task": LOCAL,
     "capture_automation_baseline": MAPPED,
+    "capture_automation_trace": MAPPED,
     "change_impact_analysis": MAPPED,
     "check_config": MAPPED,
     "configuration_integrity_analysis": MAPPED,
@@ -124,6 +125,7 @@ STATIC_CORE_TABLE = {
     "get_integration_inspection": MAPPED,
     "get_logbook": MAPPED,
     "get_server_health": CONDITIONAL,
+    "get_trace_snapshot": LOCAL,
     "handoff_generation": MAPPED,
     "incident_correlation": MAPPED,
     "list_areas": MAPPED,
@@ -138,12 +140,14 @@ STATIC_CORE_TABLE = {
     "list_execution_tasks": LOCAL,
     "list_script_traces": MAPPED,
     "list_services": MAPPED,
+    "list_trace_snapshots": LOCAL,
     "reload_domain": REFUSED,
     "render_template": MAPPED,
     "reverify_configuration_task": DOWNSTREAM,
     "rollback_change": DOWNSTREAM,
     "run_held_read_canary": DOWNSTREAM,
     "search_entities": MAPPED,
+    "set_automation_trace_watch": LOCAL,
     "search_services": MAPPED,
     "server_info": CONDITIONAL,
     "upsert_automation": REFUSED,
@@ -184,6 +188,8 @@ ALLOWLIST_ARGUMENTS = {
     "control_power": {
         "entity_id": "light.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
     },
+    "get_trace_snapshot": {"snapshot_id": "a" * 32},
+    "set_automation_trace_watch": {"action": "list"},
 }
 
 
@@ -261,7 +267,7 @@ class StaticCoreTableTests(unittest.TestCase):
 
     def test_allowlist_is_the_reviewed_closed_set(self):
         self.assertEqual(set(CORE_INDEPENDENT_STATIC_TOOLS), ALLOWLISTED)
-        self.assertEqual(len(ALLOWLISTED), 17)
+        self.assertEqual(len(ALLOWLISTED), 20)
         self.assertIsInstance(CORE_INDEPENDENT_STATIC_TOOLS, MappingProxyType)
         with self.assertRaises(TypeError):
             CORE_INDEPENDENT_STATIC_TOOLS["synthetic"] = CORE_INDEPENDENT_STATIC_TOOLS[

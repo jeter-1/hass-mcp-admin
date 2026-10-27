@@ -1,32 +1,111 @@
 # Changelog
 
-## 2.4.1-beta.38 - November Core batch built inactive (HAMCP-232, HAMCP-145)
+## 2.4.1-beta.41 - November Core batch built inactive (HAMCP-232, HAMCP-145) (staged)
 
-Builds on 2.4.1-beta.37. Activates nothing new.
+Follows 2.4.1-beta.40 (#317). Activates nothing new.
 
 - New tools `create_helper_options_plan`, `create_input_select_option_plan`,
-  `list_script_traces` and `get_script_trace` (static tools 68 -> 72). Each
-  refuses `pending_signed_registry_admission` before any read, request or
-  persistence until a signed Core registry sequence names its runtime-only
-  profile: `core.config_entry_helper_options_operation`,
+  `list_script_traces` and `get_script_trace` (static tools 72 -> 76 on the
+  beta.39 base; 77 once beta.40 merges in). Each refuses
+  `pending_signed_registry_admission` before any read, request or
+  persistence (a retained or resumed task included) until a signed Core
+  registry sequence names its runtime-only profile:
+  `core.config_entry_helper_options_operation`,
   `core.typed_input_select_option_operation` or `core.script_trace_read`.
 - Helper options (OD-1 to OD-8): template (sensor, binary_sensor), filter and
   statistics; one helper domain and 1-8 entries per plan; baseline and
   readback by opening and aborting the options flow for the plan's exact
-  entries only; one held, guarded submit per child; drift refused as
+  entries only; one held, guarded submit per child of the complete intended
+  options set (an incomplete or malformed intent is refused before any flow
+  opens); every flow this server opens is aborted on every outcome, including
+  a lost response, a timeout and cancellation; drift refused as
   `stale_target_state`; pinned `read_only` fields; injected defaults
   disclosed as `normalization_changes`; the accepted OD-7 window disclosed in
   the plan and the apply response; separately approved rollback.
 - input_select option (OD-9 to OD-12): one exact `select_option` call;
-  per-option trigger disclosure; drift refused; a Core error after the send
-  decided by readback; separately approved rollback. `create_helper_state_plan`
-  and the input_boolean path are unchanged.
+  per-option trigger disclosure (a disabled automation or trigger is
+  disclosed as not firing while disabled); drift refused; a Core error after
+  the send decided by readback; separately approved rollback.
+  `create_helper_state_plan` and the input_boolean path are unchanged.
 - Script-trace reads: `trace/list` and `trace/get` with `domain: script`
-  only, sanitized through the shared sanitizer; no fallback.
+  only, through the HAMCP-225 trace sanitizer (every string and key at every
+  depth through `credentials.screen`; identifiers in default mode, values in
+  labelled mode); no fallback.
 - Dormant sequence-15 evidence lanes and additive `ci.yml` wiring (OD-14).
   Post-signing canaries defined, not run.
-- No signed registry, signed profile, fingerprint or existing persisted
-  format change. Rollback is reinstalling 2.4.1-beta.37.
+- No signed registry, signed profile, existing fingerprint or existing
+  persisted format change. Rollback is reinstalling 2.4.1-beta.40.
+
+## 2.4.1-beta.39 - Automation trace snapshots (HAMCP-225)
+
+Builds on 2.4.1-beta.38. Adds no Home Assistant write.
+
+- New `capture_automation_trace`: stores sanitized copies of an automation's
+  retained Core traces (exactly `run_id`, or up to 5 retained runs skipping
+  `not_triggered` and, by default, `failed_conditions`), with a per-run
+  outcome. Reads only `trace/list` and `trace/get` for the automation domain;
+  requires `core.automation_trace_read`.
+- New `list_trace_snapshots` and `get_trace_snapshot` (paged): no Home
+  Assistant call; caller-bound cursors that end at a restart; read-back is
+  re-screened and a withheld string stays withheld whole (R1 strict).
+- New `set_automation_trace_watch` (`add`, `remove`, `list`): no plan or
+  approval; every add and remove is audited with the caller and every
+  response returns the list. At most 10 watches, 168 hours each. A bounded
+  poller lists each watched automation's traces every 30 seconds and
+  captures new stopped runs matching the mode; it pauses without Core
+  authority and counts missed runs. The first poll captures runs finished
+  after the watch was created; each watch gets an equal, rotating share of
+  the tick; authority is re-checked before a watch's reads are stored and
+  again under the store lock, immediately before the first write.
+- Store `trace-snapshots-v1` under the governance path: 200 snapshots,
+  256 KiB each, 32 MiB, 90 days. A manual capture at capacity is refused
+  (E1); a watch evicts only its own oldest snapshot beyond 20 (E2, new
+  behavior, audited); manual snapshots are never evicted. A damaged record
+  is deleted and leaves a content-free stub; at most 20 stubs.
+- `get_automation_trace` passes the shared trace sanitizer once (HAMCP-194
+  trace-read part, O2): credential-like and known-secret values withheld,
+  strings over 2,000 characters shortened, result `partial` with
+  categories. Input schema unchanged; description gains one disclosure.
+- Every trace string and dictionary key, at every depth, passes the shared
+  `credentials.screen` (the HAMCP-132 and HAMCP-224 pipeline) before storage
+  and on read; a flagged key withholds its whole entry. No trace-specific
+  screen. Home Assistant's own identifiers and names use the screen's
+  default mode (as in HAMCP-226), trace values the labelled mode. An
+  automation or run ID the screen flags is stored, audited and returned only
+  as `withheld_<32 hex>` (per-process key); that form is refused as input.
+- Static tools 72; catalog 100 (101 with the optional YAML reader).
+
+## 2.4.1-beta.38 - Host journal sources for get_incident_logs (HAMCP-224)
+
+Builds on 2.4.1-beta.37.
+
+- `get_incident_logs` reads `supervisor`, `host`, `host:<category>` and
+  `addon:<slug>` from the host journal, which the Supervisor mounts
+  read-only with the new `journald: true`; `hassio_role` stays
+  `homeassistant` and no `manager` route is called. Through beta.37 these
+  sources were `authority_not_granted`.
+- The reader binds 14 fixed `libsystemd.so.0` symbols (the base image's
+  library) and 9 fixed fields, merges the runtime and persistent journals in
+  one handle, and is bounded at 16 KiB per field, 4 MiB per call, 20,000
+  entries per source and the call deadline less one second.
+- Journal realtime timestamps; continuations hold a realtime and a keyed
+  cursor digest, never the raw cursor.
+- Every returned journal field (message, process, kernel subsystem and
+  device) goes through the configuration-definitions credential screen
+  (`credentials.screen`, with its labelled forms) on the complete field,
+  before any cut; a hit, a field over 16 KiB or non-UTF-8 bytes withhold the
+  whole field. Coloured lines are shown without their SGR colour codes,
+  screened with and without them; any other escape or control character
+  withholds the field as unverifiable. The final-envelope withheld-item
+  scan names each withheld entry, and a withheld entry a text filter left out is counted: any of
+  these makes the result partial.
+- Host journal entries merge on the full microsecond realtime; edge probes
+  and every field read count toward the shared bounds and the deadline.
+- journald off or unreadable is `unavailable` with its reason, never an
+  empty success.
+- No input schema, routing, provider, policy, profile, fingerprint, signed
+  registry, workflow, Dockerfile, dependency or stable-v1 change; static
+  tools 68, catalog 96 (97).
 
 ## 2.4.1-beta.37 - Truthful stored outcomes (HAMCP-181 PR2, HAMCP-214, HAMCP-193)
 

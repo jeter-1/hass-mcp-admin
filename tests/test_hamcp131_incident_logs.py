@@ -20,6 +20,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta"))
 
+from host_journal_support import journald_off_reader  # noqa: E402
 from incident_logs_journal_sim import SupervisorSim, ms, start  # noqa: E402
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
@@ -29,6 +30,7 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY, CORE_INDEPENDENT_STATIC_TOOLS,
 )
 from ha_mcp_engineering.incident_logs import contracts as c  # noqa: E402
+from ha_mcp_engineering.incident_logs import host_journal  # noqa: E402
 from ha_mcp_engineering.incident_logs import service as service_module  # noqa: E402
 from ha_mcp_engineering.incident_logs.cursor import CursorCodec  # noqa: E402
 from ha_mcp_engineering.incident_logs.journal import RawEntry  # noqa: E402
@@ -94,7 +96,7 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         codec = CursorCodec("incident_logs", key=b"k" * 32, clock=lambda: self.clock[0])
         return IncidentLogService(transport, known_secrets=(HA_TOKEN, ACCESS_SECRET), codec=codec,
                                   clock=lambda: NOW, zone_source=lambda: self.ZONE,
-                                  addon_zone_source=lambda: self.ZONE)
+                                  addon_zone_source=lambda: self.ZONE, journal_reader=journald_off_reader())
 
     async def read(self, service=None, caller="synthetic_authenticated_caller", **arguments):
         telemetry, token = begin_request()
@@ -160,11 +162,11 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((traceback["level"], traceback["level_basis"]), ("error", "inherited"))
         self.assertEqual(core_row["skipped_by_filter"], 20)
         self.assertEqual(core_row["entries_returned"], 2)
-        for key, pattern in (("supervisor", r"^/supervisor/.+$"), ("addon:zwave_js", r"^/addons/[^/]+/(?!security).+$")):
+        for key in ("supervisor", "addon:zwave_js"):
+            # HAMCP-224: read from the host journal, here without journald.
             row = self.source(page, key)
-            self.assertEqual((row["status"], row["reason"], row["requests"], row["route"]),
-                             ("unavailable", "authority_not_granted", 0, None))
-            self.assertEqual(row["required_route_pattern"], pattern)
+            self.assertEqual((row["status"], row["reason"], row["requests"], row["route"], row["reader"]),
+                             ("unavailable", "journald_not_enabled", 0, None, "host_journal"))
             self.assertIn(f"source_unavailable:{key}", page["omissions"])
         self.assertEqual([row["source"] for row in page["sources"]],
                          ["core", "supervisor", "addon:self", "addon:zwave_js"])
@@ -574,9 +576,9 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("source_unavailable:addon:self", page["omissions"])
                 self.assertNotIn("synthetic refusal", json.dumps(page))
 
-    async def test_all_statically_unavailable_reports_each_source_with_zero_requests(self):
-        # Review M5: per-source unavailability naming the required role, never
-        # a generic sources_unavailable refusal.
+    async def test_all_journal_sources_without_journald_report_each_source_with_zero_requests(self):
+        # Review M5, as HAMCP-224 changed it: per-source unavailability naming
+        # its reason, never a generic sources_unavailable refusal or empty.
         page = await self.read(sources=["supervisor", "host", "addon:zwave_js"], start="2026-10-19T12:00:00Z",
                                end="2026-10-19T12:10:00Z")
         self.assertEqual(self.sim.calls, [])
@@ -584,13 +586,15 @@ class IncidentLogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((page["has_more"], page["next_cursor"]), (False, None))
         self.assertEqual((page["complete"], page["completeness"]), (False, "partial"))
         self.assertEqual([row["source"] for row in page["sources"]], ["supervisor", "host", "addon:zwave_js"])
-        for row, pattern in zip(page["sources"], (r"^/supervisor/.+$", r"^/host/.+$",
-                                                  r"^/addons/[^/]+/(?!security).+$")):
-            self.assertEqual(row, {
-                "source": row["source"], "status": "unavailable", "reason": "authority_not_granted",
-                "detail": c.AUTHORITY_DETAIL, "required_role": "manager",
-                "required_route_pattern": pattern, "route": None, "requests": 0,
-            })
+        for row in page["sources"]:
+            self.assertEqual(
+                {key: row[key] for key in ("status", "reason", "detail", "route", "reader", "requests",
+                                           "entries_scanned", "entries_returned", "finished")},
+                {"status": "unavailable", "reason": "journald_not_enabled",
+                 "detail": host_journal.UNAVAILABLE_DETAIL["journald_not_enabled"], "route": None,
+                 "reader": "host_journal", "requests": 0, "entries_scanned": 0, "entries_returned": 0,
+                 "finished": False})
+            self.assertNotIn("required_role", row)
             self.assertIn(f"source_unavailable:{row['source']}", page["omissions"])
 
     async def test_stopped_addon_logs_remain_readable_and_wrong_shape_fails(self):
@@ -857,7 +861,7 @@ class IncidentLogToolTests(unittest.IsolatedAsyncioTestCase):
             JournalTransport(token_source=lambda: SUPERVISOR_TOKEN, timeout_seconds=1.0, base_url=url),
             known_secrets=(HA_TOKEN, ACCESS_SECRET), zone_source=lambda: "UTC",
             # No add-on TZ: the cross-check is unavailable and disclosed.
-            addon_zone_source=lambda: None,
+            addon_zone_source=lambda: None, journal_reader=journald_off_reader(),
         )
         for patcher in (patch.object(tool_module, "INCIDENT_LOGS", runtime),
                         patch.object(tool_module, "SETTINGS", self.settings)):
@@ -957,7 +961,7 @@ class IncidentLogGatewayStackTests(unittest.TestCase):
                 # HAMCP-220: the production reader under the refusing Core.
                 zone_source = HomeAssistantZoneReader(NoCoreRequest(), core)
             runtime.service = IncidentLogService(transport, known_secrets=(HA_TOKEN, ACCESS_SECRET),
-                                                 zone_source=zone_source)
+                                                 zone_source=zone_source, journal_reader=journald_off_reader())
             self.core = core
             client = SameThreadAsgiTestClient(gateway, lifespan_app=inner, base_url="http://127.0.0.1:8100")
             with patch.object(tool_module, "INCIDENT_LOGS", runtime), \
@@ -1013,23 +1017,23 @@ class IncidentLogGatewayStackTests(unittest.TestCase):
                 self.assertEqual(record["parameters"]["sources"], None)
                 self.assertEqual(record["parameters"]["min_level"], None)
 
-    def test_only_unauthorized_sources_report_authority_not_granted_per_source(self):
-        # Review M5: per-source unavailability with the required role, not a
-        # generic sources_unavailable refusal; zero journal requests.
+    def test_journal_sources_without_journald_report_their_reason_per_source(self):
+        # Review M5, as HAMCP-224 changed it: per-source unavailability with
+        # its reason, not a generic sources_unavailable refusal; no requests.
         rendered, record, _ = self.call({"sources": ["supervisor", "host", "addon:zwave_js"], **self.WINDOW})
         self.assertTrue(rendered["success"])
         data = rendered["data"]
         self.assertEqual((data["returned"], data["requests"], data["has_more"], data["completeness"]),
                          (0, 0, False, "partial"))
-        self.assertEqual([(row["source"], row["status"], row["reason"], row["required_role"], row["requests"])
+        self.assertEqual([(row["source"], row["status"], row["reason"], row["reader"], row["requests"])
                           for row in data["sources"]],
-                         [(key, "unavailable", "authority_not_granted", "manager", 0)
+                         [(key, "unavailable", "journald_not_enabled", "host_journal", 0)
                           for key in ("supervisor", "host", "addon:zwave_js")])
         self.assertEqual(rendered["metadata"]["completeness"], "partial")
         self.assertEqual(rendered["metadata"]["upstream_calls"], 0)
         self.assertEqual((record["result_status"], record["error_code"]), ("partial", None))
         self.assertEqual(record["analysis_summary"]["source_outcomes"],
-                         [{"source": key, "status": "unavailable", "reason": "authority_not_granted"}
+                         [{"source": key, "status": "unavailable", "reason": "journald_not_enabled"}
                           for key in ("supervisor", "host", "addon:zwave_js")])
         self.assertEqual(record["analysis_summary"]["upstream_calls"], 0)
 

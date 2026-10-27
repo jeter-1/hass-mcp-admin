@@ -89,6 +89,38 @@ on it, because the allowlist refuses every non-ASCII character. A
 dictionary entry whose key is credential text is dropped. Any withholding
 adds the ``credential_text_withheld`` or ``unverifiable_text_withheld``
 omission, so the report is partial.
+
+**One screen for every caller** (HAMCP-224 H1/H2). ``screen`` is the single
+string decision (invisible text first, then credential text) that
+``withhold`` applies here and the host journal applies to every returned
+journal field. Log text names a credential by a label more often than by a
+URI, so a caller may opt in to the **labelled forms** (``labelled=True``):
+a credential label (``password``, ``passphrase``, ``pass``, ``pwd``,
+``pw``, ``psk``, ``secret``, ``token``, ``api_key``, ``access_key``,
+``private_key``, ``network_key``, ``encryption_key``, ``credential(s)``,
+``authorization``, with any ``word_`` prefix such as ``mqtt_pass``)
+followed by ``=`` or ``:``; a ``Bearer`` token; a PEM private-key header.
+They are read in the same canonical, confusable-folded and squashed forms
+as the checks above, so ``api%5fkey=``, ``api_<tab>key=`` and a Cyrillic
+``е`` in ``key`` are withheld. The configuration-definitions report does
+not opt in: its behavior is unchanged.
+
+**The label withholds, not the value's shape** (HAMCP-224 review 2). In
+labelled mode a strong keyword alone withholds the text, in the normal or
+the squashed form (Unicode dashes folded to ``-``): ``bearer``,
+``password``, ``passwd``, ``pwd``, ``--pw``, ``authorization``, ``api
+key``/``apikey``/``api_key``, ``secret``, ``token``, ``private key``. So
+does the mosquitto password option ``-P`` (``-p`` is the port), decided by
+``password_option``: a bounded tokenizer on the decoded, confusable-folded
+text in which quotes and backslashes are transparent and whitespace and
+``,;:=[](){}<>|&`` separate tokens. A token starting with ``-P`` (``-P x``,
+``-Px``, ``-P'x'``, ``"-P" x``, ``-P= x``, an argv list) is the option, and
+so is a lone ``-`` followed by the token ``P``, or by a token starting
+with ``P`` after anything but plain spaces (``-<tab>P x``); a text over
+``MAX_OPTION_SCAN`` characters fails closed. The value shapes above remain
+an additional layer. The cost is disclosed, never a leak: ordinary text
+that names a keyword (``token refreshed``) or a real ``-P`` option of
+another tool (``iptables -P``) is withheld too.
 """
 
 from __future__ import annotations
@@ -98,7 +130,7 @@ import unicodedata
 from typing import Any
 from urllib.parse import unquote_to_bytes
 
-from ..providers.upstream_yaml_reader import MAX_DECODE_ROUNDS, _userinfo, canonical
+from ..providers.upstream_yaml_reader import MAX_DECODE_ROUNDS, _userinfo, canonical, canonical_forms
 from ..sanitization import sanitize_untrusted_data
 from . import contracts as c
 
@@ -182,6 +214,45 @@ _PASSWORD_FIELD = re.compile(r"\b(?:password|passwd|pwd)\s*=")
 _SQUASHED_PASSWORD_FIELD = re.compile(r"(?:password|passwd|pwd)=")
 _MARKER_FOLDED = WITHHELD_MARKER.casefold()
 
+# The labelled forms (``labelled=True``, HAMCP-224), read after casefold and
+# the confusable fold. A label is a whole word, optionally after ``word_``
+# or ``word-`` prefixes; in the squashed form it is matched anywhere, like
+# the squashed password field.
+_LABEL = (r"(?:password|passwd|passphrase|pass|pwd|pw|psk|secret|token|api[_-]?key|apikey|"
+          r"access[_-]?key|private[_-]?key|network[_-]?key|encryption[_-]?key|credentials?|"
+          r"authorization)")
+_LABELLED_FIELD = re.compile(r"(?<![a-z0-9])(?:[a-z0-9]+[_-])*" + _LABEL + r"[\"']?\s*[:=]")
+_SQUASHED_LABELLED_FIELD = re.compile(_LABEL + r"[\"']?[:=]")
+_TOKEN_CHARACTERS = r"[a-z0-9._~+/=-]"
+# One threshold in both forms (review 2): ``Be<tab>arer`` and ``Bearer``
+# with the same token decide the same.
+_BEARER = re.compile(r"\bbearer\s+" + _TOKEN_CHARACTERS + r"{8,}")
+_SQUASHED_BEARER = re.compile(r"bearer" + _TOKEN_CHARACTERS + r"{8,}")
+_PEM_PRIVATE = re.compile(r"begin[a-z0-9 ]*private ?key")
+# The strong credential keywords (HAMCP-224 review 2, owner direction): in
+# the labelled forms a keyword alone withholds the value, whatever follows
+# it. Matched anywhere, with no word boundary, in both forms; the squashed
+# form has no whitespace left, so ``api key`` reads as ``apikey`` there.
+_KEYWORD = re.compile(r"bearer|password|passwd|pwd|--pw|authorization|api[\s_-]*key|secret|token|"
+                      r"private[\s_-]*key")
+# Look-alikes of the hyphen-minus that NFKC leaves unchanged (a fixed table,
+# like ``_CONFUSABLE_POINTS``), folded in the labelled forms only so the
+# default screen is unchanged: ``\u2013P`` and ``\u2212\u2212pw`` read as ``-P`` and ``--pw``.
+_DASHES = str.maketrans(dict.fromkeys(
+    map(chr, (0x2010, 0x2012, 0x2013, 0x2014, 0x2015, 0x2212, 0x2043, 0x02D7, 0x2796, 0x2E3A, 0x2E3B,
+              0x058A, 0x05BE, 0x1806, 0x2E17, 0x1428)), "-"))
+# Case matters (mosquitto ``-p`` is the port), so ``-P`` is read on the
+# decoded NFKC text before casefold, with its uppercase look-alikes mapped.
+_UPPER_P = str.maketrans({chr(0x0420): "P", chr(0x03A1): "P", chr(0x13E2): "P", chr(0x146D): "P"})
+# The ``-P`` tokenizer (``password_option``): quotes and backslashes join
+# the text around them, as a shell does (``-P'x'`` is ``-Px``, ``"-P"`` is
+# ``-P``); whitespace and the argv-list and assignment punctuation separate
+# tokens (``["pub", "-P", "x"]``, ``-P= x``). The scan is one pass, bounded
+# by ``MAX_OPTION_SCAN`` characters; longer text is withheld (fail closed).
+_OPTION_QUOTES = frozenset("'\"`\\")
+_OPTION_SEPARATORS = frozenset(",;:=[](){}<>|&")
+MAX_OPTION_SCAN = 65536
+
 # The allowlist for Core free text: printable ASCII only, and no
 # password-like ``key=value`` or ``key: value`` (any letters after the
 # credential word: ``dbpassword=``, ``api_key: ``, ``Token =``).
@@ -235,14 +306,15 @@ def unverifiable_text(value: str) -> bool:
     return _invisible(text)
 
 
-def credential_text(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
+def credential_text(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> bool:
     """Whether ``value`` must not reach the caller.
 
     Two forms of the canonical, confusable-folded text are checked: the text
     itself and its ``squash`` (correction batch 4). Whitespace inside a
     credential (``pass<tab>word=``, a line feed inside a URI's user-info, literal or
     percent-encoded) hides it from the first form only; either form
-    matching withholds the original value whole.
+    matching withholds the original value whole. ``labelled`` adds the
+    labelled forms (HAMCP-224), read in the same forms.
     """
 
     if any(secret and secret in value for secret in known_secrets):
@@ -254,9 +326,11 @@ def credential_text(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
         return True
     text = fold_confusables(text)
     secrets = tuple(fold_confusables(secret.casefold()) for secret in known_secrets if secret)
+    squashed = squash(text)
     return (_credential_form(text, secrets, _PASSWORD_FIELD)
-            or _credential_form(squash(text), tuple(squash(secret) for secret in secrets),
-                                _SQUASHED_PASSWORD_FIELD))
+            or _credential_form(squashed, tuple(squash(secret) for secret in secrets),
+                                _SQUASHED_PASSWORD_FIELD)
+            or (labelled and _labelled_form(value, text, squashed)))
 
 
 def squash(text: str) -> str:
@@ -279,6 +353,89 @@ def _credential_form(text: str, secrets: tuple[str, ...], password_field: re.Pat
         or _MARKER_FOLDED in text
         or any(secret and secret in text for secret in secrets)
     )
+
+
+def password_option(decoded: str) -> bool:
+    """Whether ``decoded`` holds a mosquitto ``-P`` option, in any quoting or splitting.
+
+    ``decoded`` is the case-kept NFKC text with the ``-P`` look-alikes
+    mapped. A token starting with ``-P`` is the option (``-P``, ``-Px``,
+    ``-P'x'``, ``"-P"``, ``-P=x``; ``--P`` and ``-p`` are not). A lone
+    ``-`` token followed by a ``P`` token is the option split apart: the
+    ``P`` token is ``P`` exactly (``- P x``, ``"-" "P"``, ``- P=x``) or,
+    when the text between them is not only spaces (``-<tab>P``,
+    ``-<line feed>Px``), any token starting with ``P``. A lone ``-``
+    followed by a word after spaces (``Kitchen - Pool``) is not the option.
+    """
+
+    if len(decoded) > MAX_OPTION_SCAN:
+        return True
+    tokens: list[tuple[str, str]] = []  # (token, the separating text before it)
+    token: list[str] = []
+    gap = ""
+    for character in decoded + " ":
+        if character in _OPTION_QUOTES:
+            continue
+        if character.isspace() or character in _OPTION_SEPARATORS:
+            if token:
+                tokens.append(("".join(token), gap))
+                token, gap = [], ""
+            gap += character
+            continue
+        token.append(character)
+    for index, (word, _gap) in enumerate(tokens):
+        if word.startswith("-P"):
+            return True
+        if word != "-" or index + 1 == len(tokens):
+            continue
+        following, between = tokens[index + 1]
+        if following == "P" or (following.startswith("P") and set(between) - {" "}):
+            return True
+    return False
+
+
+def _labelled_form(value: str, text: str, squashed: str) -> bool:
+    try:
+        _text, _rounds, decoded = canonical_forms(value)
+    except Exception:
+        return True
+    text, squashed = text.translate(_DASHES), squashed.translate(_DASHES)
+    decoded = fold_confusables(decoded).translate(_UPPER_P).translate(_DASHES)
+    return (
+        # The label itself (review 2): a strong keyword, in either form.
+        _KEYWORD.search(text) is not None or _KEYWORD.search(squashed) is not None
+        or password_option(decoded)
+        # The value shapes, an additional layer.
+        or _value_shape(text, squashed)
+    )
+
+
+def _value_shape(text: str, squashed: str) -> bool:
+    """The labelled value shapes (review 1), kept under the label rule.
+
+    A layer of its own, so it is tested apart from the keywords it overlaps.
+    """
+
+    return (
+        _LABELLED_FIELD.search(text) is not None
+        or _SQUASHED_LABELLED_FIELD.search(squashed) is not None
+        or _BEARER.search(text) is not None or _SQUASHED_BEARER.search(squashed) is not None
+        or _PEM_PRIVATE.search(text) is not None or _PEM_PRIVATE.search(squashed) is not None
+    )
+
+
+def screen(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> str | None:
+    """The marker that replaces ``value`` whole, or ``None`` when it is shown.
+
+    Invisible text first (``UNVERIFIABLE_MARKER``), then credential text
+    (``WITHHELD_MARKER``), always on the complete original ``value``.
+    """
+
+    if unverifiable_text(value):
+        return UNVERIFIABLE_MARKER
+    if credential_text(value, known_secrets, labelled=labelled):
+        return WITHHELD_MARKER
+    return None
 
 
 def withheld_at_exit(value: str, known_secrets: tuple[str, ...] = ()) -> bool:
@@ -345,12 +502,9 @@ def withhold(value: Any, known_secrets: tuple[str, ...] = (),
     def walk(item: Any, path: tuple) -> Any:
         nonlocal count
         if type(item) is str:
-            if unverifiable_text(item):
-                return UNVERIFIABLE_MARKER
-            if credential_text(item, known_secrets):
-                count += 1
-                return WITHHELD_MARKER
-            return item
+            marker = screen(item, known_secrets)
+            count += marker == WITHHELD_MARKER
+            return item if marker is None else marker
         if type(item) is dict:
             kept = {}
             for key, child in item.items():

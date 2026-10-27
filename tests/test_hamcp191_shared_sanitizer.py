@@ -646,6 +646,7 @@ SANITIZER_SITES = {
     ("tools/compatibility.py", "get_error_log.action", "sanitize_untrusted_data"): (1, "logs"),
     ("tools/governance.py", "_identifier_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
     ("trace_normalization.py", "fetch_normalized_trace_list", "sanitize_untrusted_data"): (1, "analysis"),
+    ("trace_normalization.py", "sanitize_trace_detail", "sanitize_untrusted_data"): (1, "analysis"),
 }
 
 # D11: the only call sites allowed to use the stored-plan re-scan.

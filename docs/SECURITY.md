@@ -613,6 +613,43 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.39` trace snapshot slice (HAMCP-225) adds four
+Engineering-native tools and one Engineering-local store. It adds no Home
+Assistant write, permission, add-on option, Core capability profile,
+delegated provider or fallback.
+
+- **Reads.** Only `trace/list` and `trace/get` with `domain: "automation"`,
+  the shapes `list_automation_traces` and `get_automation_trace` already
+  send. Tests assert no other command and no `domain: "script"`.
+- **Sanitization.** `get_automation_trace` output and every captured trace
+  pass the shared trace sanitizer before they leave Engineering or reach the
+  store; capture runs one more strict pass over the complete record, and
+  read-back re-sanitizes each page. Withheld content makes the result
+  `partial`. Before the strict sanitizer, every string and every dictionary
+  key at every depth passes the shared `credentials.screen` used by HAMCP-132
+  and HAMCP-224 (no trace-specific screen); a flagged key withholds its whole
+  entry, and nesting beyond 64 levels is withheld as unverifiable. PEM
+  private-key blocks with a header are withheld whole.
+- **Identifiers.** Home Assistant's own identifiers and names are screened
+  in the default mode (owner decision, as in HAMCP-226); trace values keep
+  the labelled mode. An automation or run ID the screen flags is persisted,
+  audited and returned only as `withheld_` plus a per-process HMAC digest;
+  refusals never echo it, and the gateway audit records it as `null`. A PEM
+  block in an identity field is not withheld.
+- **Store.** `trace-snapshots-v1/` under the governance path: `flock`,
+  `O_NOFOLLOW`, `0600`, atomic rename, digest-checked loads, at most 20
+  content-free quarantine stubs, fail-closed index, fixed diagnostics,
+  bounded size, count and age. Manual
+  captures are refused at capacity; a watch evicts only its own snapshots.
+- **Watch poller.** The only periodic Core read: bounded to 10 watches every
+  30 seconds, under its own Core authority lease, paused while authority is
+  unavailable or the version is not admitted, and re-checked before each
+  watch's reads are stored and again under the store lock, immediately
+  before the first write. Watch changes need no approval but write a
+  required, caller-attributed audit row.
+- **Caller binding.** List and read cursors are HMAC-bound to the caller
+  with a per-process key.
+
 The `2.4.1-beta.33` configuration-definition slice (HAMCP-132 slice 2) adds
 the read-only `get_configuration_definitions` tool. It adds no permission,
 add-on option, HTTP client, Supervisor call, route template, batch-allowlist
@@ -798,6 +835,71 @@ option, role, fallback or delegated provider.
   the write.
 - **HAMCP-069B profiles.** The two unsigned 069B profiles now name every read
   their gateway sends; no signed profile changes.
+
+The `2.4.1-beta.38` slice (HAMCP-224) lets `get_incident_logs` read the
+`supervisor`, `host`, `host:<category>` and `addon:<slug>` sources from the
+host journal. It adds **one read-only permission** and no role, route,
+provider, fallback, write path or tool.
+
+- **Permission.** `journald: true` makes the Supervisor bind-mount the host's
+  `/var/log/journal` and `/run/log/journal` read-only (Supervisor 2026.09.1
+  `docker/app.py`). `hassio_role` stays `homeassistant`; the `manager` log
+  routes below are still never called.
+- **Reader.** `incident_logs/host_journal.py` is the only module that imports
+  `ctypes`. It binds 14 fixed symbols (`BOUND_SYMBOLS`) of the base image's
+  `libsystemd.so.0` (Debian `libsystemd0` 257.13-1~deb13u1) and reads 9 fixed
+  fields (`READ_FIELDS`) by name. No field-enumeration, unique-value,
+  descriptor, raw-cursor-seek, inotify or write symbol is bound. It opens the
+  container root `O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC` and passes it
+  with `SD_JOURNAL_OS_ROOT`; both journal directories must open without
+  following a symlink. One worker thread opens, reads and closes the handle,
+  bounded at 16 KiB per field, 4 MiB per call, 20,000 entries per source
+  (the resume walk and the edge probes count) and the call deadline less one
+  second. Each field read checks the deadline first and the call byte bound
+  before the copy, on every path.
+- **Matches.** Fixed per source (`supervisor` is `hassio_supervisor`; `host`
+  is the Supervisor's 52 default identifiers plus kernel entries;
+  `addon:<slug>` needs `SYSLOG_IDENTIFIER` equal to `CONTAINER_NAME`,
+  `app_<slug>` or `addon_<slug>`, through `_TRANSPORT=journal`). Every entry
+  is rechecked in Python; a failed recheck is counted, never returned.
+- **Positions.** Continuations hold a realtime and a keyed digest of the
+  libsystemd cursor, never the cursor (it embeds the raw boot ID); the boot
+  marker is a keyed digest too. The machine ID is never read.
+- **Secrets.** At the single `_finish` exit every returned journal field
+  (message, `process`, `kernel_subsystem`, `kernel_device`) goes through the
+  **same** screen as the configuration-definitions report,
+  `configuration_definitions/credentials.py` `screen`; the journal has no
+  screen of its own (review 1 H1/H2). It reads the complete field before any
+  cut: a field over 16 KiB, or bytes that are not UTF-8, are withheld whole
+  as unverifiable. Invisible, format or control characters, then the
+  HAMCP-132 credential and known-secret forms after bounded percent-decoding,
+  NFKC and the confusable fold, on the text and its squashed form, plus the
+  labelled forms the journal opts in to (a credential label with `=` or `:`,
+  `Bearer`, PEM private keys), withhold the **whole** field. In that
+  labelled mode the label itself withholds (review 2): a strong keyword
+  (`bearer`, `password`, `passwd`, `pwd`, `--pw`, `authorization`, `api
+  key`, `secret`, `token`, `private key`) in the normal or squashed form,
+  or the mosquitto `-P` option in any quoting, argv or split form (a
+  bounded quote-aware tokenizer); the value shapes remain a second layer.
+  Ordinary text naming a keyword, or another tool's `-P`, is withheld too.
+  An ANSI SGR colour code (`ESC [`, at most 32 digits or semicolons, `m`;
+  review 3) is the only display format: the field is screened both without
+  it and in its original form, either withholds, and the shown text has no
+  escape; any other escape (another CSI final byte, OSC, a stray or
+  malformed escape) or control character is never removed and is
+  unverifiable. The display cut to 2000 characters happens only after. A
+  withheld field is never searched. The configuration-definitions
+  final-envelope scan (`withheld_items`) then names each withheld entry, and
+  a withheld entry a text filter left out (`withheld_not_searched`) or the
+  level filter left out (`withheld_level_filtered`; the level is the
+  journal `PRIORITY`, never the text) is counted: any of these makes the
+  result partial. The shared `sanitize_log_lines` and strict
+  sanitizer then run once, as below. The configuration-definitions report
+  does not opt in to the labelled forms and is unchanged. A bare secret with
+  no key or known value can still pass (design §7, the same residual risk as
+  the Core log).
+- **Unavailability.** Decided from `/proc/self/mountinfo` and the open, never
+  from an empty result; an unavailable source is never `complete`.
 
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.

@@ -31,6 +31,7 @@ class ProviderCapability(str, Enum):
     UNREGISTERED_ENTITIES = "unregistered_entities"
     CONFIGURATION_DEFINITIONS = "configuration_definitions"
     AUTOMATION_BASELINE_CAPTURE = "automation_baseline_capture"
+    TRACE_SNAPSHOTS = "trace_snapshots"
     DASHBOARD_INTEGRITY_ANALYSIS = "dashboard_integrity_analysis"
     AUTOMATION_LIST = "automation_list"
     DEVICE_REGISTRY_READ = "device_registry_read"

@@ -2,6 +2,42 @@
 
 Date: 2026-07-10
 
+## Automation trace snapshots (2.4.1-beta.39, HAMCP-225)
+
+Four `engineering_native` tools, no delegated provider, no fallback, no Home
+Assistant write. `capture_automation_trace` (risk
+`engineering_evidence_write`) sends only `trace/list` and `trace/get` with
+`domain: "automation"` and requires `core.automation_trace_read`; it writes
+sanitized snapshots to the Engineering-local `trace-snapshots-v1` store.
+`list_trace_snapshots` and `get_trace_snapshot` are core-independent local
+reads with caller-bound cursors. `set_automation_trace_watch` (`add`,
+`remove`, `list`) is core-independent local state: no plan or approval, an
+audited add or remove, at most 10 watches; the separately gated poller
+issues the same two read commands every 30 seconds. `get_automation_trace`
+keeps its input schema and now passes the shared trace sanitizer, which
+applies the shared `credentials.screen` to every string and key first. The
+catalog is 72 static + 28 delegated = 100 (101 with the optional YAML
+reader). See
+[HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md](docs/HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md).
+
+## Host journal incident-log sources (2.4.1-beta.38, HAMCP-224)
+
+`get_incident_logs` keeps its routing (`engineering_native`), provider
+(`supervisor_incident_logs`), policy (`incident_window_journal_read_v1`),
+`risk=read`, writes `none` and input schema. `core` and `addon:self` still
+use the two fixed Supervisor routes. `supervisor`, `host`, `host:<category>`
+and `addon:<slug>` are no longer `authority_not_granted`: they are read from
+the host journal the Supervisor mounts read-only with `journald: true`,
+through a `ctypes` reader of 14 fixed `libsystemd` symbols and 9 fixed
+fields. No `manager` route is called and no role changes. A
+credential-looking journal field is withheld whole by the
+configuration-definitions screen (`credentials.screen`), and the result is
+partial; journald off or
+unreadable is `unavailable` with its reason. Only the tool description and
+the capability justification text change. The catalog is still 68 static +
+28 delegated = 96 (97 with the optional YAML reader). See
+[HAMCP_224_HOST_JOURNAL_DESIGN.md](docs/HAMCP_224_HOST_JOURNAL_DESIGN.md).
+
 ## Automation and script deletion, inactive (2.4.1-beta.35, HAMCP-155)
 
 `create_configuration_delete_plan` is a native governed planning tool:

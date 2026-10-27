@@ -31,7 +31,13 @@ from ..logging_config import get_logger
 from ..mcp_server import create_mcp_server
 from ..models.responses import dump_json
 from ..sanitization import sanitize_untrusted_data
-from ..trace_normalization import fetch_normalized_trace_list
+from ..trace_normalization import (
+    fetch_normalized_trace_list,
+    sanitize_trace_detail,
+    trace_sanitization_evidence,
+    trace_sanitization_partial,
+    trace_sanitization_warning,
+)
 from ..tool_framework import run_structured
 from ..providers.upstream_dashboard import UPSTREAM_DASHBOARD
 
@@ -532,7 +538,11 @@ async def list_automation_traces(automation_id: str) -> str:
 async def get_automation_trace(automation_id: str, run_id: str) -> str:
     """Full step-by-step trace of one automation run: which triggers fired,
     how each condition evaluated, and where execution stopped. The single
-    best debugging tool here."""
+    best debugging tool here. Engineering withholds credential-like and
+    known-secret values and shortens strings over 2,000 characters; such a
+    trace is marked partial and names the withheld categories. A value an
+    automation resolved from !secret is withheld only when it matches a
+    credential pattern."""
     result = await ws_command(
         {
             "type": "trace/get",
@@ -541,7 +551,25 @@ async def get_automation_trace(automation_id: str, run_id: str) -> str:
             "run_id": run_id,
         }
     )
-    return dump(result)
+    sanitized = sanitize_trace_detail(
+        result, known_secrets=(ACCESS_SECRET, HA_TOKEN)
+    )
+    partial = trace_sanitization_partial(sanitized)
+    return json.dumps(
+        {
+            "success": True,
+            "operation": "get_automation_trace",
+            "data": sanitized.value,
+            "warnings": (
+                [trace_sanitization_warning(sanitized)] if partial else []
+            ),
+            "metadata": {
+                "completeness": "partial" if partial else "complete",
+                "sanitization": trace_sanitization_evidence(sanitized),
+            },
+        },
+        default=str,
+    )
 
 
 # ----- Automations & config read/write --------------------------------------

@@ -1,83 +1,113 @@
 # Engineering 2.4.1-beta.38 release notes
 
-Engineering 2.4.1-beta.38 builds the November Core batch **inactive**
-(HAMCP-232, HAMCP-145 and the owner-added script-trace read). It follows
-2.4.1-beta.37 and includes it. It **activates nothing new**: every new tool
-refuses `pending_signed_registry_admission` before any Home Assistant request,
-read or persistence until a signed Core registry sequence names its profile.
-No signed registry, signed profile, fingerprint or existing input schema
-changes.
+Engineering 2.4.1-beta.38 lets `get_incident_logs` read the `supervisor`,
+`host`, `host:<category>` and `addon:<slug>` sources from the host journal
+(HAMCP-224). It follows 2.4.1-beta.37 and includes it. It adds no
+dependency change; both hashed locks are beta.37's. The only add-on
+configuration change is `journald: true`.
 
 Acceptance: [`V2_4_1_BETA38_ACCEPTANCE.md`](V2_4_1_BETA38_ACCEPTANCE.md).
-Design: [`HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md`](HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md)
-(owner decisions in section 0, the script-trace profile in section 4b, the
-Part 2 build in section 6).
+Design, owner decisions D1-D10 and the start-risk evidence (§0):
+[`HAMCP_224_HOST_JOURNAL_DESIGN.md`](HAMCP_224_HOST_JOURNAL_DESIGN.md).
 
-## What a client sees
+## Why
 
-Four new tools appear in the catalog (static tools 68 → 72; advertised catalog
-100, 101 with the optional YAML reader admitted). Each is listed with its
-requirement and refuses until signed admission:
+Through beta.37 these sources were refused with `authority_not_granted`: the
+Supervisor serves their log routes only to role `manager`, and Engineering
+runs as `homeassistant`. Josh decided (D1-D10, 2026-10-25) to read them from
+the host journal instead of raising the role.
 
-| Tool | Profile (runtime-only) | Kind |
-|---|---|---|
-| `create_helper_options_plan` | `core.config_entry_helper_options_operation` | governed write plan |
-| `create_input_select_option_plan` | `core.typed_input_select_option_operation` | governed write plan |
-| `list_script_traces` | `core.script_trace_read` | read |
-| `get_script_trace` | `core.script_trace_read` | read |
+## The change
 
-`create_helper_state_plan`'s schema and the input_boolean path are
-byte-identical.
+- **`journald: true`** (`config.yaml`). The Supervisor bind-mounts the host's
+  `/var/log/journal` and `/run/log/journal` read-only into the container.
+  `hassio_role` stays `homeassistant`. No Supervisor route that needs
+  `manager` is called.
+- **A read-only journal reader** (`incident_logs/host_journal.py`). It binds
+  14 fixed `libsystemd.so.0` symbols through `ctypes` on the base image's
+  own library (Debian `libsystemd0` 257.13-1~deb13u1; no new package) and
+  reads 9 fixed fields. One handle opened with `SD_JOURNAL_OS_ROOT` merges
+  the runtime and persistent journals. Each field is copied up to 16 KiB;
+  a call reads at most 4 MiB of fields and 20,000 entries per source (the
+  resume walk counts), and stops one second before the call deadline. The
+  read runs in one worker thread.
+- **Fixed matches.** `supervisor` is `hassio_supervisor`; `host` is the
+  Supervisor's pinned default 52-identifier set plus kernel entries;
+  `host:<category>` is a fixed subset; `addon:<slug>` needs
+  `SYSLOG_IDENTIFIER` equal to `CONTAINER_NAME` (`app_<slug>` or
+  `addon_<slug>`) through `_TRANSPORT=journal`. Every entry is rechecked in
+  Python; a failed recheck is counted (`match_rejected`), never returned.
+- **Timestamps** are the journal's realtime (`journal_realtime_utc`); no
+  text is parsed. Each entry carries a keyed `boot_ref`.
+- **Positions.** A continuation holds the entry's realtime and a keyed
+  digest of its libsystemd cursor, never the raw cursor. A position that is
+  no longer found is `journal_continuity_broken`.
+- **Secrets.** At the single `_finish` exit, every returned journal field
+  (message, `process`, `kernel_subsystem`, `kernel_device`) is screened
+  before anything reads it, by the **same** screen as the
+  configuration-definitions report (`credentials.screen`; the journal has no
+  screen of its own). The complete field is screened before any cut: a field
+  over 16 KiB, or bytes that are not UTF-8, are withheld whole as
+  unverifiable. Invisible, format or control characters, the HAMCP-132
+  credential and known-secret forms (after bounded percent-decoding, NFKC
+  and the confusable fold, on the text and its squashed form) and the
+  labelled forms the journal opts in to (a credential label with `=` or `:`,
+  `Bearer`, PEM private keys) withhold the **whole** field
+  (`credential_text_withheld` or `unverifiable_text_withheld`). In the
+  journal a strong credential keyword alone (`password`, `token`, `secret`,
+  `api key`, `authorization`, `bearer`, `--pw`, …, in the normal or
+  squashed form) or the mosquitto `-P` option in any quoting, argv or split
+  form withholds the field. Coloured lines are shown without their ANSI
+  colour (SGR) codes; a credential hidden by or across a colour code is still
+  withheld, and any other escape (cursor movement, erase, OSC, a malformed
+  escape) or control character withholds the field as unverifiable. The
+  final-envelope scan names each withheld entry (`withheld:entries[n]`); a
+  withheld entry a text filter left out counts in `withheld_not_searched`,
+  and one the level filter left out in `withheld_level_filtered`. Any of
+  these makes the result partial. The shared `sanitize_log_lines`
+  and the strict sanitizer then run once, as for every source. Fail closed:
+  ordinary text with a label and `:` or `=` (`token: refreshed`), any line
+  naming a credential keyword (`token refreshed`) and another tool's `-P`
+  option (`iptables -P`) are withheld too. The configuration-definitions report does not opt in to the labelled
+  forms and is unchanged.
+- **Order and bounds.** Host journal entries merge on the full microsecond
+  realtime (`ts` shows milliseconds; ties go to the earlier requested
+  source). Edge probes count toward the 20,000-entry bound, and each field
+  read checks the deadline and the 4 MiB call bound before it copies.
+- **Unavailability** comes from `/proc/self/mountinfo` and the open, never
+  from an empty result: `journald_not_enabled`, `journal_mount_incomplete`,
+  `journal_mount_not_read_only`, `journal_unreadable` (with errno),
+  `journal_reader_unavailable`, `journal_empty_or_unsupported`,
+  `journal_read_failed`.
 
-## What is built (inactive)
-
-- **Helper options (HAMCP-232, OD-1 to OD-8).** Edit existing UI-created
-  template (sensor, binary_sensor), filter and statistics helpers through their
-  config-entry options flow. One shared profile with a closed domain list;
-  utility_meter is deferred (OD-2). 1–8 entries per plan, one helper domain,
-  non-atomic, stop on first failure. The baseline and readback open and abort
-  the options flow only for the plan's exact entries, only inside this
-  profile; there is no general options read (OD-1, narrowing HAMCP-132
-  decision (i) for this use only). Template types with ActionSelector fields
-  are refused; `read_only` fields are pinned to the baseline (OD-3). Injected
-  defaults are disclosed as separate `normalization_changes` (OD-8). The
-  residual concurrency window between the dispatch guard and the submit is
-  accepted and disclosed in the plan and in the apply response (OD-7). Rollback is a
-  separately approved plan (OD-6).
-- **input_select option (HAMCP-145, OD-9 to OD-12).** A governed plan through
-  the new `create_input_select_option_plan` tool. Single
-  `input_select.select_option` call for one exact entity and an option in its
-  current list; the domain-parameterized dependency reader discloses per-option
-  triggers. Drift (state or options list) is refused at dispatch with
-  `stale_target_state`. A Core error after the send is decided by readback,
-  never assumed to be a failure. Rollback is a separately approved plan.
-- **Script-trace reads (owner addition).** `trace/list` and `trace/get` with
-  `domain: script` and an exact validated script key, sanitized through the
-  shared untrusted-data sanitizer before output, like the automation trace
-  reads. `trace/contexts`, `trace/debug/*` and the list-all form are never
-  sent. Not-found is reported as not-found, without fallback.
-
-Every write path uses the built-in lessons (design section 6.1): admission
-first at the service layer and again at the persist boundary; dispatch
-admission on every F3 path (first apply, retained approved plan, resume,
-recovery, read-only reconciliation); F3 entry refusal before initialization;
-pre-dispatch reads inside their own Core-authority window; closed command
-vocabularies with explicit never-sent lists; `mark_provider_send()` at the
-exact send boundary.
-
-## Evidence lanes and canaries
-
-- Dormant sequence-15 lanes (`scripts/seq15_contract_acceptance.py`) for
-  helper options, input_select and script traces, wired in `ci.yml` behind
-  `REAL_HA_SEQ15_LANES: dormant` and the candidate support slot (OD-14).
-  No existing step changed. They have not run.
-- Post-signing canaries (design section 6.6) are defined, not run.
+`core` and `addon:self` keep their Supervisor routes and Home Assistant
+time-zone handling.
 
 ## Compatibility
 
-- No F3 persisted-format change for any existing family. New enum values
-  (`set_input_select_option`, the `config_entry_helper_options` resource type)
-  can be written only after signed admission, so a beta.38 install under the
-  current signed registry (sequence 14) writes no new record shape.
-- Rollback is reinstalling 2.4.1-beta.37.
-- Stable v1.1.2 is unchanged.
+- No input schema change. The catalog is still **96 tools, 97 with the
+  optional YAML reader admitted**. Only the `get_incident_logs` description
+  and its capability-matrix justification text change.
+- Routing, provider (`supervisor_incident_logs`), policy
+  (`incident_window_journal_read_v1`), the Core gate and telemetry are
+  unchanged.
+- The signed Core capability profiles, probe fingerprints and both signed
+  registries are unchanged; the Core registry is fetched from `main` and
+  this release does not touch it.
+- No persisted format change: the signed incident-log cursor gains a journal
+  state shape, but cursors are process-keyed and expire within an hour.
+- No workflow, Dockerfile, dependency, Supervisor role or stable-v1 change.
+
+**Protected runtime files.** Josh authorized this scoped HAMCP-224 change
+(D1-D10, D9 for `config.yaml`): `incident_logs/host_journal.py` (new),
+`incident_logs/contracts.py`, `incident_logs/service.py`,
+`tools/incident_logs.py`, `capabilities.py` (justification text),
+`config.yaml` (`journald: true`) and the version.
+
+**Release collision resolved.** PR #311 merged first as `2.4.1-beta.37`, so
+this change is restaged at `2.4.1-beta.38` on a base that carries beta.37.
+
+## Rollback
+
+Reinstall the 2.4.1-beta.37 artifact. It has no `journald: true`, so the
+Supervisor removes both journal mounts. No stored format changes.

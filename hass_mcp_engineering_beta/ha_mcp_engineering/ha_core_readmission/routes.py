@@ -216,6 +216,8 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_configuration_definitions": (
         "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",
     ),
+    # HAMCP-225: trace/list and trace/get with domain automation only.
+    "capture_automation_trace": ("core.automation_trace_read",),
     "render_template": ("core.template_semantics",),
     "list_automation_traces": ("core.automation_trace_read",),
     "get_automation_trace": ("core.automation_trace_read",),
@@ -359,6 +361,22 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
             CORE_INDEPENDENT_LOCAL_STATE,
             "Reads the local Engineering audit log; it makes no Home "
             "Assistant call.",
+        ),
+        "list_trace_snapshots": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Lists the local Engineering trace snapshot store (HAMCP-225); "
+            "it makes no Home Assistant call.",
+        ),
+        "get_trace_snapshot": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Reads one stored, already sanitized trace snapshot (HAMCP-225); "
+            "it makes no Home Assistant call.",
+        ),
+        "set_automation_trace_watch": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Changes only the local watch list (HAMCP-225); it makes no Home "
+            "Assistant call. The trace watch poller acquires its own "
+            "core.automation_trace_read authority per tick.",
         ),
         "get_change_plan": CoreIndependence(
             CORE_INDEPENDENT_LOCAL_STATE,
