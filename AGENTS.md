@@ -254,6 +254,14 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   `exact`. Stop on `missing`, `partial`, `unsupported`, or unknown authority;
   never substitute a historical reference or release notes.
 
+Keep test and validation scratch inside the task worktree under the ignored
+`.artifacts/`: `TMPDIR`, the pip cache (`--cache-dir`, since `pip --isolated`
+ignores `PIP_CACHE_DIR`), venvs, wheelhouses, and `git clone --shared` targets.
+Do not put scratch in `/var/tmp` or `~/.cache`. For disposable review copies,
+use `git clone --shared` rather than `git worktree add`. The Codex
+`workspace-write` sandbox can write all of these without escalation. See
+**Sandbox-local scratch** in `docs/CODEX_WORKFLOW.md`.
+
 Fast-check areas are `Workflow`, `Context`, `Evidence`, `Validation`,
 `Instructions`, `Deployment`, and `Metadata`. Omitting `-Area` uses bounded
 changed-file inference; it stops and requires `-Area` or an explicit
