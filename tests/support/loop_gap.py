@@ -103,4 +103,3 @@ def child_failure(summary: str, result) -> str:
     lines = [line for line in result.stdout.splitlines() if line.startswith("{")]
     lines += [line for line in result.stderr.splitlines() if line.startswith("AssertionError")]
     return "\n".join([summary, *(line[:2000] for line in lines[-6:])])
-
