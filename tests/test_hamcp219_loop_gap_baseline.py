@@ -18,8 +18,8 @@ Loop-thread CPU: catalog, native and upstream .10 + min(gen-2 CPU, .10)
 (ceiling .20); alarmo and baseline .10 fixed per gap and continuation .10
 total, all with collection held off. Measured idle detection floors
 (allowance + idle baseline, 25 unloaded runs per body, median / max): alarmo
-.3109 / .3112 s, baseline .3059 / .3061 s, continuation .1056 / .1058 s,
-catalog, native and upstream .2556 / .2559 s wall and .1000 / .1000 s CPU.
+.3110 / .3113 s, baseline .3060 / .3062 s, continuation .1057 / .1059 s,
+catalog, native and upstream .2557 / .2559 s wall and .1000 / .1000 s CPU.
 Details in ``support/loop_gap.py``.
 """
 import asyncio

@@ -37,8 +37,8 @@ upstream        .25              .10   .35      .10 + min(gen-2 CPU, .10)
 The idle detection floor is the allowance plus the measured idle baseline,
 the bound a gap gets when the runner is quiet. Measured 2026-10-28 on a
 10-core host with no added load, 25 isolated runs per body, median / max:
-alarmo .3109 / .3112 s (10 ms heartbeat), baseline .3059 / .3061 s,
-continuation .1056 / .1058 s, catalog, native and upstream .2556 / .2559 s;
+alarmo .3110 / .3113 s (10 ms heartbeat), baseline .3060 / .3062 s,
+continuation .1057 / .1059 s, catalog, native and upstream .2557 / .2559 s;
 the CPU floor in catalog, native and upstream is .1000 / .1000 s (no major
 collection fell in the binding gap). On a loaded runner the wall bound rises
 above that floor only as the pre-window idle baseline rises, and the CPU
