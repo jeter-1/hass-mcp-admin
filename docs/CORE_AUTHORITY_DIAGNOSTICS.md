@@ -15,9 +15,9 @@ copied into this event. In particular, `core_observation_unavailable` cannot
 recover an HTTP status or timeout subtype that the collector discarded.
 
 Successful retry audit events now identify `failure_retry` explicitly, including
-an idempotent retry; ordinary idempotent periodic checks remain quiet. The
-successful reconciliation event, public health projection and tool descriptors
-are otherwise unchanged. Events use the existing sink outside the runtime state
+an idempotent retry; ordinary idempotent periodic checks remain quiet. That
+change left the successful reconciliation event, public health projection and
+tool descriptors otherwise unchanged; the health itemization below is HAMCP-242. Events use the existing sink outside the runtime state
 lock. A refused or throwing sink increments `audit_write_failures`; it does not
 hide the failed attempt, admit authority or queue another probe. An unavailable
 sink means a durable reason could not be recorded, not a successful audit.
@@ -27,3 +27,106 @@ checks and catalog restoration are unchanged. Offline failure and retry controls
 exercise production collection with synthetic peers and a controlled clock.
 These diagnostics do not prove that health work caused the historical October
 disconnect and do not reconstruct missing historical failure details.
+
+# Withheld capability itemization (HAMCP-242)
+
+`get_server_health.home_assistant_core_authority` previously published counts
+only. A client reading `unavailable_count: 3` and `withheld_count: 3` could not
+tell which capabilities were blocked, why, or which tools they affected, and
+could misread the two counts as six capabilities. The block now adds three
+fields. Every existing field, count and value is unchanged.
+
+| Field | Meaning |
+| --- | --- |
+| `withheld_capabilities` | One entry per held, quarantined or unavailable capability profile in the published generation, sorted by `capability_id`. Empty when every evaluated profile is compatible. |
+| `withheld_capabilities_truncated` | `true` only when more than 64 entries exist and the list holds the first 64. The counts always cover every profile. |
+| `count_semantics` | A fixed string that states how the counts relate. |
+
+Each entry has exactly four fields:
+
+| Field | Meaning |
+| --- | --- |
+| `capability_id` | The Engineering capability profile identifier, such as `core.script_trace_read`. |
+| `disposition` | `held`, `quarantined` or `unavailable`, the same class the matching `*_count` counts. |
+| `reason_code` | The fixed-vocabulary reason the coordinator recorded for that decision, such as `positive_authority_missing`. |
+| `affected_tools` | Sorted Engineering static tool names whose reviewed requirement table (`routes.STATIC_TOOL_CORE_REQUIREMENTS`) names this profile, or `[]`. |
+
+## Count semantics
+
+- `withheld_count = held_count + quarantined_count + unavailable_count`.
+  `withheld_count` is a total, not an additional set: `unavailable_count: 3`
+  with `withheld_count: 3` means three capabilities, not six.
+- `compatible_count + withheld_count` equals the number of capability profiles
+  evaluated in `current_generation`.
+- `withheld_capabilities` lists each withheld profile once. Its length equals
+  `withheld_count` unless truncated, and the number of entries for each
+  disposition equals that disposition's count.
+
+An internal consistency check enforces these relations. If the list and counts
+ever disagree, the projection fails with `core_authority_projection_inconsistent`
+instead of publishing a list that contradicts its counts. The check only reads
+the assessment the coordinator already computes. It changes no admission
+decision, reason code, lease, registry handling or recovery.
+
+## Reading the three-capability case
+
+Under the signed sequence-14 registry, Core 2026.10.3 has positive authority for
+26 profiles. It has none for the three dormant November-batch profiles, so the
+block reads:
+
+```json
+{
+  "compatible_count": 26,
+  "held_count": 0,
+  "quarantined_count": 0,
+  "unavailable_count": 3,
+  "withheld_count": 3,
+  "withheld_capabilities": [
+    {
+      "capability_id": "core.config_entry_helper_options_operation",
+      "disposition": "unavailable",
+      "reason_code": "positive_authority_missing",
+      "affected_tools": ["create_helper_options_plan"]
+    },
+    {
+      "capability_id": "core.script_trace_read",
+      "disposition": "unavailable",
+      "reason_code": "positive_authority_missing",
+      "affected_tools": ["get_script_trace", "list_script_traces"]
+    },
+    {
+      "capability_id": "core.typed_input_select_option_operation",
+      "disposition": "unavailable",
+      "reason_code": "positive_authority_missing",
+      "affected_tools": ["create_input_select_option_plan"]
+    }
+  ],
+  "withheld_capabilities_truncated": false
+}
+```
+
+Read this as three blocked capabilities: 26 + 3 = 29 profiles evaluated. Each
+lacks positive signed authority for the observed Core version, and four tools
+are affected. The fix is signed authority (registry sequence 15) that names
+those profiles, not a change to Home Assistant. After that registry is admitted
+and the add-on restarts, the list is empty and `compatible_count` is 29.
+
+## Boundaries
+
+- Every value is an Engineering identifier: profile ids, the three disposition
+  names, coordinator reason codes and Engineering tool names. No Home Assistant
+  text, entity, session or endpoint value enters the list, and the
+  final-envelope sanitizer still runs over the whole response.
+- `affected_tools` lists only Engineering static tools. Delegated `ha-mcp`
+  reads are not listed, because their client-visible names depend on the
+  admitted upstream release. A per-call narrowed tool appears under every
+  profile it can require. An empty list means no static tool requires the
+  profile; it does not mean the profile has no effect.
+- The list is derived from the decisions already published in the current
+  generation. It persists nothing new and makes no Core, Supervisor or upstream
+  call. Signing, registry content, `list_capabilities` and `server_info` are
+  unchanged.
+- The whole projection stays within the existing `MAX_REPORT_BYTES` (32 768)
+  bound. Because the list limit (64) equals `MAX_CAPABILITIES`, truncation
+  cannot occur with the current profile set. The flag guards a future increase
+  in that set.

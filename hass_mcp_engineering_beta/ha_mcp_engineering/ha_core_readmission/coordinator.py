@@ -40,6 +40,7 @@ from .models import (
     canonical_json,
     fingerprint,
 )
+from .routes import static_tools_requiring
 
 
 _DENIAL = frozenset(
@@ -49,6 +50,66 @@ _DENIAL = frozenset(
     }
 )
 _EXPLICIT_UNAVAILABLE = frozenset({CoreAuthorityStatus.UNAVAILABLE})
+
+# HAMCP-242: public health itemizes each withheld capability from the
+# assessment it already computes.  Every value is an Engineering identifier.
+WITHHELD_CAPABILITIES_LIMIT = MAX_CAPABILITIES
+COUNT_SEMANTICS = (
+    "withheld_count = held_count + quarantined_count + unavailable_count "
+    "(a total, not an additional set); compatible_count + withheld_count = "
+    "capability profiles evaluated in current_generation; "
+    "withheld_capabilities lists each withheld profile once with its "
+    "disposition"
+)
+_WITHHELD_SOURCES = (
+    (CoreDisposition.HELD.value, "held_capabilities", "held_count"),
+    (
+        CoreDisposition.QUARANTINED.value,
+        "quarantined_capabilities",
+        "quarantined_count",
+    ),
+    (
+        CoreDisposition.UNAVAILABLE.value,
+        "unavailable_capabilities",
+        "unavailable_count",
+    ),
+)
+
+
+def withheld_capability_entries(
+    assessment: dict[str, Any],
+    *,
+    limit: int = WITHHELD_CAPABILITIES_LIMIT,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Return the sorted, bounded withheld list and whether it was truncated.
+
+    The list and the assessment counts must agree exactly; a disagreement is
+    an internal defect and refuses the projection rather than publishing it.
+    """
+
+    entries: list[dict[str, Any]] = []
+    for disposition, items_key, count_key in _WITHHELD_SOURCES:
+        items = assessment[items_key]
+        if len(items) != assessment[count_key]:
+            raise CoreReadmissionError("core_authority_projection_inconsistent")
+        entries.extend(
+            {
+                "capability_id": item["capability_id"],
+                "disposition": disposition,
+                "reason_code": item["reason_code"],
+                "affected_tools": list(
+                    static_tools_requiring(item["capability_id"])
+                ),
+            }
+            for item in items
+        )
+    if (
+        len(entries) != assessment["withheld_count"]
+        or len({item["capability_id"] for item in entries}) != len(entries)
+    ):
+        raise CoreReadmissionError("core_authority_projection_inconsistent")
+    entries.sort(key=lambda item: item["capability_id"])
+    return entries[:limit], len(entries) > limit
 
 
 class CoreGenerationAllocator(Protocol):
@@ -640,6 +701,10 @@ class CoreReadmissionCoordinator:
                 if item.disposition is CoreDisposition.UNAVAILABLE
             )
             withheld = (*held, *quarantined, *unavailable)
+            if len(compatible) + len(withheld) != len(decisions):
+                raise CoreReadmissionError(
+                    "core_authority_projection_inconsistent"
+                )
             code_change_reasons = {
                 "capability_contract_changed",
                 "capability_not_compiled",
@@ -738,6 +803,10 @@ class CoreReadmissionCoordinator:
                 "fallback_count",
             )
         }
+        withheld, truncated = withheld_capability_entries(assessment)
+        projection["withheld_capabilities"] = withheld
+        projection["withheld_capabilities_truncated"] = truncated
+        projection["count_semantics"] = COUNT_SEMANTICS
         canonical_json(projection, maximum=MAX_REPORT_BYTES)
         return projection
 
@@ -1151,8 +1220,11 @@ class CoreReadmissionCoordinator:
 
 
 __all__ = [
+    "COUNT_SEMANTICS",
     "CoreGenerationAllocator",
     "CoreReadmissionCoordinator",
     "CoreReconciliationAttempt",
     "LocalCoreGenerationAllocator",
+    "WITHHELD_CAPABILITIES_LIMIT",
+    "withheld_capability_entries",
 ]
