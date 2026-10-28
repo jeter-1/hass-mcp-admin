@@ -1,0 +1,394 @@
+{
+ "baseline": {
+  "broken": false,
+  "killed_by": [],
+  "log_path": ".artifacts/hamcp242/mutants/baseline.log",
+  "returncode": 0,
+  "seconds": 1.9,
+  "tests": 25
+ },
+ "killed": 25,
+ "mutants": {
+  "drop_last_entry_unguarded": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions_refuses",
+    "test_exactly_64_is_not_truncated",
+    "test_explicit_limit_flags_truncation",
+    "test_global_refusal_lists_every_profile_within_the_report_bound",
+    "test_held_entry",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_public_health_uses_bounded_core_projection",
+    "test_quarantined_entry",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_sorted_by_capability_id_across_dispositions",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/drop_last_entry_unguarded.log",
+   "returncode": 1,
+   "seconds": 2.0,
+   "status": "killed",
+   "tests": 25
+  },
+  "duplicate_entry_unguarded": {
+   "broken": false,
+   "killed_by": [
+    "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions_refuses",
+    "test_exactly_64_is_not_truncated",
+    "test_global_refusal_lists_every_profile_within_the_report_bound",
+    "test_held_entry",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_public_health_uses_bounded_core_projection",
+    "test_quarantined_entry",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_sorted_by_capability_id_across_dispositions",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/duplicate_entry_unguarded.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "limit_63": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_exactly_64_is_not_truncated",
+    "test_limit_is_the_capability_bound"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/limit_63.log",
+   "returncode": 1,
+   "seconds": 2.0,
+   "status": "killed",
+   "tests": 25
+  },
+  "no_assessment_invariant": {
+   "broken": false,
+   "killed_by": [
+    "test_unclassified_decision_refuses_the_assessment"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/no_assessment_invariant.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "no_bound": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_explicit_limit_flags_truncation"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/no_bound.log",
+   "returncode": 1,
+   "seconds": 2.0,
+   "status": "killed",
+   "tests": 25
+  },
+  "no_class_count_check": {
+   "broken": false,
+   "killed_by": [
+    "test_count_and_list_disagreement_refuses"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/no_class_count_check.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "no_total_check": {
+   "broken": false,
+   "killed_by": [
+    "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions_refuses"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/no_total_check.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "omit_held": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_held_entry",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_sorted_by_capability_id_across_dispositions"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/omit_held.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "omit_held_unguarded": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions_refuses",
+    "test_held_entry",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_sorted_by_capability_id_across_dispositions"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/omit_held_unguarded.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "omit_quarantined": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_quarantined_entry",
+    "test_sorted_by_capability_id_across_dispositions"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/omit_quarantined.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "omit_quarantined_unguarded": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions_refuses",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_quarantined_entry",
+    "test_sorted_by_capability_id_across_dispositions"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/omit_quarantined_unguarded.log",
+   "returncode": 1,
+   "seconds": 2.0,
+   "status": "killed",
+   "tests": 25
+  },
+  "omit_unavailable": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_exactly_64_is_not_truncated",
+    "test_explicit_limit_flags_truncation",
+    "test_global_refusal_lists_every_profile_within_the_report_bound",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_projection_adds_no_core_call_and_persists_nothing",
+    "test_public_health_uses_bounded_core_projection",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_sorted_by_capability_id_across_dispositions",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/omit_unavailable.log",
+   "returncode": 1,
+   "seconds": 1.8,
+   "status": "killed",
+   "tests": 25
+  },
+  "omit_unavailable_unguarded": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions_refuses",
+    "test_exactly_64_is_not_truncated",
+    "test_explicit_limit_flags_truncation",
+    "test_global_refusal_lists_every_profile_within_the_report_bound",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_public_health_uses_bounded_core_projection",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_sorted_by_capability_id_across_dispositions",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/omit_unavailable_unguarded.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "reason_dropped": {
+   "broken": false,
+   "killed_by": [
+    "test_global_refusal_lists_every_profile_within_the_report_bound",
+    "test_held_entry",
+    "test_public_health_uses_bounded_core_projection",
+    "test_quarantined_entry",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/reason_dropped.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "semantics_missing": {
+   "broken": false,
+   "killed_by": [
+    "test_all_compatible_gives_an_empty_list",
+    "test_public_health_uses_bounded_core_projection",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/semantics_missing.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "tools_drop_first": {
+   "broken": false,
+   "killed_by": [
+    "test_held_entry",
+    "test_quarantined_entry",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/tools_drop_first.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "tools_drop_last": {
+   "broken": false,
+   "killed_by": [
+    "test_held_entry",
+    "test_quarantined_entry",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/tools_drop_last.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "tools_empty": {
+   "broken": false,
+   "killed_by": [
+    "test_held_entry",
+    "test_quarantined_entry",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/tools_empty.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "tools_include_delegated": {
+   "broken": false,
+   "killed_by": [
+    "test_delegated_and_unknown_names_are_not_listed",
+    "test_every_runtime_profile_maps_exactly",
+    "test_held_entry",
+    "test_mapping_agrees_with_the_requirement_table_both_ways",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_quarantined_entry",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/tools_include_delegated.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "tools_key_missing": {
+   "broken": false,
+   "killed_by": [
+    "test_held_entry",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_quarantined_entry",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/tools_key_missing.log",
+   "returncode": 1,
+   "seconds": 2.0,
+   "status": "killed",
+   "tests": 25
+  },
+  "tools_unsorted": {
+   "broken": false,
+   "killed_by": [
+    "test_every_runtime_profile_maps_exactly",
+    "test_held_entry",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_quarantined_entry",
+    "test_script_trace_pair_and_dormant_tools",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_unavailable_entries"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/tools_unsorted.log",
+   "returncode": 1,
+   "seconds": 2.0,
+   "status": "killed",
+   "tests": 25
+  },
+  "truncated_never": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_explicit_limit_flags_truncation"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/truncated_never.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "truncated_off_by_one": {
+   "broken": false,
+   "killed_by": [
+    "test_exactly_64_is_not_truncated"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/truncated_off_by_one.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "unsorted": {
+   "broken": false,
+   "killed_by": [
+    "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_exactly_64_is_not_truncated",
+    "test_explicit_limit_flags_truncation",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_sorted_by_capability_id_across_dispositions"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/unsorted.log",
+   "returncode": 1,
+   "seconds": 1.9,
+   "status": "killed",
+   "tests": 25
+  },
+  "wrong_disposition_label": {
+   "broken": false,
+   "killed_by": [
+    "test_held_entry",
+    "test_mixed_dispositions_are_one_sorted_list",
+    "test_quarantined_entry",
+    "test_sorted_by_capability_id_across_dispositions"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/wrong_disposition_label.log",
+   "returncode": 1,
+   "seconds": 2.0,
+   "status": "killed",
+   "tests": 25
+  }
+ },
+ "mutation_count": 25,
+ "tests": [
+  "tests.test_hamcp242_core_authority_itemization",
+  "tests.test_ha_core_2026_9_integration.Core20269RuntimeTests.test_public_health_uses_bounded_core_projection"
+ ]
+}

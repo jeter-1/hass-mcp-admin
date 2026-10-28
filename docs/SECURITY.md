@@ -888,6 +888,28 @@ option, role, fallback or delegated provider.
 - **HAMCP-069B profiles.** The two unsigned 069B profiles now name every read
   their gateway sends; no signed profile changes.
 
+The `2.4.1-beta.44` slice (HAMCP-242) adds no permission, role, route,
+provider, fallback, write path, input, tool or upstream call. It adds three
+fields to the public `home_assistant_core_authority` health block.
+
+- **Identifiers only.** `withheld_capabilities` entries hold a capability
+  profile id, a `CoreDisposition` value (`held`, `quarantined`,
+  `unavailable`), the coordinator's existing reason code and Engineering
+  static tool names from `routes.STATIC_TOOL_CORE_REQUIREMENTS`. No Home
+  Assistant observation text, entity, session or endpoint value is read into
+  them, and the final-envelope sanitizer still runs.
+- **Projection, not authority.** The list is built from the assessment the
+  coordinator already computes for the published generation. It changes no
+  selection, admission, reason code, lease, retirement, registry handling or
+  recovery, and persists nothing.
+- **Fail closed on inconsistency.** If a disposition's list length differs
+  from its count, the total differs from `withheld_count`, an id repeats, or
+  the compatible and withheld decisions do not cover every decision, the
+  projection raises `core_authority_projection_inconsistent` instead of
+  publishing a contradiction. The check never admits.
+- **Bounded.** At most 64 entries, `withheld_capabilities_truncated` past
+  that, and the whole projection within `MAX_REPORT_BYTES` (32 768).
+
 The `2.4.1-beta.43` slice (HAMCP-234 step 2) adds no permission, role,
 route, provider, fallback, write path, input or tool. It **relaxes one
 journal rule**, by owner decision (Josh, 2026-10-27), from the beta.42 live

@@ -1,5 +1,21 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.44** itemizes withheld Core capabilities in
+`get_server_health` (HAMCP-242). `home_assistant_core_authority` now lists
+each held, quarantined or unavailable capability once, in
+`withheld_capabilities`: its id, disposition, reason code and the
+Engineering tools it affects, sorted, bounded at 64
+(`withheld_capabilities_truncated`). A fixed `count_semantics` states that
+`withheld_count` is held + quarantined + unavailable, a total rather than an
+additional set. The counts are unchanged and must agree with the list. On
+Core 2026.10.3 under registry sequence 14, the list names the three dormant
+November profiles (`positive_authority_missing`). No admission, registry,
+tool or schema changes. Rollback is reinstalling beta.43. Read the
+[2.4.1-beta.44 release notes](docs/V2_4_1_BETA44_RELEASE_NOTES.md) and
+[2.4.1-beta.44 acceptance contract](docs/V2_4_1_BETA44_ACCEPTANCE.md).
+
+It builds on beta.43 and the releases below.
+
 Engineering **2.4.1-beta.43** relaxes one host journal rule, proven by a live
 calibration (HAMCP-234 step 2). On beta.42, `addon:core_matter_server`
 withheld 37 of 40 lines as `user_pass_host.squashed`: with whitespace removed,
