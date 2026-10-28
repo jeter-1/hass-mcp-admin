@@ -165,19 +165,31 @@ class BaselineCaptureProvider:
                 projected["invalid_count"], projected["withheld_count"])
 
     @staticmethod
+    def inherited_anchor(base):
+        """HAMCP-235: the installation anchor of a stored capture's rows, or None.
+
+        The base's established installation id, else the anchor its first
+        fence recorded. Captures stored by earlier releases whose final fence
+        failed recorded none (review 1, R1-M1); owner decision D4 (Josh,
+        2026-10-28) refuses resuming them.
+        """
+
+        prior = base["baseline"]
+        if prior["installation"]["status"] == "established":
+            return prior["installation"]["installation_id"]
+        return base["diagnostics"].get("first_fence_installation_id")
+
+    @staticmethod
     def resume_changes(base, identity, records):
         """HAMCP-235: the fixed categories of stable identity a resume found changed.
 
         Only the installation anchor, the set of configuration ids and each
         id's entity are compared; never the authority generation, an on/off
-        state or an unmapped count. The anchor is the base's established
-        installation id, else the anchor its first fence observed (captures
-        from earlier releases did not record one).
+        state or an unmapped count.
         """
 
         prior = base["baseline"]
-        anchor = (prior["installation"]["installation_id"] if prior["installation"]["status"] == "established"
-                  else base["diagnostics"].get("first_fence_installation_id"))
+        anchor = BaselineCaptureProvider.inherited_anchor(base)
         changes = set()
         if anchor is not None and anchor != identity:
             changes.add("installation_changed")
@@ -219,11 +231,14 @@ class BaselineCaptureProvider:
                 return projected
 
             fence_started = time.monotonic()
-            first = await fence("before", c.FENCE_READS, {})
-            # HAMCP-235: the final fence shares the collection bound; reserve
-            # the in-flight reads plus twice the measured first fence for it.
+            first = await fence("before", c.IDENTITY_READS, {})
+            # HAMCP-235 (review 1, R1-M2): the final fence shares the collection
+            # bound. Its reserve covers what must complete, the identity reads;
+            # configuration reads end when it starts (``window``).
             reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(
-                c.FINAL_FENCE_RESERVE_MIN, c.READ_SECONDS + 2 * (time.monotonic() - fence_started)))
+                c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))
+            await fence("before", c.FENCE_READS[len(c.IDENTITY_READS):], first)
+            window = started + c.COLLECTION_SECONDS - reserve
             observed_at = now()
             states = first["states"]["records"]
             registry = first["registry"]["records"]
@@ -255,6 +270,9 @@ class BaselineCaptureProvider:
                     "enabled_state": {"state": state["state"], "collected_at": observed_at,
                                       "collection_time_status": "observed"}})
             pending = list(range(len(records)))
+            # The anchor of the rows a resume inherits is the base's own, never
+            # this capture's fences (review 1, R1-M1).
+            anchor = first["identity"] if base is None else self.inherited_anchor(base)
             if base is not None:
                 prior = base["baseline"]
                 prior_outcomes = base["diagnostics"]["record_outcomes"]
@@ -280,14 +298,20 @@ class BaselineCaptureProvider:
                     index, position = pending[position], position + 1
                     row = records[index]
                     config_id, config = row["configuration_id"], row["configuration"]
-                    if time.monotonic() - started >= c.COLLECTION_SECONDS - reserve:
+                    if time.monotonic() >= window:
                         # HAMCP-228: never attempted before the bound; resume retries it.
                         outcomes[config_id] = "timeout"
                         config["status"] = "timed_out"
                         continue
                     try:
                         authorize()
-                        raw = await peer.configuration(config_id)
+                        try:
+                            # No configuration read outlasts the window, so the
+                            # identity reads keep their whole reserve.
+                            async with asyncio.timeout(max(0.0, window - time.monotonic())):
+                                raw = await peer.configuration(config_id)
+                        except TimeoutError:
+                            raise c.CaptureError("timeout") from None
                         value = await c.worker(self.projector.hash_configuration, config_id, raw)
                         del raw
                         authorize()
@@ -362,13 +386,12 @@ class BaselineCaptureProvider:
             # the resumed baseline records it as authority drift instead.
             if prior["authority"]["generation"] != authority[0]:
                 authority_drift = "detected"
-            # HAMCP-235: the base's records are bracketed by its first fence
-            # and this capture's fences. resume_changes refused a different
-            # anchor, so a base whose own final fence failed is established by
-            # this capture's; a base that recorded no anchor stays unestablished.
-            identity_established = identity_established and (
-                prior["installation"]["status"] == "established"
-                or base["diagnostics"].get("first_fence_installation_id") is not None)
+            # HAMCP-235: the base's records are bracketed by its own anchor and
+            # this capture's fences; resume_changes refused a different anchor.
+            # The service refuses a base without one (D4); were one to reach
+            # here, its rows keep no anchor and stay unestablished, so no later
+            # resume can establish them.
+            identity_established = identity_established and anchor == first["identity"]
             resume = {"resumed_from": prior["baseline_id"], "resumed_count": len(pending)}
         if mapping_drift:
             for record in records:
@@ -404,6 +427,6 @@ class BaselineCaptureProvider:
             "registry_only_entities": extras[:16], "registry_only_count": len(extras),
             "registry_only_count_precision": "lower_bound", "record_outcomes": outcomes,
             "final_fence": "complete" if inventory_complete else "identity_only" if identity_verified else "unavailable",
-            "final_fence_reason": fence_reason, "first_fence_installation_id": first["identity"],
+            "final_fence_reason": fence_reason, "first_fence_installation_id": anchor,
             "final_fence_reserve_seconds": round(reserve, 3),
             "credential_screen": storage_screen.summary(withheld)}}

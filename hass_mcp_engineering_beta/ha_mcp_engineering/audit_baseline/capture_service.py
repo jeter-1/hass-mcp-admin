@@ -155,6 +155,12 @@ class BaselineCaptureService:
                 base, _ = await self.load(resume_capture_id, caller)
                 if not self.provider.retry_ids(base["baseline"], base["diagnostics"]["record_outcomes"]):
                     raise c.CaptureError("resume_not_needed")
+                # HAMCP-235, owner decision D4 (Josh, 2026-10-28): a capture
+                # that recorded no installation anchor is never resumed; an
+                # anchor read later cannot say where its rows came from.
+                if self.provider.inherited_anchor(base) is None:
+                    raise c.CaptureError("resume_inventory_changed",
+                                         resume_changes=("installation_anchor_missing",))
             await self.stored("check_capacity", self.now_ms())
             report = await (self.provider.collect(base) if base is not None else self.provider.collect())
             # Review 2 (R1): the storage boundary. Every record and diagnostic

@@ -7,17 +7,22 @@ later with the same automations must succeed. Synthetic only: the fake
 client and Core come from ``test_automation_baseline_capture``.
 """
 import asyncio
+from collections import Counter
+from contextlib import asynccontextmanager
+from functools import partial
+import hashlib
 import json
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 
-from test_automation_baseline_capture import Core, fixture  # noqa: E402
+from test_automation_baseline_capture import Client, Core, fixture  # noqa: E402
 from test_hamcp228_baseline_store import OWNER, Harness, capture_id  # noqa: E402
 from ha_mcp_engineering.audit_baseline import capture_contracts as c  # noqa: E402
 from ha_mcp_engineering.audit_baseline.capture_provider import BaselineCaptureProvider  # noqa: E402
@@ -54,6 +59,13 @@ class LiveHarness(Harness):
                     raise c.CaptureError('timeout')
         client.hook = hook
         return service, client
+
+    def fresh_store(self):
+        self.core = Core()
+        self.core.current_observation.version = LIVE_CORE
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.governance = Path(directory.name)
 
     async def compare_all(self, service, **arguments):
         """Every page of a comparison; each page must carry the caveats once."""
@@ -160,7 +172,7 @@ class LiveShapedCompareTests(LiveHarness):
     async def test_scheduler_bound_timeouts_are_unknown_with_their_reason(self):
         service, _ = self.live(count=3)
         first = await self.capture(service)
-        with patch.object(c, 'COLLECTION_SECONDS', 10):
+        with patch.object(c, 'COLLECTION_SECONDS', c.FINAL_FENCE_RESERVE_MIN):
             second = await self.capture(service)
         result, rows = await self.compare_all(service, earlier_capture_id=capture_id(first),
                                               later_capture_id=capture_id(second))
@@ -299,13 +311,6 @@ class LiveShapedResumeTests(LiveHarness):
                 self.assertEqual(resumed['baseline_header']['resume']['resumed_count'], 1)
                 self.assertEqual(resumed['record_outcomes'], {})
 
-    def fresh_store(self):
-        self.core = Core()
-        self.core.current_observation.version = LIVE_CORE
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        self.governance = Path(directory.name)
-
     async def test_each_inventory_change_category_is_refused_precisely(self):
         def added(data):
             data['states'].append({'entity_id': 'automation.new', 'state': 'on', 'attributes': {'id': 'new'}})
@@ -350,18 +355,55 @@ class LiveShapedResumeTests(LiveHarness):
                 self.assertEqual(len(self.entries(service)), 1, 'nothing persisted before a refusal')
                 self.assertFalse(service.active)
 
-    async def test_an_unestablished_legacy_base_without_an_anchor_stays_unestablished(self):
-        service, client, base = await self.live_base(timeouts=('3',))
-        key = capture_id(base)
-        # A capture stored by an earlier release recorded no first-fence anchor.
-        report, entry = service.store.get(key, OWNER, service.now_ms())
+    async def test_an_anchorless_base_is_refused_before_any_read_or_write(self):
+        # Owner decision D4 (Josh, 2026-10-28): a capture that recorded no
+        # first-fence anchor is never resumed, on any installation.
+        for label, installation in (('same', None), ('different', 'device2')):
+            with self.subTest(label):
+                self.fresh_store()
+                service, client, base = await self.live_base(timeouts=('3',))
+                key = capture_id(base)
+                report, entry = service.store.get(key, OWNER, service.now_ms())
+                report['diagnostics'].pop('first_fence_installation_id')
+                if installation:
+                    client.data['devices'][0]['id'] = installation
+                client.fail_final = False
+                client.calls.clear()
+                with patch.object(service.store, 'get', return_value=(report, entry)):
+                    error = await self.reason(self.capture(service, resume_capture_id=key))
+                self.assertEqual(error.details, {'reason': 'resume_inventory_changed',
+                                                 'resume_changes': ['installation_anchor_missing']})
+                self.assertFalse(error.retryable)
+                self.assertEqual(client.calls, [], 'nothing is read before the refusal')
+                self.assertEqual(len(self.entries(service)), 1, 'nothing is persisted')
+                self.assertFalse(service.active)
+
+    async def test_inherited_rows_keep_their_own_provenance(self):
+        # Behind the service gate: a base without an anchor that reached the
+        # provider keeps no anchor, so no chain of resumes establishes it,
+        # and the current fence's anchor is never recorded for its rows.
+        service, client, base = await self.live_base(timeouts=('3', '9'))
+        report, _ = service.store.get(capture_id(base), OWNER, service.now_ms())
         report['diagnostics'].pop('first_fence_installation_id')
-        with patch.object(service.store, 'get', return_value=(report, entry)):
-            client.data['devices'][0]['id'] = 'device2'
-            client.fail_final = False
-            resumed = await self.capture(service, resume_capture_id=key)
-        self.assertEqual(resumed['baseline_header']['installation']['status'], 'unestablished')
-        self.assertIsNone(resumed['baseline_header']['installation']['installation_id'])
+        client.fail_final = False
+        client.data['configs']['9'] = c.CaptureError('timeout')
+        first = await service.provider.collect(report)
+        self.assertEqual(first['baseline']['installation'], {**first['baseline']['installation'],
+                                                            'status': 'unestablished', 'installation_id': None})
+        self.assertIsNone(first['diagnostics']['first_fence_installation_id'])
+        self.assertEqual(first['diagnostics']['record_outcomes'], {'9': 'timeout'})
+        client.data['configs']['9'] = {'id': '9', 'mode': 'single'}
+        second = await service.provider.collect(first)
+        self.assertEqual(second['baseline']['installation']['status'], 'unestablished')
+        self.assertIsNone(second['diagnostics']['first_fence_installation_id'])
+        self.assertEqual(second['diagnostics']['record_outcomes'], {})
+        # An anchored base keeps its own anchor through the same chain.
+        anchored, _ = service.store.get(capture_id(base), OWNER, service.now_ms())
+        resumed = await service.provider.collect(anchored)
+        self.assertEqual(resumed['diagnostics']['first_fence_installation_id'],
+                         anchored['diagnostics']['first_fence_installation_id'])
+        self.assertEqual(resumed['baseline']['installation']['installation_id'],
+                         anchored['diagnostics']['first_fence_installation_id'])
 
 
 class FinalFenceTests(LiveHarness):
@@ -415,31 +457,250 @@ class FinalFenceTests(LiveHarness):
         self.assertEqual(error.reason, 'identity_drift')
         self.assertEqual(self.entries(service), [])
 
-    async def test_the_reserve_follows_the_measured_first_fence_within_bounds(self):
-        for maximum, low, high in ((3.0, 1.4, 3.0), (1.2, 1.2, 1.2)):
-            with self.subTest(maximum=maximum):
-                service, client = self.live(count=2)
-                client.fail_final = False
-                slept = []
 
-                async def hook(kind, slept=slept):
-                    if kind == 'states' and not slept:
-                        slept.append(kind)
-                        await asyncio.sleep(0.2)
-                client.hook = hook
-                with patch.multiple(c, READ_SECONDS=1, FINAL_FENCE_RESERVE_MIN=0.5,
-                                    FINAL_FENCE_RESERVE_MAX=maximum):
-                    page = await self.capture(service)
-                self.assertGreaterEqual(page['diagnostics']['final_fence_reserve_seconds'], low)
-                self.assertLessEqual(page['diagnostics']['final_fence_reserve_seconds'], high)
 
-    async def test_configuration_scheduling_stops_at_the_reserve(self):
-        service, client = self.live(count=2)
-        client.fail_final = False
-        with patch.multiple(c, COLLECTION_SECONDS=30, FINAL_FENCE_RESERVE_MIN=30, FINAL_FENCE_RESERVE_MAX=30):
+class DeadlineClient(Client):
+    """The fake client under ``BaselinePeer``'s bounds, with per-read latency.
+
+    As ``BaselinePeer.remaining()``: one collection bound from the start of the
+    capture, each read at most ``READ_SECONDS``. ``delay(kind, fence)`` gives a
+    read's latency; ``fence`` is 0 for the first fence, 1 for the final one.
+    """
+
+    def __init__(self, data, delay):
+        super().__init__(data)
+        self.delay, self.principal_reads = delay, 0
+        self.started = None
+        self.timeline = []
+
+    @asynccontextmanager
+    async def capture(self, version, authorize):
+        self.started = time.monotonic()
+        async with super().capture(version, authorize) as peer:
+            yield peer
+
+    def remaining(self):
+        seconds = c.COLLECTION_SECONDS - (time.monotonic() - self.started)
+        if seconds <= 0:
+            raise c.CaptureError('timeout')
+        return min(c.READ_SECONDS, seconds)
+
+    async def bounded(self, kind, call):
+        if kind == 'principal':
+            self.principal_reads += 1
+        fence = self.principal_reads - 1
+        self.timeline.append((kind, round(time.monotonic() - self.started, 3)))
+        try:
+            async with asyncio.timeout(self.remaining()):
+                await asyncio.sleep(self.delay(kind, fence))
+                return await call()
+        except TimeoutError:
+            raise c.CaptureError('timeout') from None
+
+    async def read(self, kind):
+        return await self.bounded(kind, partial(super().read, kind))
+
+    async def configuration(self, identifier):
+        return await self.bounded('config', partial(super().configuration, identifier))
+
+
+class ReserveTests(LiveHarness):
+    """HAMCP-235 review 1 (R1-M2): the reserve covers the final identity reads only."""
+
+    # A tenth of the shipped bounds: 4.5 s collection, 0.5 s reads.
+    SCALED = {'COLLECTION_SECONDS': 4.5, 'READ_SECONDS': 0.5,
+              'FINAL_FENCE_RESERVE_MIN': 0.5, 'FINAL_FENCE_RESERVE_MAX': 1.5}
+
+    def deadline(self, count, delay):
+        service, _ = self.service(fixture(count))
+        client = DeadlineClient(service.provider.client.data, delay)
+        service.provider.client = client
+        return service, client
+
+    async def timed(self, service, **bounds):
+        began = time.monotonic()
+        with patch.multiple(c, **{**self.SCALED, **bounds}):
             page = await self.capture(service)
-        self.assertEqual(page['record_outcomes'], {'0': 'timeout', '1': 'timeout'})
-        self.assertEqual(page['diagnostics']['final_fence'], 'complete')
+        report, _ = service.store.get(capture_id(page), OWNER, service.now_ms())
+        return report, time.monotonic() - began
+
+    def test_the_shipped_reserve_bounds_cover_the_identity_reads(self):
+        self.assertEqual(c.IDENTITY_READS, ('principal', 'entries', 'devices'))
+        self.assertEqual(c.FENCE_READS[:len(c.IDENTITY_READS)], c.IDENTITY_READS)
+        self.assertEqual((c.FINAL_FENCE_RESERVE_MIN, c.FINAL_FENCE_RESERVE_MAX),
+                         (c.READ_SECONDS, len(c.IDENTITY_READS) * c.READ_SECONDS))
+
+    async def test_the_reserve_is_twice_the_measured_identity_reads_within_bounds(self):
+        def slow(kinds, seconds):
+            return lambda kind, fence: seconds if fence == 0 and kind in kinds else 0
+        for label, delay, bounds, low, high in (
+                ('identity', slow({'devices'}, 0.3), {}, 0.6, 0.9),
+                ('inventory_not_counted', slow({'states', 'registry'}, 0.3), {}, 0.5, 0.5),
+                ('minimum', slow(set(), 0), {'FINAL_FENCE_RESERVE_MIN': 0.7}, 0.7, 0.7),
+                ('maximum', slow({'principal', 'entries', 'devices'}, 0.3),
+                 {'FINAL_FENCE_RESERVE_MAX': 1.0}, 1.0, 1.0)):
+            with self.subTest(label):
+                self.fresh_store()
+                service, _ = self.deadline(2, delay)
+                report, _ = await self.timed(service, **bounds)
+                reserve = report['diagnostics']['final_fence_reserve_seconds']
+                self.assertGreaterEqual(reserve, low)
+                self.assertLessEqual(reserve, high)
+                self.assertEqual(report['diagnostics']['final_fence'], 'complete')
+
+    async def test_no_configuration_read_is_scheduled_or_outlasts_the_window(self):
+        # Reads may last 5 s, so the four in-flight configuration reads would
+        # hang to the collection bound; the window (4.0 s) cuts them
+        # (unreadable, timeout), nothing is scheduled after it (timed_out),
+        # and the final fence keeps its whole reserve and completes.
+        service, client = self.deadline(6, lambda kind, fence: 30 if kind == 'config' else 0)
+        report, elapsed = await self.timed(service, READ_SECONDS=5)
+        diagnostics = report['diagnostics']
+        statuses = Counter(row['configuration']['status'] for row in report['baseline']['records'])
+        self.assertEqual(statuses, {'unreadable': c.CONCURRENCY, 'timed_out': 6 - c.CONCURRENCY})
+        self.assertEqual(set(diagnostics['record_outcomes'].values()), {'timeout'})
+        self.assertEqual(diagnostics['final_fence_reserve_seconds'], 0.5)
+        self.assertEqual((diagnostics['final_fence'], diagnostics['final_fence_reason']), ('complete', None))
+        self.assertEqual(report['baseline']['installation']['status'], 'established')
+        configs = [at for kind, at in client.timeline if kind == 'config']
+        final = [at for _, at in client.timeline[len(c.FENCE_READS) + len(configs):]]
+        self.assertEqual(len(configs), c.CONCURRENCY, 'nothing is scheduled after the window')
+        self.assertEqual(len(final), len(c.FENCE_READS))
+        self.assertGreaterEqual(min(final), 4.0 - 0.01)
+        self.assertLess(min(final), 4.0 + 0.25, 'in-flight reads end at the window')
+        self.assertLess(elapsed, 4.5)
+
+    async def test_a_slow_final_fence_still_records_identity(self):
+        # The first fence's identity reads take 0.1 s each (reserve 0.6 s,
+        # window 3.9 s); configuration reads hang to the window; the final
+        # identity reads take 0.1 s each, and then an inventory read may hang.
+        def hang(*slow):
+            def delay(kind, fence):
+                if kind == 'config':
+                    return 30
+                if kind in c.IDENTITY_READS:
+                    return 0.1
+                return 30 if fence and kind in slow else 0
+            return delay
+        for label, delay, final, reason in (
+                ('slow_identity_reads_complete', hang(), 'complete', None),
+                ('hanging_states_read', hang('states'), 'identity_only', 'timeout'),
+                ('hanging_registry_read', hang('registry'), 'identity_only', 'timeout')):
+            with self.subTest(label):
+                self.fresh_store()
+                service, _ = self.deadline(6, delay)
+                report, elapsed = await self.timed(service, READ_SECONDS=5)
+                diagnostics = report['diagnostics']
+                self.assertEqual(set(diagnostics['record_outcomes'].values()), {'timeout'})
+                self.assertEqual((diagnostics['final_fence'], diagnostics['final_fence_reason']), (final, reason))
+                self.assertGreaterEqual(diagnostics['final_fence_reserve_seconds'], 0.6)
+                self.assertLess(diagnostics['final_fence_reserve_seconds'], 0.9)
+                self.assertEqual(report['baseline']['installation']['status'], 'established')
+                self.assertEqual(report['baseline']['installation']['installation_id'],
+                                 diagnostics['first_fence_installation_id'])
+                self.assertLess(elapsed, 4.5 + 0.1)
+
+
+class CoverageTests(LiveHarness):
+    """HAMCP-235 review 1 (R1-M2): the paired 115-automation, 1 s-per-read fixture.
+
+    Shipped bounds (45 s collection, 5 s reads, four readers). Identity reads
+    take about 3 s, so the reserve is about 6 s and configuration reads end at
+    about 39 s; 115 reads in rounds of four end at about 34 s and the final
+    fence at about 39 s. The base revision read all 115 in 39.3 s; review 1's
+    reserve read 100 and timed 15 out.
+    """
+
+    async def test_115_automations_at_one_second_per_read_are_all_read(self):
+        service, _ = self.service(fixture(LIVE_COUNT))
+        client = DeadlineClient(service.provider.client.data, lambda kind, fence: 1.0)
+        service.provider.client = client
+        began = time.monotonic()
+        page = await self.capture(service)
+        elapsed = time.monotonic() - began
+        report, _ = service.store.get(capture_id(page), OWNER, service.now_ms())
+        diagnostics = report['diagnostics']
+        statuses = Counter(row['configuration']['status'] for row in report['baseline']['records'])
+        self.assertEqual(statuses, {'readable': LIVE_COUNT})
+        self.assertEqual(diagnostics['record_outcomes'], {})
+        self.assertEqual((diagnostics['final_fence'], diagnostics['final_fence_reason']), ('complete', None))
+        self.assertGreaterEqual(diagnostics['final_fence_reserve_seconds'], 6.0)
+        self.assertLess(diagnostics['final_fence_reserve_seconds'], 6.5)
+        self.assertLess(elapsed, c.COLLECTION_SECONDS)
+
+
+class HistoricalWriterTests(LiveHarness):
+    """HAMCP-235 review 1 (R1-M1): captures written by 2.4.1-beta.43 itself.
+
+    ``fixtures/hamcp235_beta43_resume`` was generated by its ``generate.py``
+    from the exact beta.43 commit; ``provenance.json`` records how.
+    """
+
+    FIXTURE = ROOT / 'tests' / 'fixtures' / 'hamcp235_beta43_resume'
+
+    def setUp(self):
+        super().setUp()
+        self.provenance = json.loads((self.FIXTURE / 'provenance.json').read_text())
+        self.now = self.provenance['now_ms'] / 1000
+        source = self.FIXTURE / 'store' / 'audit-baselines-v1'
+        target = self.governance / 'audit-baselines-v1'
+        (target / 'records').mkdir(parents=True, mode=0o700)
+        target.chmod(0o700)
+        for path in sorted(source.rglob('*.json')):
+            copied = target / path.relative_to(source)
+            copied.write_bytes(path.read_bytes())
+            copied.chmod(0o600)
+
+    def snapshot(self):
+        root = self.governance / 'audit-baselines-v1'
+        return {path.relative_to(root).as_posix(): path.read_bytes()
+                for path in sorted(root.rglob('*.json'))}
+
+    def legacy(self):
+        return self.service(fixture(4))
+
+    def test_the_fixture_is_the_recorded_beta43_output(self):
+        self.assertEqual(self.provenance['writer_commit'], '0e0624297d32608bd4dfda36d90879b3462334fa')
+        self.assertEqual(self.provenance['writer_version'], '2.4.1-beta.43')
+        files = {path.relative_to(self.FIXTURE).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                 for path in sorted((self.FIXTURE / 'store').rglob('*')) if path.is_file()}
+        self.assertEqual(files, self.provenance['files'])
+        captures = self.provenance['captures']
+        self.assertEqual(captures['anchorless']['installation']['status'], 'unestablished')
+        self.assertFalse(captures['anchorless']['first_fence_anchor_recorded'])
+        self.assertEqual(captures['established']['installation']['status'], 'established')
+
+    async def test_an_anchorless_beta43_capture_is_refused_twice_and_nothing_persists(self):
+        key = self.provenance['captures']['anchorless']['capture_id']
+        before = self.snapshot()
+        for label, installation in (('same_installation', None), ('different_installation', 'device2')):
+            with self.subTest(label):
+                service, client = self.legacy()
+                if installation:
+                    client.data['devices'][0]['id'] = installation
+                error = await self.reason(self.capture(service, resume_capture_id=key))
+                self.assertEqual(error.details, {'reason': 'resume_inventory_changed',
+                                                 'resume_changes': ['installation_anchor_missing']})
+                self.assertFalse(error.retryable)
+                self.assertEqual(client.calls, [], 'nothing is read before the refusal')
+                self.assertFalse(service.active)
+                self.assertEqual(self.snapshot(), before, 'nothing is persisted')
+
+    async def test_an_established_beta43_capture_still_resumes_with_its_own_anchor(self):
+        legacy = self.provenance['captures']['established']
+        service, client = self.legacy()
+        resumed = await self.capture(service, resume_capture_id=legacy['capture_id'])
+        self.assertEqual(sorted(call for call in client.calls if type(call) is tuple), [('config', '1')])
+        header = resumed['baseline_header']
+        self.assertEqual(header['resume']['resumed_count'], 1)
+        self.assertEqual(header['installation']['status'], 'established')
+        self.assertEqual(header['installation']['installation_id'], legacy['installation']['installation_id'])
+        self.assertEqual(resumed['record_outcomes'], {})
+        service, client = self.legacy()
+        client.data['devices'][0]['id'] = 'device2'
+        error = await self.reason(self.capture(service, resume_capture_id=legacy['capture_id']))
+        self.assertEqual(error.details, {'reason': 'resume_inventory_changed',
+                                         'resume_changes': ['installation_changed']})
 
 
 class ContractTests(unittest.TestCase):

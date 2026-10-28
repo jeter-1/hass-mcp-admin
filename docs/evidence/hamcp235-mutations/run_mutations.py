@@ -21,9 +21,17 @@ The task's classes each have mutations:
 - ``F*``: the final fence (its reserve, its identity-first reads, its
   recorded reason, identity drift refused).
 
-Run 1 (``run1.log``, ``results.json``): baseline 229 tests OK; 43 of 43
-mutants killed, none by an import or syntax error. ``G13``/``G14`` needed
-the earlier-side timeout test added before the run.
+Run 1 (``run1.log``): baseline 229 tests OK; 43 of 43 mutants killed, none
+by an import or syntax error. ``G13``/``G14`` needed the earlier-side timeout
+test added before the run.
+
+Review 1 corrections (R1-M1, owner decision D4; R1-M2): ``V8``-``V11`` and
+``F1``-``F4`` follow the corrected code; ``V12``-``V14``, ``R10`` and
+``F10``-``F13`` are new: an inherited row taking the current fence's anchor,
+an anchorless resume accepted or refused under another category, the reserve
+reverted to its round-1 sizing, and the window not bounding in-flight reads.
+Run 2 (``run2.log``, ``results.json``): baseline 236 tests OK; 51 of 51
+mutants killed, none by an import or syntax error.
 
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\
@@ -134,15 +142,23 @@ MUTATIONS = [
     m("V7-full-states-compared-at-final-fence", V,
       (PROV, "self.stable_states(first) == self.stable_states(last)", 'first["states"] == last["states"]')),
     m("V8-unestablished-base-anchor-ignored", V,
-      (PROV, '                  else base["diagnostics"].get("first_fence_installation_id"))', "                  else None)")),
+      (PROV, '        return base["diagnostics"].get("first_fence_installation_id")\n', "        return None\n")),
     m("V9-anchored-base-never-established", V,
-      (PROV, '                or base["diagnostics"].get("first_fence_installation_id") is not None)',
-       "                or False)")),
+      (PROV, 'identity_established = identity_established and anchor == first["identity"]',
+       "identity_established = False")),
     m("V10-first-fence-anchor-not-recorded", V,
-      (PROV, '"first_fence_installation_id": first["identity"],', '"first_fence_installation_id": None,')),
+      (PROV, '"first_fence_installation_id": anchor,', '"first_fence_installation_id": None,')),
     m("V11-legacy-base-without-anchor-established", V,
-      (PROV, '                or base["diagnostics"].get("first_fence_installation_id") is not None)',
-       "                or True)")),
+      (PROV, 'identity_established = identity_established and anchor == first["identity"]',
+       "identity_established = identity_established")),
+    # Review 1 (R1-M1) and owner decision D4 (Josh, 2026-10-28).
+    m("V12-inherited-rows-take-the-current-anchor", V,
+      (PROV, 'anchor = first["identity"] if base is None else self.inherited_anchor(base)',
+       'anchor = first["identity"]')),
+    m("V13-anchorless-resume-accepted", V,
+      (SERV, "                if self.provider.inherited_anchor(base) is None:\n", "                if False:\n")),
+    m("V14-anchorless-refused-as-installation-changed", V,
+      (SERV, 'resume_changes=("installation_anchor_missing",))', 'resume_changes=("installation_changed",))')),
     # -- R: a refused resume names its fixed category
     m("R1-inventory-refusal-without-categories", R,
       (PROV, 'raise c.CaptureError("resume_inventory_changed", resume_changes=changes)',
@@ -164,16 +180,36 @@ MUTATIONS = [
       (PROV, 'changes.add("mapping_changed")', "pass")),
     m("R9-installation-change-not-detected", R,
       (PROV, 'changes.add("installation_changed")', "pass")),
+    m("R10-anchor-missing-not-a-listed-category", R,
+      (CONTRACTS, '"installation_changed", "installation_anchor_missing",', '"installation_changed",')),
     # -- F: the final fence keeps its reserve, its identity and its reason
     m("F1-reserve-ignored-by-scheduler", F,
-      (PROV, "if time.monotonic() - started >= c.COLLECTION_SECONDS - reserve:",
-       "if time.monotonic() - started >= c.COLLECTION_SECONDS - 10:")),
+      (PROV, "if time.monotonic() >= window:", "if time.monotonic() - started >= c.COLLECTION_SECONDS - 10:")),
     m("F2-first-fence-not-measured", F,
-      (PROV, "c.READ_SECONDS + 2 * (time.monotonic() - fence_started)))", "c.READ_SECONDS))")),
+      (PROV, "c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))", "c.FINAL_FENCE_RESERVE_MIN, 0))")),
     m("F3-reserve-maximum-unclamped", F,
       (PROV, "reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(", "reserve = min(1e9, max(")),
     m("F4-reserve-minimum-unclamped", F,
-      (PROV, "                c.FINAL_FENCE_RESERVE_MIN, c.READ_SECONDS", "                0, c.READ_SECONDS")),
+      (PROV, "c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))",
+       "0, 2 * (time.monotonic() - fence_started)))")),
+    # Review 1 (R1-M2): the reserve covers the final identity reads only.
+    m("F10-reserve-reverted-to-round-1-sizing", F,
+      (CONTRACTS, "FINAL_FENCE_RESERVE_MIN = READ_SECONDS\nFINAL_FENCE_RESERVE_MAX = len(IDENTITY_READS) * READ_SECONDS\n",
+       "FINAL_FENCE_RESERVE_MIN = 10\nFINAL_FENCE_RESERVE_MAX = 25\n"),
+      (PROV, '            reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(\n                c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))\n            await fence("before", c.FENCE_READS[len(c.IDENTITY_READS):], first)\n',
+       '            await fence("before", c.FENCE_READS[len(c.IDENTITY_READS):], first)\n'
+       '            reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(\n'
+       '                c.FINAL_FENCE_RESERVE_MIN, c.READ_SECONDS + 2 * (time.monotonic() - fence_started)))\n')),
+    m("F11-reserve-bounds-reverted-to-round-1", F,
+      (CONTRACTS, "FINAL_FENCE_RESERVE_MIN = READ_SECONDS\nFINAL_FENCE_RESERVE_MAX = len(IDENTITY_READS) * READ_SECONDS\n",
+       "FINAL_FENCE_RESERVE_MIN = 10\nFINAL_FENCE_RESERVE_MAX = 25\n")),
+    m("F12-reserve-measured-over-the-full-fence", F,
+      (PROV, '            reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(\n                c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))\n            await fence("before", c.FENCE_READS[len(c.IDENTITY_READS):], first)\n',
+       '            await fence("before", c.FENCE_READS[len(c.IDENTITY_READS):], first)\n'
+       '            reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(\n'
+       '                c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))\n')),
+    m("F13-window-does-not-bound-in-flight-reads", F,
+      (PROV, "async with asyncio.timeout(max(0.0, window - time.monotonic())):", "async with asyncio.timeout(None):")),
     m("F5-identity-needs-full-final-fence", F,
       (PROV, 'identity_verified = "identity" in last', "identity_verified = inventory_complete")),
     m("F6-final-fence-reason-dropped", F,

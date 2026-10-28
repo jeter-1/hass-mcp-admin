@@ -35,13 +35,15 @@ STRING_BYTES = 16_384
 COLLECTION_SECONDS = 45
 READ_SECONDS = 5
 CONCURRENCY = 4
-# HAMCP-235: configuration scheduling stops early enough for the final fence.
-# The reserve covers the in-flight reads (READ_SECONDS) and twice the measured
-# first fence, clamped to these bounds.
-FINAL_FENCE_RESERVE_MIN = 10
-FINAL_FENCE_RESERVE_MAX = 25
 # The identity reads of a fence; the remaining fence reads are inventory.
 IDENTITY_READS = ("principal", "entries", "devices")
+# HAMCP-235 (review 1, R1-M2): the final fence's reserve covers what must
+# complete, its identity reads: twice their measured first-fence time, at least
+# one read bound and at most the identity reads' own bounds. Configuration reads
+# end when the reserve starts; the inventory reads use what remains of the
+# collection bound and may degrade the final fence to identity_only.
+FINAL_FENCE_RESERVE_MIN = READ_SECONDS
+FINAL_FENCE_RESERVE_MAX = len(IDENTITY_READS) * READ_SECONDS
 SNAPSHOT_BYTES = 2 * 1024 * 1024
 SNAPSHOT_TTL = 600
 # HAMCP-228 decision S: a durable bounded store; refuse at capacity, never evict.
@@ -65,8 +67,11 @@ REASONS = frozenset({"invalid_arguments", "invalid_cursor", "snapshot_expired", 
 
 # HAMCP-235: which stable component a refused resume found changed. Fixed,
 # non-secret categories; never an identifier, count or Home Assistant text.
+# ``installation_anchor_missing`` (owner decision D4, Josh, 2026-10-28): the
+# capture recorded no installation anchor, so its rows cannot be resumed.
 RESUME_CHANGES = frozenset({"automation_added", "automation_removed", "mapping_changed",
-                            "installation_changed", "core_version_changed"})
+                            "installation_changed", "installation_anchor_missing",
+                            "core_version_changed"})
 
 
 # Why the store is unavailable, when it is known (HAMCP-226/228 review 2, R2).

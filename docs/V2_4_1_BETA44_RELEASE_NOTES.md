@@ -62,13 +62,19 @@ under signed registry seq 14.
   generation is recorded as `authority_drift: "detected"`.
 - A refusal names its fixed categories in `details.resume_changes`:
   `automation_added`, `automation_removed`, `mapping_changed`,
-  `installation_changed`, or `core_version_changed` (for
-  `resume_core_changed`). No identifier, count or Home Assistant text.
+  `installation_changed`, `installation_anchor_missing`, or
+  `core_version_changed` (for `resume_core_changed`). No identifier, count or
+  Home Assistant text.
 - A base whose own final fence failed is anchored by the identity its first
   fence observed (`diagnostics.first_fence_installation_id`, an opaque
   digest), and the resumed baseline is established by the resume's verified
-  fences. A base from an earlier release without that anchor stays
-  unestablished.
+  fences. Inherited rows keep the provenance of the capture they came from;
+  the current fences' anchor is never evidence for them.
+- Owner decision D4 (Josh, 2026-10-28): a base with no installation anchor,
+  such as a beta.43 capture whose final fence failed, is refused as
+  `resume_inventory_changed` with `resume_changes:
+  ["installation_anchor_missing"]`, on any installation, before any Home
+  Assistant read and with nothing stored. Take a fresh capture instead.
 
 **Final fence.**
 - It reads the identity first (principal, config entries, devices), then the
@@ -76,8 +82,14 @@ under signed registry seq 14.
   establishes the capture (`final_fence: "identity_only"`). Identity drift
   still refuses the capture, with nothing stored.
 - `diagnostics.final_fence_reason` keeps the failed read's fixed reason.
-- Scheduling reserves the read deadline plus twice the measured first fence,
-  clamped to 10–25 s (`diagnostics.final_fence_reserve_seconds`).
+- The final fence's reserve covers its identity reads: twice their measured
+  first-fence time, clamped to 5–15 s
+  (`diagnostics.final_fence_reserve_seconds`). Configuration reads end at the
+  collection deadline less the reserve (in-flight reads are cut there); the
+  inventory reads use what remains and may give `identity_only`. With 115
+  automations at 1 s per read: beta.43 read 115 in 39.3 s (fixed 10 s
+  reserve), and beta.44 reads 115 in 39.3 s (6.0 s reserve) with the final
+  fence complete, within the 45 s deadline.
 - On/off state is no longer inventory drift; entity, configuration id and
   the unmapped and withheld counts still are.
 

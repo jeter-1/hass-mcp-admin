@@ -10,8 +10,10 @@ continuity and non-atomic capture once, in `caveats`; `UNKNOWN` is kept for
 incomparable rows, each with its reason (`timed_out` included). Resume
 compares only stable identity (installation anchor, configuration ids and
 their entities) and a refusal names its fixed categories
-(`details.resume_changes`). The final fence reads the identity first, records
-its failure reason and gets an adaptive reserve. No new Core command, input
+(`details.resume_changes`); a base with no installation anchor is refused as
+`installation_anchor_missing` (owner decision D4). The final fence reads the
+identity first, records its failure reason and keeps a reserve sized for its
+identity reads. No new Core command, input
 schema or tool. The architect's live re-run of the owner's case is required
 for acceptance. Rollback is reinstalling beta.43. Read the [2.4.1-beta.44
 release notes](docs/V2_4_1_BETA44_RELEASE_NOTES.md) and [2.4.1-beta.44

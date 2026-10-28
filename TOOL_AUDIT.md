@@ -16,8 +16,13 @@ diagnostics `final_fence` value `identity_only`, `final_fence_reason`,
 `first_fence_installation_id` and `final_fence_reserve_seconds`. Resume
 compares only the installation anchor, the configuration ids and their
 entities; a new authority generation is recorded as drift, not refused.
-Identity drift, authority loss and access denial still refuse with nothing
-stored.
+Inherited rows keep their own capture's anchor. By owner decision D4 (Josh,
+2026-10-28) a base with no installation anchor (a beta.43-or-earlier capture
+whose final fence failed) is refused with the category
+`installation_anchor_missing` before any read, with nothing stored. The final
+fence's reserve covers its identity reads (twice their measured time, 5–15 s);
+configuration reads end where it starts. Identity drift, authority loss and
+access denial still refuse with nothing stored.
 
 ## Host journal one-token user:pass@host (2.4.1-beta.43, HAMCP-234 step 2)
 

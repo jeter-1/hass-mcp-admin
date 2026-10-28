@@ -574,7 +574,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_deadline_partial_no_new_reads(self):
         service,client=self.setup_capture()
-        with patch.object(c,'COLLECTION_SECONDS',10):
+        with patch.object(c,'COLLECTION_SECONDS',c.FINAL_FENCE_RESERVE_MIN):
             baseline,page=await export(service)
         self.validate(baseline)
         self.assertEqual(client.requests,10)

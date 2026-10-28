@@ -425,7 +425,7 @@ class StoreTests(Harness):
 class ResumeTests(Harness):
     async def timed_out(self, data=None):
         service, client = self.service(data)
-        with patch.object(c, 'COLLECTION_SECONDS', 10):
+        with patch.object(c, 'COLLECTION_SECONDS', c.FINAL_FENCE_RESERVE_MIN):
             page = await self.capture(service)
         self.assertTrue(all(r['configuration']['status'] == 'timed_out' for r in page['records']))
         return service, client, page
@@ -552,7 +552,7 @@ class ValidationTests(Harness):
     async def baseline(self, timed_out=False):
         service, _ = self.service()
         if timed_out:
-            with patch.object(c, 'COLLECTION_SECONDS', 10):
+            with patch.object(c, 'COLLECTION_SECONDS', c.FINAL_FENCE_RESERVE_MIN):
                 page = await self.capture(service)
         else:
             page = await self.capture(service)

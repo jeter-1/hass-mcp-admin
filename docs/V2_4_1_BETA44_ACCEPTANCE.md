@@ -74,8 +74,11 @@ The review needs a security section covering:
   a verified identity yields `identity_only`.
 - **The resume fence.** Installation anchor, configuration id set and
   id→entity mapping only. A base's anchor is its established id, else its
-  `first_fence_installation_id`; an earlier-release base with neither is not
-  checked for installation and its resume stays unestablished. A new
+  `first_fence_installation_id`. Inherited rows keep the provenance of the
+  capture they came from; the current fences' anchor is never evidence for
+  them (review 1, R1-M1). Owner decision D4 (Josh, 2026-10-28): a base with
+  neither is refused as `installation_anchor_missing`, on any installation,
+  before any Home Assistant read and with nothing stored. A new
   authority generation is recorded as `authority_drift: "detected"`, never
   hidden. The Core version still binds the resume.
 - **Categories.** `details.resume_changes` holds only the fixed
@@ -132,9 +135,25 @@ No test reaches a live system. Every value is synthetic.
     `mapping_changed`, `installation_changed` with an unestablished base,
     a replaced automation, `core_version_changed`), with no configuration
     read and nothing stored.
+  - **An anchorless base is refused (D4):** `installation_anchor_missing`
+    on the same and on a different installation, with no read and nothing
+    stored; behind that gate, a chain of provider resumes of an anchorless
+    base never takes the current fences' anchor or becomes established.
+  - **Historical writer:** `tests/fixtures/hamcp235_beta43_resume`, written
+    by the exact beta.43 commit (`generate.py`, `provenance.json`): its
+    anchorless capture is refused twice, on the same and then on a
+    different installation, and the store's bytes are unchanged; its
+    established capture still resumes with its own anchor.
   - **Final fence:** on/off state is not drift; a mapping change is;
     `identity_only` with its reason; identity drift refuses with nothing
-    stored; the reserve's bounds; scheduling stops at the reserve.
+    stored.
+  - **Reserve and window (R1-M2), under the client's own deadlines:** the
+    reserve is twice the measured identity reads, not the inventory reads,
+    within 5–15 s; no configuration read is scheduled after the window or
+    outlasts it; a slow final fence still records identity
+    (`complete`, or `identity_only` with its reason and reserve); the
+    paired 115-automation, 1 s-per-read fixture reads all 115 with none
+    timed out and the final fence complete, within 45 s.
 - Updated: `test_hamcp228_baseline_store`, `test_automation_baseline_capture`
   and `test_automation_audit_baseline` (the per-row reasons replaced by the
   caveats; the resume refusals carry their categories).
@@ -143,7 +162,10 @@ No test reaches a live system. Every value is synthetic.
   suites.
 - Mutations: `docs/evidence/hamcp235-mutations/` (a global caveat as a
   per-row UNKNOWN, a volatile input in the resume or capture fence, a
-  refusal without its category, the final fence weakened).
+  refusal without its category, the final fence weakened; review 1 adds an
+  inherited row taking the current anchor, an anchorless resume accepted,
+  the reserve reverted to its round-1 sizing and the window not bounding
+  in-flight reads).
 
 ## 2. Release CI and publication
 
@@ -203,11 +225,14 @@ deployment (steps 4 to 6). beta.44 is not accepted without it.**
    succeeds, `resumed_from` names the base, and a compare of the result
    with the other capture is `UNCHANGED` with the caveats. If neither step
    4 capture has a timed-out record, the resume is refused as
-   `resume_not_needed`; then resume the beta.40 capture from 2026-10-27
-   that had two incomplete configurations, if it is still stored and the
-   Core version is unchanged (2026.10.3), or record that the step could not
-   be exercised and stop for the architect's decision. A refusal must name
-   its category in `details.resume_changes`; record it.
+   `resume_not_needed`; record that the step could not be exercised and stop
+   for the architect's decision. A capture stored by beta.43 or earlier
+   whose final fence failed (such as the beta.40 capture from 2026-10-27)
+   recorded no installation anchor: resuming it is refused as
+   `resume_inventory_changed` with `resume_changes:
+   ["installation_anchor_missing"]` (owner decision D4). That refusal is
+   expected, may be recorded, and does not satisfy this step. A refusal must
+   name its category in `details.resume_changes`; record it.
 7. **A real change is still seen.** Optional, owner-authorized only: no
    automation is edited for this acceptance. If an automation changed for
    another reason between captures, record that it is `CHANGED`.
@@ -217,5 +242,5 @@ deployment (steps 4 to 6). beta.44 is not accepted without it.**
 No new Core command, live canary, write, registry signing or Supervisor role
 change is part of this release. The tool descriptors are unchanged. A
 baseline written by a release before beta.44 whose final fence failed has no
-first-fence anchor: a resume of it is not checked for installation and stays
-unestablished. A non-HAOS Supervised host remains outside the evidence.
+first-fence anchor: a resume of it is refused as `installation_anchor_missing`
+(owner decision D4); take a fresh capture instead. A non-HAOS Supervised host remains outside the evidence.

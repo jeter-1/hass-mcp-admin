@@ -12,12 +12,12 @@
    "test_hamcp226_named_sources"
   ],
   "returncode": 0,
-  "tests": 229,
-  "seconds": 116.9,
+  "tests": 236,
+  "seconds": 176.8,
   "summary": "OK"
  },
- "mutation_count": 43,
- "killed": 43,
+ "mutation_count": 51,
+ "killed": 51,
  "survived": [],
  "python": "3.12.14",
  "results": [
@@ -38,7 +38,7 @@
    "first_failures": [
     "FAIL test_earlier_side_timeout_is_unknown_with_its_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_earlier_side_timeout_is_unknown_with_its_reason)"
    ],
-   "seconds": 3.2
+   "seconds": 42.2
   },
   {
    "id": "G2-authority-continuity-as-row-reason",
@@ -57,7 +57,7 @@
    "first_failures": [
     "FAIL test_earlier_side_timeout_is_unknown_with_its_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_earlier_side_timeout_is_unknown_with_its_reason)"
    ],
-   "seconds": 3.2
+   "seconds": 42.1
   },
   {
    "id": "G3-recorded-unestablished-capture-as-row-reason",
@@ -76,7 +76,7 @@
    "first_failures": [
     "FAIL test_recorded_fingerprints_against_an_unestablished_capture (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_recorded_fingerprints_against_an_unestablished_capture)"
    ],
-   "seconds": 5.5
+   "seconds": 45.1
   },
   {
    "id": "G4-recorded-authority-as-row-reason",
@@ -95,7 +95,7 @@
    "first_failures": [
     "FAIL test_fingerprint_model_mismatch_is_unknown_with_its_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_fingerprint_model_mismatch_is_unknown_with_its_reason)"
    ],
-   "seconds": 3.3
+   "seconds": 43.0
   },
   {
    "id": "G5-stored-caveats-dropped",
@@ -114,7 +114,7 @@
    "first_failures": [
     "FAIL test_established_pair_has_only_the_non_atomic_caveat (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_established_pair_has_only_the_non_atomic_caveat)"
    ],
-   "seconds": 3.2
+   "seconds": 42.6
   },
   {
    "id": "G6-installation-caveat-earlier-side-only",
@@ -133,7 +133,7 @@
    "first_failures": [
     "FAIL test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat)"
    ],
-   "seconds": 4.9
+   "seconds": 44.5
   },
   {
    "id": "G7-authority-caveat-dropped",
@@ -152,7 +152,7 @@
    "first_failures": [
     "FAIL test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat)"
    ],
-   "seconds": 4.9
+   "seconds": 44.5
   },
   {
    "id": "G8-non-atomic-caveat-dropped",
@@ -171,7 +171,7 @@
    "first_failures": [
     "FAIL test_established_pair_has_only_the_non_atomic_caveat (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_established_pair_has_only_the_non_atomic_caveat)"
    ],
-   "seconds": 3.5
+   "seconds": 42.7
   },
   {
    "id": "G9-recorded-caveats-dropped",
@@ -190,7 +190,7 @@
    "first_failures": [
     "FAIL test_recorded_fingerprints_against_an_unestablished_capture (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_recorded_fingerprints_against_an_unestablished_capture)"
    ],
-   "seconds": 5.6
+   "seconds": 45.7
   },
   {
    "id": "G10-recorded-side-not-unverified",
@@ -209,7 +209,7 @@
    "first_failures": [
     "FAIL test_recorded_fingerprints_against_an_unestablished_capture (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_recorded_fingerprints_against_an_unestablished_capture)"
    ],
-   "seconds": 5.6
+   "seconds": 45.4
   },
   {
    "id": "G11-timed-out-reason-dropped",
@@ -228,7 +228,7 @@
    "first_failures": [
     "FAIL test_earlier_side_timeout_is_unknown_with_its_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_earlier_side_timeout_is_unknown_with_its_reason)"
    ],
-   "seconds": 3.2
+   "seconds": 42.7
   },
   {
    "id": "G12-timed-out-on-every-unknown",
@@ -247,7 +247,7 @@
    "first_failures": [
     "FAIL test_live_pair_timed_out_rows_are_unknown_with_their_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_live_pair_timed_out_rows_are_unknown_with_their_reason)"
    ],
-   "seconds": 4.1
+   "seconds": 43.7
   },
   {
    "id": "G13-timeouts-from-earlier-only",
@@ -266,7 +266,7 @@
    "first_failures": [
     "FAIL test_live_pair_timed_out_rows_are_unknown_with_their_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_live_pair_timed_out_rows_are_unknown_with_their_reason)"
    ],
-   "seconds": 4.2
+   "seconds": 43.9
   },
   {
    "id": "G14-timeouts-from-later-only",
@@ -285,7 +285,7 @@
    "first_failures": [
     "FAIL test_earlier_side_timeout_is_unknown_with_its_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_earlier_side_timeout_is_unknown_with_its_reason)"
    ],
-   "seconds": 3.3
+   "seconds": 42.6
   },
   {
    "id": "G15-installation-mismatch-row-reason-dropped",
@@ -304,7 +304,7 @@
    "first_failures": [
     "FAIL test_two_established_different_installations_stay_unknown_per_row (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_two_established_different_installations_stay_unknown_per_row)"
    ],
-   "seconds": 5.9
+   "seconds": 46.0
   },
   {
    "id": "V1-generation-change-refuses-resume",
@@ -323,7 +323,7 @@
    "first_failures": [
     "ERROR test_each_volatile_input_alone_resumes (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_each_volatile_input_alone_resumes)"
    ],
-   "seconds": 8.9
+   "seconds": 49.3
   },
   {
    "id": "V2-generation-change-not-recorded-as-drift",
@@ -342,7 +342,7 @@
    "first_failures": [
     "FAIL test_resume_minutes_later_with_unchanged_automations_succeeds (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_resume_minutes_later_with_unchanged_automations_succeeds)"
    ],
-   "seconds": 11.2
+   "seconds": 52.9
   },
   {
    "id": "V3-enabled-state-in-resume-mapping",
@@ -361,7 +361,7 @@
    "first_failures": [
     "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
    ],
-   "seconds": 2.4
+   "seconds": 2.6
   },
   {
    "id": "V4-declared-count-refuses-resume",
@@ -380,7 +380,7 @@
    "first_failures": [
     "FAIL test_each_inventory_change_category_is_refused_precisely (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_each_inventory_change_category_is_refused_precisely)"
    ],
-   "seconds": 6.8
+   "seconds": 47.0
   },
   {
    "id": "V5-on-off-state-in-stable-inventory",
@@ -399,7 +399,7 @@
    "first_failures": [
     "FAIL test_volatile_state_between_fences_is_not_inventory_drift (test_hamcp235_baseline_usability.FinalFenceTests.test_volatile_state_between_fences_is_not_inventory_drift)"
    ],
-   "seconds": 3.1
+   "seconds": 42.5
   },
   {
    "id": "V7-full-states-compared-at-final-fence",
@@ -418,7 +418,7 @@
    "first_failures": [
     "FAIL test_volatile_state_between_fences_is_not_inventory_drift (test_hamcp235_baseline_usability.FinalFenceTests.test_volatile_state_between_fences_is_not_inventory_drift)"
    ],
-   "seconds": 3.1
+   "seconds": 42.8
   },
   {
    "id": "V8-unestablished-base-anchor-ignored",
@@ -426,8 +426,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
-     "                  else base[\"diagnostics\"].get(\"first_fence_installation_id\"))",
-     "                  else None)"
+     "        return base[\"diagnostics\"].get(\"first_fence_installation_id\")\n",
+     "        return None\n"
     ]
    ],
    "log_path": "mutation-logs/V8-unestablished-base-anchor-ignored.log",
@@ -437,7 +437,7 @@
    "first_failures": [
     "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
    ],
-   "seconds": 2.3
+   "seconds": 2.7
   },
   {
    "id": "V9-anchored-base-never-established",
@@ -445,8 +445,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
-     "                or base[\"diagnostics\"].get(\"first_fence_installation_id\") is not None)",
-     "                or False)"
+     "identity_established = identity_established and anchor == first[\"identity\"]",
+     "identity_established = False"
     ]
    ],
    "log_path": "mutation-logs/V9-anchored-base-never-established.log",
@@ -454,9 +454,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_resume_minutes_later_with_unchanged_automations_succeeds (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_resume_minutes_later_with_unchanged_automations_succeeds)"
+    "FAIL test_an_established_beta43_capture_still_resumes_with_its_own_anchor (test_hamcp235_baseline_usability.HistoricalWriterTests.test_an_established_beta43_capture_still_resumes_with_its_own_anchor)"
    ],
-   "seconds": 11.5
+   "seconds": 42.7
   },
   {
    "id": "V10-first-fence-anchor-not-recorded",
@@ -464,7 +464,7 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
-     "\"first_fence_installation_id\": first[\"identity\"],",
+     "\"first_fence_installation_id\": anchor,",
      "\"first_fence_installation_id\": None,"
     ]
    ],
@@ -475,7 +475,7 @@
    "first_failures": [
     "ERROR test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat)"
    ],
-   "seconds": 4.7
+   "seconds": 44.4
   },
   {
    "id": "V11-legacy-base-without-anchor-established",
@@ -483,8 +483,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
-     "                or base[\"diagnostics\"].get(\"first_fence_installation_id\") is not None)",
-     "                or True)"
+     "identity_established = identity_established and anchor == first[\"identity\"]",
+     "identity_established = identity_established"
     ]
    ],
    "log_path": "mutation-logs/V11-legacy-base-without-anchor-established.log",
@@ -492,9 +492,66 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_an_unestablished_legacy_base_without_an_anchor_stays_unestablished (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_an_unestablished_legacy_base_without_an_anchor_stays_unestablished)"
+    "FAIL test_inherited_rows_keep_their_own_provenance (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_inherited_rows_keep_their_own_provenance)"
    ],
-   "seconds": 6.7
+   "seconds": 51.6
+  },
+  {
+   "id": "V12-inherited-rows-take-the-current-anchor",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "anchor = first[\"identity\"] if base is None else self.inherited_anchor(base)",
+     "anchor = first[\"identity\"]"
+    ]
+   ],
+   "log_path": "mutation-logs/V12-inherited-rows-take-the-current-anchor.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_inherited_rows_keep_their_own_provenance (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_inherited_rows_keep_their_own_provenance)"
+   ],
+   "seconds": 51.8
+  },
+  {
+   "id": "V13-anchorless-resume-accepted",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "                if self.provider.inherited_anchor(base) is None:\n",
+     "                if False:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/V13-anchorless-resume-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_anchorless_beta43_capture_is_refused_twice_and_nothing_persists (test_hamcp235_baseline_usability.HistoricalWriterTests.test_an_anchorless_beta43_capture_is_refused_twice_and_nothing_persists)"
+   ],
+   "seconds": 42.4
+  },
+  {
+   "id": "V14-anchorless-refused-as-installation-changed",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "resume_changes=(\"installation_anchor_missing\",))",
+     "resume_changes=(\"installation_changed\",))"
+    ]
+   ],
+   "log_path": "mutation-logs/V14-anchorless-refused-as-installation-changed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_anchorless_beta43_capture_is_refused_twice_and_nothing_persists (test_hamcp235_baseline_usability.HistoricalWriterTests.test_an_anchorless_beta43_capture_is_refused_twice_and_nothing_persists)"
+   ],
+   "seconds": 42.4
   },
   {
    "id": "R1-inventory-refusal-without-categories",
@@ -511,9 +568,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_each_inventory_change_category_is_refused_precisely (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_each_inventory_change_category_is_refused_precisely)"
+    "FAIL test_an_established_beta43_capture_still_resumes_with_its_own_anchor (test_hamcp235_baseline_usability.HistoricalWriterTests.test_an_established_beta43_capture_still_resumes_with_its_own_anchor)"
    ],
-   "seconds": 7.5
+   "seconds": 42.4
   },
   {
    "id": "R2-core-refusal-without-category",
@@ -532,7 +589,7 @@
    "first_failures": [
     "FAIL test_each_inventory_change_category_is_refused_precisely (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_each_inventory_change_category_is_refused_precisely)"
    ],
-   "seconds": 9.3
+   "seconds": 49.1
   },
   {
    "id": "R3-categories-not-in-details",
@@ -551,7 +608,7 @@
    "first_failures": [
     "FAIL test_refusal_details_carry_only_fixed_categories (test_hamcp235_baseline_usability.ContractTests.test_refusal_details_carry_only_fixed_categories)"
    ],
-   "seconds": 2.5
+   "seconds": 2.7
   },
   {
    "id": "R4-unlisted-category-kept",
@@ -570,7 +627,7 @@
    "first_failures": [
     "FAIL test_refusal_details_carry_only_fixed_categories (test_hamcp235_baseline_usability.ContractTests.test_refusal_details_carry_only_fixed_categories)"
    ],
-   "seconds": 2.5
+   "seconds": 2.6
   },
   {
    "id": "R5-categories-on-any-reason",
@@ -589,7 +646,7 @@
    "first_failures": [
     "FAIL test_refusal_details_carry_only_fixed_categories (test_hamcp235_baseline_usability.ContractTests.test_refusal_details_carry_only_fixed_categories)"
    ],
-   "seconds": 2.6
+   "seconds": 2.7
   },
   {
    "id": "R6-added-not-detected",
@@ -608,7 +665,7 @@
    "first_failures": [
     "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
    ],
-   "seconds": 2.6
+   "seconds": 2.7
   },
   {
    "id": "R7-removed-not-detected",
@@ -646,7 +703,7 @@
    "first_failures": [
     "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
    ],
-   "seconds": 2.6
+   "seconds": 2.7
   },
   {
    "id": "R9-installation-change-not-detected",
@@ -665,7 +722,26 @@
    "first_failures": [
     "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
    ],
-   "seconds": 2.6
+   "seconds": 2.7
+  },
+  {
+   "id": "R10-anchor-missing-not-a-listed-category",
+   "class": "a refusal without its category",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+     "\"installation_changed\", \"installation_anchor_missing\",",
+     "\"installation_changed\","
+    ]
+   ],
+   "log_path": "mutation-logs/R10-anchor-missing-not-a-listed-category.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_anchorless_beta43_capture_is_refused_twice_and_nothing_persists (test_hamcp235_baseline_usability.HistoricalWriterTests.test_an_anchorless_beta43_capture_is_refused_twice_and_nothing_persists)"
+   ],
+   "seconds": 42.3
   },
   {
    "id": "F1-reserve-ignored-by-scheduler",
@@ -673,7 +749,7 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
-     "if time.monotonic() - started >= c.COLLECTION_SECONDS - reserve:",
+     "if time.monotonic() >= window:",
      "if time.monotonic() - started >= c.COLLECTION_SECONDS - 10:"
     ]
    ],
@@ -682,9 +758,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_configuration_scheduling_stops_at_the_reserve (test_hamcp235_baseline_usability.FinalFenceTests.test_configuration_scheduling_stops_at_the_reserve)"
+    "FAIL test_no_configuration_read_is_scheduled_or_outlasts_the_window (test_hamcp235_baseline_usability.ReserveTests.test_no_configuration_read_is_scheduled_or_outlasts_the_window)"
    ],
-   "seconds": 2.7
+   "seconds": 63.4
   },
   {
    "id": "F2-first-fence-not-measured",
@@ -692,8 +768,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
-     "c.READ_SECONDS + 2 * (time.monotonic() - fence_started)))",
-     "c.READ_SECONDS))"
+     "c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))",
+     "c.FINAL_FENCE_RESERVE_MIN, 0))"
     ]
    ],
    "log_path": "mutation-logs/F2-first-fence-not-measured.log",
@@ -701,9 +777,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_the_reserve_follows_the_measured_first_fence_within_bounds (test_hamcp235_baseline_usability.FinalFenceTests.test_the_reserve_follows_the_measured_first_fence_within_bounds)"
+    "FAIL test_115_automations_at_one_second_per_read_are_all_read (test_hamcp235_baseline_usability.CoverageTests.test_115_automations_at_one_second_per_read_are_all_read)"
    ],
-   "seconds": 2.8
+   "seconds": 42.1
   },
   {
    "id": "F3-reserve-maximum-unclamped",
@@ -720,9 +796,9 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_the_reserve_follows_the_measured_first_fence_within_bounds (test_hamcp235_baseline_usability.FinalFenceTests.test_the_reserve_follows_the_measured_first_fence_within_bounds)"
+    "FAIL test_the_reserve_is_twice_the_measured_identity_reads_within_bounds (test_hamcp235_baseline_usability.ReserveTests.test_the_reserve_is_twice_the_measured_identity_reads_within_bounds)"
    ],
-   "seconds": 3.0
+   "seconds": 73.4
   },
   {
    "id": "F4-reserve-minimum-unclamped",
@@ -730,8 +806,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
-     "                c.FINAL_FENCE_RESERVE_MIN, c.READ_SECONDS",
-     "                0, c.READ_SECONDS"
+     "c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))",
+     "0, 2 * (time.monotonic() - fence_started)))"
     ]
    ],
    "log_path": "mutation-logs/F4-reserve-minimum-unclamped.log",
@@ -739,9 +815,90 @@
    "killed": true,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_configuration_scheduling_stops_at_the_reserve (test_hamcp235_baseline_usability.FinalFenceTests.test_configuration_scheduling_stops_at_the_reserve)"
+    "FAIL test_scheduler_bound_timeouts_are_unknown_with_their_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_scheduler_bound_timeouts_are_unknown_with_their_reason)"
    ],
-   "seconds": 2.4
+   "seconds": 45.7
+  },
+  {
+   "id": "F10-reserve-reverted-to-round-1-sizing",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+     "FINAL_FENCE_RESERVE_MIN = READ_SECONDS\nFINAL_FENCE_RESERVE_MAX = len(IDENTITY_READS) * READ_SECONDS\n",
+     "FINAL_FENCE_RESERVE_MIN = 10\nFINAL_FENCE_RESERVE_MAX = 25\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "            reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(\n                c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))\n            await fence(\"before\", c.FENCE_READS[len(c.IDENTITY_READS):], first)\n",
+     "            await fence(\"before\", c.FENCE_READS[len(c.IDENTITY_READS):], first)\n            reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(\n                c.FINAL_FENCE_RESERVE_MIN, c.READ_SECONDS + 2 * (time.monotonic() - fence_started)))\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F10-reserve-reverted-to-round-1-sizing.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_115_automations_at_one_second_per_read_are_all_read (test_hamcp235_baseline_usability.CoverageTests.test_115_automations_at_one_second_per_read_are_all_read)"
+   ],
+   "seconds": 37.8
+  },
+  {
+   "id": "F11-reserve-bounds-reverted-to-round-1",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+     "FINAL_FENCE_RESERVE_MIN = READ_SECONDS\nFINAL_FENCE_RESERVE_MAX = len(IDENTITY_READS) * READ_SECONDS\n",
+     "FINAL_FENCE_RESERVE_MIN = 10\nFINAL_FENCE_RESERVE_MAX = 25\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F11-reserve-bounds-reverted-to-round-1.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_115_automations_at_one_second_per_read_are_all_read (test_hamcp235_baseline_usability.CoverageTests.test_115_automations_at_one_second_per_read_are_all_read)"
+   ],
+   "seconds": 42.0
+  },
+  {
+   "id": "F12-reserve-measured-over-the-full-fence",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "            reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(\n                c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))\n            await fence(\"before\", c.FENCE_READS[len(c.IDENTITY_READS):], first)\n",
+     "            await fence(\"before\", c.FENCE_READS[len(c.IDENTITY_READS):], first)\n            reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(\n                c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F12-reserve-measured-over-the-full-fence.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_115_automations_at_one_second_per_read_are_all_read (test_hamcp235_baseline_usability.CoverageTests.test_115_automations_at_one_second_per_read_are_all_read)"
+   ],
+   "seconds": 41.9
+  },
+  {
+   "id": "F13-window-does-not-bound-in-flight-reads",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "async with asyncio.timeout(max(0.0, window - time.monotonic())):",
+     "async with asyncio.timeout(None):"
+    ]
+   ],
+   "log_path": "mutation-logs/F13-window-does-not-bound-in-flight-reads.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_slow_final_fence_still_records_identity (test_hamcp235_baseline_usability.ReserveTests.test_a_slow_final_fence_still_records_identity)"
+   ],
+   "seconds": 56.1
   },
   {
    "id": "F5-identity-needs-full-final-fence",
@@ -760,7 +917,7 @@
    "first_failures": [
     "FAIL test_an_inventory_read_failure_keeps_the_verified_identity (test_hamcp235_baseline_usability.FinalFenceTests.test_an_inventory_read_failure_keeps_the_verified_identity)"
    ],
-   "seconds": 2.4
+   "seconds": 41.9
   },
   {
    "id": "F6-final-fence-reason-dropped",
@@ -779,7 +936,7 @@
    "first_failures": [
     "FAIL test_an_inventory_read_failure_keeps_the_verified_identity (test_hamcp235_baseline_usability.FinalFenceTests.test_an_inventory_read_failure_keeps_the_verified_identity)"
    ],
-   "seconds": 2.4
+   "seconds": 42.0
   },
   {
    "id": "F7-identity-drift-swallowed",
@@ -798,7 +955,7 @@
    "first_failures": [
     "FAIL test_identity_drift_still_refuses_and_stores_nothing (test_hamcp235_baseline_usability.FinalFenceTests.test_identity_drift_still_refuses_and_stores_nothing)"
    ],
-   "seconds": 2.6
+   "seconds": 42.0
   },
   {
    "id": "F8-identity-drift-unchecked",
@@ -817,7 +974,7 @@
    "first_failures": [
     "FAIL test_identity_drift_still_refuses_and_stores_nothing (test_hamcp235_baseline_usability.FinalFenceTests.test_identity_drift_still_refuses_and_stores_nothing)"
    ],
-   "seconds": 2.5
+   "seconds": 42.0
   },
   {
    "id": "F9-identity-only-reported-unavailable",
@@ -836,7 +993,7 @@
    "first_failures": [
     "FAIL test_an_inventory_read_failure_keeps_the_verified_identity (test_hamcp235_baseline_usability.FinalFenceTests.test_an_inventory_read_failure_keeps_the_verified_identity)"
    ],
-   "seconds": 2.4
+   "seconds": 42.1
   }
  ]
 }

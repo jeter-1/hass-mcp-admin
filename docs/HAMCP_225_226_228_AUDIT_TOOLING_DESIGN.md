@@ -434,7 +434,10 @@ Today scheduling stops 10 seconds before `COLLECTION_SECONDS = 45`
   `authority_drift: "detected"` instead of refusing, and on/off state and the
   unmapped count are not compared. A refusal carries `details.resume_changes`,
   the fixed categories `automation_added`, `automation_removed`,
-  `mapping_changed`, `installation_changed` or `core_version_changed`. The
+  `mapping_changed`, `installation_changed`, `installation_anchor_missing` or
+  `core_version_changed`. Inherited records keep their own capture's anchor;
+  a base with none is refused as `installation_anchor_missing` before any
+  read (owner decision D4, Josh, 2026-10-28). The
   comparator states installation identity, authority continuity and non-atomic
   capture once as comparison-level `caveats` instead of per-row `UNKNOWN`
   reasons (owner decision, Josh, option a); see

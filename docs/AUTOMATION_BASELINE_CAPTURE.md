@@ -162,11 +162,20 @@ capture at every stage; it is never reduced to an unreadable record.
 | Stored baselines (HAMCP-228) | 12 × 2 MiB, 180 days; continuation cursors 600 s |
 | Page records / response data | Default 25, maximum 100 / 48,000 bytes |
 
-Configuration scheduling stops early enough for the final fence. HAMCP-235:
-the reserve is the individual read deadline plus twice the measured first
-fence, clamped to 10–25 s (`diagnostics.final_fence_reserve_seconds`); before,
-a fixed ten seconds left a slow installation's final fence without time.
-HAMCP-228: a record not scheduled before that reserve is `timed_out` (schema
+Configuration reads end early enough for the final fence. HAMCP-235 (review
+1, R1-M2): the final fence's reserve covers what must complete, its identity
+reads (principal, config entries, devices): twice their measured first-fence
+time, clamped to one to three read deadlines, 5–15 s
+(`diagnostics.final_fence_reserve_seconds`). Configuration reads end at the
+window, the collection deadline less the reserve: none is scheduled after it,
+and one still in flight there is cut (`unreadable`, outcome `timeout`), so the
+final identity reads keep the whole reserve. The final inventory reads use
+what remains of the collection deadline and may degrade the final fence to
+`identity_only`. The capture stays within the 45 s collection deadline. For
+example, at 1 s per read the identity reads take about 3 s, the reserve is
+about 6 s and the window ends at about 39 s; 115 configuration reads in
+rounds of four end at about 34 s and the final fence at about 39 s.
+HAMCP-228: a record not scheduled before the window is `timed_out` (schema
 v2), with no digest, instead of an indistinguishable unreadable record.
 Network operations share the collection deadline; cancellation drains owned bounded
 pure worker computation and closes transport before returning. There is no detached
@@ -283,7 +292,7 @@ authority generation (a reconnect, registry refresh or Engineering restart),
 and not the unmapped count. A refusal is `resume_inventory_changed` with
 `details.resume_changes`, a sorted list of fixed categories:
 `automation_added`, `automation_removed`, `mapping_changed`,
-`installation_changed`. A restart can reuse the authority generation, so the
+`installation_changed`, `installation_anchor_missing`. A restart can reuse the authority generation, so the
 base's Core version binds the resume too: a different version is refused as
 `resume_core_changed` with `resume_changes: ["core_version_changed"]` (not
 retryable) before any configuration read (review 1, M1). The categories never
@@ -293,9 +302,15 @@ new stored baseline with `resume: {resumed_from: <base baseline_id>,
 resumed_count}`; its capture interval starts at the base's start, and drift in
 the base is inherited. A new authority generation is recorded as
 `authority_drift: "detected"`. A base that recorded its first-fence anchor and
-whose own final fence failed is established by the resume's verified fences;
-a base from an earlier release without that anchor stays unestablished. The
-base is never changed.
+whose own final fence failed is established by the resume's verified fences.
+The rows a resume inherits keep the provenance of the capture they came from:
+the current fences' anchor is never evidence for them (review 1, R1-M1).
+Owner decision D4 (Josh, 2026-10-28): a base with no installation anchor
+(neither established nor a recorded first-fence anchor, as an earlier
+release stored when its final fence failed) is refused as
+`resume_inventory_changed` with `resume_changes: ["installation_anchor_missing"]`
+(not retryable), on any installation, before any Home Assistant read and with
+nothing stored. A fresh capture replaces it. The base is never changed.
 `resume_capture_id` cannot be combined with `cursor`.
 
 ## `compare_automation_baselines` (HAMCP-228)
