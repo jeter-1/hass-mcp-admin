@@ -31,15 +31,26 @@ Owner decision (Josh, 2026-10-27), **in the host journal path only**:
 - **Decoding never splits the token** (owner clarification, Josh,
   2026-10-28, from the independent review). The token is also checked in
   the text as given and after each round of its percent-decode, so a
-  `%20`, `%09` or `%0A` inside a password stays one token. Example: a
+  `%20`, `%09` or `%0A` inside a password stays one token (within one raw
+  token, at most four rounds). Example: a
   logged proxy setting `{"proxy": "user:pass%20more@proxy:8080"}`, which a
   proxy client decodes and uses, is withheld.
 - **Encoded separators too** (correction D320-H1, Josh, 2026-10-28). The
-  tokens come from the raw text, split at its literal whitespace; each raw
-  token is decoded on its own, at most four rounds, and whitespace a round
-  introduces stays inside the token. A token whose `:` or `@` is encoded
-  (`%3A`, `%3a`, `%40`) and decodes in the same round as `%20`, or a whole
-  setting passed through `quote(value, safe='')`, is withheld.
+  tokens come from the raw text, split at its raw ASCII whitespace
+  (U+0009–U+000D, U+0020) only; each raw token is decoded on its own, at
+  most four rounds, and whitespace a round introduces stays inside the
+  token. A token whose `:` or `@` is encoded (`%3A`, `%3a`, `%40`) and
+  decodes in the same round as `%20`, or a whole setting passed through
+  `quote(value, safe='')`, is withheld.
+- **Normalization before squash** (correction R3-H1, Josh, 2026-10-28,
+  fixed). Each stage of a raw token gets NFKC, casefold and the confusable
+  fold first, and only then has its whitespace removed. At c371c739 a space
+  that NFKC introduces (U+00A8, U+00AF, U+00B4, U+0385) split one raw token
+  and the credential was shown; it is withheld now (mutant `D5`). Whitespace
+  that percent-decoding or normalization introduces within one raw token is
+  part of the token. Non-ASCII whitespace (no-break, figure, narrow
+  no-break, ideographic space) no longer splits a raw token and is withheld;
+  U+2028 and U+0085 are withheld as `invisible_or_control`.
 - **Every other rule is unchanged, in both forms:**
   - credential URLs and connection URIs;
   - `password=` fields;
@@ -71,21 +82,35 @@ generated file that a test keeps equal to its computation:
 | Python logging (6) | 4 / 2 | 6 / 0 | none |
 
 In beta.42, 18 lines were withheld by `user_pass_host.squashed` alone; all
-18 are now shown. No other rule's count changes. Neither correction (the
-token read before decoding too, then decoded per raw token) changes a line
-of this corpus (the report is byte-identical before and after each).
+18 are now shown. No other rule's count changes. None of the three
+corrections (the token read before decoding too, then decoded per raw
+token, then normalized before its whitespace is removed) changes a line of
+this corpus (the report is byte-identical before and after each).
 
 ## Disclosed cost and residuals
 
-- **Disclosed residual, accepted by Josh 2026-10-28.** In the journal, a
-  scheme-less `user:pass@host` with literal whitespace inside it in the raw
-  text (`user: pass@host`) is now shown, unless another rule meets it. Some
-  clients accept such a value: Python's `urllib.request` proxy parser takes
-  a literal space inside a password (verified offline). Percent-encoded
-  whitespace inside one raw token never splits it, whether the `:` and `@`
-  are literal or encoded, within the four-round decode bound; a literal
-  space in the raw text still separates tokens even when the rest is
-  encoded.
+- **Residual: raw ASCII whitespace (U+0009–U+000D, U+0020), journal
+  mode, scheme-less only; disclosed residual, accepted by Josh
+  2026-10-28.** In the journal, a scheme-less `user:pass@host` split by raw
+  ASCII whitespace in the raw text (`user: pass@host`) is now shown, unless
+  another rule meets it. Some clients accept such a value: Python's proxy
+  parser (`urllib.request._parse_proxy`) takes a literal space inside a
+  password (verified offline). `http://`, `https://` and `socks5://` forms
+  stay withheld (`credential_url`). Percent-encoded whitespace inside one
+  raw token never splits it, whether the `:` and `@` are literal or
+  encoded, within the four-round decode bound; raw ASCII whitespace still
+  separates tokens even when the rest is encoded. Non-ASCII whitespace is
+  not part of this residual (Josh, 2026-10-28, resolving the round-3
+  question). Under the severity bar Josh adopted project-wide on
+  2026-10-28, a realistic accidental leak (also through text devices or
+  integrations write into Home Assistant) is High and an adversarial-only
+  construction is Low.
+- **Known limitation (HAMCP-240).** Journal final screening has no total-time
+  bound and runs on the event loop. A maximum-size pathological read (255 ×
+  16,384-byte messages) took about 408 s on c371c739 (404.877 s screening,
+  408.577 s call; no deadline flag; every field fully screened, no unscreened
+  output). The missing bound predates beta.43; the D320-H1 correction made the
+  slow shape about 1.5x slower than c0789386. Tracked as HAMCP-240.
 - **Still withheld (false positives remain):**
   - a contiguous `name:tag@sha256:…` image reference, which is
     `user_pass_host` in the normal form;

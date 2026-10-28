@@ -1,20 +1,31 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.43** relaxes one host journal rule, proven by a
-live calibration (HAMCP-234 step 2). On beta.42, `addon:core_matter_server`
-withheld 37 of 40 lines as `user_pass_host.squashed`: with whitespace
-removed, matter.js timestamps and a later `@peer` read as
-`user:password@host`. In the journal only, `user_pass_host` now needs one
-contiguous token in the normal form. Every other rule is unchanged, in both
-forms. The configuration-definitions and trace paths are unchanged. The
-token is judged on the text as written and after each percent-decode round
-too, so an encoded `%20` or `%09` inside a password never splits it (owner
-clarification, 2026-10-28), also when the `:` or `@` is encoded and decodes in
-the same round: each raw token is decoded on its own. The disclosed residual,
-accepted by Josh 2026-10-28, is that a scheme-less `user:pass@host` split by
-literal whitespace in the raw text is shown in the journal. Rollback is reinstalling beta.42. Read the
-[2.4.1-beta.43 release notes](docs/V2_4_1_BETA43_RELEASE_NOTES.md) and
-[2.4.1-beta.43 acceptance contract](docs/V2_4_1_BETA43_ACCEPTANCE.md).
+Engineering **2.4.1-beta.43** relaxes one host journal rule, proven by a live
+calibration (HAMCP-234 step 2). On beta.42, `addon:core_matter_server`
+withheld 37 of 40 lines as `user_pass_host.squashed`: with whitespace removed,
+matter.js timestamps and a later `@peer` read as `user:password@host`. In the
+journal only, `user_pass_host` now needs one contiguous token in the normal
+form. Every other rule is unchanged, in both forms. The
+configuration-definitions and trace paths are unchanged. The token is judged
+on the text as written and after each percent-decode round too, so an encoded
+`%20` or `%09` inside a password never splits it (owner clarification,
+2026-10-28), also when the `:` or `@` is encoded and decodes in the same
+round: each raw token is decoded on its own (at most four rounds), and it is
+normalized before its whitespace is removed (R3-H1, fixed), so whitespace that
+decoding or normalization introduces within one raw token is withheld.
+Non-ASCII whitespace no longer splits a raw token. Residual: raw ASCII
+whitespace (U+0009–U+000D, U+0020), journal mode, scheme-less only; disclosed
+residual, accepted by Josh 2026-10-28. A scheme-less `user:pass@host` split
+that way is shown in the journal, although Python's proxy parser
+(`urllib.request._parse_proxy`) accepts a literal space inside a password
+(verified offline); `http`, `https` and `socks5` forms stay withheld. Known
+limitation: journal final screening has no total-time bound and runs on the
+event loop (a maximum-size pathological read took about 408 s on c371c739,
+every field fully screened; the missing bound predates beta.43; the D320-H1
+correction made the slow shape about 1.5x slower than c0789386); tracked as
+HAMCP-240. Rollback is reinstalling beta.42. Read the [2.4.1-beta.43 release
+notes](docs/V2_4_1_BETA43_RELEASE_NOTES.md) and [2.4.1-beta.43 acceptance
+contract](docs/V2_4_1_BETA43_ACCEPTANCE.md).
 
 It builds on beta.42 and the releases below.
 

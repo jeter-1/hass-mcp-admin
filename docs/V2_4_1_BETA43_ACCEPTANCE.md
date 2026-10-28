@@ -34,18 +34,49 @@ percent-decode, the text as given first, which also covers a doubly encoded
 split.
 
 **Correction D320-H1 (Josh, 2026-10-28), from the round-2 review of
-c0789386.** The tokens are taken from the raw text, split at its literal
-whitespace. Each raw token that carries a percent escape is read as given
-and after each round of its own bounded percent-decode (`MAX_DECODE_ROUNDS`
-4, unchanged); whitespace a round introduces stays part of the token. So a
-token whose `:` or `@` is encoded and decodes in the same round as encoded
-password whitespace, for example a whole value passed through
-`quote(value, safe='')`, is withheld too. Literal whitespace in the raw
-text is never joined.
+c0789386.** The tokens are taken from the raw text, split at its raw
+ASCII whitespace (U+0009–U+000D, U+0020) only. Each raw token is read as
+given and, if it carries a percent escape, after each round of its own
+bounded percent-decode (`MAX_DECODE_ROUNDS` 4, unchanged); whitespace a
+round introduces stays part of the token. So a token whose `:` or `@` is
+encoded and decodes in the same round as encoded password whitespace, for
+example a whole value passed through `quote(value, safe='')`, is withheld
+too. Raw ASCII whitespace is never joined.
 
-**Literal-space residual: disclosed residual, accepted by Josh 2026-10-28.**
-In the journal only, a scheme-less `user:pass@host` split by a literal
-space in the raw text is shown unless another rule meets it.
+**Correction R3-H1 (Josh, 2026-10-28), from the round-3 review of
+c371c739: fixed.** Each stage of a raw token is normalized first (NFKC,
+casefold, confusable fold) and only then has its whitespace removed. At
+c371c739 the whitespace was removed before NFKC, so a space NFKC introduces
+(U+00A8, U+00AF, U+00B4, U+0385) split one raw token and the credential was
+shown in the final response. Whitespace that percent-decoding or
+normalization introduces within one raw token (at most four decode rounds)
+is now part of that token and withheld. Non-ASCII whitespace (no-break,
+figure, narrow no-break or ideographic space) no longer splits a raw token;
+U+2028 and U+0085 are withheld as `invisible_or_control`. Mutant `D5`
+restores the old order.
+
+**Residual: raw ASCII whitespace (U+0009–U+000D, U+0020), journal mode,
+scheme-less only; disclosed residual, accepted by Josh 2026-10-28.** In the
+journal only, a scheme-less `user:pass@host` split by raw ASCII whitespace
+in the raw text is shown unless another rule meets it. The round-3 question
+whether Unicode whitespace joins this residual ("Unicode whitespace — Josh
+to decide") is resolved by this decision: it does not, and such a value is
+withheld.
+
+**Severity bar (Josh, 2026-10-28, adopted project-wide).** A realistic
+accidental leak, including one through text that devices or integrations
+write into Home Assistant, is High; a leak that needs an adversarial-only
+construction is Low. Review findings and residuals of this release are
+rated against it.
+
+**Known limitation (HAMCP-240).** Journal final screening has no total-time
+bound and runs on the event loop. A maximum-size pathological read (255 ×
+16,384-byte messages) took about 408 s on c371c739 (404.877 s screening,
+408.577 s call; no deadline flag; every field fully screened, no unscreened
+output). The missing bound predates beta.43; the D320-H1 correction made the
+slow shape about 1.5x slower than c0789386. Tracked as HAMCP-240 ("Bound
+journal final-screen time: linear-time matching, cumulative budget, off-loop
+screening"), out of scope here.
 
 **Release target.** `2.4.1-beta.43` is the next free beta after `main` at
 2.4.1-beta.42 (#316). If another release reaches `main` first, this change
@@ -79,13 +110,14 @@ The review needs a security section covering:
   `user_pass_host` (`_credential_form_rules(..., user_pass_host=False)`).
   The normal-form `_USER_PASS_HOST` already excludes whitespace, so it is
   the contiguous-token rule. With the option, `_undecoded_user_pass_host`
-  splits the text as given at its literal whitespace. Each raw token that
-  carries an escape is read with `_USER_PASS_HOST` as given and after each
-  round of its own decode, at most `MAX_DECODE_ROUNDS` (4) rounds, with the
-  whitespace a round introduces removed from the token, then NFKC,
-  casefold and the confusable fold; a match yields `user_pass_host`. A
-  stage without both `:` and `@` cannot match and skips the regex. It only
-  adds withholding. No other rule or form reads the option.
+  splits the text as given at its raw ASCII whitespace only
+  (`_RAW_TOKEN_SEPARATOR`, U+0009–U+000D and U+0020). Every raw token is
+  read with `_USER_PASS_HOST` as given and, if it carries an escape, after
+  each round of its own decode, at most `MAX_DECODE_ROUNDS` (4) rounds. Each
+  stage gets NFKC, casefold and the confusable fold first, then its
+  whitespace is removed (R3-H1); a match yields `user_pass_host`. A stage
+  without both `:` and `@` cannot match and skips the regex. It only adds
+  withholding. No other rule or form reads the option.
 - **Only the journal sets it.** `host_journal._JOURNAL_SCREEN` (read-only:
   `labelled=True, contiguous_user_pass_host=True`) is used by all five
   screen calls of `screen_text_rule` and `screen_text_rules`. The
@@ -96,22 +128,29 @@ The review needs a security section covering:
   (`test_hamcp225_*`).
 - **Rule ids.** `host_journal.RULE_IDS` drops `user_pass_host.squashed`
   (44 ids). `credentials.RULE_IDS` keeps it (42) for the other paths.
-- **Disclosed residual, accepted by Josh 2026-10-28.** In the journal, a
-  scheme-less `user:pass@host` split by literal whitespace in the raw text
-  is shown unless another rule meets it. Python's `urllib.request` proxy
-  parser accepts a literal space inside a password (verified offline), so
-  such a logged setting is shown. Percent-encoded whitespace (`%20`, `%09`,
+- **Residual: raw ASCII whitespace (U+0009–U+000D, U+0020), journal
+  mode, scheme-less only; disclosed residual, accepted by Josh
+  2026-10-28.** In the journal, a scheme-less `user:pass@host` split by raw
+  ASCII whitespace in the raw text is shown unless another rule meets it.
+  Python's proxy parser (`urllib.request._parse_proxy`) accepts a literal
+  space inside a password (verified offline), so such a logged setting is
+  shown. Non-ASCII whitespace (U+00A0, U+2007, U+202F, U+3000) inside a
+  password does not split the raw token and is withheld (`user_pass_host`);
+  U+2028 and U+0085 are withheld as `invisible_or_control`. Whitespace NFKC
+  introduces within one raw token is withheld too. Percent-encoded
+  whitespace (`%20`, `%09`,
   `%0A`, `%0D`, `%C2%A0`, `%E3%80%80`, doubly or triply encoded) inside one
   raw token never splits it: the token is withheld whether its `:` and `@`
   are literal or encoded (`%3A`, `%3a`, `%40`) and whether they decode in
   the same round as the whitespace or another, within the four-round
   bound. A value still carrying an escape after four rounds is refused
-  (`canonical_refused`). A literal space in the raw text separates tokens
-  even when the rest is encoded (`user:pass %2Bmore@host` is shown). A
-  `scheme://user:pass@host` is `credential_url` in the normal form,
-  unchanged. The labelled rules (`password`, `token`, `-P`, `Bearer`,
-  …), known secrets (normal and squashed), PEM headers, invisible and
-  control characters and the value shapes are unchanged in both forms.
+  (`canonical_refused`). Raw ASCII whitespace separates tokens even when
+  the rest is encoded (`user:pass %2Bmore@host` is shown). A
+  `scheme://user:pass@host` (`http`, `https`, `socks5`) is `credential_url`
+  in the normal form, unchanged. The labelled rules (`password`, `token`,
+  `-P`, `Bearer`, …), known secrets (normal and squashed), PEM headers,
+  invisible and control characters and the value shapes are unchanged in
+  both forms.
 - **Calibration reachability.** There was no source defect. `calibration`
   was already a strict optional boolean on `get_incident_logs`. A test now
   reads it from the production application's served `tools/list`. Another
@@ -185,12 +224,25 @@ committed file holds secret-shaped text.
     final response or the audit record, and the matter.js lines in the
     same read come back verbatim. The round-2 reviewer regression
     (`test_urlencoded_proxy_value_with_space_is_withheld_over_wire`) is
-    ported with its assertions intact. A literal space or tab in the raw
-    text still separates tokens (the accepted residual, also with encoded
-    separators), the definitions and labelled modes still withhold those as
-    `user_pass_host.squashed`, and `http://`, `https://` and `socks5://`
-    forms are `credential_url`. A per-token count shows each raw token is
-    decoded at most four times.
+    ported with its assertions intact. A raw U+0020 or U+0009 still
+    separates tokens (the accepted raw ASCII whitespace residual, also with
+    encoded separators), the definitions and labelled modes still withhold
+    those as `user_pass_host.squashed`, and `http://`, `https://` and
+    `socks5://` forms are `credential_url`. A per-token count shows each raw
+    token is decoded at most four times.
+  - **Normalization before squash (correction R3-H1, High).** The
+    reviewer's construction, a whole proxy setting with U+00A8, U+00AF,
+    U+00B4 or U+0385 next to a space through `quote(value, safe='')` (one
+    raw token), and the same marks in a raw token without an escape, are
+    withheld as `user_pass_host` by the screen and through `tools/call` on
+    the authenticated gateway, with no needle or host in the final response
+    or the audit record.
+  - **Raw ASCII whitespace only (Josh, 2026-10-28).** Scheme-less
+    `user:pa<X>ss@host`: X = U+00A0, U+2007, U+202F, U+3000, U+2028 or
+    U+0085 is withheld in the journal, the final authenticated response, the
+    definitions and the trace paths; X = U+0020 or U+0009 is shown in the
+    journal (the accepted residual) and withheld in the definitions and
+    trace paths.
   - **Trace identity and name fields (correction, Medium).** Squashed-only
     credentials (split by a space, a tab, a line feed, or `%20`) in
     `alias`, `id`, `entity_id` (string and list) and `friendly_name` are
@@ -244,18 +296,23 @@ committed file holds secret-shaped text.
     whitespace kept in the token. The encoded-separator screen test, the
     final response and audit test and the ported reviewer regression must
     fail.
+  - `D5` (correction R3-H1): a stage squashed before its NFKC, casefold and
+    confusable fold. The three normalization tests must fail, including the
+    one over the wire.
   - `T1` (correction): the reviewer's identity-only opt-in
     (`contiguous_user_pass_host=not labelled` in the trace screen). The
     unchanged HAMCP-225 suites run first, then the trace identity boundary
     tests must fail.
 
-  Result (`mutations.json`, D320-H1 correction run): all 14 are killed over
-  a 329-test baseline, none by an import or syntax error. `D1`-`D3` are
-  killed by the named percent-encoded tests (`D1` also by the over-the-wire
-  test). `D4` is killed by all three encoded-separator tests (the screen
-  test, the final response and audit test and the ported reviewer
-  regression), and also by the decode-bound test. **`T1` survives the unchanged HAMCP-225 suites**, as the reviewer
-  found, and is killed by all three trace identity boundary tests.
+  Result (`mutations.json`, R3-H1 correction run): all 15 are killed over
+  a 335-test baseline, none by an import or syntax error.
+  `D1`-`D3` are killed by the named percent-encoded tests (`D1` also by the
+  over-the-wire test). `D4` is killed by all three encoded-separator tests
+  (the screen test, the final response and audit test and the ported
+  reviewer regression), and also by the decode-bound test. `D5` is killed
+  by the named normalization tests. **`T1` survives the unchanged HAMCP-225
+  suites**, as the reviewer found, and is killed by all three trace
+  identity boundary tests.
   `L1` and `L4` are killed by the unchanged HAMCP-132 suite
   (`test_a_colon_then_an_at_sign_across_whitespace_is_withheld_by_design`).
   **`L2` and `L3` (the trace path) survive the unchanged HAMCP-225 suites**
@@ -263,6 +320,20 @@ committed file holds secret-shaped text.
   no text that only the squashed `user_pass_host` withholds. They stay
   byte-unchanged, so the trace path's guard against this leak is the step 2
   suite.
+- R3-H1 re-verification (offline, synthetic). The step 2 module has 37
+  tests (31 at c371c739). The corpus report is byte-identical (sha256
+  `cbcea841515d74b7f38b2641bf6fd9fc4ead79a176aa949d3e4d5beaa2c3a481`;
+  matter.js 18 shown, 1 withheld). Of the 20 round-2 reviewer probes, the 6
+  D320-H1 cases are withheld and the other 14 decide as before. Timing,
+  median of 5 per 16 KiB field, same host, one process:
+
+  | Shape | c0789386 | c371c739 | R3-H1 head |
+  |---|---|---|---|
+  | `'a'*16381+'%20'` (reviewer worst) | 1.4317 s | 0.7112 s | 0.7206 s |
+  | `('@'+'a:'*8192)[:16381]+'%20'` | 1.2217 s | 1.8583 s | 1.8595 s |
+
+  The reviewer's host measured 1.0855 s to 1.6446 s for the second shape.
+  The slow shape is the known limitation above (HAMCP-240).
 
 ## 2. Release CI and publication
 
@@ -331,7 +402,9 @@ read-only. Record each result in HAMCP-234.
 ## 4. Not covered
 
 No other screening change, live canary, write, registry signing or
-Supervisor role change is part of this release. A contiguous
+Supervisor role change is part of this release. A total-time bound and
+off-loop execution for journal final screening (the known limitation
+above) are HAMCP-240. A contiguous
 `name:tag@sha256:…` image reference, a line with `://` and a later `@`,
 and a line with a labelled keyword stay withheld. Each needs its own owner
 decision. Multi-line level inheritance remains future work. A non-HAOS

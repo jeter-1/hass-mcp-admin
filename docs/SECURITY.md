@@ -912,12 +912,26 @@ calibration (`addon:core_matter_server`: 37 of 40 lines withheld, all as
   final authenticated response.
 - **Raw-token boundaries** (correction D320-H1, Josh, 2026-10-28, from the
   round-2 review of c0789386). The tokens are taken from the text as given,
-  split at its literal whitespace, and each raw token that carries an
-  escape is decoded on its own (at most four rounds), the whitespace a
-  round introduces kept inside the token. An encoded `:` or `@` that
-  decodes in the same round as encoded password whitespace (a whole value
-  through `quote(value, safe='')`) was shown at c0789386 and is withheld
-  now, in the final response and the audit record.
+  split at its raw ASCII whitespace (U+0009–U+000D, U+0020) only, and each
+  raw token is read as given and, if it carries an escape, decoded on its
+  own (at most four rounds), the whitespace a round introduces kept inside
+  the token. An encoded `:` or `@` that decodes in the same round as
+  encoded password whitespace (a whole value through
+  `quote(value, safe='')`) was shown at c0789386 and is withheld now, in
+  the final response and the audit record.
+- **Normalization before squash** (correction R3-H1, Josh, 2026-10-28,
+  from the round-3 review of c371c739; fixed). Each stage of a raw token
+  gets NFKC, casefold and the confusable fold first, and only then has its
+  whitespace removed. At c371c739 the order was reversed, so a space NFKC
+  introduces (U+00A8, U+00AF, U+00B4, U+0385) split one raw token and the
+  credential reached the final authenticated response (the audit record
+  stayed clean). It is withheld now; mutant `D5` restores the old order and
+  is killed. Whitespace that percent-decoding or normalization introduces
+  within one raw token (at most four decode rounds) is part of the token
+  and withheld. Non-ASCII whitespace no longer splits a raw token: U+00A0,
+  U+2007, U+202F and U+3000 inside a password are withheld as
+  `user_pass_host`, U+2028 and U+0085 as `invisible_or_control`, in the
+  journal and the final response as in the definitions and trace paths.
 - **What did not.** Every other rule is unchanged in both forms: credential
   URLs and connection URIs, `password=`, the labelled keywords, `Bearer`,
   `-P`/`--pw`, known secrets (normal and squashed), PEM headers, invisible
@@ -931,15 +945,32 @@ calibration (`addon:core_matter_server`: 37 of 40 lines withheld, all as
   the trace identity and name fields (`alias`, `id`, `entity_id`,
   `friendly_name`), killed by the step 2 trace identity boundary tests
   (capture, store, read-back, `get_automation_trace`).
-- **Disclosed residual, accepted by Josh 2026-10-28.** A scheme-less
-  `user:pass@host` split by literal whitespace in the raw text is shown in
-  the journal unless another rule meets it. This is not only a
-  non-credential: Python's `urllib.request` proxy parser accepts a literal
-  space inside a password (verified offline, Python 3.12.14), so a logged
-  proxy setting written that way is shown. Percent-encoded whitespace
-  inside one raw token never splits it, with literal or encoded `:` and
-  `@`, within the four-round decode bound (above). A contiguous one, and
-  any `scheme://user:pass@host`, is still withheld.
+- **Residual: raw ASCII whitespace (U+0009–U+000D, U+0020), journal mode,
+  scheme-less only; disclosed residual, accepted by Josh 2026-10-28.** A
+  scheme-less `user:pass@host` split by raw ASCII whitespace in the raw
+  text is shown in the journal unless another rule meets it. This is not
+  only a non-credential: Python's proxy parser
+  (`urllib.request._parse_proxy`) accepts a literal space inside a password
+  (verified offline, Python 3.12.14), so a logged proxy setting written
+  that way is shown. Percent-encoded whitespace inside one raw token never
+  splits it, with literal or encoded `:` and `@`, within the four-round
+  decode bound (above). A contiguous one, and any
+  `scheme://user:pass@host` (`http`, `https`, `socks5`: `credential_url`),
+  is still withheld. Non-ASCII whitespace is not part of the residual; this
+  resolves the round-3 question left to Josh.
+- **Severity bar (Josh, 2026-10-28, adopted project-wide).** A realistic
+  accidental leak, including one through text that devices or integrations
+  write into Home Assistant, is High; a leak that needs an adversarial-only
+  construction is Low. Review findings and residuals of this slice are
+  rated against it.
+- **Known limitation (HAMCP-240, availability, not exposure).** Journal final
+  screening has no total-time bound and runs synchronously on the event loop.
+  A maximum-size pathological read (255 × 16,384-byte messages) took about 408
+  s on c371c739 (404.877 s screening, 408.577 s call; no deadline flag; every
+  field fully screened, no unscreened output). The missing bound predates
+  beta.43; the D320-H1 correction made the slow shape about 1.5x slower than
+  c0789386. Linear-time matching, a cumulative budget and off-loop screening
+  are tracked as HAMCP-240.
 - **Rule ids.** The journal's `RULE_IDS` drop `user_pass_host.squashed`
   (44); a calibration never reports it.
 

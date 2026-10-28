@@ -19,15 +19,29 @@ later `@peer` joined into that shape once whitespace was removed.
 - Contiguity is judged on the text as given and after each percent-decode
   round too, not only on the decoded normal form (owner clarification,
   Josh, 2026-10-28, review of aaf1fe8e): a `%20`, `%09` or `%0A` inside a
-  password, such as a logged scheme-less proxy setting, is withheld.
-- Each raw token (split at the literal whitespace of the text as given) is
-  decoded on its own, decoded whitespace kept inside it (correction
+  password within one raw token (at most four decode rounds), such as a
+  logged scheme-less proxy setting, is withheld.
+- Each raw token (split at the raw ASCII whitespace of the text as given)
+  is decoded on its own, decoded whitespace kept inside it (correction
   D320-H1, Josh, 2026-10-28): an encoded `:` or `@` that decodes in the
   same round as `%20`, such as a whole value through `quote(value,
   safe='')`, is withheld.
-- Disclosed residual, accepted by Josh 2026-10-28: in the journal, a
-  scheme-less `user:pass@host` split by literal whitespace in the raw text
-  is shown unless another rule meets it.
+- Each stage is normalized and folded before its whitespace is removed
+  (correction R3-H1, Josh, 2026-10-28, fixed; mutant `D5`): a space NFKC
+  introduces (U+00A8, U+00AF, U+00B4, U+0385) within one raw token is
+  withheld. Non-ASCII whitespace no longer splits a raw token.
+- Residual: raw ASCII whitespace (U+0009–U+000D, U+0020), journal mode,
+  scheme-less only; disclosed residual, accepted by Josh 2026-10-28. In the
+  journal, a scheme-less `user:pass@host` split that way is shown unless
+  another rule meets it, although Python's proxy parser
+  (`urllib.request._parse_proxy`) accepts a literal space inside a password
+  (verified offline). `http`, `https` and `socks5` forms stay withheld.
+- Known limitation: journal final screening has no total-time bound and runs
+  on the event loop. A maximum-size pathological read (255 × 16,384-byte
+  messages) took about 408 s on c371c739 (404.877 s screening, 408.577 s call;
+  no deadline flag; every field fully screened, no unscreened output). The
+  missing bound predates beta.43; the D320-H1 correction made the slow shape
+  about 1.5x slower than c0789386. Tracked as HAMCP-240.
 - The trace identity and name fields keep the squashed shape; new boundary
   tests cover capture, store, read-back and `get_automation_trace`.
 - The journal's `rule_ids` drop `user_pass_host.squashed` (44 ids).
