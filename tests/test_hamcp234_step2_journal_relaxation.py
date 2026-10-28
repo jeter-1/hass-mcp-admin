@@ -16,6 +16,16 @@ through the final gateway response. The trace identity and name fields
 ``user_pass_host`` through capture, the store, read-back and
 ``get_automation_trace``.
 
+Correction D320-H1 (review of c0789386; Josh, 2026-10-28): the tokens are
+taken from the text as given, split at its literal whitespace, and each is
+read through its own bounded percent-decode with the whitespace a round
+introduces kept inside the token, so an encoded ``:`` or ``@`` that decodes
+in the same round as an encoded space (a whole value passed through
+``quote(value, safe='')``) is withheld too. Literal whitespace in the text
+as given still separates tokens: a scheme-less ``user:pass@host`` split by
+a literal space is shown in the journal, a disclosed residual accepted by
+Josh, 2026-10-28.
+
 Live-shaped tests come first. Offline: the HAMCP-224 fixture journals with
 entries rewritten in memory, the production MCP application and the
 authenticated gateway in process. Every credential-shaped payload is
@@ -31,6 +41,8 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs, quote, urlencode
+from urllib.request import _parse_proxy
 
 TESTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TESTS))
@@ -502,6 +514,154 @@ class ProxyCredentialOverTheWireTests(unittest.TestCase):
         self.assertNotIn("proxy.invalid", wire)
         self.assertNotIn(NEEDLE, json.dumps(record))
         self.assertEqual(record["tool_name"], "get_incident_logs")
+
+
+def encoded_proxy(colon: str, space: str, at: str, needle: str) -> str:
+    """A scheme-less proxy setting whose ``:``, password whitespace and ``@`` are given as written."""
+
+    return "reviewer" + colon + needle + space + "elm" + at + "proxy.invalid" + COLON + "8080"
+
+
+def encoded_separator_cases() -> dict[str, str]:
+    """``label -> value``: one raw token whose separators and password whitespace decode, each a distinct needle.
+
+    Same round: an encoded separator and an encoded space decode together.
+    Mixed rounds: they decode in different rounds. Complete value encoding:
+    the whole setting through ``quote(value, safe='')``, once and twice.
+    """
+
+    cases = {}
+    for colon_label, colon in (("plain_colon", COLON), ("upper_colon", "%3A"), ("lower_colon", "%3a")):
+        for at_label, at in (("plain_at", AT), ("encoded_at", "%40")):
+            if colon == COLON and at == AT:
+                continue
+            cases["same_round." + colon_label + "." + at_label] = (colon, "%20", at)
+    cases.update({
+        "same_round.tab_both_encoded": ("%3A", "%09", "%40"),
+        "same_round.nbsp_both_encoded": ("%3a", "%C2%A0", "%40"),
+        "mixed_rounds.encoded_at_double_space": (COLON, "%2520", "%40"),
+        "mixed_rounds.lower_colon_double_space": ("%3a", "%2520", AT),
+        "mixed_rounds.double_colon_single_space": ("%253A", "%20", AT),
+        "mixed_rounds.double_at_single_space": (COLON, "%20", "%2540"),
+        "mixed_rounds.triple_space_triple_at": (COLON, "%252520", "%252540"),
+        "mixed_rounds.triple_all": ("%25253a", "%252520", "%252540"),
+    })
+    values = {label: encoded_proxy(*parts, NEEDLE + str(index))
+              for index, (label, parts) in enumerate(cases.items())}
+    base = len(values)
+    values["complete_value.once"] = quote(encoded_proxy(COLON, " ", AT, NEEDLE + str(base)), safe="")
+    values["complete_value.twice"] = quote(quote(encoded_proxy(COLON, " ", AT, NEEDLE + str(base + 1)), safe=""),
+                                           safe="")
+    values["complete_value.tab"] = quote(encoded_proxy(COLON, "\t", AT, NEEDLE + str(base + 2)), safe="")
+    return values
+
+
+class EncodedSeparatorContiguityTests(unittest.TestCase):
+    """Correction D320-H1: a raw token whose separators decode with its password whitespace is withheld."""
+
+    def test_encoded_separators_decoded_with_whitespace_are_withheld(self):
+        for label, value in encoded_separator_cases().items():
+            with self.subTest(case=label):
+                # The decoded normal form alone is split: the raw token's decode meets it.
+                self.assertIsNone(credentials._USER_PASS_HOST.search(credentials.canonical(value)[0]))
+                self.assertEqual(hj.screen_text_rule(value.encode(), ()),
+                                 (credentials.WITHHELD_MARKER, credentials.OMISSION, "user_pass_host"))
+                self.assertEqual(hj.screen_text_rules(value.encode(), ())[0], "user_pass_host")
+
+    def test_literal_whitespace_in_the_text_as_given_still_separates_tokens(self):
+        # The accepted residual (Josh, 2026-10-28): a literal space splits the raw token.
+        for label, value in {
+            "literal_space": encoded_proxy(COLON, " ", AT, NEEDLE),
+            "literal_space_encoded_plus": encoded_proxy(COLON, " %2B", AT, NEEDLE),
+            "literal_space_encoded_separators": encoded_proxy("%3A", " ", "%40", NEEDLE),
+            "literal_tab_encoded_space": encoded_proxy("%3A", "\t%20", "%40", NEEDLE),
+        }.items():
+            with self.subTest(case=label):
+                self.assertEqual(hj.screen_text_rule(value.encode(), ()), (value, None, None))
+                # Definitions and labelled modes are unchanged: the squashed shape withholds it.
+                self.assertEqual(credentials.screen_rule(value, ())[1], "user_pass_host.squashed")
+                self.assertEqual(credentials.screen_rule(value, (), labelled=True)[1], "user_pass_host.squashed")
+        # A scheme still withholds it in the journal (credential_url).
+        for scheme in ("http://", "https://", "socks5://"):
+            with self.subTest(scheme=scheme):
+                value = scheme + encoded_proxy(COLON, " ", AT, NEEDLE)
+                self.assertEqual(hj.screen_text_rule(value.encode(), ())[2], "credential_url")
+
+    def test_each_raw_token_is_decoded_at_most_the_fixed_number_of_rounds(self):
+        decoded = []
+        original = credentials.unquote_to_bytes
+        # No ``@`` in any round, so every round of the token is read.
+        token = "reviewer%3A" + NEEDLE + "%2525252520elm.proxy.invalid"
+        counting = lambda text: decoded.append(text) or original(text)  # noqa: E731
+        with patch.object(credentials, "unquote_to_bytes", counting):
+            self.assertFalse(credentials._undecoded_user_pass_host("x%20y " + token + " z%2541"))
+        self.assertEqual(credentials.MAX_DECODE_ROUNDS, 4)
+        self.assertEqual(sum(1 for text in decoded if NEEDLE in text), credentials.MAX_DECODE_ROUNDS)
+        self.assertEqual(len(decoded), 1 + credentials.MAX_DECODE_ROUNDS + 2)
+        # The screen refuses the token that still carries an escape after the last round.
+        self.assertEqual(hj.screen_text_rule(token.encode(), ())[2], credentials.RULE_CANONICAL_REFUSED)
+
+
+class EncodedProxyOverTheWireTests(unittest.TestCase):
+    """Correction D320-H1: encoded proxy credentials are withheld in the final response and the audit record."""
+
+    def call(self, entries: list[tuple[bytes, bytes]]) -> tuple[dict, dict, str]:
+        root = author.journal_root()
+        self.addCleanup(author.shutil.rmtree, root, True)
+        stack = gateway_tests.IncidentLogGatewayStackTests()
+        with patch.object(gateway_tests, "journald_off_reader", lambda: step1.Rewriting(root, MATTER, entries)):
+            rendered, record, wire = stack.call({"sources": [MATTER], "start": author.iso(0),
+                                                 "end": author.iso(7000), "limit": 200})
+        self.assertTrue(rendered["success"], rendered)
+        self.assertEqual(record["tool_name"], "get_incident_logs")
+        return rendered, record, wire
+
+    def test_urlencoded_proxy_value_with_space_is_withheld_over_wire(self):
+        # Ported from the round-2 reviewer regression (test_encoded_proxy_regression.py), assertions intact.
+        needle = "SYNTHETIC" + "review320url"
+        raw = "reviewer" + ":" + needle + " elm" + "@" + "proxy.invalid:8080"
+        encoded = quote(raw, safe="")
+        # A conventional form/query serialization, recovered without any network.
+        query = urlencode({"proxy": raw}, quote_via=quote)
+        recovered = parse_qs(query)["proxy"][0]
+        self.assertEqual(recovered, raw)
+        self.assertEqual(_parse_proxy(recovered)[2], needle + " elm")
+        line = "2026-10-27 03:16:00,123 INFO [proxy] configuration " + json.dumps({"proxy": encoded})
+        self.assertEqual(credentials.screen_rule(line, labelled=True)[1], "user_pass_host.squashed")
+        result, audit, wire = self.call([(line.encode(), b"6")])
+        self.assertTrue(result["success"])
+        self.assertFalse(needle in wire, "whole-value percent encoding exposes proxy password in final response")
+        self.assertNotIn(encoded, wire)
+        self.assertNotIn("proxy.invalid", wire)
+        self.assertNotIn(needle, json.dumps(audit))
+        self.assertNotIn("proxy.invalid", json.dumps(audit))
+
+    def test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit(self):
+        cases = encoded_separator_cases()
+        lines = ["2026-10-27 03:16:00,123 INFO [proxy] configuration " + json.dumps({"proxy": value})
+                 for value in cases.values()]
+        entries = [(line.encode(), b"6") for line in list(corpus.MATTER_JS) + lines]
+        rendered, record, wire = self.call(entries)
+        rows = rendered["data"]["entries"]
+        self.assertEqual(len(rows), len(entries))
+        # The live-shaped lines read as before; every encoded proxy line is withheld by the token.
+        self.assertEqual([row["message"] for row in rows if "withheld" not in row], list(corpus.MATTER_JS))
+        held = [row for row in rows if "withheld" in row]
+        self.assertEqual([row["withheld_rules"]["message"] for row in held], ["user_pass_host"] * len(cases))
+        audit = json.dumps(record)
+        for index, (label, value) in enumerate(cases.items()):
+            with self.subTest(case=label):
+                self.assertEqual(held[index]["message"], credentials.WITHHELD_MARKER)
+                self.assertNotIn(value, wire)
+        for index in range(len(cases)):
+            needle = NEEDLE + str(index)
+            with self.subTest(needle=index):
+                self.assertNotIn(needle, wire)
+                self.assertNotIn(needle, audit)
+        self.assertNotIn(NEEDLE, wire)
+        self.assertNotIn(NEEDLE, audit)
+        self.assertNotIn("proxy.invalid", wire)
+        self.assertNotIn("proxy.invalid", audit)
 
 
 if __name__ == "__main__":

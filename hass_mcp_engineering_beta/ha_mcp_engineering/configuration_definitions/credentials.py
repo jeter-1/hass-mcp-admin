@@ -141,13 +141,19 @@ meets it (percent-encoded whitespace no longer is, below). The configuration-def
 the trace path do not opt in: their behavior is unchanged.
 
 **Decoding never splits the token** (HAMCP-234 step 2 correction, owner
-clarification, Josh, 2026-10-28). With ``contiguous_user_pass_host`` the
-token is also read in the text as given and after each round of its
-percent-decode, each normalized and folded as the normal form is; any of
-them matching withholds the value (``user_pass_host``). A ``%20``, ``%09``
-or ``%0A`` inside a password (a proxy setting such as
-``user:pass%20more@proxy:8080``, which a proxy client decodes and uses) is
-one token as written, so decoding it to whitespace never shows it.
+clarification, Josh, 2026-10-28; D320-H1, Josh, 2026-10-28). With
+``contiguous_user_pass_host`` the tokens are taken from the text as given,
+split at its literal whitespace. Each token that carries a percent escape
+is read as given and after each round of its own bounded percent-decode;
+whitespace a round introduces stays part of the token. Each stage is
+normalized and folded as the normal form is; any of them matching
+withholds the value (``user_pass_host``). A ``%20``, ``%09`` or ``%0A``
+inside a password (a proxy setting such as ``user:pass%20more@proxy:8080``,
+which a proxy client decodes and uses) is one token as written, so
+decoding it to whitespace never shows it, also when the ``:`` or ``@`` is
+encoded and decodes in the same round (``user%3Apass%20more%40proxy``, a
+whole value passed through ``quote(value, safe='')``). Literal whitespace
+in the text as given still separates tokens.
 """
 
 from __future__ import annotations
@@ -435,28 +441,42 @@ def _credential_rules(value: str, known_secrets: tuple[str, ...], labelled: bool
 
 
 def _undecoded_user_pass_host(value: str) -> bool:
-    """Whether ``user_pass_host`` meets ``value`` as given or after a round of its percent-decode.
+    """Whether ``user_pass_host`` meets a token of ``value`` as given or in its percent-decode.
 
-    HAMCP-234 step 2 correction (Josh, 2026-10-28): contiguity is judged
-    before decoding too, so a ``%20`` or ``%09`` inside a password never
-    splits the token. Every round before the last is read, each after NFKC,
-    casefold and the confusable fold, as the normal form is; the last round
-    is the normal form itself, which ``_credential_form_rules`` reads. Only
-    called after ``canonical`` accepted ``value``; a decode that fails here
-    anyway withholds (fail closed).
+    HAMCP-234 step 2 correction (Josh, 2026-10-28; D320-H1): contiguity is
+    judged on the tokens of the text as given, split at its literal
+    whitespace. A token that carries an escape is read as given and after
+    each round of its own percent-decode, at most ``MAX_DECODE_ROUNDS``
+    rounds; a ``%20`` or ``%09`` inside a password never splits the token,
+    whether its ``:`` and ``@`` are literal or decode in the same round. A
+    token with no escape is the normal form's to read. Only called after
+    ``canonical`` accepted ``value``; a decode that fails here anyway
+    withholds (fail closed).
     """
 
-    stage = value
+    return any(_ESCAPE.search(token) and _decoded_token_user_pass_host(token) for token in value.split())
+
+
+def _decoded_token_user_pass_host(token: str) -> bool:
+    stage = token
     for _round in range(MAX_DECODE_ROUNDS):
+        if _token_stage_user_pass_host(stage):
+            return True
         if not _ESCAPE.search(stage):
             return False
-        if _USER_PASS_HOST.search(fold_confusables(unicodedata.normalize("NFKC", stage).casefold())) is not None:
-            return True
         try:
             stage = unquote_to_bytes(stage).decode("utf-8", "strict")
         except (UnicodeError, ValueError):
             return True
-    return False
+    return _token_stage_user_pass_host(stage)
+
+
+def _token_stage_user_pass_host(stage: str) -> bool:
+    # The token as given has no whitespace: any in a stage came from decoding and
+    # is part of the token. Then NFKC, casefold and the confusable fold, as the
+    # normal form is read. ``user_pass_host`` needs a ``:`` and an ``@``.
+    text = fold_confusables(unicodedata.normalize("NFKC", squash(stage)).casefold())
+    return ":" in text and "@" in text and _USER_PASS_HOST.search(text) is not None
 
 
 def squash(text: str) -> str:

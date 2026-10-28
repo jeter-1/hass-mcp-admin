@@ -26,6 +26,11 @@ suites the task names, not merely any test:
   the normal form's NFKC, casefold and confusable fold (``D3``). The
   percent-encoded tests in ``test_hamcp234_step2_journal_relaxation`` must
   fail; for ``D1`` that includes the final authenticated gateway response.
+  ``D4`` (correction D320-H1, review of c0789386): the pre-fix helper, the
+  whole value read as given and after each round with no raw-token
+  boundaries and no decoded whitespace kept in the token. The encoded
+  separator tests must fail, including the final response and audit test
+  and the ported reviewer regression.
 - ``T1`` (correction batch): the reviewer's identity-only opt-in, the trace
   identity and name fields reading ``user_pass_host`` as one token
   (``contiguous_user_pass_host=not labelled``). As for ``L*``, the unchanged
@@ -76,6 +81,9 @@ BOUNDARY = ("test_definitions_and_trace_paths_still_withhold_the_live_shaped_lin
 PROXY = ("test_the_reviewer_proxy_reproduction_is_withheld",
          "test_percent_encoded_whitespace_inside_a_credential_is_withheld",
          "test_the_proxy_credential_is_withheld_and_matter_js_shown_over_the_wire")
+ENCODED_SEPARATORS = ("test_encoded_separators_decoded_with_whitespace_are_withheld",
+                      "test_urlencoded_proxy_value_with_space_is_withheld_over_wire",
+                      "test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit")
 IDENTITY_BOUNDARY = ("test_the_named_fields_are_identity_keys_read_in_the_default_mode",
                      "test_capture_store_and_read_back_withhold_squashed_only_identity_credentials",
                      "test_get_automation_trace_withholds_squashed_only_identity_credentials")
@@ -131,8 +139,24 @@ MUTATIONS = [
        "            return False\n")),
     m("D3-rounds-not-normalized", "a look-alike split credential shown in the journal", (STEP2,),
       ("test_each_round_is_normalized_and_folded_as_the_normal_form",),
-      (CRED, 'search(fold_confusables(unicodedata.normalize("NFKC", stage).casefold())) is not None:\n',
-       "search(stage) is not None:\n")),
+      (CRED, '    text = fold_confusables(unicodedata.normalize("NFKC", squash(stage)).casefold())\n',
+       "    text = squash(stage)\n")),
+    m("D4-separator-only-stage-check", "an encoded separator decoded with the password whitespace shown",
+      (STEP2,), ENCODED_SEPARATORS,
+      (CRED, "    return any(_ESCAPE.search(token) and _decoded_token_user_pass_host(token)"
+             " for token in value.split())\n",
+       "    stage = value\n"
+       "    for _round in range(MAX_DECODE_ROUNDS):\n"
+       "        if not _ESCAPE.search(stage):\n"
+       "            return False\n"
+       '        if _USER_PASS_HOST.search(fold_confusables(unicodedata.normalize("NFKC", stage).casefold()))'
+       " is not None:\n"
+       "            return True\n"
+       "        try:\n"
+       '            stage = unquote_to_bytes(stage).decode("utf-8", "strict")\n'
+       "        except (UnicodeError, ValueError):\n"
+       "            return True\n"
+       "    return False\n")),
     # -- T: the trace identity and name fields keep the squashed shape (correction batch)
     leak("T1-trace-identity-opts-in", "the relaxation leaking into the trace identity and name fields", TRACES,
          (TRACE, SCREEN_CALL,
