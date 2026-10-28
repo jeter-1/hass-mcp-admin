@@ -9,8 +9,10 @@ contiguous token in the normal form. Every other rule is unchanged, in both
 forms. The configuration-definitions and trace paths are unchanged. The
 token is judged on the text as written and after each percent-decode round
 too, so an encoded `%20` or `%09` inside a password never splits it (owner
-clarification, 2026-10-28). The disclosed cost is that a scheme-less
-`user:pass@host` split by literal whitespace is shown in the journal. Rollback is reinstalling beta.42. Read the
+clarification, 2026-10-28), also when the `:` or `@` is encoded and decodes in
+the same round: each raw token is decoded on its own. The disclosed residual,
+accepted by Josh 2026-10-28, is that a scheme-less `user:pass@host` split by
+literal whitespace in the raw text is shown in the journal. Rollback is reinstalling beta.42. Read the
 [2.4.1-beta.43 release notes](docs/V2_4_1_BETA43_RELEASE_NOTES.md) and
 [2.4.1-beta.43 acceptance contract](docs/V2_4_1_BETA43_ACCEPTANCE.md).
 

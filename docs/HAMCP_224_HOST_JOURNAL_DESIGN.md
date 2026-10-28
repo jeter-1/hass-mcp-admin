@@ -175,9 +175,13 @@ review, H1/H2 and M1–M3).** These supersede the "Withholding scope" and
   its percent-decode (each normalized and folded as the normal form is),
   and any match withholds, so decoding `%20`, `%09` or `%0A` never splits
   a token that was whole as written (a proxy setting
-  `user:pass%20more@proxy:8080`). The disclosed cost is that a scheme-less
-  `user:pass@host` split by literal whitespace is shown in the journal
-  unless another rule meets it.
+  `user:pass%20more@proxy:8080`). Correction D320-H1 (Josh, 2026-10-28):
+  the tokens are taken from the raw text, split at its literal whitespace,
+  and each is decoded on its own with decoded whitespace kept inside it, so
+  an encoded `:` or `@` decoding in the same round as `%20` is withheld too.
+  The disclosed residual, accepted by Josh 2026-10-28, is that a
+  scheme-less `user:pass@host` split by literal whitespace in the raw text
+  is shown in the journal unless another rule meets it.
 - **Fail-closed consequences, disclosed.** A `Bearer` token and an
   `api_key=` value are now withheld whole instead of redacted in place.
   Ordinary text with a label followed by `:` or `=` (`token: refreshed`,

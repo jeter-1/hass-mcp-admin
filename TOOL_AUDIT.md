@@ -8,8 +8,10 @@ Date: 2026-07-10
 writes `none` and its input schema (`calibration` included; a test now reads
 it from the served `tools/list`). In the host journal path only,
 `user_pass_host` is read as one contiguous token in the normal form and in
-the text as given and after each percent-decode round (so `%20` never splits
-it), not in the squashed form; every other rule is unchanged. A calibration's
+each raw token (split at the literal whitespace of the text as given) as
+given and after each round of its own percent-decode (so `%20` never splits
+it, with literal or encoded `:` and `@`), not in the squashed form; every
+other rule is unchanged. A calibration's
 `rule_ids` lists 44 ids. No tool is added, so the catalog count is the
 base's.
 

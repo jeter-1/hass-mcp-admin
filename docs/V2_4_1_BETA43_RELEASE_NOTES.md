@@ -34,6 +34,12 @@ Owner decision (Josh, 2026-10-27), **in the host journal path only**:
   `%20`, `%09` or `%0A` inside a password stays one token. Example: a
   logged proxy setting `{"proxy": "user:pass%20more@proxy:8080"}`, which a
   proxy client decodes and uses, is withheld.
+- **Encoded separators too** (correction D320-H1, Josh, 2026-10-28). The
+  tokens come from the raw text, split at its literal whitespace; each raw
+  token is decoded on its own, at most four rounds, and whitespace a round
+  introduces stays inside the token. A token whose `:` or `@` is encoded
+  (`%3A`, `%3a`, `%40`) and decodes in the same round as `%20`, or a whole
+  setting passed through `quote(value, safe='')`, is withheld.
 - **Every other rule is unchanged, in both forms:**
   - credential URLs and connection URIs;
   - `password=` fields;
@@ -65,17 +71,21 @@ generated file that a test keeps equal to its computation:
 | Python logging (6) | 4 / 2 | 6 / 0 | none |
 
 In beta.42, 18 lines were withheld by `user_pass_host.squashed` alone; all
-18 are now shown. No other rule's count changes. The correction that reads
-the token before decoding too changes no line of this corpus (the report is
-byte-identical before and after it).
+18 are now shown. No other rule's count changes. Neither correction (the
+token read before decoding too, then decoded per raw token) changes a line
+of this corpus (the report is byte-identical before and after each).
 
 ## Disclosed cost and residuals
 
-- **Accepted cost.** In the journal, a scheme-less `user:pass@host` with
-  literal whitespace inside it (`user: pass@host`) is now shown, unless
-  another rule meets it. Some clients accept such a value: Python's
-  `urllib.request` proxy parser takes a literal space inside a password
-  (verified offline). Percent-encoded whitespace is withheld.
+- **Disclosed residual, accepted by Josh 2026-10-28.** In the journal, a
+  scheme-less `user:pass@host` with literal whitespace inside it in the raw
+  text (`user: pass@host`) is now shown, unless another rule meets it. Some
+  clients accept such a value: Python's `urllib.request` proxy parser takes
+  a literal space inside a password (verified offline). Percent-encoded
+  whitespace inside one raw token never splits it, whether the `:` and `@`
+  are literal or encoded, within the four-round decode bound; a literal
+  space in the raw text still separates tokens even when the rest is
+  encoded.
 - **Still withheld (false positives remain):**
   - a contiguous `name:tag@sha256:…` image reference, which is
     `user_pass_host` in the normal form;

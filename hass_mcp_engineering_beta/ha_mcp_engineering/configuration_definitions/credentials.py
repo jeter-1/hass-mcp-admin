@@ -135,9 +135,10 @@ colon-rich timestamp and names a peer, session or node address with an
 Every other rule is unchanged in both forms: a URI with user-info, a
 connection URI, the password field, the marker, the known secrets, the
 labelled keywords, ``-P``, the value shapes, PEM headers and invisible or
-control text. The cost is disclosed: a scheme-less ``user:pass@host``
-split by literal whitespace is shown in the journal unless another rule
-meets it (percent-encoded whitespace no longer is, below). The configuration-definitions report and
+control text. The cost is disclosed (a residual accepted by Josh,
+2026-10-28): a scheme-less ``user:pass@host`` split by literal whitespace
+in the text as given is shown in the journal unless another rule meets it
+(percent-encoded whitespace inside one raw token is not, below). The configuration-definitions report and
 the trace path do not opt in: their behavior is unchanged.
 
 **Decoding never splits the token** (HAMCP-234 step 2 correction, owner

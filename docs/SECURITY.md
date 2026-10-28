@@ -910,6 +910,14 @@ calibration (`addon:core_matter_server`: 37 of 40 lines withheld, all as
   (which `urllib.request.ProxyHandler` decodes and uses), was shown whole
   through the gateway at aaf1fe8e and is withheld now, also through the
   final authenticated response.
+- **Raw-token boundaries** (correction D320-H1, Josh, 2026-10-28, from the
+  round-2 review of c0789386). The tokens are taken from the text as given,
+  split at its literal whitespace, and each raw token that carries an
+  escape is decoded on its own (at most four rounds), the whitespace a
+  round introduces kept inside the token. An encoded `:` or `@` that
+  decodes in the same round as encoded password whitespace (a whole value
+  through `quote(value, safe='')`) was shown at c0789386 and is withheld
+  now, in the final response and the audit record.
 - **What did not.** Every other rule is unchanged in both forms: credential
   URLs and connection URIs, `password=`, the labelled keywords, `Bearer`,
   `-P`/`--pw`, known secrets (normal and squashed), PEM headers, invisible
@@ -923,13 +931,15 @@ calibration (`addon:core_matter_server`: 37 of 40 lines withheld, all as
   the trace identity and name fields (`alias`, `id`, `entity_id`,
   `friendly_name`), killed by the step 2 trace identity boundary tests
   (capture, store, read-back, `get_automation_trace`).
-- **Disclosed cost.** A scheme-less `user:pass@host` split by literal
-  whitespace is shown in the journal unless another rule meets it. This is
-  not only a non-credential: Python's `urllib.request` proxy parser accepts
-  a literal space inside a password (verified offline, Python 3.12.14), so
-  a logged proxy setting written that way is shown. Percent-encoded
-  whitespace is withheld (above). A contiguous one, and any `scheme://user:pass@host`, is still
-  withheld.
+- **Disclosed residual, accepted by Josh 2026-10-28.** A scheme-less
+  `user:pass@host` split by literal whitespace in the raw text is shown in
+  the journal unless another rule meets it. This is not only a
+  non-credential: Python's `urllib.request` proxy parser accepts a literal
+  space inside a password (verified offline, Python 3.12.14), so a logged
+  proxy setting written that way is shown. Percent-encoded whitespace
+  inside one raw token never splits it, with literal or encoded `:` and
+  `@`, within the four-round decode bound (above). A contiguous one, and
+  any `scheme://user:pass@host`, is still withheld.
 - **Rule ids.** The journal's `RULE_IDS` drop `user_pass_host.squashed`
   (44); a calibration never reports it.
 

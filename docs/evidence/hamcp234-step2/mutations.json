@@ -15,12 +15,12 @@
    "test_hamcp225_review2_delta_extra"
   ],
   "returncode": 0,
-  "tests": 324,
-  "seconds": 116.3,
+  "tests": 329,
+  "seconds": 119.4,
   "summary": "OK"
  },
- "mutation_count": 13,
- "killed": 13,
+ "mutation_count": 14,
+ "killed": 14,
  "survived": [],
  "missed_by_unchanged_legacy_suites": [
   "L2-leak-into-labelled-mode",
@@ -58,6 +58,9 @@
    ],
    "failed_tests": [
     "test_hamcp234_step2_journal_relaxation.CalibrationOverTheWireTests.test_a_calibration_call_returns_counts_over_the_wire",
+    "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit",
+    "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_encoded_separators_decoded_with_whitespace_are_withheld",
+    "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_literal_whitespace_in_the_text_as_given_still_separates_tokens",
     "test_hamcp234_step2_journal_relaxation.JournalModeBoundaryTests.test_the_journal_never_reports_the_squashed_shape",
     "test_hamcp234_step2_journal_relaxation.LiveShapedLineTests.test_a_scheme_less_user_pass_host_is_decided_in_the_normal_form",
     "test_hamcp234_step2_journal_relaxation.LiveShapedLineTests.test_labelled_credentials_and_known_secrets_in_live_shaped_lines_are_withheld_in_both_forms",
@@ -73,8 +76,8 @@
     "test_hamcp234_step2_journal_relaxation.ProxyCredentialOverTheWireTests.test_the_proxy_credential_is_withheld_and_matter_js_shown_over_the_wire",
     "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_the_named_fields_are_identity_keys_read_in_the_default_mode"
    ],
-   "failed_test_count": 15,
-   "seconds": 3.5
+   "failed_test_count": 18,
+   "seconds": 3.6
   },
   {
    "id": "S2-squashed-form-always-on",
@@ -105,6 +108,8 @@
    ],
    "failed_tests": [
     "test_hamcp234_step2_journal_relaxation.CalibrationOverTheWireTests.test_a_calibration_call_returns_counts_over_the_wire",
+    "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit",
+    "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_literal_whitespace_in_the_text_as_given_still_separates_tokens",
     "test_hamcp234_step2_journal_relaxation.JournalModeBoundaryTests.test_the_option_defaults_off_and_changes_only_the_squashed_shape",
     "test_hamcp234_step2_journal_relaxation.LiveShapedLineTests.test_a_scheme_less_user_pass_host_is_decided_in_the_normal_form",
     "test_hamcp234_step2_journal_relaxation.LiveShapedLineTests.test_labelled_credentials_and_known_secrets_in_live_shaped_lines_are_withheld_in_both_forms",
@@ -116,8 +121,8 @@
     "test_hamcp234_step2_journal_relaxation.ProxyCredentialOverTheWireTests.test_the_proxy_credential_is_withheld_and_matter_js_shown_over_the_wire",
     "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_the_named_fields_are_identity_keys_read_in_the_default_mode"
    ],
-   "failed_test_count": 11,
-   "seconds": 3.4
+   "failed_test_count": 13,
+   "seconds": 3.6
   },
   {
    "id": "S3-form-gate-ignored",
@@ -148,6 +153,8 @@
    ],
    "failed_tests": [
     "test_hamcp234_step2_journal_relaxation.CalibrationOverTheWireTests.test_a_calibration_call_returns_counts_over_the_wire",
+    "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit",
+    "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_literal_whitespace_in_the_text_as_given_still_separates_tokens",
     "test_hamcp234_step2_journal_relaxation.JournalModeBoundaryTests.test_the_option_defaults_off_and_changes_only_the_squashed_shape",
     "test_hamcp234_step2_journal_relaxation.LiveShapedLineTests.test_a_scheme_less_user_pass_host_is_decided_in_the_normal_form",
     "test_hamcp234_step2_journal_relaxation.LiveShapedLineTests.test_labelled_credentials_and_known_secrets_in_live_shaped_lines_are_withheld_in_both_forms",
@@ -159,8 +166,8 @@
     "test_hamcp234_step2_journal_relaxation.ProxyCredentialOverTheWireTests.test_the_proxy_credential_is_withheld_and_matter_js_shown_over_the_wire",
     "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_the_named_fields_are_identity_keys_read_in_the_default_mode"
    ],
-   "failed_test_count": 11,
-   "seconds": 3.5
+   "failed_test_count": 13,
+   "seconds": 3.6
   },
   {
    "id": "L1-leak-into-default-mode",
@@ -197,7 +204,7 @@
     "test_hamcp132_configuration_definitions.SquashedFormTests.test_spaces_and_unicode_whitespace_inside_a_credential_are_withheld"
    ],
    "failed_test_count": 4,
-   "seconds": 22.3,
+   "seconds": 22.4,
    "killed_by_legacy_suites": true,
    "boundary": {
     "log_path": "mutation-logs/L1-leak-into-default-mode-boundary.log",
@@ -207,6 +214,7 @@
      "test_definitions_and_trace_paths_still_withhold_the_live_shaped_lines"
     ],
     "failed_tests": [
+     "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_literal_whitespace_in_the_text_as_given_still_separates_tokens",
      "test_hamcp234_step2_journal_relaxation.JournalModeBoundaryTests.test_definitions_and_trace_paths_still_withhold_the_live_shaped_lines",
      "test_hamcp234_step2_journal_relaxation.JournalModeBoundaryTests.test_the_option_defaults_off_and_changes_only_the_squashed_shape",
      "test_hamcp234_step2_journal_relaxation.PercentEncodedContiguityTests.test_the_default_and_labelled_modes_are_unchanged",
@@ -214,7 +222,7 @@
      "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_get_automation_trace_withholds_squashed_only_identity_credentials",
      "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_the_named_fields_are_identity_keys_read_in_the_default_mode"
     ],
-    "seconds": 3.4
+    "seconds": 3.5
    }
   },
   {
@@ -249,7 +257,7 @@
    "required_failed": [],
    "failed_tests": [],
    "failed_test_count": 0,
-   "seconds": 95.7,
+   "seconds": 101.2,
    "killed_by_legacy_suites": false,
    "boundary": {
     "log_path": "mutation-logs/L2-leak-into-labelled-mode-boundary.log",
@@ -259,6 +267,8 @@
      "test_definitions_and_trace_paths_still_withhold_the_live_shaped_lines"
     ],
     "failed_tests": [
+     "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_urlencoded_proxy_value_with_space_is_withheld_over_wire",
+     "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_literal_whitespace_in_the_text_as_given_still_separates_tokens",
      "test_hamcp234_step2_journal_relaxation.JournalModeBoundaryTests.test_definitions_and_trace_paths_still_withhold_the_live_shaped_lines",
      "test_hamcp234_step2_journal_relaxation.JournalModeBoundaryTests.test_the_option_defaults_off_and_changes_only_the_squashed_shape",
      "test_hamcp234_step2_journal_relaxation.LiveShapedLineTests.test_the_corpus_report_is_current",
@@ -266,7 +276,7 @@
      "test_hamcp234_step2_journal_relaxation.PercentEncodedContiguityTests.test_the_default_and_labelled_modes_are_unchanged",
      "test_hamcp234_step2_journal_relaxation.PercentEncodedContiguityTests.test_the_reviewer_proxy_reproduction_is_withheld"
     ],
-    "seconds": 3.3
+    "seconds": 4.0
    }
   },
   {
@@ -301,7 +311,7 @@
    "required_failed": [],
    "failed_tests": [],
    "failed_test_count": 0,
-   "seconds": 90.0,
+   "seconds": 103.0,
    "killed_by_legacy_suites": false,
    "boundary": {
     "log_path": "mutation-logs/L3-trace-path-opts-in-boundary.log",
@@ -316,7 +326,7 @@
      "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_get_automation_trace_withholds_squashed_only_identity_credentials",
      "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_the_named_fields_are_identity_keys_read_in_the_default_mode"
     ],
-    "seconds": 3.3
+    "seconds": 4.0
    }
   },
   {
@@ -360,7 +370,7 @@
     "test_hamcp132_configuration_definitions.SquashedFormTests.test_spaces_and_unicode_whitespace_inside_a_credential_are_withheld"
    ],
    "failed_test_count": 4,
-   "seconds": 109.3,
+   "seconds": 122.4,
    "killed_by_legacy_suites": true,
    "boundary": {
     "log_path": "mutation-logs/L4-leak-everywhere-boundary.log",
@@ -370,6 +380,8 @@
      "test_definitions_and_trace_paths_still_withhold_the_live_shaped_lines"
     ],
     "failed_tests": [
+     "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_urlencoded_proxy_value_with_space_is_withheld_over_wire",
+     "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_literal_whitespace_in_the_text_as_given_still_separates_tokens",
      "test_hamcp234_step2_journal_relaxation.JournalModeBoundaryTests.test_definitions_and_trace_paths_still_withhold_the_live_shaped_lines",
      "test_hamcp234_step2_journal_relaxation.JournalModeBoundaryTests.test_the_option_defaults_off_and_changes_only_the_squashed_shape",
      "test_hamcp234_step2_journal_relaxation.LiveShapedLineTests.test_the_corpus_report_is_current",
@@ -380,7 +392,7 @@
      "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_get_automation_trace_withholds_squashed_only_identity_credentials",
      "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_the_named_fields_are_identity_keys_read_in_the_default_mode"
     ],
-    "seconds": 3.3
+    "seconds": 3.9
    }
   },
   {
@@ -411,14 +423,17 @@
     "test_the_reviewer_proxy_reproduction_is_withheld"
    ],
    "failed_tests": [
+    "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit",
+    "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_urlencoded_proxy_value_with_space_is_withheld_over_wire",
+    "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_encoded_separators_decoded_with_whitespace_are_withheld",
     "test_hamcp234_step2_journal_relaxation.PercentEncodedContiguityTests.test_an_intermediate_decode_round_is_read",
     "test_hamcp234_step2_journal_relaxation.PercentEncodedContiguityTests.test_each_round_is_normalized_and_folded_as_the_normal_form",
     "test_hamcp234_step2_journal_relaxation.PercentEncodedContiguityTests.test_percent_encoded_whitespace_inside_a_credential_is_withheld",
     "test_hamcp234_step2_journal_relaxation.PercentEncodedContiguityTests.test_the_reviewer_proxy_reproduction_is_withheld",
     "test_hamcp234_step2_journal_relaxation.ProxyCredentialOverTheWireTests.test_the_proxy_credential_is_withheld_and_matter_js_shown_over_the_wire"
    ],
-   "failed_test_count": 5,
-   "seconds": 3.3
+   "failed_test_count": 8,
+   "seconds": 3.9
   },
   {
    "id": "D2-no-intermediate-decode-round",
@@ -444,10 +459,14 @@
     "test_an_intermediate_decode_round_is_read"
    ],
    "failed_tests": [
+    "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit",
+    "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_urlencoded_proxy_value_with_space_is_withheld_over_wire",
+    "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_each_raw_token_is_decoded_at_most_the_fixed_number_of_rounds",
+    "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_encoded_separators_decoded_with_whitespace_are_withheld",
     "test_hamcp234_step2_journal_relaxation.PercentEncodedContiguityTests.test_an_intermediate_decode_round_is_read"
    ],
-   "failed_test_count": 1,
-   "seconds": 3.2
+   "failed_test_count": 5,
+   "seconds": 3.9
   },
   {
    "id": "D3-rounds-not-normalized",
@@ -455,8 +474,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
-     "search(fold_confusables(unicodedata.normalize(\"NFKC\", stage).casefold())) is not None:\n",
-     "search(stage) is not None:\n"
+     "    text = fold_confusables(unicodedata.normalize(\"NFKC\", squash(stage)).casefold())\n",
+     "    text = squash(stage)\n"
     ]
    ],
    "modules": [
@@ -476,7 +495,43 @@
     "test_hamcp234_step2_journal_relaxation.PercentEncodedContiguityTests.test_each_round_is_normalized_and_folded_as_the_normal_form"
    ],
    "failed_test_count": 1,
-   "seconds": 3.3
+   "seconds": 4.0
+  },
+  {
+   "id": "D4-separator-only-stage-check",
+   "class": "an encoded separator decoded with the password whitespace shown",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/credentials.py",
+     "    return any(_ESCAPE.search(token) and _decoded_token_user_pass_host(token) for token in value.split())\n",
+     "    stage = value\n    for _round in range(MAX_DECODE_ROUNDS):\n        if not _ESCAPE.search(stage):\n            return False\n        if _USER_PASS_HOST.search(fold_confusables(unicodedata.normalize(\"NFKC\", stage).casefold())) is not None:\n            return True\n        try:\n            stage = unquote_to_bytes(stage).decode(\"utf-8\", \"strict\")\n        except (UnicodeError, ValueError):\n            return True\n    return False\n"
+    ]
+   ],
+   "modules": [
+    "test_hamcp234_step2_journal_relaxation"
+   ],
+   "must_fail": [
+    "test_encoded_separators_decoded_with_whitespace_are_withheld",
+    "test_urlencoded_proxy_value_with_space_is_withheld_over_wire",
+    "test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit"
+   ],
+   "log_path": "mutation-logs/D4-separator-only-stage-check.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "required_failed": [
+    "test_encoded_separators_decoded_with_whitespace_are_withheld",
+    "test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit",
+    "test_urlencoded_proxy_value_with_space_is_withheld_over_wire"
+   ],
+   "failed_tests": [
+    "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit",
+    "test_hamcp234_step2_journal_relaxation.EncodedProxyOverTheWireTests.test_urlencoded_proxy_value_with_space_is_withheld_over_wire",
+    "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_each_raw_token_is_decoded_at_most_the_fixed_number_of_rounds",
+    "test_hamcp234_step2_journal_relaxation.EncodedSeparatorContiguityTests.test_encoded_separators_decoded_with_whitespace_are_withheld"
+   ],
+   "failed_test_count": 4,
+   "seconds": 3.9
   },
   {
    "id": "T1-trace-identity-opts-in",
@@ -512,7 +567,7 @@
    "required_failed": [],
    "failed_tests": [],
    "failed_test_count": 0,
-   "seconds": 89.7,
+   "seconds": 95.5,
    "killed_by_legacy_suites": false,
    "boundary": {
     "log_path": "mutation-logs/T1-trace-identity-opts-in-boundary.log",
@@ -528,7 +583,7 @@
      "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_get_automation_trace_withholds_squashed_only_identity_credentials",
      "test_hamcp234_step2_journal_relaxation.TraceIdentityBoundaryTests.test_the_named_fields_are_identity_keys_read_in_the_default_mode"
     ],
-    "seconds": 3.3
+    "seconds": 3.4
    }
   },
   {
@@ -558,7 +613,7 @@
     "test_hamcp234_step2_journal_relaxation.ServedSchemaTests.test_the_served_schema_offers_calibration"
    ],
    "failed_test_count": 1,
-   "seconds": 3.2
+   "seconds": 3.6
   },
   {
    "id": "C2-calibration-removed",
@@ -593,7 +648,7 @@
     "test_hamcp234_step2_journal_relaxation.ServedSchemaTests.test_the_served_schema_offers_calibration"
    ],
    "failed_test_count": 2,
-   "seconds": 3.4
+   "seconds": 3.5
   }
  ]
 }

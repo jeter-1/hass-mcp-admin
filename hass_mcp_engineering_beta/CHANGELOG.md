@@ -20,8 +20,14 @@ later `@peer` joined into that shape once whitespace was removed.
   round too, not only on the decoded normal form (owner clarification,
   Josh, 2026-10-28, review of aaf1fe8e): a `%20`, `%09` or `%0A` inside a
   password, such as a logged scheme-less proxy setting, is withheld.
-- Disclosed cost: in the journal, a scheme-less `user:pass@host` split by
-  literal whitespace is shown unless another rule meets it.
+- Each raw token (split at the literal whitespace of the text as given) is
+  decoded on its own, decoded whitespace kept inside it (correction
+  D320-H1, Josh, 2026-10-28): an encoded `:` or `@` that decodes in the
+  same round as `%20`, such as a whole value through `quote(value,
+  safe='')`, is withheld.
+- Disclosed residual, accepted by Josh 2026-10-28: in the journal, a
+  scheme-less `user:pass@host` split by literal whitespace in the raw text
+  is shown unless another rule meets it.
 - The trace identity and name fields keep the squashed shape; new boundary
   tests cover capture, store, read-back and `get_automation_trace`.
 - The journal's `rule_ids` drop `user_pass_host.squashed` (44 ids).
