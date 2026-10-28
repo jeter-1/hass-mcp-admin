@@ -23,13 +23,27 @@ RESULT = ROOT / "docs/evidence/hamcp242/mutations.json"
 C = "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/coordinator.py"
 R = "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py"
 CHECK1 = '''        if len(items) != assessment[count_key]:
-            raise CoreReadmissionError("core_authority_projection_inconsistent")
+            raise CoreReadmissionError(PROJECTION_INCONSISTENT)
 '''
 CHECK2 = '''    if (
         len(entries) != assessment["withheld_count"]
         or len({item["capability_id"] for item in entries}) != len(entries)
     ):
-        raise CoreReadmissionError("core_authority_projection_inconsistent")
+        raise CoreReadmissionError(PROJECTION_INCONSISTENT)
+'''
+DUPLICATE = '''
+        or len({item["capability_id"] for item in entries}) != len(entries)'''
+PARTITION = '''            if (
+                assessment["compatible_count"] + assessment["withheld_count"]
+                != evaluated
+            ):'''
+CONTAIN = '''            if exc.code != PROJECTION_INCONSISTENT:
+                raise
+'''
+REFUSED = "            refused = {key: assessment[key] for key in REFUSED_HEALTH_KEYS}\n"
+INDICATOR = '''            refused["projection_degraded"] = True
+'''
+REFUSAL_REASON = '''            refused["projection_reason_code"] = PROJECTION_INCONSISTENT
 '''
 HELD = '''    (CoreDisposition.HELD.value, "held_capabilities", "held_count"),
 '''
@@ -71,7 +85,8 @@ MUTANTS = {
     "duplicate_entry_unguarded": [(C, CHECK1, ""), (C, CHECK2, ""), (C, SORT, SORT + "    entries = entries + entries[:1]\n")],
     "no_class_count_check": [(C, CHECK1, "")],
     "no_total_check": [(C, CHECK2, "")],
-    "no_assessment_invariant": [(C, '''        if len(compatible) + len(withheld) != len(decisions):''', '''        if False:''')],
+    "no_duplicate_check": [(C, DUPLICATE, "")],
+    "no_partition_check": [(C, PARTITION, "            if False:")],
     "wrong_disposition_label": [(C, '''                "disposition": disposition,''', '''                "disposition": "unavailable",''')],
     "reason_dropped": [(C, '''                "reason_code": item["reason_code"],''', '''                "reason_code": "withheld",''')],
     "unsorted": [(C, SORT, "")],
@@ -81,6 +96,15 @@ MUTANTS = {
     "no_bound": [(C, RET, "    return entries, len(entries) > limit\n")],
     "limit_63": [(C, "WITHHELD_CAPABILITIES_LIMIT = MAX_CAPABILITIES\n", "WITHHELD_CAPABILITIES_LIMIT = MAX_CAPABILITIES - 1\n")],
     "semantics_missing": [(C, '''        projection["count_semantics"] = COUNT_SEMANTICS\n''', "")],
+    # 5. R1-H1: the refusal stays inside the Core-authority block
+    "refusal_escapes_block": [(C, CONTAIN, "            raise\n")],
+    "refusal_contains_every_code": [(C, CONTAIN, "")],
+    "refused_block_keeps_counts": [(C, REFUSED, '            refused = {key: assessment[key] for key in (*REFUSED_HEALTH_KEYS, "compatible_count", "withheld_count")}\n')],
+    "refused_block_keeps_disposition": [(C, REFUSED, '            refused = {key: assessment[key] for key in (*REFUSED_HEALTH_KEYS, "disposition")}\n')],
+    "refused_block_fabricates_empty_list": [(C, INDICATOR, INDICATOR + '            refused["withheld_capabilities"] = []\n')],
+    "refused_block_without_indicator": [(C, INDICATOR, "")],
+    "refused_block_without_reason": [(C, REFUSAL_REASON, "")],
+    "refused_block_drops_generation": [(C, REFUSED, '            refused = {key: assessment[key] for key in REFUSED_HEALTH_KEYS if key != "current_generation"}\n')],
 }
 TESTS = [
     "tests.test_hamcp242_core_authority_itemization",

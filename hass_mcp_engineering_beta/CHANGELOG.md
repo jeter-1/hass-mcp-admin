@@ -17,8 +17,11 @@ affected, and could be misread as six.
 - `count_semantics`: `withheld_count = held_count + quarantined_count +
   unavailable_count` (a total), and `compatible_count + withheld_count` is
   the number of profiles evaluated.
-- Counts unchanged. A list that disagrees with the counts refuses the
-  projection (`core_authority_projection_inconsistent`).
+- Counts unchanged. A list that disagrees with the counts refuses only the
+  Core-authority block: it carries `projection_degraded: true` and
+  `projection_reason_code` `core_authority_projection_inconsistent`, drops
+  the disputed counts and list, and `get_server_health` still succeeds with
+  every other section unchanged.
 - No admission, reason code, lease, registry, recovery, tool, schema,
   `list_capabilities` or `server_info` change. Nothing new is persisted or
   called.

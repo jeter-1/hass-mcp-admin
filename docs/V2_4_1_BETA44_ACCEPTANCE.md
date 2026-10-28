@@ -39,16 +39,25 @@ Bind the following:
 - the Evidence tier log named in the PR.
 
 The review needs a security section covering:
-- **Engineering identifiers only.** Every list value comes from a profile
-  id, `CoreDisposition`, a coordinator reason code or
+- **Engineering identifiers only.** Every list value is a fixed-vocabulary
+  identifier from Engineering's own code: a compiled profile id,
+  `CoreDisposition`, a coordinator reason code or
   `STATIC_TOOL_CORE_REQUIREMENTS`. No observation text, entity, session or
-  endpoint value is read into it. The response still passes the
-  final-envelope sanitizer.
+  endpoint value is read into it. The health path serializes and
+  size-bounds the block (64 entries, 32 768 bytes); it does not run the
+  shared sanitizer over it, and this release adds none.
 - **No decision change.** `withheld_capability_entries` reads the assessment
-  `update_assessment` already builds. It does not touch selection,
-  admission, reason codes, leases, retirement, the registry or recovery.
-  The two new consistency checks only refuse an inconsistent projection
-  (`core_authority_projection_inconsistent`). They never admit.
+  `update_assessment` already builds; `update_assessment` itself is
+  unchanged from beta.43. Nothing touches selection, admission, reason
+  codes, leases, retirement, the registry or recovery.
+- **Refusal contained to the block.** Six consistency guards (three
+  per-disposition counts, the `withheld_count` total, a repeated id, and
+  `compatible_count + withheld_count` against the generation's decisions)
+  refuse only the Core-authority block with
+  `core_authority_projection_inconsistent`. `get_server_health` still
+  succeeds with every other section unchanged. The degraded block drops the
+  disputed values and invents none. Any other coordinator error still fails
+  the call. The guards never admit.
 - **No new reach.** No new Core, Supervisor or upstream call, no persisted
   state, no tool, route, provider, write or fallback.
 - **Bound.** At most 64 entries, `withheld_capabilities_truncated` past
@@ -100,7 +109,23 @@ ephemeral test key.
     truncated; 65 bounded to the first 64 with the flag set; the limit
     equal to `MAX_CAPABILITIES`.
   - **Consistency.** A disagreeing count, a duplicate id and an
-    unclassified (`verifying`) decision each refuse.
+    unclassified (`verifying`) decision each refuse. A different
+    coordinator error code is not contained.
+  - **Refusal contained (R1-H1).** For each of the six guards, a fault is
+    injected into the live-case runtime and the public async
+    `get_server_health(check_ha=False)` is called. `success` stays true;
+    the block has exactly the degraded shape, with
+    `projection_degraded: true` and the reason code, and its kept fields
+    equal the nominal ones; every other section, the summary and the
+    warnings equal the nominal response; the published generation, every
+    runtime profile's route status and the three refusals are unchanged; and
+    the next call returns the nominal block. The unclassified decision is
+    injected into the published generation itself.
+  - **Nominal block unchanged by the correction.**
+    `docs/evidence/hamcp242/r1_nominal_identity.py` replays the live case
+    under a fixed clock with the reviewed `f5f83c4d` coordinator and with
+    this one. The public block is byte-identical (result
+    `r1_nominal_identity.json`).
   - **`affected_tools`.** It matches a hand-pinned table for every runtime
     profile, including the script-trace pair. It agrees with
     `STATIC_TOOL_CORE_REQUIREMENTS` both ways and names only Engineering
@@ -116,17 +141,22 @@ ephemeral test key.
   unchanged and needs no edit.
 - Mutations (`docs/evidence/hamcp242/run_mutations.py`, result
   `mutations.json`), run against the new suite and the updated 2026.9 test
-  over a 25-test baseline. A mutant counts as killed only when a named test
-  fails and no import or syntax error occurs. All 25 are killed:
+  over a 34-test baseline. A mutant counts as killed only when a named test
+  fails and no import or syntax error occurs. All 34 are killed, none
+  invalid:
   - a disposition class omitted, with and without the consistency guards;
   - `affected_tools` empty, missing an element, reversed, including
     delegated tools, or absent;
   - the list and counts disagreeing: an entry dropped or duplicated with the
-    guards removed, each guard removed alone, and the assessment invariant
-    removed;
+    guards removed, and each guard (per-class count, total, duplicate id,
+    partition) removed alone;
   - a wrong disposition label, a dropped reason, no sort;
   - the truncation flag never set or off by one, no bound, the limit 63;
-  - `count_semantics` missing.
+  - `count_semantics` missing;
+  - the refusal escaping the block (the whole call fails), every error code
+    contained, and a degraded block that keeps counts or the disposition,
+    invents an empty list, or lacks the indicator, the reason or the
+    generation.
 
 ## 2. Release CI and publication
 

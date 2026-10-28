@@ -12,7 +12,9 @@ affected_tools}` entry per withheld profile, sorted, at most 64),
 Engineering identifier; `affected_tools` names Engineering static tools from
 the reviewed requirement table only. The list derives from the published
 generation, with no new Core, Supervisor or upstream call and nothing
-persisted. No tool is added, so the catalog count is the base's.
+persisted. A list that disagrees with the counts degrades only this block
+(`projection_degraded`, `core_authority_projection_inconsistent`); the call
+still succeeds. No tool is added, so the catalog count is the base's.
 
 ## Host journal one-token user:pass@host (2.4.1-beta.43, HAMCP-234 step 2)
 

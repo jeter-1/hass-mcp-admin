@@ -61,6 +61,23 @@ COUNT_SEMANTICS = (
     "withheld_capabilities lists each withheld profile once with its "
     "disposition"
 )
+PROJECTION_INCONSISTENT = "core_authority_projection_inconsistent"
+# A refused health block keeps only values the decision partition does not
+# feed: the block identity, the generation that failed, and the lease,
+# commit, retirement, capacity and fallback counters.  It drops the
+# disposition, every count and list derived from the partition, and
+# count_semantics, so nothing it shows can contradict anything else in it.
+REFUSED_HEALTH_KEYS = (
+    "model_version",
+    "surface",
+    "current_generation",
+    "issued_lease_count",
+    "active_commit_count",
+    "retained_retirement_count",
+    "capacity_exhaustion_count",
+    "capacity_exhaustion_reason",
+    "fallback_count",
+)
 _WITHHELD_SOURCES = (
     (CoreDisposition.HELD.value, "held_capabilities", "held_count"),
     (
@@ -91,7 +108,7 @@ def withheld_capability_entries(
     for disposition, items_key, count_key in _WITHHELD_SOURCES:
         items = assessment[items_key]
         if len(items) != assessment[count_key]:
-            raise CoreReadmissionError("core_authority_projection_inconsistent")
+            raise CoreReadmissionError(PROJECTION_INCONSISTENT)
         entries.extend(
             {
                 "capability_id": item["capability_id"],
@@ -107,7 +124,7 @@ def withheld_capability_entries(
         len(entries) != assessment["withheld_count"]
         or len({item["capability_id"] for item in entries}) != len(entries)
     ):
-        raise CoreReadmissionError("core_authority_projection_inconsistent")
+        raise CoreReadmissionError(PROJECTION_INCONSISTENT)
     entries.sort(key=lambda item: item["capability_id"])
     return entries[:limit], len(entries) > limit
 
@@ -701,10 +718,6 @@ class CoreReadmissionCoordinator:
                 if item.disposition is CoreDisposition.UNAVAILABLE
             )
             withheld = (*held, *quarantined, *unavailable)
-            if len(compatible) + len(withheld) != len(decisions):
-                raise CoreReadmissionError(
-                    "core_authority_projection_inconsistent"
-                )
             code_change_reasons = {
                 "capability_contract_changed",
                 "capability_not_compiled",
@@ -780,9 +793,33 @@ class CoreReadmissionCoordinator:
             return projection
 
     def health_projection(self) -> dict[str, Any]:
-        """Return a smaller bounded capability and lifecycle summary."""
+        """Return a smaller bounded capability and lifecycle summary.
 
-        assessment = self.update_assessment()
+        An inconsistent decision partition refuses only this block: the
+        result carries the refusal and the partition-independent fields, and
+        the caller's other health sections are unaffected.  The refusal
+        changes no decision, lease or route.
+        """
+
+        with self._lock:
+            assessment = self.update_assessment()
+            generation = self._published
+            evaluated = len(generation.decisions) if generation is not None else 0
+        try:
+            if (
+                assessment["compatible_count"] + assessment["withheld_count"]
+                != evaluated
+            ):
+                raise CoreReadmissionError(PROJECTION_INCONSISTENT)
+            withheld, truncated = withheld_capability_entries(assessment)
+        except CoreReadmissionError as exc:
+            if exc.code != PROJECTION_INCONSISTENT:
+                raise
+            refused = {key: assessment[key] for key in REFUSED_HEALTH_KEYS}
+            refused["projection_degraded"] = True
+            refused["projection_reason_code"] = PROJECTION_INCONSISTENT
+            canonical_json(refused, maximum=MAX_REPORT_BYTES)
+            return refused
         projection = {
             key: assessment[key]
             for key in (
@@ -803,7 +840,6 @@ class CoreReadmissionCoordinator:
                 "fallback_count",
             )
         }
-        withheld, truncated = withheld_capability_entries(assessment)
         projection["withheld_capabilities"] = withheld
         projection["withheld_capabilities_truncated"] = truncated
         projection["count_semantics"] = COUNT_SEMANTICS
@@ -1225,6 +1261,8 @@ __all__ = [
     "CoreReadmissionCoordinator",
     "CoreReconciliationAttempt",
     "LocalCoreGenerationAllocator",
+    "PROJECTION_INCONSISTENT",
+    "REFUSED_HEALTH_KEYS",
     "WITHHELD_CAPABILITIES_LIMIT",
     "withheld_capability_entries",
 ]

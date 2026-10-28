@@ -23,6 +23,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,8 @@ from ha_mcp_engineering.health import HealthRegistry  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import coordinator as coordinator_module  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.coordinator import (  # noqa: E402
     COUNT_SEMANTICS,
+    PROJECTION_INCONSISTENT,
+    REFUSED_HEALTH_KEYS,
     WITHHELD_CAPABILITIES_LIMIT,
     CoreReadmissionCoordinator,
     withheld_capability_entries,
@@ -61,6 +64,7 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
 )
 from ha_mcp_engineering.ha_core_readmission.runtime import CoreRuntime  # noqa: E402
 from ha_mcp_engineering.tool_framework import run_structured  # noqa: E402
+from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.tools.registry import ENGINEERING_STATIC_TOOL_NAMES  # noqa: E402
 
 from tests.test_ha_core_capability_auto_readmission import (  # noqa: E402
@@ -106,6 +110,28 @@ NEW_KEYS = (
     "withheld_capabilities",
     "withheld_capabilities_truncated",
     "count_semantics",
+)
+# A refused block drops every value the decision partition feeds.
+PARTITION_KEYS = (
+    "disposition",
+    "compatible_count",
+    "held_count",
+    "quarantined_count",
+    "unavailable_count",
+    "withheld_count",
+) + NEW_KEYS
+REFUSED_BLOCK_KEYS = (
+    "model_version",
+    "surface",
+    "current_generation",
+    "issued_lease_count",
+    "active_commit_count",
+    "retained_retirement_count",
+    "capacity_exhaustion_count",
+    "capacity_exhaustion_reason",
+    "fallback_count",
+    "projection_degraded",
+    "projection_reason_code",
 )
 ENTRY_KEYS = ("capability_id", "disposition", "reason_code", "affected_tools")
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_.]*$")
@@ -318,7 +344,7 @@ def assert_entries_are_identifiers(case: unittest.TestCase, entries: list[dict])
         case.assertTrue(set(entry["affected_tools"]) <= set(ENGINEERING_STATIC_TOOL_NAMES))
 
 
-class LiveCaseTests(unittest.IsolatedAsyncioTestCase):
+class _LiveCase(unittest.IsolatedAsyncioTestCase):
     """Core 2026.10.3 under the signed sequence-14 entry (beta.43 live)."""
 
     async def asyncSetUp(self) -> None:
@@ -361,6 +387,8 @@ class LiveCaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(envelope["success"])
         return envelope["data"]["home_assistant_core_authority"]
 
+
+class LiveCaseTests(_LiveCase):
     async def test_sequence_14_lists_exactly_the_three_pending_profiles(self):
         projection = await self.admit(signed_sequence_14_entry())
         self.assertEqual(projection["observed_core_version"], LIVE_CORE)
@@ -420,6 +448,156 @@ class LiveCaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, [])
         self.assertEqual(first["withheld_capabilities"], second["withheld_capabilities"])
         self.assertEqual(sorted(path.name for path in Path(self.tmp.name).iterdir()), before)
+
+
+class PublicEnvelopeRefusalTests(_LiveCase):
+    """R1-H1: each consistency guard refuses only the Core-authority block.
+
+    Faults are injected into the live-case runtime; the call goes through the
+    public ``get_server_health`` tool with ``check_ha=False``.
+    """
+
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        await self.admit(signed_sequence_14_entry())
+        patcher = patch.object(
+            compatibility, "HEALTH", HealthRegistry(core_readmission=self.core)
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.coordinator = self.core._coordinator  # noqa: SLF001 - fault boundary
+        self.published = self.coordinator._published  # noqa: SLF001
+        self.routes = self.route_table()
+        self.nominal = await self.public_health()
+        self.assertEqual(
+            tuple(self.nominal["data"]["home_assistant_core_authority"]),
+            PRE_242_KEYS[:15] + NEW_KEYS + PRE_242_KEYS[15:],
+        )
+
+    def route_table(self) -> dict:
+        return {
+            profile.capability_id: self.core.route_status((profile.capability_id,))
+            for profile in CORE_RUNTIME_CAPABILITY_PROFILES
+        }
+
+    async def public_health(self) -> dict:
+        envelope = json.loads(await compatibility.get_server_health(check_ha=False))
+        self.assertIs(envelope["success"], True)
+        return envelope
+
+    def faulted_assessment(self, change) -> dict:
+        assessment = self.coordinator.update_assessment()
+        change(assessment)
+        return assessment
+
+    def partition_agrees(self, assessment: dict) -> bool:
+        return (
+            assessment["compatible_count"] + assessment["withheld_count"]
+            == len(self.published.decisions)
+        )
+
+    async def assert_only_the_block_is_refused(self, envelope: dict) -> None:
+        self.assertIs(envelope["success"], True)
+        block = envelope["data"]["home_assistant_core_authority"]
+        nominal = self.nominal["data"]["home_assistant_core_authority"]
+        self.assertEqual(tuple(block), REFUSED_BLOCK_KEYS + PRE_242_KEYS[15:])
+        self.assertIs(block["projection_degraded"], True)
+        self.assertEqual(block["projection_reason_code"], PROJECTION_INCONSISTENT)
+        for key in PARTITION_KEYS:
+            self.assertNotIn(key, block)
+        for key in REFUSED_HEALTH_KEYS + PRE_242_KEYS[15:]:
+            self.assertEqual(block[key], nominal[key], key)
+        # Every other section, and the envelope summary, is the nominal one.
+        unrelated = ("home_assistant_core_authority", "uptime_seconds")
+        self.assertEqual(
+            {key: value for key, value in envelope["data"].items() if key not in unrelated},
+            {key: value for key, value in self.nominal["data"].items() if key not in unrelated},
+        )
+        self.assertEqual(envelope["summary"], self.nominal["summary"])
+        self.assertEqual(envelope["warnings"], self.nominal["warnings"])
+        # Nothing persists: the next call returns the nominal block again.
+        self.assertEqual(
+            (await self.public_health())["data"]["home_assistant_core_authority"],
+            nominal,
+        )
+        # Authority is untouched: same generation, same routes, same refusals.
+        self.assertIs(self.coordinator._published, self.published)  # noqa: SLF001
+        self.assertEqual(self.route_table(), self.routes)
+        for capability in (INPUT_SELECT, SCRIPT_TRACE, HELPER_OPTIONS):
+            self.assertIsNone(self.core.acquire((capability,)))
+
+    async def assert_count_fault_refused(self, change) -> None:
+        assessment = self.faulted_assessment(change)
+        with patch.object(self.coordinator, "update_assessment", return_value=assessment):
+            envelope = await self.public_health()
+        await self.assert_only_the_block_is_refused(envelope)
+
+    async def test_held_count_mismatch(self):
+        def change(assessment):
+            assessment["held_count"] += 1
+
+        self.assertTrue(self.partition_agrees(self.faulted_assessment(change)))
+        await self.assert_count_fault_refused(change)
+
+    async def test_quarantined_count_mismatch(self):
+        def change(assessment):
+            assessment["quarantined_count"] += 1
+
+        self.assertTrue(self.partition_agrees(self.faulted_assessment(change)))
+        await self.assert_count_fault_refused(change)
+
+    async def test_unavailable_count_mismatch(self):
+        def change(assessment):
+            assessment["unavailable_count"] -= 1
+
+        self.assertTrue(self.partition_agrees(self.faulted_assessment(change)))
+        await self.assert_count_fault_refused(change)
+
+    async def test_withheld_total_mismatch(self):
+        def change(assessment):
+            assessment["withheld_count"] += 1
+            assessment["compatible_count"] -= 1
+
+        # Partition and per-class guards pass; only the total guard refuses.
+        self.assertTrue(self.partition_agrees(self.faulted_assessment(change)))
+        await self.assert_count_fault_refused(change)
+
+    async def test_duplicate_capability_across_dispositions(self):
+        def change(assessment):
+            assessment["held_capabilities"] = [dict(assessment["unavailable_capabilities"][0])]
+            assessment["held_count"] = 1
+            assessment["withheld_count"] += 1
+            assessment["compatible_count"] -= 1
+
+        # Every count agrees; only the duplicate guard refuses.
+        assessment = self.faulted_assessment(change)
+        self.assertTrue(self.partition_agrees(assessment))
+        self.assertEqual(
+            assessment["withheld_count"],
+            sum(
+                len(assessment[key])
+                for key in ("held_capabilities", "quarantined_capabilities", "unavailable_capabilities")
+            ),
+        )
+        await self.assert_count_fault_refused(change)
+
+    async def test_partition_count_mismatch(self):
+        def change(assessment):
+            assessment["compatible_count"] += 1
+
+        self.assertFalse(self.partition_agrees(self.faulted_assessment(change)))
+        await self.assert_count_fault_refused(change)
+
+    async def test_unclassified_decision(self):
+        first, *rest = self.published.decisions
+        faulted = replace(
+            self.published,
+            decisions=(replace(first, disposition=CoreDisposition.VERIFYING), *rest),
+        )
+        with patch.object(self.coordinator, "_published", faulted):
+            self.assertFalse(self.partition_agrees(self.coordinator.update_assessment()))
+            envelope = await self.public_health()
+        await self.assert_only_the_block_is_refused(envelope)
 
 
 class DispositionTests(unittest.TestCase):
@@ -657,7 +835,7 @@ class BoundAndConsistencyTests(unittest.TestCase):
         with self.assertRaises(CoreReadmissionError):
             withheld_capability_entries(_assessment(held=("core.a",), unavailable=("core.a",)))
 
-    def test_unclassified_decision_refuses_the_assessment(self):
+    def test_unclassified_decision_refuses_only_the_health_block(self):
         coordinator = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES)
         coordinator.reconcile(_observation(), _verified_authority())
         generation = coordinator._published  # noqa: SLF001 - invariant probe
@@ -666,11 +844,36 @@ class BoundAndConsistencyTests(unittest.TestCase):
             generation,
             decisions=(replace(first, disposition=CoreDisposition.VERIFYING), *rest),
         )
-        for read in (coordinator.update_assessment, coordinator.health_projection):
-            with self.subTest(read=read.__name__):
-                with self.assertRaises(CoreReadmissionError) as raised:
-                    read()
-                self.assertEqual(raised.exception.code, "core_authority_projection_inconsistent")
+        # The operator assessment keeps its pre-HAMCP-242 behaviour, so the
+        # governance runtime snapshot that reads it is unaffected.
+        assessment = coordinator.update_assessment()
+        self.assertEqual(
+            assessment["compatible_count"] + assessment["withheld_count"],
+            len(CORE_CAPABILITY_PROFILES) - 1,
+        )
+        projection = coordinator.health_projection()
+        self.assertEqual(tuple(projection), REFUSED_BLOCK_KEYS)
+        self.assertEqual(projection["projection_reason_code"], PROJECTION_INCONSISTENT)
+
+    def test_refused_block_keeps_only_partition_independent_fields(self):
+        self.assertEqual(PROJECTION_INCONSISTENT, "core_authority_projection_inconsistent")
+        self.assertFalse(set(REFUSED_HEALTH_KEYS) & set(PARTITION_KEYS))
+        self.assertEqual(
+            set(REFUSED_HEALTH_KEYS) | set(PARTITION_KEYS),
+            set(PRE_242_KEYS[:15]) | set(NEW_KEYS),
+        )
+
+    def test_other_refusal_codes_are_not_contained(self):
+        coordinator = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES)
+        coordinator.reconcile(_observation(), _verified_authority())
+        with patch.object(
+            coordinator_module,
+            "withheld_capability_entries",
+            side_effect=CoreReadmissionError("profile_registry_invalid"),
+        ):
+            with self.assertRaises(CoreReadmissionError) as raised:
+                coordinator.health_projection()
+        self.assertEqual(raised.exception.code, "profile_registry_invalid")
 
 
 class AffectedToolsTests(unittest.TestCase):

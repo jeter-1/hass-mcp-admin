@@ -41,10 +41,17 @@ count and value is unchanged.
   and `compatible_count + withheld_count` is the number of capability
   profiles evaluated in `current_generation`.
 
-The list and the counts must agree. If they ever disagree, the projection
-fails with `core_authority_projection_inconsistent` rather than publishing a
-contradiction. An assessment whose compatible and withheld decisions do not
-cover every decision fails the same way.
+The list and the counts must agree. If they ever disagree (a disposition's
+count, the `withheld_count` total, a repeated id, or `compatible_count +
+withheld_count` against the generation's decisions), only this block is
+refused. `get_server_health` still succeeds and every other section is
+unchanged. The block then carries `projection_degraded: true` and
+`projection_reason_code: "core_authority_projection_inconsistent"`, and keeps
+only the fields the decision partition does not feed. It omits the
+disposition, the counts, the list and `count_semantics` rather than show a
+contradiction or invent zeros. See
+[`CORE_AUTHORITY_DIAGNOSTICS.md`](CORE_AUTHORITY_DIAGNOSTICS.md) for the
+exact shape.
 
 On beta.43's live state, the block now reads:
 
@@ -64,10 +71,11 @@ How to read the block: see
 
 ## Boundaries
 
-- **Engineering identifiers only.** Every value is a profile id, one of the
+- **Engineering identifiers only.** Every value is a fixed-vocabulary
+  identifier from Engineering's own code: a compiled profile id, one of the
   three disposition names, a coordinator reason code or an Engineering tool
-  name. No Home Assistant text enters the list, and the final-envelope
-  sanitizer still runs over the whole response.
+  name. No Home Assistant text enters the list. The health path serializes
+  and size-bounds the block. It does not run the shared sanitizer over it.
 - **Delegated reads are not listed.** `affected_tools` lists Engineering
   static tools only, because the client-visible names of delegated `ha-mcp`
   reads depend on the admitted upstream release. An empty list does not mean
@@ -75,9 +83,9 @@ How to read the block: see
 - **Nothing new is persisted or called.** The list derives from decisions the
   coordinator already published. Building it makes no Core, Supervisor or
   upstream call.
-- **Bounded.** The whole projection stays within the existing
-  `MAX_REPORT_BYTES` (32 768). With every runtime profile withheld (29), it
-  is under 12 000 bytes.
+- **Bounded.** At most 64 entries, and the whole projection stays within
+  the existing `MAX_REPORT_BYTES` (32 768). With every runtime profile
+  withheld (29), it is under 12 000 bytes.
 
 ## Compatibility
 
@@ -92,7 +100,7 @@ How to read the block: see
 **Protected runtime files.** The HAMCP-242 task authorized this scoped
 change:
 - `ha_core_readmission/coordinator.py`: the projection fields, the
-  consistency checks;
+  consistency guards and their containment to the health block;
 - `ha_core_readmission/routes.py`: `static_tools_requiring`, a read of the
   existing requirement table;
 - the version.

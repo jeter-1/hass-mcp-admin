@@ -62,11 +62,66 @@ Each entry has exactly four fields:
   `withheld_count` unless truncated, and the number of entries for each
   disposition equals that disposition's count.
 
-An internal consistency check enforces these relations. If the list and counts
-ever disagree, the projection fails with `core_authority_projection_inconsistent`
-instead of publishing a list that contradicts its counts. The check only reads
-the assessment the coordinator already computes. It changes no admission
-decision, reason code, lease, registry handling or recovery.
+Internal consistency guards enforce these relations. Each one refuses with
+`core_authority_projection_inconsistent`:
+
+1. a disposition's list length differs from its count (`held_count`,
+   `quarantined_count`, `unavailable_count`; one guard each);
+2. the list total differs from `withheld_count`;
+3. a capability id appears more than once across dispositions;
+4. `compatible_count + withheld_count` differs from the number of decisions
+   in `current_generation`, for example a decision in no disposition class.
+
+A refusal stays inside this block. `get_server_health` still succeeds and
+every other section is unchanged. The block is then degraded:
+
+- it carries `projection_degraded: true` and `projection_reason_code:
+  "core_authority_projection_inconsistent"`. Neither key appears in a normal
+  block;
+- it keeps only fields the decision partition does not feed:
+  `model_version`, `surface`, `current_generation` (the generation that
+  failed), `issued_lease_count`, `active_commit_count`,
+  `retained_retirement_count`, `capacity_exhaustion_count`,
+  `capacity_exhaustion_reason` and `fallback_count`, plus the runtime fields
+  `configured`, `initialized`, `observed_core_version`, `identity_agreement`,
+  `counters`, `recovery`, `release_registry` and `recent_event_count`;
+- it drops `disposition`, all five disposition counts,
+  `withheld_capabilities`, `withheld_capabilities_truncated` and
+  `count_semantics`. Those are the values in dispute, so the block shows no
+  list or count that could contradict another, and it never substitutes
+  zeros or an empty list.
+
+```json
+{
+  "model_version": 1,
+  "surface": "home_assistant_core",
+  "current_generation": 1,
+  "issued_lease_count": 0,
+  "active_commit_count": 0,
+  "retained_retirement_count": 0,
+  "capacity_exhaustion_count": 0,
+  "capacity_exhaustion_reason": null,
+  "fallback_count": 0,
+  "projection_degraded": true,
+  "projection_reason_code": "core_authority_projection_inconsistent",
+  "configured": true,
+  "initialized": true,
+  "observed_core_version": "2026.10.3",
+  "identity_agreement": true,
+  "counters": {"...": "unchanged"},
+  "recovery": {"...": "unchanged"},
+  "release_registry": {"...": "unchanged"},
+  "recent_event_count": 1
+}
+```
+
+The guards only read the assessment the coordinator already computes. A
+refusal changes no admission decision, reason code, lease, route, registry
+handling or recovery, and persists nothing: the next consistent read returns
+the normal block. The guards can only refuse; they never admit. Any other
+coordinator error still fails the call as before. The guards run only in the
+health projection. The operator assessment behind the governance runtime
+snapshot behaves as it did in beta.43.
 
 ## Reading the three-capability case
 
@@ -113,10 +168,14 @@ and the add-on restarts, the list is empty and `compatible_count` is 29.
 
 ## Boundaries
 
-- Every value is an Engineering identifier: profile ids, the three disposition
-  names, coordinator reason codes and Engineering tool names. No Home Assistant
-  text, entity, session or endpoint value enters the list, and the
-  final-envelope sanitizer still runs over the whole response.
+- Every value is a fixed-vocabulary identifier from Engineering's own code:
+  capability ids of the compiled profiles (the production evidence collector
+  emits no other id), the three `CoreDisposition` names, coordinator reason
+  codes and Engineering static tool names from
+  `STATIC_TOOL_CORE_REQUIREMENTS`. No Home Assistant text, entity, session or
+  endpoint value enters the list. The health path serializes and size-bounds
+  this block; it does not run the shared sanitizer over it, and this release
+  adds none.
 - `affected_tools` lists only Engineering static tools. Delegated `ha-mcp`
   reads are not listed, because their client-visible names depend on the
   admitted upstream release. A per-call narrowed tool appears under every

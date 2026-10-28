@@ -4,54 +4,64 @@
   "killed_by": [],
   "log_path": ".artifacts/hamcp242/mutants/baseline.log",
   "returncode": 0,
-  "seconds": 1.9,
-  "tests": 25
+  "seconds": 3.9,
+  "tests": 34
  },
- "killed": 25,
+ "killed": 34,
  "mutants": {
   "drop_last_entry_unguarded": {
    "broken": false,
    "killed_by": [
     "test_65_is_bounded_to_the_first_64_and_flagged",
     "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions",
     "test_duplicate_capability_across_dispositions_refuses",
     "test_exactly_64_is_not_truncated",
     "test_explicit_limit_flags_truncation",
     "test_global_refusal_lists_every_profile_within_the_report_bound",
+    "test_held_count_mismatch",
     "test_held_entry",
     "test_mixed_dispositions_are_one_sorted_list",
     "test_public_health_uses_bounded_core_projection",
+    "test_quarantined_count_mismatch",
     "test_quarantined_entry",
     "test_sequence_14_lists_exactly_the_three_pending_profiles",
     "test_sorted_by_capability_id_across_dispositions",
-    "test_unavailable_entries"
+    "test_unavailable_count_mismatch",
+    "test_unavailable_entries",
+    "test_withheld_total_mismatch"
    ],
    "log_path": ".artifacts/hamcp242/mutants/drop_last_entry_unguarded.log",
    "returncode": 1,
-   "seconds": 2.0,
+   "seconds": 3.2,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "duplicate_entry_unguarded": {
    "broken": false,
    "killed_by": [
     "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions",
     "test_duplicate_capability_across_dispositions_refuses",
     "test_exactly_64_is_not_truncated",
     "test_global_refusal_lists_every_profile_within_the_report_bound",
+    "test_held_count_mismatch",
     "test_held_entry",
     "test_mixed_dispositions_are_one_sorted_list",
     "test_public_health_uses_bounded_core_projection",
+    "test_quarantined_count_mismatch",
     "test_quarantined_entry",
     "test_sequence_14_lists_exactly_the_three_pending_profiles",
     "test_sorted_by_capability_id_across_dispositions",
-    "test_unavailable_entries"
+    "test_unavailable_count_mismatch",
+    "test_unavailable_entries",
+    "test_withheld_total_mismatch"
    ],
    "log_path": ".artifacts/hamcp242/mutants/duplicate_entry_unguarded.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.2,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "limit_63": {
    "broken": false,
@@ -62,20 +72,9 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/limit_63.log",
    "returncode": 1,
-   "seconds": 2.0,
+   "seconds": 3.7,
    "status": "killed",
-   "tests": 25
-  },
-  "no_assessment_invariant": {
-   "broken": false,
-   "killed_by": [
-    "test_unclassified_decision_refuses_the_assessment"
-   ],
-   "log_path": ".artifacts/hamcp242/mutants/no_assessment_invariant.log",
-   "returncode": 1,
-   "seconds": 1.9,
-   "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "no_bound": {
    "broken": false,
@@ -85,133 +84,187 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/no_bound.log",
    "returncode": 1,
-   "seconds": 2.0,
+   "seconds": 3.7,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "no_class_count_check": {
    "broken": false,
    "killed_by": [
-    "test_count_and_list_disagreement_refuses"
+    "test_count_and_list_disagreement_refuses",
+    "test_held_count_mismatch",
+    "test_quarantined_count_mismatch",
+    "test_unavailable_count_mismatch"
    ],
    "log_path": ".artifacts/hamcp242/mutants/no_class_count_check.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.5,
    "status": "killed",
-   "tests": 25
+   "tests": 34
+  },
+  "no_duplicate_check": {
+   "broken": false,
+   "killed_by": [
+    "test_duplicate_capability_across_dispositions",
+    "test_duplicate_capability_across_dispositions_refuses"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/no_duplicate_check.log",
+   "returncode": 1,
+   "seconds": 3.6,
+   "status": "killed",
+   "tests": 34
+  },
+  "no_partition_check": {
+   "broken": false,
+   "killed_by": [
+    "test_partition_count_mismatch",
+    "test_unclassified_decision",
+    "test_unclassified_decision_refuses_only_the_health_block"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/no_partition_check.log",
+   "returncode": 1,
+   "seconds": 3.5,
+   "status": "killed",
+   "tests": 34
   },
   "no_total_check": {
    "broken": false,
    "killed_by": [
     "test_count_and_list_disagreement_refuses",
-    "test_duplicate_capability_across_dispositions_refuses"
+    "test_duplicate_capability_across_dispositions",
+    "test_duplicate_capability_across_dispositions_refuses",
+    "test_withheld_total_mismatch"
    ],
    "log_path": ".artifacts/hamcp242/mutants/no_total_check.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.5,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "omit_held": {
    "broken": false,
    "killed_by": [
     "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_held_count_mismatch",
     "test_held_entry",
     "test_mixed_dispositions_are_one_sorted_list",
     "test_sorted_by_capability_id_across_dispositions"
    ],
    "log_path": ".artifacts/hamcp242/mutants/omit_held.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.9,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "omit_held_unguarded": {
    "broken": false,
    "killed_by": [
     "test_65_is_bounded_to_the_first_64_and_flagged",
     "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions",
     "test_duplicate_capability_across_dispositions_refuses",
+    "test_held_count_mismatch",
     "test_held_entry",
     "test_mixed_dispositions_are_one_sorted_list",
-    "test_sorted_by_capability_id_across_dispositions"
+    "test_quarantined_count_mismatch",
+    "test_sorted_by_capability_id_across_dispositions",
+    "test_unavailable_count_mismatch",
+    "test_withheld_total_mismatch"
    ],
    "log_path": ".artifacts/hamcp242/mutants/omit_held_unguarded.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.4,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "omit_quarantined": {
    "broken": false,
    "killed_by": [
     "test_65_is_bounded_to_the_first_64_and_flagged",
     "test_mixed_dispositions_are_one_sorted_list",
+    "test_quarantined_count_mismatch",
     "test_quarantined_entry",
     "test_sorted_by_capability_id_across_dispositions"
    ],
    "log_path": ".artifacts/hamcp242/mutants/omit_quarantined.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.8,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "omit_quarantined_unguarded": {
    "broken": false,
    "killed_by": [
     "test_65_is_bounded_to_the_first_64_and_flagged",
     "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions",
     "test_duplicate_capability_across_dispositions_refuses",
+    "test_held_count_mismatch",
     "test_mixed_dispositions_are_one_sorted_list",
+    "test_quarantined_count_mismatch",
     "test_quarantined_entry",
-    "test_sorted_by_capability_id_across_dispositions"
+    "test_sorted_by_capability_id_across_dispositions",
+    "test_unavailable_count_mismatch",
+    "test_withheld_total_mismatch"
    ],
    "log_path": ".artifacts/hamcp242/mutants/omit_quarantined_unguarded.log",
    "returncode": 1,
-   "seconds": 2.0,
+   "seconds": 3.4,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "omit_unavailable": {
    "broken": false,
    "killed_by": [
     "test_65_is_bounded_to_the_first_64_and_flagged",
+    "test_duplicate_capability_across_dispositions",
     "test_exactly_64_is_not_truncated",
     "test_explicit_limit_flags_truncation",
     "test_global_refusal_lists_every_profile_within_the_report_bound",
+    "test_held_count_mismatch",
     "test_mixed_dispositions_are_one_sorted_list",
+    "test_partition_count_mismatch",
     "test_projection_adds_no_core_call_and_persists_nothing",
     "test_public_health_uses_bounded_core_projection",
+    "test_quarantined_count_mismatch",
     "test_sequence_14_lists_exactly_the_three_pending_profiles",
     "test_sorted_by_capability_id_across_dispositions",
-    "test_unavailable_entries"
+    "test_unavailable_count_mismatch",
+    "test_unavailable_entries",
+    "test_unclassified_decision",
+    "test_withheld_total_mismatch"
    ],
    "log_path": ".artifacts/hamcp242/mutants/omit_unavailable.log",
    "returncode": 1,
-   "seconds": 1.8,
+   "seconds": 3.2,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "omit_unavailable_unguarded": {
    "broken": false,
    "killed_by": [
     "test_65_is_bounded_to_the_first_64_and_flagged",
     "test_count_and_list_disagreement_refuses",
+    "test_duplicate_capability_across_dispositions",
     "test_duplicate_capability_across_dispositions_refuses",
     "test_exactly_64_is_not_truncated",
     "test_explicit_limit_flags_truncation",
     "test_global_refusal_lists_every_profile_within_the_report_bound",
+    "test_held_count_mismatch",
     "test_mixed_dispositions_are_one_sorted_list",
     "test_public_health_uses_bounded_core_projection",
+    "test_quarantined_count_mismatch",
     "test_sequence_14_lists_exactly_the_three_pending_profiles",
     "test_sorted_by_capability_id_across_dispositions",
-    "test_unavailable_entries"
+    "test_unavailable_count_mismatch",
+    "test_unavailable_entries",
+    "test_withheld_total_mismatch"
    ],
    "log_path": ".artifacts/hamcp242/mutants/omit_unavailable_unguarded.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.5,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "reason_dropped": {
    "broken": false,
@@ -225,22 +278,166 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/reason_dropped.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 4.0,
    "status": "killed",
-   "tests": 25
+   "tests": 34
+  },
+  "refusal_contains_every_code": {
+   "broken": false,
+   "killed_by": [
+    "test_other_refusal_codes_are_not_contained"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/refusal_contains_every_code.log",
+   "returncode": 1,
+   "seconds": 3.8,
+   "status": "killed",
+   "tests": 34
+  },
+  "refusal_escapes_block": {
+   "broken": false,
+   "killed_by": [
+    "test_duplicate_capability_across_dispositions",
+    "test_held_count_mismatch",
+    "test_partition_count_mismatch",
+    "test_quarantined_count_mismatch",
+    "test_unavailable_count_mismatch",
+    "test_unclassified_decision",
+    "test_unclassified_decision_refuses_only_the_health_block",
+    "test_withheld_total_mismatch"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/refusal_escapes_block.log",
+   "returncode": 1,
+   "seconds": 3.0,
+   "status": "killed",
+   "tests": 34
+  },
+  "refused_block_drops_generation": {
+   "broken": false,
+   "killed_by": [
+    "test_duplicate_capability_across_dispositions",
+    "test_held_count_mismatch",
+    "test_partition_count_mismatch",
+    "test_quarantined_count_mismatch",
+    "test_unavailable_count_mismatch",
+    "test_unclassified_decision",
+    "test_unclassified_decision_refuses_only_the_health_block",
+    "test_withheld_total_mismatch"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/refused_block_drops_generation.log",
+   "returncode": 1,
+   "seconds": 3.0,
+   "status": "killed",
+   "tests": 34
+  },
+  "refused_block_fabricates_empty_list": {
+   "broken": false,
+   "killed_by": [
+    "test_duplicate_capability_across_dispositions",
+    "test_held_count_mismatch",
+    "test_partition_count_mismatch",
+    "test_quarantined_count_mismatch",
+    "test_unavailable_count_mismatch",
+    "test_unclassified_decision",
+    "test_unclassified_decision_refuses_only_the_health_block",
+    "test_withheld_total_mismatch"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/refused_block_fabricates_empty_list.log",
+   "returncode": 1,
+   "seconds": 2.9,
+   "status": "killed",
+   "tests": 34
+  },
+  "refused_block_keeps_counts": {
+   "broken": false,
+   "killed_by": [
+    "test_duplicate_capability_across_dispositions",
+    "test_held_count_mismatch",
+    "test_partition_count_mismatch",
+    "test_quarantined_count_mismatch",
+    "test_unavailable_count_mismatch",
+    "test_unclassified_decision",
+    "test_unclassified_decision_refuses_only_the_health_block",
+    "test_withheld_total_mismatch"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/refused_block_keeps_counts.log",
+   "returncode": 1,
+   "seconds": 3.0,
+   "status": "killed",
+   "tests": 34
+  },
+  "refused_block_keeps_disposition": {
+   "broken": false,
+   "killed_by": [
+    "test_duplicate_capability_across_dispositions",
+    "test_held_count_mismatch",
+    "test_partition_count_mismatch",
+    "test_quarantined_count_mismatch",
+    "test_unavailable_count_mismatch",
+    "test_unclassified_decision",
+    "test_unclassified_decision_refuses_only_the_health_block",
+    "test_withheld_total_mismatch"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/refused_block_keeps_disposition.log",
+   "returncode": 1,
+   "seconds": 3.0,
+   "status": "killed",
+   "tests": 34
+  },
+  "refused_block_without_indicator": {
+   "broken": false,
+   "killed_by": [
+    "test_duplicate_capability_across_dispositions",
+    "test_held_count_mismatch",
+    "test_partition_count_mismatch",
+    "test_quarantined_count_mismatch",
+    "test_unavailable_count_mismatch",
+    "test_unclassified_decision",
+    "test_unclassified_decision_refuses_only_the_health_block",
+    "test_withheld_total_mismatch"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/refused_block_without_indicator.log",
+   "returncode": 1,
+   "seconds": 3.0,
+   "status": "killed",
+   "tests": 34
+  },
+  "refused_block_without_reason": {
+   "broken": false,
+   "killed_by": [
+    "test_duplicate_capability_across_dispositions",
+    "test_held_count_mismatch",
+    "test_partition_count_mismatch",
+    "test_quarantined_count_mismatch",
+    "test_unavailable_count_mismatch",
+    "test_unclassified_decision",
+    "test_unclassified_decision_refuses_only_the_health_block",
+    "test_withheld_total_mismatch"
+   ],
+   "log_path": ".artifacts/hamcp242/mutants/refused_block_without_reason.log",
+   "returncode": 1,
+   "seconds": 3.1,
+   "status": "killed",
+   "tests": 34
   },
   "semantics_missing": {
    "broken": false,
    "killed_by": [
     "test_all_compatible_gives_an_empty_list",
+    "test_duplicate_capability_across_dispositions",
+    "test_held_count_mismatch",
+    "test_partition_count_mismatch",
     "test_public_health_uses_bounded_core_projection",
-    "test_sequence_14_lists_exactly_the_three_pending_profiles"
+    "test_quarantined_count_mismatch",
+    "test_sequence_14_lists_exactly_the_three_pending_profiles",
+    "test_unavailable_count_mismatch",
+    "test_unclassified_decision",
+    "test_withheld_total_mismatch"
    ],
    "log_path": ".artifacts/hamcp242/mutants/semantics_missing.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 2.9,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "tools_drop_first": {
    "broken": false,
@@ -252,9 +449,9 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/tools_drop_first.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.8,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "tools_drop_last": {
    "broken": false,
@@ -266,9 +463,9 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/tools_drop_last.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 4.0,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "tools_empty": {
    "broken": false,
@@ -280,9 +477,9 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/tools_empty.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 4.2,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "tools_include_delegated": {
    "broken": false,
@@ -297,9 +494,9 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/tools_include_delegated.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.8,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "tools_key_missing": {
    "broken": false,
@@ -312,9 +509,9 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/tools_key_missing.log",
    "returncode": 1,
-   "seconds": 2.0,
+   "seconds": 3.7,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "tools_unsorted": {
    "broken": false,
@@ -329,9 +526,9 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/tools_unsorted.log",
    "returncode": 1,
-   "seconds": 2.0,
+   "seconds": 3.8,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "truncated_never": {
    "broken": false,
@@ -341,9 +538,9 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/truncated_never.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.7,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "truncated_off_by_one": {
    "broken": false,
@@ -352,9 +549,9 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/truncated_off_by_one.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 3.7,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "unsorted": {
    "broken": false,
@@ -367,9 +564,9 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/unsorted.log",
    "returncode": 1,
-   "seconds": 1.9,
+   "seconds": 4.0,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   },
   "wrong_disposition_label": {
    "broken": false,
@@ -381,12 +578,12 @@
    ],
    "log_path": ".artifacts/hamcp242/mutants/wrong_disposition_label.log",
    "returncode": 1,
-   "seconds": 2.0,
+   "seconds": 3.8,
    "status": "killed",
-   "tests": 25
+   "tests": 34
   }
  },
- "mutation_count": 25,
+ "mutation_count": 34,
  "tests": [
   "tests.test_hamcp242_core_authority_itemization",
   "tests.test_ha_core_2026_9_integration.Core20269RuntimeTests.test_public_health_uses_bounded_core_projection"
