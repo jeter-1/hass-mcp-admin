@@ -25,6 +25,14 @@ and the host). It no longer runs on the squashed form there. Every other
 rule is unchanged in both forms. The HAMCP-132 definitions path and the
 HAMCP-225 trace path are unchanged.
 
+**Owner clarification (Josh, 2026-10-28), from the independent review of
+aaf1fe8e.** "One contiguous token" is judged on the original (pre-decode)
+text and on the decoded normal form; the journal withholds if either
+matches. Percent-decoding (`%20` to a space) never breaks contiguity that
+existed in the raw text. The implementation reads every stage of the bounded
+percent-decode, the text as given first, which also covers a doubly encoded
+split.
+
 **Release target.** `2.4.1-beta.43` is the next free beta after `main` at
 2.4.1-beta.42 (#316). If another release reaches `main` first, this change
 is restaged at the next free beta and these documents are renamed.
@@ -56,20 +64,27 @@ The review needs a security section covering:
   default `False`. When it is set, the squashed form skips only
   `user_pass_host` (`_credential_form_rules(..., user_pass_host=False)`).
   The normal-form `_USER_PASS_HOST` already excludes whitespace, so it is
-  the contiguous-token rule. No other rule or form reads the option.
+  the contiguous-token rule. With the option, `_undecoded_user_pass_host`
+  also reads `_USER_PASS_HOST` in the text as given and after each decode
+  round before the last (the last is the normal form), each after NFKC,
+  casefold and the confusable fold; a match yields `user_pass_host`. It
+  only adds withholding. No other rule or form reads the option.
 - **Only the journal sets it.** `host_journal._JOURNAL_SCREEN` (read-only:
   `labelled=True, contiguous_user_pass_host=True`) is used by all five
   screen calls of `screen_text_rule` and `screen_text_rules`. The
   definitions path (default mode) and the trace path
-  (`trace_normalization.screen_trace_value`, labelled and default modes) do
-  not pass it. Their suites pass unchanged: HAMCP-132
+  (`trace_normalization.screen_trace_value`, labelled and default modes,
+  the identity and name fields included) do not pass it. Their suites pass unchanged: HAMCP-132
   (`test_hamcp132_configuration_definitions`, `test_pr294_*`) and HAMCP-225
   (`test_hamcp225_*`).
 - **Rule ids.** `host_journal.RULE_IDS` drops `user_pass_host.squashed`
   (44 ids). `credentials.RULE_IDS` keeps it (42) for the other paths.
 - **Disclosed cost.** In the journal, a scheme-less `user:pass@host` split
-  by whitespace (literally or percent-encoded) is shown unless another rule
-  meets it. A `scheme://user:pass@host` is `credential_url` in the normal
+  by literal whitespace is shown unless another rule meets it. Python's
+  `urllib.request` proxy parser accepts a literal space inside a password
+  (verified offline), so such a logged setting is a real, accepted residual.
+  Percent-encoded whitespace (`%20`, `%09`, `%0A`, `%0D`, `%C2%A0`,
+  `%E3%80%80`, doubly encoded) is withheld. A `scheme://user:pass@host` is `credential_url` in the normal
   form, unchanged. The labelled rules (`password`, `token`, `-P`, `Bearer`,
   …), known secrets (normal and squashed), PEM headers, invisible and
   control characters and the value shapes are unchanged in both forms.
@@ -116,6 +131,28 @@ committed file holds secret-shaped text.
     calibration of the same source counts every live-shaped line `shown`,
     and the one `credential_url` line withheld. No count names
     `user_pass_host.squashed`.
+  - **Percent-encoded contiguity (correction, High).** The reviewer's
+    reproduction, a Python logging line
+    `{"proxy": "<user>:<pass>%20<more>@proxy.invalid:8080"}` built at run
+    time, is withheld as `user_pass_host`. So is every other encoded
+    whitespace inside the password (`%09`, `%0A`, `%0D`, `%0a`, `%C2%A0`,
+    `%E3%80%80`, `%2B%20`, `+%20`, `%20%2B`, `%2520`), each of which the
+    decoded normal form alone no longer meets. Encoded separators that keep
+    the token whole (`%2B`, `+`, `%2C`, `%3B`) and encoded controls
+    (`%0B`, `%0C`, `%1F`, `%7F`, `%C2%85`) are withheld. An intermediate
+    decode round, NFKC (fullwidth `@`) and the confusable fold (ratio colon)
+    are read. Live-shaped lines with ordinary percent-encoded text appended
+    are still shown, and the default and labelled modes are unchanged.
+  - **Over the wire (correction, High).** The matter.js corpus and the
+    proxy lines through `tools/call` on the authenticated gateway: the
+    matter.js lines come back verbatim, every proxy line is withheld as
+    `user_pass_host`, and the final response and the audit record hold no
+    part of the credential.
+  - **Trace identity and name fields (correction, Medium).** Squashed-only
+    credentials (split by a space, a tab, a line feed, or `%20`) in
+    `alias`, `id`, `entity_id` (string and list) and `friendly_name` are
+    withheld by `screen_trace_value`, on capture, in the store, on
+    read-back, and by `get_automation_trace`.
   - **Cross-path checks.** The definitions default mode, the labelled mode,
     `withhold` and `screen_trace_value` still withhold the live-shaped lines
     as `user_pass_host.squashed`. With the option on, every other rule's
@@ -155,8 +192,20 @@ committed file holds secret-shaped text.
     must fail.
   - `C1`-`C2`: `calibration` missing from the served schema. The
     served-schema test must fail.
+  - `D1`-`D3` (correction): contiguity judged only after decoding (`D1`),
+    no intermediate decode round (`D2`), rounds not normalized and folded
+    (`D3`). The percent-encoded tests must fail; for `D1` they include the
+    over-the-wire test.
+  - `T1` (correction): the reviewer's identity-only opt-in
+    (`contiguous_user_pass_host=not labelled` in the trace screen). The
+    unchanged HAMCP-225 suites run first, then the trace identity boundary
+    tests must fail.
 
-  Result (`mutations.json`): all 9 are killed over a 312-test baseline.
+  Result (`mutations.json`, correction run): all 13 are killed over a
+  324-test baseline, none by an import or syntax error. `D1`-`D3` are
+  killed by the named percent-encoded tests (`D1` also by the over-the-wire
+  test). **`T1` survives the unchanged HAMCP-225 suites**, as the reviewer
+  found, and is killed by all three trace identity boundary tests.
   `L1` and `L4` are killed by the unchanged HAMCP-132 suite
   (`test_a_colon_then_an_at_sign_across_whitespace_is_withheld_by_design`).
   **`L2` and `L3` (the trace path) survive the unchanged HAMCP-225 suites**

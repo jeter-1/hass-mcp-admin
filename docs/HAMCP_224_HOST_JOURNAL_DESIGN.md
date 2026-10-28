@@ -169,9 +169,15 @@ review, H1/H2 and M1–M3).** These supersede the "Withholding scope" and
   `@peer` joined into the shape. It is an option of the same shared screen
   (`contiguous_user_pass_host=True`, in `host_journal._JOURNAL_SCREEN`), not
   a fork. Every other rule is unchanged in both forms. The definitions and
-  trace paths do not opt in. The disclosed cost is that a scheme-less
-  `user:pass@host` split by whitespace, written literally or
-  percent-encoded, is shown in the journal unless another rule meets it.
+  trace paths do not opt in, the trace identity and name fields
+  included. Owner clarification (Josh, 2026-10-28, review of aaf1fe8e):
+  the token is also judged on the text as given and after each round of
+  its percent-decode (each normalized and folded as the normal form is),
+  and any match withholds, so decoding `%20`, `%09` or `%0A` never splits
+  a token that was whole as written (a proxy setting
+  `user:pass%20more@proxy:8080`). The disclosed cost is that a scheme-less
+  `user:pass@host` split by literal whitespace is shown in the journal
+  unless another rule meets it.
 - **Fail-closed consequences, disclosed.** A `Bearer` token and an
   `api_key=` value are now withheld whole instead of redacted in place.
   Ordinary text with a label followed by `:` or `=` (`token: refreshed`,

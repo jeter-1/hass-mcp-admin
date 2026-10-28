@@ -7,8 +7,10 @@ removed, matter.js timestamps and a later `@peer` read as
 `user:password@host`. In the journal only, `user_pass_host` now needs one
 contiguous token in the normal form. Every other rule is unchanged, in both
 forms. The configuration-definitions and trace paths are unchanged. The
-disclosed cost is that a whitespace-split, scheme-less `user:pass@host` is
-shown in the journal. Rollback is reinstalling beta.42. Read the
+token is judged on the text as written and after each percent-decode round
+too, so an encoded `%20` or `%09` inside a password never splits it (owner
+clarification, 2026-10-28). The disclosed cost is that a scheme-less
+`user:pass@host` split by literal whitespace is shown in the journal. Rollback is reinstalling beta.42. Read the
 [2.4.1-beta.43 release notes](docs/V2_4_1_BETA43_RELEASE_NOTES.md) and
 [2.4.1-beta.43 acceptance contract](docs/V2_4_1_BETA43_ACCEPTANCE.md).
 

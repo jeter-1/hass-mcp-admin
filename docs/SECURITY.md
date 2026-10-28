@@ -901,6 +901,15 @@ calibration (`addon:core_matter_server`: 37 of 40 lines withheld, all as
   an option of the same shared `credentials.screen`
   (`contiguous_user_pass_host`, default off), set only by
   `host_journal._JOURNAL_SCREEN`; it is not a separate screen.
+- **Decoding never splits the token** (owner clarification, Josh,
+  2026-10-28, from the review of aaf1fe8e). With the option, the token is
+  also read in the text as given and after each round of its bounded
+  percent-decode, each after NFKC, casefold and the confusable fold; any
+  match withholds (`user_pass_host`). The reviewer's reproduction, a Python
+  logging line naming a scheme-less proxy with `%20` inside the password
+  (which `urllib.request.ProxyHandler` decodes and uses), was shown whole
+  through the gateway at aaf1fe8e and is withheld now, also through the
+  final authenticated response.
 - **What did not.** Every other rule is unchanged in both forms: credential
   URLs and connection URIs, `password=`, the labelled keywords, `Bearer`,
   `-P`/`--pw`, known secrets (normal and squashed), PEM headers, invisible
@@ -910,10 +919,16 @@ calibration (`addon:core_matter_server`: 37 of 40 lines withheld, all as
   definitions path is killed by the unchanged HAMCP-132 suite. One that
   leaks it into the trace path survives the unchanged HAMCP-225 suites and
   is killed by the step 2 cross-path boundary test
-  (`test_hamcp234_step2_journal_relaxation`).
-- **Disclosed cost.** A scheme-less `user:pass@host` split by whitespace
-  (literal or percent-encoded) is shown in the journal unless another rule
-  meets it. A contiguous one, and any `scheme://user:pass@host`, is still
+  (`test_hamcp234_step2_journal_relaxation`). So is one that opts in only
+  the trace identity and name fields (`alias`, `id`, `entity_id`,
+  `friendly_name`), killed by the step 2 trace identity boundary tests
+  (capture, store, read-back, `get_automation_trace`).
+- **Disclosed cost.** A scheme-less `user:pass@host` split by literal
+  whitespace is shown in the journal unless another rule meets it. This is
+  not only a non-credential: Python's `urllib.request` proxy parser accepts
+  a literal space inside a password (verified offline, Python 3.12.14), so
+  a logged proxy setting written that way is shown. Percent-encoded
+  whitespace is withheld (above). A contiguous one, and any `scheme://user:pass@host`, is still
   withheld.
 - **Rule ids.** The journal's `RULE_IDS` drop `user_pass_host.squashed`
   (44); a calibration never reports it.

@@ -28,6 +28,12 @@ Owner decision (Josh, 2026-10-27), **in the host journal path only**:
   `@` and the host. It is no longer checked in the squashed form there.
   A contiguous `user:pass@host` is still withheld (`user_pass_host`), and
   so is any `scheme://user:pass@host` (`credential_url`).
+- **Decoding never splits the token** (owner clarification, Josh,
+  2026-10-28, from the independent review). The token is also checked in
+  the text as given and after each round of its percent-decode, so a
+  `%20`, `%09` or `%0A` inside a password stays one token. Example: a
+  logged proxy setting `{"proxy": "user:pass%20more@proxy:8080"}`, which a
+  proxy client decodes and uses, is withheld.
 - **Every other rule is unchanged, in both forms:**
   - credential URLs and connection URIs;
   - `password=` fields;
@@ -59,14 +65,17 @@ generated file that a test keeps equal to its computation:
 | Python logging (6) | 4 / 2 | 6 / 0 | none |
 
 In beta.42, 18 lines were withheld by `user_pass_host.squashed` alone; all
-18 are now shown. No other rule's count changes.
+18 are now shown. No other rule's count changes. The correction that reads
+the token before decoding too changes no line of this corpus (the report is
+byte-identical before and after it).
 
 ## Disclosed cost and residuals
 
 - **Accepted cost.** In the journal, a scheme-less `user:pass@host` with
-  whitespace inside it (`user: pass@host`, literally or percent-encoded) is
-  now shown, unless another rule meets it. Such a split form is not a
-  credential string any client would accept as written.
+  literal whitespace inside it (`user: pass@host`) is now shown, unless
+  another rule meets it. Some clients accept such a value: Python's
+  `urllib.request` proxy parser takes a literal space inside a password
+  (verified offline). Percent-encoded whitespace is withheld.
 - **Still withheld (false positives remain):**
   - a contiguous `name:tag@sha256:…` image reference, which is
     `user_pass_host` in the normal form;

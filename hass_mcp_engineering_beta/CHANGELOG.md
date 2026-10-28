@@ -16,8 +16,14 @@ later `@peer` joined into that shape once whitespace was removed.
 - An option of the same shared `credentials.screen`
   (`contiguous_user_pass_host`), set only by the journal. The definitions
   (HAMCP-132) and trace (HAMCP-225) paths are unchanged.
+- Contiguity is judged on the text as given and after each percent-decode
+  round too, not only on the decoded normal form (owner clarification,
+  Josh, 2026-10-28, review of aaf1fe8e): a `%20`, `%09` or `%0A` inside a
+  password, such as a logged scheme-less proxy setting, is withheld.
 - Disclosed cost: in the journal, a scheme-less `user:pass@host` split by
-  whitespace is shown unless another rule meets it.
+  literal whitespace is shown unless another rule meets it.
+- The trace identity and name fields keep the squashed shape; new boundary
+  tests cover capture, store, read-back and `get_automation_trace`.
 - The journal's `rule_ids` drop `user_pass_host.squashed` (44 ids).
 - `calibration` was already in the served schema (no defect found); tests
   now read the served `tools/list` and make a calibration call over the
