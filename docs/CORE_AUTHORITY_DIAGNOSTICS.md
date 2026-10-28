@@ -168,12 +168,14 @@ and the add-on restarts, the list is empty and `compatible_count` is 29.
 
 ## Boundaries
 
-- Every value is a fixed-vocabulary identifier from Engineering's own code:
-  capability ids of the compiled profiles (the production evidence collector
-  emits no other id), the three `CoreDisposition` names, coordinator reason
-  codes and Engineering static tool names from
-  `STATIC_TOOL_CORE_REQUIREMENTS`. No Home Assistant text, entity, session or
-  endpoint value enters the list. The health path serializes and size-bounds
+- Every string value in a `withheld_capabilities` entry is a
+  fixed-vocabulary identifier from Engineering's code: capability ids of the
+  compiled profiles (the production evidence collector emits no other id),
+  the three `CoreDisposition` names, coordinator reason codes and Engineering
+  static tool names from `STATIC_TOOL_CORE_REQUIREMENTS`. No Home Assistant
+  text, entity, session or endpoint value enters the list. The block's other
+  fields include validated HA-observed versions, counters, timestamps and
+  registry state, and are not covered by that list-only claim. The health path serializes and size-bounds
   this block; it does not run the shared sanitizer over it, and this release
   adds none.
 - `affected_tools` lists only Engineering static tools. Delegated `ha-mcp`

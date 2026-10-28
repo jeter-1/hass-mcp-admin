@@ -75,6 +75,26 @@ def _without_hamcp225_trace_disclosure(case, descriptor):
     return descriptor
 
 
+# HAMCP-242 (2.4.1-beta.44) adds one paragraph to the get_server_health
+# description documenting the degraded Core-authority block; its input schema
+# is unchanged. Strip only that reviewed text before comparing.
+HAMCP242_HEALTH_DESCRIPTION = (
+    "\n"
+    "    home_assistant_core_authority carries projection_degraded and\n"
+    "    projection_reason_code only when Engineering refuses an inconsistent Core\n"
+    "    projection. The block then omits the partition counts, disposition,\n"
+    "    withheld_capabilities, withheld_capabilities_truncated and\n"
+    "    count_semantics, and the overall call still succeeds.\n"
+)
+
+
+def _without_hamcp242_health_disclosure(case, descriptor):
+    descriptor = json.loads(json.dumps(descriptor))
+    case.assertEqual(descriptor["description"].count(HAMCP242_HEALTH_DESCRIPTION), 1)
+    descriptor["description"] = descriptor["description"].replace(HAMCP242_HEALTH_DESCRIPTION, "")
+    return descriptor
+
+
 class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
     async def test_old_native_descriptors_are_identical_and_only_one_is_added(self):
         from ha_mcp_engineering.tools import get_registered_server
@@ -99,6 +119,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "set_automation_trace_watch",
                           "compare_automation_baselines"})
         current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
+        current["get_server_health"] = _without_hamcp242_health_disclosure(self, current["get_server_health"])
         from hamcp226_228_descriptor_changes import (without_hamcp226_descriptor_change,
                                                      without_hamcp228_capture_changes)
         current["configuration_integrity_analysis"] = without_hamcp226_descriptor_change(

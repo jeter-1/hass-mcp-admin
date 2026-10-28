@@ -71,10 +71,13 @@ How to read the block: see
 
 ## Boundaries
 
-- **Engineering identifiers only.** Every value is a fixed-vocabulary
-  identifier from Engineering's own code: a compiled profile id, one of the
-  three disposition names, a coordinator reason code or an Engineering tool
-  name. No Home Assistant text enters the list. The health path serializes
+- **Engineering identifiers only.** Every string value in a
+  `withheld_capabilities` entry is a fixed-vocabulary identifier from
+  Engineering's code: a compiled profile id, one of the three disposition
+  names, a coordinator reason code or an Engineering tool name. No Home
+  Assistant text enters the list. The block's other fields include validated
+  HA-observed versions, counters, timestamps and registry state, and are not
+  covered by that list-only claim. The health path serializes
   and size-bounds the block. It does not run the shared sanitizer over it.
 - **Delegated reads are not listed.** `affected_tools` lists Engineering
   static tools only, because the client-visible names of delegated `ha-mcp`

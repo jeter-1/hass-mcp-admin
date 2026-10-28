@@ -184,8 +184,12 @@ read-only. Record each result in HAMCP-242.
    image index digest, the release tag and the protected `main` merge
    commit.
 3. **(a) On beta.44, before sequence 15 (required).** Call
-   `get_server_health` with `check_ha: false`. In
-   `home_assistant_core_authority`, expect:
+   `get_server_health` with `check_ha: false`.
+   Inspect `projection_degraded` first. If it is `true`, record
+   `projection_reason_code` and the retained block, and stop acceptance. Do
+   not read the missing counts or list as zero or empty, and do not use that
+   outcome to justify signing registry authority.
+   Otherwise, in `home_assistant_core_authority`, expect:
    - `observed_core_version` `2026.10.3`;
    - counts unchanged from beta.43: `compatible_count` 26, `held_count` 0,
      `quarantined_count` 0, `unavailable_count` 3, `withheld_count` 3;
@@ -206,7 +210,12 @@ read-only. Record each result in HAMCP-242.
    sign.
 4. **(b) After signing sequence 15 and an add-on restart (required, when
    that separately authorized signing happens).** Call `get_server_health`
-   again. Expected: `withheld_capabilities` `[]`,
+   again.
+   Inspect `projection_degraded` first. If it is `true`, record
+   `projection_reason_code` and the retained block, and stop acceptance. Do
+   not read the missing counts or list as zero or empty, and do not use that
+   outcome to justify signing registry authority.
+   Otherwise, expect: `withheld_capabilities` `[]`,
    `withheld_capabilities_truncated` `false`, `compatible_count` 29,
    `withheld_count` 0. Signing sequence 15 is not part of this release.
 
