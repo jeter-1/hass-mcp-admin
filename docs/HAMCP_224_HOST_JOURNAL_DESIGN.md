@@ -159,6 +159,19 @@ review, H1/H2 and M1–M3).** These supersede the "Withholding scope" and
   labelled form such as `api%5fkey=` in a configuration definition is
   therefore still decided by HAMCP-132's own forms; extending that report
   is a separate decision (suggested follow-up).
+- **One-token `user:pass@host` (HAMCP-234 step 2, 2.4.1-beta.43; supersedes
+  step 4 for the journal).** Owner decision (Josh, 2026-10-27), from the
+  beta.42 live calibration of `addon:core_matter_server` (37 of 40 lines
+  withheld, every one by `user_pass_host.squashed`). The journal reads
+  `user_pass_host` in the normal form only, as one contiguous token (no
+  whitespace between the user, `:`, the password, `@` and the host). It no
+  longer reads it in the squashed form, where a timestamp's `:` and a later
+  `@peer` joined into the shape. It is an option of the same shared screen
+  (`contiguous_user_pass_host=True`, in `host_journal._JOURNAL_SCREEN`), not
+  a fork. Every other rule is unchanged in both forms. The definitions and
+  trace paths do not opt in. The disclosed cost is that a scheme-less
+  `user:pass@host` split by whitespace, written literally or
+  percent-encoded, is shown in the journal unless another rule meets it.
 - **Fail-closed consequences, disclosed.** A `Bearer` token and an
   `api_key=` value are now withheld whole instead of redacted in place.
   Ordinary text with a label followed by `:` or `=` (`token: refreshed`,

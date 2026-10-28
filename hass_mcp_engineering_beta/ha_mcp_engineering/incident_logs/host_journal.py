@@ -657,11 +657,20 @@ class _Bound(Exception):
 _SGR = re.compile(r"\x1b\[[0-9;]{0,32}m")
 _SGR_ESCAPE = re.compile(r"\x1b(?=\[[0-9;]{0,32}m)")
 OMISSIONS = {WITHHELD_MARKER: WITHHELD_OMISSION, UNVERIFIABLE_MARKER: UNVERIFIABLE_OMISSION}
+# The shared screen's journal mode: the labelled forms (HAMCP-224) and
+# ``user_pass_host`` as one contiguous token in the normal form only
+# (HAMCP-234 step 2, owner decision, Josh, 2026-10-27). Every other rule is
+# read in both forms, as for every caller.
+_JOURNAL_SCREEN = MappingProxyType({"labelled": True, "contiguous_user_pass_host": True})
 # The reader's own rule ids (HAMCP-234), beside the shared screen's.
 RULE_FIELD_TOO_LONG = "field_too_long"
 RULE_NOT_UTF8 = "not_utf8"
 RULE_UNVERIFIABLE_ESCAPE = "unverifiable_escape"
-RULE_IDS = credentials.RULE_IDS | {RULE_FIELD_TOO_LONG, RULE_NOT_UTF8, RULE_UNVERIFIABLE_ESCAPE}
+# The ids this reader can report: the shared screen's, but for
+# ``user_pass_host.squashed``, which ``_JOURNAL_SCREEN`` never reads
+# (HAMCP-234 step 2), and the reader's own.
+RULE_IDS = (credentials.RULE_IDS - {credentials.RULE_USER_PASS_HOST + credentials.SQUASHED_FORM}) | {
+    RULE_FIELD_TOO_LONG, RULE_NOT_UTF8, RULE_UNVERIFIABLE_ESCAPE}
 # Reported in place of any id outside ``RULE_IDS``; never produced by the screen.
 RULE_UNLISTED = "unlisted_rule"
 
@@ -671,7 +680,9 @@ def screen_text(raw: bytes, known_secrets: tuple[str, ...], truncated: bool = Fa
 
     HAMCP-224 H1/H2: the decision is the configuration-definitions screen
     (``credentials.screen``) with its labelled forms, on the complete field
-    as read, before anything is cut for display. A field longer than
+    as read, before anything is cut for display; ``user_pass_host`` is read
+    as one contiguous token in the normal form only (``_JOURNAL_SCREEN``,
+    HAMCP-234 step 2). A field longer than
     ``MAX_FIELD_BYTES`` (``truncated``) was never read whole, and bytes that
     are not UTF-8 cannot be read as text: both are withheld whole as
     unverifiable.
@@ -713,14 +724,14 @@ def screen_text_rule(raw: bytes, known_secrets: tuple[str, ...],
     except UnicodeDecodeError:
         return UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION, RULE_NOT_UTF8
     text = screened = _SGR.sub("", original)
-    marker = credentials.screen(text, known_secrets, labelled=True)
+    marker = credentials.screen(text, known_secrets, **_JOURNAL_SCREEN)
     if marker is None and text != original:
         screened = _SGR_ESCAPE.sub("", original)
-        marker = credentials.screen(screened, known_secrets, labelled=True)
+        marker = credentials.screen(screened, known_secrets, **_JOURNAL_SCREEN)
     if marker is None:
         return text, None, None
     # The decision is the screen's alone; the id is read for withheld text only.
-    rule = credentials.screen_rule(screened, known_secrets, labelled=True)[1]
+    rule = credentials.screen_rule(screened, known_secrets, **_JOURNAL_SCREEN)[1]
     if rule == credentials.RULE_INVISIBLE and "\x1b" in text:
         rule = RULE_UNVERIFIABLE_ESCAPE
     return marker, OMISSIONS[marker], rule
@@ -740,9 +751,9 @@ def screen_text_rules(raw: bytes, known_secrets: tuple[str, ...], truncated: boo
     except UnicodeDecodeError:
         return (RULE_NOT_UTF8,)
     text = _SGR.sub("", original)
-    rules = credentials.screen_rules(text, known_secrets, labelled=True)
+    rules = credentials.screen_rules(text, known_secrets, **_JOURNAL_SCREEN)
     if text != original:
-        rules += credentials.screen_rules(_SGR_ESCAPE.sub("", original), known_secrets, labelled=True)
+        rules += credentials.screen_rules(_SGR_ESCAPE.sub("", original), known_secrets, **_JOURNAL_SCREEN)
     if "\x1b" in text:
         rules = tuple(RULE_UNVERIFIABLE_ESCAPE if rule == credentials.RULE_INVISIBLE else rule for rule in rules)
     return tuple(dict.fromkeys(rules))

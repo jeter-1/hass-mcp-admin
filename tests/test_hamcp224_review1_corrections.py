@@ -157,7 +157,11 @@ class CrossPathCredentialTests(Harness):
     def test_the_journal_screen_is_the_configuration_definitions_screen(self):
         # One screen: the reader holds no credential pattern of its own.
         source = (author.PACKAGE / "incident_logs" / "host_journal.py").read_text(encoding="utf-8")
-        self.assertIn("credentials.screen(text, known_secrets, labelled=True)", source)
+        # HAMCP-234 step 2: the journal mode is the labelled forms plus the
+        # contiguous ``user_pass_host``, options of the same shared screen.
+        self.assertIn("credentials.screen(text, known_secrets, **_JOURNAL_SCREEN)", source)
+        self.assertIn('_JOURNAL_SCREEN = MappingProxyType({"labelled": True, "contiguous_user_pass_host": True})',
+                      source)
         for private in ("_JOURNAL_KEYS", "_KEY_FORM", "journal_credential_text", "credential_text(",
                         "unverifiable_text(", "squash("):
             self.assertNotIn(private, source)
