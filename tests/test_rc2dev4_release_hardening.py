@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import logging
+import os
 from pathlib import Path
 import tempfile
 import time
@@ -303,7 +304,7 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 gc.enable()
         self.assertTrue(gaps)
         wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .1)
-        print(json.dumps({"fixture": "dependency_cursor_continuation",
+        print(json.dumps({"fixture": "dependency_cursor_continuation", "cpu_count": os.cpu_count(),
                           "maximum_loop_gap_seconds": max(gaps), "unstalled_gap_seconds": unstalled,
                           "maximum_runner_delay_seconds": max(delays), "wall_gap": wall,
                           "thread_cpu_seconds": cpu_seconds, "thread_cpu_bound_seconds": .1}), flush=True)

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -543,7 +544,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         finally:
             gc.enable()
         wall = loop_gap.gap_report(gaps, [unstalled+delay for delay in delays], .3, cap=.05)
-        print(json.dumps({'fixture': 'maximum_automation_baseline_inventory',
+        print(json.dumps({'fixture': 'maximum_automation_baseline_inventory', 'cpu_count': os.cpu_count(),
                           'maximum_loop_gap_seconds': max(gaps), 'unstalled_gap_seconds': unstalled,
                           'maximum_runner_delay_seconds': max(delays), 'wall_gap': wall,
                           'maximum_thread_cpu_gap_seconds': max(cpu_gaps),

@@ -9,6 +9,16 @@ The baseline's contribution is capped, so every bound stays at or below
 stall, including when every baseline reports an arbitrarily noisy runner; the
 HAMCP-208 review 1 probe covers three bodies byte for byte, and
 ``support/loop_stall_probe.py`` applies the same stall to all six.
+
+Wall allowance + cap (ceiling): alarmo and baseline .30 + .05 (.35);
+continuation .10 + .10 (.20); catalog, native and upstream .25 + .10 (.35).
+Loop-thread CPU: catalog, native and upstream .10 + min(gen-2 CPU, .10)
+(ceiling .20); alarmo and baseline .10 fixed per gap and continuation .10
+total, all with collection held off. Measured idle detection floors
+(allowance + idle baseline, 25 unloaded runs per body, median / max): alarmo
+.3109 / .3112 s, baseline .3059 / .3061 s, continuation .1056 / .1058 s,
+catalog, native and upstream .2556 / .2559 s wall and .1000 / .1000 s CPU.
+Details in ``support/loop_gap.py``.
 """
 import asyncio
 import re

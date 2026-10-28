@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import replace
 import gc
 import json
+import os
 import subprocess
 from pathlib import Path
 import sys
@@ -613,7 +614,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(owner, stages[name])
             wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .25)
             thread_cpu = loop_gap.gap_report(cpu_gaps, collections, .1)
-            print(json.dumps({"fixture": "assembled_dashboard_admission_hash_scan_export",
+            print(json.dumps({"fixture": "assembled_dashboard_admission_hash_scan_export", "cpu_count": os.cpu_count(),
                 "controlled_contention": contention, "maximum_loop_gap_seconds": max(gaps),
                 "unstalled_gap_seconds": unstalled, "maximum_runner_delay_seconds": max(delays), "wall_gap": wall,
                 "maximum_thread_cpu_gap_seconds": max(cpu_gaps), "thread_cpu_gap": thread_cpu,

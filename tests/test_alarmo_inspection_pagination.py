@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -696,7 +697,8 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             gc.enable()
         wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .3, cap=.05)
-        print(json.dumps({"fixture": "maximum_alarmo_inventory", "maximum_loop_gap_seconds": max(gaps),
+        print(json.dumps({"fixture": "maximum_alarmo_inventory", "cpu_count": os.cpu_count(),
+                          "maximum_loop_gap_seconds": max(gaps),
                           "unstalled_gap_seconds": unstalled, "maximum_runner_delay_seconds": max(delays),
                           "wall_gap": wall, "maximum_thread_cpu_gap_seconds": max(cpu_gaps),
                           "window_thread_cpu_seconds": window_cpu, "thread_cpu_bound_seconds": .1,

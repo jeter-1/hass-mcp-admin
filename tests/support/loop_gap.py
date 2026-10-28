@@ -18,6 +18,29 @@ The baseline's contribution is capped. ``gap_bound`` refuses an allowance and
 cap whose sum exceeds ``CEILING_SECONDS``, so every bound stays at least 50 ms
 below a 400 ms loop stall: a stall that long produces a wall gap of at least
 400 ms on any runner, so it is rejected however noisy the runner reports.
+
+Per body (wall = allowance + min(baseline, cap); ceiling = allowance + cap):
+
+==============  ===============  ====  =======  ==========================
+body            wall allowance   cap   ceiling  thread CPU bound
+==============  ===============  ====  =======  ==========================
+alarmo          .30              .05   .35      .10 fixed per gap (GC off)
+baseline        .30              .05   .35      .10 fixed per gap (GC off)
+continuation    .10              .10   .20      .10 total, fixed (GC off)
+catalog         .25              .10   .35      .10 + min(gen-2 CPU, .10)
+native          .25              .10   .35      .10 + min(gen-2 CPU, .10)
+upstream        .25              .10   .35      .10 + min(gen-2 CPU, .10)
+==============  ===============  ====  =======  ==========================
+
+The idle detection floor is the allowance plus the measured idle baseline,
+the bound a gap gets when the runner is quiet. Measured 2026-10-28 on a
+10-core host with no added load, 25 isolated runs per body, median / max:
+alarmo .3109 / .3112 s (10 ms heartbeat), baseline .3059 / .3061 s,
+continuation .1056 / .1058 s, catalog, native and upstream .2556 / .2559 s;
+the CPU floor in catalog, native and upstream is .1000 / .1000 s (no major
+collection fell in the binding gap). The bound rises above that floor only
+by the run delay and collection CPU measured in the same gap, and never past
+the ceiling.
 """
 
 from __future__ import annotations

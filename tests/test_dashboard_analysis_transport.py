@@ -3,6 +3,7 @@
 import asyncio
 import json
 import math
+import os
 from pathlib import Path
 import sys
 import subprocess
@@ -438,7 +439,7 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
                     await stress
             wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .25)
             thread_cpu = loop_gap.gap_report(cpu_gaps, collections, .1)
-            print(json.dumps({'fixture': 'native_dashboard_inventory_4MiB_10000',
+            print(json.dumps({'fixture': 'native_dashboard_inventory_4MiB_10000', 'cpu_count': os.cpu_count(),
                 'controlled_contention': contention, 'maximum_loop_gap_seconds': max(gaps),
                 'unstalled_gap_seconds': unstalled, 'maximum_runner_delay_seconds': max(delays), 'wall_gap': wall,
                 'maximum_thread_cpu_gap_seconds': max(cpu_gaps), 'thread_cpu_gap': thread_cpu,
@@ -1083,7 +1084,7 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
                     await stress
             wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .25)
             thread_cpu = loop_gap.gap_report(cpu_gaps, collections, .1)
-            print(json.dumps({'fixture': 'upstream_dashboard_2MiB_500_descriptors',
+            print(json.dumps({'fixture': 'upstream_dashboard_2MiB_500_descriptors', 'cpu_count': os.cpu_count(),
                 'controlled_contention': contention, 'maximum_loop_gap_seconds': max(gaps),
                 'unstalled_gap_seconds': unstalled, 'maximum_runner_delay_seconds': max(delays), 'wall_gap': wall,
                 'maximum_thread_cpu_gap_seconds': max(cpu_gaps), 'thread_cpu_gap': thread_cpu,
