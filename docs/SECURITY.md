@@ -888,6 +888,33 @@ option, role, fallback or delegated provider.
 - **HAMCP-069B profiles.** The two unsigned 069B profiles now name every read
   their gateway sends; no signed profile changes.
 
+The `2.4.1-beta.43` slice (HAMCP-234 step 2) adds no permission, role,
+route, provider, fallback, write path, input or tool. It **relaxes one
+journal rule**, by owner decision (Josh, 2026-10-27), from the beta.42 live
+calibration (`addon:core_matter_server`: 37 of 40 lines withheld, all as
+`user_pass_host.squashed`).
+
+- **What changed.** In the host journal path only, `user_pass_host` is read
+  in the normal form as one contiguous token: no whitespace between user,
+  `:`, password, `@` and host. It is no longer read in the squashed form,
+  where a timestamp's `:` and a later `@peer` joined into the shape. It is
+  an option of the same shared `credentials.screen`
+  (`contiguous_user_pass_host`, default off), set only by
+  `host_journal._JOURNAL_SCREEN`; it is not a separate screen.
+- **What did not.** Every other rule is unchanged in both forms: credential
+  URLs and connection URIs, `password=`, the labelled keywords, `Bearer`,
+  `-P`/`--pw`, known secrets (normal and squashed), PEM headers, invisible
+  and control characters, and the value shapes. The configuration
+  definitions (HAMCP-132) and trace (HAMCP-225) paths do not set the option;
+  their suites pass unchanged. Mutations that leak the option into either
+  path are killed by those unchanged suites.
+- **Disclosed cost.** A scheme-less `user:pass@host` split by whitespace
+  (literal or percent-encoded) is shown in the journal unless another rule
+  meets it. A contiguous one, and any `scheme://user:pass@host`, is still
+  withheld.
+- **Rule ids.** The journal's `RULE_IDS` drop `user_pass_host.squashed`
+  (44); a calibration never reports it.
+
 The `2.4.1-beta.42` slice (HAMCP-234 step 1) adds no permission, role,
 route, provider, fallback, write path or tool, and **changes nothing in what
 is withheld**.

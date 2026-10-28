@@ -2,6 +2,16 @@
 
 Date: 2026-07-10
 
+## Host journal one-token user:pass@host (2.4.1-beta.43, HAMCP-234 step 2)
+
+`get_incident_logs` keeps its routing, provider, policy, `risk=read`,
+writes `none` and its input schema (`calibration` included; a test now reads
+it from the served `tools/list`). In the host journal path only,
+`user_pass_host` is read as one contiguous token in the normal form, not in
+the squashed form; every other rule is unchanged. A calibration's
+`rule_ids` lists 44 ids. No tool is added, so the catalog count is the
+base's.
+
 ## Host journal rule names, calibration and levels (2.4.1-beta.42, HAMCP-234)
 
 `get_incident_logs` keeps its routing, provider, policy, `risk=read` and

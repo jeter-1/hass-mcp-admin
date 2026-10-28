@@ -1,5 +1,19 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.43** relaxes one host journal rule, proven by a
+live calibration (HAMCP-234 step 2). On beta.42, `addon:core_matter_server`
+withheld 37 of 40 lines as `user_pass_host.squashed`: with whitespace
+removed, matter.js timestamps and a later `@peer` read as
+`user:password@host`. In the journal only, `user_pass_host` now needs one
+contiguous token in the normal form. Every other rule is unchanged, in both
+forms. The configuration-definitions and trace paths are unchanged. The
+disclosed cost is that a whitespace-split, scheme-less `user:pass@host` is
+shown in the journal. Rollback is reinstalling beta.42. Read the
+[2.4.1-beta.43 release notes](docs/V2_4_1_BETA43_RELEASE_NOTES.md) and
+[2.4.1-beta.43 acceptance contract](docs/V2_4_1_BETA43_ACCEPTANCE.md).
+
+It builds on beta.42 and the releases below.
+
 Engineering **2.4.1-beta.42** makes host journal reads usable on real
 add-on log formats (HAMCP-234 step 1). A withheld entry names the fixed
 screen rule that withheld each part (`withheld_rules`), and `calibration:
