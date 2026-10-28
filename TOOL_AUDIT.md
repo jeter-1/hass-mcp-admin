@@ -2,6 +2,35 @@
 
 Date: 2026-07-10
 
+## Host journal one-token user:pass@host (2.4.1-beta.43, HAMCP-234 step 2)
+
+`get_incident_logs` keeps its routing, provider, policy, `risk=read`,
+writes `none` and its input schema (`calibration` included; a test now reads
+it from the served `tools/list`). In the host journal path only,
+`user_pass_host` is read as one contiguous token in the normal form and in
+each raw token (split at the raw ASCII whitespace of the text as given) as
+given and after each round of its own percent-decode, at most four rounds,
+each stage normalized before its whitespace is removed (R3-H1, fixed), so
+whitespace that decoding or normalization introduces within one raw token
+never splits it, with literal or encoded `:` and `@`; non-ASCII whitespace
+no longer splits a raw token. It is not read in the squashed form; every
+other rule is unchanged. A calibration's `rule_ids` lists 44 ids. No tool is
+added, so the catalog count is the base's.
+
+Residual: raw ASCII whitespace (U+0009–U+000D, U+0020), journal mode,
+scheme-less only; disclosed residual, accepted by Josh 2026-10-28. A
+scheme-less `user:pass@host` split that way is shown in the journal, although
+Python's proxy parser (`urllib.request._parse_proxy`) accepts a literal space
+inside a password (verified offline); `http`, `https` and `socks5` forms stay
+withheld (`credential_url`).
+
+Known limitation: journal final screening has no total-time bound and runs on
+the event loop. A maximum-size pathological read (255 × 16,384-byte messages)
+took about 408 s on c371c739 (404.877 s screening, 408.577 s call; no deadline
+flag; every field fully screened, no unscreened output). The missing bound
+predates beta.43; the D320-H1 correction made the slow shape about 1.5x slower
+than c0789386. Tracked as HAMCP-240.
+
 ## Host journal rule names, calibration and levels (2.4.1-beta.42, HAMCP-234)
 
 `get_incident_logs` keeps its routing, provider, policy, `risk=read` and

@@ -56,7 +56,6 @@ def deciding_cases() -> dict[str, tuple[bytes, bool]]:
         "connection_uri": b("mqtt" + "://" + NEEDLE + ".example.invalid"),
         "connection_uri.squashed": b("mqtt" + colon + " //" + NEEDLE + ".example.invalid"),
         "user_pass_host": b("u" + colon + NEEDLE + at + "example.invalid"),
-        "user_pass_host.squashed": b("u" + colon + " " + NEEDLE + at + "example.invalid"),
         "password_field": b("pass" + "wd =" + NEEDLE),
         "password_field.squashed": b("pass wd" + "=" + NEEDLE),
         "marker_collision": b("see " + credentials.WITHHELD_MARKER),
@@ -77,6 +76,12 @@ def deciding_cases() -> dict[str, tuple[bytes, bool]]:
         cases["labelled_keyword:" + name + ".squashed"] = b("the " + split.get(name, word[:2] + " " + word[2:])
                                                              + " " + NEEDLE)
     return cases
+
+
+# The squashed ``user_pass_host`` is not read by the journal (HAMCP-234 step
+# 2, owner decision): this field is shown there, and still withheld by the
+# shared screen in its default and labelled modes (definitions, traces).
+SQUASHED_USER_PASS_HOST = "u" + ":" + " " + NEEDLE + "@" + "example.invalid"
 
 
 # A keyword rule always decides these first (``bearer``, ``private key``):
@@ -104,6 +109,16 @@ class RuleIdTests(unittest.TestCase):
         _marker, rule = credentials.screen_rule("a " * (credentials.MAX_OPTION_SCAN // 2 + 1), (), labelled=True)
         self.assertEqual(rule, credentials.RULE_PASSWORD_OPTION_SCAN_LIMIT)
 
+    def test_the_squashed_user_pass_host_is_not_a_journal_rule(self):
+        # HAMCP-234 step 2: shown by the journal, withheld by the shared screen's other modes.
+        self.assertEqual(hj.screen_text_rule(SQUASHED_USER_PASS_HOST.encode(), (KNOWN,)),
+                         (SQUASHED_USER_PASS_HOST, None, None))
+        self.assertEqual(hj.screen_text_rules(SQUASHED_USER_PASS_HOST.encode(), (KNOWN,)), ())
+        for labelled in (False, True):
+            with self.subTest(labelled=labelled):
+                self.assertEqual(credentials.screen_rule(SQUASHED_USER_PASS_HOST, (KNOWN,), labelled=labelled),
+                                 (credentials.WITHHELD_MARKER, "user_pass_host.squashed"))
+
     def test_the_matching_only_rules_are_counted_beside_their_keyword(self):
         for rule, (text, decided) in MATCHING_ONLY.items():
             with self.subTest(rule=rule):
@@ -113,7 +128,8 @@ class RuleIdTests(unittest.TestCase):
     def test_every_rule_id_is_covered_and_fixed(self):
         covered = set(deciding_cases()) | set(MATCHING_ONLY) | {credentials.RULE_PASSWORD_OPTION_SCAN_LIMIT}
         self.assertEqual(covered, set(hj.RULE_IDS))
-        self.assertEqual(len(hj.RULE_IDS), 45)
+        self.assertEqual(len(hj.RULE_IDS), 44)
+        self.assertEqual(credentials.RULE_IDS - hj.RULE_IDS, {"user_pass_host.squashed"})
         self.assertNotIn(hj.RULE_UNLISTED, hj.RULE_IDS)
         for rule in sorted(hj.RULE_IDS | {hj.RULE_UNLISTED}):
             with self.subTest(rule=rule):
