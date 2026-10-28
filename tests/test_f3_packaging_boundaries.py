@@ -118,6 +118,89 @@ def _source_module_names() -> set[str]:
     return names
 
 
+_IMPORT_CLOSURE_SCRIPT = textwrap.dedent(
+    """
+    import importlib
+    import json
+    from pathlib import Path
+    import pkgutil
+    import sys
+
+    forbidden_root = Path(sys.argv[1]).resolve()
+    # The isolated image tree and the interpreter's own prefix may
+    # sit inside the checkout when scratch lives in .artifacts/;
+    # they are not repository source. The checkout root itself, or
+    # any ancestor of it, is never exempt.
+    exempt = [
+        root
+        for root in {
+            Path(sys.argv[2]).resolve(),
+            Path(sys.prefix).resolve(),
+            Path(sys.exec_prefix).resolve(),
+        }
+        if root != forbidden_root and root not in forbidden_root.parents
+    ]
+    for entry in sys.path:
+        resolved = Path(entry or Path.cwd()).resolve()
+        if any(
+            resolved == root or root in resolved.parents
+            for root in exempt
+        ):
+            continue
+        if resolved == forbidden_root or forbidden_root in resolved.parents:
+            raise AssertionError(f"repository path leaked into sys.path: {resolved}")
+
+    import ha_mcp_engineering
+    names = {"ha_mcp_engineering"}
+    names.update(
+        item.name
+        for item in pkgutil.walk_packages(
+            ha_mcp_engineering.__path__,
+            ha_mcp_engineering.__name__ + ".",
+        )
+    )
+    for name in sorted(names):
+        importlib.import_module(name)
+    importlib.import_module("ha_mcp_engineering.f3.contracts")
+
+    forbidden_modules = sorted(
+        name
+        for name in sys.modules
+        if name == "f3_contracts"
+        or name.startswith("f3_contracts.")
+        or name == "tests"
+        or name.startswith("tests.")
+        or name == "f3_dashboard"
+        or name.startswith("f3_dashboard.")
+    )
+    if forbidden_modules:
+        raise AssertionError(
+            f"repository-only modules imported: {forbidden_modules}"
+        )
+    print(json.dumps(sorted(names)))
+    """
+)
+
+
+def _run_import_closure(isolated, python_path, working):
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"PYTHONHOME", "PYTHONPATH"}
+    }
+    environment["PYTHONPATH"] = os.pathsep.join(str(path) for path in python_path)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    return subprocess.run(
+        [sys.executable, "-P", "-c", _IMPORT_CLOSURE_SCRIPT, str(ROOT), str(isolated)],
+        cwd=working,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
 class BuiltImageImportClosureTests(unittest.TestCase):
     def test_every_shipped_module_imports_without_repository_root(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -127,66 +210,7 @@ class BuiltImageImportClosureTests(unittest.TestCase):
             shutil.copytree(RUNTIME, image_app / "ha_mcp_engineering")
             working.mkdir()
 
-            script = textwrap.dedent(
-                """
-                import importlib
-                import json
-                from pathlib import Path
-                import pkgutil
-                import sys
-
-                forbidden_root = Path(sys.argv[1]).resolve()
-                for entry in sys.path:
-                    resolved = Path(entry or Path.cwd()).resolve()
-                    if resolved == forbidden_root or forbidden_root in resolved.parents:
-                        raise AssertionError(f"repository path leaked into sys.path: {resolved}")
-
-                import ha_mcp_engineering
-                names = {"ha_mcp_engineering"}
-                names.update(
-                    item.name
-                    for item in pkgutil.walk_packages(
-                        ha_mcp_engineering.__path__,
-                        ha_mcp_engineering.__name__ + ".",
-                    )
-                )
-                for name in sorted(names):
-                    importlib.import_module(name)
-                importlib.import_module("ha_mcp_engineering.f3.contracts")
-
-                forbidden_modules = sorted(
-                    name
-                    for name in sys.modules
-                    if name == "f3_contracts"
-                    or name.startswith("f3_contracts.")
-                    or name == "tests"
-                    or name.startswith("tests.")
-                    or name == "f3_dashboard"
-                    or name.startswith("f3_dashboard.")
-                )
-                if forbidden_modules:
-                    raise AssertionError(
-                        f"repository-only modules imported: {forbidden_modules}"
-                    )
-                print(json.dumps(sorted(names)))
-                """
-            )
-            environment = {
-                key: value
-                for key, value in os.environ.items()
-                if key not in {"PYTHONHOME", "PYTHONPATH"}
-            }
-            environment["PYTHONPATH"] = str(image_app)
-            environment["PYTHONDONTWRITEBYTECODE"] = "1"
-            completed = subprocess.run(
-                [sys.executable, "-P", "-c", script, str(ROOT)],
-                cwd=working,
-                env=environment,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+            completed = _run_import_closure(isolated, [image_app], working)
             self.assertEqual(
                 completed.returncode,
                 0,
@@ -203,6 +227,26 @@ class BuiltImageImportClosureTests(unittest.TestCase):
             )
             self.assertFalse((image_app / "f3_contracts").exists())
             self.assertFalse((image_app / "f3_dashboard").exists())
+
+    def test_repository_paths_on_sys_path_are_still_refused(self):
+        # The isolated-tree and interpreter-prefix exemptions must not hide a
+        # leaked checkout root or repository source directory.
+        with tempfile.TemporaryDirectory() as temporary:
+            isolated = Path(temporary)
+            image_app = isolated / "app"
+            working = isolated / "working"
+            shutil.copytree(RUNTIME, image_app / "ha_mcp_engineering")
+            working.mkdir()
+            for leaked in (ROOT, BETA_DIR):
+                with self.subTest(leaked=leaked.relative_to(ROOT).as_posix()):
+                    completed = _run_import_closure(
+                        isolated, [image_app, leaked], working
+                    )
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn(
+                        f"repository path leaked into sys.path: {leaked.resolve()}",
+                        completed.stderr,
+                    )
 
     def test_every_declared_architecture_uses_the_same_package_copy(self):
         config = yaml.safe_load(
@@ -327,7 +371,9 @@ class F3ImportBoundaryTests(unittest.TestCase):
     def test_explicit_f3_imports_match_the_reviewed_allowlist(self):
         actual: set[str] = set()
         for path in sorted(ROOT.rglob("*.py")):
-            if ".git" in path.parts:
+            # Dot-prefixed parts (.git, .artifacts scratch, nested worktrees)
+            # hold no repository source.
+            if any(part.startswith(".") for part in path.relative_to(ROOT).parts):
                 continue
             imported = _imports(path)
             if any(
