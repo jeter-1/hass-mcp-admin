@@ -906,8 +906,11 @@ calibration (`addon:core_matter_server`: 37 of 40 lines withheld, all as
   `-P`/`--pw`, known secrets (normal and squashed), PEM headers, invisible
   and control characters, and the value shapes. The configuration
   definitions (HAMCP-132) and trace (HAMCP-225) paths do not set the option;
-  their suites pass unchanged. Mutations that leak the option into either
-  path are killed by those unchanged suites.
+  their suites pass unchanged. A mutation that leaks the option into the
+  definitions path is killed by the unchanged HAMCP-132 suite. One that
+  leaks it into the trace path survives the unchanged HAMCP-225 suites and
+  is killed by the step 2 cross-path boundary test
+  (`test_hamcp234_step2_journal_relaxation`).
 - **Disclosed cost.** A scheme-less `user:pass@host` split by whitespace
   (literal or percent-encoded) is shown in the journal unless another rule
   meets it. A contiguous one, and any `scheme://user:pass@host`, is still

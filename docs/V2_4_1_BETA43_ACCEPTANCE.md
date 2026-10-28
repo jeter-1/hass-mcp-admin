@@ -149,10 +149,21 @@ committed file holds secret-shaped text.
   - `S1`-`S3`: `user_pass_host` still on the squashed form in the journal.
     The live-shaped benign tests must fail.
   - `L1`-`L4`: the relaxation leaking into the definitions or trace paths.
-    Only the unchanged HAMCP-132 or HAMCP-225 suites run, and they must
-    fail.
+    The unchanged HAMCP-132 and HAMCP-225 suites run first, then the step 2
+    suite, where
+    `test_definitions_and_trace_paths_still_withhold_the_live_shaped_lines`
+    must fail.
   - `C1`-`C2`: `calibration` missing from the served schema. The
     served-schema test must fail.
+
+  Result (`mutations.json`): all 9 are killed over a 312-test baseline.
+  `L1` and `L4` are killed by the unchanged HAMCP-132 suite
+  (`test_a_colon_then_an_at_sign_across_whitespace_is_withheld_by_design`).
+  **`L2` and `L3` (the trace path) survive the unchanged HAMCP-225 suites**
+  and are killed only by the step 2 boundary test. The HAMCP-225 suites hold
+  no text that only the squashed `user_pass_host` withholds. They stay
+  byte-unchanged, so the trace path's guard against this leak is the step 2
+  suite.
 
 ## 2. Release CI and publication
 
