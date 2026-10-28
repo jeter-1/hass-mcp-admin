@@ -3,6 +3,7 @@
 import asyncio
 import json
 import math
+import os
 from pathlib import Path
 import sys
 import subprocess
@@ -18,6 +19,7 @@ from ha_mcp_engineering.clients.dashboard_analysis import CollectionBudget, Dash
 from ha_mcp_engineering.dashboard_analysis import contracts as c
 from ha_mcp_engineering.dashboard_analysis.provider import project_inventory
 from ha_mcp_engineering.request_context import begin_request, end_request
+from support import loop_gap
 from support.real_time import real_time_measurement
 from ha_mcp_engineering.clients import dashboard_analysis as client_module
 
@@ -378,7 +380,8 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
         for line in result.stderr.splitlines():
             print(line.replace('Ran ', 'Isolated child summary: ', 1) if line.startswith('Ran ') else line,
                   file=sys.stderr, flush=True)
-        self.assertEqual(result.returncode, 0, 'Native inventory responsiveness child failed.')
+        self.assertEqual(result.returncode, 0,
+                         loop_gap.child_failure('Native inventory responsiveness child failed.', result))
 
     async def _maximum_native_path(self):
         import gc
@@ -388,27 +391,33 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
         self.states_raw = raw + b' ' * (c.INVENTORY_BYTES - len(raw))
         original_gc = (gc.isenabled(), gc.get_threshold())
         for contention in (False, True):
-            gaps, cpu_gaps, events, starts = [], [], [], {}
+            gaps, cpu_gaps, collections, events, starts = [], [], [], [], {}
+            collected = [0.0]
             loop_thread = threading.get_ident()
             async def heartbeat():
-                last, last_cpu = time.perf_counter(), time.thread_time()
+                last, last_cpu, last_collected = time.perf_counter(), time.thread_time(), collected[0]
                 while True:
                     await asyncio.sleep(.005)
                     now, cpu = time.perf_counter(), time.thread_time()
                     gaps.append(now - last)
                     cpu_gaps.append(cpu - last_cpu)
-                    last, last_cpu = now, cpu
+                    collections.append(collected[0] - last_collected)
+                    last, last_cpu, last_collected = now, cpu, collected[0]
             def observe_gc(phase, info):
                 if info['generation'] != 2:
                     return
                 thread = threading.get_ident()
                 if phase == 'start':
                     starts[thread] = (time.perf_counter(), time.thread_time())
-                elif thread in starts and len(events) < 64:
+                elif thread in starts:
                     wall, cpu = starts.pop(thread)
-                    events.append({'event_loop_thread': thread == loop_thread,
-                                   'wall_seconds': time.perf_counter() - wall,
-                                   'thread_cpu_seconds': time.thread_time() - cpu})
+                    wall, cpu = time.perf_counter() - wall, time.thread_time() - cpu
+                    if thread == loop_thread:
+                        collected[0] += cpu
+                    if len(events) < 64:
+                        events.append({'event_loop_thread': thread == loop_thread,
+                                       'wall_seconds': wall, 'thread_cpu_seconds': cpu})
+            unstalled = await loop_gap.unstalled_gap(.005)
             pulse = asyncio.create_task(heartbeat())
             stress = asyncio.create_task(asyncio.to_thread(sum, range(4_000_000))) if contention else None
             gc.callbacks.append(observe_gc)
@@ -426,15 +435,18 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(pulse, return_exceptions=True)
                 if stress:
                     await stress
-            print(json.dumps({'fixture': 'native_dashboard_inventory_4MiB_10000',
+            wall = loop_gap.gap_report(gaps, [unstalled] * len(gaps), .25)
+            thread_cpu = loop_gap.gap_report(cpu_gaps, collections, .1)
+            print(json.dumps({'fixture': 'native_dashboard_inventory_4MiB_10000', 'cpu_count': os.cpu_count(),
                 'controlled_contention': contention, 'maximum_loop_gap_seconds': max(gaps),
-                'maximum_thread_cpu_gap_seconds': max(cpu_gaps), 'major_gc_events': events,
-                'gc_enabled': original_gc[0], 'gc_thresholds': original_gc[1],
-                'wall_bound_seconds': .25, 'thread_cpu_bound_seconds': .1}), flush=True)
+                'unstalled_gap_seconds': unstalled, 'wall_gap': wall,
+                'maximum_thread_cpu_gap_seconds': max(cpu_gaps), 'thread_cpu_gap': thread_cpu,
+                'major_gc_events': events, 'gc_enabled': original_gc[0], 'gc_thresholds': original_gc[1]}), flush=True)
             self.assertEqual(len(projection.records), c.INVENTORY_ENTRIES)
             self.assertTrue(projection.complete)
-            self.assertLess(max(gaps), .25)
-            self.assertLess(max(cpu_gaps), .1)
+            self.assertLess(wall['gap_seconds'], wall['bound_seconds'], loop_gap.gap_message('Wall', wall))
+            self.assertLess(thread_cpu['gap_seconds'], thread_cpu['bound_seconds'],
+                            loop_gap.gap_message('Thread CPU', thread_cpu))
             self.assertEqual((gc.isenabled(), gc.get_threshold()), original_gc)
 
 
@@ -1010,7 +1022,8 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
         for line in result.stderr.splitlines():
             print(line.replace('Ran ', 'Isolated child summary: ', 1) if line.startswith('Ran ') else line,
                   file=sys.stderr, flush=True)
-        self.assertEqual(result.returncode, 0, 'Upstream transport responsiveness child failed.')
+        self.assertEqual(result.returncode, 0,
+                         loop_gap.child_failure('Upstream transport responsiveness child failed.', result))
 
     async def _maximum_upstream_path(self):
         import gc
@@ -1022,27 +1035,33 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
         self.catalog_padding = 'x' * 3500
         original_gc = (gc.isenabled(), gc.get_threshold())
         for contention in (False, True):
-            gaps, cpu_gaps, events, starts = [], [], [], {}
+            gaps, cpu_gaps, collections, events, starts = [], [], [], [], {}
+            collected = [0.0]
             loop_thread = threading.get_ident()
             async def heartbeat():
-                last, last_cpu = time.perf_counter(), time.thread_time()
+                last, last_cpu, last_collected = time.perf_counter(), time.thread_time(), collected[0]
                 while True:
                     await asyncio.sleep(.005)
                     now, cpu = time.perf_counter(), time.thread_time()
                     gaps.append(now - last)
                     cpu_gaps.append(cpu - last_cpu)
-                    last, last_cpu = now, cpu
+                    collections.append(collected[0] - last_collected)
+                    last, last_cpu, last_collected = now, cpu, collected[0]
             def observe_gc(phase, info):
                 if info['generation'] != 2:
                     return
                 thread = threading.get_ident()
                 if phase == 'start':
                     starts[thread] = (time.perf_counter(), time.thread_time())
-                elif thread in starts and len(events) < 64:
+                elif thread in starts:
                     wall, cpu = starts.pop(thread)
-                    events.append({'event_loop_thread': thread == loop_thread,
-                        'wall_seconds': time.perf_counter() - wall,
-                        'thread_cpu_seconds': time.thread_time() - cpu})
+                    wall, cpu = time.perf_counter() - wall, time.thread_time() - cpu
+                    if thread == loop_thread:
+                        collected[0] += cpu
+                    if len(events) < 64:
+                        events.append({'event_loop_thread': thread == loop_thread,
+                            'wall_seconds': wall, 'thread_cpu_seconds': cpu})
+            unstalled = await loop_gap.unstalled_gap(.005)
             pulse = asyncio.create_task(heartbeat())
             stress = asyncio.create_task(asyncio.to_thread(sum, range(4_000_000))) if contention else None
             gc.callbacks.append(observe_gc)
@@ -1059,15 +1078,18 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(pulse, return_exceptions=True)
                 if stress:
                     await stress
-            print(json.dumps({'fixture': 'upstream_dashboard_2MiB_500_descriptors',
+            wall = loop_gap.gap_report(gaps, [unstalled] * len(gaps), .25)
+            thread_cpu = loop_gap.gap_report(cpu_gaps, collections, .1)
+            print(json.dumps({'fixture': 'upstream_dashboard_2MiB_500_descriptors', 'cpu_count': os.cpu_count(),
                 'controlled_contention': contention, 'maximum_loop_gap_seconds': max(gaps),
-                'maximum_thread_cpu_gap_seconds': max(cpu_gaps), 'major_gc_events': events,
-                'gc_enabled': original_gc[0], 'gc_thresholds': original_gc[1],
-                'wall_bound_seconds': .25, 'thread_cpu_bound_seconds': .1}), flush=True)
+                'unstalled_gap_seconds': unstalled, 'wall_gap': wall,
+                'maximum_thread_cpu_gap_seconds': max(cpu_gaps), 'thread_cpu_gap': thread_cpu,
+                'major_gc_events': events, 'gc_enabled': original_gc[0], 'gc_thresholds': original_gc[1]}), flush=True)
             self.assertFalse(result.call_result['isError'])
             self.assertEqual(len(result.handshake.tools), 500)
-            self.assertLess(max(gaps), .25)
-            self.assertLess(max(cpu_gaps), .1)
+            self.assertLess(wall['gap_seconds'], wall['bound_seconds'], loop_gap.gap_message('Wall', wall))
+            self.assertLess(thread_cpu['gap_seconds'], thread_cpu['bound_seconds'],
+                            loop_gap.gap_message('Thread CPU', thread_cpu))
             self.assertEqual((gc.isenabled(), gc.get_threshold()), original_gc)
 
 

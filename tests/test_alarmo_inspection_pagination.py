@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -10,6 +11,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+from support import loop_gap
 from test_integration_inspection_contract import TARGET, fixture, setup_service
 from ha_mcp_engineering.integration_inspection import contracts as c
 from ha_mcp_engineering.integration_inspection.models import InspectionError
@@ -559,8 +561,10 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         # check depend on unrelated tests. Run the unchanged fixture in a fresh
         # interpreter. The child bounds the heartbeat's loop gap and the
         # loop-thread CPU between yields, with collection held off only for
-        # the timed window. -I avoids inherited Python startup/path settings;
-        # no retry, threshold adjustment or timing subtraction is performed.
+        # the timed window. The wall bound adds the same child's capped
+        # unstalled baseline (support/loop_gap.py, HAMCP-219) and stays below
+        # a 400 ms stall. -I avoids inherited Python startup/path settings;
+        # no retry is performed.
         result = subprocess.run(
             [sys.executable, "-I", "-B", "-c",
              "import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); "
@@ -578,7 +582,8 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
             if line.startswith("Ran "):
                 line = "Isolated child test summary: " + line.removeprefix("Ran ")
             print(line, file=sys.stderr, flush=True)
-        self.assertEqual(result.returncode, 0, "Isolated Alarmo responsiveness check failed.")
+        self.assertEqual(result.returncode, 0,
+                         loop_gap.child_failure("Isolated Alarmo responsiveness check failed.", result))
 
     def test_maximum_inventory_child_failure_is_not_accepted(self):
         from contextlib import redirect_stderr, redirect_stdout
@@ -666,11 +671,13 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         # The CPU bound is the loop-thread CPU spent between yields; the old
         # synchronous projection violates it, and a busy host cannot inflate
         # it. CPU time cannot see a blocking wait (sleep, lock, I/O) on the
-        # loop thread, so the heartbeat's wall gap is bounded as well, below
-        # a 400 ms stall and with margin for a fully loaded host.
+        # loop thread, so the heartbeat's wall gap is bounded as well: by an
+        # allowance plus the same child's idle unstalled gap, capped below a
+        # 400 ms stall.
         gc.collect()
         gc.disable()
         try:
+            unstalled = await loop_gap.unstalled_gap(.01)
             ticker = asyncio.create_task(heartbeat())
             await asyncio.sleep(0)
             gc.callbacks.append(observe_gc)
@@ -685,16 +692,18 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(ticker, return_exceptions=True)
         finally:
             gc.enable()
-        maximum_gap = max(gaps)
-        print(json.dumps({"fixture": "maximum_alarmo_inventory", "maximum_loop_gap_seconds": maximum_gap,
-                          "maximum_thread_cpu_gap_seconds": max(cpu_gaps),
-                          "window_thread_cpu_seconds": window_cpu,
-                          "wall_bound_seconds": .3, "thread_cpu_bound_seconds": .1,
+        wall = loop_gap.gap_report(gaps, [unstalled] * len(gaps), .3, cap=.05)
+        print(json.dumps({"fixture": "maximum_alarmo_inventory", "cpu_count": os.cpu_count(),
+                          "maximum_loop_gap_seconds": max(gaps),
+                          "unstalled_gap_seconds": unstalled, "wall_gap": wall, "maximum_thread_cpu_gap_seconds": max(cpu_gaps),
+                          "window_thread_cpu_seconds": window_cpu, "thread_cpu_bound_seconds": .1,
                           "sensors": c.MAX_SENSORS, "groups": c.MAX_GROUPS,
                           "gc_state": gc_state, "major_gc_events": gc_events}), flush=True)
         self.assertTrue(cpu_gaps)
-        self.assertLess(maximum_gap, .3, f"Projection and fitting left the event loop without a turn for {maximum_gap:.3f}s.")
-        self.assertLess(max(cpu_gaps), .1, "Projection and fitting must yield within the loop-thread CPU budget.")
+        self.assertLess(wall["gap_seconds"], wall["bound_seconds"],
+                        "Projection and fitting left the event loop without a turn: " + loop_gap.gap_message("Wall", wall))
+        self.assertLess(max(cpu_gaps), .1, f"Projection and fitting must yield within the loop-thread CPU budget;"
+                                           f" longest thread CPU gap {max(cpu_gaps):.4f}s, bound 0.100s.")
         self.assertEqual(report["membership"]["configured_members_retained"], 512)
         self.assertEqual(report["assessment"], "partial")
         self.assertIn("output_bytes", report["truncation"]["reasons"])

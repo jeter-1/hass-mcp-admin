@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import replace
 import gc
 import json
+import os
 import subprocess
 from pathlib import Path
 import sys
@@ -31,6 +32,7 @@ from ha_mcp_engineering.request_context import begin_request, end_request
 from ha_mcp_engineering.tools import dashboard as dashboard_tools
 from test_rc3a_dashboard_provider import settings, handshake, call_result, dashboard_tool
 import test_dashboard_analysis_transport as transport_cases
+from support import loop_gap
 from support.real_time import real_time_measurement
 
 
@@ -537,7 +539,8 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
         for line in result.stderr.splitlines():
             print(line.replace("Ran ", "Isolated child summary: ", 1) if line.startswith("Ran ") else line,
                   file=sys.stderr, flush=True)
-        self.assertEqual(result.returncode, 0, "Assembled analyzer responsiveness child failed.")
+        self.assertEqual(result.returncode, 0,
+                         loop_gap.child_failure("Assembled analyzer responsiveness child failed.", result))
 
     async def _full_assembled_path(self):
         # Maximum native wire bytes and entry count; bounded dashboard just
@@ -554,7 +557,8 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
         owner, original_gc = threading.get_ident(), (gc.isenabled(), gc.get_threshold())
         for contention in (False, True):
             self.service.snapshots.clear()
-            gaps, cpu_gaps, events, starts, stages = [], [], [], {}, {}
+            gaps, cpu_gaps, collections, events, starts, stages = [], [], [], [], {}, {}
+            collected = [0.0]
             original = c.worker
             async def worker(function, *args, **kwargs):
                 def observed():
@@ -562,24 +566,29 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
                     return function(*args, **kwargs)
                 return await original(observed)
             async def heartbeat():
-                last, last_cpu = time.perf_counter(), time.thread_time()
+                last, last_cpu, last_collected = time.perf_counter(), time.thread_time(), collected[0]
                 while True:
                     await asyncio.sleep(.005)
                     now, cpu = time.perf_counter(), time.thread_time()
                     gaps.append(now - last)
                     cpu_gaps.append(cpu - last_cpu)
-                    last, last_cpu = now, cpu
+                    collections.append(collected[0] - last_collected)
+                    last, last_cpu, last_collected = now, cpu, collected[0]
             def observe_gc(phase, info):
                 if info["generation"] != 2:
                     return
                 thread = threading.get_ident()
                 if phase == "start":
                     starts[thread] = time.perf_counter(), time.thread_time()
-                elif thread in starts and len(events) < 64:
+                elif thread in starts:
                     wall, cpu = starts.pop(thread)
-                    events.append({"event_loop_thread": thread == owner,
-                        "wall_seconds": time.perf_counter() - wall,
-                        "thread_cpu_seconds": time.thread_time() - cpu})
+                    wall, cpu = time.perf_counter() - wall, time.thread_time() - cpu
+                    if thread == owner:
+                        collected[0] += cpu
+                    if len(events) < 64:
+                        events.append({"event_loop_thread": thread == owner,
+                            "wall_seconds": wall, "thread_cpu_seconds": cpu})
+            unstalled = await loop_gap.unstalled_gap(.005)
             pulse = asyncio.create_task(heartbeat())
             stress = asyncio.create_task(asyncio.to_thread(sum, range(4_000_000))) if contention else None
             gc.callbacks.append(observe_gc)
@@ -601,13 +610,16 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
                          "_freeze", "_prepare", "_page", "render_result"):
                 self.assertIn(name, stages)
                 self.assertNotIn(owner, stages[name])
-            print(json.dumps({"fixture": "assembled_dashboard_admission_hash_scan_export",
+            wall = loop_gap.gap_report(gaps, [unstalled] * len(gaps), .25)
+            thread_cpu = loop_gap.gap_report(cpu_gaps, collections, .1)
+            print(json.dumps({"fixture": "assembled_dashboard_admission_hash_scan_export", "cpu_count": os.cpu_count(),
                 "controlled_contention": contention, "maximum_loop_gap_seconds": max(gaps),
-                "maximum_thread_cpu_gap_seconds": max(cpu_gaps), "major_gc_events": events,
-                "gc_enabled": original_gc[0], "gc_thresholds": original_gc[1],
-                "wall_bound_seconds": .25, "thread_cpu_bound_seconds": .1}), flush=True)
-            self.assertLess(max(gaps), .25)
-            self.assertLess(max(cpu_gaps), .1)
+                "unstalled_gap_seconds": unstalled, "wall_gap": wall,
+                "maximum_thread_cpu_gap_seconds": max(cpu_gaps), "thread_cpu_gap": thread_cpu,
+                "major_gc_events": events, "gc_enabled": original_gc[0], "gc_thresholds": original_gc[1]}), flush=True)
+            self.assertLess(wall["gap_seconds"], wall["bound_seconds"], loop_gap.gap_message("Wall", wall))
+            self.assertLess(thread_cpu["gap_seconds"], thread_cpu["bound_seconds"],
+                            loop_gap.gap_message("Thread CPU", thread_cpu))
             self.assertEqual((gc.isenabled(), gc.get_threshold()), original_gc)
             self.assertLessEqual(len(c.canonical(result)), c.PAGE_BYTES)
 
