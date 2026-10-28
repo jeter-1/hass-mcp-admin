@@ -20,6 +20,17 @@ suites the task names, not merely any test:
   the step 2 suite must fail its cross-path boundary test. A mutant the
   legacy suites miss is reported, not hidden: the HAMCP-225 suites hold no
   text that only the squashed ``user_pass_host`` withholds.
+- ``D*`` (correction batch, review of aaf1fe8e): contiguity judged only
+  after decoding (``D1``, the reviewer's proxy reproduction), the text as
+  given but no intermediate decode round (``D2``), or the rounds read without
+  the normal form's NFKC, casefold and confusable fold (``D3``). The
+  percent-encoded tests in ``test_hamcp234_step2_journal_relaxation`` must
+  fail; for ``D1`` that includes the final authenticated gateway response.
+- ``T1`` (correction batch): the reviewer's identity-only opt-in, the trace
+  identity and name fields reading ``user_pass_host`` as one token
+  (``contiguous_user_pass_host=not labelled``). As for ``L*``, the unchanged
+  HAMCP-225 suites run first and are recorded; then the step 2 trace
+  identity boundary tests must fail.
 - ``C*``: ``calibration`` missing from the served ``get_incident_logs``
   schema (``C1`` removed from the advertised properties, ``C2`` removed from
   the tool). The served-schema test must fail.
@@ -62,6 +73,12 @@ LIVE_SHAPED = ("test_live_shaped_matter_js_lines_are_shown",
                "test_the_calibration_counts_the_live_shaped_lines_shown")
 SERVED = ("test_the_served_schema_offers_calibration",)
 BOUNDARY = ("test_definitions_and_trace_paths_still_withhold_the_live_shaped_lines",)
+PROXY = ("test_the_reviewer_proxy_reproduction_is_withheld",
+         "test_percent_encoded_whitespace_inside_a_credential_is_withheld",
+         "test_the_proxy_credential_is_withheld_and_matter_js_shown_over_the_wire")
+IDENTITY_BOUNDARY = ("test_the_named_fields_are_identity_keys_read_in_the_default_mode",
+                     "test_capture_store_and_read_back_withhold_squashed_only_identity_credentials",
+                     "test_get_automation_trace_withholds_squashed_only_identity_credentials")
 
 SQUASHED_CALL = "                                      user_pass_host=not contiguous_user_pass_host)\n"
 SCREEN_CALL = "            decided[(text, labelled)] = credentials.screen(text, known_secrets, labelled=labelled)\n"
@@ -73,11 +90,12 @@ def m(identifier: str, item: str, modules: tuple[str, ...], must_fail: tuple[str
     return {**base.m(identifier, item, *replacements), "modules": list(modules), "must_fail": list(must_fail)}
 
 
-def leak(identifier: str, item: str, modules: tuple[str, ...], *replacements):
+def leak(identifier: str, item: str, modules: tuple[str, ...], *replacements,
+         boundary: tuple[str, ...] = BOUNDARY):
     """A leak mutant: the unchanged legacy suites first, then the step 2 boundary test."""
 
     return {**m(identifier, item, modules, (), *replacements), "boundary_modules": [STEP2],
-            "boundary_must_fail": list(BOUNDARY)}
+            "boundary_must_fail": list(boundary)}
 
 
 MUTATIONS = [
@@ -103,6 +121,24 @@ MUTATIONS = [
        "                                                           contiguous_user_pass_host=True)\n")),
     leak("L4-leak-everywhere", "the relaxation leaking into the definitions and trace paths", DEFINITIONS + TRACES,
       (CRED, SQUASHED_CALL, "                                      user_pass_host=False)\n")),
+    # -- D: contiguity judged before decoding too (correction batch, owner clarification 2026-10-28)
+    m("D1-contiguity-only-after-decoding", "a percent-encoded split credential shown in the journal", (STEP2,),
+      PROXY, (CRED, "    if contiguous_user_pass_host and _undecoded_user_pass_host(value):\n",
+              "    if False:\n")),
+    m("D2-no-intermediate-decode-round", "a doubly encoded split credential shown in the journal", (STEP2,),
+      ("test_an_intermediate_decode_round_is_read",),
+      (CRED, '            stage = unquote_to_bytes(stage).decode("utf-8", "strict")\n',
+       "            return False\n")),
+    m("D3-rounds-not-normalized", "a look-alike split credential shown in the journal", (STEP2,),
+      ("test_each_round_is_normalized_and_folded_as_the_normal_form",),
+      (CRED, 'search(fold_confusables(unicodedata.normalize("NFKC", stage).casefold())) is not None:\n',
+       "search(stage) is not None:\n")),
+    # -- T: the trace identity and name fields keep the squashed shape (correction batch)
+    leak("T1-trace-identity-opts-in", "the relaxation leaking into the trace identity and name fields", TRACES,
+         (TRACE, SCREEN_CALL,
+          "            decided[(text, labelled)] = credentials.screen(text, known_secrets, labelled=labelled,\n"
+          "                                                           contiguous_user_pass_host=not labelled)\n"),
+         boundary=IDENTITY_BOUNDARY),
     # -- C: calibration is in the served schema
     m("C1-calibration-not-advertised", "calibration missing from the served schema", (STEP2,), SERVED,
       (TOOL, '    tool.parameters["additionalProperties"] = False\n',

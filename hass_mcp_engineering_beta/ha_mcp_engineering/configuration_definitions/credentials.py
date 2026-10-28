@@ -136,9 +136,18 @@ Every other rule is unchanged in both forms: a URI with user-info, a
 connection URI, the password field, the marker, the known secrets, the
 labelled keywords, ``-P``, the value shapes, PEM headers and invisible or
 control text. The cost is disclosed: a scheme-less ``user:pass@host``
-split by whitespace (literal or percent-encoded) is shown in the journal
-unless another rule meets it. The configuration-definitions report and
+split by literal whitespace is shown in the journal unless another rule
+meets it (percent-encoded whitespace no longer is, below). The configuration-definitions report and
 the trace path do not opt in: their behavior is unchanged.
+
+**Decoding never splits the token** (HAMCP-234 step 2 correction, owner
+clarification, Josh, 2026-10-28). With ``contiguous_user_pass_host`` the
+token is also read in the text as given and after each round of its
+percent-decode, each normalized and folded as the normal form is; any of
+them matching withholds the value (``user_pass_host``). A ``%20``, ``%09``
+or ``%0A`` inside a password (a proxy setting such as
+``user:pass%20more@proxy:8080``, which a proxy client decodes and uses) is
+one token as written, so decoding it to whitespace never shows it.
 """
 
 from __future__ import annotations
@@ -369,8 +378,9 @@ def credential_text(value: str, known_secrets: tuple[str, ...] = (), *, labelled
     percent-encoded) hides it from the first form only; either form
     matching withholds the original value whole. ``labelled`` adds the
     labelled forms (HAMCP-224), read in the same forms.
-    ``contiguous_user_pass_host`` reads ``user_pass_host`` in the normal form
-    only (HAMCP-234 step 2, the host journal).
+    ``contiguous_user_pass_host`` reads ``user_pass_host`` as one token, in
+    the normal form and in the text before and during its percent-decode,
+    not in the squashed form (HAMCP-234 step 2, the host journal).
     """
 
     return credential_rule(value, known_secrets, labelled=labelled,
@@ -415,11 +425,38 @@ def _credential_rules(value: str, known_secrets: tuple[str, ...], labelled: bool
     secrets = tuple(fold_confusables(secret.casefold()) for secret in known_secrets if secret)
     squashed = squash(text)
     yield from _credential_form_rules(text, secrets, _PASSWORD_FIELD, "")
+    if contiguous_user_pass_host and _undecoded_user_pass_host(value):
+        yield RULE_USER_PASS_HOST
     yield from _credential_form_rules(squashed, tuple(squash(secret) for secret in secrets),
                                       _SQUASHED_PASSWORD_FIELD, SQUASHED_FORM,
                                       user_pass_host=not contiguous_user_pass_host)
     if labelled:
         yield from _labelled_rules(value, text, squashed, every)
+
+
+def _undecoded_user_pass_host(value: str) -> bool:
+    """Whether ``user_pass_host`` meets ``value`` as given or after a round of its percent-decode.
+
+    HAMCP-234 step 2 correction (Josh, 2026-10-28): contiguity is judged
+    before decoding too, so a ``%20`` or ``%09`` inside a password never
+    splits the token. Every round before the last is read, each after NFKC,
+    casefold and the confusable fold, as the normal form is; the last round
+    is the normal form itself, which ``_credential_form_rules`` reads. Only
+    called after ``canonical`` accepted ``value``; a decode that fails here
+    anyway withholds (fail closed).
+    """
+
+    stage = value
+    for _round in range(MAX_DECODE_ROUNDS):
+        if not _ESCAPE.search(stage):
+            return False
+        if _USER_PASS_HOST.search(fold_confusables(unicodedata.normalize("NFKC", stage).casefold())) is not None:
+            return True
+        try:
+            stage = unquote_to_bytes(stage).decode("utf-8", "strict")
+        except (UnicodeError, ValueError):
+            return True
+    return False
 
 
 def squash(text: str) -> str:

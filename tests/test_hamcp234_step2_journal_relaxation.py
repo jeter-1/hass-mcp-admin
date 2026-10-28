@@ -7,6 +7,15 @@ is read in the normal form as one contiguous token and not in the squashed
 form. Every other rule is unchanged in both forms; the configuration
 definitions (HAMCP-132) and trace (HAMCP-225) paths are unchanged.
 
+Correction batch (review of aaf1fe8e; owner clarification, Josh,
+2026-10-28): "one contiguous token" is judged on the text as given and after
+each round of its percent-decode, not only on the decoded normal form, so a
+``%20`` inside a proxy password (the reviewer's reproduction) is withheld
+through the final gateway response. The trace identity and name fields
+(``alias``, ``id``, ``entity_id``, ``friendly_name``) keep the squashed
+``user_pass_host`` through capture, the store, read-back and
+``get_automation_trace``.
+
 Live-shaped tests come first. Offline: the HAMCP-224 fixture journals with
 entries rewritten in memory, the production MCP application and the
 authenticated gateway in process. Every credential-shaped payload is
@@ -32,10 +41,11 @@ import hamcp234_step2_corpus as corpus  # noqa: E402
 import test_hamcp131_incident_logs as gateway_tests  # noqa: E402
 import test_hamcp224_host_journal as author  # noqa: E402
 import test_hamcp224_review1_corrections as review1  # noqa: E402
+import test_hamcp225_trace_snapshots as traces  # noqa: E402
 import test_hamcp234_journal_usability as step1  # noqa: E402
 
 from ha_mcp_engineering.configuration_definitions import credentials  # noqa: E402
-from ha_mcp_engineering.trace_normalization import screen_trace_value  # noqa: E402
+from ha_mcp_engineering.trace_normalization import IDENTITY_KEYS, screen_trace_value  # noqa: E402
 
 hj = author.hj
 NEEDLE = "SYNTHETIC" + "relax234"
@@ -73,6 +83,22 @@ def labelled_credentials() -> dict[str, tuple[str, set[str]]]:
         "pem_header": (" -----BEGIN RSA PRIV" + "ATE KEY-----", {"labelled_keyword:private_key"}),
         "invisible": (" a​b " + NEEDLE, {credentials.RULE_INVISIBLE}),
     }
+
+
+# Percent-encoded whitespace inside a password, each of which a decode turns
+# into whitespace that splits the decoded normal form (review of aaf1fe8e).
+SPLITTING_ESCAPES = {
+    "space": "%20", "tab": "%09", "line_feed": "%0A", "carriage_return": "%0D", "nbsp": "%C2%A0",
+    "ideographic_space": "%E3%80%80", "plus_then_space": "%2B%20", "literal_plus_then_space": "+%20",
+    "space_then_plus": "%20%2B", "double_encoded_space": "%2520", "lower_hex_space": "%0a",
+}
+
+
+def proxy_line(escape: str, needle: str = NEEDLE) -> str:
+    """The reviewer's reproduction: a Python logging line naming a scheme-less proxy credential."""
+
+    setting = json.dumps({"proxy": "sample" + COLON + needle + escape + "elm" + AT + "proxy.invalid" + COLON + "8080"})
+    return "2026-10-27 03:16:00,123 INFO [proxy] Using proxy configuration " + setting
 
 
 class LiveShapedLineTests(unittest.TestCase):
@@ -139,6 +165,75 @@ class LiveShapedLineTests(unittest.TestCase):
                                          ("user_pass_host.squashed",))
 
 
+class PercentEncodedContiguityTests(unittest.TestCase):
+    """Correction (High): contiguity is judged before decoding too; decoding never splits the token."""
+
+    def test_the_reviewer_proxy_reproduction_is_withheld(self):
+        line = proxy_line("%20")
+        self.assertEqual(hj.screen_text_rule(line.encode(), (KNOWN,)),
+                         (credentials.WITHHELD_MARKER, credentials.OMISSION, "user_pass_host"))
+        self.assertIn("user_pass_host", hj.screen_text_rules(line.encode(), (KNOWN,)))
+        # Base (beta.42) withheld it by the squashed shape; the journal still withholds it, by the token.
+        self.assertEqual(corpus.beta42_rule(line), "user_pass_host.squashed")
+
+    def test_percent_encoded_whitespace_inside_a_credential_is_withheld(self):
+        for label, escape in SPLITTING_ESCAPES.items():
+            line = proxy_line(escape)
+            with self.subTest(escape=label):
+                text, omission, rule = hj.screen_text_rule(line.encode(), (KNOWN,))
+                self.assertEqual((text, omission, rule),
+                                 (credentials.WITHHELD_MARKER, credentials.OMISSION, "user_pass_host"))
+                # The decoded normal form alone no longer meets the token: the text as given does.
+                decoded = credentials.canonical(line)[0]
+                self.assertIsNone(credentials._USER_PASS_HOST.search(decoded))
+
+    def test_encoded_separators_that_keep_the_token_whole_are_withheld(self):
+        for label, escape in {"plus": "%2B", "literal_plus": "+", "comma": "%2C", "semicolon": "%3B"}.items():
+            with self.subTest(escape=label):
+                self.assertEqual(hj.screen_text_rule(proxy_line(escape).encode(), ())[1:],
+                                 (credentials.OMISSION, "user_pass_host"))
+
+    def test_encoded_controls_inside_a_credential_are_withheld(self):
+        for escape in ("%0B", "%0C", "%1F", "%7F", "%C2%85"):
+            with self.subTest(escape=escape):
+                marker, omission, _rule = hj.screen_text_rule(proxy_line(escape).encode(), ())
+                self.assertIn(marker, (credentials.WITHHELD_MARKER, credentials.UNVERIFIABLE_MARKER))
+                self.assertIsNotNone(omission)
+
+    def test_an_intermediate_decode_round_is_read(self):
+        # Neither the text as given (no ``@`` yet) nor the decoded normal form (split)
+        # meets the token; the first decode round does.
+        value = "u" + COLON + NEEDLE + "%2520elm%40proxy.invalid"
+        self.assertIsNone(credentials._USER_PASS_HOST.search(value))
+        self.assertIsNone(credentials._USER_PASS_HOST.search(credentials.canonical(value)[0]))
+        self.assertEqual(hj.screen_text_rule(value.encode(), ())[2], "user_pass_host")
+
+    def test_each_round_is_normalized_and_folded_as_the_normal_form(self):
+        # A fullwidth ``@`` (NFKC) and a ratio colon (the confusable fold) before a ``%20``.
+        for label, at, colon in (("fullwidth_at", chr(0xFF20), COLON), ("ratio_colon", AT, chr(0x2236))):
+            value = "u" + colon + NEEDLE + "%20elm" + at + "proxy.invalid"
+            with self.subTest(case=label):
+                self.assertEqual(hj.screen_text_rule(value.encode(), ())[2], "user_pass_host")
+
+    def test_live_shaped_lines_with_percent_encoded_text_are_still_shown(self):
+        for line in corpus.MATTER_JS:
+            # A stray ``%`` (``%eth0``) beside an escape is refused as ambiguous, as before step 2.
+            if "://" in line or "%" in line:
+                continue
+            for suffix in (" label=Living%20Room", " path=/api/states%3Fq%3Da%2520b", " note=50%25"):
+                with self.subTest(line=line[24:72], suffix=suffix):
+                    value = line + suffix
+                    self.assertEqual(hj.screen_text_rule(value.encode(), ()), (value, None, None))
+
+    def test_the_default_and_labelled_modes_are_unchanged(self):
+        for escape in SPLITTING_ESCAPES.values():
+            line = proxy_line(escape)
+            for labelled in (False, True):
+                with self.subTest(escape=escape, labelled=labelled):
+                    self.assertEqual(credentials.screen_rule(line, (), labelled=labelled)[1],
+                                     "user_pass_host.squashed")
+
+
 class JournalModeBoundaryTests(unittest.TestCase):
     """Only the journal opts in: the definitions and trace paths decide as before."""
 
@@ -187,6 +282,82 @@ class JournalModeBoundaryTests(unittest.TestCase):
         self.assertNotIn("user_pass_host.squashed", hj.RULE_IDS)
         self.assertIn("user_pass_host", hj.RULE_IDS)
         self.assertEqual(dict(hj._JOURNAL_SCREEN), {"labelled": True, "contiguous_user_pass_host": True})
+
+
+# A credential only the squashed form meets: the token split by literal whitespace.
+def squashed_only_credentials() -> dict[str, tuple[str, str]]:
+    """``label -> (value, needle)`` for the trace identity and name fields."""
+
+    needles = {label: NEEDLE + label.replace("_", "") for label in ("space", "tab", "line_feed", "encoded")}
+    return {
+        "space": ("u" + COLON + " " + needles["space"] + AT + "broker.invalid", needles["space"]),
+        "tab": ("u" + COLON + needles["tab"] + "\tx" + AT + "broker.invalid", needles["tab"]),
+        "line_feed": ("u" + COLON + needles["line_feed"] + "\nx" + AT + "broker.invalid", needles["line_feed"]),
+        "encoded": ("u" + COLON + needles["encoded"] + "%20x" + AT + "broker.invalid", needles["encoded"]),
+    }
+
+
+IDENTITY_FIELDS = ("alias", "id", "entity_id", "friendly_name")
+
+
+def identity_detail(run_id: str, value: str) -> dict:
+    """A trace whose identity and name fields (and only those) hold ``value``."""
+
+    return {**traces.header(run_id),
+            "config": {"id": value, "alias": value, "entity_id": ["sensor.ok", value],
+                       "triggers": [{"trigger": "state", "entity_id": value, "id": value}]},
+            "context": {"id": "ctx"},
+            "trace": {"action/0": [{"path": "action/0", "variables": {"trigger": {
+                "entity_id": value, "to_state": {"attributes": {"friendly_name": value}}}}}]}}
+
+
+class TraceIdentityBoundaryTests(traces.ServiceCase):
+    """Correction (Medium): the trace identity and name fields keep the squashed ``user_pass_host``."""
+
+    def test_the_named_fields_are_identity_keys_read_in_the_default_mode(self):
+        self.assertLessEqual(set(IDENTITY_FIELDS), IDENTITY_KEYS)
+        for label, (value, needle) in squashed_only_credentials().items():
+            self.assertEqual(credentials.screen_rule(value, ())[1], "user_pass_host.squashed")
+            if label != "encoded":  # the journal's token rule does not meet a literal split
+                self.assertIsNone(hj.screen_text_rule(value.encode(), ())[1])
+            for field in IDENTITY_FIELDS:
+                with self.subTest(credential=label, field=field):
+                    for item in ({field: value}, {field: ["sensor.ok", value]}):
+                        screened, count, _categories, _failed = screen_trace_value(item, (KNOWN,))
+                        self.assertEqual(count, 1)
+                        self.assertNotIn(needle, json.dumps(screened))
+
+    async def test_capture_store_and_read_back_withhold_squashed_only_identity_credentials(self):
+        for number, (label, (value, needle)) in enumerate(squashed_only_credentials().items()):
+            run_id = f"r{number}"
+            self.core.add(run_id)
+            self.core.details[run_id] = identity_detail(run_id, value)
+            with self.subTest(credential=label):
+                captured, _ = await self.service.capture(automation_id="a1", run_id=run_id)
+                run = captured["runs"][0]
+                self.assertEqual((run["outcome"], run["completeness"]), ("captured", "partial"))
+                page, partial = await self.service.get(snapshot_id=run["snapshot_id"])
+                self.assertTrue(partial)
+                config = next(unit["value"] for unit in page["units"] if unit["kind"] == "config")
+                self.assertEqual((config["id"], config["alias"], config["entity_id"]),
+                                 (credentials.WITHHELD_MARKER, credentials.WITHHELD_MARKER,
+                                  ["sensor.ok", credentials.WITHHELD_MARKER]))
+                step = next(unit["value"] for unit in page["units"] if unit["kind"] == "step")
+                trigger = step["variables"]["trigger"]
+                self.assertEqual((trigger["entity_id"], trigger["to_state"]["attributes"]["friendly_name"]),
+                                 (credentials.WITHHELD_MARKER, credentials.WITHHELD_MARKER))
+                self.assertNotIn(needle, json.dumps((captured, page)))
+                self.assertNotIn(needle.encode(), traces.all_store_bytes(self.root))
+
+    async def test_get_automation_trace_withholds_squashed_only_identity_credentials(self):
+        for label, (value, needle) in squashed_only_credentials().items():
+            with self.subTest(credential=label):
+                async def command(payload, value=value):
+                    return identity_detail("r1", value)
+                with patch.object(traces.compatibility, "ws_command", command):
+                    envelope = json.loads(await traces.compatibility.get_automation_trace("a1", "r1"))
+                self.assertNotIn(needle, json.dumps(envelope))
+                self.assertEqual(envelope["metadata"]["completeness"], "partial")
 
 
 class LiveShapedReadTests(review1.Harness):
@@ -304,6 +475,33 @@ class CalibrationOverTheWireTests(unittest.TestCase):
         self.assertEqual(record["tool_name"], "get_incident_logs")
         for line in corpus.MATTER_JS:
             self.assertNotIn(line[24:], wire)
+
+
+class ProxyCredentialOverTheWireTests(unittest.TestCase):
+    """Correction (High): the proxy reproduction is withheld in the final authenticated gateway response."""
+
+    def test_the_proxy_credential_is_withheld_and_matter_js_shown_over_the_wire(self):
+        root = author.journal_root()
+        self.addCleanup(author.shutil.rmtree, root, True)
+        proxies = [proxy_line(escape) for escape in SPLITTING_ESCAPES.values()]
+        entries = [(line.encode(), b"6") for line in list(corpus.MATTER_JS) + proxies]
+        stack = gateway_tests.IncidentLogGatewayStackTests()
+        with patch.object(gateway_tests, "journald_off_reader", lambda: step1.Rewriting(root, MATTER, entries)):
+            rendered, record, wire = stack.call({"sources": [MATTER], "start": author.iso(0), "end": author.iso(7000),
+                                                 "limit": 200})
+        self.assertTrue(rendered["success"], rendered)
+        rows = rendered["data"]["entries"]
+        self.assertEqual(len(rows), len(entries))
+        self.assertEqual([row["message"] for row in rows if "withheld" not in row], list(corpus.MATTER_JS))
+        held = [row for row in rows if "withheld" in row]
+        self.assertEqual([row["withheld_rules"]["message"] for row in held], ["user_pass_host"] * len(proxies))
+        for row in held:
+            self.assertEqual(row["message"], credentials.WITHHELD_MARKER)
+        # The final response, after the gateway's own sanitization: no part of the credential.
+        self.assertNotIn(NEEDLE, wire)
+        self.assertNotIn("proxy.invalid", wire)
+        self.assertNotIn(NEEDLE, json.dumps(record))
+        self.assertEqual(record["tool_name"], "get_incident_logs")
 
 
 if __name__ == "__main__":
