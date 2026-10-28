@@ -30,7 +30,10 @@ suites the task names, not merely any test:
   whole value read as given and after each round with no raw-token
   boundaries and no decoded whitespace kept in the token. The encoded
   separator tests must fail, including the final response and audit test
-  and the ported reviewer regression.
+  and the ported reviewer regression. ``D5`` (correction R3-H1, review of
+  c371c739): a stage squashed before its NFKC, casefold and confusable fold,
+  so a space NFKC introduces splits the raw token. The normalization tests
+  must fail, including the ported reviewer regression over the wire.
 - ``T1`` (correction batch): the reviewer's identity-only opt-in, the trace
   identity and name fields reading ``user_pass_host`` as one token
   (``contiguous_user_pass_host=not labelled``). As for ``L*``, the unchanged
@@ -84,6 +87,10 @@ PROXY = ("test_the_reviewer_proxy_reproduction_is_withheld",
 ENCODED_SEPARATORS = ("test_encoded_separators_decoded_with_whitespace_are_withheld",
                       "test_urlencoded_proxy_value_with_space_is_withheld_over_wire",
                       "test_every_encoded_separator_case_is_withheld_in_the_response_and_the_audit")
+NORMALIZATION = ("test_nfkc_whitespace_cannot_split_one_encoded_raw_token_on_the_screen",
+                 "test_nfkc_whitespace_in_a_raw_token_without_an_escape_is_withheld",
+                 "test_nfkc_whitespace_cannot_split_one_raw_token_over_the_wire")
+STAGE_FORM = '    text = squash(fold_confusables(unicodedata.normalize("NFKC", stage).casefold()))\n'
 IDENTITY_BOUNDARY = ("test_the_named_fields_are_identity_keys_read_in_the_default_mode",
                      "test_capture_store_and_read_back_withhold_squashed_only_identity_credentials",
                      "test_get_automation_trace_withholds_squashed_only_identity_credentials")
@@ -139,12 +146,11 @@ MUTATIONS = [
        "            return False\n")),
     m("D3-rounds-not-normalized", "a look-alike split credential shown in the journal", (STEP2,),
       ("test_each_round_is_normalized_and_folded_as_the_normal_form",),
-      (CRED, '    text = fold_confusables(unicodedata.normalize("NFKC", squash(stage)).casefold())\n',
-       "    text = squash(stage)\n")),
+      (CRED, STAGE_FORM, "    text = squash(stage)\n")),
     m("D4-separator-only-stage-check", "an encoded separator decoded with the password whitespace shown",
       (STEP2,), ENCODED_SEPARATORS,
-      (CRED, "    return any(_ESCAPE.search(token) and _decoded_token_user_pass_host(token)"
-             " for token in value.split())\n",
+      (CRED, "    return any(_decoded_token_user_pass_host(token)"
+             " for token in _RAW_TOKEN_SEPARATOR.split(value) if token)\n",
        "    stage = value\n"
        "    for _round in range(MAX_DECODE_ROUNDS):\n"
        "        if not _ESCAPE.search(stage):\n"
@@ -157,6 +163,9 @@ MUTATIONS = [
        "        except (UnicodeError, ValueError):\n"
        "            return True\n"
        "    return False\n")),
+    m("D5-squash-before-normalization", "a space NFKC introduces splits one raw token", (STEP2,), NORMALIZATION,
+      (CRED, STAGE_FORM,
+       '    text = fold_confusables(unicodedata.normalize("NFKC", squash(stage)).casefold())\n')),
     # -- T: the trace identity and name fields keep the squashed shape (correction batch)
     leak("T1-trace-identity-opts-in", "the relaxation leaking into the trace identity and name fields", TRACES,
          (TRACE, SCREEN_CALL,

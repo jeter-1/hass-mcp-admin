@@ -26,6 +26,14 @@ as given still separates tokens: a scheme-less ``user:pass@host`` split by
 a literal space is shown in the journal, a disclosed residual accepted by
 Josh, 2026-10-28.
 
+Correction R3-H1 (review of c371c739; Josh, 2026-10-28): each stage of a raw
+token is normalized (NFKC, casefold, confusable fold) before its whitespace
+is removed, so a space that NFKC introduces (U+00A8 is a space and a
+diaeresis) stays inside the token. Raw tokens split at literal ASCII
+whitespace only (U+0009 to U+000D, U+0020): a no-break, figure, narrow
+no-break or ideographic space inside a password no longer splits it. The
+residual is raw ASCII whitespace, journal mode, scheme-less only.
+
 Live-shaped tests come first. Offline: the HAMCP-224 fixture journals with
 entries rewritten in memory, the production MCP application and the
 authenticated gateway in process. Every credential-shaped payload is
@@ -41,7 +49,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
-from urllib.parse import parse_qs, quote, urlencode
+from urllib.parse import parse_qs, quote, unquote, urlencode
 from urllib.request import _parse_proxy
 
 TESTS = Path(__file__).resolve().parent
@@ -662,6 +670,143 @@ class EncodedProxyOverTheWireTests(unittest.TestCase):
         self.assertNotIn(NEEDLE, audit)
         self.assertNotIn("proxy.invalid", wire)
         self.assertNotIn("proxy.invalid", audit)
+
+
+# Spacing marks NFKC maps to a space and a combining mark (R3-H1).
+NFKC_SPACING_MARKS = (0x00A8, 0x00AF, 0x00B4, 0x0385)
+# Non-ASCII whitespace no longer splits a raw token (Josh, 2026-10-28); U+2028
+# and U+0085 are withheld as invisible or control text.
+NON_ASCII_WHITESPACE = (0x00A0, 0x2007, 0x202F, 0x3000, 0x2028, 0x0085)
+# The disclosed residual: raw ASCII whitespace, journal mode, scheme-less only.
+ASCII_WHITESPACE = (0x0020, 0x0009)
+
+
+def nfkc_proxy(point: int, needle: str) -> str:
+    """The round-3 reviewer's construction: a whole proxy setting through ``quote(value, safe='')``, one raw token."""
+
+    return quote("reviewer" + COLON + needle + chr(point) + " tail" + AT + "proxy.invalid" + COLON + "8080", safe="")
+
+
+def whitespace_proxy(point: int, needle: str) -> str:
+    """A scheme-less ``user:pa<X>ss@host`` with the literal character ``X`` inside the password."""
+
+    return "matrix" + COLON + needle + "pa" + chr(point) + "ss" + AT + "proxy.invalid"
+
+
+def codepoint(point: int) -> str:
+    return f"U+{point:04X}"
+
+
+def journal_call(test: unittest.TestCase, entries: list[tuple[bytes, bytes]]) -> tuple[dict, dict, str]:
+    root = author.journal_root()
+    test.addCleanup(author.shutil.rmtree, root, True)
+    stack = gateway_tests.IncidentLogGatewayStackTests()
+    with patch.object(gateway_tests, "journald_off_reader", lambda: step1.Rewriting(root, MATTER, entries)):
+        rendered, record, wire = stack.call({"sources": [MATTER], "start": author.iso(0),
+                                             "end": author.iso(7000), "limit": 200})
+    test.assertTrue(rendered["success"], rendered)
+    test.assertEqual(record["tool_name"], "get_incident_logs")
+    return rendered, record, wire
+
+
+class NormalizationWhitespaceTests(unittest.TestCase):
+    """Correction R3-H1: whitespace NFKC introduces inside one raw token stays part of the token."""
+
+    def test_nfkc_whitespace_cannot_split_one_encoded_raw_token_on_the_screen(self):
+        for point in NFKC_SPACING_MARKS:
+            needle = NEEDLE + "nfkc" + str(point)
+            value = nfkc_proxy(point, needle)
+            line = json.dumps({"proxy": value})
+            with self.subTest(codepoint=codepoint(point)):
+                # One raw token: an encoded separator and an encoded space in the same token.
+                self.assertEqual(len(value.split()), 1)
+                self.assertFalse(any(character.isspace() for character in value))
+                self.assertIn("%3A", value)
+                self.assertIn("%40", value)
+                self.assertIn("%20", value)
+                # A proxy client recovers the password after decoding.
+                self.assertEqual(_parse_proxy(unquote(value))[2], needle + chr(point) + " tail")
+                self.assertEqual(hj.screen_text_rule(line.encode(), ()),
+                                 (credentials.WITHHELD_MARKER, credentials.OMISSION, "user_pass_host"))
+                # Definitions and labelled modes are unchanged: the squashed shape withholds it.
+                self.assertEqual(credentials.screen_rule(line)[1], "user_pass_host.squashed")
+                self.assertEqual(credentials.screen_rule(line, labelled=True)[1], "user_pass_host.squashed")
+
+    def test_nfkc_whitespace_in_a_raw_token_without_an_escape_is_withheld(self):
+        for point in NFKC_SPACING_MARKS:
+            value = "reviewer" + COLON + NEEDLE + chr(point) + "tail" + AT + "proxy.invalid" + COLON + "8080"
+            with self.subTest(codepoint=codepoint(point)):
+                self.assertEqual(len(value.split()), 1)
+                # The normal form alone is split by the space NFKC introduces.
+                self.assertIsNone(credentials._USER_PASS_HOST.search(credentials.canonical(value)[0]))
+                self.assertEqual(hj.screen_text_rule(value.encode(), ())[2], "user_pass_host")
+                self.assertEqual(credentials.screen_rule(value)[1], "user_pass_host.squashed")
+
+    def test_nfkc_whitespace_cannot_split_one_raw_token_over_the_wire(self):
+        # Ported from the round-3 reviewer regression (test_normalization_regression.py), assertions
+        # intact, for all four spacing marks.
+        for point in NFKC_SPACING_MARKS:
+            with self.subTest(codepoint=codepoint(point)):
+                needle = "SYNTHETIC" + "normalization320"
+                value = quote("reviewer:" + needle + chr(point) + " tail@proxy.invalid:8080", safe="")
+                self.assertEqual(len(value.split()), 1)
+                envelope, audit, wire = journal_call(self, [(json.dumps({"proxy": value}).encode(), b"6")])
+                self.assertTrue(envelope["success"])
+                self.assertNotIn(needle, wire, "NFKC-added whitespace must remain inside the original raw token")
+                self.assertNotIn("proxy.invalid", wire)
+                self.assertNotIn(needle, json.dumps(audit))
+                self.assertNotIn("proxy.invalid", json.dumps(audit))
+                self.assertEqual(envelope["data"]["entries"][0]["withheld_rules"]["message"], "user_pass_host")
+
+
+class UnicodeWhitespaceMatrixTests(unittest.TestCase):
+    """Josh, 2026-10-28: raw tokens split at ASCII whitespace only; the residual is raw ASCII whitespace."""
+
+    def test_non_ascii_whitespace_inside_a_password_is_withheld_in_every_mode(self):
+        for point in NON_ASCII_WHITESPACE:
+            value = whitespace_proxy(point, NEEDLE)
+            with self.subTest(codepoint=codepoint(point)):
+                self.assertIn(hj.screen_text_rule(value.encode(), ()),
+                              {(credentials.WITHHELD_MARKER, credentials.OMISSION, "user_pass_host"),
+                               (credentials.UNVERIFIABLE_MARKER, credentials.UNVERIFIABLE_OMISSION,
+                                credentials.RULE_INVISIBLE)})
+                self.assertIsNotNone(credentials.screen_rule(value)[1])
+                self.assertIsNotNone(credentials.screen_rule(value, labelled=True)[1])
+                for field in ("alias", "message"):
+                    self.assertEqual(screen_trace_value({field: value}, ())[1], 1, field)
+
+    def test_non_ascii_whitespace_inside_a_password_is_withheld_in_the_response_and_the_audit(self):
+        needles = [NEEDLE + "ws" + str(point) for point in NON_ASCII_WHITESPACE]
+        entries = [(json.dumps({"proxy": whitespace_proxy(point, needle)}).encode(), b"6")
+                   for point, needle in zip(NON_ASCII_WHITESPACE, needles)]
+        rendered, record, wire = journal_call(self, entries)
+        rows = rendered["data"]["entries"]
+        self.assertEqual(len(rows), len(entries))
+        audit = json.dumps(record)
+        for point, needle, row in zip(NON_ASCII_WHITESPACE, needles, rows):
+            with self.subTest(codepoint=codepoint(point)):
+                self.assertIn("withheld", row)
+                self.assertIn(row["message"], {credentials.WITHHELD_MARKER, credentials.UNVERIFIABLE_MARKER})
+                self.assertNotIn(needle, wire)
+                self.assertNotIn(needle, audit)
+        self.assertNotIn(NEEDLE, wire)
+        self.assertNotIn("proxy.invalid", wire)
+        self.assertNotIn("proxy.invalid", audit)
+
+    def test_raw_ascii_whitespace_is_the_disclosed_journal_residual(self):
+        for point in ASCII_WHITESPACE:
+            value = whitespace_proxy(point, NEEDLE)
+            with self.subTest(codepoint=codepoint(point)):
+                self.assertEqual(hj.screen_text_rule(value.encode(), ()), (value, None, None))
+                # Definitions and trace are unchanged: the squashed shape withholds it.
+                self.assertEqual(credentials.screen_rule(value)[1], "user_pass_host.squashed")
+                self.assertEqual(credentials.screen_rule(value, labelled=True)[1], "user_pass_host.squashed")
+                for field in ("alias", "message"):
+                    self.assertEqual(screen_trace_value({field: value}, ())[1], 1, field)
+        entries = [(whitespace_proxy(point, NEEDLE).encode(), b"6") for point in ASCII_WHITESPACE]
+        rendered, _record, _wire = journal_call(self, entries)
+        self.assertEqual([row["message"] for row in rendered["data"]["entries"]],
+                         [whitespace_proxy(point, NEEDLE) for point in ASCII_WHITESPACE])
 
 
 if __name__ == "__main__":

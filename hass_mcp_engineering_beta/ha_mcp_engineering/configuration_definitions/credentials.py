@@ -136,25 +136,30 @@ Every other rule is unchanged in both forms: a URI with user-info, a
 connection URI, the password field, the marker, the known secrets, the
 labelled keywords, ``-P``, the value shapes, PEM headers and invisible or
 control text. The cost is disclosed (a residual accepted by Josh,
-2026-10-28): a scheme-less ``user:pass@host`` split by literal whitespace
-in the text as given is shown in the journal unless another rule meets it
-(percent-encoded whitespace inside one raw token is not, below). The configuration-definitions report and
-the trace path do not opt in: their behavior is unchanged.
+2026-10-28): a scheme-less ``user:pass@host`` split by raw ASCII
+whitespace (U+0009 to U+000D, U+0020) in the text as given is shown in the
+journal unless another rule meets it. Whitespace that percent-decoding or
+normalization introduces within one raw token is not (below), and no other
+whitespace splits a raw token. The configuration-definitions report and the
+trace path do not opt in: their behavior is unchanged.
 
 **Decoding never splits the token** (HAMCP-234 step 2 correction, owner
-clarification, Josh, 2026-10-28; D320-H1, Josh, 2026-10-28). With
+clarification, Josh, 2026-10-28; D320-H1 and R3-H1, Josh, 2026-10-28). With
 ``contiguous_user_pass_host`` the tokens are taken from the text as given,
-split at its literal whitespace. Each token that carries a percent escape
-is read as given and after each round of its own bounded percent-decode;
-whitespace a round introduces stays part of the token. Each stage is
-normalized and folded as the normal form is; any of them matching
-withholds the value (``user_pass_host``). A ``%20``, ``%09`` or ``%0A``
+split at its literal ASCII whitespace only. Each token is read as given and,
+when it carries a percent escape, after each round of its own bounded
+percent-decode. Each stage is normalized and folded as the normal form is
+(NFKC, casefold, confusable fold) and only then has its whitespace removed,
+so whitespace a decode round or the normalization introduces (U+00A8 is a
+space and a diaeresis under NFKC), or a no-break or ideographic space in the
+raw text, stays part of the token; any stage matching withholds the value
+(``user_pass_host``). A ``%20``, ``%09`` or ``%0A``
 inside a password (a proxy setting such as ``user:pass%20more@proxy:8080``,
 which a proxy client decodes and uses) is one token as written, so
 decoding it to whitespace never shows it, also when the ``:`` or ``@`` is
 encoded and decodes in the same round (``user%3Apass%20more%40proxy``, a
-whole value passed through ``quote(value, safe='')``). Literal whitespace
-in the text as given still separates tokens.
+whole value passed through ``quote(value, safe='')``). Literal ASCII
+whitespace in the text as given still separates tokens.
 """
 
 from __future__ import annotations
@@ -193,6 +198,9 @@ _DEFAULT_IGNORABLE = (
 )
 _ASCII_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
+# The journal's raw ``user_pass_host`` tokens are split at literal ASCII
+# whitespace only (HAMCP-234 step 2, Josh, 2026-10-28).
+_RAW_TOKEN_SEPARATOR = re.compile(r"[\t\n\v\f\r ]+")
 
 # Look-alikes NFKC and casefold leave unchanged, mapped to the character they
 # imitate (Unicode confusables). Read after casefold, so only lowercase
@@ -444,18 +452,18 @@ def _credential_rules(value: str, known_secrets: tuple[str, ...], labelled: bool
 def _undecoded_user_pass_host(value: str) -> bool:
     """Whether ``user_pass_host`` meets a token of ``value`` as given or in its percent-decode.
 
-    HAMCP-234 step 2 correction (Josh, 2026-10-28; D320-H1): contiguity is
-    judged on the tokens of the text as given, split at its literal
-    whitespace. A token that carries an escape is read as given and after
-    each round of its own percent-decode, at most ``MAX_DECODE_ROUNDS``
-    rounds; a ``%20`` or ``%09`` inside a password never splits the token,
-    whether its ``:`` and ``@`` are literal or decode in the same round. A
-    token with no escape is the normal form's to read. Only called after
-    ``canonical`` accepted ``value``; a decode that fails here anyway
-    withholds (fail closed).
+    HAMCP-234 step 2 correction (Josh, 2026-10-28; D320-H1, R3-H1): contiguity
+    is judged on the tokens of the text as given, split at its literal ASCII
+    whitespace only (U+0009 to U+000D and U+0020); other whitespace does not
+    split a raw token. Each token is read as given and, when it carries an
+    escape, after each round of its own percent-decode, at most
+    ``MAX_DECODE_ROUNDS`` rounds; a ``%20`` or ``%09`` inside a password never
+    splits the token, whether its ``:`` and ``@`` are literal or decode in the
+    same round. Only called after ``canonical`` accepted ``value``; a decode
+    that fails here anyway withholds (fail closed).
     """
 
-    return any(_ESCAPE.search(token) and _decoded_token_user_pass_host(token) for token in value.split())
+    return any(_decoded_token_user_pass_host(token) for token in _RAW_TOKEN_SEPARATOR.split(value) if token)
 
 
 def _decoded_token_user_pass_host(token: str) -> bool:
@@ -473,10 +481,13 @@ def _decoded_token_user_pass_host(token: str) -> bool:
 
 
 def _token_stage_user_pass_host(stage: str) -> bool:
-    # The token as given has no whitespace: any in a stage came from decoding and
-    # is part of the token. Then NFKC, casefold and the confusable fold, as the
-    # normal form is read. ``user_pass_host`` needs a ``:`` and an ``@``.
-    text = fold_confusables(unicodedata.normalize("NFKC", squash(stage)).casefold())
+    # NFKC, casefold and the confusable fold first, as the normal form is read;
+    # then every whitespace in the stage is removed. The raw token has no ASCII
+    # whitespace, so any whitespace here came from the raw text's other
+    # whitespace, from decoding or from the normalization (U+00A8 is a space and
+    # a diaeresis), and is part of the token (R3-H1). ``user_pass_host`` needs a
+    # ``:`` and an ``@``.
+    text = squash(fold_confusables(unicodedata.normalize("NFKC", stage).casefold()))
     return ":" in text and "@" in text and _USER_PASS_HOST.search(text) is not None
 
 
