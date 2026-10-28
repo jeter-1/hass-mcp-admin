@@ -21,6 +21,7 @@ from ha_mcp_engineering.audit_baseline.capture_service import BaselineCaptureSer
 from ha_mcp_engineering.audit_baseline.store import BaselineStore
 from ha_mcp_engineering.audit_baseline import load_baseline, compare_baselines, canonical_configuration_digest
 from ha_mcp_engineering.request_context import begin_request, end_request
+from support import loop_gap
 
 SECRET = 'synthetic-never-export-credential'
 
@@ -432,8 +433,9 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         # As in the Alarmo responsiveness check, isolate the measurement from
         # the unrelated heap retained by full discovery. The child bounds the
         # heartbeat's loop gap and the loop-thread CPU between yields, with
-        # collection held off for the timed window; it never subtracts time
-        # or retries.
+        # collection held off for the timed window. The wall bound adds the
+        # same child's capped unstalled baseline (support/loop_gap.py,
+        # HAMCP-219) and stays below a 400 ms stall; it never retries.
         result = subprocess.run(
             [sys.executable, '-I', '-B', '-c',
              'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); '
@@ -448,7 +450,8 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
             if line.startswith('Ran '):
                 line = 'Isolated child test summary: ' + line.removeprefix('Ran ')
             print(line, file=sys.stderr, flush=True)
-        self.assertEqual(result.returncode, 0, 'Isolated baseline responsiveness check failed.')
+        self.assertEqual(result.returncode, 0,
+                         loop_gap.child_failure('Isolated baseline responsiveness check failed.', result))
 
     def test_maximum_capture_child_failure_is_not_accepted(self):
         from contextlib import redirect_stderr, redirect_stdout
@@ -487,15 +490,16 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         import threading
 
         service,client=self.setup_capture(fixture(1001))
-        gaps, cpu_gaps = [], []
+        gaps, cpu_gaps, delays = [], [], []
         async def heartbeat():
-            last, last_cpu = time.perf_counter(), time.thread_time()
+            last, last_cpu, last_delay = time.perf_counter(), time.thread_time(), loop_gap.runner_delay()
             while True:
                 await asyncio.sleep(.005)
-                current, current_cpu = time.perf_counter(), time.thread_time()
+                current, current_cpu, current_delay = time.perf_counter(), time.thread_time(), loop_gap.runner_delay()
                 gaps.append(current-last)
                 cpu_gaps.append(current_cpu-last_cpu)
-                last, last_cpu = current, current_cpu
+                delays.append(max(current_delay-last_delay, 0))
+                last, last_cpu, last_delay = current, current_cpu, current_delay
         # Diagnostic only. Collections may run on a worker: attribute their
         # thread instead of presenting worker CPU as event-loop CPU.
         loop_thread = threading.get_ident()
@@ -518,10 +522,12 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         # window: the CPU bound is the loop-thread CPU the capture spends
         # between yields. CPU time cannot see a blocking wait (sleep, lock,
         # I/O) on the loop thread, so the heartbeat's wall gap is bounded as
-        # well, below a 400 ms stall and with margin for a fully loaded host.
+        # well: by an allowance plus the same child's unstalled gap and the
+        # runner's scheduling delay during that gap, capped below a 400 ms stall.
         gc.collect()
         gc.disable()
         try:
+            unstalled = await loop_gap.unstalled_gap(.005)
             pulse=asyncio.create_task(heartbeat())
             await asyncio.sleep(0)
             gc.callbacks.append(observe_gc)
@@ -536,16 +542,19 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(pulse, return_exceptions=True)
         finally:
             gc.enable()
+        wall = loop_gap.gap_report(gaps, [unstalled+delay for delay in delays], .3, cap=.05)
         print(json.dumps({'fixture': 'maximum_automation_baseline_inventory',
-                          'maximum_loop_gap_seconds': max(gaps),
+                          'maximum_loop_gap_seconds': max(gaps), 'unstalled_gap_seconds': unstalled,
+                          'maximum_runner_delay_seconds': max(delays), 'wall_gap': wall,
                           'maximum_thread_cpu_gap_seconds': max(cpu_gaps),
-                          'window_thread_cpu_seconds': window_cpu,
-                          'wall_bound_seconds': .3, 'thread_cpu_bound_seconds': .1,
+                          'window_thread_cpu_seconds': window_cpu, 'thread_cpu_bound_seconds': .1,
                           'records': len(baseline['records']), 'gc_state': gc_state,
                           'major_gc_events': gc_events}), flush=True)
         self.assertTrue(cpu_gaps)
-        self.assertLess(max(gaps), .3, f'Capture and export left the event loop without a turn for {max(gaps):.3f}s.')
-        self.assertLess(max(cpu_gaps), .1, 'Capture and export must yield within the loop-thread CPU budget.')
+        self.assertLess(wall['gap_seconds'], wall['bound_seconds'],
+                        'Capture and export left the event loop without a turn: '+loop_gap.gap_message('Wall', wall))
+        self.assertLess(max(cpu_gaps), .1, f'Capture and export must yield within the loop-thread CPU budget;'
+                                           f' longest thread CPU gap {max(cpu_gaps):.4f}s, bound 0.100s.')
         self.validate(baseline)
         self.assertEqual(len(baseline['records']),1000)
         self.assertEqual(baseline['inventory']['omitted_count'],1)

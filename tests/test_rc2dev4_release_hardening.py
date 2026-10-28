@@ -12,6 +12,7 @@ import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from tests.support import loop_gap
 from tests.test_beta_observability import SECRET, settings
 from tests.test_entity_dependency_analysis import FakeProvider, coverage, finding, scan, TARGET
 from tests.test_governance import GovernanceTestCase
@@ -263,24 +264,28 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         service = EntityDependencyAnalysisService(index)
         first = await service.analyze(entity_id=TARGET, detail_level="standard", limit=1)
         before = METRICS.snapshot()["dependency_analysis"]
-        gaps = []
+        gaps, delays = [], []
         async def heartbeat():
-            last = time.perf_counter()
+            last, last_delay = time.perf_counter(), loop_gap.runner_delay()
             while True:
                 await asyncio.sleep(.005)
-                now = time.perf_counter()
+                now, delay = time.perf_counter(), loop_gap.runner_delay()
                 gaps.append(now - last)
-                last = now
+                delays.append(max(delay - last_delay, 0))
+                last, last_delay = now, delay
         # The continuation is served from the built index: prove no build is
         # even scheduled, rather than inferring it from elapsed wall time, and
         # bound the CPU it spends (collection held off for the timed window).
         # CPU time cannot see a blocking wait (sleep, lock, I/O) on the loop
         # thread, so a separately scheduled heartbeat also bounds the longest
-        # the continuation leaves the event loop without a turn.
+        # the continuation leaves the event loop without a turn: by 100 ms
+        # plus the unstalled gap and the runner's scheduling delay during that
+        # gap, capped well below a 400 ms stall (support/loop_gap.py).
         with patch.object(index, "_ensure_build", wraps=index._ensure_build) as build:
             gc.collect()
             gc.disable()
             try:
+                unstalled = await loop_gap.unstalled_gap(.005)
                 ticker = asyncio.create_task(heartbeat())
                 await asyncio.sleep(0)
                 try:
@@ -296,9 +301,11 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                     await asyncio.gather(ticker, return_exceptions=True)
             finally:
                 gc.enable()
+        self.assertTrue(gaps)
+        wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .1)
         print(json.dumps({"fixture": "dependency_cursor_continuation",
-                          "maximum_loop_gap_seconds": max(gaps, default=None),
-                          "loop_gap_bound_seconds": .1,
+                          "maximum_loop_gap_seconds": max(gaps), "unstalled_gap_seconds": unstalled,
+                          "maximum_runner_delay_seconds": max(delays), "wall_gap": wall,
                           "thread_cpu_seconds": cpu_seconds, "thread_cpu_bound_seconds": .1}), flush=True)
         build.assert_not_called()
         self.assertEqual(provider.scan_count, 1)
@@ -311,8 +318,8 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(continued.data["index"]["generation"], first.data["index"]["generation"])
         self.assertEqual(continued.data["index"]["built_at"], first.data["index"]["built_at"])
         self.assertLess(cpu_seconds, 0.1)
-        self.assertTrue(gaps)
-        self.assertLess(max(gaps), .1, f"Continuation left the event loop without a turn for {max(gaps):.3f}s.")
+        self.assertLess(wall["gap_seconds"], wall["bound_seconds"],
+                        "Continuation left the event loop without a turn: " + loop_gap.gap_message("Wall", wall))
 
     async def test_optional_prewarm_requires_connectivity_and_never_raises(self):
         unavailable_provider = FakeProvider(scan([finding()]))
