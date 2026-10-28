@@ -224,6 +224,79 @@ Review and commit the resulting authoritative version updates and deletion of
 CI fails closed while an unmaterialized declaration remains, so a second
 promotion pull request is neither created nor required.
 
+## Sandbox-local scratch
+
+Keep test and validation scratch inside the task worktree, under the ignored
+`.artifacts/` directory. Under the Codex `workspace-write` sandbox this needs
+no escalation.
+
+Codex's [Sandbox and approvals](https://learn.chatgpt.com/docs/agent-approvals-security#protected-paths-in-writable-roots)
+page says the workspace is the current directory plus temporary directories
+such as `/tmp`. The [Configuration Reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+adds `$TMPDIR` unless `sandbox_workspace_write.exclude_tmpdir_env_var` is set,
+and `/tmp` unless `exclude_slash_tmp` is set. Everything else needs
+`writable_roots` or an approval. Inside a writable root, `.git` (and, for a
+worktree, the resolved Git directory), `.agents`, `.codex` and `.aws` stay
+read-only. Outbound network is off unless
+`sandbox_workspace_write.network_access` is enabled.
+
+`codex sandbox -P :workspace` (codex-cli 0.163.0, Linux) confirms this from a
+task worktree. The worktree, including `.artifacts/`, and `/tmp` are writable.
+`/var/tmp`, `~/.cache/pip`, `~/.local/share/powershell` and the main
+checkout's `.git/worktrees` are read-only, and outbound network is blocked.
+
+| Scratch | Location | Notes |
+| --- | --- | --- |
+| Temporary files | `TMPDIR=$PWD/.artifacts/tmp` | Disk-backed. Avoids the shared `/tmp` tmpfs. |
+| pip cache | `--cache-dir $PWD/.artifacts/pip-cache` | `pip --isolated` (the CI form) ignores `PIP_CACHE_DIR`; pass the flag. |
+| Offline wheels | `$PWD/.artifacts/wheelhouse` | Filled once by `pip download` (needs network). |
+| Virtual environments | `$PWD/.artifacts/venv` | One per worktree. |
+| Disposable clones | `$PWD/.artifacts/clones/<name>` | `git clone --shared`, not `git worktree add`. |
+| PowerShell caches | `XDG_CACHE_HOME`, `XDG_DATA_HOME` under `.artifacts/` | For `check.ps1` on Linux. |
+
+```sh
+A="$PWD/.artifacts"
+export TMPDIR="$A/tmp" PIP_CACHE_DIR="$A/pip-cache"
+export XDG_CACHE_HOME="$A/xdg-cache" XDG_DATA_HOME="$A/xdg-data"
+mkdir -p "$TMPDIR" "$PIP_CACHE_DIR" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
+
+# Network: run once with approval or outside the sandbox.
+python3.12 -m pip --isolated --cache-dir "$A/pip-cache" download \
+  --require-hashes --only-binary=:all: --index-url https://pypi.org/simple \
+  -d "$A/wheelhouse" -r tests/requirements.lock
+
+# No network or escalation needed from here on.
+python3.12 -m venv "$A/venv"
+"$A/venv/bin/python" -m pip --isolated --cache-dir "$A/pip-cache" install \
+  --no-index --find-links "$A/wheelhouse" \
+  --require-hashes --only-binary=:all: -r tests/requirements.lock
+git clone --shared --no-checkout . "$A/clones/review"
+git -C "$A/clones/review" checkout --detach <commit>
+```
+
+Then pass `-PythonExecutable "$A/venv/bin/python"` to `check.ps1`.
+
+`git worktree add` writes into the main checkout's `.git/worktrees`, which is
+outside the writable root or protected. A `--shared` clone borrows objects
+read-only through `objects/info/alternates` and writes only under
+`.artifacts/`. It shares objects with the source repository, so it must not
+outlive the task, and the source must not be garbage-collected while the clone
+exists.
+
+The tests tolerate this layout. Repository-wide `*.py` walks skip
+dot-prefixed parts such as `.artifacts` and `.git`, so a clone or venv there
+adds no definitions. The built-image import closure exempts its own isolated
+tree and the interpreter prefix, but still refuses the checkout root and
+repository source directories. The Supervisor discovery test runs on a path
+relative to its temporary root. A `TMPDIR` inside `.artifacts/` therefore no
+longer trips the dot-prefixed-part guard.
+
+Package downloads, `gh`, `git fetch` and `git push` still need network, and
+writing a worktree's Git metadata still needs approval; scratch placement does
+not change either. Tests that open loopback sockets need a sandbox that allows
+local sockets (see `tests/AGENTS.md`). `.artifacts/` can grow to hundreds of
+megabytes per worktree. Delete it with the worktree.
+
 ## Required CI check
 
 The public required check remains `validate`. It is an aggregate over every
