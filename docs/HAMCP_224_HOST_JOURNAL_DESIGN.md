@@ -159,6 +159,43 @@ review, H1/H2 and M1–M3).** These supersede the "Withholding scope" and
   labelled form such as `api%5fkey=` in a configuration definition is
   therefore still decided by HAMCP-132's own forms; extending that report
   is a separate decision (suggested follow-up).
+- **One-token `user:pass@host` (HAMCP-234 step 2, 2.4.1-beta.43; supersedes
+  step 4 for the journal).** Owner decision (Josh, 2026-10-27), from the
+  beta.42 live calibration of `addon:core_matter_server` (37 of 40 lines
+  withheld, every one by `user_pass_host.squashed`). The journal reads
+  `user_pass_host` in the normal form only, as one contiguous token (no
+  whitespace between the user, `:`, the password, `@` and the host). It no
+  longer reads it in the squashed form, where a timestamp's `:` and a later
+  `@peer` joined into the shape. It is an option of the same shared screen
+  (`contiguous_user_pass_host=True`, in `host_journal._JOURNAL_SCREEN`), not a
+  fork. Every other rule is unchanged in both forms. The definitions and trace
+  paths do not opt in, the trace identity and name fields included. Owner
+  clarification (Josh, 2026-10-28, review of aaf1fe8e): the token is also
+  judged on the text as given and after each round of its percent-decode (each
+  normalized and folded as the normal form is), and any match withholds, so
+  decoding `%20`, `%09` or `%0A` never splits a token that was whole as
+  written (a proxy setting `user:pass%20more@proxy:8080`). Correction D320-H1
+  (Josh, 2026-10-28): the tokens are taken from the raw text, split at its raw
+  ASCII whitespace (U+0009–U+000D, U+0020) only, and each is decoded on its
+  own with decoded whitespace kept inside it, so an encoded `:` or `@`
+  decoding in the same round as `%20` is withheld too. Correction R3-H1 (Josh,
+  2026-10-28, fixed): each stage is normalized and folded first and only then
+  has its whitespace removed, so whitespace that percent-decoding or NFKC
+  introduces within one raw token (at most four decode rounds) is part of the
+  token and withheld; non-ASCII whitespace no longer splits a raw token.
+  Residual: raw ASCII whitespace (U+0009–U+000D, U+0020), journal mode,
+  scheme-less only; disclosed residual, accepted by Josh 2026-10-28. A
+  scheme-less `user:pass@host` split that way is shown in the journal unless
+  another rule meets it, although Python's proxy parser
+  (`urllib.request._parse_proxy`) accepts a literal space inside a password
+  (verified offline). `http`, `https` and `socks5` forms stay withheld
+  (`credential_url`). Known limitation: journal final screening has no
+  total-time bound and runs on the event loop; a maximum-size pathological
+  read (255 × 16,384-byte messages) took about 408 s on c371c739 (404.877 s
+  screening, 408.577 s call; no deadline flag; every field fully screened, no
+  unscreened output). The missing bound predates beta.43; the D320-H1
+  correction made the slow shape about 1.5x slower than c0789386; tracked as
+  HAMCP-240.
 - **Fail-closed consequences, disclosed.** A `Bearer` token and an
   `api_key=` value are now withheld whole instead of redacted in place.
   Ordinary text with a label followed by `:` or `=` (`token: refreshed`,

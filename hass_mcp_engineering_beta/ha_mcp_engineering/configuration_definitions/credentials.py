@@ -121,6 +121,45 @@ with ``P`` after anything but plain spaces (``-<tab>P x``); a text over
 an additional layer. The cost is disclosed, never a leak: ordinary text
 that names a keyword (``token refreshed``) or a real ``-P`` option of
 another tool (``iptables -P``) is withheld too.
+
+**The journal reads a user and password before a host as one token**
+(HAMCP-234 step 2, owner decision, Josh, 2026-10-27). A caller may opt in to
+``contiguous_user_pass_host=True``: the ``user_pass_host`` rule (a user, a
+``:``, a password, an ``@`` and a host with no scheme) is then met only in
+the normal form, as one token with no whitespace inside; it is not read in
+the squashed form. Only the host journal opts in. Live calibration on
+beta.42 (``addon:core_matter_server``, 37 of 40 lines withheld, every one by
+``user_pass_host.squashed``) showed why: a matter.js line starts with a
+colon-rich timestamp and names a peer, session or node address with an
+``@`` later, so removing the whitespace assembles the shape across words.
+Every other rule is unchanged in both forms: a URI with user-info, a
+connection URI, the password field, the marker, the known secrets, the
+labelled keywords, ``-P``, the value shapes, PEM headers and invisible or
+control text. The cost is disclosed (a residual accepted by Josh,
+2026-10-28): a scheme-less ``user:pass@host`` split by raw ASCII
+whitespace (U+0009 to U+000D, U+0020) in the text as given is shown in the
+journal unless another rule meets it. Whitespace that percent-decoding or
+normalization introduces within one raw token is not (below), and no other
+whitespace splits a raw token. The configuration-definitions report and the
+trace path do not opt in: their behavior is unchanged.
+
+**Decoding never splits the token** (HAMCP-234 step 2 correction, owner
+clarification, Josh, 2026-10-28; D320-H1 and R3-H1, Josh, 2026-10-28). With
+``contiguous_user_pass_host`` the tokens are taken from the text as given,
+split at its literal ASCII whitespace only. Each token is read as given and,
+when it carries a percent escape, after each round of its own bounded
+percent-decode. Each stage is normalized and folded as the normal form is
+(NFKC, casefold, confusable fold) and only then has its whitespace removed,
+so whitespace a decode round or the normalization introduces (U+00A8 is a
+space and a diaeresis under NFKC), or a no-break or ideographic space in the
+raw text, stays part of the token; any stage matching withholds the value
+(``user_pass_host``). A ``%20``, ``%09`` or ``%0A``
+inside a password (a proxy setting such as ``user:pass%20more@proxy:8080``,
+which a proxy client decodes and uses) is one token as written, so
+decoding it to whitespace never shows it, also when the ``:`` or ``@`` is
+encoded and decodes in the same round (``user%3Apass%20more%40proxy``, a
+whole value passed through ``quote(value, safe='')``). Literal ASCII
+whitespace in the text as given still separates tokens.
 """
 
 from __future__ import annotations
@@ -159,6 +198,9 @@ _DEFAULT_IGNORABLE = (
 )
 _ASCII_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
+# The journal's raw ``user_pass_host`` tokens are split at literal ASCII
+# whitespace only (HAMCP-234 step 2, Josh, 2026-10-28).
+_RAW_TOKEN_SEPARATOR = re.compile(r"[\t\n\v\f\r ]+")
 
 # Look-alikes NFKC and casefold leave unchanged, mapped to the character they
 # imitate (Unicode confusables). Read after casefold, so only lowercase
@@ -341,7 +383,8 @@ def unverifiable_text(value: str) -> bool:
     return _invisible(text)
 
 
-def credential_text(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> bool:
+def credential_text(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False,
+                    contiguous_user_pass_host: bool = False) -> bool:
     """Whether ``value`` must not reach the caller.
 
     Two forms of the canonical, confusable-folded text are checked: the text
@@ -350,22 +393,28 @@ def credential_text(value: str, known_secrets: tuple[str, ...] = (), *, labelled
     percent-encoded) hides it from the first form only; either form
     matching withholds the original value whole. ``labelled`` adds the
     labelled forms (HAMCP-224), read in the same forms.
+    ``contiguous_user_pass_host`` reads ``user_pass_host`` as one token, in
+    the normal form and in the text before and during its percent-decode,
+    not in the squashed form (HAMCP-234 step 2, the host journal).
     """
 
-    return credential_rule(value, known_secrets, labelled=labelled) is not None
+    return credential_rule(value, known_secrets, labelled=labelled,
+                           contiguous_user_pass_host=contiguous_user_pass_host) is not None
 
 
-def credential_rule(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> str | None:
+def credential_rule(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False,
+                    contiguous_user_pass_host: bool = False) -> str | None:
     """The id of the first rule that withholds ``value`` (HAMCP-234), or ``None``.
 
     The one ordered chain ``credential_text`` decides by, so the id never
     changes what is withheld. The id is a fixed name from ``RULE_IDS``.
     """
 
-    return next(_credential_rules(value, known_secrets, labelled), None)
+    return next(_credential_rules(value, known_secrets, labelled, contiguous_user_pass_host), None)
 
 
-def credential_rules(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> tuple[str, ...]:
+def credential_rules(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False,
+                     contiguous_user_pass_host: bool = False) -> tuple[str, ...]:
     """Every rule of the chain that matches ``value``, in chain order, each once.
 
     For the calibration counts (HAMCP-234): which rules a withheld entry
@@ -373,10 +422,12 @@ def credential_rules(value: str, known_secrets: tuple[str, ...] = (), *, labelle
     ``credential_rule``. A canonicalization refusal ends the chain.
     """
 
-    return tuple(dict.fromkeys(_credential_rules(value, known_secrets, labelled, every=True)))
+    return tuple(dict.fromkeys(_credential_rules(value, known_secrets, labelled, contiguous_user_pass_host,
+                                                 every=True)))
 
 
-def _credential_rules(value: str, known_secrets: tuple[str, ...], labelled: bool, *, every: bool = False):
+def _credential_rules(value: str, known_secrets: tuple[str, ...], labelled: bool,
+                      contiguous_user_pass_host: bool = False, *, every: bool = False):
     if any(secret and secret in value for secret in known_secrets):
         yield RULE_KNOWN_SECRET
     try:
@@ -389,10 +440,55 @@ def _credential_rules(value: str, known_secrets: tuple[str, ...], labelled: bool
     secrets = tuple(fold_confusables(secret.casefold()) for secret in known_secrets if secret)
     squashed = squash(text)
     yield from _credential_form_rules(text, secrets, _PASSWORD_FIELD, "")
+    if contiguous_user_pass_host and _undecoded_user_pass_host(value):
+        yield RULE_USER_PASS_HOST
     yield from _credential_form_rules(squashed, tuple(squash(secret) for secret in secrets),
-                                      _SQUASHED_PASSWORD_FIELD, SQUASHED_FORM)
+                                      _SQUASHED_PASSWORD_FIELD, SQUASHED_FORM,
+                                      user_pass_host=not contiguous_user_pass_host)
     if labelled:
         yield from _labelled_rules(value, text, squashed, every)
+
+
+def _undecoded_user_pass_host(value: str) -> bool:
+    """Whether ``user_pass_host`` meets a token of ``value`` as given or in its percent-decode.
+
+    HAMCP-234 step 2 correction (Josh, 2026-10-28; D320-H1, R3-H1): contiguity
+    is judged on the tokens of the text as given, split at its literal ASCII
+    whitespace only (U+0009 to U+000D and U+0020); other whitespace does not
+    split a raw token. Each token is read as given and, when it carries an
+    escape, after each round of its own percent-decode, at most
+    ``MAX_DECODE_ROUNDS`` rounds; a ``%20`` or ``%09`` inside a password never
+    splits the token, whether its ``:`` and ``@`` are literal or decode in the
+    same round. Only called after ``canonical`` accepted ``value``; a decode
+    that fails here anyway withholds (fail closed).
+    """
+
+    return any(_decoded_token_user_pass_host(token) for token in _RAW_TOKEN_SEPARATOR.split(value) if token)
+
+
+def _decoded_token_user_pass_host(token: str) -> bool:
+    stage = token
+    for _round in range(MAX_DECODE_ROUNDS):
+        if _token_stage_user_pass_host(stage):
+            return True
+        if not _ESCAPE.search(stage):
+            return False
+        try:
+            stage = unquote_to_bytes(stage).decode("utf-8", "strict")
+        except (UnicodeError, ValueError):
+            return True
+    return _token_stage_user_pass_host(stage)
+
+
+def _token_stage_user_pass_host(stage: str) -> bool:
+    # NFKC, casefold and the confusable fold first, as the normal form is read;
+    # then every whitespace in the stage is removed. The raw token has no ASCII
+    # whitespace, so any whitespace here came from the raw text's other
+    # whitespace, from decoding or from the normalization (U+00A8 is a space and
+    # a diaeresis), and is part of the token (R3-H1). ``user_pass_host`` needs a
+    # ``:`` and an ``@``.
+    text = squash(fold_confusables(unicodedata.normalize("NFKC", stage).casefold()))
+    return ":" in text and "@" in text and _USER_PASS_HOST.search(text) is not None
 
 
 def squash(text: str) -> str:
@@ -410,12 +506,15 @@ def _credential_form(text: str, secrets: tuple[str, ...], password_field: re.Pat
     return next(_credential_form_rules(text, secrets, password_field, ""), None) is not None
 
 
-def _credential_form_rules(text: str, secrets: tuple[str, ...], password_field: re.Pattern, form: str):
+def _credential_form_rules(text: str, secrets: tuple[str, ...], password_field: re.Pattern, form: str,
+                           *, user_pass_host: bool = True):
     if _userinfo(text):
         yield RULE_CREDENTIAL_URL + form
     if _CONNECTION_SCHEME.search(text) is not None:
         yield RULE_CONNECTION_URI + form
-    if _USER_PASS_HOST.search(text) is not None:
+    # ``user_pass_host`` is False only for the squashed form of a
+    # ``contiguous_user_pass_host`` caller (the host journal, HAMCP-234 step 2).
+    if user_pass_host and _USER_PASS_HOST.search(text) is not None:
         yield RULE_USER_PASS_HOST + form
     if password_field.search(text) is not None:
         yield RULE_PASSWORD_FIELD + form
@@ -530,18 +629,20 @@ def private_key_header(value: str) -> bool:
     return _PEM_PRIVATE.search(text) is not None or _PEM_PRIVATE.search(squash(text)) is not None
 
 
-def screen(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> str | None:
+def screen(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False,
+           contiguous_user_pass_host: bool = False) -> str | None:
     """The marker that replaces ``value`` whole, or ``None`` when it is shown.
 
     Invisible text first (``UNVERIFIABLE_MARKER``), then credential text
     (``WITHHELD_MARKER``), always on the complete original ``value``.
     """
 
-    return screen_rule(value, known_secrets, labelled=labelled)[0]
+    return screen_rule(value, known_secrets, labelled=labelled,
+                       contiguous_user_pass_host=contiguous_user_pass_host)[0]
 
 
-def screen_rule(value: str, known_secrets: tuple[str, ...] = (), *,
-                labelled: bool = False) -> tuple[str | None, str | None]:
+def screen_rule(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False,
+                contiguous_user_pass_host: bool = False) -> tuple[str | None, str | None]:
     """(``screen``'s marker, the id of the rule that decided it), or (``None``, ``None``).
 
     The same decision as ``screen``: the id is data about it (HAMCP-234),
@@ -550,20 +651,23 @@ def screen_rule(value: str, known_secrets: tuple[str, ...] = (), *,
 
     if unverifiable_text(value):
         return UNVERIFIABLE_MARKER, RULE_INVISIBLE
-    rule = credential_rule(value, known_secrets, labelled=labelled)
+    rule = credential_rule(value, known_secrets, labelled=labelled,
+                           contiguous_user_pass_host=contiguous_user_pass_host)
     if rule is not None:
         return WITHHELD_MARKER, rule
     return None, None
 
 
-def screen_rules(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False) -> tuple[str, ...]:
+def screen_rules(value: str, known_secrets: tuple[str, ...] = (), *, labelled: bool = False,
+                 contiguous_user_pass_host: bool = False) -> tuple[str, ...]:
     """Every rule that matches ``value``: ``invisible_or_control`` first, then the chain.
 
     Empty exactly when ``screen`` shows ``value``; the first id is
     ``screen_rule``'s. For the calibration counts only.
     """
 
-    rules = credential_rules(value, known_secrets, labelled=labelled)
+    rules = credential_rules(value, known_secrets, labelled=labelled,
+                             contiguous_user_pass_host=contiguous_user_pass_host)
     return ((RULE_INVISIBLE,) + rules) if unverifiable_text(value) else rules
 
 
