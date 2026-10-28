@@ -32,11 +32,7 @@ from .ha_core_readmission.routes import (
     StaticCoreRoute,
     AVAILABILITY_EXPOSURE_OPERATIONS,
     AVAILABILITY_EXPOSURE_TOOL,
-    LABEL_PROFILE,
-    LABEL_RESOURCE_TYPE,
-    LABEL_TOOL,
-    CONFIGURATION_DELETE_PROFILE,
-    CONFIGURATION_DELETE_TOOL,
+    PENDING_ADMISSION_TOOLS,
     StaticToolTargetRefused,
     static_tool_core_route,
     static_tool_target,
@@ -466,18 +462,18 @@ class AuthenticatedMcpGateway:
         await send({"type": "http.response.body", "body": body})
 
     def _pending_admission_details(self, tool_name, parameters) -> dict:
-        """Name a 069B, 165 or 155 profile that no owner-signed registry admits yet.
+        """Name a runtime-only profile that no owner-signed registry admits yet.
 
-        Only the selected profile's own admission state is reported; any other
-        Core unavailability keeps the generic refusal with empty details.
+        Covers 069B, and every ``PENDING_ADMISSION_TOOLS`` tool (165, 155,
+        232, 145 and the script-trace reads).  Only the selected profile's
+        own admission state is reported; any other Core unavailability keeps
+        the generic refusal with empty details.
         """
 
         if self._core_runtime is None:
             return {}
-        if tool_name == LABEL_TOOL:
-            selected = (LABEL_RESOURCE_TYPE, LABEL_PROFILE)
-        elif tool_name == CONFIGURATION_DELETE_TOOL:
-            selected = ("configuration_deletion", CONFIGURATION_DELETE_PROFILE)
+        if tool_name in PENDING_ADMISSION_TOOLS:
+            selected = PENDING_ADMISSION_TOOLS[tool_name]
         elif tool_name != AVAILABILITY_EXPOSURE_TOOL or not isinstance(
             parameters, dict
         ):
@@ -1064,26 +1060,16 @@ class AuthenticatedMcpGateway:
                 core_route.requirements if core_route is not None else ()
             )
             if self._core_runtime is not None and core_requirements:
-                # HAMCP-165: an unadmitted label profile is refused before the
-                # request is even validated; nothing is read or stored.
-                pending_label_admission = tool_name == LABEL_TOOL and bool(
+                # HAMCP-165/155/232/145: an unadmitted runtime-only profile
+                # is refused before the request is even validated; nothing is
+                # read or stored and no Core authority is acquired.
+                pending_admission = tool_name in PENDING_ADMISSION_TOOLS and bool(
                     self._pending_admission_details(tool_name, parameters)
-                )
-                # HAMCP-155: an unadmitted delete profile is refused before
-                # the request is even validated; nothing is read or stored
-                # and no Core authority is acquired.
-                pending_delete_admission = (
-                    tool_name == CONFIGURATION_DELETE_TOOL
-                    and bool(
-                        self._pending_admission_details(tool_name, parameters)
-                    )
                 )
                 try:
                     core_target = (
                         static_tool_target(tool_name, parameters)
-                        if isinstance(tool_name, str)
-                        and not pending_label_admission
-                        and not pending_delete_admission
+                        if isinstance(tool_name, str) and not pending_admission
                         else None
                     )
                 except StaticToolTargetRefused as refusal:
@@ -1120,7 +1106,7 @@ class AuthenticatedMcpGateway:
                         request_id=request_id,
                     )
                     return
-                if pending_label_admission or pending_delete_admission:
+                if pending_admission:
                     core_authority = None
                 elif core_target is None:
                     core_authority = self._core_runtime.acquire(

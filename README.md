@@ -1,5 +1,34 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.42** makes host journal reads usable on real
+add-on log formats (HAMCP-234 step 1). A withheld entry names the fixed
+screen rule that withheld each part (`withheld_rules`), and `calibration:
+true` returns per-source counts only, with no text. `supervisor` and add-on
+levels are parsed from known log formats instead of the stderr priority.
+The tool description no longer says a manager role is needed. Nothing
+withheld is relaxed; relaxations follow a live calibration. Rollback is
+reinstalling beta.41. Read the
+[2.4.1-beta.42 release notes](docs/V2_4_1_BETA42_RELEASE_NOTES.md) and
+[2.4.1-beta.42 acceptance contract](docs/V2_4_1_BETA42_ACCEPTANCE.md).
+
+It builds on beta.41 and the releases below.
+
+Staged, not yet released: Engineering **2.4.1-beta.41** builds the November
+Core batch inactive (HAMCP-232, HAMCP-145): governed edits of existing
+template (sensor, binary_sensor), filter and statistics helpers through their
+options flow, governed input_select option selection, and script-trace reads
+sanitized by the same trace sanitizer as the HAMCP-225 automation traces. It
+activates nothing new: `create_helper_options_plan`,
+`create_input_select_option_plan`, `list_script_traces` and
+`get_script_trace` refuse `pending_signed_registry_admission` before any Home
+Assistant request or persistence until a signed Core registry sequence names
+their runtime-only profiles. The dormant sequence-15 evidence lanes are wired
+but do not run. No signed registry, signed profile, existing fingerprint or
+existing schema change; static tools 77, advertised catalog 105 (106 with the
+optional YAML reader). Read the
+[2.4.1-beta.41 release notes](docs/V2_4_1_BETA41_RELEASE_NOTES.md) and
+[2.4.1-beta.41 acceptance contract](docs/V2_4_1_BETA41_ACCEPTANCE.md).
+
 Engineering **2.4.1-beta.40** (HAMCP-226, HAMCP-228) names each source that
 reached a scan bound and reports unavailable entity references in the
 integrity, dependency and helper scans;

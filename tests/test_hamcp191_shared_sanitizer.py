@@ -613,7 +613,7 @@ SANITIZER_SITES = {
     ("incident/provider.py", "DirectHaIncidentProvider._states", "sanitize_untrusted_data"): (1, "analysis"),
     ("incident/provider.py", "DirectHaIncidentProvider._system_log", "sanitize_untrusted_data"): (1, "logs"),
     ("incident_logs/service.py", "IncidentLogService._finish", "sanitize_log_lines"): (1, "logs"),
-    ("incident_logs/service.py", "IncidentLogService._finish", "sanitize_untrusted_data"): (1, "logs"),
+    ("incident_logs/service.py", "IncidentLogService._finish", "sanitize_untrusted_data"): (2, "logs"),
     ("integration_inspection/projection.py", "Projector._project_steps.scalar", "sanitize_untrusted_data"): (1, "identifier"),
     ("integration_inspection/projection.py", "Projector.identifier", "sanitize_untrusted_data"): (1, "identifier"),
     ("integrity/provider.py", "DirectHaIntegrityProvider._current_states", "sanitize_untrusted_data"): (1, "analysis"),

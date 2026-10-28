@@ -1,0 +1,455 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp234_journal_usability",
+   "test_hamcp224_host_journal",
+   "test_hamcp224_review1_corrections",
+   "test_hamcp224_review2_corrections",
+   "test_hamcp224_review3_corrections",
+   "test_pr313_delta_residuals",
+   "test_pr313_independent_review",
+   "test_review2_ansi_residual",
+   "test_hamcp131_incident_logs",
+   "test_hamcp220_incident_log_timestamps",
+   "test_hamcp191_shared_sanitizer",
+   "test_hamcp132_configuration_definitions",
+   "test_pr294_delta_review",
+   "test_pr294_corr2_extra",
+   "test_pr294_final32_review"
+  ],
+  "returncode": 0,
+  "tests": 548,
+  "seconds": 97.3,
+  "summary": "OK (expected failures=1)"
+ },
+ "mutation_count": 22,
+ "killed": 22,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "R1-rule-id-carries-message-text",
+   "class": "a rule id carrying the matched text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            rules = {} if omission is None else {\"message\": _rule_id(rule)}\n",
+     "            rules = {} if omission is None else {\"message\": _rule_id(rule) + \"=\"\n                     + (record.message or b\"\").decode(\"utf-8\", \"replace\")[:40]}\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R1-rule-id-carries-message-text.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_counts_match_the_normal_read (test_hamcp234_journal_usability.CalibrationTests.test_counts_match_the_normal_read)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "R2-rule-id-carries-message-length",
+   "class": "a rule id carrying the matched text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            rules = {} if omission is None else {\"message\": _rule_id(rule)}\n",
+     "            rules = {} if omission is None else {\"message\": _rule_id(rule) + \".\"\n                     + str(len(record.message or b\"\"))}\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R2-rule-id-carries-message-length.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_counts_match_the_normal_read (test_hamcp234_journal_usability.CalibrationTests.test_counts_match_the_normal_read)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "R3-screen-rule-id-carries-text",
+   "class": "a rule id carrying the matched text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+     "    return marker, OMISSIONS[marker], rule\n",
+     "    return marker, OMISSIONS[marker], f\"{rule}:{screened[:40]}\"\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "    return rule if rule in hj.RULE_IDS else hj.RULE_UNLISTED\n",
+     "    return rule\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R3-screen-rule-id-carries-text.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_no_text_under_any_input (test_hamcp234_journal_usability.CalibrationTests.test_no_text_under_any_input)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "R4-field-rule-id-carries-field-text",
+   "class": "a rule id carrying the matched text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                    rules[name] = _rule_id(field_rule)\n",
+     "                    rules[name] = _rule_id(field_rule) + \"=\" + raw.decode(\"utf-8\", \"replace\")[:40]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R4-field-rule-id-carries-field-text.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_no_text_under_any_input (test_hamcp234_journal_usability.CalibrationTests.test_no_text_under_any_input)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "K1-calibration-message-sample",
+   "class": "calibration returning any text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                \"source\": scan.key, \"status\": status, \"reason\": scan.failure or scan.finished or stopped,\n",
+     "                \"source\": scan.key, \"status\": status, \"reason\": scan.failure or scan.finished or stopped,\n                \"sample\": (in_window[0].record.message or b\"\").decode(\"utf-8\", \"replace\") if in_window else None,\n"
+    ]
+   ],
+   "log_path": "mutation-logs/K1-calibration-message-sample.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_no_text_under_any_input (test_hamcp234_journal_usability.CalibrationTests.test_no_text_under_any_input)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "K2-calibration-process-name",
+   "class": "calibration returning any text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                \"source\": scan.key, \"status\": status, \"reason\": scan.failure or scan.finished or stopped,\n",
+     "                \"source\": scan.key, \"status\": status, \"reason\": scan.failure or scan.finished or stopped,\n                \"processes\": sorted({(item.record.identifier or b\"\").decode(\"utf-8\", \"replace\") for item in in_window}),\n"
+    ]
+   ],
+   "log_path": "mutation-logs/K2-calibration-process-name.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_no_text_under_any_input (test_hamcp234_journal_usability.CalibrationTests.test_no_text_under_any_input)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "K3-calibration-sanitizer-verdict-ignored",
+   "class": "calibration returning any text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            if result.failed_closed or result.redacted_field_count or result.value != envelope:\n",
+     "            if result.failed_closed:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/K3-calibration-sanitizer-verdict-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_any_sanitizer_change_fails_closed (test_hamcp234_journal_usability.CalibrationTests.test_any_sanitizer_change_fails_closed)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "K4-calibration-returns-entries",
+   "class": "calibration returning any text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "        if args[\"calibration\"]:\n",
+     "        if False:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/K4-calibration-returns-entries.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_any_sanitizer_change_fails_closed (test_hamcp234_journal_usability.CalibrationTests.test_any_sanitizer_change_fails_closed)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "P1-container-level-from-priority",
+   "class": "the container level taken from PRIORITY when a known format matches",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "    parsed = cl.parse_level(message)\n",
+     "    parsed = None\n"
+    ]
+   ],
+   "log_path": "mutation-logs/P1-container-level-from-priority.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_addon_line_is_read_after_its_colour_codes_are_removed (test_hamcp234_journal_usability.ContainerLevelReadTests.test_an_addon_line_is_read_after_its_colour_codes_are_removed)"
+   ],
+   "seconds": 11.6
+  },
+  {
+   "id": "P2-no-container-sources",
+   "class": "the container level taken from PRIORITY when a known format matches",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/container_levels.py",
+     "    return key == \"supervisor\" or key.startswith(\"addon:\")\n",
+     "    return False\n"
+    ]
+   ],
+   "log_path": "mutation-logs/P2-no-container-sources.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_container_line_keeps_its_priority_unverified (test_hamcp234_journal_usability.ContainerLevelReadTests.test_a_withheld_container_line_keeps_its_priority_unverified)"
+   ],
+   "seconds": 10.8
+  },
+  {
+   "id": "P3-parsed-level-only-when-priority-agrees",
+   "class": "the container level taken from PRIORITY when a known format matches",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "    if parsed is not None:\n",
+     "    if parsed is not None and parsed == level:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/P3-parsed-level-only-when-priority-agrees.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_addon_line_is_read_after_its_colour_codes_are_removed (test_hamcp234_journal_usability.ContainerLevelReadTests.test_an_addon_line_is_read_after_its_colour_codes_are_removed)"
+   ],
+   "seconds": 11.1
+  },
+  {
+   "id": "D1-unverified-withheld-dropped-uncounted",
+   "class": "a withheld entry dropped by min_level without being counted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                elif withheld_entry:\n",
+     "                elif withheld_entry and view[\"level_basis\"] != cl.UNVERIFIED_BASIS:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/D1-unverified-withheld-dropped-uncounted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_container_line_keeps_its_priority_unverified (test_hamcp234_journal_usability.ContainerLevelReadTests.test_a_withheld_container_line_keeps_its_priority_unverified)"
+   ],
+   "seconds": 10.7
+  },
+  {
+   "id": "D2-withheld-priority-trusted-as-level",
+   "class": "a withheld entry dropped by min_level without being counted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            level_known = args[\"min_level\"] is None or view[\"level_basis\"] != cl.UNVERIFIED_BASIS\n",
+     "            level_known = True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/D2-withheld-priority-trusted-as-level.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_container_line_keeps_its_priority_unverified (test_hamcp234_journal_usability.ContainerLevelReadTests.test_a_withheld_container_line_keeps_its_priority_unverified)"
+   ],
+   "seconds": 11.1
+  },
+  {
+   "id": "D3-withheld-level-filtered-complete",
+   "class": "a withheld entry dropped by min_level without being counted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                    if row[\"withheld_level_filtered\"]:\n                        reasons.append(f\"withheld_level_filtered:{row['source']}\")\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/D3-withheld-level-filtered-complete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_container_line_keeps_its_priority_unverified (test_hamcp234_journal_usability.ContainerLevelReadTests.test_a_withheld_container_line_keeps_its_priority_unverified)"
+   ],
+   "seconds": 11.3
+  },
+  {
+   "id": "F1-level-word-anywhere",
+   "class": "the container level read from the wrong text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/container_levels.py",
+     "        match = form.match(head)\n",
+     "        match = form.search(head)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F1-level-word-anywhere.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_text_in_no_known_format_gives_none (test_hamcp234_journal_usability.ContainerLevelTests.test_text_in_no_known_format_gives_none)"
+   ],
+   "seconds": 11.2
+  },
+  {
+   "id": "F2-level-from-any-line",
+   "class": "the container level read from the wrong text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/container_levels.py",
+     "    head = message.split(\"\\n\", 1)[0][:_HEAD]\n",
+     "    head = message[:_HEAD]\n    for line in message.split(\"\\n\"):\n        for form in _FORMATS:\n            if form.match(line):\n                return _LEVELS[form.match(line).group(1)]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F2-level-from-any-line.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_text_in_no_known_format_gives_none (test_hamcp234_journal_usability.ContainerLevelTests.test_text_in_no_known_format_gives_none)"
+   ],
+   "seconds": 10.7
+  },
+  {
+   "id": "F3-host-sources-parsed",
+   "class": "the container level read from the wrong text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "    if not container:\n",
+     "    if False:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F3-host-sources-parsed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_host_line_keeps_its_priority_level_filter (test_hamcp234_journal_usability.ContainerLevelReadTests.test_a_withheld_host_line_keeps_its_priority_level_filter)"
+   ],
+   "seconds": 10.8
+  },
+  {
+   "id": "F4-withheld-text-parsed",
+   "class": "the container level read from the wrong text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            level, basis = _journal_level(container, record.priority, None if omission else body)\n",
+     "            level, basis = _journal_level(container, record.priority,\n                                          (record.message or b\"\").decode(\"utf-8\", \"replace\"))\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F4-withheld-text-parsed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_withheld_container_line_keeps_its_priority_unverified (test_hamcp234_journal_usability.ContainerLevelReadTests.test_a_withheld_container_line_keeps_its_priority_unverified)"
+   ],
+   "seconds": 10.5
+  },
+  {
+   "id": "C1-calibration-fields-never-counted",
+   "class": "calibration counts not the read's",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                for name, raw, truncated in parts:\n",
+     "                for name, raw, truncated in parts[:1]:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C1-calibration-fields-never-counted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_no_text_under_any_input (test_hamcp234_journal_usability.CalibrationTests.test_no_text_under_any_input)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "C2-matching-rules-only-the-deciding-one",
+   "class": "calibration counts not the read's",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                    for match in dict.fromkeys(_rule_id(each) for each in hj.screen_text_rules(raw, secrets, truncated)):\n",
+     "                    for match in (rule,):\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C2-matching-rules-only-the-deciding-one.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_rewritten_entries_count_by_rule (test_hamcp234_journal_usability.CalibrationTests.test_rewritten_entries_count_by_rule)"
+   ],
+   "seconds": 9.8
+  },
+  {
+   "id": "C3-withheld-entries-make-partial",
+   "class": "calibration counts not the read's",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "            elif stopped or rejected or unreadable or scan.start_location == \"retention_edge\":\n",
+     "            elif stopped or rejected or unreadable or withheld or scan.start_location == \"retention_edge\":\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C3-withheld-entries-make-partial.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_counts_match_the_normal_read (test_hamcp234_journal_usability.CalibrationTests.test_counts_match_the_normal_read)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "W1-row-withheld-rules-dropped",
+   "class": "a rule id carrying the matched text",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/service.py",
+     "                        row[\"withheld_rules\"] = dict(view[\"withheld_rules\"])\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/W1-row-withheld-rules-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_counts_match_the_normal_read (test_hamcp234_journal_usability.CalibrationTests.test_counts_match_the_normal_read)"
+   ],
+   "seconds": 2.6
+  }
+ ]
+}

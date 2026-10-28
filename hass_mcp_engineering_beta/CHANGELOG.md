@@ -1,5 +1,62 @@
 # Changelog
 
+## 2.4.1-beta.42 - Journal logs usable on real add-on formats (HAMCP-234 step 1)
+
+Builds on 2.4.1-beta.41. Nothing withheld is relaxed.
+
+- A withheld host journal entry names, per withheld part, the fixed id of
+  the screen rule that withheld it (`withheld_rules`). There are 45 ids,
+  exposed as data by the shared `credentials.screen` (`screen_rule`); an id
+  never carries the text, its length or the matched part.
+- `calibration: true` (host journal sources, no `min_level`, `text` or
+  `cursor`) returns per-source counts only: scanned, shown, withheld, and
+  withheld and matched per rule id. It returns no entry or text.
+- `supervisor` and `addon:<slug>` levels are parsed from known formats
+  (Supervisor, matter.js, Python logging, bashio; `level_basis:
+  parsed_text`), else they are the journal priority. A withheld container
+  line keeps its priority as `priority_unverified` and is counted in
+  `withheld_level_filtered` under `min_level`, never returned.
+- The `get_incident_logs` description no longer says a manager role is
+  needed.
+- One new optional input (`calibration`); no tool, routing, provider,
+  policy, profile, fingerprint, signed registry, persisted format,
+  workflow, Dockerfile, dependency or stable-v1 change.
+
+## 2.4.1-beta.41 - November Core batch built inactive (HAMCP-232, HAMCP-145) (staged)
+
+Follows 2.4.1-beta.40 (#317). Activates nothing new.
+
+- New tools `create_helper_options_plan`, `create_input_select_option_plan`,
+  `list_script_traces` and `get_script_trace` (static tools 73 -> 77). Each refuses
+  `pending_signed_registry_admission` before any read, request or
+  persistence (a retained or resumed task included) until a signed Core
+  registry sequence names its runtime-only profile:
+  `core.config_entry_helper_options_operation`,
+  `core.typed_input_select_option_operation` or `core.script_trace_read`.
+- Helper options (OD-1 to OD-8): template (sensor, binary_sensor), filter and
+  statistics; one helper domain and 1-8 entries per plan; baseline and
+  readback by opening and aborting the options flow for the plan's exact
+  entries only; one held, guarded submit per child of the complete intended
+  options set (an incomplete or malformed intent is refused before any flow
+  opens); every flow this server opens is aborted on every outcome, including
+  a lost response, a timeout and cancellation; drift refused as
+  `stale_target_state`; pinned `read_only` fields; injected defaults
+  disclosed as `normalization_changes`; the accepted OD-7 window disclosed in
+  the plan and the apply response; separately approved rollback.
+- input_select option (OD-9 to OD-12): one exact `select_option` call;
+  per-option trigger disclosure (a disabled automation or trigger is
+  disclosed as not firing while disabled); drift refused; a Core error after
+  the send decided by readback; separately approved rollback.
+  `create_helper_state_plan` and the input_boolean path are unchanged.
+- Script-trace reads: `trace/list` and `trace/get` with `domain: script`
+  only, through the HAMCP-225 trace sanitizer (every string and key at every
+  depth through `credentials.screen`; identifiers in default mode, values in
+  labelled mode); no fallback.
+- Dormant sequence-15 evidence lanes and additive `ci.yml` wiring (OD-14).
+  Post-signing canaries defined, not run.
+- No signed registry, signed profile, existing fingerprint or existing
+  persisted format change. Rollback is reinstalling 2.4.1-beta.40.
+
 ## 2.4.1-beta.40 - Named scan bounds and durable baselines (HAMCP-226, HAMCP-228)
 
 Builds on 2.4.1-beta.39. Adds no Home Assistant write.

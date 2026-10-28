@@ -44,7 +44,7 @@ RETIREMENT_HEADER = (
     b"# rename it back. Values are kept as the last shipped v1.1.2 metadata. See README.md.\n"
     b"\n"
 )
-BETA_VERSION = "2.4.1-beta.40"
+BETA_VERSION = "2.4.1-beta.42"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 NEXT_VERSION_PATH = Path(".release/next-version")
 NON_RELEASE_BETA_PATHS = frozenset({"hass_mcp_engineering_beta/AGENTS.md"})

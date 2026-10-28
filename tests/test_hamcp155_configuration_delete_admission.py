@@ -148,8 +148,9 @@ class DormantProfileTests(unittest.TestCase):
         self.assertEqual(ids(CORE_CONFIGURATION_DELETE_PROFILES), {DELETE})
         self.assertNotIn(DELETE, ids(CORE_CAPABILITY_PROFILES))
         self.assertIn(DELETE, ids(CORE_RUNTIME_CAPABILITY_PROFILES))
-        # The runtime profile set ends with it (sequence-13 batch).
-        self.assertEqual(CORE_RUNTIME_CAPABILITY_PROFILES[-1].capability_id, DELETE)
+        # The sequence-13 batch ends with it; the HAMCP-232/145 November
+        # batch (dormant, unsigned) follows.
+        self.assertEqual(CORE_RUNTIME_CAPABILITY_PROFILES[-4].capability_id, DELETE)
         for version, _commit, _digest in SUPPORTED_CORE_RELEASES:
             with self.subTest(version=version):
                 self.assertNotIn(

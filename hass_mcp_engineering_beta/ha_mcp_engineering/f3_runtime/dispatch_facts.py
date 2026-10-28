@@ -102,6 +102,8 @@ _B_CONFLICTING_CODES = frozenset(
     {
         PROVIDER_REJECTED_MUTATION,
         "provider_rejection_confirmed",
+        # HAMCP-145: Core answered the select_option send; readback decides.
+        "provider_rejection_readback_decides",
         "provider_completed_unexpectedly",
         "provider_response_indeterminate",
         "structured_provider_rejection_received",

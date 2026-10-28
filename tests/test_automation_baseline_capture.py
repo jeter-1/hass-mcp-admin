@@ -655,7 +655,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         from ha_mcp_engineering.providers.routing import routing_for_tool
         from ha_mcp_engineering.ha_core_readmission.routes import static_tool_requirements
         tools=registered_tools(get_registered_server()); tool=tools['capture_automation_baseline']
-        self.assertEqual(len(tools),73)
+        self.assertEqual(len(tools),77)
         # HAMCP-228: a capture writes one Engineering-local stored baseline;
         # its Home Assistant access stays read-only.
         self.assertFalse(tool.annotations.readOnlyHint)

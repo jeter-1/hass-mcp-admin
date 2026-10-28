@@ -27,7 +27,9 @@ from ha_mcp_engineering.f3_runtime.registry import (  # noqa: E402
     CONFIGURATION_REGISTRATIONS,
     DASHBOARD_REGISTRATION,
     ENTITY_METADATA_REGISTRATION,
+    HELPER_OPTIONS_REGISTRATION,
     HELPER_STATE_REGISTRATION,
+    INPUT_SELECT_REGISTRATION,
     LABEL_REGISTRATIONS,
     OPERATIONAL_REGISTRATIONS,
 )
@@ -1041,13 +1043,18 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
                     *AVAILABILITY_EXPOSURE_REGISTRATIONS,
                     *LABEL_REGISTRATIONS,
                     *CONFIGURATION_DELETE_REGISTRATIONS,
+                    # HAMCP-232/145: registered but refused until a signed
+                    # registry admits each dormant profile.
+                    HELPER_OPTIONS_REGISTRATION,
+                    INPUT_SELECT_REGISTRATION,
                     DASHBOARD_REGISTRATION,
                 )
             },
         )
         # HAMCP-155: the two delete identities are registered but each adapter
         # refuses until a signed registry admits the delete profile.
-        self.assertEqual(len(identities), 21)  # +2 HAMCP-165 label identities
+        # +2 HAMCP-165 label identities, +2 HAMCP-232/145 dormant identities
+        self.assertEqual(len(identities), 23)
         self.assertEqual(
             [item for item in identities if "dashboard" in item],
             ["update_existing_dashboard"],
@@ -1057,7 +1064,8 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
         health = self.runtime.health()
         self.assertEqual(health["status"], "ready")
         self.assertTrue(health["execution_ready"])
-        self.assertEqual(health["activated_capability_count"], 21)  # +2 HAMCP-165, +2 HAMCP-155
+        # +2 HAMCP-165, +2 HAMCP-155, +2 HAMCP-232/145
+        self.assertEqual(health["activated_capability_count"], 23)
         self.assertEqual(health["dashboard_capability_count"], 1)
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(health["recovery_cadence_seconds"], 30)
