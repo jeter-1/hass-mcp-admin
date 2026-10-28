@@ -1,0 +1,842 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp235_baseline_usability",
+   "test_hamcp228_baseline_store",
+   "test_automation_baseline_capture",
+   "test_automation_audit_baseline",
+   "test_hamcp226_228_review1_corrections",
+   "test_hamcp226_228_review2_corrections",
+   "test_hamcp226_228_review2_delta_extra",
+   "test_hamcp226_named_sources"
+  ],
+  "returncode": 0,
+  "tests": 229,
+  "seconds": 116.9,
+  "summary": "OK"
+ },
+ "mutation_count": 43,
+ "killed": 43,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "G1-unestablished-identity-as-row-mismatch",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "    installation_mismatch = installation_reason == \"installation_identity_mismatch\"\n",
+     "    installation_mismatch = not installation_comparable\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G1-unestablished-identity-as-row-mismatch.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_earlier_side_timeout_is_unknown_with_its_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_earlier_side_timeout_is_unknown_with_its_reason)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "G2-authority-continuity-as-row-reason",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "            if reasons:\n                classification = Classification.UNKNOWN\n            elif old.configuration_digest == new.configuration_digest:\n",
+     "            if not authority_continuity_comparable:\n                reasons.append(\"authority_continuity_unestablished\")\n            if reasons:\n                classification = Classification.UNKNOWN\n            elif old.configuration_digest == new.configuration_digest:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G2-authority-continuity-as-row-reason.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_earlier_side_timeout_is_unknown_with_its_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_earlier_side_timeout_is_unknown_with_its_reason)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "G3-recorded-unestablished-capture-as-row-reason",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "            # HAMCP-235: installation identity and authority continuity are\n            # comparison-level caveats, not row reasons.\n",
+     "            if not capture.installation.established:\n                reasons.append(\"capture_installation_unestablished\")\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G3-recorded-unestablished-capture-as-row-reason.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recorded_fingerprints_against_an_unestablished_capture (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_recorded_fingerprints_against_an_unestablished_capture)"
+   ],
+   "seconds": 5.5
+  },
+  {
+   "id": "G4-recorded-authority-as-row-reason",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "            # HAMCP-235: installation identity and authority continuity are\n            # comparison-level caveats, not row reasons.\n",
+     "            if not authority_continuous:\n                reasons.append(\"capture_authority_continuity_unestablished\")\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G4-recorded-authority-as-row-reason.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_fingerprint_model_mismatch_is_unknown_with_its_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_fingerprint_model_mismatch_is_unknown_with_its_reason)"
+   ],
+   "seconds": 3.3
+  },
+  {
+   "id": "G5-stored-caveats-dropped",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "        caveats=_caveats(((\"earlier\", earlier), (\"later\", later))),\n",
+     "        caveats=(),\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G5-stored-caveats-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_established_pair_has_only_the_non_atomic_caveat (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_established_pair_has_only_the_non_atomic_caveat)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "G6-installation-caveat-earlier-side-only",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "installation = [side for side, item in pairs if",
+     "installation = [side for side, item in pairs[:1] if"
+    ]
+   ],
+   "log_path": "mutation-logs/G6-installation-caveat-earlier-side-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat)"
+   ],
+   "seconds": 4.9
+  },
+  {
+   "id": "G7-authority-caveat-dropped",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "if item.consistency.get(\"authority_drift\") != \"none_observed_at_capture_fences\"]",
+     "if False]"
+    ]
+   ],
+   "log_path": "mutation-logs/G7-authority-caveat-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat)"
+   ],
+   "seconds": 4.9
+  },
+  {
+   "id": "G8-non-atomic-caveat-dropped",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "atomic = [side for side, item in pairs if item.capture_non_atomic]",
+     "atomic = [side for side, item in pairs if False]"
+    ]
+   ],
+   "log_path": "mutation-logs/G8-non-atomic-caveat-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_established_pair_has_only_the_non_atomic_caveat (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_established_pair_has_only_the_non_atomic_caveat)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "G9-recorded-caveats-dropped",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "\"caveats\": list(_caveats(((\"capture\", capture),), unverified_sides=(\"recorded_fingerprints\",))),",
+     "\"caveats\": [],"
+    ]
+   ],
+   "log_path": "mutation-logs/G9-recorded-caveats-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recorded_fingerprints_against_an_unestablished_capture (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_recorded_fingerprints_against_an_unestablished_capture)"
+   ],
+   "seconds": 5.6
+  },
+  {
+   "id": "G10-recorded-side-not-unverified",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "unverified_sides=(\"recorded_fingerprints\",))),",
+     "unverified_sides=())),"
+    ]
+   ],
+   "log_path": "mutation-logs/G10-recorded-side-not-unverified.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recorded_fingerprints_against_an_unestablished_capture (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_recorded_fingerprints_against_an_unestablished_capture)"
+   ],
+   "seconds": 5.6
+  },
+  {
+   "id": "G11-timed-out-reason-dropped",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "row[\"reasons\"] = sorted({*row[\"reasons\"], \"timed_out\"})",
+     "row[\"reasons\"] = row[\"reasons\"]"
+    ]
+   ],
+   "log_path": "mutation-logs/G11-timed-out-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_earlier_side_timeout_is_unknown_with_its_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_earlier_side_timeout_is_unknown_with_its_reason)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "G12-timed-out-on-every-unknown",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "if row[\"classification\"] == \"UNKNOWN\" and row[\"configuration_id\"] in timed_out:",
+     "if row[\"classification\"] == \"UNKNOWN\":"
+    ]
+   ],
+   "log_path": "mutation-logs/G12-timed-out-on-every-unknown.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_live_pair_timed_out_rows_are_unknown_with_their_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_live_pair_timed_out_rows_are_unknown_with_their_reason)"
+   ],
+   "seconds": 4.1
+  },
+  {
+   "id": "G13-timeouts-from-earlier-only",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "timed_out = self._read_timeouts(earlier) | self._read_timeouts(later)",
+     "timed_out = self._read_timeouts(earlier)"
+    ]
+   ],
+   "log_path": "mutation-logs/G13-timeouts-from-earlier-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_live_pair_timed_out_rows_are_unknown_with_their_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_live_pair_timed_out_rows_are_unknown_with_their_reason)"
+   ],
+   "seconds": 4.2
+  },
+  {
+   "id": "G14-timeouts-from-later-only",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_service.py",
+     "timed_out = self._read_timeouts(earlier) | self._read_timeouts(later)",
+     "timed_out = self._read_timeouts(later)"
+    ]
+   ],
+   "log_path": "mutation-logs/G14-timeouts-from-later-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_earlier_side_timeout_is_unknown_with_its_reason (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_earlier_side_timeout_is_unknown_with_its_reason)"
+   ],
+   "seconds": 3.3
+  },
+  {
+   "id": "G15-installation-mismatch-row-reason-dropped",
+   "class": "a comparison-level caveat as a per-row UNKNOWN, or the caveat lost",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/comparison.py",
+     "    if installation_mismatch:\n        reasons.append(\"installation_identity_mismatch\")\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/G15-installation-mismatch-row-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_two_established_different_installations_stay_unknown_per_row (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_two_established_different_installations_stay_unknown_per_row)"
+   ],
+   "seconds": 5.9
+  },
+  {
+   "id": "V1-generation-change-refuses-resume",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "            if prior[\"authority\"][\"generation\"] != authority[0]:\n                authority_drift = \"detected\"\n",
+     "            if prior[\"authority\"][\"generation\"] != authority[0]:\n                raise c.CaptureError(\"resume_inventory_changed\")\n"
+    ]
+   ],
+   "log_path": "mutation-logs/V1-generation-change-refuses-resume.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_each_volatile_input_alone_resumes (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_each_volatile_input_alone_resumes)"
+   ],
+   "seconds": 8.9
+  },
+  {
+   "id": "V2-generation-change-not-recorded-as-drift",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "            if prior[\"authority\"][\"generation\"] != authority[0]:\n                authority_drift = \"detected\"\n",
+     "            if prior[\"authority\"][\"generation\"] != authority[0]:\n                pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/V2-generation-change-not-recorded-as-drift.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_minutes_later_with_unchanged_automations_succeeds (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_resume_minutes_later_with_unchanged_automations_succeeds)"
+   ],
+   "seconds": 11.2
+  },
+  {
+   "id": "V3-enabled-state-in-resume-mapping",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "before = {row[\"configuration_id\"]: row[\"entity_id\"] for row in prior[\"records\"]}\n        after = {row[\"configuration_id\"]: row[\"entity_id\"] for row in records}\n",
+     "before = {row[\"configuration_id\"]: (row[\"entity_id\"], row[\"enabled_state\"][\"state\"]) for row in prior[\"records\"]}\n        after = {row[\"configuration_id\"]: (row[\"entity_id\"], row[\"enabled_state\"][\"state\"]) for row in records}\n"
+    ]
+   ],
+   "log_path": "mutation-logs/V3-enabled-state-in-resume-mapping.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "V4-declared-count-refuses-resume",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                changes = self.resume_changes(base, first[\"identity\"], records)\n",
+     "                if prior[\"inventory\"][\"declared_count\"] != len(states) + first[\"states\"][\"invalid_count\"]:\n                    raise c.CaptureError(\"resume_inventory_changed\")\n                changes = self.resume_changes(base, first[\"identity\"], records)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/V4-declared-count-refuses-resume.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_inventory_change_category_is_refused_precisely (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_each_inventory_change_category_is_refused_precisely)"
+   ],
+   "seconds": 6.8
+  },
+  {
+   "id": "V5-on-off-state-in-stable-inventory",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "{entity: (row[\"id\"], row[\"id_withheld\"]) for entity, row in projected[\"records\"].items()}",
+     "{entity: (row[\"id\"], row[\"id_withheld\"], row.get(\"state\")) for entity, row in projected[\"records\"].items()}"
+    ]
+   ],
+   "log_path": "mutation-logs/V5-on-off-state-in-stable-inventory.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_volatile_state_between_fences_is_not_inventory_drift (test_hamcp235_baseline_usability.FinalFenceTests.test_volatile_state_between_fences_is_not_inventory_drift)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "V7-full-states-compared-at-final-fence",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "self.stable_states(first) == self.stable_states(last)",
+     "first[\"states\"] == last[\"states\"]"
+    ]
+   ],
+   "log_path": "mutation-logs/V7-full-states-compared-at-final-fence.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_volatile_state_between_fences_is_not_inventory_drift (test_hamcp235_baseline_usability.FinalFenceTests.test_volatile_state_between_fences_is_not_inventory_drift)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "V8-unestablished-base-anchor-ignored",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                  else base[\"diagnostics\"].get(\"first_fence_installation_id\"))",
+     "                  else None)"
+    ]
+   ],
+   "log_path": "mutation-logs/V8-unestablished-base-anchor-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "V9-anchored-base-never-established",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                or base[\"diagnostics\"].get(\"first_fence_installation_id\") is not None)",
+     "                or False)"
+    ]
+   ],
+   "log_path": "mutation-logs/V9-anchored-base-never-established.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_minutes_later_with_unchanged_automations_succeeds (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_resume_minutes_later_with_unchanged_automations_succeeds)"
+   ],
+   "seconds": 11.5
+  },
+  {
+   "id": "V10-first-fence-anchor-not-recorded",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "\"first_fence_installation_id\": first[\"identity\"],",
+     "\"first_fence_installation_id\": None,"
+    ]
+   ],
+   "log_path": "mutation-logs/V10-first-fence-anchor-not-recorded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat (test_hamcp235_baseline_usability.LiveShapedCompareTests.test_live_pair_unestablished_identical_digests_is_unchanged_with_one_caveat)"
+   ],
+   "seconds": 4.7
+  },
+  {
+   "id": "V11-legacy-base-without-anchor-established",
+   "class": "a volatile input in the resume or capture fence",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                or base[\"diagnostics\"].get(\"first_fence_installation_id\") is not None)",
+     "                or True)"
+    ]
+   ],
+   "log_path": "mutation-logs/V11-legacy-base-without-anchor-established.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_unestablished_legacy_base_without_an_anchor_stays_unestablished (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_an_unestablished_legacy_base_without_an_anchor_stays_unestablished)"
+   ],
+   "seconds": 6.7
+  },
+  {
+   "id": "R1-inventory-refusal-without-categories",
+   "class": "a refusal without its category",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "raise c.CaptureError(\"resume_inventory_changed\", resume_changes=changes)",
+     "raise c.CaptureError(\"resume_inventory_changed\")"
+    ]
+   ],
+   "log_path": "mutation-logs/R1-inventory-refusal-without-categories.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_inventory_change_category_is_refused_precisely (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_each_inventory_change_category_is_refused_precisely)"
+   ],
+   "seconds": 7.5
+  },
+  {
+   "id": "R2-core-refusal-without-category",
+   "class": "a refusal without its category",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "raise c.CaptureError(\"resume_core_changed\", resume_changes=(\"core_version_changed\",))",
+     "raise c.CaptureError(\"resume_core_changed\")"
+    ]
+   ],
+   "log_path": "mutation-logs/R2-core-refusal-without-category.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_inventory_change_category_is_refused_precisely (test_hamcp235_baseline_usability.LiveShapedResumeTests.test_each_inventory_change_category_is_refused_precisely)"
+   ],
+   "seconds": 9.3
+  },
+  {
+   "id": "R3-categories-not-in-details",
+   "class": "a refusal without its category",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+     "            details[\"resume_changes\"] = changes\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R3-categories-not-in-details.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_refusal_details_carry_only_fixed_categories (test_hamcp235_baseline_usability.ContractTests.test_refusal_details_carry_only_fixed_categories)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "R4-unlisted-category-kept",
+   "class": "a refusal without its category",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+     "changes = sorted(set(resume_changes) & RESUME_CHANGES)",
+     "changes = sorted(set(resume_changes))"
+    ]
+   ],
+   "log_path": "mutation-logs/R4-unlisted-category-kept.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_refusal_details_carry_only_fixed_categories (test_hamcp235_baseline_usability.ContractTests.test_refusal_details_carry_only_fixed_categories)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "R5-categories-on-any-reason",
+   "class": "a refusal without its category",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+     "if reason in {\"resume_inventory_changed\", \"resume_core_changed\"} and changes:",
+     "if changes:"
+    ]
+   ],
+   "log_path": "mutation-logs/R5-categories-on-any-reason.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_refusal_details_carry_only_fixed_categories (test_hamcp235_baseline_usability.ContractTests.test_refusal_details_carry_only_fixed_categories)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "R6-added-not-detected",
+   "class": "a refusal without its category",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "changes.add(\"automation_added\")",
+     "pass"
+    ]
+   ],
+   "log_path": "mutation-logs/R6-added-not-detected.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "R7-removed-not-detected",
+   "class": "a refusal without its category",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "changes.add(\"automation_removed\")",
+     "pass"
+    ]
+   ],
+   "log_path": "mutation-logs/R7-removed-not-detected.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "R8-mapping-change-not-detected",
+   "class": "a refusal without its category",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "changes.add(\"mapping_changed\")",
+     "pass"
+    ]
+   ],
+   "log_path": "mutation-logs/R8-mapping-change-not-detected.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "R9-installation-change-not-detected",
+   "class": "a refusal without its category",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "changes.add(\"installation_changed\")",
+     "pass"
+    ]
+   ],
+   "log_path": "mutation-logs/R9-installation-change-not-detected.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_resume_changes_compare_only_stable_identity (test_hamcp235_baseline_usability.ContractTests.test_resume_changes_compare_only_stable_identity)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "F1-reserve-ignored-by-scheduler",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "if time.monotonic() - started >= c.COLLECTION_SECONDS - reserve:",
+     "if time.monotonic() - started >= c.COLLECTION_SECONDS - 10:"
+    ]
+   ],
+   "log_path": "mutation-logs/F1-reserve-ignored-by-scheduler.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_configuration_scheduling_stops_at_the_reserve (test_hamcp235_baseline_usability.FinalFenceTests.test_configuration_scheduling_stops_at_the_reserve)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "F2-first-fence-not-measured",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "c.READ_SECONDS + 2 * (time.monotonic() - fence_started)))",
+     "c.READ_SECONDS))"
+    ]
+   ],
+   "log_path": "mutation-logs/F2-first-fence-not-measured.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_reserve_follows_the_measured_first_fence_within_bounds (test_hamcp235_baseline_usability.FinalFenceTests.test_the_reserve_follows_the_measured_first_fence_within_bounds)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "F3-reserve-maximum-unclamped",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(",
+     "reserve = min(1e9, max("
+    ]
+   ],
+   "log_path": "mutation-logs/F3-reserve-maximum-unclamped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_reserve_follows_the_measured_first_fence_within_bounds (test_hamcp235_baseline_usability.FinalFenceTests.test_the_reserve_follows_the_measured_first_fence_within_bounds)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "F4-reserve-minimum-unclamped",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                c.FINAL_FENCE_RESERVE_MIN, c.READ_SECONDS",
+     "                0, c.READ_SECONDS"
+    ]
+   ],
+   "log_path": "mutation-logs/F4-reserve-minimum-unclamped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_configuration_scheduling_stops_at_the_reserve (test_hamcp235_baseline_usability.FinalFenceTests.test_configuration_scheduling_stops_at_the_reserve)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "F5-identity-needs-full-final-fence",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "identity_verified = \"identity\" in last",
+     "identity_verified = inventory_complete"
+    ]
+   ],
+   "log_path": "mutation-logs/F5-identity-needs-full-final-fence.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_inventory_read_failure_keeps_the_verified_identity (test_hamcp235_baseline_usability.FinalFenceTests.test_an_inventory_read_failure_keeps_the_verified_identity)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "F6-final-fence-reason-dropped",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                fence_reason = exc.reason\n",
+     "                fence_reason = None\n"
+    ]
+   ],
+   "log_path": "mutation-logs/F6-final-fence-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_inventory_read_failure_keeps_the_verified_identity (test_hamcp235_baseline_usability.FinalFenceTests.test_an_inventory_read_failure_keeps_the_verified_identity)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "F7-identity-drift-swallowed",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "\"identity_unverified\", \"identity_drift\"}:",
+     "\"identity_unverified\"}:"
+    ]
+   ],
+   "log_path": "mutation-logs/F7-identity-drift-swallowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_identity_drift_still_refuses_and_stores_nothing (test_hamcp235_baseline_usability.FinalFenceTests.test_identity_drift_still_refuses_and_stores_nothing)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "F8-identity-drift-unchecked",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "                if first[\"identity\"] != last[\"identity\"]:\n                    raise c.CaptureError(\"identity_drift\")\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/F8-identity-drift-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_identity_drift_still_refuses_and_stores_nothing (test_hamcp235_baseline_usability.FinalFenceTests.test_identity_drift_still_refuses_and_stores_nothing)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "F9-identity-only-reported-unavailable",
+   "class": "the final fence weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_provider.py",
+     "\"identity_only\" if identity_verified else \"unavailable\"",
+     "\"unavailable\""
+    ]
+   ],
+   "log_path": "mutation-logs/F9-identity-only-reported-unavailable.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_inventory_read_failure_keeps_the_verified_identity (test_hamcp235_baseline_usability.FinalFenceTests.test_an_inventory_read_failure_keeps_the_verified_identity)"
+   ],
+   "seconds": 2.4
+  }
+ ]
+}

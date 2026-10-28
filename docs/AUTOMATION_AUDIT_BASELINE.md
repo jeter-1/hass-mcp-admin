@@ -170,15 +170,35 @@ baseline schema, fingerprint model, legacy normalization or CLI arguments. A
 self-comparison is not independent change evidence, even for otherwise exact
 baselines; the retained legacy self-comparison remains 100 `UNKNOWN`.
 
-For an identity present in both baselines, capture-fence authority continuity
-must also be established for both baselines:
+HAMCP-235 (owner decision, Josh, 2026-10-27, option a): what the pair cannot
+verify as a whole is stated once, in `caveats` (a list of `{code, statement,
+sides}`), and never repeated as a reason on every row:
+
+- `installation_identity_unverified` — a side's installation identity is
+  unestablished; the comparison assumes both sides are from this installation;
+- `authority_continuity_unestablished` — a side's capture fences did not
+  establish Core authority continuity (`authority_drift` other than
+  `none_observed_at_capture_fences`);
+- `non_atomic_capture` — a side's capture was not atomic, so a change and its
+  reversion inside its interval can go unobserved.
+
+Before HAMCP-235 these conditions made every row `UNKNOWN`
+(`installation_identity_unestablished`,
+`earlier_/later_authority_continuity_unestablished`), so two identical
+captures of an installation whose final fence failed compared as all
+`UNKNOWN`. Two established, different installations still make every row
+incomparable (`installation_identity_mismatch`).
+
+For an identity present in both baselines:
 
 - `UNCHANGED` — both records are readable with complete unredacted/untruncated
   no-fallback coverage under the same supported fingerprint contract and the
   digests match.
 - `CHANGED` — the same prerequisites hold and the digests differ.
-- `UNKNOWN` — installation identity, mapping, readability, coverage, fingerprint
-  compatibility or another decision-critical prerequisite is missing.
+- `UNKNOWN` — the row is genuinely incomparable: an installation mismatch,
+  inventory scope mismatch, unverified mapping, unreadable or timed-out
+  configuration, incomplete coverage, missing digest, or fingerprint contract
+  incompatibility, each with its reason.
 
 For an identity present only in the later baseline:
 
@@ -204,8 +224,8 @@ Partial inventories retain their uncertainty; an empty complete inventory with
 zero declared records can legitimately prove absence.
 
 Entity-ID renames and enabled-state changes are reported separately when the
-canonical mapping on both sides and the same installation and inventory scope
-are established. Unknown or contradictory mappings cannot establish these
+canonical mapping on both sides and the same inventory scope are established
+and the installations are not known to differ. Unknown or contradictory mappings cannot establish these
 changes. They do not by themselves change the configuration classification.
 
 Partial baselines do not poison unrelated records: comparable shared records can

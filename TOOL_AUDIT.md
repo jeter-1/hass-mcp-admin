@@ -2,6 +2,23 @@
 
 Date: 2026-07-10
 
+## Baseline compare and resume usability (2.4.1-beta.44, HAMCP-235)
+
+`capture_automation_baseline` and `compare_automation_baselines` keep their
+routing, provider, policy, `risk=read`, writes `none`, input schemas and
+descriptors. No Core command, read or write is added; the final fence issues
+the same five reads, identity reads first. Output changes are additive:
+`caveats` on comparisons (installation identity, authority continuity,
+non-atomic capture, stated once instead of per-row `UNKNOWN` reasons, owner
+decision Josh option a), `timed_out` on timed-out rows from either capture,
+`details.resume_changes` (fixed categories) on resume refusals, and the
+diagnostics `final_fence` value `identity_only`, `final_fence_reason`,
+`first_fence_installation_id` and `final_fence_reserve_seconds`. Resume
+compares only the installation anchor, the configuration ids and their
+entities; a new authority generation is recorded as drift, not refused.
+Identity drift, authority loss and access denial still refuse with nothing
+stored.
+
 ## Host journal one-token user:pass@host (2.4.1-beta.43, HAMCP-234 step 2)
 
 `get_incident_logs` keeps its routing, provider, policy, `risk=read`,

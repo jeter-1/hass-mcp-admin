@@ -253,6 +253,11 @@ class BaselineCaptureService:
             raise c.CaptureError("output_limit")
         return page
 
+    @staticmethod
+    def _read_timeouts(report):
+        outcomes = report["diagnostics"]["record_outcomes"]
+        return {key for key, value in outcomes.items() if value == "timeout"}
+
     def _compare(self, earlier_id, earlier, later_id, later, fingerprints, model):
         try:
             first = baseline_from_value(earlier["baseline"])
@@ -263,9 +268,16 @@ class BaselineCaptureService:
             value = comparison_report_dict(compare_baselines(first, second))
             value["counts"] = {**value["counts"], PREFIX_MATCH: 0}
             value.update(mode="stored_captures", earlier_capture_id=earlier_id, later_capture_id=later_id)
+            timed_out = self._read_timeouts(earlier) | self._read_timeouts(later)
         else:
             value = compare_recorded_fingerprints(first, fingerprints, model)
             value.update(mode="recorded_fingerprints", earlier_capture_id=earlier_id, later_capture_id=None)
+            timed_out = self._read_timeouts(earlier)
+        # HAMCP-235: an unknown row whose read timed out says so; the stored
+        # baseline records it only as unreadable.
+        for row in value["records"]:
+            if row["classification"] == "UNKNOWN" and row["configuration_id"] in timed_out:
+                row["reasons"] = sorted({*row["reasons"], "timed_out"})
         # Rows needing attention first, so a bounded result keeps them.
         value["records"].sort(key=lambda row: (row["classification"] in {"UNCHANGED", PREFIX_MATCH},
                                                row["configuration_id"]))

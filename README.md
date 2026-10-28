@@ -1,5 +1,24 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.44** makes automation baseline compare and resume
+usable on a real installation (HAMCP-235). On beta.40 (HAOS, 115
+automations), two identical captures compared as UNKNOWN 115 because their
+final fence failed, and a resume minutes later was refused with no detail.
+By owner decision (Josh, option a), `compare_automation_baselines` now
+classifies rows by digest and states installation identity, authority
+continuity and non-atomic capture once, in `caveats`; `UNKNOWN` is kept for
+incomparable rows, each with its reason (`timed_out` included). Resume
+compares only stable identity (installation anchor, configuration ids and
+their entities) and a refusal names its fixed categories
+(`details.resume_changes`). The final fence reads the identity first, records
+its failure reason and gets an adaptive reserve. No new Core command, input
+schema or tool. The architect's live re-run of the owner's case is required
+for acceptance. Rollback is reinstalling beta.43. Read the [2.4.1-beta.44
+release notes](docs/V2_4_1_BETA44_RELEASE_NOTES.md) and [2.4.1-beta.44
+acceptance contract](docs/V2_4_1_BETA44_ACCEPTANCE.md).
+
+It builds on beta.43 and the releases below.
+
 Engineering **2.4.1-beta.43** relaxes one host journal rule, proven by a live
 calibration (HAMCP-234 step 2). On beta.42, `addon:core_matter_server`
 withheld 37 of 40 lines as `user_pass_host.squashed`: with whitespace removed,

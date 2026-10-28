@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.4.1-beta.44 - Baseline compare and resume usable on a real installation (HAMCP-235)
+
+Builds on 2.4.1-beta.43. From the beta.40 live findings (HAOS, Core
+2026.10.3, 115 automations): two identical captures compared as UNKNOWN 115,
+and a resume minutes later was refused with no detail. No new Core command.
+
+- Owner decision (Josh, option a): `compare_automation_baselines` classifies
+  rows by digest (`UNCHANGED` / `CHANGED` / `PREFIX_MATCH`; `ADDED` /
+  `REMOVED` only where inventory authority allows). Installation identity,
+  authority continuity and non-atomic capture are stated once in a new
+  `caveats` list, never as per-row reasons. `UNKNOWN` is kept for
+  incomparable rows, each with its reason; a timed-out read now says
+  `timed_out` on either side.
+- Resume compares only stable identity: the installation anchor, the
+  configuration ids and each id's entity. On/off state, the Core authority
+  generation (now recorded as `authority_drift: "detected"`) and the unmapped
+  count no longer refuse it. A refusal names its fixed categories in
+  `details.resume_changes` (`automation_added`, `automation_removed`,
+  `mapping_changed`, `installation_changed`, `core_version_changed`).
+- The final fence reads the identity first: an inventory read failure keeps
+  the verified identity (`final_fence: "identity_only"`), and its fixed
+  reason is recorded (`final_fence_reason`). Scheduling reserves the read
+  deadline plus twice the measured first fence, 10–25 s. The first fence's
+  identity digest is recorded so a resume can anchor a base whose final
+  fence failed. On/off state is no longer inventory drift.
+- Acceptance requires the architect's live re-run of the owner's case: two
+  captures, a compare showing `UNCHANGED` with the caveat, and a successful
+  resume.
+
 ## 2.4.1-beta.43 - Journal user:pass@host as one token (HAMCP-234 step 2)
 
 Builds on 2.4.1-beta.42. One relaxation, proven by its live calibration:

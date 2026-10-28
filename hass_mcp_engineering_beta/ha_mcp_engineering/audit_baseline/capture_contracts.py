@@ -35,6 +35,13 @@ STRING_BYTES = 16_384
 COLLECTION_SECONDS = 45
 READ_SECONDS = 5
 CONCURRENCY = 4
+# HAMCP-235: configuration scheduling stops early enough for the final fence.
+# The reserve covers the in-flight reads (READ_SECONDS) and twice the measured
+# first fence, clamped to these bounds.
+FINAL_FENCE_RESERVE_MIN = 10
+FINAL_FENCE_RESERVE_MAX = 25
+# The identity reads of a fence; the remaining fence reads are inventory.
+IDENTITY_READS = ("principal", "entries", "devices")
 SNAPSHOT_BYTES = 2 * 1024 * 1024
 SNAPSHOT_TTL = 600
 # HAMCP-228 decision S: a durable bounded store; refuse at capacity, never evict.
@@ -56,12 +63,18 @@ REASONS = frozenset({"invalid_arguments", "invalid_cursor", "snapshot_expired", 
     "resume_not_needed", "resume_core_changed"})
 
 
+# HAMCP-235: which stable component a refused resume found changed. Fixed,
+# non-secret categories; never an identifier, count or Home Assistant text.
+RESUME_CHANGES = frozenset({"automation_added", "automation_removed", "mapping_changed",
+                            "installation_changed", "core_version_changed"})
+
+
 # Why the store is unavailable, when it is known (HAMCP-226/228 review 2, R2).
 STORE_CONDITIONS = frozenset({"namespace_unreadable", "namespace_not_writable", "record_unreadable"})
 
 
 class CaptureError(GovernanceError):
-    def __init__(self, reason, *, oldest_age_seconds=None, store_condition=None):
+    def __init__(self, reason, *, oldest_age_seconds=None, store_condition=None, resume_changes=()):
         if reason not in REASONS:
             reason = "source_unavailable"
         code = (ErrorCode.INVALID_REQUEST if reason == "invalid_arguments" else
@@ -76,6 +89,10 @@ class CaptureError(GovernanceError):
         if reason == "store_unavailable" and store_condition in STORE_CONDITIONS:
             # Review 2 (R2): the fixed condition, never a path or an OS message.
             details["store_condition"] = store_condition
+        changes = sorted(set(resume_changes) & RESUME_CHANGES)
+        if reason in {"resume_inventory_changed", "resume_core_changed"} and changes:
+            # HAMCP-235: the fixed categories only, sorted; an unlisted value is dropped.
+            details["resume_changes"] = changes
         super().__init__(code, details=details)
         self.reason = reason
 
