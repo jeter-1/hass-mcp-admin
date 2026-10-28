@@ -3,9 +3,9 @@
 Not collected by discovery. Usage: ``loop_stall_probe.py NAME STALL NOISY``.
 NAME selects the measured body. STALL ``1`` wraps its measured call with one
 ``time.sleep(.4)`` on the loop thread (no CPU time), as the HAMCP-208 review 1
-probe does. NOISY ``1`` makes every same-child baseline report an arbitrarily
-noisy runner (a huge unstalled gap and a huge run delay in every interval), so
-each wall bound sits at its cap. The probe prints one verdict line and exits 1
+probe does. NOISY ``1`` makes the same-child idle baseline report an
+arbitrarily noisy runner (a huge unstalled gap), so each wall bound sits at
+its cap. The probe prints one verdict line and exits 1
 when the body fails.
 """
 import importlib
@@ -53,10 +53,6 @@ def main(name, stall, noisy):
     async def noisy_gap(*args, **kwargs):
         return 10.0
 
-    def noisy_delay():
-        # Monotonic and fast-growing: every interval reports a huge run delay.
-        return time.perf_counter() * 1000
-
     patches = [patch.object(target, attr, stalled)]
     if noisy:
         # The bodies import the helper module as support.loop_gap or
@@ -64,7 +60,6 @@ def main(name, stall, noisy):
         for loaded in {id(m): m for m in (sys.modules.get("support.loop_gap"),
                                           sys.modules.get("tests.support.loop_gap")) if m}.values():
             patches.append(patch.object(loaded, "unstalled_gap", noisy_gap))
-            patches.append(patch.object(loaded, "runner_delay", noisy_delay))
     for active in patches:
         active.start()
     try:

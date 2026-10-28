@@ -557,7 +557,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
         owner, original_gc = threading.get_ident(), (gc.isenabled(), gc.get_threshold())
         for contention in (False, True):
             self.service.snapshots.clear()
-            gaps, cpu_gaps, delays, collections, events, starts, stages = [], [], [], [], [], {}, {}
+            gaps, cpu_gaps, collections, events, starts, stages = [], [], [], [], {}, {}
             collected = [0.0]
             original = c.worker
             async def worker(function, *args, **kwargs):
@@ -566,16 +566,14 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
                     return function(*args, **kwargs)
                 return await original(observed)
             async def heartbeat():
-                last, last_cpu, last_delay, last_collected = (time.perf_counter(), time.thread_time(),
-                                                              loop_gap.runner_delay(), collected[0])
+                last, last_cpu, last_collected = time.perf_counter(), time.thread_time(), collected[0]
                 while True:
                     await asyncio.sleep(.005)
-                    now, cpu, delay = time.perf_counter(), time.thread_time(), loop_gap.runner_delay()
+                    now, cpu = time.perf_counter(), time.thread_time()
                     gaps.append(now - last)
                     cpu_gaps.append(cpu - last_cpu)
-                    delays.append(max(delay - last_delay, 0))
                     collections.append(collected[0] - last_collected)
-                    last, last_cpu, last_delay, last_collected = now, cpu, delay, collected[0]
+                    last, last_cpu, last_collected = now, cpu, collected[0]
             def observe_gc(phase, info):
                 if info["generation"] != 2:
                     return
@@ -612,11 +610,11 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
                          "_freeze", "_prepare", "_page", "render_result"):
                 self.assertIn(name, stages)
                 self.assertNotIn(owner, stages[name])
-            wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .25)
+            wall = loop_gap.gap_report(gaps, [unstalled] * len(gaps), .25)
             thread_cpu = loop_gap.gap_report(cpu_gaps, collections, .1)
             print(json.dumps({"fixture": "assembled_dashboard_admission_hash_scan_export", "cpu_count": os.cpu_count(),
                 "controlled_contention": contention, "maximum_loop_gap_seconds": max(gaps),
-                "unstalled_gap_seconds": unstalled, "maximum_runner_delay_seconds": max(delays), "wall_gap": wall,
+                "unstalled_gap_seconds": unstalled, "wall_gap": wall,
                 "maximum_thread_cpu_gap_seconds": max(cpu_gaps), "thread_cpu_gap": thread_cpu,
                 "major_gc_events": events, "gc_enabled": original_gc[0], "gc_thresholds": original_gc[1]}), flush=True)
             self.assertLess(wall["gap_seconds"], wall["bound_seconds"], loop_gap.gap_message("Wall", wall))

@@ -265,23 +265,22 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         service = EntityDependencyAnalysisService(index)
         first = await service.analyze(entity_id=TARGET, detail_level="standard", limit=1)
         before = METRICS.snapshot()["dependency_analysis"]
-        gaps, delays = [], []
+        gaps = []
         async def heartbeat():
-            last, last_delay = time.perf_counter(), loop_gap.runner_delay()
+            last = time.perf_counter()
             while True:
                 await asyncio.sleep(.005)
-                now, delay = time.perf_counter(), loop_gap.runner_delay()
+                now = time.perf_counter()
                 gaps.append(now - last)
-                delays.append(max(delay - last_delay, 0))
-                last, last_delay = now, delay
+                last = now
         # The continuation is served from the built index: prove no build is
         # even scheduled, rather than inferring it from elapsed wall time, and
         # bound the CPU it spends (collection held off for the timed window).
         # CPU time cannot see a blocking wait (sleep, lock, I/O) on the loop
         # thread, so a separately scheduled heartbeat also bounds the longest
         # the continuation leaves the event loop without a turn: by 100 ms
-        # plus the unstalled gap and the runner's scheduling delay during that
-        # gap, capped well below a 400 ms stall (support/loop_gap.py).
+        # plus the same child's idle unstalled gap, capped well below a 400 ms
+        # stall (support/loop_gap.py).
         with patch.object(index, "_ensure_build", wraps=index._ensure_build) as build:
             gc.collect()
             gc.disable()
@@ -303,10 +302,10 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 gc.enable()
         self.assertTrue(gaps)
-        wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .1)
+        wall = loop_gap.gap_report(gaps, [unstalled] * len(gaps), .1)
         print(json.dumps({"fixture": "dependency_cursor_continuation", "cpu_count": os.cpu_count(),
                           "maximum_loop_gap_seconds": max(gaps), "unstalled_gap_seconds": unstalled,
-                          "maximum_runner_delay_seconds": max(delays), "wall_gap": wall,
+                          "wall_gap": wall,
                           "thread_cpu_seconds": cpu_seconds, "thread_cpu_bound_seconds": .1}), flush=True)
         build.assert_not_called()
         self.assertEqual(provider.scan_count, 1)

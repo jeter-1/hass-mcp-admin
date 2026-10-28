@@ -1,11 +1,13 @@
 """HAMCP-219: loop-gap bounds relative to same-child baselines.
 
 The six event-loop responsiveness bodies bound each heartbeat gap by a fixed
-allowance plus a baseline measured in the same child for that same gap
-(``support.loop_gap``): the unstalled idle gap plus the scheduler run delay,
-and, where collection stays enabled, the loop thread's major-collection CPU.
-The baseline's contribution is capped, so every bound stays at or below
-350 ms whatever the runner reports. Every body must still reject a 400 ms loop
+allowance plus a baseline measured in the same child (``support.loop_gap``):
+the unstalled gap measured idle just before the window and, where collection
+stays enabled, the loop thread's major-collection CPU in that same gap. The
+baseline's contribution is capped, so every bound stays at or below 350 ms
+whatever the runner reports. The heartbeat reads no ``/proc`` or other file
+on the loop thread (PR #321 review 1, M1); ``support/loop_io_probe.py`` records
+any such read made while a body's heartbeat is on the stack. Every body must still reject a 400 ms loop
 stall, including when every baseline reports an arbitrarily noisy runner; the
 HAMCP-208 review 1 probe covers three bodies byte for byte, and
 ``support/loop_stall_probe.py`` applies the same stall to all six.
@@ -35,10 +37,12 @@ from support.real_time import real_time_measurement
 
 ROOT = Path(__file__).resolve().parents[1]
 PROBE = ROOT / "tests" / "support" / "loop_stall_probe.py"
+IO_PROBE = ROOT / "tests" / "support" / "loop_io_probe.py"
 PATH = [str(ROOT), str(ROOT / "tests"), str(ROOT / "hass_mcp_engineering_beta")]
 RUN_PROBE = ("import runpy, sys; sys.path[0:0] = sys.argv[1:4]; sys.argv[:] = sys.argv[4:]; "
              "runpy.run_path(sys.argv[0], run_name='__main__')")
 VERDICT = re.compile(r"^LOOP_STALL_PROBE (\w+) STALL \[([^\]]*)\] NOISY (True|False) BODY_PASSED (True|False)$", re.M)
+IO_VERDICT = re.compile(r"^LOOP_IO_PROBE (\w+) CONTROL (\d+) HEARTBEAT_IO (\d+) (\[.*\]) BODY_PASSED (True|False)$", re.M)
 BODIES = ("alarmo", "baseline", "continuation", "catalog", "native", "upstream")
 
 
@@ -109,18 +113,6 @@ class ReportTests(unittest.TestCase):
                          ["Body failed.", "{\"wall_gap\": 1}", "AssertionError: 0.3 not less than 0.25 : Wall gap"])
 
 
-class RunnerDelayTests(unittest.TestCase):
-    def test_runner_delay_is_a_non_negative_monotonic_total(self):
-        first = loop_gap.runner_delay()
-        sum(range(100000))
-        self.assertGreaterEqual(first, 0)
-        self.assertGreaterEqual(loop_gap.runner_delay(), first)
-
-    def test_runner_delay_is_zero_without_schedstat(self):
-        with patch.object(loop_gap.os, "listdir", side_effect=OSError):
-            self.assertEqual(loop_gap.runner_delay(), 0.0)
-
-
 @real_time_measurement("measures an idle event-loop heartbeat")
 class BaselineTests(unittest.IsolatedAsyncioTestCase):
     async def test_unstalled_gap_is_a_positive_idle_gap(self):
@@ -169,7 +161,7 @@ class StallProbeTests(unittest.TestCase):
             with self.subTest(body=name):
                 self.assert_stall_rejected(name, noisy=False)
 
-    def test_every_body_rejects_a_400ms_stall_on_a_maximally_noisy_runner(self):
+    def test_every_body_rejects_a_400ms_stall_with_an_inflated_idle_baseline(self):
         for name in BODIES:
             with self.subTest(body=name):
                 self.assert_stall_rejected(name, noisy=True)
@@ -184,7 +176,33 @@ class StallProbeTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, output(result))
 
     def test_probe_is_not_collected_by_discovery(self):
-        self.assertIsNone(re.fullmatch(r"test.*\.py", PROBE.name))
+        for probe in (PROBE, IO_PROBE):
+            self.assertIsNone(re.fullmatch(r"test.*\.py", probe.name))
+
+
+@real_time_measurement("runs the measured responsiveness bodies under a file-access audit hook")
+class HeartbeatObservationTests(unittest.TestCase):
+    def test_heartbeat_reads_no_proc_or_other_file_on_the_loop_thread(self):
+        # PR #321 review 1 (M1): per-heartbeat schedstat reads delayed the very
+        # heartbeat they credited. Each heartbeat may observe only clocks and
+        # in-memory counters; the probe's control proves its hook sees a
+        # listing and an open, and the body's JSON record proves its heartbeat
+        # ran. Body timing is judged by the bodies' own tests, not here.
+        for name in BODIES:
+            with self.subTest(body=name):
+                result = subprocess.run([sys.executable, "-I", "-B", "-c", RUN_PROBE, *PATH, str(IO_PROBE), name],
+                                        cwd=ROOT, capture_output=True, text=True, timeout=120, check=False)
+                verdict = IO_VERDICT.findall(result.stdout)
+                self.assertEqual(len(verdict), 1, output(result))
+                probed, control, count, accesses, _ = verdict[0]
+                self.assertEqual(probed, name, output(result))
+                self.assertGreaterEqual(int(control), 2, output(result))
+                self.assertEqual((int(count), accesses), (0, "[]"),
+                                 f"The {name} heartbeat touched files on the loop thread:\n" + output(result))
+                self.assertEqual(result.returncode, 0, output(result))
+                records = [line for line in result.stdout.splitlines()
+                           if line.startswith("{") and "maximum_loop_gap_seconds" in line]
+                self.assertTrue(records, output(result))
 
 
 if __name__ == "__main__":

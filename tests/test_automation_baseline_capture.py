@@ -491,16 +491,15 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         import threading
 
         service,client=self.setup_capture(fixture(1001))
-        gaps, cpu_gaps, delays = [], [], []
+        gaps, cpu_gaps = [], []
         async def heartbeat():
-            last, last_cpu, last_delay = time.perf_counter(), time.thread_time(), loop_gap.runner_delay()
+            last, last_cpu = time.perf_counter(), time.thread_time()
             while True:
                 await asyncio.sleep(.005)
-                current, current_cpu, current_delay = time.perf_counter(), time.thread_time(), loop_gap.runner_delay()
+                current, current_cpu = time.perf_counter(), time.thread_time()
                 gaps.append(current-last)
                 cpu_gaps.append(current_cpu-last_cpu)
-                delays.append(max(current_delay-last_delay, 0))
-                last, last_cpu, last_delay = current, current_cpu, current_delay
+                last, last_cpu = current, current_cpu
         # Diagnostic only. Collections may run on a worker: attribute their
         # thread instead of presenting worker CPU as event-loop CPU.
         loop_thread = threading.get_ident()
@@ -523,8 +522,8 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         # window: the CPU bound is the loop-thread CPU the capture spends
         # between yields. CPU time cannot see a blocking wait (sleep, lock,
         # I/O) on the loop thread, so the heartbeat's wall gap is bounded as
-        # well: by an allowance plus the same child's unstalled gap and the
-        # runner's scheduling delay during that gap, capped below a 400 ms stall.
+        # well: by an allowance plus the same child's idle unstalled gap,
+        # capped below a 400 ms stall.
         gc.collect()
         gc.disable()
         try:
@@ -543,10 +542,10 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(pulse, return_exceptions=True)
         finally:
             gc.enable()
-        wall = loop_gap.gap_report(gaps, [unstalled+delay for delay in delays], .3, cap=.05)
+        wall = loop_gap.gap_report(gaps, [unstalled]*len(gaps), .3, cap=.05)
         print(json.dumps({'fixture': 'maximum_automation_baseline_inventory', 'cpu_count': os.cpu_count(),
                           'maximum_loop_gap_seconds': max(gaps), 'unstalled_gap_seconds': unstalled,
-                          'maximum_runner_delay_seconds': max(delays), 'wall_gap': wall,
+                          'wall_gap': wall,
                           'maximum_thread_cpu_gap_seconds': max(cpu_gaps),
                           'window_thread_cpu_seconds': window_cpu, 'thread_cpu_bound_seconds': .1,
                           'records': len(baseline['records']), 'gc_state': gc_state,

@@ -391,20 +391,18 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
         self.states_raw = raw + b' ' * (c.INVENTORY_BYTES - len(raw))
         original_gc = (gc.isenabled(), gc.get_threshold())
         for contention in (False, True):
-            gaps, cpu_gaps, delays, collections, events, starts = [], [], [], [], [], {}
+            gaps, cpu_gaps, collections, events, starts = [], [], [], [], {}
             collected = [0.0]
             loop_thread = threading.get_ident()
             async def heartbeat():
-                last, last_cpu, last_delay, last_collected = (time.perf_counter(), time.thread_time(),
-                                                              loop_gap.runner_delay(), collected[0])
+                last, last_cpu, last_collected = time.perf_counter(), time.thread_time(), collected[0]
                 while True:
                     await asyncio.sleep(.005)
-                    now, cpu, delay = time.perf_counter(), time.thread_time(), loop_gap.runner_delay()
+                    now, cpu = time.perf_counter(), time.thread_time()
                     gaps.append(now - last)
                     cpu_gaps.append(cpu - last_cpu)
-                    delays.append(max(delay - last_delay, 0))
                     collections.append(collected[0] - last_collected)
-                    last, last_cpu, last_delay, last_collected = now, cpu, delay, collected[0]
+                    last, last_cpu, last_collected = now, cpu, collected[0]
             def observe_gc(phase, info):
                 if info['generation'] != 2:
                     return
@@ -437,11 +435,11 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(pulse, return_exceptions=True)
                 if stress:
                     await stress
-            wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .25)
+            wall = loop_gap.gap_report(gaps, [unstalled] * len(gaps), .25)
             thread_cpu = loop_gap.gap_report(cpu_gaps, collections, .1)
             print(json.dumps({'fixture': 'native_dashboard_inventory_4MiB_10000', 'cpu_count': os.cpu_count(),
                 'controlled_contention': contention, 'maximum_loop_gap_seconds': max(gaps),
-                'unstalled_gap_seconds': unstalled, 'maximum_runner_delay_seconds': max(delays), 'wall_gap': wall,
+                'unstalled_gap_seconds': unstalled, 'wall_gap': wall,
                 'maximum_thread_cpu_gap_seconds': max(cpu_gaps), 'thread_cpu_gap': thread_cpu,
                 'major_gc_events': events, 'gc_enabled': original_gc[0], 'gc_thresholds': original_gc[1]}), flush=True)
             self.assertEqual(len(projection.records), c.INVENTORY_ENTRIES)
@@ -1037,20 +1035,18 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
         self.catalog_padding = 'x' * 3500
         original_gc = (gc.isenabled(), gc.get_threshold())
         for contention in (False, True):
-            gaps, cpu_gaps, delays, collections, events, starts = [], [], [], [], [], {}
+            gaps, cpu_gaps, collections, events, starts = [], [], [], [], {}
             collected = [0.0]
             loop_thread = threading.get_ident()
             async def heartbeat():
-                last, last_cpu, last_delay, last_collected = (time.perf_counter(), time.thread_time(),
-                                                              loop_gap.runner_delay(), collected[0])
+                last, last_cpu, last_collected = time.perf_counter(), time.thread_time(), collected[0]
                 while True:
                     await asyncio.sleep(.005)
-                    now, cpu, delay = time.perf_counter(), time.thread_time(), loop_gap.runner_delay()
+                    now, cpu = time.perf_counter(), time.thread_time()
                     gaps.append(now - last)
                     cpu_gaps.append(cpu - last_cpu)
-                    delays.append(max(delay - last_delay, 0))
                     collections.append(collected[0] - last_collected)
-                    last, last_cpu, last_delay, last_collected = now, cpu, delay, collected[0]
+                    last, last_cpu, last_collected = now, cpu, collected[0]
             def observe_gc(phase, info):
                 if info['generation'] != 2:
                     return
@@ -1082,11 +1078,11 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(pulse, return_exceptions=True)
                 if stress:
                     await stress
-            wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .25)
+            wall = loop_gap.gap_report(gaps, [unstalled] * len(gaps), .25)
             thread_cpu = loop_gap.gap_report(cpu_gaps, collections, .1)
             print(json.dumps({'fixture': 'upstream_dashboard_2MiB_500_descriptors', 'cpu_count': os.cpu_count(),
                 'controlled_contention': contention, 'maximum_loop_gap_seconds': max(gaps),
-                'unstalled_gap_seconds': unstalled, 'maximum_runner_delay_seconds': max(delays), 'wall_gap': wall,
+                'unstalled_gap_seconds': unstalled, 'wall_gap': wall,
                 'maximum_thread_cpu_gap_seconds': max(cpu_gaps), 'thread_cpu_gap': thread_cpu,
                 'major_gc_events': events, 'gc_enabled': original_gc[0], 'gc_thresholds': original_gc[1]}), flush=True)
             self.assertFalse(result.call_result['isError'])

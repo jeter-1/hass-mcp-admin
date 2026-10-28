@@ -636,22 +636,18 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
             data["sensor_groups"][group] = {"group_id": group, "entities": identifiers[4 * index:4 * index + 4], "timeout": 0, "event_count": 2}
         service, client, _, _, token = setup_service(data)
         self.addCleanup(end_request, token)
-        gaps, cpu_gaps, delays = [], [], []
+        gaps, cpu_gaps = [], []
         async def heartbeat():
             last = time.monotonic()
             last_cpu = time.thread_time()
-            last_delay = loop_gap.runner_delay()
             while True:
                 await asyncio.sleep(.01)
                 now = time.monotonic()
                 now_cpu = time.thread_time()
-                now_delay = loop_gap.runner_delay()
                 gaps.append(now - last)
                 cpu_gaps.append(now_cpu - last_cpu)
-                delays.append(max(now_delay - last_delay, 0))
                 last = now
                 last_cpu = now_cpu
-                last_delay = now_delay
         # Diagnostic-only: report any collection that still occurs inside the
         # timed window (one would be explicit, since automatic GC is held off).
         import gc
@@ -676,8 +672,8 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         # synchronous projection violates it, and a busy host cannot inflate
         # it. CPU time cannot see a blocking wait (sleep, lock, I/O) on the
         # loop thread, so the heartbeat's wall gap is bounded as well: by an
-        # allowance plus the same child's unstalled gap and the runner's
-        # scheduling delay during that gap, capped below a 400 ms stall.
+        # allowance plus the same child's idle unstalled gap, capped below a
+        # 400 ms stall.
         gc.collect()
         gc.disable()
         try:
@@ -696,11 +692,10 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(ticker, return_exceptions=True)
         finally:
             gc.enable()
-        wall = loop_gap.gap_report(gaps, [unstalled + delay for delay in delays], .3, cap=.05)
+        wall = loop_gap.gap_report(gaps, [unstalled] * len(gaps), .3, cap=.05)
         print(json.dumps({"fixture": "maximum_alarmo_inventory", "cpu_count": os.cpu_count(),
                           "maximum_loop_gap_seconds": max(gaps),
-                          "unstalled_gap_seconds": unstalled, "maximum_runner_delay_seconds": max(delays),
-                          "wall_gap": wall, "maximum_thread_cpu_gap_seconds": max(cpu_gaps),
+                          "unstalled_gap_seconds": unstalled, "wall_gap": wall, "maximum_thread_cpu_gap_seconds": max(cpu_gaps),
                           "window_thread_cpu_seconds": window_cpu, "thread_cpu_bound_seconds": .1,
                           "sensors": c.MAX_SENSORS, "groups": c.MAX_GROUPS,
                           "gc_state": gc_state, "major_gc_events": gc_events}), flush=True)

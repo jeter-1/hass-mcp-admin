@@ -128,9 +128,10 @@ read/hash/scan/export path with natural GC, loop-thread CPU, wall gaps and a
 controlled contention run. The tests use a fresh child to isolate suite heap
 history, without disabling GC. Each heartbeat gap is bounded by a fixed allowance
 (250 ms wall, 100 ms loop-thread CPU) plus a capped baseline measured in the same
-child for that same gap: the idle unstalled gap plus scheduler run delay for the
-wall gap, and the loop thread's natural major-collection CPU for the CPU gap
-(HAMCP-219, `tests/support/loop_gap.py`). Every bound stays at or below 350 ms,
+child: the idle unstalled gap measured just before the window for the wall gap,
+and the loop thread's natural major-collection CPU in that same gap for the CPU
+gap (HAMCP-219, `tests/support/loop_gap.py`). The heartbeat reads no `/proc` or
+other file on the loop thread. Every bound stays at or below 350 ms,
 so a 400 ms loop stall is still rejected on any runner.
 
 No raw configuration, helper value, action payload, URL, confirmation text,

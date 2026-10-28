@@ -3,16 +3,18 @@
 A responsiveness body schedules a heartbeat on the event loop and bounds the
 longest wall gap between its turns, and the loop-thread CPU between them,
 while the work under test runs. Each gap is bounded by a fixed allowance plus
-a baseline measured in the same child at the same moment, never by a retry:
+a baseline measured in the same child, never by a retry:
 
-- wall: the unstalled heartbeat gap measured idle just before the window,
-  plus the time this process's threads spent runnable but waiting for a CPU
-  during that same gap (Linux ``schedstat`` run delay; 0 elsewhere). On a
-  busy runner the loop thread, or the worker holding the GIL it needs, waits
-  for the scheduler; the run delay measures exactly that wait. A thread
-  sleeping or blocked is not runnable, so a blocking stall adds nothing.
+- wall: the unstalled heartbeat gap measured idle just before the window.
 - thread CPU, where collection stays enabled: the loop-thread CPU of the
   natural major collections that ran in that same gap.
+
+The heartbeat observes only clocks and in-memory counters. It reads no
+``/proc`` or other file on the loop thread: an earlier per-heartbeat
+scheduler run-delay credit read ``/proc/self/task/*/schedstat`` there, and
+those reads themselves delayed the heartbeat by up to 153 ms on a loaded
+host, while the credit measured 0.000 s median and 0.009 s max at four busy
+processes (PR #321 review 1, M1).
 
 The baseline's contribution is capped. ``gap_bound`` refuses an allowance and
 cap whose sum exceeds ``CEILING_SECONDS``, so every bound stays at least 50 ms
@@ -38,16 +40,16 @@ the bound a gap gets when the runner is quiet. Measured 2026-10-28 on a
 alarmo .3109 / .3112 s (10 ms heartbeat), baseline .3059 / .3061 s,
 continuation .1056 / .1058 s, catalog, native and upstream .2556 / .2559 s;
 the CPU floor in catalog, native and upstream is .1000 / .1000 s (no major
-collection fell in the binding gap). The bound rises above that floor only
-by the run delay and collection CPU measured in the same gap, and never past
-the ceiling.
+collection fell in the binding gap). On a loaded runner the wall bound rises
+above that floor only as the pre-window idle baseline rises, and the CPU
+bound only with the collection CPU measured in the same gap; neither passes
+its ceiling.
 """
 
 from __future__ import annotations
 
 import asyncio
 import math
-import os
 import time
 
 STALL_SECONDS = .4
@@ -68,23 +70,6 @@ async def unstalled_gap(interval: float, seconds: float = BASELINE_SECONDS) -> f
         gaps.append(now - last)
         last = now
     return max(gaps)
-
-
-def runner_delay() -> float:
-    """Seconds this process's threads have waited runnable for a CPU (0 if unknown)."""
-
-    total = 0
-    try:
-        tasks = os.listdir("/proc/self/task")
-    except OSError:
-        return 0.0
-    for task in tasks:
-        try:
-            with open(f"/proc/self/task/{task}/schedstat", "rb") as stats:
-                total += int(stats.read().split()[1])
-        except (OSError, IndexError, ValueError):
-            pass
-    return total / 1e9
 
 
 def gap_bound(baseline: float, allowance: float, cap: float = BASELINE_CAP_SECONDS) -> float:
