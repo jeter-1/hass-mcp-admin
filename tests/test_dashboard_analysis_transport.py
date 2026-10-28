@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 from pathlib import Path
 import sys
 import subprocess
@@ -48,16 +49,33 @@ class DeadlineRecorder:
 
 
 class FrozenMonotonic:
-    """Client-module ``time`` stand-in with a fixed monotonic reading."""
+    """Client-module ``time`` stand-in with a fixed monotonic reading.
+
+    The reading is integer-valued (rounded up, so real deadlines stay at least
+    as far away), which keeps whole-second deadline arithmetic exact: a
+    fractional reading made ``(now + 10) - now`` 9.999999999999993 (HAMCP-219).
+    """
 
     def __init__(self):
-        self.now = time.monotonic()
+        self.now = float(math.ceil(time.monotonic()))
 
     def __getattr__(self, name):
         return getattr(time, name)
 
     def monotonic(self):
         return self.now
+
+
+class FrozenMonotonicArithmeticTests(unittest.TestCase):
+    def test_whole_second_deadline_arithmetic_is_exact(self):
+        # A fractional reading near a binade edge rounds (now + 10) - now.
+        reading = 1020.123456789
+        self.assertNotEqual((reading + c.READ_SECONDS) - reading, c.READ_SECONDS)
+        with patch.object(time, 'monotonic', return_value=reading):
+            clock = FrozenMonotonic()
+        self.assertGreaterEqual(clock.now, reading)
+        self.assertEqual(clock.now, math.floor(clock.now))
+        self.assertEqual((clock.now + c.READ_SECONDS) - clock.now, c.READ_SECONDS)
 
 
 class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
