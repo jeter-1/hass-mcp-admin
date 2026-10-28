@@ -621,7 +621,8 @@ class DownloadTests(unittest.TestCase):
             retry.DOWNLOAD_HOST, timeout=42.0, context=retry.tls_context())
         self.assertAlmostEqual(connection.deadline - time.monotonic(), 42.0, delta=5)
         connection = retry.DeadlineHTTPSConnection(retry.DOWNLOAD_HOST, timeout=900.0)
-        self.assertLessEqual(connection.deadline - time.monotonic(), retry.MAX_TOTAL_SECONDS)
+        # Compare absolute times: (now + cap) - now can round above the cap (HAMCP-219).
+        self.assertLessEqual(connection.deadline, time.monotonic() + retry.MAX_TOTAL_SECONDS)
 
     def test_download_attempt_bound_fails_closed(self):
         opener = FakeOpener(*[http_error(503)] * 10)
