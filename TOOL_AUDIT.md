@@ -650,6 +650,13 @@ Reports server identity, version, Git commit, build time, schema version, HA con
 
 Identifies each capability as native, delegated, transitional, or unavailable, including risk class.
 
+HAMCP-247 (2.4.1-beta.46) bounds it under the response cap. The unfiltered
+call returns a summary: server identity, counts, the canonical tools, a
+status/category index of every registered tool and a `sections` map. A
+`status` or `category` filter narrows every section it applies to, and the
+optional `detail_section` returns one full section. A section too large for
+the cap is named in `size_limit`, with the narrower calls that return it.
+
 ### `analyze_entity_dependencies`
 
 Finds direct and probable consumers across automations, scripts, scenes, helpers, groups, dashboards, and blueprint inputs.

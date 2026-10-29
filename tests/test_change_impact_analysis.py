@@ -1830,10 +1830,14 @@ class ToolCompatibilityTests(unittest.TestCase):
                 "control_fan",
             },
         )
+        from hamcp247_descriptor_changes import without_hamcp247_detail_section
         for name, expected in BETA14_SCHEMA_HASHES.items():
+            parameters = current[name].parameters
+            if name == "list_capabilities":
+                parameters = without_hamcp247_detail_section(self, parameters)
             digest = hashlib.sha256(
                 json.dumps(
-                    current[name].parameters,
+                    parameters,
                     sort_keys=True,
                     separators=(",", ":"),
                 ).encode()

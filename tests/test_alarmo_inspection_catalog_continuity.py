@@ -96,6 +96,8 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual["configuration_integrity_analysis"] = without_hamcp226_descriptor_change(
             self, actual["configuration_integrity_analysis"])
         actual["get_automation_trace"] = _without_hamcp225_trace_disclosure(self, actual["get_automation_trace"])
+        from hamcp247_descriptor_changes import without_hamcp247_descriptor_change
+        actual["list_capabilities"] = without_hamcp247_descriptor_change(self, actual["list_capabilities"])
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 77)

@@ -1,5 +1,20 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.46** makes `list_capabilities` return usable data
+within the response cap (HAMCP-247). On beta.44 the unfiltered call and
+`status=delegated` succeeded with `/data` omitted and nothing to retrieve.
+The unfiltered call is now a bounded summary with a `sections` map; `status`
+and `category` narrow every section they apply to; the new optional
+`detail_section` returns one section in full; and every response states what
+it omitted and the request that returns it (`size_limit`). The global cap and
+the envelope's truncation are unchanged. One optional, additive input; no
+tool, routing, provider or governance change. Rollback is reinstalling
+beta.45. Read the [2.4.1-beta.46 release
+notes](docs/V2_4_1_BETA46_RELEASE_NOTES.md) and [2.4.1-beta.46 acceptance
+contract](docs/V2_4_1_BETA46_ACCEPTANCE.md).
+
+It builds on beta.45 and the releases below.
+
 Engineering **2.4.1-beta.45** makes automation baseline compare and resume
 usable on a real installation (HAMCP-235). On beta.40 (HAOS, 115
 automations), two identical captures compared as UNKNOWN 115 because their

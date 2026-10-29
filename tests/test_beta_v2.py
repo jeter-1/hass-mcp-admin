@@ -652,6 +652,15 @@ class ToolParityTests(unittest.TestCase):
         beta_schemas = {
             name: self.beta_tools[name].parameters for name in self.production_tools
         }
+        # HAMCP-247 adds exactly one optional list_capabilities input; every
+        # stable v1 input, default and requirement is otherwise unchanged.
+        listing = json.loads(json.dumps(beta_schemas["list_capabilities"]))
+        self.assertEqual(
+            listing["properties"].pop("detail_section"),
+            {"default": "", "title": "Detail Section", "type": "string"},
+        )
+        self.assertNotIn("detail_section", listing.get("required", []))
+        beta_schemas["list_capabilities"] = listing
         self.assertEqual(beta_schemas, production_schemas)
 
     def test_capability_catalog_preserves_phase3c_provider_truth(self):
@@ -703,7 +712,9 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
-        result = json.loads(asyncio.run(compatibility.list_capabilities()))
+        result = json.loads(
+            asyncio.run(compatibility.list_capabilities(detail_section="beta_native"))
+        )
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
@@ -766,13 +777,22 @@ class ToolParityTests(unittest.TestCase):
                 "handoff_generation",
             ],
         )
+
+        def section(name):
+            response = json.loads(
+                asyncio.run(compatibility.list_capabilities(detail_section=name))
+            )
+            self.assertTrue(response["success"])
+            return response["data"][name]
+
         self.assertEqual(
-            Counter(item["status"] for item in catalog["tools"]),
+            Counter(item["status"] for item in section("tools")),
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(catalog["provider_matrix"]), 33)
+        provider_matrix = section("provider_matrix")
+        self.assertEqual(len(provider_matrix), 33)
         self.assertEqual(
-            {item["selected_provider"] for item in catalog["provider_matrix"]},
+            {item["selected_provider"] for item in provider_matrix},
             {"direct_ha_api", "supervisor_core_logs", "supervisor_incident_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power", "upstream_platform_reads", "ha_mcp_delegated"},
         )
 

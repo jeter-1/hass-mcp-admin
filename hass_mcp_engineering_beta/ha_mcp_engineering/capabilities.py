@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+
 from .power.contracts import POWER_CONTRACTS, POWER_SEMANTIC_CONTRACTS
 
 from typing import Any
 
+from .errors import InvalidRequestError
 from .fan.contracts import CORE_VERSION, FAN_CONTRACTS, FAN_RELEASES, FAN_SEMANTIC_CONTRACTS
 
 from .version import (
@@ -1158,6 +1161,105 @@ def _with_current_admission(
     return item
 
 
+# HAMCP-247: list_capabilities sections a caller can request one at a time.
+CATALOG_SECTIONS: tuple[str, ...] = (
+    "tools",
+    "beta_native",
+    "dynamic_upstream",
+    "provider_matrix",
+    "upstream_read_gateway",
+)
+# Per-tool rows of the published gateway snapshot.  Every other gateway field
+# is an identity, version, status or count field and is always returned.
+GATEWAY_DETAIL_FIELDS: tuple[str, ...] = (
+    "exposed_tools",
+    "collision_mappings",
+    "blocked_tools",
+    "held_tools",
+    "live_canary_required_tools",
+    "core_withheld_tools",
+    "readmission_withheld_tools",
+    "quarantined_tools",
+    "missing_tools",
+    "unreviewed_tools",
+    "optional_tools",
+    "optional_sibling_drift",
+)
+_GATEWAY_ROW_NAME_KEYS = ("tool", "upstream_name", "exposed_name")
+# Room the success envelope needs around ``data`` (operation, summary,
+# timing, request id and metadata are each well under a kilobyte).
+CATALOG_ENVELOPE_RESERVE_CHARS = 4_000
+_DROP_ORDER = (
+    "provider_matrix",
+    "upstream_read_gateway",
+    "tool_index",
+    "dynamic_upstream",
+    "beta_native",
+    "tools",
+)
+
+
+def _matches(item: dict[str, Any], status: str, category: str) -> bool:
+    return (not status or item.get("status") == status) and (
+        not category or item.get("category") == category
+    )
+
+
+def _gateway_row_names(row: Any) -> set[str]:
+    if isinstance(row, str):
+        return {row}
+    if isinstance(row, dict):
+        return {
+            row[key]
+            for key in _GATEWAY_ROW_NAME_KEYS
+            if isinstance(row.get(key), str)
+        }
+    return set()
+
+
+def _project_gateway(
+    gateway: dict[str, Any], names: frozenset[str] | None, *, scope: str
+) -> dict[str, Any]:
+    """Return the gateway block with its per-tool detail narrowed.
+
+    ``names`` None keeps every row.  Otherwise a row is kept only when it
+    names a selected tool; scope ``summary`` drops the detail fields.  The
+    unfiltered row counts are always stated so an empty list is never
+    mistaken for "none exist".
+    """
+
+    value = dict(gateway)
+    totals: dict[str, int] = {}
+    for field in GATEWAY_DETAIL_FIELDS:
+        rows = value.get(field)
+        if not isinstance(rows, (list, dict)):
+            continue
+        totals[field] = len(rows)
+        if scope == "summary":
+            del value[field]
+        elif names is not None and isinstance(rows, list):
+            value[field] = [row for row in rows if _gateway_row_names(row) & names]
+        elif names is not None:
+            value[field] = {key: item for key, item in rows.items() if key in names}
+    readmission = value.get("automatic_readmission")
+    if isinstance(readmission, dict) and isinstance(
+        readmission.get("readmission_withheld_tools"), list
+    ):
+        readmission = dict(readmission)
+        if scope == "summary":
+            del readmission["readmission_withheld_tools"]
+        elif names is not None:
+            readmission["readmission_withheld_tools"] = [
+                row
+                for row in readmission["readmission_withheld_tools"]
+                if _gateway_row_names(row) & names
+            ]
+        value["automatic_readmission"] = readmission
+    value["detail_scope"] = scope
+    value["detail_total_counts"] = totals
+    return value
+
+
 def build_capability_catalog(
     *,
     status: str = "",
@@ -1168,21 +1270,45 @@ def build_capability_catalog(
 
     ``core_admission`` is the governance service's admission snapshot; the
     governed tools' current admission is projected from it.
+
+    HAMCP-247: a filter narrows every section.  Tool lists keep the entries
+    whose own status and category match; provider-matrix rows and gateway
+    per-tool rows keep those naming a selected tool.
     """
     normalized_status = status.strip().lower()
     normalized_category = category.strip().lower()
     tools = [
         {**dict(item), "operation_class": item.get("operation_class", "read" if item.get("risk") == "read" else "prohibited")}
         for item in CAPABILITIES
-        if (not normalized_status or item["status"] == normalized_status)
-        and (not normalized_category or item["category"] == normalized_category)
+        if _matches(item, normalized_status, normalized_category)
     ]
     dynamic_tools = [
         dict(item)
         for item in _DYNAMIC_UPSTREAM_CAPABILITIES
-        if (not normalized_status or item["status"] == normalized_status)
-        and (not normalized_category or item["category"] == normalized_category)
+        if _matches(item, normalized_status, normalized_category)
     ]
+    beta_native = [
+        _with_current_admission(
+            {**dict(item), "operation_class": item.get("operation_class", "read" if item.get("risk") == "read" else "prohibited")},
+            core_admission,
+        )
+        for item in BETA_NATIVE_CAPABILITIES
+        if _matches(item, normalized_status, normalized_category)
+    ]
+    if normalized_status or normalized_category:
+        selected = frozenset(
+            item["tool"] for item in (*tools, *beta_native, *dynamic_tools)
+        )
+        provider_matrix = [
+            dict(item) for item in CAPABILITY_PROVIDER_MATRIX
+            if item["tool"] in selected
+        ]
+        gateway = _project_gateway(
+            _UPSTREAM_READ_GATEWAY_SUMMARY, selected, scope="selected_tools"
+        )
+    else:
+        provider_matrix = [dict(item) for item in CAPABILITY_PROVIDER_MATRIX]
+        gateway = dict(_UPSTREAM_READ_GATEWAY_SUMMARY)
     return {
         "count": len(tools),
         "filters": {
@@ -1190,14 +1316,11 @@ def build_capability_catalog(
             "category": normalized_category or None,
         },
         "tools": tools,
-        "planned": [dict(item) for item in PLANNED_CAPABILITIES],
-        "beta_native": [
-            _with_current_admission(
-                {**dict(item), "operation_class": item.get("operation_class", "read" if item.get("risk") == "read" else "prohibited")},
-                core_admission,
-            )
-            for item in BETA_NATIVE_CAPABILITIES
+        "planned": [
+            dict(item) for item in PLANNED_CAPABILITIES
+            if _matches(item, normalized_status, normalized_category)
         ],
+        "beta_native": beta_native,
         "core_admission": (
             {
                 "status": core_admission["status"],
@@ -1207,8 +1330,8 @@ def build_capability_catalog(
             else {"status": CORE_ADMISSION_NOT_EVALUATED, "generation": None}
         ),
         "dynamic_upstream": dynamic_tools,
-        "upstream_read_gateway": dict(_UPSTREAM_READ_GATEWAY_SUMMARY),
-        "provider_matrix": [dict(item) for item in CAPABILITY_PROVIDER_MATRIX],
+        "upstream_read_gateway": gateway,
+        "provider_matrix": provider_matrix,
         "registered_count": (
             len(CAPABILITIES)
             + len(BETA_NATIVE_CAPABILITIES)
@@ -1220,3 +1343,257 @@ def build_capability_catalog(
         "dynamic_upstream_count": len(_DYNAMIC_UPSTREAM_CAPABILITIES),
         "status_values": ["native", "transitional", "delegated", "deprecated", "beta_native", "planned", "unavailable"],
     }
+
+
+def _section_classification(
+    section: str, item: dict[str, Any]
+) -> tuple[Any, Any]:
+    if section != "provider_matrix":
+        return item.get("status"), item.get("category")
+    for entry in (
+        *CAPABILITIES,
+        *BETA_NATIVE_CAPABILITIES,
+        *_DYNAMIC_UPSTREAM_CAPABILITIES,
+    ):
+        if entry["tool"] == item.get("tool"):
+            return entry.get("status"), entry.get("category")
+    return None, None
+
+
+def _rendered_chars(value: Any) -> int:
+    # The envelope serves its compact rendering whenever the indented one is
+    # over the limit, so the compact size decides whether ``data`` fits.
+    return len(json.dumps({"data": value}, separators=(",", ":"), default=str))
+
+
+def _request(arguments: dict[str, str]) -> dict[str, Any]:
+    return {"tool": "list_capabilities", "arguments": arguments}
+
+
+def _oversize_section(
+    section: str, value: Any, active: dict[str, str], fits: Any
+) -> Any:
+    """Report a requested section that cannot fit, with narrower calls.
+
+    ``fits(candidate)`` says whether the response fits with ``candidate`` in
+    place of the section.
+    """
+
+    chars = _rendered_chars(value)
+    if isinstance(value, dict):
+        # The gateway block: keep identity, version and count fields and drop
+        # the largest per-tool detail fields until it fits.
+        value = dict(value)
+        omitted: dict[str, int] = {}
+        value["detail_complete"] = False
+        value["detail_omitted_fields"] = omitted
+        value["section_chars"] = chars
+        value["retrieval"] = [
+            _request(
+                {"detail_section": section, **active, "status": "delegated"}
+                if "status" not in active
+                else {"detail_section": "dynamic_upstream", **active}
+            )
+        ]
+        for field in sorted(
+            (f for f in GATEWAY_DETAIL_FIELDS if f in value),
+            key=lambda f: _rendered_chars(value[f]),
+            reverse=True,
+        ):
+            if fits(value):
+                break
+            omitted[field] = len(value.pop(field))
+        readmission = value.get("automatic_readmission")
+        if not fits(value) and isinstance(readmission, dict) and isinstance(
+            readmission.get("readmission_withheld_tools"), list
+        ):
+            readmission = dict(readmission)
+            omitted["automatic_readmission.readmission_withheld_tools"] = len(
+                readmission.pop("readmission_withheld_tools")
+            )
+            value["automatic_readmission"] = readmission
+        if fits(value):
+            return value
+        # Even the identity and count fields cannot fit.
+        return {
+            "omitted": True,
+            "reason": "section_exceeds_response_limit",
+            "section_chars": chars,
+            "detail_total_counts": value.get("detail_total_counts", {}),
+            "retrieval": value["retrieval"],
+        }
+    key = (
+        "category" if "category" not in active
+        else "status" if "status" not in active
+        else None
+    )
+    values: set[str] = set()
+    unpartitioned: list[dict[str, Any]] = []
+    for item in value:
+        found = _section_classification(section, item)[key == "category"]
+        if key is not None and isinstance(found, str):
+            values.add(found)
+        else:
+            unpartitioned.append(item)
+    record = {
+        "omitted": True,
+        "reason": "section_exceeds_response_limit",
+        "section_chars": chars,
+        "item_count": len(value),
+        "item_names": [item.get("tool") for item in value],
+        "retrieval": [
+            _request({"detail_section": section, **active, key: found})
+            for found in sorted(values)
+        ],
+        "unpartitioned_item_count": len(unpartitioned),
+        # Rows no narrower call returns (a matrix row for a tool that is not
+        # registered here) are carried inline when they fit.
+        "unpartitioned_items": unpartitioned,
+    }
+    if not fits(record):
+        del record["unpartitioned_items"]
+    if not record["retrieval"]:
+        # Both filters are already set: no narrower call exists.
+        record["retrieval_unavailable_reason"] = "no_narrower_filter"
+    return record
+
+
+def build_capability_view(
+    *,
+    status: str = "",
+    category: str = "",
+    detail_section: str = "",
+    core_admission: dict[str, Any] | None = None,
+    response_limit: int = 60_000,
+) -> dict[str, Any]:
+    """Return the bounded ``list_capabilities`` data (HAMCP-247).
+
+    No filter and no section returns a summary; a status or category filter
+    returns every section narrowed by it in the established catalog shape;
+    ``detail_section`` returns that one section in full, filters still
+    applying.  The result stays under ``response_limit``: a section that
+    cannot fit is named with the calls that retrieve it, never dropped
+    silently.
+    """
+
+    section = detail_section.strip().lower()
+    if section and section not in CATALOG_SECTIONS:
+        raise InvalidRequestError(
+            "Unknown list_capabilities detail_section.",
+            details={
+                "field": "detail_section",
+                "reason": "unknown_section",
+                "allowed": list(CATALOG_SECTIONS),
+            },
+        )
+    catalog = build_capability_catalog(
+        status=status, category=category, core_admission=core_admission
+    )
+    active = {key: value for key, value in catalog["filters"].items() if value}
+    view = "section" if section else "filtered" if active else "summary"
+    data = dict(catalog)
+    data["filters"] = {**catalog["filters"], "detail_section": section or None}
+    included = {name: "full" for name in CATALOG_SECTIONS}
+    if view == "summary":
+        for name in ("beta_native", "dynamic_upstream", "provider_matrix"):
+            del data[name]
+            included[name] = "omitted"
+        data["upstream_read_gateway"] = _project_gateway(
+            catalog["upstream_read_gateway"], None, scope="summary"
+        )
+        included["upstream_read_gateway"] = "summary"
+        data["tool_index"] = [
+            {"tool": item["tool"], "status": item["status"], "category": item["category"]}
+            for item in (
+                *catalog["tools"],
+                *catalog["beta_native"],
+                *catalog["dynamic_upstream"],
+            )
+        ]
+    elif view == "section":
+        for name in CATALOG_SECTIONS:
+            if name != section:
+                del data[name]
+                included[name] = "omitted"
+    gateway = catalog["upstream_read_gateway"]
+    data["view"] = view
+    data["server"] = {
+        "id": SERVER_ID,
+        "name": SERVER_NAME,
+        "version": SERVER_VERSION,
+        "schema_version": SCHEMA_VERSION,
+        "build_sha": BUILD_SHA,
+    }
+    data["category_values"] = sorted(
+        {
+            item["category"]
+            for item in (
+                *CAPABILITIES,
+                *BETA_NATIVE_CAPABILITIES,
+                *_DYNAMIC_UPSTREAM_CAPABILITIES,
+            )
+        }
+    )
+    data["sections"] = {
+        name: {
+            "included": included[name],
+            "item_count": (
+                sum(
+                    len(gateway[field])
+                    for field in GATEWAY_DETAIL_FIELDS
+                    if isinstance(gateway.get(field), (list, dict))
+                )
+                if name == "upstream_read_gateway"
+                else len(catalog[name])
+            ),
+            "request": {"detail_section": name, **active},
+        }
+        for name in CATALOG_SECTIONS
+    }
+    budget = response_limit - CATALOG_ENVELOPE_RESERVE_CHARS
+    omitted: list[str] = []
+    retrieval: list[dict[str, Any]] = []
+    # Present while sizing, so the size statement itself is counted.
+    data["size_limit"] = {
+        "budget_chars": budget,
+        "omitted_sections": omitted,
+        "retrieval": retrieval,
+    }
+    if _rendered_chars(data) > budget:
+        if view == "section":
+            # Marked before sizing, so every candidate is sized as served.
+            data["sections"][section]["included"] = "omitted_size_limit"
+
+            def fits(candidate: Any) -> bool:
+                return _rendered_chars(
+                    {
+                        **data,
+                        section: candidate,
+                        "size_limit": {
+                            **data["size_limit"],
+                            "omitted_sections": [section],
+                            "retrieval": candidate.get("retrieval", []),
+                        },
+                    }
+                ) <= budget
+
+            data[section] = _oversize_section(section, data[section], active, fits)
+            omitted.append(section)
+            retrieval.extend(data[section]["retrieval"])
+        else:
+            # Secondary detail goes first; the tool lists are kept longest.
+            for name in (n for n in _DROP_ORDER if n in data):
+                if _rendered_chars(data) <= budget:
+                    break
+                del data[name]
+                omitted.append(name)
+                if name in data["sections"]:
+                    data["sections"][name]["included"] = "omitted_size_limit"
+                # The tool index is rebuilt from the three tool-list sections.
+                for part in (
+                    ("tools", "beta_native", "dynamic_upstream")
+                    if name == "tool_index"
+                    else (name,)
+                ):
+                    retrieval.append(_request(data["sections"][part]["request"]))
+    return data
