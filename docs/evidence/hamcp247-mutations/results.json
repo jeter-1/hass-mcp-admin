@@ -1,0 +1,964 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp247_list_capabilities_bounded",
+   "test_hamcp181_catalog_core_admission",
+   "test_rc1_compatibility",
+   "test_upstream_8_5_compatibility",
+   "test_readonly_upstream_gateway",
+   "test_beta_v2"
+  ],
+  "returncode": 0,
+  "tests": 303,
+  "seconds": 64.7,
+  "summary": "OK"
+ },
+ "mutation_count": 49,
+ "killed": 49,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "C1-matrix-not-narrowed",
+   "class": "a filter no longer narrows a section it applies to",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "if item[\"tool\"] in selected\n",
+     "if True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C1-matrix-not-narrowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_status_filter_narrows_every_section (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_a_status_filter_narrows_every_section)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "C2-gateway-not-narrowed",
+   "class": "a filter no longer narrows a section it applies to",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        gateway = _project_gateway(\n            _UPSTREAM_READ_GATEWAY_SUMMARY, selected, scope=\"selected_tools\"\n        )\n",
+     "        gateway = dict(_UPSTREAM_READ_GATEWAY_SUMMARY)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C2-gateway-not-narrowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_status_filter_narrows_every_section (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_a_status_filter_narrows_every_section)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "C3-selection-omits-dynamic-tools",
+   "class": "a filter no longer narrows a section it applies to",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "item[\"tool\"] for item in (*tools, *beta_native, *dynamic_tools)",
+     "item[\"tool\"] for item in (*tools, *beta_native)"
+    ]
+   ],
+   "log_path": "mutation-logs/C3-selection-omits-dynamic-tools.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_status_filter_narrows_every_section (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_a_status_filter_narrows_every_section)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "C4-beta-native-not-narrowed",
+   "class": "a filter no longer narrows a section it applies to",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        for item in BETA_NATIVE_CAPABILITIES\n        if _matches(item, normalized_status, normalized_category)\n",
+     "        for item in BETA_NATIVE_CAPABILITIES\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C4-beta-native-not-narrowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_status_filter_narrows_every_section (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_a_status_filter_narrows_every_section)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "C5-category-ignored",
+   "class": "a filter no longer narrows a section it applies to",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "not category or item.get(\"category\") == category",
+     "True"
+    ]
+   ],
+   "log_path": "mutation-logs/C5-category-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_category_matching_semantics_are_unchanged (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_category_matching_semantics_are_unchanged)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "C6-selection-only-canonical",
+   "class": "a filter no longer narrows a section it applies to",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "for item in (*tools, *beta_native, *dynamic_tools)",
+     "for item in tools"
+    ]
+   ],
+   "log_path": "mutation-logs/C6-selection-only-canonical.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_status_filter_narrows_every_section (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_a_status_filter_narrows_every_section)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "P1-list-rows-not-narrowed",
+   "class": "the gateway per-tool projection weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "value[field] = [row for row in rows if _gateway_row_names(row) & names]",
+     "value[field] = list(rows)"
+    ]
+   ],
+   "log_path": "mutation-logs/P1-list-rows-not-narrowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_status_filter_narrows_every_section (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_a_status_filter_narrows_every_section)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "P2-dict-rows-not-narrowed",
+   "class": "the gateway per-tool projection weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "value[field] = {key: item for key, item in rows.items() if key in names}",
+     "value[field] = dict(rows)"
+    ]
+   ],
+   "log_path": "mutation-logs/P2-dict-rows-not-narrowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_status_filter_narrows_every_section (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_a_status_filter_narrows_every_section)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "P3-nested-readmission-not-narrowed",
+   "class": "the gateway per-tool projection weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "                if _gateway_row_names(row) & names\n            ]\n",
+     "            ]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/P3-nested-readmission-not-narrowed.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_string_dict_and_nested_rows_are_narrowed (test_hamcp247_list_capabilities_bounded.GatewayProjectionTests.test_string_dict_and_nested_rows_are_narrowed)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "P4-summary-keeps-detail",
+   "class": "the gateway per-tool projection weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        if scope == \"summary\":\n            del value[field]\n",
+     "        if False:\n            del value[field]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/P4-summary-keeps-detail.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_summary_scope_drops_every_detail_list (test_hamcp247_list_capabilities_bounded.GatewayProjectionTests.test_the_summary_scope_drops_every_detail_list)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "P5-totals-not-stated",
+   "class": "the gateway per-tool projection weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        totals[field] = len(rows)\n",
+     "        pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/P5-totals-not-stated.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_delegated_narrows_beta_native_matrix_and_gateway (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_delegated_narrows_beta_native_matrix_and_gateway)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "P6-row-names-tool-key-only",
+   "class": "the gateway per-tool projection weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "_GATEWAY_ROW_NAME_KEYS = (\"tool\", \"upstream_name\", \"exposed_name\")",
+     "_GATEWAY_ROW_NAME_KEYS = (\"tool\",)"
+    ]
+   ],
+   "log_path": "mutation-logs/P6-row-names-tool-key-only.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_rows_naming_a_selected_tool_by_any_key_are_kept (test_hamcp247_list_capabilities_bounded.GatewayProjectionTests.test_rows_naming_a_selected_tool_by_any_key_are_kept)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "P7-summary-keeps-nested-readmission",
+   "class": "the gateway per-tool projection weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        if scope == \"summary\":\n            del readmission[\"readmission_withheld_tools\"]\n",
+     "        if False:\n            del readmission[\"readmission_withheld_tools\"]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/P7-summary-keeps-nested-readmission.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_summary_scope_drops_every_detail_list (test_hamcp247_list_capabilities_bounded.GatewayProjectionTests.test_the_summary_scope_drops_every_detail_list)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "P8-string-rows-not-named",
+   "class": "the gateway per-tool projection weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "    if isinstance(row, str):\n        return {row}\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/P8-string-rows-not-named.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_delegated_narrows_beta_native_matrix_and_gateway (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_delegated_narrows_beta_native_matrix_and_gateway)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "S1-unknown-section-accepted",
+   "class": "the section selector or summary view weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "    if section and section not in CATALOG_SECTIONS:\n",
+     "    if False:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/S1-unknown-section-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_unknown_section_is_refused_clearly (test_hamcp247_list_capabilities_bounded.SectionSelectorTests.test_an_unknown_section_is_refused_clearly)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "S2-section-not-normalized",
+   "class": "the section selector or summary view weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "section = detail_section.strip().lower()",
+     "section = detail_section"
+    ]
+   ],
+   "log_path": "mutation-logs/S2-section-not-normalized.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_section_name_is_normalized (test_hamcp247_list_capabilities_bounded.SectionSelectorTests.test_the_section_name_is_normalized)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "S3-section-view-keeps-other-sections",
+   "class": "the section selector or summary view weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "                del data[name]\n                included[name] = \"omitted\"\n",
+     "                included[name] = \"omitted\"\n"
+    ]
+   ],
+   "log_path": "mutation-logs/S3-section-view-keeps-other-sections.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_section_is_returned_in_full (test_hamcp247_list_capabilities_bounded.SectionSelectorTests.test_each_section_is_returned_in_full)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "S4-section-request-drops-filters",
+   "class": "the section selector or summary view weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "\"request\": {\"detail_section\": name, **active},",
+     "\"request\": {\"detail_section\": name},"
+    ]
+   ],
+   "log_path": "mutation-logs/S4-section-request-drops-filters.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_filters_still_apply_to_the_section (test_hamcp247_list_capabilities_bounded.SectionSelectorTests.test_filters_still_apply_to_the_section)"
+   ],
+   "seconds": 3.6
+  },
+  {
+   "id": "S5-summary-keeps-full-sections",
+   "class": "the section selector or summary view weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "            del data[name]\n            included[name] = \"omitted\"\n",
+     "            included[name] = \"omitted\"\n"
+    ]
+   ],
+   "log_path": "mutation-logs/S5-summary-keeps-full-sections.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_dropping_the_tool_index_names_every_list_it_carries (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_dropping_the_tool_index_names_every_list_it_carries)"
+   ],
+   "seconds": 5.7
+  },
+  {
+   "id": "S6-tool-index-omits-dynamic",
+   "class": "the section selector or summary view weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "                *catalog[\"dynamic_upstream\"],\n            )\n        ]\n",
+     "            )\n        ]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/S6-tool-index-omits-dynamic.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_following_retrieval_recovers_every_item_under_a_small_limit (test_hamcp247_list_capabilities_bounded.SizeLimitTests.test_following_retrieval_recovers_every_item_under_a_small_limit)"
+   ],
+   "seconds": 5.9
+  },
+  {
+   "id": "S7-gateway-item-count-wrong",
+   "class": "the section selector or summary view weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "                if name == \"upstream_read_gateway\"\n",
+     "                if False\n"
+    ]
+   ],
+   "log_path": "mutation-logs/S7-gateway-item-count-wrong.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_summary_gateway_keeps_identity_and_states_detail_counts (test_hamcp247_list_capabilities_bounded.SummaryTests.test_the_summary_gateway_keeps_identity_and_states_detail_counts)"
+   ],
+   "seconds": 6.2
+  },
+  {
+   "id": "S8-filtered-view-labelled-summary",
+   "class": "the section selector or summary view weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "view = \"section\" if section else \"filtered\" if active else \"summary\"",
+     "view = \"section\" if section else \"summary\""
+    ]
+   ],
+   "log_path": "mutation-logs/S8-filtered-view-labelled-summary.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_status_filter_narrows_every_section (test_hamcp247_list_capabilities_bounded.FilterSemanticsTests.test_a_status_filter_narrows_every_section)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "S9-server-version-missing",
+   "class": "the section selector or summary view weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        \"version\": SERVER_VERSION,\n        \"schema_version\": SCHEMA_VERSION,\n",
+     "        \"schema_version\": SCHEMA_VERSION,\n"
+    ]
+   ],
+   "log_path": "mutation-logs/S9-server-version-missing.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_unfiltered_call_is_a_bounded_summary (test_hamcp247_list_capabilities_bounded.SummaryTests.test_the_unfiltered_call_is_a_bounded_summary)"
+   ],
+   "seconds": 6.0
+  },
+  {
+   "id": "B1-no-envelope-reserve",
+   "class": "the response budget or size guard weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "CATALOG_ENVELOPE_RESERVE_CHARS = 4_000",
+     "CATALOG_ENVELOPE_RESERVE_CHARS = 0"
+    ]
+   ],
+   "log_path": "mutation-logs/B1-no-envelope-reserve.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_an_oversize_gateway_retrieval_is_a_different_call (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_an_oversize_gateway_retrieval_is_a_different_call)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "B2-budget-measured-indented",
+   "class": "the response budget or size guard weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "return len(json.dumps({\"data\": value}, separators=(\",\", \":\"), default=str))",
+     "return len(json.dumps({\"data\": value}, indent=2, default=str))"
+    ]
+   ],
+   "log_path": "mutation-logs/B2-budget-measured-indented.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_largest_secondary_section_goes_first_and_only_as_needed (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_the_largest_secondary_section_goes_first_and_only_as_needed)"
+   ],
+   "seconds": 10.0
+  },
+  {
+   "id": "B3-size-statement-not-counted",
+   "class": "the response budget or size guard weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "    if _rendered_chars(data) > budget:\n",
+     "    if _rendered_chars({k: v for k, v in data.items() if k != \"size_limit\"}) > budget:\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "                if _rendered_chars(data) <= budget:\n",
+     "                if _rendered_chars({k: v for k, v in data.items() if k != \"size_limit\"}) <= budget:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/B3-size-statement-not-counted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_oversize_section_counts_its_size_statement_at_every_limit (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_an_oversize_section_counts_its_size_statement_at_every_limit)"
+   ],
+   "seconds": 4.1
+  },
+  {
+   "id": "B4-no-size-guard",
+   "class": "the response budget or size guard weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "    if _rendered_chars(data) > budget:\n",
+     "    if False:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/B4-no-size-guard.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_oversize_gateway_drops_its_largest_field_first (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_an_oversize_gateway_drops_its_largest_field_first)"
+   ],
+   "seconds": 3.4
+  },
+  {
+   "id": "B5-tool-lists-dropped-first",
+   "class": "the response budget or size guard weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "for name in (n for n in _DROP_ORDER if n in data):",
+     "for name in (n for n in reversed(_DROP_ORDER) if n in data):"
+    ]
+   ],
+   "log_path": "mutation-logs/B5-tool-lists-dropped-first.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_dropping_the_tool_index_names_every_list_it_carries (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_dropping_the_tool_index_names_every_list_it_carries)"
+   ],
+   "seconds": 5.0
+  },
+  {
+   "id": "B6-drops-past-fit",
+   "class": "the response budget or size guard weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "                if _rendered_chars(data) <= budget:\n                    break\n",
+     "                if False:\n                    break\n"
+    ]
+   ],
+   "log_path": "mutation-logs/B6-drops-past-fit.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_dropping_the_tool_index_names_every_list_it_carries (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_dropping_the_tool_index_names_every_list_it_carries)"
+   ],
+   "seconds": 5.0
+  },
+  {
+   "id": "B7-tool-index-retrieval-incomplete",
+   "class": "the response budget or size guard weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "                    (\"tools\", \"beta_native\", \"dynamic_upstream\")\n                    if name == \"tool_index\"\n",
+     "                    (\"tools\",)\n                    if name == \"tool_index\"\n"
+    ]
+   ],
+   "log_path": "mutation-logs/B7-tool-index-retrieval-incomplete.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_dropping_the_tool_index_names_every_list_it_carries (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_dropping_the_tool_index_names_every_list_it_carries)"
+   ],
+   "seconds": 5.0
+  },
+  {
+   "id": "B8-dropped-section-not-marked",
+   "class": "the response budget or size guard weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "                    data[\"sections\"][name][\"included\"] = \"omitted_size_limit\"\n",
+     "                    pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/B8-dropped-section-not-marked.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_dropping_the_tool_index_names_every_list_it_carries (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_dropping_the_tool_index_names_every_list_it_carries)"
+   ],
+   "seconds": 5.1
+  },
+  {
+   "id": "B9-dropped-section-no-retrieval",
+   "class": "the response budget or size guard weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "                    retrieval.append(_request(data[\"sections\"][part][\"request\"]))\n",
+     "                    pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/B9-dropped-section-no-retrieval.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_dropping_the_tool_index_names_every_list_it_carries (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_dropping_the_tool_index_names_every_list_it_carries)"
+   ],
+   "seconds": 5.1
+  },
+  {
+   "id": "O1-section-not-marked-omitted",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "            data[\"sections\"][section][\"included\"] = \"omitted_size_limit\"\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O1-section-not-marked-omitted.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_oversize_section_names_its_partitions (test_hamcp247_list_capabilities_bounded.SizeLimitTests.test_an_oversize_section_names_its_partitions)"
+   ],
+   "seconds": 5.2
+  },
+  {
+   "id": "O2-section-retrieval-not-in-size-limit",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "            retrieval.extend(data[section][\"retrieval\"])\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O2-section-retrieval-not-in-size-limit.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_gateway_whose_identity_cannot_fit_is_omitted_with_retrieval (test_hamcp247_list_capabilities_bounded.SizeLimitTests.test_a_gateway_whose_identity_cannot_fit_is_omitted_with_retrieval)"
+   ],
+   "seconds": 5.2
+  },
+  {
+   "id": "O3-partition-ignores-active-category",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "\"category\" if \"category\" not in active",
+     "\"category\" if True"
+    ]
+   ],
+   "log_path": "mutation-logs/O3-partition-ignores-active-category.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_category_filtered_oversize_section_partitions_by_status (test_hamcp247_list_capabilities_bounded.SizeLimitTests.test_a_category_filtered_oversize_section_partitions_by_status)"
+   ],
+   "seconds": 5.1
+  },
+  {
+   "id": "O4-unpartitioned-rows-lost",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "            unpartitioned.append(item)\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O4-unpartitioned-rows-lost.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_class_with_no_narrower_filter_says_so (test_hamcp247_list_capabilities_bounded.SizeLimitTests.test_a_class_with_no_narrower_filter_says_so)"
+   ],
+   "seconds": 5.2
+  },
+  {
+   "id": "O5-unpartitioned-rows-kept-oversize",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "    if not fits(record):\n        del record[\"unpartitioned_items\"]\n",
+     "    if False:\n        del record[\"unpartitioned_items\"]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O5-unpartitioned-rows-kept-oversize.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_class_with_no_narrower_filter_says_so (test_hamcp247_list_capabilities_bounded.SizeLimitTests.test_a_class_with_no_narrower_filter_says_so)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "O6-no-narrower-reason-missing",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        record[\"retrieval_unavailable_reason\"] = \"no_narrower_filter\"\n",
+     "        pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O6-no-narrower-reason-missing.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_class_with_no_narrower_filter_says_so (test_hamcp247_list_capabilities_bounded.SizeLimitTests.test_a_class_with_no_narrower_filter_says_so)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "O7-gateway-fields-not-dropped",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "            omitted[field] = len(value.pop(field))\n",
+     "            omitted[field] = len(value[field])\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O7-gateway-fields-not-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_an_oversize_gateway_drops_its_largest_field_first (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_an_oversize_gateway_drops_its_largest_field_first)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "O8-gateway-nested-readmission-not-dropped",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        if not fits(value) and isinstance(readmission, dict) and isinstance(\n",
+     "        if False and isinstance(readmission, dict) and isinstance(\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O8-gateway-nested-readmission-not-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_oversize_gateway_drops_the_nested_readmission_list (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_an_oversize_gateway_drops_the_nested_readmission_list)"
+   ],
+   "seconds": 3.4
+  },
+  {
+   "id": "O9-gateway-returned-oversize",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        if fits(value):\n            return value\n",
+     "        if True:\n            return value\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O9-gateway-returned-oversize.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_oversize_section_counts_its_size_statement_at_every_limit (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_an_oversize_section_counts_its_size_statement_at_every_limit)"
+   ],
+   "seconds": 3.3
+  },
+  {
+   "id": "O10-gateway-status-retrieval-loops",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "else {\"detail_section\": \"dynamic_upstream\", **active}",
+     "else {\"detail_section\": section, **active}"
+    ]
+   ],
+   "log_path": "mutation-logs/O10-gateway-status-retrieval-loops.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_oversize_gateway_retrieval_is_a_different_call (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_an_oversize_gateway_retrieval_is_a_different_call)"
+   ],
+   "seconds": 3.5
+  },
+  {
+   "id": "O11-gateway-drops-smallest-first",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "            reverse=True,\n        ):\n            if fits(value):\n",
+     "            reverse=False,\n        ):\n            if fits(value):\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O11-gateway-drops-smallest-first.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_oversize_gateway_drops_its_largest_field_first (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_an_oversize_gateway_drops_its_largest_field_first)"
+   ],
+   "seconds": 3.3
+  },
+  {
+   "id": "O12-matrix-rows-unclassified",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "    if section != \"provider_matrix\":\n",
+     "    if True:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O12-matrix-rows-unclassified.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_a_category_filtered_oversize_section_partitions_by_status (test_hamcp247_list_capabilities_bounded.SizeLimitTests.test_a_category_filtered_oversize_section_partitions_by_status)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "O13-oversize-detail-flag-missing",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        value[\"detail_complete\"] = False\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/O13-oversize-detail-flag-missing.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_an_oversize_gateway_drops_detail_fields_and_says_so (test_hamcp247_list_capabilities_bounded.SizeLimitTests.test_an_oversize_gateway_drops_detail_fields_and_says_so)"
+   ],
+   "seconds": 5.6
+  },
+  {
+   "id": "O14-fits-ignores-size-statement",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "                            \"retrieval\": candidate.get(\"retrieval\", []),\n",
+     "                            \"retrieval\": [],\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O14-fits-ignores-size-statement.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_oversize_section_counts_its_size_statement_at_every_limit (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_an_oversize_section_counts_its_size_statement_at_every_limit)"
+   ],
+   "seconds": 3.9
+  },
+  {
+   "id": "O15-section-marked-after-sizing",
+   "class": "an oversize section reported untruthfully or without retrieval",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "            # Marked before sizing, so every candidate is sized as served.\n            data[\"sections\"][section][\"included\"] = \"omitted_size_limit\"\n",
+     ""
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "            data[section] = _oversize_section(section, data[section], active, fits)\n",
+     "            data[section] = _oversize_section(section, data[section], active, fits)\n            data[\"sections\"][section][\"included\"] = \"omitted_size_limit\"\n"
+    ]
+   ],
+   "log_path": "mutation-logs/O15-section-marked-after-sizing.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_oversize_section_counts_its_size_statement_at_every_limit (test_hamcp247_list_capabilities_bounded.SizeGuardTests.test_an_oversize_section_counts_its_size_statement_at_every_limit)"
+   ],
+   "seconds": 3.8
+  },
+  {
+   "id": "E1-cap-not-passed-to-view",
+   "class": "the tool entry point",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
+     "            response_limit=SETTINGS.response_size_limit,\n        )\n",
+     "        )\n"
+    ]
+   ],
+   "log_path": "mutation-logs/E1-cap-not-passed-to-view.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_tool_never_reaches_the_envelope_truncation (test_hamcp247_list_capabilities_bounded.SizeLimitTests.test_the_tool_never_reaches_the_envelope_truncation)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "E2-section-not-forwarded",
+   "class": "the tool entry point",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
+     "            detail_section=detail_section,\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/E2-section-not-forwarded.log",
+   "returncode": 1,
+   "killed": true,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_an_unknown_section_is_refused_clearly (test_hamcp247_list_capabilities_bounded.SectionSelectorTests.test_an_unknown_section_is_refused_clearly)"
+   ],
+   "seconds": 3.1
+  }
+ ]
+}
