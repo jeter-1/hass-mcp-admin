@@ -171,7 +171,10 @@ async def server_info(check_ha: bool = True) -> str:
 
 @mcp.tool()
 async def list_capabilities(
-    status: str = "", category: str = "", detail_section: str = ""
+    status: str = "",
+    category: str = "",
+    detail_section: str = "",
+    detail_cursor: str = "",
 ) -> str:
     """List this server's tool capabilities and lifecycle classification.
 
@@ -190,7 +193,16 @@ async def list_capabilities(
     Optional detail_section returns one full section, filters still applying:
     tools, beta_native, dynamic_upstream, provider_matrix, or
     upstream_read_gateway. A section too large for the response limit is
-    reported with the narrower calls that return it.
+    returned in pages of its actual rows, in catalog order; each page but
+    the last carries a retrieval request for the next page (the same
+    detail_section and filters plus detail_cursor). An oversized gateway
+    keeps its identity and count fields and names each omitted per-tool
+    field with the request that pages that field's own rows.
+
+    Optional detail_cursor is the opaque cursor from such a request, valid
+    only with detail_section and the same filters. A cursor from a catalog
+    that has since changed is refused as stale_cursor, and a malformed or
+    mismatched one as invalid_cursor; restart the crawl from the section.
 
     Planned engineering capabilities are returned separately.
     """
@@ -202,6 +214,7 @@ async def list_capabilities(
             status=status,
             category=category,
             detail_section=detail_section,
+            detail_cursor=detail_cursor,
             core_admission=(
                 service.core_admission_snapshot() if service is not None else None
             ),

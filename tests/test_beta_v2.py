@@ -652,14 +652,18 @@ class ToolParityTests(unittest.TestCase):
         beta_schemas = {
             name: self.beta_tools[name].parameters for name in self.production_tools
         }
-        # HAMCP-247 adds exactly one optional list_capabilities input; every
+        # HAMCP-247 adds exactly two optional list_capabilities inputs; every
         # stable v1 input, default and requirement is otherwise unchanged.
         listing = json.loads(json.dumps(beta_schemas["list_capabilities"]))
-        self.assertEqual(
-            listing["properties"].pop("detail_section"),
-            {"default": "", "title": "Detail Section", "type": "string"},
-        )
-        self.assertNotIn("detail_section", listing.get("required", []))
+        for name, title in (
+            ("detail_section", "Detail Section"),
+            ("detail_cursor", "Detail Cursor"),
+        ):
+            self.assertEqual(
+                listing["properties"].pop(name),
+                {"default": "", "title": title, "type": "string"},
+            )
+            self.assertNotIn(name, listing.get("required", []))
         beta_schemas["list_capabilities"] = listing
         self.assertEqual(beta_schemas, production_schemas)
 

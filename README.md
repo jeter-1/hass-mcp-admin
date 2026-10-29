@@ -5,9 +5,10 @@ within the response cap (HAMCP-247). On beta.44 the unfiltered call and
 `status=delegated` succeeded with `/data` omitted and nothing to retrieve.
 The unfiltered call is now a bounded summary with a `sections` map; `status`
 and `category` narrow every section they apply to; the new optional
-`detail_section` returns one section in full; and every response states what
-it omitted and the request that returns it (`size_limit`). The global cap and
-the envelope's truncation are unchanged. One optional, additive input; no
+`detail_section` returns one section in full, paged by the new optional
+`detail_cursor` when it is larger than the limit; and every response states
+what it omitted and the request that returns it (`size_limit`). The global cap
+and the envelope's truncation are unchanged. Two optional, additive inputs; no
 tool, routing, provider or governance change. Rollback is reinstalling
 beta.45. Read the [2.4.1-beta.46 release
 notes](docs/V2_4_1_BETA46_RELEASE_NOTES.md) and [2.4.1-beta.46 acceptance

@@ -655,7 +655,9 @@ call returns a summary: server identity, counts, the canonical tools, a
 status/category index of every registered tool and a `sections` map. A
 `status` or `category` filter narrows every section it applies to, and the
 optional `detail_section` returns one full section. A section too large for
-the cap is named in `size_limit`, with the narrower calls that return it.
+the limit is returned in pages of its actual rows, followed with the optional
+`detail_cursor` from each page's request; an oversize gateway pages each
+omitted per-tool field by its own identity.
 
 ### `analyze_entity_dependencies`
 

@@ -7,15 +7,25 @@ never narrowed by a filter, and the envelope's generic bound drops ``/data``
 whole.  The tool now returns a bounded summary by default, narrows every
 section by a filter, and returns one full section on request.
 
-The catalog is live-shaped: the real UpstreamReadGateway is driven offline
-with the reviewed ha-mcp 8.6.0 capture (28 dynamic tools, 105 registered).
-Every call shape is rendered by the real tool and envelope, at that size and
-with every section grown by half.  Nothing is sent anywhere.
+The committed catalog fixture is a 105-tool synthetic, live-shaped catalog:
+the real UpstreamReadGateway is driven offline with the captured stock
+ha-mcp 8.6.0 descriptors and the signed release registry disabled (77 native
++ 28 dynamic = 105 registered; live had 106).  The 106-tool cases use the
+exact ha-mcp 8.5.0 component capture with the optional ``ha_config_get_yaml``
+admitted (77 + 29 = 106), as the round-1 review did; neither is a claim about
+the household's current provider version.  Every call shape is rendered by
+the real tool and envelope, at that size and with every section grown by
+half.  Nothing is sent anywhere.
+
+A requested section too large for the response limit is served in pages of
+its actual rows; every page request is followed to completion and the rows
+are compared byte-for-byte with the filtered source (round-1 R1-M1, R1-M2).
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 from contextlib import contextmanager
 from dataclasses import replace
 import json
@@ -43,6 +53,7 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 )
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
+from test_hamcp162_yaml_admission import captured  # noqa: E402
 from test_upstream_8_5_compatibility import capture  # noqa: E402
 
 LIMIT = compatibility.SETTINGS.response_size_limit
@@ -122,7 +133,20 @@ def _call(**arguments):
     return asyncio.run(compatibility.list_capabilities(**arguments))
 
 
+def _call_at(limit, **arguments):
+    """The public call with the supported response limit set to ``limit``."""
+
+    settings = replace(compatibility.SETTINGS, response_size_limit=limit)
+    with mock.patch.object(compatibility, "SETTINGS", settings):
+        return _call(**arguments)
+
+
 class _LiveShapedCatalog(unittest.TestCase):
+    # The 105-tool synthetic fixture (stock ha-mcp 8.6.0 descriptors).
+    @staticmethod
+    def upstream_capture():
+        return capture("8.6.0")["tools"], "8.6.0"
+
     @classmethod
     def setUpClass(cls):
         cls._saved = (
@@ -131,7 +155,8 @@ class _LiveShapedCatalog(unittest.TestCase):
         )
 
         async def publish():
-            transport = _GatewayTransport(capture("8.6.0")["tools"], version="8.6.0")
+            tools, version = cls.upstream_capture()
+            transport = _GatewayTransport(tools, version=version)
             gateway = UpstreamReadGateway()
             gateway.configure(
                 replace(
@@ -501,85 +526,238 @@ class SectionSelectorTests(_LiveShapedCatalog):
                     self.assertIn(section, view)
 
 
-class SizeLimitTests(_LiveShapedCatalog):
+LIST_SECTIONS = ("tools", "beta_native", "dynamic_upstream", "provider_matrix")
+
+
+class _Crawler:
+    """Follows every retrieval request through the public callable."""
+
+    def crawl(self, arguments, limit):
+        """Every response from ``arguments`` on, each request followed once.
+
+        Asserts what every response must hold: the cap, success with
+        ``/data``, no envelope truncation, a request for each omission, a
+        nonempty row list on every page, retrieval exactly on non-final
+        pages, and no request repeated (so the crawl ends).
+        """
+
+        responses = []
+        queue = [dict(arguments)]
+        issued = set()
+        while queue:
+            current = queue.pop(0)
+            key = json.dumps(current, sort_keys=True)
+            self.assertNotIn(key, issued, "repeated request")
+            issued.add(key)
+            self.assertLess(len(issued), 500, "the crawl does not end")
+            text = _call_at(limit, **current)
+            self.assertLessEqual(len(text), limit, current)
+            result = json.loads(text)
+            self.assertTrue(result["success"], (current, result))
+            self.assertNotIn("response_completeness", result, current)
+            data = result["data"]
+            size = data["size_limit"]
+            self.assertEqual(bool(size["omitted_sections"]), bool(size["retrieval"]), current)
+            for request in size["retrieval"]:
+                self.assertEqual(request["tool"], "list_capabilities")
+                self.assertTrue(request["arguments"], current)
+            section = current.get("detail_section")
+            value = data.get(section) if section else None
+            if isinstance(value, dict) and value.get("paged"):
+                self.assertTrue(value["rows"], "empty page")
+                self.assertEqual(value["page"]["row_count"], len(value["rows"]))
+                self.assertEqual(value["page"]["final"], not value["retrieval"])
+                self.assertEqual(data["sections"][section]["included"], "paged")
+            if isinstance(value, dict) and "detail_cursor" in json.dumps(
+                size["retrieval"]
+            ):
+                for request in size["retrieval"]:
+                    # A page request keeps the section and every filter.
+                    self.assertEqual(
+                        {k: v for k, v in request["arguments"].items()
+                         if k != "detail_cursor"},
+                        {k: v for k, v in current.items() if k != "detail_cursor"},
+                    )
+            responses.append((current, data))
+            queue.extend(request["arguments"] for request in size["retrieval"])
+        return responses
+
+    def list_rows(self, responses, section):
+        """The section's rows reassembled from one section crawl."""
+
+        rows = []
+        offsets = []
+        for arguments, data in responses:
+            if arguments.get("detail_section") != section:
+                continue
+            value = data[section]
+            if isinstance(value, list):
+                self.assertEqual(rows, [], "a full section after a page")
+                return value
+            self.assertTrue(value["paged"], value)
+            # Each page starts where the previous one ended: no gap, no overlap.
+            self.assertEqual(value["page"]["offset"], len(rows))
+            offsets.append(value["page"]["offset"])
+            rows.extend(value["rows"])
+        self.assertEqual(len(offsets), len(set(offsets)))
+        return rows
+
+    def gateway_rows(self, responses):
+        """The gateway block reassembled from one gateway section crawl."""
+
+        rebuilt = None
+        offsets = {}
+        for arguments, data in responses:
+            value = data["upstream_read_gateway"]
+            if "detail_cursor" not in arguments:
+                self.assertIsNone(rebuilt)
+                self.assertNotIn("omitted", value)
+                if not value.get("detail_omitted_fields"):
+                    return value
+                rebuilt = {
+                    key: item for key, item in value.items()
+                    if key not in ("detail_complete", "detail_omitted_fields", "retrieval")
+                }
+                if "automatic_readmission" in rebuilt:
+                    rebuilt["automatic_readmission"] = dict(rebuilt["automatic_readmission"])
+                continue
+            field = value["field"]
+            self.assertEqual(value["page"]["offset"], offsets.get(field, 0), field)
+            offsets[field] = value["page"]["offset"] + len(value["rows"])
+            if field == capabilities._READMISSION_FIELD:
+                target = rebuilt["automatic_readmission"].setdefault(
+                    "readmission_withheld_tools", []
+                )
+            else:
+                target = rebuilt.setdefault(
+                    field, {} if isinstance(value["rows"], dict) else []
+                )
+            self.assertIsInstance(value["rows"], type(target))
+            if isinstance(target, dict):
+                self.assertFalse(set(target) & set(value["rows"]), "duplicate rows")
+                target.update(value["rows"])
+            else:
+                target.extend(value["rows"])
+        return rebuilt
+
+    def assert_same(self, recovered, source):
+        # Byte-for-byte, in source order.  A reassembled gateway re-adds its
+        # paged fields after the identity fields, so its keys are compared as
+        # a set and each field's value byte-for-byte.
+        if isinstance(source, dict):
+            self.assertEqual(sorted(recovered), sorted(source))
+            for key in source:
+                self.assertEqual(
+                    json.dumps(recovered[key]), json.dumps(source[key]), key
+                )
+            return
+        self.assertEqual(json.dumps(recovered), json.dumps(source))
+
+
+class SizeLimitTests(_LiveShapedCatalog, _Crawler):
     """Reachable size-limit paths, forced with a small response limit."""
 
-    def crawl(self, arguments, limit, seen, depth=0):
-        self.assertLess(depth, 4, arguments)
-        data = build_capability_view(**arguments, response_limit=limit)
-        self.assertLessEqual(len(_compact({"data": data})),
-                             limit - capabilities.CATALOG_ENVELOPE_RESERVE_CHARS)
-        if data["size_limit"]["omitted_sections"]:
-            self.assertTrue(data["size_limit"]["retrieval"], arguments)
-        for name in ("tools", "beta_native", "dynamic_upstream", "provider_matrix"):
-            value = data.get(name)
-            if isinstance(value, dict):
-                value = value.get("unpartitioned_items", [])
-            if isinstance(value, list):
-                seen.setdefault(name, set()).update(
-                    (item["tool"], json.dumps(item, sort_keys=True)) for item in value
-                )
-        for request in data["size_limit"]["retrieval"]:
-            self.assertEqual(request["tool"], "list_capabilities")
-            self.crawl(request["arguments"], limit, seen, depth + 1)
-        return data
-
-    def test_following_retrieval_recovers_every_item_under_a_small_limit(self):
-        # Each limit is below the summary and the largest sections and above
-        # the largest status-and-category class at that size.
-        for factor, limit in ((1.0, 24_000), (1.5, 30_000)):
-            with self.subTest(factor=factor), self.grown(factor):
+    def test_following_retrieval_recovers_every_section_under_a_small_limit(self):
+        # Each limit is below the summary and the largest sections.
+        for factor, limit in ((1.0, 24_000), (1.5, 30_000), (1.0, 16_000)):
+            with self.subTest(factor=factor, limit=limit), self.grown(factor):
                 catalog = build_capability_catalog()
-                seen = {}
-                data = self.crawl({}, limit, seen)
-                self.assertTrue(data["size_limit"]["omitted_sections"])
+                summary = self.crawl({}, limit)
+                self.assertTrue(summary[0][1]["size_limit"]["omitted_sections"])
                 for section in CATALOG_SECTIONS:
-                    self.crawl(data["sections"][section]["request"], limit, seen)
-                for name in ("tools", "beta_native", "dynamic_upstream", "provider_matrix"):
-                    self.assertEqual(
-                        seen[name],
-                        {(item["tool"], json.dumps(item, sort_keys=True))
-                         for item in catalog[name]},
-                        name,
+                    responses = self.crawl(
+                        summary[0][1]["sections"][section]["request"], limit
                     )
+                    recovered = (
+                        self.gateway_rows(responses)
+                        if section == "upstream_read_gateway"
+                        else self.list_rows(responses, section)
+                    )
+                    self.assert_same(recovered, catalog[section])
 
-    def test_an_oversize_section_names_its_partitions(self):
+    def test_every_filtered_section_crawl_recovers_its_rows(self):
+        catalog = build_capability_view(response_limit=10**6)
+        for status in ("", *STATUSES):
+            for category in ("", "upstream_read_gateway", "evidence", "discovery"):
+                filters = {k: v for k, v in (("status", status), ("category", category)) if v}
+                source = build_capability_catalog(**filters)
+                for section in CATALOG_SECTIONS:
+                    with self.subTest(section=section, **filters):
+                        # The gateway's identity fields alone need ~13k.
+                        limit = 16_000 if section == "upstream_read_gateway" else 12_000
+                        responses = self.crawl(
+                            {"detail_section": section, **filters}, limit
+                        )
+                        recovered = (
+                            self.gateway_rows(responses)
+                            if section == "upstream_read_gateway"
+                            else self.list_rows(responses, section)
+                        )
+                        self.assert_same(recovered, source[section])
+        self.assertTrue(catalog["category_values"])
+
+    def test_an_oversize_section_is_paged_in_catalog_order(self):
         data = build_capability_view(detail_section="beta_native", response_limit=20_000)
         record = data["beta_native"]
-        self.assertTrue(record["omitted"])
-        self.assertEqual(record["reason"], "section_exceeds_response_limit")
+        self.assertIs(record["paged"], True)
         self.assertEqual(record["item_count"], 52)
-        self.assertEqual(len(record["item_names"]), 52)
-        self.assertEqual(record["unpartitioned_item_count"], 0)
-        self.assertEqual(record["unpartitioned_items"], [])
-        self.assertEqual(
-            [request["arguments"] for request in record["retrieval"]],
-            [
-                {"detail_section": "beta_native", "category": category}
-                for category in sorted(
-                    {item["category"] for item in capabilities.BETA_NATIVE_CAPABILITIES}
-                )
-            ],
-        )
+        self.assertEqual(record["page"]["offset"], 0)
+        self.assertIs(record["page"]["final"], False)
+        count = record["page"]["row_count"]
+        self.assertGreaterEqual(count, 1)
+        self.assertEqual(record["page"]["next_offset"], count)
+        self.assertEqual(record["rows"], build_capability_catalog()["beta_native"][:count])
+        [request] = record["retrieval"]
+        arguments = dict(request["arguments"])
+        self.assertTrue(arguments.pop("detail_cursor").startswith("lc1."))
+        self.assertEqual(arguments, {"detail_section": "beta_native"})
         self.assertEqual(data["size_limit"]["retrieval"], record["retrieval"])
-        self.assertEqual(data["sections"]["beta_native"]["included"], "omitted_size_limit")
+        self.assertEqual(data["size_limit"]["omitted_sections"], ["beta_native"])
+        self.assertEqual(data["sections"]["beta_native"]["included"], "paged")
+        for key in ("omitted", "item_names", "unpartitioned_items",
+                    "retrieval_unavailable_reason"):
+            self.assertNotIn(key, record)
 
-    def test_a_category_filtered_oversize_section_partitions_by_status(self):
-        data = build_capability_view(
-            detail_section="provider_matrix", category="discovery", response_limit=8_000
+    def test_the_largest_page_that_fits_is_served(self):
+        # One more row than served would not fit; the page is not short.
+        for arguments, limit in (
+            ({"detail_section": "beta_native"}, 20_000),
+            ({"detail_section": "provider_matrix", "category": "discovery"}, 8_000),
+        ):
+            with self.subTest(**arguments):
+                data = build_capability_view(**arguments, response_limit=limit)
+                section = arguments["detail_section"]
+                record = data[section]
+                count = record["page"]["row_count"]
+                source = build_capability_catalog(
+                    **{k: v for k, v in arguments.items() if k != "detail_section"}
+                )[section]
+                self.assertLess(count, len(source))
+                longer = json.loads(json.dumps(data))
+                longer[section]["rows"] = source[: count + 1]
+                longer[section]["page"]["row_count"] = count + 1
+                longer[section]["page"]["next_offset"] = count + 1
+                self.assertGreater(
+                    len(_compact({"data": longer})),
+                    limit - capabilities.CATALOG_ENVELOPE_RESERVE_CHARS,
+                )
+
+    def test_a_category_filtered_oversize_section_pages_with_its_filters(self):
+        responses = self.crawl(
+            {"detail_section": "provider_matrix", "category": "discovery"}, 8_000
         )
-        record = data["provider_matrix"]
-        self.assertTrue(record["omitted"])
-        self.assertTrue(record["retrieval"])
-        for request in record["retrieval"]:
-            self.assertEqual(request["arguments"]["category"], "discovery")
-            self.assertIn(request["arguments"]["status"], STATUSES)
+        self.assertGreater(len(responses), 1)
+        self.assert_same(
+            self.list_rows(responses, "provider_matrix"),
+            build_capability_catalog(category="discovery")["provider_matrix"],
+        )
 
     def test_an_oversize_gateway_drops_detail_fields_and_says_so(self):
-        for arguments in ({}, {"status": "delegated"}):
+        # Between the identity floor and the full section, per filter.
+        for arguments, limit in (({}, 14_000), ({"status": "delegated"}, 13_000)):
             with self.subTest(**arguments), self.grown(4.0):
                 data = build_capability_view(
-                    detail_section="upstream_read_gateway", response_limit=13_000,
+                    detail_section="upstream_read_gateway", response_limit=limit,
                     **arguments,
                 )
                 gateway = data["upstream_read_gateway"]
@@ -589,44 +767,49 @@ class SizeLimitTests(_LiveShapedCatalog):
                 for field, count in gateway["detail_omitted_fields"].items():
                     self.assertNotIn(field, gateway)
                     self.assertEqual(count, len(source[field]))
-                self.assertTrue(gateway["retrieval"])
+                self.assertEqual(
+                    len(gateway["retrieval"]), len(gateway["detail_omitted_fields"])
+                )
                 self.assertEqual(data["size_limit"]["retrieval"], gateway["retrieval"])
+                self.assertEqual(
+                    data["sections"]["upstream_read_gateway"]["included"], "partial"
+                )
                 self.assertLessEqual(
                     len(_compact({"data": data})),
-                    13_000 - capabilities.CATALOG_ENVELOPE_RESERVE_CHARS,
+                    limit - capabilities.CATALOG_ENVELOPE_RESERVE_CHARS,
                 )
 
-    def test_a_gateway_whose_identity_cannot_fit_is_omitted_with_retrieval(self):
+    def test_a_gateway_whose_identity_cannot_fit_still_pages_every_field(self):
         data = build_capability_view(
             detail_section="upstream_read_gateway", response_limit=9_000
         )
         record = data["upstream_read_gateway"]
         self.assertTrue(record["omitted"])
         self.assertEqual(record["reason"], "section_exceeds_response_limit")
-        self.assertEqual(
-            record["retrieval"],
-            [{"tool": "list_capabilities",
-              "arguments": {"detail_section": "upstream_read_gateway",
-                            "status": "delegated"}}],
-        )
+        source = build_capability_catalog()["upstream_read_gateway"]
+        nonempty = {
+            field: len(source[field]) for field in GATEWAY_DETAIL_FIELDS
+            if source.get(field)
+        }
+        self.assertEqual(record["detail_omitted_fields"], nonempty)
+        self.assertEqual(len(record["retrieval"]), len(nonempty))
         self.assertEqual(data["size_limit"]["retrieval"], record["retrieval"])
         self.assertLessEqual(
             len(_compact({"data": data})),
             9_000 - capabilities.CATALOG_ENVELOPE_RESERVE_CHARS,
         )
-
-    def test_a_class_with_no_narrower_filter_says_so(self):
-        data = build_capability_view(
-            detail_section="dynamic_upstream", status="delegated",
-            category="upstream_read_gateway", response_limit=12_000,
-        )
-        record = data["dynamic_upstream"]
-        self.assertTrue(record["omitted"])
-        self.assertEqual(record["retrieval"], [])
-        self.assertEqual(record["retrieval_unavailable_reason"], "no_narrower_filter")
-        self.assertEqual(record["unpartitioned_item_count"], 28)
-        self.assertEqual(record["item_names"], [item["tool"] for item in self.dynamic])
-        self.assertNotIn("unpartitioned_items", record)
+        responses = self.crawl({"detail_section": "upstream_read_gateway"}, 9_000)
+        for field, count in nonempty.items():
+            rows = [
+                row for arguments, page in responses[1:]
+                if page["upstream_read_gateway"]["field"] == field
+                for row in (
+                    page["upstream_read_gateway"]["rows"].items()
+                    if isinstance(source[field], dict)
+                    else page["upstream_read_gateway"]["rows"]
+                )
+            ]
+            self.assertEqual(len(rows), count, field)
 
     def test_no_single_class_outgrows_the_real_cap(self):
         # Every one of the 77 tools ha-mcp 8.6.0 offers, delegated at once,
@@ -639,6 +822,21 @@ class SizeLimitTests(_LiveShapedCatalog):
             data = self.assert_usable(_call(**arguments), arguments)
             self.assertEqual(data["size_limit"]["omitted_sections"], [])
             self.assertEqual(len(data["dynamic_upstream"]), 84)
+
+    def test_an_oversized_terminal_class_is_paged_at_the_real_cap(self):
+        # R1-M1 at 60k: a synthetic delegated upstream_read_gateway class
+        # (both filters set) larger than the whole response.
+        with self.grown(10.0):
+            arguments = {"detail_section": "dynamic_upstream", "status": "delegated",
+                         "category": "upstream_read_gateway"}
+            source = build_capability_catalog(
+                status="delegated", category="upstream_read_gateway"
+            )["dynamic_upstream"]
+            self.assertEqual(len(source), 280)
+            self.assertGreater(len(_compact(source)), LIMIT)
+            responses = self.crawl(arguments, LIMIT)
+            self.assertGreaterEqual(len(responses), 3)
+            self.assert_same(self.list_rows(responses, "dynamic_upstream"), source)
 
     def test_the_tool_never_reaches_the_envelope_truncation(self):
         small = replace(compatibility.SETTINGS, response_size_limit=24_000)
@@ -653,6 +851,15 @@ class SizeLimitTests(_LiveShapedCatalog):
                     data = result["data"]
                     if data["size_limit"]["omitted_sections"]:
                         self.assertTrue(data["size_limit"]["retrieval"])
+
+    def test_a_limit_too_small_for_one_row_says_so(self):
+        # Below the default-size scope: the floor is stated, never a loop.
+        data = build_capability_view(detail_section="beta_native", response_limit=6_000)
+        record = data["beta_native"]
+        self.assertEqual(record["reason"], "page_row_exceeds_response_limit")
+        self.assertEqual(record["retrieval"], [])
+        self.assertEqual(record["item_count"], 52)
+        self.assertEqual(data["sections"]["beta_native"]["included"], "omitted_size_limit")
 
 
 class SizeGuardTests(_LiveShapedCatalog):
@@ -737,24 +944,41 @@ class SizeGuardTests(_LiveShapedCatalog):
         )
         self.assertEqual(value["automatic_readmission"], {"state": "withheld"})
 
-    def test_an_oversize_gateway_retrieval_is_a_different_call(self):
-        for arguments, expected in (
-            ({}, {"detail_section": "upstream_read_gateway", "status": "delegated"}),
-            ({"status": "delegated"},
-             {"detail_section": "dynamic_upstream", "status": "delegated"}),
-        ):
+    def test_an_oversize_gateway_pages_the_omitted_field_itself(self):
+        # R1-M2: the request for an omitted field pages that field's own
+        # rows, never a delegated-only or different-section call.
+        # Between the identity floor and the full section, per filter.
+        for arguments, limit in (({}, 14_000), ({"status": "delegated"}, 13_000)):
             with self.subTest(**arguments), self.grown(4.0):
                 data = build_capability_view(
-                    detail_section="upstream_read_gateway", response_limit=13_000,
+                    detail_section="upstream_read_gateway", response_limit=limit,
                     **arguments,
                 )
-                self.assertEqual(
-                    data["upstream_read_gateway"]["retrieval"],
-                    [{"tool": "list_capabilities", "arguments": expected}],
-                )
-                self.assertNotEqual(
-                    expected, {"detail_section": "upstream_read_gateway", **arguments}
-                )
+                value = data["upstream_read_gateway"]
+                for request, field in zip(value["retrieval"], value["detail_omitted_fields"]):
+                    request_arguments = dict(request["arguments"])
+                    cursor = request_arguments.pop("detail_cursor")
+                    self.assertEqual(
+                        request_arguments,
+                        {"detail_section": "upstream_read_gateway", **arguments},
+                    )
+                    page = build_capability_view(
+                        **request["arguments"], response_limit=limit
+                    )["upstream_read_gateway"]
+                    self.assertEqual(page["field"], field)
+                    self.assertEqual(page["page"]["offset"], 0)
+                    source = build_capability_catalog(**arguments)["upstream_read_gateway"]
+                    expected = (
+                        list(source[field].items())[: page["page"]["row_count"]]
+                        if isinstance(source[field], dict)
+                        else source[field][: page["page"]["row_count"]]
+                    )
+                    self.assertEqual(
+                        list(page["rows"].items())
+                        if isinstance(page["rows"], dict) else page["rows"],
+                        expected,
+                    )
+                    self.assertTrue(cursor.startswith("lc1."))
 
     def test_an_oversize_section_counts_its_size_statement_at_every_limit(self):
         # Stepping through each limit where the section's record changes shape
@@ -774,6 +998,360 @@ class SizeGuardTests(_LiveShapedCatalog):
                     self.assertLessEqual(
                         len(_compact({"data": data})), limit - self.RESERVE, limit
                     )
+
+
+class _Catalog106(_LiveShapedCatalog):
+    """The exact ha-mcp 8.5.0 component capture: 77 native + 29 upstream."""
+
+    @staticmethod
+    def upstream_capture():
+        return captured("8.5.0"), "8.5.0"
+
+
+M1_ARGUMENTS = {"detail_section": "dynamic_upstream", "status": "delegated",
+                "category": "upstream_read_gateway"}
+
+
+class ReviewReproductionTests(_Catalog106, _Crawler):
+    """Round-1 R1-M1 and R1-M2, through the real callable and envelope."""
+
+    def test_the_fixture_is_the_106_tool_catalog(self):
+        catalog = build_capability_catalog()
+        self.assertEqual(catalog["registered_count"], 106)
+        self.assertEqual(catalog["dynamic_upstream_count"], 29)
+        self.assertEqual(len(catalog["upstream_read_gateway"]["blocked_tools"]), 49)
+
+    def test_r1_m1_a_terminal_class_is_crawled_to_completion(self):
+        source = build_capability_catalog(
+            status="delegated", category="upstream_read_gateway"
+        )["dynamic_upstream"]
+        self.assertEqual(len(source), 29)
+        responses = self.crawl(M1_ARGUMENTS, 12_000)
+        self.assertGreater(len(responses), 1)
+        recovered = self.list_rows(responses, "dynamic_upstream")
+        self.assert_same(recovered, source)
+        names = [row["tool"] for row in recovered]
+        self.assertEqual(len(names), len(set(names)))
+        last = responses[-1][1]["dynamic_upstream"]
+        self.assertIs(last["page"]["final"], True)
+        self.assertEqual(last["retrieval"], [])
+        self.assertEqual(responses[-1][1]["size_limit"]["retrieval"], [])
+
+    def test_r1_m2_every_blocked_row_is_recovered_with_its_reason(self):
+        source = build_capability_catalog()["upstream_read_gateway"]
+        responses = self.crawl({"detail_section": "upstream_read_gateway"}, 16_000)
+        first = responses[0][1]["upstream_read_gateway"]
+        self.assertEqual(first["detail_omitted_fields"], {"blocked_tools": 49})
+        for _arguments, data in responses[1:]:
+            self.assertEqual(data["upstream_read_gateway"]["field"], "blocked_tools")
+        rebuilt = self.gateway_rows(responses)
+        self.assertEqual(len(rebuilt["blocked_tools"]), 49)
+        self.assert_same(rebuilt["blocked_tools"], source["blocked_tools"])
+        for row in rebuilt["blocked_tools"]:
+            self.assertIn("classification", row)
+        self.assertEqual(rebuilt, source)
+
+    def test_r1_m2_active_filters_page_the_projected_gateway(self):
+        for filters in ({"status": "delegated"}, {"category": "upstream_read_gateway"},
+                        {"status": "delegated", "category": "upstream_read_gateway"}):
+            with self.subTest(**filters):
+                responses = self.crawl(
+                    {"detail_section": "upstream_read_gateway", **filters}, 16_000
+                )
+                self.assert_same(
+                    self.gateway_rows(responses),
+                    build_capability_catalog(**filters)["upstream_read_gateway"],
+                )
+
+    def test_nominal_sections_are_complete_at_the_real_cap(self):
+        for arguments in (M1_ARGUMENTS, {"detail_section": "upstream_read_gateway"}):
+            with self.subTest(**arguments):
+                data = self.assert_usable(_call(**arguments), arguments)
+                self.assertEqual(data["sections"][arguments["detail_section"]]["included"], "full")
+                self.assertEqual(data["size_limit"]["retrieval"], [])
+
+
+def _synthetic_gateway(registered):
+    """A gateway with every pageable field populated, naming ``registered``
+    tools (so filters keep rows) and unregistered ones."""
+
+    unregistered = [f"ha_synthetic_{index:03d}" for index in range(60)]
+    names = [*registered, *unregistered]
+    reason = "synthetic reason text " * 6
+
+    def rows(field, key="tool"):
+        return [
+            {key: name, "reason": f"{field}:{copy}:{reason}"}
+            for name in names for copy in range(2)
+        ]
+
+    return {
+        "status": "ready",
+        "upstream_version": "synthetic",
+        "exposed_tools": list(registered),
+        "collision_mappings": [
+            {"upstream_name": name, "exposed_name": f"{name}_up", "reason": reason}
+            for name in names
+        ],
+        "blocked_tools": [
+            {"upstream_name": name, "classification": "physical_or_high_risk_action",
+             "reason": reason}
+            for name in names
+        ],
+        "held_tools": list(names),
+        "live_canary_required_tools": list(names),
+        "core_withheld_tools": {name: {"reason": reason} for name in names},
+        "readmission_withheld_tools": rows("readmission_withheld_tools"),
+        "quarantined_tools": rows("quarantined_tools"),
+        "missing_tools": rows("missing_tools"),
+        "unreviewed_tools": list(unregistered),
+        "optional_tools": {name: {"status": "admitted", "contract": reason} for name in names},
+        "optional_sibling_drift": rows("optional_sibling_drift"),
+        "automatic_readmission": {
+            "state": "withheld",
+            "readmission_withheld_tools": rows("automatic_readmission"),
+        },
+    }
+
+
+class GatewayFieldPagingTests(_Catalog106, _Crawler):
+    """R1-M2 on every pageable gateway field, with active filters."""
+
+    def setUp(self):
+        super().setUp()
+        self.synthetic = _synthetic_gateway([item["tool"] for item in self.dynamic])
+
+    def test_every_field_is_recovered_under_every_filter(self):
+        with mock.patch.object(
+            capabilities, "_UPSTREAM_READ_GATEWAY_SUMMARY", self.synthetic
+        ):
+            for filters in ({}, {"status": "delegated"},
+                            {"category": "upstream_read_gateway"},
+                            {"status": "delegated", "category": "upstream_read_gateway"},
+                            {"status": "native"}):
+                with self.subTest(**filters):
+                    source = build_capability_catalog(**filters)["upstream_read_gateway"]
+                    responses = self.crawl(
+                        {"detail_section": "upstream_read_gateway", **filters}, 16_000
+                    )
+                    rebuilt = self.gateway_rows(responses)
+                    self.assert_same(rebuilt, source)
+                    paged = {
+                        data["upstream_read_gateway"]["field"]
+                        for _arguments, data in responses[1:]
+                    }
+                    expected = {
+                        field for field in capabilities.GATEWAY_PAGE_FIELDS
+                        if capabilities._gateway_field_rows(source, field)
+                    }
+                    if filters.get("status") == "native":
+                        # Nothing selected: every field is empty and fits.
+                        self.assertEqual(expected, set())
+                        self.assertEqual(len(responses), 1)
+                    else:
+                        self.assertTrue(
+                            {"blocked_tools", "held_tools", "missing_tools",
+                             "quarantined_tools", "optional_tools",
+                             capabilities._READMISSION_FIELD} <= expected
+                        )
+                        self.assertLessEqual(paged, expected)
+                        for field in expected - paged:
+                            # A field not paged was returned whole.
+                            first = responses[0][1]["upstream_read_gateway"]
+                            self.assertNotIn(field, first["detail_omitted_fields"])
+
+    def test_nested_readmission_and_mapping_rows_keep_their_shape(self):
+        with mock.patch.object(
+            capabilities, "_UPSTREAM_READ_GATEWAY_SUMMARY", self.synthetic
+        ):
+            responses = self.crawl({"detail_section": "upstream_read_gateway"}, 16_000)
+            pages = {}
+            for _arguments, data in responses[1:]:
+                value = data["upstream_read_gateway"]
+                pages.setdefault(value["field"], []).append(value)
+            self.assertIn(capabilities._READMISSION_FIELD, pages)
+            for value in pages["optional_tools"]:
+                self.assertIsInstance(value["rows"], dict)
+                self.assertTrue(value["rows"])
+            for value in pages["blocked_tools"]:
+                for row in value["rows"]:
+                    self.assertEqual(set(row), {"upstream_name", "classification", "reason"})
+            for field, values in pages.items():
+                self.assertEqual(values[-1]["page"]["final"], True, field)
+                self.assertEqual(
+                    sum(len(value["rows"]) for value in values),
+                    values[0]["item_count"],
+                    field,
+                )
+
+
+class CursorTests(_Catalog106, _Crawler):
+    """A cursor is honored only for the catalog, section and filters it was
+    issued for; anything else is refused and the crawl restarts."""
+
+    def first_cursor(self, arguments=M1_ARGUMENTS, limit=12_000):
+        data = json.loads(_call_at(limit, **arguments))["data"]
+        [request] = data["size_limit"]["retrieval"]
+        return request["arguments"]
+
+    def refusal(self, reason, cause, limit=12_000, **arguments):
+        result = json.loads(_call_at(limit, **arguments))
+        self.assertFalse(result["success"], arguments)
+        self.assertEqual(result["error_code"], "invalid_request")
+        self.assertNotIn("data", result)
+        details = result["details"]
+        self.assertEqual(details["field"], "detail_cursor")
+        self.assertEqual(details["reason"], reason)
+        if cause is not None:
+            self.assertEqual(details["cause"], cause)
+        return details
+
+    def assert_restart_works(self, details, limit=12_000):
+        restart = details["restart"]
+        self.assertEqual(restart["tool"], "list_capabilities")
+        self.assertNotIn("detail_cursor", restart["arguments"])
+        self.assertTrue(json.loads(_call_at(limit, **restart["arguments"]))["success"])
+
+    def test_a_cursor_from_a_changed_catalog_is_stale(self):
+        arguments = self.first_cursor()
+        changes = (
+            ("_DYNAMIC_UPSTREAM_CAPABILITIES", self.dynamic[:-1]),
+            ("_UPSTREAM_READ_GATEWAY_SUMMARY", {**self.gateway, "status": "changed"}),
+        )
+        for name, value in changes:
+            with self.subTest(changed=name), mock.patch.object(capabilities, name, value):
+                details = self.refusal("stale_cursor", "catalog_changed", **arguments)
+                self.assertEqual(
+                    details["restart"]["arguments"],
+                    {k: v for k, v in arguments.items() if k != "detail_cursor"},
+                )
+                self.assert_restart_works(details)
+        # A changed Core admission projection changes the catalog too.
+        with self.assertRaises(InvalidRequestError) as raised:
+            build_capability_view(
+                **arguments, response_limit=12_000,
+                core_admission={"status": "current", "generation": 99, "tools": {}},
+            )
+        self.assertEqual(raised.exception.details["reason"], "stale_cursor")
+        # Unchanged, the same cursor still serves its page.
+        self.assertTrue(json.loads(_call_at(12_000, **arguments))["success"])
+
+    def test_a_cursor_with_different_filters_is_refused(self):
+        arguments = self.first_cursor()
+        cursor = arguments["detail_cursor"]
+        for filters in ({"status": "delegated"}, {"category": "upstream_read_gateway"},
+                        {"status": "native", "category": "upstream_read_gateway"}, {}):
+            with self.subTest(**filters):
+                details = self.refusal(
+                    "invalid_cursor", "filter_mismatch",
+                    detail_section="dynamic_upstream", detail_cursor=cursor, **filters,
+                )
+                self.assert_restart_works(details)
+
+    def test_a_cursor_for_another_section_is_refused(self):
+        arguments = self.first_cursor()
+        for section in ("beta_native", "upstream_read_gateway", "tools"):
+            with self.subTest(section=section):
+                self.refusal(
+                    "invalid_cursor", "section_mismatch",
+                    **{**arguments, "detail_section": section},
+                )
+
+    def test_a_malformed_cursor_is_refused(self):
+        cursor = self.first_cursor()["detail_cursor"]
+        body, digest = cursor[len("lc1."):].split(".")
+        flipped = ("B" if body[5] == "A" else "A")
+        valid = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+
+        def encoded(state):
+            return capabilities._encode_cursor(state)
+
+        malformed = {
+            "garbage": "not-a-cursor",
+            "prefix_only": "lc1.",
+            "wrong_prefix": "lc2." + cursor[4:],
+            "body_changed": f"lc1.{body[:5]}{flipped}{body[6:]}.{digest}",
+            "digest_changed": f"lc1.{body}.{'0' * len(digest)}",
+            "extra_part": cursor + ".x",
+            "not_base64": "lc1.***.abc",
+            "overlong": "lc1." + "A" * 3_000,
+            # Correctly signed, so only the length bound refuses it.
+            "overlong_signed": encoded({**valid, "ca": "x" * 3_000}),
+            "missing_key": encoded({k: v for k, v in valid.items() if k != "o"}),
+            "extra_key": encoded({**valid, "x": 1}),
+            "negative_offset": encoded({**valid, "o": -1}),
+            "string_offset": encoded({**valid, "o": "1"}),
+            "boolean_offset": encoded({**valid, "o": True}),
+            "unknown_section": encoded({**valid, "s": "planned"}),
+            "field_on_list_section": encoded({**valid, "f": "blocked_tools"}),
+            "not_an_object": capabilities._encode_cursor([1, 2]),
+        }
+        for label, value in malformed.items():
+            with self.subTest(label=label):
+                details = self.refusal(
+                    "invalid_cursor", "malformed",
+                    **{**M1_ARGUMENTS, "detail_cursor": value},
+                )
+                self.assert_restart_works(details)
+        gateway = self.first_cursor({"detail_section": "upstream_read_gateway"}, 16_000)
+        gateway_state = json.loads(base64.urlsafe_b64decode(
+            gateway["detail_cursor"][4:].split(".")[0] + "=="))
+        for label, state in (
+            ("no_field_on_gateway", {**gateway_state, "f": None}),
+            ("unknown_field", {**gateway_state, "f": "status"}),
+        ):
+            with self.subTest(label=label):
+                self.refusal(
+                    "invalid_cursor", "malformed", limit=16_000,
+                    detail_section="upstream_read_gateway", detail_cursor=encoded(state),
+                )
+
+    def test_a_forged_position_past_the_end_is_refused(self):
+        cursor = self.first_cursor()["detail_cursor"]
+        state = json.loads(base64.urlsafe_b64decode(cursor[4:].split(".")[0] + "=="))
+        for offset in (29, 10_000):
+            with self.subTest(offset=offset):
+                self.refusal(
+                    "invalid_cursor", "position_out_of_range",
+                    **{**M1_ARGUMENTS,
+                       "detail_cursor": capabilities._encode_cursor({**state, "o": offset})},
+                )
+
+    def test_a_cursor_requires_a_detail_section(self):
+        cursor = self.first_cursor()["detail_cursor"]
+        for arguments in ({}, {"status": "delegated"},
+                          {"status": "delegated", "category": "upstream_read_gateway"}):
+            with self.subTest(**arguments):
+                details = self.refusal(
+                    "cursor_requires_detail_section", None,
+                    detail_cursor=cursor, **arguments,
+                )
+                self.assertNotIn("restart", details)
+        with self.assertRaises(InvalidRequestError):
+            build_capability_view(detail_cursor="anything")
+
+    def test_an_unknown_section_is_refused_before_the_cursor(self):
+        result = json.loads(_call(detail_section="everything", detail_cursor="x"))
+        self.assertEqual(result["details"]["reason"], "unknown_section")
+
+    def test_an_empty_cursor_is_the_first_page(self):
+        for cursor in ("", "   "):
+            with self.subTest(cursor=cursor):
+                self.assertEqual(
+                    json.loads(_call_at(12_000, **M1_ARGUMENTS, detail_cursor=cursor))["data"]["dynamic_upstream"]["page"]["offset"],
+                    0,
+                )
+
+    def test_a_cursor_names_its_section_field_filters_position_and_catalog(self):
+        cursor = self.first_cursor()["detail_cursor"]
+        state = json.loads(base64.urlsafe_b64decode(cursor[4:].split(".")[0] + "=="))
+        self.assertEqual(
+            {k: state[k] for k in ("s", "f", "st", "ca")},
+            {"s": "dynamic_upstream", "f": None, "st": "delegated",
+             "ca": "upstream_read_gateway"},
+        )
+        self.assertGreater(state["o"], 0)
+        self.assertEqual(state["fp"], capabilities._catalog_fingerprint(None))
 
 
 class GatewayProjectionTests(unittest.TestCase):

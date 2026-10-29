@@ -15,23 +15,37 @@ Mutation classes:
 - ``P*``: the gateway per-tool projection (narrowing, summary, totals);
 - ``S*``: the section selector and the summary view;
 - ``B*``: the response budget and the summary/filtered size guard;
-- ``O*``: an oversize section's truthful record and retrieval path;
+- ``O*``: an oversize section's bounded page and its next-page retrieval;
+- ``G*``: the gateway's per-field pages (each omitted field by its own
+  identity, never a substitute content set) and its size fallbacks;
+- ``K*``: the ``detail_cursor`` encoding and its refusals (stale, malformed,
+  section, filter or position mismatch, cursor without a section);
 - ``E*``: the tool entry point.
 
-Results (Python 3.12.14, six modules, baseline 303 tests OK):
-- ``run1.log``: the first 48 mutants against the first candidate: 36
-  killed, 12 survived. C3 (selection also naming ``upstream_tool``) was
-  equivalent: no catalog entry carries that key, so the dead branch was
-  removed and C3 redefined. P3, P6 and P7 (gateway rows of shapes the
-  live fixture lacks) gained ``GatewayProjectionTests``. B5-B8, O8, O10,
-  O11 and O14 gained ``SizeGuardTests``, whose limit sweep also found a
-  real defect: a requested oversize section was sized before its
-  ``sections`` entry was marked ``omitted_size_limit`` (14 characters
-  over). The entry is now marked before sizing (O15 reverts that).
-- ``run2-survivors.log``: those 12 re-run with ``--only`` (a partial,
-  non-evidence run): all killed.
-- ``run3.log`` / ``results.json``: the final full run on the final code:
-  49 mutants, 49 killed, none survived, none by an import or syntax error.
+Results (Python 3.12.14, six modules):
+- Round 0 (the first, ``no_narrower_filter`` candidate; baseline 303 tests
+  OK), kept as history in ``round0-*``: ``round0-run1.log``, 48 mutants, 36
+  killed and 12 survived. C3 was equivalent (dead ``upstream_tool`` branch
+  removed, C3 redefined); P3, P6, P7, B5-B8, O8, O10, O11 and O14 gained
+  tests, and the limit sweep found a requested oversize section 14
+  characters over (now marked before sizing; O15 reverts that).
+  ``round0-run2-survivors.log`` re-ran those 12 (partial): all killed.
+  ``round0-run3.log`` / ``round0-results.json``: 49 of 49 killed.
+- Round 1 (the ``detail_cursor`` paging corrections, R1-M1 and R1-M2; the
+  round-0 classes kept and re-pointed at the paging code, plus ``G*`` and
+  ``K*``; 79 mutants): ``round1-run1.log`` / ``round1-run1-results.json``,
+  77 killed and 2 survived. G10 was equivalent (a second field-drop loop
+  in the gateway fallback was dead: the loop before it had already dropped
+  every nonempty field), so the dead loop was removed and G10 redefined
+  (the fallback without its field cursors). K6 (the cursor length bound
+  not checked) gained an over-long, correctly signed cursor case.
+- ``run-final.log`` / ``results.json``: the final full run on the final
+  code, baseline 322 tests OK: 79 mutants, 79 killed, none survived, none
+  by an import or syntax error.
+
+Every run used a disposable copy of the tracked tree under ``.artifacts/``;
+no fragment was applied to the task worktree, whose status and diff hashes
+were recorded before and verified unchanged after each run.
 
 Usage:
     systemd-run --user --unit=hamcp247-mut -p MemoryMax=3G -p OOMPolicy=continue \\
@@ -64,7 +78,9 @@ C = "a filter no longer narrows a section it applies to"
 P = "the gateway per-tool projection weakened"
 S = "the section selector or summary view weakened"
 B = "the response budget or size guard weakened"
-O = "an oversize section reported untruthfully or without retrieval"
+O = "an oversize section not paged by its actual rows"
+G = "an oversize gateway field not paged by its own identity"
+K = "a cursor accepted or issued untruthfully"
 EP = "the tool entry point"
 
 MUTATIONS = [
@@ -129,68 +145,133 @@ MUTATIONS = [
       (CAP, 'return len(json.dumps({"data": value}, separators=(",", ":"), default=str))',
        'return len(json.dumps({"data": value}, indent=2, default=str))')),
     m("B3-size-statement-not-counted", B,
-      (CAP, "    if _rendered_chars(data) > budget:\n",
-       '    if _rendered_chars({k: v for k, v in data.items() if k != "size_limit"}) > budget:\n'),
-      (CAP, "                if _rendered_chars(data) <= budget:\n",
-       '                if _rendered_chars({k: v for k, v in data.items() if k != "size_limit"}) <= budget:\n')),
+      (CAP, "    elif _rendered_chars(data) > budget:\n",
+       '    elif _rendered_chars({k: v for k, v in data.items() if k != "size_limit"}) > budget:\n'),
+      (CAP, "            if _rendered_chars(data) <= budget:\n",
+       '            if _rendered_chars({k: v for k, v in data.items() if k != "size_limit"}) <= budget:\n')),
     m("B4-no-size-guard", B,
-      (CAP, "    if _rendered_chars(data) > budget:\n", "    if False:\n")),
+      (CAP, "    elif _rendered_chars(data) > budget:\n", "    elif False:\n")),
     m("B5-tool-lists-dropped-first", B,
       (CAP, "for name in (n for n in _DROP_ORDER if n in data):", "for name in (n for n in reversed(_DROP_ORDER) if n in data):")),
     m("B6-drops-past-fit", B,
-      (CAP, "                if _rendered_chars(data) <= budget:\n                    break\n",
-       "                if False:\n                    break\n")),
+      (CAP, "            if _rendered_chars(data) <= budget:\n                break\n",
+       "            if False:\n                break\n")),
     m("B7-tool-index-retrieval-incomplete", B,
-      (CAP, '                    ("tools", "beta_native", "dynamic_upstream")\n                    if name == "tool_index"\n',
-       '                    ("tools",)\n                    if name == "tool_index"\n')),
+      (CAP, '                ("tools", "beta_native", "dynamic_upstream")\n                if name == "tool_index"\n',
+       '                ("tools",)\n                if name == "tool_index"\n')),
     m("B8-dropped-section-not-marked", B,
-      (CAP, '                    data["sections"][name]["included"] = "omitted_size_limit"\n', "                    pass\n")),
+      (CAP, '                data["sections"][name]["included"] = "omitted_size_limit"\n', "                pass\n")),
     m("B9-dropped-section-no-retrieval", B,
-      (CAP, '                    retrieval.append(_request(data["sections"][part]["request"]))\n', "                    pass\n")),
-    # -- O: an oversize section's record and retrieval path
-    m("O1-section-not-marked-omitted", O,
-      (CAP, '            data["sections"][section]["included"] = "omitted_size_limit"\n', "            pass\n")),
-    m("O2-section-retrieval-not-in-size-limit", O,
-      (CAP, '            retrieval.extend(data[section]["retrieval"])\n', "            pass\n")),
-    m("O3-partition-ignores-active-category", O,
-      (CAP, '"category" if "category" not in active', '"category" if True')),
-    m("O4-unpartitioned-rows-lost", O,
-      (CAP, "            unpartitioned.append(item)\n", "            pass\n")),
-    m("O5-unpartitioned-rows-kept-oversize", O,
-      (CAP, '    if not fits(record):\n        del record["unpartitioned_items"]\n',
-       '    if False:\n        del record["unpartitioned_items"]\n')),
-    m("O6-no-narrower-reason-missing", O,
-      (CAP, '        record["retrieval_unavailable_reason"] = "no_narrower_filter"\n', "        pass\n")),
-    m("O7-gateway-fields-not-dropped", O,
+      (CAP, '                retrieval.append(_request(data["sections"][part]["request"]))\n', "                pass\n")),
+    # -- O: an oversize section is paged by its actual rows
+    m("O1-page-not-marked-paged", O,
+      (CAP, '    serve(page, "paged")\n', '    serve(page, "full")\n')),
+    m("O2-page-retrieval-not-in-size-limit", O,
+      (CAP, '            data["size_limit"]["retrieval"].extend(value["retrieval"])\n', "            pass\n")),
+    m("O3-page-not-in-omitted-sections", O,
+      (CAP, '            data["size_limit"]["omitted_sections"].append(section)\n', "            pass\n")),
+    m("O4-final-page-carries-retrieval", O,
+      (CAP, "[] if next_offset is None else [next_request(field, next_offset)]",
+       "[next_request(field, next_offset or 0)]")),
+    m("O5-page-skips-a-row", O,
+      (CAP, "            None if final else offset + count,\n", "            None if final else offset + count + 1,\n")),
+    m("O6-page-repeats-a-row", O,
+      (CAP, "            None if final else offset + count,\n", "            None if final else offset + count - 1,\n")),
+    m("O7-final-page-not-tried-first", O,
+      (CAP, "    if fits(candidate):\n        return candidate\n", "    if False:\n        return candidate\n")),
+    m("O8-bisection-takes-one-row", O,
+      (CAP, "    low, high = 1, remaining - 1\n", "    low, high = 1, 1\n")),
+    m("O9-page-size-not-checked", O,
+      (CAP, 'lambda value: fits(value, "paged")', "lambda value: True")),
+    m("O10-page-ignores-offset", O,
+      (CAP, "        chosen = items[offset:offset + count]\n", "        chosen = items[:count]\n")),
+    m("O11-mapping-paged-as-list", O,
+      (CAP, "            dict(chosen) if isinstance(rows, dict) else chosen,\n", "            chosen,\n")),
+    m("O12-fits-ignores-size-statement", O,
+      (CAP, '                    "retrieval": pending,\n', '                    "retrieval": [],\n')),
+    m("O13-page-sized-before-label", O,
+      (CAP, 'section: {**data["sections"][section], "included": included},',
+       'section: {**data["sections"][section], "included": "full"},')),
+    m("O14-row-too-large-reason-missing", O,
+      (CAP, '            "reason": "page_row_exceeds_response_limit",\n', "")),
+    m("O15-first-page-not-paged", O,
+      (CAP, 'if view == "section" and (state is not None or _rendered_chars(data) > budget):',
+       'if view == "section" and state is not None:')),
+    m("O16-section-always-paged", O,
+      (CAP, 'if view == "section" and (state is not None or _rendered_chars(data) > budget):',
+       'if view == "section":')),
+    # -- G: an oversize gateway pages each omitted field by its own identity
+    m("G1-gateway-field-not-dropped", G,
       (CAP, "            omitted[field] = len(value.pop(field))\n", "            omitted[field] = len(value[field])\n")),
-    m("O8-gateway-nested-readmission-not-dropped", O,
-      (CAP, "        if not fits(value) and isinstance(readmission, dict) and isinstance(\n",
-       "        if False and isinstance(readmission, dict) and isinstance(\n")),
-    m("O9-gateway-returned-oversize", O,
-      (CAP, "        if fits(value):\n            return value\n", "        if True:\n            return value\n")),
-    m("O10-gateway-status-retrieval-loops", O,
-      (CAP, 'else {"detail_section": "dynamic_upstream", **active}', 'else {"detail_section": section, **active}')),
-    m("O11-gateway-drops-smallest-first", O,
-      (CAP, "            reverse=True,\n        ):\n            if fits(value):\n",
-       "            reverse=False,\n        ):\n            if fits(value):\n")),
-    m("O12-matrix-rows-unclassified", O,
-      (CAP, '    if section != "provider_matrix":\n', "    if True:\n")),
-    m("O13-oversize-detail-flag-missing", O,
-      (CAP, '        value["detail_complete"] = False\n', "")),
-    m("O14-fits-ignores-size-statement", O,
-      (CAP, '                            "retrieval": candidate.get("retrieval", []),\n',
-       '                            "retrieval": [],\n')),
-    m("O15-section-marked-after-sizing", O,
-      (CAP, '            # Marked before sizing, so every candidate is sized as served.\n'
-            '            data["sections"][section]["included"] = "omitted_size_limit"\n', ""),
-      (CAP, "            data[section] = _oversize_section(section, data[section], active, fits)\n",
-       "            data[section] = _oversize_section(section, data[section], active, fits)\n"
-       '            data["sections"][section]["included"] = "omitted_size_limit"\n')),
+    m("G2-readmission-not-dropped", G,
+      (CAP, '            omitted[field] = len(readmission.pop("readmission_withheld_tools"))\n',
+       '            omitted[field] = len(readmission["readmission_withheld_tools"])\n')),
+    m("G3-readmission-never-paged", G,
+      (CAP, "    if _gateway_field_rows(value, _READMISSION_FIELD):\n        candidates.append(_READMISSION_FIELD)\n", "")),
+    m("G4-drops-smallest-first", G,
+      (CAP, "candidates.sort(key=lambda field: _rendered_chars(value[field]), reverse=True)",
+       "candidates.sort(key=lambda field: _rendered_chars(value[field]), reverse=False)")),
+    m("G5-drops-past-fit", G,
+      (CAP, '        if fits(value, "partial"):\n            break\n', "        if False:\n            break\n")),
+    m("G6-gateway-returned-oversize", G,
+      (CAP, '    if fits(value, "partial"):\n        return value, "partial"\n', '    if True:\n        return value, "partial"\n')),
+    m("G7-empty-field-dropped", G,
+      (CAP, "        if isinstance(value.get(field), (list, dict)) and value[field]\n",
+       "        if isinstance(value.get(field), (list, dict))\n")),
+    m("G8-field-cursor-pages-another-field", G,
+      (CAP, "        _gateway_field_rows(data[section], field)\n",
+       '        _gateway_field_rows(data[section], "exposed_tools")\n')),
+    m("G9-field-cursor-pages-unfiltered-rows", G,
+      (CAP, "        _gateway_field_rows(data[section], field)\n",
+       "        _gateway_field_rows(_UPSTREAM_READ_GATEWAY_SUMMARY, field)\n")),
+    m("G10-fallback-without-field-cursors", G,
+      (CAP, '        "retrieval": pending,\n    }\n', '        "retrieval": [],\n    }\n')),
+    m("G11-detail-flag-missing", G,
+      (CAP, '    value["detail_complete"] = False\n', "")),
+    m("G12-fallback-returned-oversize", G,
+      (CAP, '    if not fits(record, "omitted_size_limit"):\n        # The limit',
+       '    if False:\n        # The limit')),
+    # -- K: the cursor and its refusals
+    m("K1-stale-cursor-accepted", K,
+      (CAP, '        if state["fp"] != fingerprint:\n', "        if False:\n")),
+    m("K2-filter-mismatch-accepted", K,
+      (CAP, '        if (state["st"], state["ca"]) != (\n', '        if False and (state["st"], state["ca"]) != (\n')),
+    m("K3-section-mismatch-accepted", K,
+      (CAP, '        if state["s"] != section:\n', "        if False:\n")),
+    m("K4-digest-not-checked", K,
+      (CAP, "        if hashlib.sha256(payload).hexdigest()[:12] != digest:\n", "        if False:\n")),
+    m("K5-prefix-not-checked", K,
+      (CAP, " or not cursor.startswith(_CURSOR_PREFIX):", ":")),
+    m("K6-length-not-checked", K,
+      (CAP, "if len(cursor) > _CURSOR_MAX_CHARS or ", "if ")),
+    m("K7-negative-offset-accepted", K,
+      (CAP, '            or state["o"] < 0\n', "")),
+    m("K8-bool-offset-accepted", K,
+      (CAP, '            or type(state["o"]) is not int\n', '            or not isinstance(state["o"], int)\n')),
+    m("K9-extra-keys-accepted", K,
+      (CAP, "set(state) != _CURSOR_KEYS", "not set(state) >= _CURSOR_KEYS")),
+    m("K10-out-of-range-accepted", K,
+      (CAP, "    if state is not None and offset >= count:\n", "    if False:\n")),
+    m("K11-fingerprint-ignores-core-admission", K,
+      (CAP, "        build_capability_catalog(core_admission=core_admission),\n        sort_keys=True,\n",
+       "        build_capability_catalog(),\n        sort_keys=True,\n")),
+    m("K12-cursor-without-section-accepted", K,
+      (CAP, "    if cursor and not section:\n", "    if False:\n")),
+    m("K13-next-cursor-drops-filter", K,
+      (CAP, '                        "st": active.get("status", ""),\n', '                        "st": "",\n')),
+    m("K14-field-section-pairing-unchecked", K,
+      (CAP, '            or (state["f"] is None) != (state["s"] != "upstream_read_gateway")\n', "")),
+    m("K15-cursor-not-stripped", K,
+      (CAP, "    cursor = detail_cursor.strip()\n", "    cursor = detail_cursor\n")),
+    m("K16-unknown-field-accepted", K,
+      (CAP, '            or (state["f"] is not None and state["f"] not in GATEWAY_PAGE_FIELDS)\n', "")),
     # -- E: the tool entry point
     m("E1-cap-not-passed-to-view", EP,
       (COMPAT, "            response_limit=SETTINGS.response_size_limit,\n        )\n", "        )\n")),
     m("E2-section-not-forwarded", EP,
       (COMPAT, "            detail_section=detail_section,\n", "")),
+    m("E3-cursor-not-forwarded", EP,
+      (COMPAT, "            detail_cursor=detail_cursor,\n", "")),
 ]
 
 base.MODULES = ("test_hamcp247_list_capabilities_bounded", "test_hamcp181_catalog_core_admission",

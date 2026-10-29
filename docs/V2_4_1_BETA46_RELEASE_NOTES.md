@@ -4,7 +4,7 @@ Engineering 2.4.1-beta.46 makes `list_capabilities` return usable data for
 every documented call within the response cap (HAMCP-247). It follows
 2.4.1-beta.45 and includes it. There is no dependency, add-on configuration,
 tool, routing, provider, governance, Core command or signed registry change.
-The only input change is one optional, additive `list_capabilities` argument.
+The only input change is two optional, additive `list_capabilities` arguments.
 
 Acceptance: [`V2_4_1_BETA46_ACCEPTANCE.md`](V2_4_1_BETA46_ACCEPTANCE.md).
 
@@ -59,13 +59,24 @@ The tool now bounds its own data before the envelope sees it. The global
   (`budget_chars`, `omitted_sections`, `retrieval`). A summary or filtered
   view that would exceed the budget drops whole secondary sections first
   (provider matrix, gateway detail, then the tool lists) and lists the calls
-  that return each. A requested section that cannot fit returns a record
-  with `omitted: true`, `reason: "section_exceeds_response_limit"`, its
-  size, item names and narrower calls (by category, else by status); rows no
-  narrower call returns are carried inline. An oversize gateway drops its
-  largest per-tool fields first, names them in `detail_omitted_fields` and
-  keeps its identity. A class with both filters set has no narrower call and
-  says `retrieval_unavailable_reason: "no_narrower_filter"`.
+  that return each. A requested section that cannot fit is returned in pages
+  of its actual rows, in catalog order (`included: "paged"`): each page
+  states `item_count` and `page` (`offset`, `row_count`, `next_offset`,
+  `final`), has at least one row, and all but the last carry one retrieval
+  request for the next page with the same `detail_section` and filters plus
+  `detail_cursor`. An oversize gateway (`included: "partial"`) keeps its
+  identity and count fields, drops its largest per-tool fields first, names
+  them in `detail_omitted_fields`, and gives each the request that pages
+  that field's own rows (blocked, held, missing, quarantined, optional and
+  the nested readmission rows, reason fields included); no other content
+  set is substituted.
+- **`detail_cursor` (new, optional).** The opaque cursor from such a
+  request. It binds the section, gateway field, filters, position and
+  catalog fingerprint, and is valid only with `detail_section` and the same
+  filters. A cursor without `detail_section` is refused
+  (`cursor_requires_detail_section`); a malformed, mismatched or
+  out-of-range one as `invalid_cursor`; one from a catalog that has since
+  changed as `stale_cursor`. Each refusal carries a `restart` request.
 
 The budget is the response limit less a 4,000-character envelope reserve,
 measured on the compact rendering the envelope serves when the indented one
@@ -73,9 +84,10 @@ is over the limit.
 
 ### Before and after, live-shaped (offline)
 
-Full tool response length in characters. The fixture is the real upstream
-read gateway driven with the ha-mcp 8.6.0 capture (105 registered tools;
-live had 106). The beta.45 columns run the beta.45 projection on the same
+Full tool response length in characters. The fixture is the 105-tool
+synthetic live-shaped catalog: the real upstream read gateway driven with
+the stock ha-mcp 8.6.0 capture (77 native plus 28 upstream; live had 106).
+Every section fits whole at the real cap, so no row below is paged. The beta.45 columns run the beta.45 projection on the same
 fixture. "No data" means the envelope dropped `/data` with empty
 retrieval.
 
@@ -98,10 +110,10 @@ retrieval.
 
 ## Compatibility
 
-- **Input (additive).** `list_capabilities` gains the optional string
-  `detail_section` (default `""`). Every existing call stays valid. Its
-  description is rewritten for the summary, the filters and the section
-  selector.
+- **Input (additive).** `list_capabilities` gains the optional strings
+  `detail_section` and `detail_cursor` (default `""`). Every existing call
+  stays valid. Its description is rewritten for the summary, the filters,
+  the section selector and paging.
 - **Output.**
   - Filtered calls keep the established catalog keys (`count`, `filters`,
     `tools`, `planned`, `beta_native`, `core_admission`,
@@ -128,4 +140,4 @@ change: `capabilities.py` and `tools/compatibility.py` (the
 ## Rollback
 
 Reinstall the 2.4.1-beta.45 artifact. Nothing is stored. Calls that use
-`detail_section` are not supported there.
+`detail_section` or `detail_cursor` are not supported there.

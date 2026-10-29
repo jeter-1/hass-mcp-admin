@@ -21,6 +21,11 @@ the envelope's truncation mechanism are unchanged.
 - Every response carries `size_limit`. The tool sizes its data against the
   limit less a 4,000-character envelope reserve; anything it omits is named
   with a request that returns it, never an empty success.
+- New optional `detail_cursor` pages a section too large for the limit: its
+  actual rows in catalog order, each page but the last carrying the request
+  for the next (same section and filters). An oversize gateway pages each
+  omitted per-tool field by its own identity. Stale, malformed or
+  mismatched cursors are refused (`stale_cursor`, `invalid_cursor`).
 - Additive input only; filtered responses keep their established keys. No
   tool, routing, provider, governance or stable-v1 change.
 

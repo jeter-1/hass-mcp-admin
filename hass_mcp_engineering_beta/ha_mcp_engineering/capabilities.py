@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import json
 
 from .power.contracts import POWER_CONTRACTS, POWER_SEMANTIC_CONTRACTS
@@ -1185,7 +1188,13 @@ GATEWAY_DETAIL_FIELDS: tuple[str, ...] = (
     "optional_tools",
     "optional_sibling_drift",
 )
+_READMISSION_FIELD = "automatic_readmission.readmission_withheld_tools"
+# Every gateway field a ``detail_cursor`` pages, each by its own identity.
+GATEWAY_PAGE_FIELDS: tuple[str, ...] = (*GATEWAY_DETAIL_FIELDS, _READMISSION_FIELD)
 _GATEWAY_ROW_NAME_KEYS = ("tool", "upstream_name", "exposed_name")
+_CURSOR_PREFIX = "lc1."
+_CURSOR_MAX_CHARS = 2_048
+_CURSOR_KEYS = frozenset({"s", "f", "st", "ca", "o", "fp"})
 # Room the success envelope needs around ``data`` (operation, summary,
 # timing, request id and metadata are each well under a kilobyte).
 CATALOG_ENVELOPE_RESERVE_CHARS = 4_000
@@ -1345,21 +1354,6 @@ def build_capability_catalog(
     }
 
 
-def _section_classification(
-    section: str, item: dict[str, Any]
-) -> tuple[Any, Any]:
-    if section != "provider_matrix":
-        return item.get("status"), item.get("category")
-    for entry in (
-        *CAPABILITIES,
-        *BETA_NATIVE_CAPABILITIES,
-        *_DYNAMIC_UPSTREAM_CAPABILITIES,
-    ):
-        if entry["tool"] == item.get("tool"):
-            return entry.get("status"), entry.get("category")
-    return None, None
-
-
 def _rendered_chars(value: Any) -> int:
     # The envelope serves its compact rendering whenever the indented one is
     # over the limit, so the compact size decides whether ``data`` fits.
@@ -1370,92 +1364,119 @@ def _request(arguments: dict[str, str]) -> dict[str, Any]:
     return {"tool": "list_capabilities", "arguments": arguments}
 
 
-def _oversize_section(
-    section: str, value: Any, active: dict[str, str], fits: Any
-) -> Any:
-    """Report a requested section that cannot fit, with narrower calls.
+def _catalog_fingerprint(core_admission: dict[str, Any] | None) -> str:
+    """Fingerprint of the whole unfiltered catalog a cursor pages through."""
 
-    ``fits(candidate)`` says whether the response fits with ``candidate`` in
-    place of the section.
+    text = json.dumps(
+        build_capability_catalog(core_admission=core_admission),
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _encode_cursor(state: dict[str, Any]) -> str:
+    payload = json.dumps(state, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    body = base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+    return f"{_CURSOR_PREFIX}{body}.{hashlib.sha256(payload).hexdigest()[:12]}"
+
+
+def _cursor_error(reason: str, cause: str, restart: dict[str, str]) -> InvalidRequestError:
+    return InvalidRequestError(
+        "The list_capabilities detail_cursor is stale; restart the crawl."
+        if reason == "stale_cursor"
+        else "The list_capabilities detail_cursor is not valid for this call.",
+        details={
+            "field": "detail_cursor",
+            "reason": reason,
+            "cause": cause,
+            "restart": _request(restart),
+        },
+    )
+
+
+def _decode_cursor(cursor: str, restart: dict[str, str]) -> dict[str, Any]:
+    """The cursor's state, or ``invalid_cursor`` when it is not one we issued."""
+
+    try:
+        if len(cursor) > _CURSOR_MAX_CHARS or not cursor.startswith(_CURSOR_PREFIX):
+            raise ValueError
+        body, digest = cursor[len(_CURSOR_PREFIX):].split(".")
+        payload = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+        if hashlib.sha256(payload).hexdigest()[:12] != digest:
+            raise ValueError
+        state = json.loads(payload)
+        if not isinstance(state, dict) or set(state) != _CURSOR_KEYS:
+            raise ValueError
+        if (
+            state["s"] not in CATALOG_SECTIONS
+            or (state["f"] is None) != (state["s"] != "upstream_read_gateway")
+            or (state["f"] is not None and state["f"] not in GATEWAY_PAGE_FIELDS)
+            or not all(isinstance(state[key], str) for key in ("st", "ca", "fp"))
+            or type(state["o"]) is not int
+            or state["o"] < 0
+        ):
+            raise ValueError
+    except (ValueError, TypeError, binascii.Error, UnicodeDecodeError):
+        raise _cursor_error("invalid_cursor", "malformed", restart) from None
+    return state
+
+
+def _gateway_field_rows(gateway: dict[str, Any], field: str) -> Any:
+    """The rows of one gateway page field: a list or a mapping, or None."""
+
+    if field == _READMISSION_FIELD:
+        readmission = gateway.get("automatic_readmission")
+        if not isinstance(readmission, dict):
+            return None
+        rows = readmission.get("readmission_withheld_tools")
+        return rows if isinstance(rows, list) else None
+    rows = gateway.get(field)
+    return rows if isinstance(rows, (list, dict)) else None
+
+
+def _page(
+    rows: Any,
+    offset: int,
+    make: Any,
+    fits: Any,
+) -> dict[str, Any] | None:
+    """The largest page of ``rows`` from ``offset`` that fits, or None.
+
+    ``make(page_rows, next_offset)`` builds the page record; ``next_offset``
+    None marks the final page.  Every page carries at least one row, so a
+    crawl always progresses and ends.
     """
 
-    chars = _rendered_chars(value)
-    if isinstance(value, dict):
-        # The gateway block: keep identity, version and count fields and drop
-        # the largest per-tool detail fields until it fits.
-        value = dict(value)
-        omitted: dict[str, int] = {}
-        value["detail_complete"] = False
-        value["detail_omitted_fields"] = omitted
-        value["section_chars"] = chars
-        value["retrieval"] = [
-            _request(
-                {"detail_section": section, **active, "status": "delegated"}
-                if "status" not in active
-                else {"detail_section": "dynamic_upstream", **active}
-            )
-        ]
-        for field in sorted(
-            (f for f in GATEWAY_DETAIL_FIELDS if f in value),
-            key=lambda f: _rendered_chars(value[f]),
-            reverse=True,
-        ):
-            if fits(value):
-                break
-            omitted[field] = len(value.pop(field))
-        readmission = value.get("automatic_readmission")
-        if not fits(value) and isinstance(readmission, dict) and isinstance(
-            readmission.get("readmission_withheld_tools"), list
-        ):
-            readmission = dict(readmission)
-            omitted["automatic_readmission.readmission_withheld_tools"] = len(
-                readmission.pop("readmission_withheld_tools")
-            )
-            value["automatic_readmission"] = readmission
-        if fits(value):
-            return value
-        # Even the identity and count fields cannot fit.
-        return {
-            "omitted": True,
-            "reason": "section_exceeds_response_limit",
-            "section_chars": chars,
-            "detail_total_counts": value.get("detail_total_counts", {}),
-            "retrieval": value["retrieval"],
-        }
-    key = (
-        "category" if "category" not in active
-        else "status" if "status" not in active
-        else None
-    )
-    values: set[str] = set()
-    unpartitioned: list[dict[str, Any]] = []
-    for item in value:
-        found = _section_classification(section, item)[key == "category"]
-        if key is not None and isinstance(found, str):
-            values.add(found)
+    items = list(rows.items()) if isinstance(rows, dict) else list(rows)
+
+    def build(count: int, final: bool) -> dict[str, Any]:
+        chosen = items[offset:offset + count]
+        return make(
+            dict(chosen) if isinstance(rows, dict) else chosen,
+            None if final else offset + count,
+        )
+
+    remaining = len(items) - offset
+    if remaining < 1:
+        return None
+    candidate = build(remaining, True)
+    if fits(candidate):
+        return candidate
+    # Below the final page a page only grows with its row count (the next
+    # cursor's offset grows with it), so the largest fitting count is found
+    # by bisection.
+    if remaining == 1 or not fits(build(1, False)):
+        return None
+    low, high = 1, remaining - 1
+    while low < high:
+        middle = (low + high + 1) // 2
+        if fits(build(middle, False)):
+            low = middle
         else:
-            unpartitioned.append(item)
-    record = {
-        "omitted": True,
-        "reason": "section_exceeds_response_limit",
-        "section_chars": chars,
-        "item_count": len(value),
-        "item_names": [item.get("tool") for item in value],
-        "retrieval": [
-            _request({"detail_section": section, **active, key: found})
-            for found in sorted(values)
-        ],
-        "unpartitioned_item_count": len(unpartitioned),
-        # Rows no narrower call returns (a matrix row for a tool that is not
-        # registered here) are carried inline when they fit.
-        "unpartitioned_items": unpartitioned,
-    }
-    if not fits(record):
-        del record["unpartitioned_items"]
-    if not record["retrieval"]:
-        # Both filters are already set: no narrower call exists.
-        record["retrieval_unavailable_reason"] = "no_narrower_filter"
-    return record
+            high = middle - 1
+    return build(low, False)
 
 
 def build_capability_view(
@@ -1463,6 +1484,7 @@ def build_capability_view(
     status: str = "",
     category: str = "",
     detail_section: str = "",
+    detail_cursor: str = "",
     core_admission: dict[str, Any] | None = None,
     response_limit: int = 60_000,
 ) -> dict[str, Any]:
@@ -1471,9 +1493,11 @@ def build_capability_view(
     No filter and no section returns a summary; a status or category filter
     returns every section narrowed by it in the established catalog shape;
     ``detail_section`` returns that one section in full, filters still
-    applying.  The result stays under ``response_limit``: a section that
-    cannot fit is named with the calls that retrieve it, never dropped
-    silently.
+    applying.  The result stays under ``response_limit``.  A summary or
+    filtered view drops whole sections and names the call that returns each.
+    A requested section that cannot fit is served in pages of its actual
+    rows (a gateway by each omitted field) with a ``detail_cursor`` request
+    for the next page; the final page carries none.
     """
 
     section = detail_section.strip().lower()
@@ -1486,10 +1510,21 @@ def build_capability_view(
                 "allowed": list(CATALOG_SECTIONS),
             },
         )
+    cursor = detail_cursor.strip()
+    if cursor and not section:
+        raise InvalidRequestError(
+            "list_capabilities detail_cursor is valid only with detail_section.",
+            details={
+                "field": "detail_cursor",
+                "reason": "cursor_requires_detail_section",
+            },
+        )
     catalog = build_capability_catalog(
         status=status, category=category, core_admission=core_admission
     )
     active = {key: value for key, value in catalog["filters"].items() if value}
+    restart = {"detail_section": section, **active}
+    state = _decode_cursor(cursor, restart) if cursor else None
     view = "section" if section else "filtered" if active else "summary"
     data = dict(catalog)
     data["filters"] = {**catalog["filters"], "detail_section": section or None}
@@ -1559,41 +1594,204 @@ def build_capability_view(
         "omitted_sections": omitted,
         "retrieval": retrieval,
     }
-    if _rendered_chars(data) > budget:
-        if view == "section":
-            # Marked before sizing, so every candidate is sized as served.
-            data["sections"][section]["included"] = "omitted_size_limit"
-
-            def fits(candidate: Any) -> bool:
-                return _rendered_chars(
-                    {
-                        **data,
-                        section: candidate,
-                        "size_limit": {
-                            **data["size_limit"],
-                            "omitted_sections": [section],
-                            "retrieval": candidate.get("retrieval", []),
-                        },
-                    }
-                ) <= budget
-
-            data[section] = _oversize_section(section, data[section], active, fits)
-            omitted.append(section)
-            retrieval.extend(data[section]["retrieval"])
-        else:
-            # Secondary detail goes first; the tool lists are kept longest.
-            for name in (n for n in _DROP_ORDER if n in data):
-                if _rendered_chars(data) <= budget:
-                    break
-                del data[name]
-                omitted.append(name)
-                if name in data["sections"]:
-                    data["sections"][name]["included"] = "omitted_size_limit"
-                # The tool index is rebuilt from the three tool-list sections.
-                for part in (
-                    ("tools", "beta_native", "dynamic_upstream")
-                    if name == "tool_index"
-                    else (name,)
-                ):
-                    retrieval.append(_request(data["sections"][part]["request"]))
+    if view == "section" and (state is not None or _rendered_chars(data) > budget):
+        _serve_section_page(data, section, active, state, core_admission, budget)
+    elif _rendered_chars(data) > budget:
+        # Secondary detail goes first; the tool lists are kept longest.
+        for name in (n for n in _DROP_ORDER if n in data):
+            if _rendered_chars(data) <= budget:
+                break
+            del data[name]
+            omitted.append(name)
+            if name in data["sections"]:
+                data["sections"][name]["included"] = "omitted_size_limit"
+            # The tool index is rebuilt from the three tool-list sections.
+            for part in (
+                ("tools", "beta_native", "dynamic_upstream")
+                if name == "tool_index"
+                else (name,)
+            ):
+                retrieval.append(_request(data["sections"][part]["request"]))
     return data
+
+
+def _serve_section_page(
+    data: dict[str, Any],
+    section: str,
+    active: dict[str, str],
+    state: dict[str, Any] | None,
+    core_admission: dict[str, Any] | None,
+    budget: int,
+) -> None:
+    """Replace ``data[section]`` with the page (or gateway part) that fits.
+
+    ``state`` is the decoded cursor of a page request, or None for the
+    section's first response.
+    """
+
+    fingerprint = _catalog_fingerprint(core_admission)
+    restart = {"detail_section": section, **active}
+    if state is not None:
+        if state["s"] != section:
+            raise _cursor_error("invalid_cursor", "section_mismatch", restart)
+        if (state["st"], state["ca"]) != (
+            active.get("status", ""), active.get("category", "")
+        ):
+            raise _cursor_error("invalid_cursor", "filter_mismatch", restart)
+        if state["fp"] != fingerprint:
+            raise _cursor_error("stale_cursor", "catalog_changed", restart)
+
+    def next_request(field: str | None, offset: int) -> dict[str, Any]:
+        return _request(
+            {
+                **restart,
+                "detail_cursor": _encode_cursor(
+                    {
+                        "s": section,
+                        "f": field,
+                        "st": active.get("status", ""),
+                        "ca": active.get("category", ""),
+                        "o": offset,
+                        "fp": fingerprint,
+                    }
+                ),
+            }
+        )
+
+    def fits(candidate: dict[str, Any], included: str) -> bool:
+        pending = candidate.get("retrieval", [])
+        return _rendered_chars(
+            {
+                **data,
+                section: candidate,
+                "sections": {
+                    **data["sections"],
+                    section: {**data["sections"][section], "included": included},
+                },
+                "size_limit": {
+                    **data["size_limit"],
+                    "omitted_sections": [section] if pending else [],
+                    "retrieval": pending,
+                },
+            }
+        ) <= budget
+
+    def serve(value: dict[str, Any], included: str) -> None:
+        data[section] = value
+        data["sections"][section]["included"] = included
+        if value.get("retrieval"):
+            data["size_limit"]["omitted_sections"].append(section)
+            data["size_limit"]["retrieval"].extend(value["retrieval"])
+
+    field = state["f"] if state is not None else None
+    if section == "upstream_read_gateway" and state is None:
+        serve(*_gateway_part(data[section], next_request, fits))
+        return
+    rows = (
+        _gateway_field_rows(data[section], field)
+        if field is not None
+        else data[section]
+    )
+    offset = state["o"] if state is not None else 0
+    count = len(rows) if isinstance(rows, (list, dict)) else 0
+    if state is not None and offset >= count:
+        raise _cursor_error("invalid_cursor", "position_out_of_range", restart)
+
+    def make(page_rows: Any, next_offset: int | None) -> dict[str, Any]:
+        record: dict[str, Any] = {"paged": True}
+        if field is not None:
+            record["field"] = field
+        record["item_count"] = count
+        record["page"] = {
+            "offset": offset,
+            "row_count": len(page_rows),
+            "next_offset": next_offset,
+            "final": next_offset is None,
+        }
+        record["rows"] = page_rows
+        record["retrieval"] = (
+            [] if next_offset is None else [next_request(field, next_offset)]
+        )
+        return record
+
+    page = _page(rows, offset, make, lambda value: fits(value, "paged")) if count else None
+    if page is None:
+        # Not even one row fits beside the response's fixed fields; the
+        # configured response limit is too small to page this section.
+        page = {
+            "omitted": True,
+            "reason": "page_row_exceeds_response_limit",
+            "item_count": count,
+            "offset": offset,
+            "retrieval": [],
+        }
+        if field is not None:
+            page["field"] = field
+        serve(page, "omitted_size_limit")
+        return
+    serve(page, "paged")
+
+
+def _gateway_part(
+    value: dict[str, Any], next_request: Any, fits: Any
+) -> tuple[dict[str, Any], str]:
+    """The gateway's first response when its full detail cannot fit.
+
+    Identity, version and count fields stay; the largest per-tool fields are
+    dropped until it fits, each with the cursor request that pages its own
+    rows.  An empty field is never dropped, so every cursor has a row.  Below
+    the limit at which the identity fields fit, the gateway is ``omitted``
+    and its identity is not retrievable at that limit.
+    """
+
+    value = dict(value)
+    omitted: dict[str, int] = {}
+    pending: list[dict[str, Any]] = []
+    value["detail_complete"] = False
+    value["detail_omitted_fields"] = omitted
+    value["retrieval"] = pending
+
+    def drop(field: str) -> None:
+        if field == _READMISSION_FIELD:
+            readmission = dict(value["automatic_readmission"])
+            omitted[field] = len(readmission.pop("readmission_withheld_tools"))
+            value["automatic_readmission"] = readmission
+        else:
+            omitted[field] = len(value.pop(field))
+        pending.append(next_request(field, 0))
+
+    candidates = [
+        field
+        for field in GATEWAY_DETAIL_FIELDS
+        if isinstance(value.get(field), (list, dict)) and value[field]
+    ]
+    candidates.sort(key=lambda field: _rendered_chars(value[field]), reverse=True)
+    if _gateway_field_rows(value, _READMISSION_FIELD):
+        candidates.append(_READMISSION_FIELD)
+    for field in candidates:
+        if fits(value, "partial"):
+            break
+        drop(field)
+    if fits(value, "partial"):
+        return value, "partial"
+    # Even the identity and count fields cannot fit.  The loop above has
+    # dropped every nonempty field, so each is still paged by its own cursor.
+    record = {
+        "omitted": True,
+        "reason": "section_exceeds_response_limit",
+        "detail_total_counts": value.get("detail_total_counts", {}),
+        "detail_omitted_fields": omitted,
+        "retrieval": pending,
+    }
+    if not fits(record, "omitted_size_limit"):
+        # The limit is too small for even the field cursors: say so, with no
+        # retrieval the response could not carry.
+        record = {
+            "omitted": True,
+            "reason": "section_exceeds_response_limit",
+            "detail_omitted_fields": omitted,
+            "retrieval": [],
+        }
+        if not fits(record, "omitted_size_limit"):
+            del record["detail_omitted_fields"]
+    return record, "omitted_size_limit"
