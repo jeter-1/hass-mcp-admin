@@ -89,10 +89,40 @@ class BaselinePeer:
                 telemetry.timeout_occurred |= timed_out
                 telemetry.endpoint_categories.add("automation_baseline_" + category)
 
-    async def receive(self, maximum):
-        frame = await self.websocket.receive()
-        if frame.type != aiohttp.WSMsgType.TEXT:
+    async def frame(self):
+        """The next TEXT frame; keepalive is answered, every other frame refused.
+
+        HAMCP-248: the websocket idles through collection, so the Supervisor
+        proxy's heartbeat PING is waiting when the final fence reads. A PING is
+        answered with its own payload and an unsolicited PONG skipped, both
+        within the read's deadline and byte budget; anything else that is not
+        TEXT is refused with the reason of what it is.
+        """
+
+        controls = 0
+        while True:
+            frame = await self.websocket.receive()
+            if frame.type == aiohttp.WSMsgType.TEXT:
+                return frame
+            if frame.type in (aiohttp.WSMsgType.PING, aiohttp.WSMsgType.PONG):
+                controls += 1
+                if controls > c.CONTROL_FRAMES:
+                    raise c.CaptureError("malformed_response")
+                self.charge(len(frame.data))
+                if frame.type == aiohttp.WSMsgType.PING:
+                    await self.websocket.pong(frame.data)
+                continue
+            if frame.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING, aiohttp.WSMsgType.CLOSED):
+                raise c.CaptureError("source_unavailable")
+            if frame.type == aiohttp.WSMsgType.ERROR:
+                if not isinstance(frame.data, aiohttp.WebSocketError):
+                    raise c.CaptureError("source_unavailable")
+                if frame.data.code == aiohttp.WSCloseCode.MESSAGE_TOO_BIG:
+                    raise c.CaptureError("response_limit")
             raise c.CaptureError("malformed_response")
+
+    async def receive(self, maximum):
+        frame = await self.frame()
         try:
             raw = frame.data.encode("utf-8")
         except UnicodeError:

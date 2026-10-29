@@ -182,7 +182,16 @@ pure worker computation and closes transport before returning. There is no detac
 capture job, retry, redirect, fallback or automatic refresh. Parsing, projection,
 hashing, validation and page fitting run outside the event loop. The accepted auth
 payload bound is checked before JSON decoding; the connection's wire-frame ceiling
-remains 4 MiB. Unexpected/control frames are refused, not automatically ponged.
+remains 4 MiB. HAMCP-248: the capture websocket is idle through collection, and
+the Supervisor websocket proxy (`heartbeat=30`) pings a client idle for 30 s, so
+on a full capture its PING waits for the final fence's first read. A read answers
+a PING with its own payload and skips an unsolicited PONG, at most
+`CONTROL_FRAMES` (4) per read, within that read's deadline and charged to the
+byte budget; it sends no Home Assistant command. Every other frame that is not
+TEXT is refused with the reason of what it is: a close or transport error is
+`source_unavailable`, an oversize frame `response_limit`, a binary frame, a
+protocol error or more keepalive frames than the bound `malformed_response`.
+A timeout stays `timeout` and a cancellation propagates.
 
 Reaching the record ceiling is explicitly partial even at exactly 1,000. Unmapped
 and registry-only ID previews retain at most 16 IDs each; counts and their precision
@@ -300,7 +309,11 @@ carry an identifier, count or Home Assistant text. Retried records are
 collected fresh; all others are copied verbatim from the base. The result is a
 new stored baseline with `resume: {resumed_from: <base baseline_id>,
 resumed_count}`; its capture interval starts at the base's start, and drift in
-the base is inherited. A new authority generation is recorded as
+the base is inherited. A capture taken between the base and its resume
+therefore overlaps the resume's interval, and comparing the two correctly
+yields `capture_intervals_not_ordered` (every row `UNKNOWN`): compare a resume
+with a capture that starts after the resume ends (or one that ended before
+the base started). A new authority generation is recorded as
 `authority_drift: "detected"`. A base that recorded its first-fence anchor and
 whose own final fence failed is established by the resume's verified fences.
 The rows a resume inherits keep the provenance of the capture they came from:

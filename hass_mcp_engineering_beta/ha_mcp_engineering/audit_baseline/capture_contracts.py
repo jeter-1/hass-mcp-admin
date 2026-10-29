@@ -35,6 +35,8 @@ STRING_BYTES = 16_384
 COLLECTION_SECONDS = 45
 READ_SECONDS = 5
 CONCURRENCY = 4
+# HAMCP-248: keepalive frames one websocket read answers or skips before refusing.
+CONTROL_FRAMES = 4
 # The identity reads of a fence; the remaining fence reads are inventory.
 IDENTITY_READS = ("principal", "entries", "devices")
 # HAMCP-235 (review 1, R1-M2): the final fence's reserve covers what must

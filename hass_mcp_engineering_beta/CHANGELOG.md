@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.4.1-beta.48 - A full baseline capture completes its final fence (HAMCP-248)
+
+Builds on 2.4.1-beta.47. No budget, concurrency, reserve, resume, D4,
+stored-format, tool or Home Assistant write change.
+
+- Root cause: the capture websocket idles through collection; the Supervisor
+  websocket proxy (`heartbeat=30`) pings it, and the final fence's first read
+  refused the queued PING as `malformed_response` (123 of 127 requests).
+- A capture websocket read answers a PING with its payload and skips an
+  unsolicited PONG, at most `CONTROL_FRAMES` (4) per read, within its
+  deadline and charged to the byte budget. No Home Assistant command is sent.
+- Every other non-TEXT frame keeps its own reason: close or transport error
+  `source_unavailable`, oversize frame `response_limit`, binary, protocol
+  error or keepalive flood `malformed_response`.
+- An `UNKNOWN` compare row with a missing digest no longer also claims
+  `record_fingerprint_model_mismatch` (or, against recorded fingerprints, the
+  per-row `fingerprint_model_mismatch`).
+- Capture documentation: the keepalive handling, and that a resume must be
+  compared with a capture taken after it ends.
+
 ## 2.4.1-beta.46 - list_capabilities returns data within the response cap (HAMCP-247)
 
 Builds on 2.4.1-beta.45. On beta.44 the unfiltered call (96,902 characters)
