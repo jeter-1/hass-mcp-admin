@@ -76,9 +76,10 @@ The review needs a security section covering:
   position and catalog fingerprint. It is valid only with `detail_section`
   (`cursor_requires_detail_section`); a malformed, section- or
   filter-mismatched or out-of-range cursor is refused as `invalid_cursor`,
-  and one from a catalog that has since changed as `stale_cursor`, each with
-  a restart request. No input reaches anything but the in-process
-  projection.
+  and one from a catalog that has since changed as `stale_cursor`.
+  `invalid_cursor` and `stale_cursor` refusals include a `restart` request.
+  `cursor_requires_detail_section` does not; supply a section to start the
+  crawl. No input reaches anything but the in-process projection.
 - **Disclosure unchanged.** The same catalog fields are published; the
   gateway rows are the published health snapshot, narrowed. Nothing new is
   read from the gateway or the governance service.

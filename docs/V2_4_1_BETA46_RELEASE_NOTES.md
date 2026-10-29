@@ -76,7 +76,9 @@ The tool now bounds its own data before the envelope sees it. The global
   filters. A cursor without `detail_section` is refused
   (`cursor_requires_detail_section`); a malformed, mismatched or
   out-of-range one as `invalid_cursor`; one from a catalog that has since
-  changed as `stale_cursor`. Each refusal carries a `restart` request.
+  changed as `stale_cursor`. `invalid_cursor` and `stale_cursor` refusals
+  include a `restart` request. `cursor_requires_detail_section` does not;
+  supply a section to start the crawl.
 
 The budget is the response limit less a 4,000-character envelope reserve,
 measured on the compact rendering the envelope serves when the indented one
