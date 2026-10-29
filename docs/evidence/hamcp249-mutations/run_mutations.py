@@ -31,7 +31,10 @@ Runs (``results.json`` is the last, complete one):
   from the derived one). A pre-screen of the P and B mutants against the
   HAMCP-249 module also found P6. The terminal-projection reconcile,
   persisted-reason-wins and projected-fields tests were added.
-- Run 4 (complete, final tests): baseline OK in 929 s; 29 of 29 killed, 0 survivors, 0 timeouts.
+- Run 4 (complete): baseline OK in 929 s; 29 of 29 killed, 0 survivors,
+  0 timeouts.
+- Run 5 (complete, after the module moved to ``f3_runtime/``): baseline OK
+  in 757 s; 29 of 29 killed, 0 survivors, 0 timeouts.
 
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\

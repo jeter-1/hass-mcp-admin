@@ -10,8 +10,8 @@
    "test_f3_orphan_child_recovery"
   ],
   "returncode": 0,
-  "tests": 231,
-  "seconds": 929.1,
+  "tests": 233,
+  "seconds": 757.2,
   "summary": "OK"
  },
  "mutation_count": 29,
@@ -37,7 +37,7 @@
    "first_failures": [
     "ERROR test_e10_expired_unclaimed_child_names_plan_expiry (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_e10_expired_unclaimed_child_names_plan_expiry)"
    ],
-   "seconds": 4.6
+   "seconds": 4.0
   },
   {
    "id": "S2-parent-last-error-dropped",
@@ -57,7 +57,7 @@
    "first_failures": [
     "ERROR test_e10_expired_unclaimed_child_names_plan_expiry (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_e10_expired_unclaimed_child_names_plan_expiry)"
    ],
-   "seconds": 4.7
+   "seconds": 4.0
   },
   {
    "id": "S3-preflight-failed-event-error-code-dropped",
@@ -77,7 +77,7 @@
    "first_failures": [
     "FAIL test_e10_expired_unclaimed_child_names_plan_expiry (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_e10_expired_unclaimed_child_names_plan_expiry)"
    ],
-   "seconds": 4.9
+   "seconds": 3.9
   },
   {
    "id": "S4-terminal-event-ignores-error-code",
@@ -97,7 +97,7 @@
    "first_failures": [
     "FAIL test_e10_expired_unclaimed_child_names_plan_expiry (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_e10_expired_unclaimed_child_names_plan_expiry)"
    ],
-   "seconds": 4.8
+   "seconds": 4.0
   },
   {
    "id": "S5-child-view-reason-dropped",
@@ -117,7 +117,7 @@
    "first_failures": [
     "FAIL test_e10_expired_unclaimed_child_names_plan_expiry (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_e10_expired_unclaimed_child_names_plan_expiry)"
    ],
-   "seconds": 4.7
+   "seconds": 4.0
   },
   {
    "id": "S6-apply-result-reason-dropped",
@@ -137,7 +137,7 @@
    "first_failures": [
     "ERROR test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
    ],
-   "seconds": 5.6
+   "seconds": 4.5
   },
   {
    "id": "S7-f1-task-view-reason-dropped",
@@ -157,7 +157,7 @@
    "first_failures": [
     "ERROR test_f1_refusal_reads_back_through_the_f3_task_view (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_refusal_reads_back_through_the_f3_task_view)"
    ],
-   "seconds": 3.0
+   "seconds": 2.7
   },
   {
    "id": "S8-f3-task-view-reason-dropped",
@@ -177,7 +177,7 @@
    "first_failures": [
     "ERROR test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
    ],
-   "seconds": 5.4
+   "seconds": 4.6
   },
   {
    "id": "S9-repeat-apply-details-reason-dropped",
@@ -197,7 +197,7 @@
    "first_failures": [
     "ERROR test_f1_stale_target_refusal_names_its_reason (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_stale_target_refusal_names_its_reason)"
    ],
-   "seconds": 3.5
+   "seconds": 3.1
   },
   {
    "id": "S10-f1-manual-review-failure-information-dropped",
@@ -217,7 +217,7 @@
    "first_failures": [
     "ERROR test_l1_contradictory_pre_dispatch_task_names_its_reason (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_l1_contradictory_pre_dispatch_task_names_its_reason)"
    ],
-   "seconds": 3.7
+   "seconds": 3.4
   },
   {
    "id": "S11-f1-apply-failure-information-dropped",
@@ -237,14 +237,14 @@
    "first_failures": [
     "FAIL test_f1_refusal_reads_back_through_the_f3_task_view (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_refusal_reads_back_through_the_f3_task_view)"
    ],
-   "seconds": 2.8
+   "seconds": 2.5
   },
   {
    "id": "C1-classify-priority-reversed",
    "class": "the refusal reason misclassified",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "    for code, check in _REASONS:\n        if code in present:",
      "    for code, check in reversed(_REASONS):\n        if code in present:"
     ]
@@ -257,14 +257,14 @@
    "first_failures": [
     "FAIL test_the_earlier_vocabulary_code_always_names_the_reason (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_the_earlier_vocabulary_code_always_names_the_reason)"
    ],
-   "seconds": 20.2
+   "seconds": 17.2
   },
   {
    "id": "C2-verifier-rule-never-selected",
    "class": "the refusal reason misclassified",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "if code in AUTOMATION_VERIFIER_DETAILS),",
      "if False),"
     ]
@@ -277,14 +277,14 @@
    "first_failures": [
     "FAIL test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
    ],
-   "seconds": 7.5
+   "seconds": 6.6
   },
   {
    "id": "C3-verifier-rule-not-in-detail",
    "class": "the refusal reason misclassified",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "    if rule is not None:\n        detail +=",
      "    if False:\n        detail +="
     ]
@@ -297,7 +297,7 @@
    "first_failures": [
     "FAIL test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
    ],
-   "seconds": 7.7
+   "seconds": 6.5
   },
   {
    "id": "C4-adapter-verifier-rule-code-dropped",
@@ -317,7 +317,7 @@
    "first_failures": [
     "FAIL test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
    ],
-   "seconds": 7.1
+   "seconds": 6.6
   },
   {
    "id": "C5-adapter-mismatch-categories-dropped",
@@ -337,7 +337,7 @@
    "first_failures": [
     "FAIL test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
    ],
-   "seconds": 6.8
+   "seconds": 6.6
   },
   {
    "id": "C6-verifier-detail-code-outside-closed-set",
@@ -357,14 +357,14 @@
    "first_failures": [
     "FAIL test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
    ],
-   "seconds": 6.8
+   "seconds": 6.6
   },
   {
    "id": "C7-unclassified-code-reported-as-unknown-legacy",
    "class": "the refusal reason misclassified",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "return UNCLASSIFIED, \"adapter_preflight\", rule",
      "return UNKNOWN_LEGACY, UNKNOWN_LEGACY, rule"
     ]
@@ -377,7 +377,7 @@
    "first_failures": [
     "FAIL test_unknown_and_missing_codes_never_fabricate_a_reason (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_unknown_and_missing_codes_never_fabricate_a_reason)"
    ],
-   "seconds": 18.7
+   "seconds": 17.2
   },
   {
    "id": "P1-terminal-recovery-rewrites-stored-task",
@@ -397,7 +397,7 @@
    "first_failures": [
     "FAIL test_legacy_reasonless_task_reads_the_durable_child_reason (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_legacy_reasonless_task_reads_the_durable_child_reason)"
    ],
-   "seconds": 16.3
+   "seconds": 14.1
   },
   {
    "id": "P2-persisted-reason-not-preferred",
@@ -417,7 +417,7 @@
    "first_failures": [
     "FAIL test_the_persisted_reason_wins_over_the_derived_one (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_the_persisted_reason_wins_over_the_derived_one)"
    ],
-   "seconds": 18.9
+   "seconds": 16.0
   },
   {
    "id": "P3-legacy-f3-derived-reason-lost",
@@ -437,14 +437,14 @@
    "first_failures": [
     "FAIL test_legacy_reasonless_task_reads_the_durable_child_reason (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_legacy_reasonless_task_reads_the_durable_child_reason)"
    ],
-   "seconds": 16.0
+   "seconds": 13.9
   },
   {
    "id": "P4-missing-codes-fabricate-a-reason",
    "class": "persistence or legacy semantics of the reason",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "    if not codes:\n        return UNKNOWN_LEGACY, UNKNOWN_LEGACY, None",
      "    if not codes:\n        return UNCLASSIFIED, \"adapter_preflight\", None"
     ]
@@ -457,14 +457,14 @@
    "first_failures": [
     "FAIL test_legacy_task_without_any_codes_reads_unknown_legacy (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_legacy_task_without_any_codes_reads_unknown_legacy)"
    ],
-   "seconds": 16.5
+   "seconds": 14.8
   },
   {
    "id": "P5-recorded-accepts-unreviewed-error-code",
    "class": "persistence or legacy semantics of the reason",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "    if value.get(\"error_code\") not in REASON_CODES:\n        return None",
      "    if False:\n        return None"
     ]
@@ -477,14 +477,14 @@
    "first_failures": [
     "FAIL test_recorded_rejects_foreign_or_out_of_vocabulary_values (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_recorded_rejects_foreign_or_out_of_vocabulary_values)"
    ],
-   "seconds": 18.7
+   "seconds": 17.4
   },
   {
    "id": "P6-recorded-returns-unprojected-value",
    "class": "persistence or legacy semantics of the reason",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "    return {key: value.get(key) for key in REASON_FIELDS}\n\n\ndef unknown_legacy",
      "    return value\n\n\ndef unknown_legacy"
     ]
@@ -497,14 +497,14 @@
    "first_failures": [
     "FAIL test_recorded_rejects_foreign_or_out_of_vocabulary_values (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_recorded_rejects_foreign_or_out_of_vocabulary_values)"
    ],
-   "seconds": 18.6
+   "seconds": 17.1
   },
   {
    "id": "P7-legacy-f1-stored-reason-ignored",
    "class": "persistence or legacy semantics of the reason",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "if isinstance(stored, dict) and stored.get(\"reason_model\") == REASON_MODEL:",
      "if False:"
     ]
@@ -517,14 +517,14 @@
    "first_failures": [
     "FAIL test_legacy_f1_reasons (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_legacy_f1_reasons)"
    ],
-   "seconds": 18.6
+   "seconds": 17.2
   },
   {
    "id": "P8-legacy-f1-code-dropped",
    "class": "persistence or legacy semantics of the reason",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "    if known:\n        reason.update(",
      "    if False:\n        reason.update("
     ]
@@ -537,14 +537,14 @@
    "first_failures": [
     "FAIL test_f1_refusal_reads_back_through_the_f3_task_view (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_refusal_reads_back_through_the_f3_task_view)"
    ],
-   "seconds": 2.8
+   "seconds": 2.6
   },
   {
    "id": "P9-dispatched-child-reported-as-refusal",
    "class": "persistence or legacy semantics of the reason",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "        and record.dispatch_intent is None\n        and not record.dispatch_count\n        and record.normalized_outcome in PRE_DISPATCH_OUTCOMES\n",
      "\n"
     ]
@@ -557,14 +557,14 @@
    "first_failures": [
     "FAIL test_valid_plan_still_applies_without_a_refusal (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_valid_plan_still_applies_without_a_refusal)"
    ],
-   "seconds": 18.2
+   "seconds": 17.2
   },
   {
    "id": "B1-identifier-control-characters-kept",
    "class": "identifier bounding or sanitization",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "    if any(ord(char) < 0x21 or ord(char) > 0x7E for char in value):\n        return None",
      "    if False:\n        return None"
     ]
@@ -577,14 +577,14 @@
    "first_failures": [
     "FAIL test_identifiers_drop_untrusted_text (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_identifiers_drop_untrusted_text)"
    ],
-   "seconds": 18.1
+   "seconds": 17.3
   },
   {
    "id": "B2-identifier-length-unbounded",
    "class": "identifier bounding or sanitization",
    "replacements": [
     [
-     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/pre_dispatch_reasons.py",
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
      "    return value[:MAX_IDENTIFIER_LENGTH]",
      "    return value"
     ]
@@ -597,7 +597,7 @@
    "first_failures": [
     "FAIL test_identifiers_drop_untrusted_text (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_identifiers_drop_untrusted_text)"
    ],
-   "seconds": 17.8
+   "seconds": 16.9
   }
  ]
 }
