@@ -489,6 +489,24 @@ def _validate_static_core_routes() -> None:
 _validate_static_core_routes()
 
 
+def static_tools_requiring(capability_id: str) -> tuple[str, ...]:
+    """Sorted Engineering static tools whose declared requirements name it.
+
+    HAMCP-242: a health projection over the reviewed requirement table, not
+    an admission input.  A tool narrowed per call is listed under every
+    profile it can require.  Delegated ha-mcp reads are not listed: their
+    client-visible names depend on the admitted upstream release.
+    """
+
+    return tuple(
+        sorted(
+            name
+            for name, values in STATIC_TOOL_CORE_REQUIREMENTS.items()
+            if capability_id in values
+        )
+    )
+
+
 def delegated_requirements(tool_name: str) -> tuple[str, ...]:
     """Return the complete compiled Core requirement set for one ha-mcp read."""
 
@@ -988,4 +1006,5 @@ __all__ = [
     "static_tool_core_route",
     "static_tool_requirements",
     "static_tool_target",
+    "static_tools_requiring",
 ]

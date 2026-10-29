@@ -2,6 +2,23 @@
 
 Date: 2026-07-10
 
+## Core authority withheld itemization (2.4.1-beta.44, HAMCP-242)
+
+`get_server_health` keeps its routing, input schema, `risk=read` and writes
+`none`. Its `home_assistant_core_authority` block gains
+`withheld_capabilities` (one `{capability_id, disposition, reason_code,
+affected_tools}` entry per withheld profile, sorted, at most 64),
+`withheld_capabilities_truncated` and `count_semantics`. Every string value
+in a `withheld_capabilities` entry is a fixed-vocabulary identifier from
+Engineering's code; `affected_tools` names Engineering static tools from the
+reviewed requirement table only. The block's other fields include validated
+HA-observed versions, counters, timestamps and registry state, and are not
+covered by that list-only claim. The list derives from the published
+generation, with no new Core, Supervisor or upstream call and nothing
+persisted. A list that disagrees with the counts degrades only this block
+(`projection_degraded`, `core_authority_projection_inconsistent`); the call
+still succeeds. No tool is added, so the catalog count is the base's.
+
 ## Host journal one-token user:pass@host (2.4.1-beta.43, HAMCP-234 step 2)
 
 `get_incident_logs` keeps its routing, provider, policy, `risk=read`,
