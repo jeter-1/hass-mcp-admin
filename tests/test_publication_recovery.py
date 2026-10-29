@@ -375,10 +375,13 @@ class InspectionTests(InspectionFixture):
 
     def test_unreadable_claim_and_remote_errors_are_unknown(self):
         prefix = "/git/ref/tags/engineering-publication-attempt/v1.0.0"
-        for document in ({"object": {"type": "commit", "sha": "c" * 40}}, {"object": {"type": "tag", "sha": "x"}}, []):
+        for document in ({"object": {"type": "commit", "sha": "c" * 40}}, {"object": {"type": "tag", "sha": "x"}}):
             self.opener.routes[("GET", API + prefix)] = [Response(200, json.dumps(document).encode())]
             with self.subTest(document=document):
                 self.assertEqual(recovery.inspect(self.root, REPO, self.reader, version="1.0.0")["claim"], "unknown")
+        self.opener.routes[("GET", API + prefix)] = [Response(200, b"[]")]
+        with self.assertRaisesRegex(recovery.RecoveryError, "github_response_malformed:claim_ref"):
+            recovery.inspect(self.root, REPO, self.reader, version="1.0.0")
         self.opener.routes[("GET", API + prefix)] = [Response(200, json.dumps(
             {"object": {"type": "tag", "sha": "c" * 40}}).encode())]
         self.route("/git/tags/" + "c" * 40, {"message": "not json"})
@@ -423,6 +426,93 @@ class InspectionTests(InspectionFixture):
 
 
 
+class SharedReaderTests(unittest.TestCase):
+    """SV-M1: only an allowed HTTP 404 is absence; a 2xx body must be a schema-valid object."""
+
+    def api(self, *responses):
+        opener = Opener()
+        opener.add("GET", API + "/x", *responses)
+        reader = recovery.watchdog.Reader(opener, clock=lambda: 0.0, sleep=lambda s: None,
+                                          jitter=lambda: 0.0, wall=lambda: 0.0)
+        return recovery.GitHub(REPO, reader)
+
+    def test_only_an_allowed_404_is_absence(self):
+        self.assertIs(self.api(Response(404)).read("/x", "tag_ref", recovery.TAG_REF, absent_ok=True),
+                      recovery.ABSENT)
+        self.assertEqual(self.api(Response(404)).presence("/x", "tag_ref", recovery.TAG_REF), "absent")
+        # A 404 where absence is not allowed, and every other failure, is unknown.
+        self.assertEqual(self.api(Response(404)).read("/x", "tag_ref", recovery.TAG_REF), "unknown")
+        for status in (301, 302, 403, 410, 422, 500):
+            with self.subTest(status=status):
+                self.assertEqual(self.api(*[Response(status)] * 10).presence("/x", "tag_ref", recovery.TAG_REF),
+                                 "unknown")
+        self.assertEqual(self.api(Response(200, b"not json")).presence("/x", "tag_ref", recovery.TAG_REF),
+                         "unknown")
+
+    def test_a_2xx_body_is_never_the_absence_sentinel(self):
+        schemas = {"main_ref": recovery.MAIN_REF, "tag_ref": recovery.TAG_REF, "release": recovery.RELEASE,
+                   "claim_ref": recovery.TAG_REF, "claim_tag": recovery.GIT_TAG, "run": recovery.RUN,
+                   "claim_run": recovery.RUN, "claim_jobs": recovery.JOBS}
+        self.assertEqual(set(schemas), set(SHAPE_FAILURES))
+        for label, schema in schemas.items():
+            for body in (*NON_OBJECTS, *SHAPE_FAILURES[label]):
+                for status in (200, 201):
+                    with self.subTest(label=label, body=body, status=status), self.assertRaisesRegex(
+                            recovery.RecoveryError, f"^github_response_malformed:{label}$"):
+                        self.api(Response(status, json.dumps(body).encode())).read(
+                            "/x", label, schema, absent_ok=True)
+
+    def test_valid_objects_are_returned_and_present(self):
+        documents = {"tag_ref": (recovery.TAG_REF, TAG_DOC),
+                     "release": (recovery.RELEASE, {"tag_name": "v1.0.0", "id": 1}),
+                     "main_ref": (recovery.MAIN_REF, {"object": {"sha": "a" * 40}}),
+                     "claim_tag": (recovery.GIT_TAG, {"message": "{}"}),
+                     "run": (recovery.RUN, dict(RUN_DOC, conclusion=None)),
+                     "claim_jobs": (recovery.JOBS, {"total_count": 0, "jobs": []})}
+        for label, (schema, document) in documents.items():
+            with self.subTest(label=label):
+                body = json.dumps(document).encode()
+                self.assertEqual(self.api(Response(200, body)).read("/x", label, schema), document)
+                self.assertEqual(self.api(Response(200, body)).presence("/x", label, schema), "present")
+
+
+    def test_run_summary_refuses_unreadable_runs_on_its_own(self):
+        # Defense in depth behind the shared reader: run_summary never trusts its input's shape.
+        self.assertEqual(recovery.run_summary(RUN_DOC)["actor"], "jeter-1")
+        for run in ("unknown", None, [], dict(RUN_DOC, id="77"), dict(RUN_DOC, triggering_actor=None),
+                    {k: v for k, v in RUN_DOC.items() if k != "triggering_actor"}):
+            with self.subTest(run=run):
+                self.assertEqual(recovery.run_summary(run), "unknown")
+
+
+class ObjectEndpointControlTests(InspectionFixture):
+    """Ordinary object responses keep the published and partial outcomes."""
+
+    def publish_registry(self):
+        index, children = helpers.index(("amd64", None), ("arm64", "v8"))
+        for tag in ("1.0.0", "sha-" + self.release):
+            self.opener.routes[("GET", MANIFESTS + tag)] = [Response(200, index, helpers.INDEX_TYPE)]
+        for digest, body in children.items():
+            self.opener.add("GET", MANIFESTS + digest, Response(200, body, helpers.MANIFEST_TYPE))
+
+    def test_valid_tag_and_release_objects_are_published(self):
+        self.publish_registry()
+        self.opener.routes[("GET", API + "/git/ref/tags/v1.0.0")] = [Response(200, json.dumps(
+            {"ref": "refs/tags/v1.0.0", "object": {"type": "tag", "sha": "c" * 40}}).encode())]
+        self.opener.routes[("GET", API + "/releases/tags/v1.0.0")] = [Response(200, json.dumps(
+            {"tag_name": "v1.0.0", "id": 1}).encode())]
+        state, (name, _, command) = self.inspect(version="1.0.0")
+        self.assertEqual((state["git_tag"], state["github_release"], name, command),
+                         ("present", "present", "published", None))
+
+    def test_a_valid_tag_object_alone_is_partial(self):
+        self.opener.routes[("GET", API + "/git/ref/tags/v1.0.0")] = [Response(200, json.dumps(
+            {"ref": "refs/tags/v1.0.0", "object": {"type": "commit", "sha": self.release}}).encode())]
+        state, (name, _, command) = self.inspect(version="1.0.0")
+        self.assertEqual((state["git_tag"], state["github_release"], name, command),
+                         ("present", "absent", "reconcile", None))
+
+
 # HAMCP-223 R2 failure-class sweep. Each ID is one row of the handoff table
 # "Failure paths: publication recovery helper"; every row has a case. Every
 # failure ends in exit 2 with a fixed category, or in a stop verdict, and never
@@ -442,15 +532,40 @@ HELPER_FAILURE_ROWS = {
     "H12": "release walk cut by its bound -> exit 2 release_walk_truncated",
     "H13": "first-parent walk or parent read fails -> exit 2 (unchanged)",
     "H14": "named run's head unreadable or not local -> exit 2 run_head_*",
-    "H15": "named run unreadable or unrecognized -> run unknown -> stop",
-    "H16": "claim build-job listing incomplete or malformed -> build unknown -> stop",
+    "H15": "named run with unrecognized field values -> run unknown -> stop (wrong types: H23)",
+    "H16": "claim build-job listing incomplete or with malformed entries -> build unknown -> stop "
+           "(wrong top-level shape: H23)",
     "H17": "claim build conclusion unreadable -> build unknown -> stop",
     "H18": "publish-run status unrecognized -> live runs unknown -> stop",
     "H19": "registry manifest listing malformed -> unknown -> stop, never partial/absent",
     "H20": "GitHub read failures -> unknown -> stop (unchanged)",
     "H21": "local main unresolvable or unreadable -> exit 2",
     "H22": "unexpected exception -> exit 2 unexpected_<type>, no command",
+    "H23": "2xx GitHub body that is not an object with the read keys and types (null, list, scalar, {}, "
+           "missing or wrong-typed key) -> exit 2 github_response_malformed:<endpoint>, never absence",
 }
+# Each object endpoint the helper reads: label, route, a valid document, and
+# missing-key / wrong-type variants of it.
+CLAIM_REF = "/git/ref/tags/engineering-publication-attempt/v1.0.0"
+TAG_DOC = {"ref": "refs/tags/v1.0.0", "object": {"type": "tag", "sha": "c" * 40}}
+RUN_DOC = {"id": 77, "run_attempt": 2, "event": "workflow_dispatch", "status": "completed", "conclusion": "failure",
+           "head_sha": "d" * 40, "path": ".github/workflows/publish-rc-image.yml",
+           "triggering_actor": {"login": "jeter-1"}}
+SHAPE_FAILURES = {
+    "main_ref": [{"object": {}}, {"object": {"sha": 7}}, {"object": "x"}, {"ref": "refs/heads/main"}],
+    "tag_ref": [{"object": {"sha": "c" * 40}}, {"object": {"type": None, "sha": "c" * 40}},
+                {"object": {"type": "tag", "sha": ["c" * 40]}}, {"object": None}, {"ref": "refs/tags/v1.0.0"}],
+    "release": [{"name": "v1.0.0"}, {"tag_name": 1}, {"tag_name": None}, {"tag_name": ["v1.0.0"]}],
+    "claim_ref": [{"object": {"type": "tag"}}, {"object": {"type": 1, "sha": "c" * 40}}, {"object": []}],
+    "claim_tag": [{"tag": "x"}, {"message": None}, {"message": 7}, {"message": {"schema": 1}}],
+    "run": [{k: v for k, v in RUN_DOC.items() if k != "path"}, dict(RUN_DOC, run_attempt="2"),
+            dict(RUN_DOC, id=True), dict(RUN_DOC, conclusion=0), dict(RUN_DOC, triggering_actor={})],
+    "claim_run": [{k: v for k, v in RUN_DOC.items() if k != "head_sha"}, dict(RUN_DOC, status=None),
+                  dict(RUN_DOC, id=77.0), dict(RUN_DOC, triggering_actor={"login": None})],
+    "claim_jobs": [{"jobs": []}, {"total_count": True, "jobs": []}, {"total_count": 0, "jobs": None}],
+}
+# Bodies that are never an object with keys: every endpoint refuses each one.
+NON_OBJECTS = (None, [], [TAG_DOC], "present", "", 0, 1, 1.5, True, {})
 COMMAND = "gh workflow run"
 
 
@@ -652,20 +767,29 @@ class HelperFailureClassTests(InspectionFixture):
                 self.assertExit2(category, "--run-id", "123")
 
     def row_H15(self):
-        for fields in ({"id": "123"}, {"triggering_actor": None}, {"status": "action_required"},
-                       {"status": None}, {"head_sha": "short"}, {"event": 7}, {"path": "../x\n"}):
+        for fields in ({"status": "action_required"}, {"head_sha": "short"}, {"path": "../x\n"},
+                       {"event": "bad event\n"}, {"triggering_actor": {"login": "bad login\n"}}):
             with self.subTest(fields=fields):
                 self.named_run(**fields)
                 state = self.assertStop(run_id="123", version="1.0.0")
                 self.assertEqual(state["run"], "unknown")
+        # A wrong-typed key is a malformed response (H23), never a readable run.
+        for fields in ({"id": "123"}, {"triggering_actor": None}, {"status": None}, {"event": 7}):
+            with self.subTest(fields=fields):
+                self.named_run(**fields)
+                self.assertExit2("github_response_malformed:run", "--run-id", "123")
 
     def row_H16(self):
         job = {"name": recovery.BUILD_JOB, "conclusion": "success"}
-        for jobs in ({"jobs": [job]}, {"total_count": 2, "jobs": [job]}, {"total_count": "1", "jobs": [job]},
-                     {"total_count": 1, "jobs": {}}, {"total_count": 2, "jobs": [job, 1]}, [job]):
+        for jobs in ({"total_count": 2, "jobs": [job]}, {"total_count": 2, "jobs": [job, 1]}):
             with self.subTest(jobs=jobs):
                 self.claim(jobs)
                 self.assertEqual(self.assertStop(version="1.0.0")["claim_build"], "unknown")
+        # A missing or wrong-typed top-level key is a malformed response (H23).
+        for jobs in ({"jobs": [job]}, {"total_count": "1", "jobs": [job]}, {"total_count": 1, "jobs": {}}, [job]):
+            with self.subTest(jobs=jobs):
+                self.claim(jobs)
+                self.assertExit2("github_response_malformed:claim_jobs")
         self.claim({"total_count": 1, "jobs": [job]})
         self.assertEqual(self.inspect(version="1.0.0")[1][0], "needs_digest")
         self.claim({"total_count": 0, "jobs": []})
@@ -719,6 +843,42 @@ class HelperFailureClassTests(InspectionFixture):
             with self.subTest(error=type(error).__name__), mock.patch.object(
                     recovery.watchdog, "registry_state", side_effect=error):
                 self.assertExit2(f"unexpected_{type(error).__name__}")
+
+    def malformed(self, label, body):
+        """Serve ``body`` from ``label``'s endpoint, everything before it valid."""
+        if label in ("claim_tag", "claim_run", "claim_jobs"):
+            self.claim({"total_count": 1, "jobs": [{"name": recovery.BUILD_JOB, "conclusion": "success"}]})
+        route = {"main_ref": "/git/ref/heads/main", "tag_ref": "/git/ref/tags/v1.0.0",
+                 "release": "/releases/tags/v1.0.0", "claim_ref": CLAIM_REF, "claim_tag": "/git/tags/" + "c" * 40,
+                 "run": "/actions/runs/123", "claim_run": "/actions/runs/77/attempts/2",
+                 "claim_jobs": "/actions/runs/77/attempts/2/jobs"}[label]
+        if label == "run":
+            self.named_run()
+        self.opener.routes[("GET", API + route)] = [Response(200, json.dumps(body).encode())]
+        return ("--run-id", "123") if label == "run" else ()
+
+    def row_H23(self):
+        clean = {key: list(queue) for key, queue in self.opener.routes.items()}
+
+        def reset():
+            self.opener.routes = {key: list(queue) for key, queue in clean.items()}
+        # Codex SV-M1: 200 + null on the claim ref, the version tag and the GitHub Release.
+        for label in ("claim_ref", "tag_ref", "release"):
+            with self.subTest(codex=label):
+                self.malformed(label, None)
+                self.assertExit2(f"github_response_malformed:{label}")
+                with self.assertRaisesRegex(recovery.RecoveryError, f"github_response_malformed:{label}"):
+                    recovery.inspect(self.root, REPO, self.reader, version="1.0.0")
+            reset()
+        for label, variants in SHAPE_FAILURES.items():
+            for body in (*NON_OBJECTS, *variants):
+                with self.subTest(label=label, body=body):
+                    args = self.malformed(label, body)
+                    self.assertExit2(f"github_response_malformed:{label}", *args)
+                reset()
+        # Positive control: the allowed 404 on every absent-capable endpoint is the
+        # only absence, and leads to the fresh recovery command.
+        self.assertFreshControl()
 
     def test_every_table_row_has_a_case(self):
         cases = {name.removeprefix("row_") for name in dir(self) if name.startswith("row_")}

@@ -160,6 +160,33 @@ def tree_drift(root, release, main_sha):
 
 # --- Remote facts --------------------------------------------------------------
 
+# Only an allowed HTTP 404 produces ABSENT; no decoded JSON value can equal it.
+ABSENT = object()
+UNKNOWN = "unknown"
+# Each object endpoint's keys the helper reads, with their exact types. A nested
+# dict is a nested object; element and value checks stay with each caller.
+MAIN_REF = {"object": {"sha": (str,)}}
+TAG_REF = {"object": {"type": (str,), "sha": (str,)}}
+GIT_TAG = {"message": (str,)}
+RELEASE = {"tag_name": (str,)}
+RUN = {"id": (int,), "run_attempt": (int,), "event": (str,), "status": (str,), "conclusion": (str, type(None)),
+       "head_sha": (str,), "path": (str,), "triggering_actor": {"login": (str,)}}
+JOBS = {"total_count": (int,), "jobs": (list,)}
+
+
+def shaped(document, schema):
+    """True only for an object carrying every schema key with an exact schema type."""
+    if not isinstance(document, dict):
+        return False
+    for key, expected in schema.items():
+        if key not in document:
+            return False
+        value = document[key]
+        if not (shaped(value, expected) if isinstance(expected, dict) else type(value) in expected):
+            return False
+    return True
+
+
 class GitHub:
     def __init__(self, repository, reader, token=None):
         self.base = f"https://{watchdog.API}/repos/{repository}"
@@ -169,16 +196,24 @@ class GitHub:
         if token:
             self.headers["Authorization"] = "Bearer " + token
 
-    def read(self, route, absent_ok=False):
-        """The JSON document, None for an allowed 404, or "unknown"."""
-        try:
-            return self.reader.json(self.base + route, self.headers)
-        except retry.GitHubReadError as exc:
-            return None if absent_ok and exc.status == 404 else "unknown"
+    def read(self, route, label, schema, absent_ok=False):
+        """A schema-valid object, ABSENT for an allowed 404, or UNKNOWN for any other read failure.
 
-    def presence(self, route):
-        found = self.read(route, absent_ok=True)
-        return "unknown" if found == "unknown" else ("absent" if found is None else "present")
+        A 2xx body that is not such an object (null, a list, a scalar, a
+        missing or wrong-typed key) is never absence: it raises, so the CLI
+        exits 2 with a fixed category and prints no command.
+        """
+        try:
+            document = self.reader.json(self.base + route, self.headers)
+        except retry.GitHubReadError as exc:
+            return ABSENT if absent_ok and exc.status == 404 else UNKNOWN
+        if not shaped(document, schema):
+            raise RecoveryError(f"github_response_malformed:{label}")
+        return document
+
+    def presence(self, route, label, schema):
+        found = self.read(route, label, schema, absent_ok=True)
+        return UNKNOWN if found is UNKNOWN else ("absent" if found is ABSENT else "present")
 
 
 def run_summary(run):
@@ -198,14 +233,15 @@ def run_summary(run):
 
 
 def read_claim(api, version):
-    ref = api.read(f"/git/ref/tags/{CLAIM_PREFIX}{version}", absent_ok=True)
-    if ref is None:
+    ref = api.read(f"/git/ref/tags/{CLAIM_PREFIX}{version}", "claim_ref", TAG_REF, absent_ok=True)
+    if ref is ABSENT:
         return None
-    target = ref.get("object") if isinstance(ref, dict) else None
-    if not isinstance(target, dict) or target.get("type") != "tag" \
-            or not watchdog.SHA_PATTERN.fullmatch(str(target.get("sha"))):
+    if ref is UNKNOWN:
         return "unknown"
-    tag = api.read(f"/git/tags/{target['sha']}")
+    target = ref["object"]
+    if target["type"] != "tag" or not watchdog.SHA_PATTERN.fullmatch(target["sha"]):
+        return "unknown"
+    tag = api.read(f"/git/tags/{target['sha']}", "claim_tag", GIT_TAG)
     try:
         claim = json.loads(tag["message"]) if isinstance(tag, dict) and len(tag.get("message", "")) <= 8192 else None
     except (ValueError, TypeError):
@@ -214,7 +250,7 @@ def read_claim(api, version):
 
 
 def build_conclusion(api, run_id, attempt):
-    jobs = api.read(f"/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")
+    jobs = api.read(f"/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100", "claim_jobs", JOBS)
     listing = jobs.get("jobs") if isinstance(jobs, dict) else None
     # Only a complete, well-formed listing proves the build job never started.
     if not isinstance(listing, list) or type(jobs.get("total_count")) is not int \
@@ -250,13 +286,12 @@ def inspect(root, repository=REPOSITORY, reader=None, token=None, run_id=None, v
         facts["main_sha"] = main_sha = watchdog.resolve_ref(root, main_ref)
     except watchdog.WatchdogError as exc:
         raise RecoveryError(str(exc)) from None
-    remote = api.read("/git/ref/heads/main")
-    facts["remote_main_sha"] = watchdog.text((remote.get("object") or {}).get("sha")) \
-        if isinstance(remote, dict) else "unknown"
+    remote = api.read("/git/ref/heads/main", "main_ref", MAIN_REF)
+    facts["remote_main_sha"] = UNKNOWN if remote is UNKNOWN else watchdog.text(remote["object"]["sha"])
     if run_id is not None:
         if not re.fullmatch(INPUT_PATTERNS["recovery_run_id"], str(run_id)):
             raise RecoveryError("invalid_run_id")
-        facts["run"] = run = run_summary(api.read(f"/actions/runs/{run_id}"))
+        facts["run"] = run = run_summary(api.read(f"/actions/runs/{run_id}", "run", RUN))
         if run != "unknown":
             # The publisher refuses Engineering drift, so the run's own checkout
             # advertises the version it published or recovered. An unreadable
@@ -291,8 +326,8 @@ def inspect(root, repository=REPOSITORY, reader=None, token=None, run_id=None, v
         facts["registry_commit"] = registry_presence(reader, match.group(1), "sha-" + release, arch)
         if digest is not None and re.fullmatch(INPUT_PATTERNS["recovery_source_digest"], digest):
             facts["digest"] = registry_presence(reader, match.group(1), digest, arch)
-    facts["git_tag"] = api.presence(f"/git/ref/tags/v{version}")
-    facts["github_release"] = api.presence(f"/releases/tags/v{version}")
+    facts["git_tag"] = api.presence(f"/git/ref/tags/v{version}", "tag_ref", TAG_REF)
+    facts["github_release"] = api.presence(f"/releases/tags/v{version}", "release", RELEASE)
     live = []
     for sha in dict.fromkeys((release, main_sha)):
         try:
@@ -307,7 +342,8 @@ def inspect(root, repository=REPOSITORY, reader=None, token=None, run_id=None, v
     facts["claim"] = claim
     if isinstance(claim, dict) and type(claim.get("run_id")) is int and type(claim.get("run_attempt")) is int \
             and 0 < claim["run_id"] and 0 < claim["run_attempt"] <= 100:
-        facts["claim_run"] = run_summary(api.read(f"/actions/runs/{claim['run_id']}/attempts/{claim['run_attempt']}"))
+        facts["claim_run"] = run_summary(api.read(f"/actions/runs/{claim['run_id']}/attempts/{claim['run_attempt']}",
+                                                  "claim_run", RUN))
         facts["claim_build"] = build_conclusion(api, claim["run_id"], claim["run_attempt"])
     return facts
 
