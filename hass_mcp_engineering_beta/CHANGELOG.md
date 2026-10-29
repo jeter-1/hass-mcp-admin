@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.4.1-beta.47 - Every pre-dispatch refusal names its reason (HAMCP-249) (staged)
+## 2.4.1-beta.47 - Every pre-dispatch refusal names its reason (HAMCP-249)
 
-Follows 2.4.1-beta.46 (#325). Reporting only: no preflight, tool, input
+Builds on 2.4.1-beta.46. Reporting only: no preflight, tool, input
 schema or Home Assistant write change.
 
 - New `pre_dispatch_refusal` (model `f3_pre_dispatch_reason`): a

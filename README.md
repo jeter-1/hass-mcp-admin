@@ -1,16 +1,18 @@
 # HA MCP Engineering Server
 
-Staged, not yet released: Engineering **2.4.1-beta.47** (HAMCP-249) makes
-every pre-dispatch refusal name its reason. A closed-vocabulary
+Engineering **2.4.1-beta.47** makes every pre-dispatch refusal name its
+reason (HAMCP-249). A closed-vocabulary
 `pre_dispatch_refusal` (`error_code`, `check`, fixed `detail`, and the
 readback verifier rule when that check refused) is reported on the F3 child
 view, the parent task's `last_error` and `verification_summary`, the
 `apply_change_plan` result, the `preflight_failed` event and its add-on log
 line. Older records read their child's stored codes or `unknown_legacy`;
 nothing is rewritten. Reporting only: no preflight, tool, input schema or
-Home Assistant write change. Follows 2.4.1-beta.46 (#325). Read the
+Home Assistant write change. Rollback is reinstalling beta.46. Read the
 [2.4.1-beta.47 release notes](docs/V2_4_1_BETA47_RELEASE_NOTES.md) and
 [2.4.1-beta.47 acceptance contract](docs/V2_4_1_BETA47_ACCEPTANCE.md).
+
+It builds on beta.46 and the releases below.
 
 Engineering **2.4.1-beta.46** makes `list_capabilities` return usable data
 within the response cap (HAMCP-247). On beta.44 the unfiltered call and

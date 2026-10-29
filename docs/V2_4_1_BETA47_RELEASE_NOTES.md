@@ -1,8 +1,8 @@
 # Engineering 2.4.1-beta.47 release notes
 
 Engineering 2.4.1-beta.47 makes every pre-dispatch refusal name its reason
-(HAMCP-249, HA Admin E021). It is staged after 2.4.1-beta.46 (HAMCP-247,
-#325), which merges first. It adds no Home Assistant write, tool, input
+(HAMCP-249, HA Admin E021). It follows 2.4.1-beta.46 and includes it. It
+adds no Home Assistant write, tool, input
 schema, route, provider, Core command or signed registry change, and it does
 not change what preflight accepts or refuses.
 
