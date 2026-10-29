@@ -529,6 +529,9 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
         from hamcp226_228_descriptor_changes import without_hamcp226_finding_type
         schemas["configuration_integrity_analysis"] = without_hamcp226_finding_type(
             self, schemas["configuration_integrity_analysis"])
+        from hamcp247_descriptor_changes import without_hamcp247_detail_section
+        schemas["list_capabilities"] = without_hamcp247_detail_section(
+            self, schemas["list_capabilities"])
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), F2_PUBLIC_SCHEMA_SHA256)
         self.assertEqual(len(tools), 77)

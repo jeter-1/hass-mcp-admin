@@ -18,6 +18,35 @@ schema or Home Assistant write change.
 - Older tasks are projected from their child's stored terminal codes, else
   `unknown_legacy`; terminal recovery never rewrites a stored task.
 
+## 2.4.1-beta.46 - list_capabilities returns data within the response cap (HAMCP-247)
+
+Builds on 2.4.1-beta.45. On beta.44 the unfiltered call (96,902 characters)
+and `status=delegated` (91,274) succeeded with `/data` omitted and an empty
+retrieval; `category=foundation` worked. The global 60,000-character cap and
+the envelope's truncation mechanism are unchanged.
+
+- The unfiltered call is a bounded summary: server identity and version,
+  counts, the canonical tools, a `tool_index` of every registered tool, the
+  gateway's identity and counts, and a `sections` map with the exact request
+  for each section.
+- `status` and `category` narrow every section they apply to:
+  `beta_native`, `dynamic_upstream`, `provider_matrix` rows and the
+  gateway's per-tool rows. Category matching is unchanged. The gateway
+  states `detail_scope` and the unfiltered `detail_total_counts`.
+- New optional `detail_section` returns one section in full, filters still
+  applying; an unknown section is refused as `invalid_request`
+  (`unknown_section`, allowed values listed).
+- Every response carries `size_limit`. The tool sizes its data against the
+  limit less a 4,000-character envelope reserve; anything it omits is named
+  with a request that returns it, never an empty success.
+- New optional `detail_cursor` pages a section too large for the limit: its
+  actual rows in catalog order, each page but the last carrying the request
+  for the next (same section and filters). An oversize gateway pages each
+  omitted per-tool field by its own identity. Stale, malformed or
+  mismatched cursors are refused (`stale_cursor`, `invalid_cursor`).
+- Additive input only; filtered responses keep their established keys. No
+  tool, routing, provider, governance or stable-v1 change.
+
 ## 2.4.1-beta.45 - Baseline compare and resume usable on a real installation (HAMCP-235)
 
 Builds on 2.4.1-beta.44. From the beta.40 live findings (HAOS, Core
