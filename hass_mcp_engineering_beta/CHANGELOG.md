@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.4.1-beta.47 - Every pre-dispatch refusal names its reason (HAMCP-249) (staged)
+
+Follows 2.4.1-beta.46 (#325). Reporting only: no preflight, tool, input
+schema or Home Assistant write change.
+
+- New `pre_dispatch_refusal` (model `f3_pre_dispatch_reason`): a
+  closed-vocabulary `error_code`, the refusing `check`, fixed `detail`,
+  `verifier_rule`, bounded child, operation and target identifiers, and the
+  stored diagnostic codes.
+- Reported on `f3_children[*].pre_dispatch_reason`, the task's
+  `verification_summary` and `last_error`, the `apply_change_plan` result,
+  repeat-apply details, the `preflight_failed` event and its add-on log
+  `error_code`; legacy F1 refusals gain `last_error.failure_information`.
+- `configuration_not_verifiable` also stores the mismatch categories and the
+  readback verifier rule (`automation_verifier_<rule>`).
+- Older tasks are projected from their child's stored terminal codes, else
+  `unknown_legacy`; terminal recovery never rewrites a stored task.
+
 ## 2.4.1-beta.45 - Baseline compare and resume usable on a real installation (HAMCP-235)
 
 Builds on 2.4.1-beta.44. From the beta.40 live findings (HAOS, Core
