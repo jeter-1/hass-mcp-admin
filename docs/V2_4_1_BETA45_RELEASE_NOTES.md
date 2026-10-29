@@ -116,8 +116,10 @@ under signed registry seq 14.
   `final_fence` value `identity_only`. Refusals gain `details.resume_changes`.
 - **Stored format.** The baseline schema is unchanged; the new values are in
   the free-form diagnostics. Baselines written by beta.44 or earlier compare and
-  resume on beta.45 (such a base whose final fence failed has no anchor and its
-  resume stays unestablished). Baselines written by beta.45 load on beta.44.
+  resume on beta.45 (such a base whose final fence failed has no anchor, so its
+  resume is refused as `resume_inventory_changed` with `resume_changes:
+  ["installation_anchor_missing"]`, not retryable; take a fresh capture).
+  Baselines written by beta.45 load on beta.44.
 - No input schema, tool count, routing, provider, policy, Core gate,
   telemetry, signed profile, probe fingerprint, signed registry, workflow,
   Dockerfile, dependency, add-on option or stable-v1 change. Tool

@@ -901,8 +901,10 @@ automation baseline compare and resume usable on the owner's installation.
   authority generation is recorded as `authority_drift: "detected"`. A
   refusal carries only fixed categories (`details.resume_changes`), never an
   identifier, count or Home Assistant text. A base from an earlier release
-  whose final fence failed has no anchor: its resume is not checked for
-  installation and stays unestablished, which the comparison caveat states.
+  whose final fence failed has no anchor: its resume is refused as
+  `resume_inventory_changed` with `resume_changes:
+  ["installation_anchor_missing"]` (not retryable, owner decision D4); take a
+  fresh capture.
 - **Final fence.** Identity reads first; identity drift, authority loss,
   access denial and an unverifiable identity still refuse with nothing
   stored. Only an inventory read failure after a verified identity yields
