@@ -296,6 +296,23 @@ class InspectionTests(unittest.TestCase):
         state, (name, _, _) = self.inspect(version="1.0.0")
         self.assertEqual((state["engineering_drift"], name), (True, "roll_forward"))
 
+    def test_later_config_edit_at_same_version_is_not_another_release(self):
+        self.config["description"] = "Edited after release"
+        self.git("update-ref", "refs/remotes/origin/main", self.commit("1.0.0"))
+        self.opener.routes[("GET", API + "/git/ref/heads/main")] = [
+            Response(200, json.dumps({"object": {"sha": self.git("rev-parse", "HEAD")}}).encode())]
+        state, (name, _, _) = self.inspect(version="1.0.0")
+        self.assertEqual((state["release_candidates"], state["release_sha"]), ([self.release], self.release))
+        self.assertEqual(name, "roll_forward")
+
+    def test_incomplete_version_index_is_partial_not_absent(self):
+        index, children = helpers.index(("amd64", None))
+        self.opener.routes[("GET", MANIFESTS + "1.0.0")] = [Response(200, index, helpers.INDEX_TYPE)]
+        for digest, body in children.items():
+            self.opener.add("GET", MANIFESTS + digest, Response(200, body, helpers.MANIFEST_TYPE))
+        state, (name, _, command) = self.inspect(version="1.0.0")
+        self.assertEqual((state["registry_version"], name, command), ("partial", "reconcile", None))
+
     def test_staged_declaration_and_unknown_version_stop(self):
         state, (name, _, _) = self.inspect(version="2.0.0")
         self.assertEqual((state["release_candidates"], name), ([], "stop"))
