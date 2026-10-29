@@ -18,7 +18,11 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from ..capabilities import build_capability_catalog, build_server_metadata
+from ..capabilities import (
+    build_capability_catalog,
+    build_capability_view,
+    build_server_metadata,
+)
 from ..clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
 from ..clients.logbook import LOGBOOK
 from ..clients.paths import Route, rest_path
@@ -166,13 +170,39 @@ async def server_info(check_ha: bool = True) -> str:
 
 
 @mcp.tool()
-async def list_capabilities(status: str = "", category: str = "") -> str:
+async def list_capabilities(
+    status: str = "",
+    category: str = "",
+    detail_section: str = "",
+    detail_cursor: str = "",
+) -> str:
     """List this server's tool capabilities and lifecycle classification.
 
-    Optional exact filters:
-    - status: native, transitional, delegated, deprecated
+    With no argument this returns a bounded summary: server identity and
+    version, counts, the canonical tools, a status/category index of every
+    registered tool, and a ``sections`` map saying which sections exist and
+    the exact arguments that return each.
+
+    Optional exact filters narrow every section they apply to (canonical
+    tools, beta_native, dynamic_upstream, provider_matrix rows and the
+    gateway's per-tool detail):
+    - status: native, transitional, delegated, deprecated, or beta_native
     - category: foundation, evidence, verification, observability, discovery,
-      configuration, or execution
+      configuration, execution, or any value listed in category_values
+
+    Optional detail_section returns one full section, filters still applying:
+    tools, beta_native, dynamic_upstream, provider_matrix, or
+    upstream_read_gateway. A section too large for the response limit is
+    returned in pages of its actual rows, in catalog order; each page but
+    the last carries a retrieval request for the next page (the same
+    detail_section and filters plus detail_cursor). An oversized gateway
+    keeps its identity and count fields and names each omitted per-tool
+    field with the request that pages that field's own rows.
+
+    Optional detail_cursor is the opaque cursor from such a request, valid
+    only with detail_section and the same filters. A cursor from a catalog
+    that has since changed is refused as stale_cursor, and a malformed or
+    mismatched one as invalid_cursor; restart the crawl from the section.
 
     Planned engineering capabilities are returned separately.
     """
@@ -180,12 +210,15 @@ async def list_capabilities(status: str = "", category: str = "") -> str:
     def action() -> dict[str, Any]:
         # Current Core admission from the snapshot health projects (M2).
         service = getattr(HEALTH.governance, "service", None)
-        return build_capability_catalog(
+        return build_capability_view(
             status=status,
             category=category,
+            detail_section=detail_section,
+            detail_cursor=detail_cursor,
             core_admission=(
                 service.core_admission_snapshot() if service is not None else None
             ),
+            response_limit=SETTINGS.response_size_limit,
         )
 
     return await run_structured(

@@ -108,7 +108,9 @@ def health_and_catalog(service):
     operational = service.health_summary()["operational_administration"]
     health = {key: operational[key]["core_admission"] for key in PROVIDERS}
     with mock.patch.object(HEALTH, "governance", SimpleNamespace(service=service)):
-        result = json.loads(asyncio.run(compatibility.list_capabilities()))
+        result = json.loads(
+            asyncio.run(compatibility.list_capabilities(detail_section="beta_native"))
+        )
     assert result["success"], result
     catalog = result["data"]
     by_tool = {item["tool"]: item for item in catalog["beta_native"]}
@@ -230,7 +232,11 @@ class StaticCatalogTests(unittest.TestCase):
 
     def test_without_a_governance_service_the_tool_says_not_evaluated(self):
         with mock.patch.object(HEALTH, "governance", SimpleNamespace(service=None)):
-            result = json.loads(asyncio.run(compatibility.list_capabilities()))
+            result = json.loads(
+                asyncio.run(
+                    compatibility.list_capabilities(detail_section="beta_native")
+                )
+            )
         catalog = result["data"]
         self.assertEqual(
             catalog["core_admission"],
