@@ -161,6 +161,8 @@ class ReasonVocabularyTests(unittest.TestCase):
         self.assertIsNone(reasons.recorded({**good, "reason_model": "other"}))
         self.assertIsNone(reasons.recorded({**good, "error_code": "free text"}))
         self.assertIsNone(reasons.recorded("lock_conflict"))
+        # Only the reviewed fields are read back; anything else is dropped.
+        self.assertEqual(reasons.recorded({**good, "payload": UNTRUSTED_TEXT}), good)
 
     def test_legacy_f1_reasons(self):
         target = {"target_type": "automation", "target_id": "a1"}
@@ -610,6 +612,19 @@ class PreDispatchReasonSurfaceTests(ConfigurationPlanTestCase):
             PROPOSED_AUTOMATION["action"],
         )
 
+    async def _reconcile_terminal_projection(self, task_id):
+        """Drive the terminal-recovery projection: a known child fault on a
+        terminal parent is reconciled exactly, and only an exact projection
+        clears the fault."""
+        task = self.service.task_repository.get(task_id)
+        declarations, _records = self.runtime._validate_sequence_state(task)
+        keys = ["recovery_child:" + item["child_id"] for item in declarations]
+        for key in keys:
+            self.runtime._readiness_fault(key)
+        await self.runtime.recover_once("test")
+        for key in keys:
+            self.assertNotIn(key, self.runtime._readiness_faults)
+
     async def _legacy_shaped_failed_task(self):
         created = await self._plan()
         with _preflight_raises(RuntimeError(UNTRUSTED_TEXT)):
@@ -651,10 +666,43 @@ class PreDispatchReasonSurfaceTests(ConfigurationPlanTestCase):
             "preflight_failed",
         )
         self.assertIsNone(public["last_error"])
-        # Terminal recovery projects without raising or rewriting.
-        await self.runtime.recover_once("test")
+        # Terminal recovery projects without raising or rewriting: adding a
+        # reason to stored history would leave the child fault unresolved.
+        await self._reconcile_terminal_projection(task.task_id)
         self.assertEqual(
             self.service.task_repository.get(task.task_id).to_dict(), before
+        )
+
+    async def test_the_persisted_reason_wins_over_the_derived_one(self):
+        created = await self._plan()
+        with _preflight_raises(RuntimeError(UNTRUSTED_TEXT)):
+            result = await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+        task = self.service.task_repository.get(result["task_id"])
+        record = task.to_dict()
+        # Plant stored history whose reviewed reason differs from what the
+        # child's codes derive; the stored reason is what is reported.
+        stored = {
+            **record["verification_summary"]["pre_dispatch_refusal"],
+            "error_code": "plan_expired",
+        }
+        record["verification_summary"]["pre_dispatch_refusal"] = stored
+        for event in record["events"]:
+            if event["event_type"] == "preflight_failed":
+                event["changes"]["verification_summary"][
+                    "pre_dispatch_refusal"
+                ] = stored
+        repository = self.service.task_repository
+        repository._path(task.task_id, plan_id=task.plan_id).write_text(
+            json.dumps(record, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        public = self.service.get_execution_task(task.task_id)
+        self.assertEqual(public["pre_dispatch_refusal"], stored)
+        self.assertEqual(
+            public["f3_children"][0]["pre_dispatch_reason"]["error_code"],
+            "preflight_failed",
         )
 
     async def test_legacy_task_without_any_codes_reads_unknown_legacy(self):
@@ -671,7 +719,7 @@ class PreDispatchReasonSurfaceTests(ConfigurationPlanTestCase):
         created = await self._plan(_wait_dict_automation())
         result = await self.service.apply(created["plan_id"], created["plan_hash"])
         before = self.service.task_repository.get(result["task_id"]).to_dict()
-        await self.runtime.recover_once("test")
+        await self._reconcile_terminal_projection(result["task_id"])
         self.assertEqual(
             self.service.task_repository.get(result["task_id"]).to_dict(), before
         )

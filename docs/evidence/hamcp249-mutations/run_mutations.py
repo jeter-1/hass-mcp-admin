@@ -20,6 +20,19 @@ Classes:
   or a derivable one lost, an unreviewed stored shape accepted);
 - ``B*``: bounding and sanitization of identifiers and detail text.
 
+Runs (``results.json`` is the last, complete one):
+- Runs 1 and 2 were stopped. A 900 s per-mutant timeout masked S7 (the
+  baseline took 860-872 s) and counted as a kill, and C1 survived the
+  single-code tests. The timeout is now 2400 s and a timeout counts as a
+  survivor. The pairwise priority, mismatch-category, F1-through-F3-view and
+  L1 tests were added.
+- Run 3 was stopped after P2. P1 survived (recovery never reached the
+  terminal-projection path) and so did P2 (no stored reason that differed
+  from the derived one). A pre-screen of the P and B mutants against the
+  HAMCP-249 module also found P6. The terminal-projection reconcile,
+  persisted-reason-wins and projected-fields tests were added.
+- Run 4 (complete, final tests): baseline OK in 929 s; 29 of 29 killed, 0 survivors, 0 timeouts.
+
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\
         python docs/evidence/hamcp249-mutations/run_mutations.py \\
