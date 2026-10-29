@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
-from ha_mcp_engineering.f3 import pre_dispatch_reasons as reasons  # noqa: E402
+from ha_mcp_engineering.f3_runtime import pre_dispatch_reasons as reasons  # noqa: E402
 from ha_mcp_engineering.f3.executor import DispatchAuthorityRefused  # noqa: E402
 from ha_mcp_engineering.f3.locks import (  # noqa: E402
     DurableLockStore,
@@ -93,6 +93,45 @@ class ReasonVocabularyTests(unittest.TestCase):
         self.assertEqual(
             reasons.classify(("configuration_not_verifiable", "stale_target_state"))[1],
             "readback_verifiability",
+        )
+
+    def test_restated_bounds_equal_the_execution_record_bounds(self):
+        from ha_mcp_engineering.f3 import models
+
+        self.assertEqual(reasons.EVIDENCE_PATTERN.pattern, models.EVIDENCE_PATTERN.pattern)
+        self.assertEqual(reasons.MAX_DIAGNOSTIC_ITEMS, models.MAX_DIAGNOSTIC_ITEMS)
+        self.assertEqual(reasons.MAX_DIAGNOSTIC_LENGTH, models.MAX_DIAGNOSTIC_LENGTH)
+        samples = (
+            None, "lock_conflict", ("b", "a", "a"), ["Bad", "ok_code", 7, ""],
+            [f"code_{index:02d}" for index in range(40)], ["x" * 200],
+            ["z" + "y" * 95, "lock\nconflict"],
+        )
+        for sample in samples:
+            with self.subTest(sample=sample):
+                self.assertEqual(
+                    reasons.bounded_diagnostics(sample),
+                    models.bounded_diagnostics(sample),
+                )
+
+    def test_reasons_module_imports_nothing_from_f3(self):
+        # governance/service.py imports it; HAMCP-181 design section 5 keeps
+        # ..f3 out of the service's import graph.
+        tree = ast.parse(
+            (
+                ROOT / "hass_mcp_engineering_beta" / "ha_mcp_engineering"
+                / "f3_runtime" / "pre_dispatch_reasons.py"
+            ).read_text(encoding="utf-8")
+        )
+        imported = {
+            (node.level, node.module or "")
+            for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+        } | {
+            (0, alias.name)
+            for node in ast.walk(tree) if isinstance(node, ast.Import)
+            for alias in node.names
+        }
+        self.assertEqual(
+            imported, {(0, "__future__"), (0, "re"), (0, "typing")}
         )
 
     def test_unknown_and_missing_codes_never_fabricate_a_reason(self):

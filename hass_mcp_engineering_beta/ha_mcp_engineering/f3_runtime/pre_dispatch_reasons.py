@@ -11,9 +11,26 @@ inferred from state that does not name one.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from .models import EVIDENCE_PATTERN, bounded_diagnostics
+# The F3 execution record's identifier and diagnostic bounds (f3/models.py),
+# restated so the governance service can import this module without importing
+# ``..f3`` (HAMCP-181 design section 5).  A test pins them equal.
+EVIDENCE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,95}$")
+MAX_DIAGNOSTIC_ITEMS = 16
+MAX_DIAGNOSTIC_LENGTH = 96
+
+
+def bounded_diagnostics(values: object) -> tuple[str, ...]:
+    if not isinstance(values, (tuple, list)):
+        return ()
+    result: list[str] = []
+    for value in values[:MAX_DIAGNOSTIC_ITEMS]:
+        if isinstance(value, str) and EVIDENCE_PATTERN.fullmatch(value):
+            result.append(value[:MAX_DIAGNOSTIC_LENGTH])
+    return tuple(sorted(set(result), key=lambda item: item.encode("utf-8")))
+
 
 REASON_MODEL = "f3_pre_dispatch_reason"
 REASON_SCHEMA_VERSION = 1

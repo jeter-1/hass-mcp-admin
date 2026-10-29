@@ -19,7 +19,6 @@ from ..errors import ErrorCode, GovernanceError
 from ..request_context import observe_provider_send
 from .health_scan import HealthScanFence
 from ..governance.task_storage import TaskHealthSnapshotSuperseded
-from ..f3 import pre_dispatch_reasons
 from ..f3.executor import (
     DispatchAuthorityRefused,
     PreIntentRetryRequired,
@@ -159,6 +158,7 @@ from ..governance.task_storage import ExecutionTaskStorageError
 from ..request_context import begin_request, current_telemetry, end_request
 from .registry import ClosedAdapterRegistry
 from . import dispatch_facts as dispatch_projection
+from . import pre_dispatch_reasons
 from .dispatch_facts import (
     PROVIDER_CALL_NOT_SENT,
     PHASE_SEND_UNCERTAIN,

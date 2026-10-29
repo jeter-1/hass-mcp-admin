@@ -44,7 +44,6 @@ from ..sanitization import (
     rescan_stored_plan,
     sanitize_untrusted_data,
 )
-from ..f3 import pre_dispatch_reasons
 from ..f3_dashboard.approval_projection import (
     build_dashboard_approval_projection,
     validate_dashboard_approval_projection,
@@ -143,6 +142,7 @@ from .resources import (
     validate_resource_create_identity,
     validate_resource,
 )
+from ..f3_runtime import pre_dispatch_reasons
 from ..f3_runtime.health_scan import HealthScanFence
 from ..f3_runtime.dispatch_facts import (
     PHASE_ALREADY_PRESENT,

@@ -61,7 +61,7 @@ RT = f"{E}/f3_runtime/runtime.py"
 SV = f"{E}/governance/service.py"
 AD = f"{E}/f3_configuration/adapter.py"
 NZ = f"{E}/governance/normalize.py"
-PR = f"{E}/f3/pre_dispatch_reasons.py"
+PR = f"{E}/f3_runtime/pre_dispatch_reasons.py"
 
 S = "a pre-dispatch refusal reason dropped at one reporting surface"
 C = "the refusal reason misclassified"
