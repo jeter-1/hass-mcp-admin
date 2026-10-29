@@ -482,13 +482,21 @@ class ComparisonSemanticsTests(BaselineTestCase):
         self.assertEqual(result.classification, Classification.UNKNOWN)
         self.assertIn("installation_identity_mismatch", result.reasons)
 
-    def test_unestablished_installation_is_unknown(self):
+    def test_unestablished_installation_is_a_caveat_not_a_row_reason(self):
+        # HAMCP-235 (owner decision, Josh, 2026-10-27, option a): rows are
+        # classified by digest; the unverified identity is stated once.
         rows = [record("one", "automation.one")]
         a, b = self.load_ordered_pair(
             baseline(rows, installation_status="unestablished"),
             baseline(copy.deepcopy(rows), baseline_id="baseline-b"),
         )
-        self.assertEqual(compare_baselines(a, b).records[0].classification, Classification.UNKNOWN)
+        report = compare_baselines(a, b)
+        self.assertEqual(report.records[0].classification, Classification.UNCHANGED)
+        self.assertEqual(report.records[0].reasons, ())
+        self.assertFalse(report.installation_comparable)
+        self.assertIn({"code": "installation_identity_unverified",
+                       "statement": "installation identity unverified: assumes both sides are from this installation",
+                       "sides": ["earlier"]}, report.caveats)
 
     def test_fingerprint_version_mismatch_is_unknown(self):
         a_rows = [record("one", "automation.one", model=FINGERPRINT_MODEL)]
@@ -501,15 +509,19 @@ class ComparisonSemanticsTests(BaselineTestCase):
         self.assertEqual(result.classification, Classification.UNKNOWN)
         self.assertIn("fingerprint_contract_incompatible", result.reasons)
 
-    def test_authority_drift_blocks_definitive_shared_comparison(self):
+    def test_authority_drift_is_a_caveat_not_a_row_reason(self):
+        # HAMCP-235 (owner decision, Josh, 2026-10-27, option a).
         rows = [record("one", "automation.one")]
         a, b = self.load_ordered_pair(
             baseline(rows, authority_drift="detected"),
             baseline(copy.deepcopy(rows), baseline_id="baseline-b"),
         )
-        result = compare_baselines(a, b).records[0]
-        self.assertEqual(result.classification, Classification.UNKNOWN)
-        self.assertIn("earlier_authority_continuity_unestablished", result.reasons)
+        report = compare_baselines(a, b)
+        self.assertEqual(report.records[0].classification, Classification.UNCHANGED)
+        self.assertEqual(report.records[0].reasons, ())
+        self.assertFalse(report.authority_continuity_comparable)
+        self.assertEqual([item["code"] for item in report.caveats if item["sides"] == ["earlier"]],
+                         ["authority_continuity_unestablished"])
 
     def test_inventory_drift_blocks_absence_classification(self):
         a_rows = [record("one", "automation.one")]

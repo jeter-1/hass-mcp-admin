@@ -219,6 +219,8 @@ class ComparisonReport:
     fingerprint_contract_compatible: bool
     records: tuple[ComparisonRecord, ...]
     limitations: tuple[str, ...]
+    # HAMCP-235: comparison-level caveats, stated once, never per-row reasons.
+    caveats: tuple[dict[str, Any], ...] = ()
 
     @property
     def comparison_eligible(self) -> bool:

@@ -888,6 +888,29 @@ option, role, fallback or delegated provider.
 - **HAMCP-069B profiles.** The two unsigned 069B profiles now name every read
   their gateway sends; no signed profile changes.
 
+The `2.4.1-beta.45` slice (HAMCP-235) adds no permission, role, route,
+provider, fallback, write path, Core command, input or tool. It makes
+automation baseline compare and resume usable on the owner's installation.
+
+- **Compare.** Installation identity, authority continuity and non-atomic
+  capture are comparison-level `caveats` (owner decision, Josh, option a),
+  not per-row `UNKNOWN` reasons. Two established, different installations
+  still make every row `UNKNOWN` (`installation_identity_mismatch`).
+- **Resume.** Only the installation anchor, the configuration id set and the
+  id→entity mapping fence a resume; the Core version still binds it. A new
+  authority generation is recorded as `authority_drift: "detected"`. A
+  refusal carries only fixed categories (`details.resume_changes`), never an
+  identifier, count or Home Assistant text. A base from an earlier release
+  whose final fence failed has no anchor: its resume is refused as
+  `resume_inventory_changed` with `resume_changes:
+  ["installation_anchor_missing"]` (not retryable, owner decision D4); take a
+  fresh capture.
+- **Final fence.** Identity reads first; identity drift, authority loss,
+  access denial and an unverifiable identity still refuse with nothing
+  stored. Only an inventory read failure after a verified identity yields
+  `identity_only`. The recorded first-fence identity is the same opaque
+  digest as the installation id and is screened like every diagnostic.
+
 The `2.4.1-beta.44` slice (HAMCP-242) adds no permission, role, route,
 provider, fallback, write path, input, tool or upstream call. It adds three
 fields to the public `home_assistant_core_authority` health block.

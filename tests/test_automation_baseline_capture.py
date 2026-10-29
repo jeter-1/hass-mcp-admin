@@ -289,10 +289,14 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(c.digest(baseline), page['artifact_sha256'])
                 self.assertEqual([r['configuration_id'] for r in page['records']], ['0', '1', '2'])
                 if scenario == 'final_states':
-                    self.assertEqual(baseline['installation']['status'], 'unestablished')
-                    self.assertIsNone(baseline['installation']['installation_id'])
+                    # HAMCP-235: the final identity reads succeeded before the
+                    # states read failed, so the identity stays verified.
+                    self.assertEqual(baseline['installation']['status'], 'established')
+                    self.assertIsNotNone(baseline['installation']['installation_id'])
+                    self.assertEqual(page['diagnostics']['final_fence'], 'identity_only')
+                    self.assertEqual(page['diagnostics']['final_fence_reason'], 'source_unavailable')
                     self.assertEqual(baseline['consistency']['inventory_drift'], 'unknown')
-                    self.assertEqual(baseline['consistency']['authority_drift'], 'unknown')
+                    self.assertEqual(baseline['consistency']['authority_drift'], 'none_observed_at_capture_fences')
                     self.assertEqual(page['record_outcomes'], {})
                     readable = page['records']
                 else:
@@ -363,7 +367,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.telemetry.retry_count, 0)
 
     async def test_authority_principal_anchor_and_mapping_fence_changes(self):
-        for scenario in ('authority','principal','anchor','mapping','inventory','missing_final'):
+        for scenario in ('authority','principal','anchor','mapping','inventory','on_off','missing_final'):
             with self.subTest(scenario=scenario):
                 self.core=Core()
                 service,client=self.setup_capture()
@@ -373,7 +377,11 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                         elif scenario=='principal': client.data['principal']['is_admin']=False
                         elif scenario=='anchor': client.data['devices'][0]['id']='changed'
                         elif scenario=='mapping': client.data['registry'][0]['unique_id']='changed'
-                        elif scenario=='inventory': client.data['states'][0]['state']='on'
+                        # HAMCP-235: an added automation is inventory drift; an
+                        # on/off change is volatile state and is not.
+                        elif scenario=='inventory' and client.data['states'][-1]['entity_id']!='automation.zz':
+                            client.data['states'].append({'entity_id':'automation.zz','state':'on','attributes':{}})
+                        elif scenario=='on_off': client.data['states'][0]['state']='on'
                     if scenario=='missing_final' and kind=='principal' and client.requests>5:
                         raise c.CaptureError('timeout')
                 client.hook=change
@@ -385,6 +393,8 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
                     self.validate(baseline)
                     if scenario=='missing_final':
                         self.assertEqual(baseline['installation']['status'],'unestablished')
+                    elif scenario=='on_off':
+                        self.assertEqual(baseline['consistency']['inventory_drift'],'none_observed_at_capture_fences')
                     else:
                         self.assertEqual(baseline['consistency']['inventory_drift'],'detected')
 
@@ -564,7 +574,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_deadline_partial_no_new_reads(self):
         service,client=self.setup_capture()
-        with patch.object(c,'COLLECTION_SECONDS',10):
+        with patch.object(c,'COLLECTION_SECONDS',c.FINAL_FENCE_RESERVE_MIN):
             baseline,page=await export(service)
         self.validate(baseline)
         self.assertEqual(client.requests,10)

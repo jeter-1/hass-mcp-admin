@@ -1,0 +1,53 @@
+{
+  "caller": "synthetic-owner",
+  "captures": {
+    "anchorless": {
+      "capture_id": "5d3c6a7dc425c90568ba5c56d4775be1",
+      "final_fence": "unavailable",
+      "first_fence_anchor_recorded": false,
+      "installation": {
+        "installation_id": null,
+        "limitations": [
+          "registry_lineage_not_core_uuid",
+          "restored_clones_may_share_identity",
+          "recreated_anchor_breaks_continuity"
+        ],
+        "method": "supervised_core_registry_lineage-v1",
+        "status": "unestablished"
+      },
+      "record_outcomes": {
+        "1": "timeout",
+        "2": "timeout"
+      }
+    },
+    "established": {
+      "capture_id": "51cd3cd430ab242841ebd549b02519a8",
+      "final_fence": "complete",
+      "first_fence_anchor_recorded": false,
+      "installation": {
+        "installation_id": "sha256:7cf8cdd92e948674e0ab6fc733b99b2a034dbb11b60188ba9a1b0985f2371763",
+        "limitations": [
+          "registry_lineage_not_core_uuid",
+          "restored_clones_may_share_identity",
+          "recreated_anchor_breaks_continuity"
+        ],
+        "method": "supervised_core_registry_lineage-v1",
+        "status": "established"
+      },
+      "record_outcomes": {
+        "1": "timeout"
+      }
+    }
+  },
+  "core_version": "2026.10.3",
+  "files": {
+    "store/audit-baselines-v1/index.json": "3c00952a127361b638b7f8cd78029033131c3616d25b1f6b22b75e43766fe1e9",
+    "store/audit-baselines-v1/records/51cd3cd430ab242841ebd549b02519a8.json": "3e6f76a2f9f5086d90cf72e25eb0d7c9bf7d82cede67bbeb604c1d25b0291acf",
+    "store/audit-baselines-v1/records/5d3c6a7dc425c90568ba5c56d4775be1.json": "aed2415082b3b11402709e7984b4d65f6eae5453baf8b4a7d406f1d18493c5bc"
+  },
+  "generator": "tests/fixtures/hamcp235_beta43_resume/generate.py",
+  "now_ms": 1800000000000,
+  "python": "3.12.14",
+  "writer_commit": "0e0624297d32608bd4dfda36d90879b3462334fa",
+  "writer_version": "2.4.1-beta.43"
+}

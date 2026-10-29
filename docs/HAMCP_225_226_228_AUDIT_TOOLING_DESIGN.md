@@ -427,6 +427,21 @@ Today scheduling stops 10 seconds before `COLLECTION_SECONDS = 45`
      `resumed_from` and the resumed count. The non-atomic window disclosure
      spans base and resume. The base capture is never changed.
   Records that time out again stay `timed_out`; the caller may resume again.
+  HAMCP-235 supersedes step 2 (beta.40 live finding: a resume two minutes
+  after its base was refused with no detail). The resume compares only stable
+  identity: the installation anchor, the set of configuration ids and each
+  id's entity. A new Core authority generation is recorded as
+  `authority_drift: "detected"` instead of refusing, and on/off state and the
+  unmapped count are not compared. A refusal carries `details.resume_changes`,
+  the fixed categories `automation_added`, `automation_removed`,
+  `mapping_changed`, `installation_changed`, `installation_anchor_missing` or
+  `core_version_changed`. Inherited records keep their own capture's anchor;
+  a base with none is refused as `installation_anchor_missing` before any
+  read (owner decision D4, Josh, 2026-10-28). The
+  comparator states installation identity, authority continuity and non-atomic
+  capture once as comparison-level `caveats` instead of per-row `UNKNOWN`
+  reasons (owner decision, Josh, option a); see
+  `docs/AUTOMATION_AUDIT_BASELINE.md#comparison-semantics`.
 
 ## 5. Registration and compatibility
 

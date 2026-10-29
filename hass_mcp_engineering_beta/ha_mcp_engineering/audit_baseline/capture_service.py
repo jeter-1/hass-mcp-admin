@@ -155,6 +155,12 @@ class BaselineCaptureService:
                 base, _ = await self.load(resume_capture_id, caller)
                 if not self.provider.retry_ids(base["baseline"], base["diagnostics"]["record_outcomes"]):
                     raise c.CaptureError("resume_not_needed")
+                # HAMCP-235, owner decision D4 (Josh, 2026-10-28): a capture
+                # that recorded no installation anchor is never resumed; an
+                # anchor read later cannot say where its rows came from.
+                if self.provider.inherited_anchor(base) is None:
+                    raise c.CaptureError("resume_inventory_changed",
+                                         resume_changes=("installation_anchor_missing",))
             await self.stored("check_capacity", self.now_ms())
             report = await (self.provider.collect(base) if base is not None else self.provider.collect())
             # Review 2 (R1): the storage boundary. Every record and diagnostic
@@ -253,6 +259,11 @@ class BaselineCaptureService:
             raise c.CaptureError("output_limit")
         return page
 
+    @staticmethod
+    def _read_timeouts(report):
+        outcomes = report["diagnostics"]["record_outcomes"]
+        return {key for key, value in outcomes.items() if value == "timeout"}
+
     def _compare(self, earlier_id, earlier, later_id, later, fingerprints, model):
         try:
             first = baseline_from_value(earlier["baseline"])
@@ -263,9 +274,16 @@ class BaselineCaptureService:
             value = comparison_report_dict(compare_baselines(first, second))
             value["counts"] = {**value["counts"], PREFIX_MATCH: 0}
             value.update(mode="stored_captures", earlier_capture_id=earlier_id, later_capture_id=later_id)
+            timed_out = self._read_timeouts(earlier) | self._read_timeouts(later)
         else:
             value = compare_recorded_fingerprints(first, fingerprints, model)
             value.update(mode="recorded_fingerprints", earlier_capture_id=earlier_id, later_capture_id=None)
+            timed_out = self._read_timeouts(earlier)
+        # HAMCP-235: an unknown row whose read timed out says so; the stored
+        # baseline records it only as unreadable.
+        for row in value["records"]:
+            if row["classification"] == "UNKNOWN" and row["configuration_id"] in timed_out:
+                row["reasons"] = sorted({*row["reasons"], "timed_out"})
         # Rows needing attention first, so a bounded result keeps them.
         value["records"].sort(key=lambda row: (row["classification"] in {"UNCHANGED", PREFIX_MATCH},
                                                row["configuration_id"]))
