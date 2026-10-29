@@ -72,7 +72,17 @@ readmission probes or admit itself. Old signed entries withhold this capability.
 
 Changed/missing/ambiguous identity, privilege loss or authority drift refuses the
 capture. If only the final bounded collection fails, retained useful records may
-be exported with unestablished identity and unknown fence continuity. Changed
+be exported with unknown fence continuity. HAMCP-235: the final fence reads the
+installation identity first (principal, config entries, devices) and its
+inventory second; when only the inventory reads fail, the identity re-verified
+by the final fence still establishes the capture (`final_fence:
+"identity_only"`), and when the identity reads fail too it is unestablished
+(`final_fence: "unavailable"`). `diagnostics.final_fence_reason` keeps the
+failed read's fixed reason (for example `timeout`), and
+`diagnostics.first_fence_installation_id` keeps the opaque identity digest the
+first fence observed. An automation's on/off state is volatile and is not
+inventory drift; the fences compare each automation's entity, configuration id
+and the unmapped and withheld counts. Changed
 inventory/mappings stay explicit; comparison cannot use that capture as absence
 authority. Equal before/after observations do not prove atomicity: changes and
 reversions within the interval may be missed.
@@ -152,8 +162,20 @@ capture at every stage; it is never reduced to an unreadable record.
 | Stored baselines (HAMCP-228) | 12 × 2 MiB, 180 days; continuation cursors 600 s |
 | Page records / response data | Default 25, maximum 100 / 48,000 bytes |
 
-Configuration scheduling stops with ten seconds reserved for the final fence.
-HAMCP-228: a record not scheduled before that reserve is `timed_out` (schema
+Configuration reads end early enough for the final fence. HAMCP-235 (review
+1, R1-M2): the final fence's reserve covers what must complete, its identity
+reads (principal, config entries, devices): twice their measured first-fence
+time, clamped to one to three read deadlines, 5–15 s
+(`diagnostics.final_fence_reserve_seconds`). Configuration reads end at the
+window, the collection deadline less the reserve: none is scheduled after it,
+and one still in flight there is cut (`unreadable`, outcome `timeout`), so the
+final identity reads keep the whole reserve. The final inventory reads use
+what remains of the collection deadline and may degrade the final fence to
+`identity_only`. The capture stays within the 45 s collection deadline. For
+example, at 1 s per read the identity reads take about 3 s, the reserve is
+about 6 s and the window ends at about 39 s; 115 configuration reads in
+rounds of four end at about 34 s and the final fence at about 39 s.
+HAMCP-228: a record not scheduled before the window is `timed_out` (schema
 v2), with no digest, instead of an indistinguishable unreadable record.
 Network operations share the collection deadline; cancellation drains owned bounded
 pure worker computation and closes transport before returning. There is no detached
@@ -262,16 +284,33 @@ unchanged; repeating it is not a recovery strategy.
 Before any Home Assistant read, the base is loaded (same caller, digests
 verified) and `resume_not_needed` is refused if it has nothing to retry, and
 capacity is checked. The resume then runs both capture fences again and
-refuses `resume_inventory_changed` unless the installation identity, the Core
-authority generation, the declared inventory count and the ordered
-`(configuration_id, entity_id)` mapping all equal the base's. A restart can
-reuse the authority generation, so the base's Core version binds the resume
-too: a different version is refused as `resume_core_changed` (not retryable)
-before any configuration read (review 1, M1). Retried records
-are collected fresh; all others are copied verbatim from the base. The result
-is a new stored baseline with `resume: {resumed_from: <base baseline_id>,
-resumed_count}`; its capture interval starts at the base's start, and drift or
-unestablished identity in the base is inherited. The base is never changed.
+compares only stable identity with the base (HAMCP-235): the installation
+anchor (the base's established installation id, else the identity its first
+fence observed), the set of configuration ids and each id's entity. Volatile
+state never refuses a resume: not an automation's on/off state, not the Core
+authority generation (a reconnect, registry refresh or Engineering restart),
+and not the unmapped count. A refusal is `resume_inventory_changed` with
+`details.resume_changes`, a sorted list of fixed categories:
+`automation_added`, `automation_removed`, `mapping_changed`,
+`installation_changed`, `installation_anchor_missing`. A restart can reuse the authority generation, so the
+base's Core version binds the resume too: a different version is refused as
+`resume_core_changed` with `resume_changes: ["core_version_changed"]` (not
+retryable) before any configuration read (review 1, M1). The categories never
+carry an identifier, count or Home Assistant text. Retried records are
+collected fresh; all others are copied verbatim from the base. The result is a
+new stored baseline with `resume: {resumed_from: <base baseline_id>,
+resumed_count}`; its capture interval starts at the base's start, and drift in
+the base is inherited. A new authority generation is recorded as
+`authority_drift: "detected"`. A base that recorded its first-fence anchor and
+whose own final fence failed is established by the resume's verified fences.
+The rows a resume inherits keep the provenance of the capture they came from:
+the current fences' anchor is never evidence for them (review 1, R1-M1).
+Owner decision D4 (Josh, 2026-10-28): a base with no installation anchor
+(neither established nor a recorded first-fence anchor, as an earlier
+release stored when its final fence failed) is refused as
+`resume_inventory_changed` with `resume_changes: ["installation_anchor_missing"]`
+(not retryable), on any installation, before any Home Assistant read and with
+nothing stored. A fresh capture replaces it. The base is never changed.
 `resume_capture_id` cannot be combined with `cursor`.
 
 ## `compare_automation_baselines` (HAMCP-228)
@@ -295,9 +334,23 @@ echoed.
   authority, so an id on one side only is `UNKNOWN`
   (`absent_from_capture` / `absent_from_recorded_fingerprints`), never `ADDED`
   or `REMOVED`. A `fingerprint_model` other than the capture's makes every row
-  `UNKNOWN` (`fingerprint_model_mismatch`). The capture's own prerequisites
-  (installation, authority continuity, mapping, readability including
-  `timed_out`, coverage and digest) also apply.
+  `UNKNOWN` (`fingerprint_model_mismatch`). The capture's own row
+  prerequisites (mapping, readability including `timed_out`, coverage and
+  digest) also apply; installation identity and authority continuity are
+  comparison-level caveats (below), with the recorded side always listed as
+  unverified.
+- HAMCP-235 (owner decision, Josh, option a): rows are classified by digest
+  (`UNCHANGED` / `CHANGED` / `PREFIX_MATCH`; `ADDED` / `REMOVED` only where
+  inventory authority allows). What the comparison cannot verify is stated
+  once in `caveats`, a list of `{code, statement, sides}` with the codes
+  `installation_identity_unverified`, `authority_continuity_unestablished` and
+  `non_atomic_capture`; it is identical on every page and is never repeated as
+  a row reason. `UNKNOWN` is kept for rows that are genuinely incomparable,
+  each with its reason: a timed-out read (`timed_out`, from either capture's
+  stored outcomes), a missing digest, an unreadable configuration, incomplete
+  coverage, an unverified mapping, a fingerprint contract or model mismatch,
+  an inventory scope mismatch, or two established, different installations
+  (`installation_identity_mismatch`).
 - Counts are `UNCHANGED`, `PREFIX_MATCH`, `CHANGED`, `ADDED`, `REMOVED`,
   `UNKNOWN` and `TOTAL`; stored/stored comparisons report `PREFIX_MATCH: 0`.
 - Rows other than `UNCHANGED`/`PREFIX_MATCH` come first, then by

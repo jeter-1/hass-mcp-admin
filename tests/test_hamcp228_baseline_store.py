@@ -425,7 +425,7 @@ class StoreTests(Harness):
 class ResumeTests(Harness):
     async def timed_out(self, data=None):
         service, client = self.service(data)
-        with patch.object(c, 'COLLECTION_SECONDS', 10):
+        with patch.object(c, 'COLLECTION_SECONDS', c.FINAL_FENCE_RESERVE_MIN):
             page = await self.capture(service)
         self.assertTrue(all(r['configuration']['status'] == 'timed_out' for r in page['records']))
         return service, client, page
@@ -482,18 +482,16 @@ class ResumeTests(Harness):
             # Same configuration ids in the same order; one entity id differs.
             data['states'][0]['entity_id'] = data['registry'][0]['entity_id'] = 'automation.a0x'
 
-        def unmapped(data):
-            # The mapped records are unchanged; only the declared count grows.
-            data['states'].append({'entity_id': 'automation.zz', 'state': 'on', 'attributes': {}})
-
         def installation(data):
             data['devices'][0]['id'] = 'device2'
 
-        def generation(_data):
-            self.core.generation = 2
-
-        for label, change in (('added', added), ('renamed', renamed), ('renamed_in_place', renamed_in_place),
-                              ('unmapped', unmapped), ('installation', installation), ('generation', generation)):
+        # HAMCP-235 (owner decision, Josh): only stable identity refuses, and
+        # the refusal names the fixed category. An unmapped automation and a
+        # new authority generation now resume (ResumeStabilityTests).
+        for label, change, expected in (
+                ('added', added, ['automation_added']), ('renamed', renamed, ['mapping_changed']),
+                ('renamed_in_place', renamed_in_place, ['mapping_changed']),
+                ('installation', installation, ['installation_changed'])):
             with self.subTest(label):
                 self.core = Core()
                 directory = tempfile.TemporaryDirectory()
@@ -503,6 +501,7 @@ class ResumeTests(Harness):
                 change(client.data)
                 error = await self.reason(self.capture(service, resume_capture_id=capture_id(first)))
                 self.assertEqual(error.reason, 'resume_inventory_changed')
+                self.assertEqual(error.details, {'reason': 'resume_inventory_changed', 'resume_changes': expected})
                 self.assertEqual(len(self.entries(service)), 1)
                 self.assertFalse(service.active)
 
@@ -515,6 +514,7 @@ class ResumeTests(Harness):
         client.calls.clear()
         error = await self.reason(self.capture(service, resume_capture_id=capture_id(first)))
         self.assertEqual(error.reason, 'resume_core_changed')
+        self.assertEqual(error.details['resume_changes'], ['core_version_changed'])
         self.assertFalse(error.retryable)
         self.assertEqual([call for call in client.calls if type(call) is tuple], [], 'no configuration read')
         self.assertEqual(len(self.entries(service)), 1)
@@ -552,7 +552,7 @@ class ValidationTests(Harness):
     async def baseline(self, timed_out=False):
         service, _ = self.service()
         if timed_out:
-            with patch.object(c, 'COLLECTION_SECONDS', 10):
+            with patch.object(c, 'COLLECTION_SECONDS', c.FINAL_FENCE_RESERVE_MIN):
                 page = await self.capture(service)
         else:
             page = await self.capture(service)

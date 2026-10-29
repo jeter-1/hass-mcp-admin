@@ -21,6 +21,21 @@ from .validation import BaselineValidationError, _parse_timestamp
 MAX_OUTPUT_BYTES = 1_000_000
 MAX_OUTPUT_DETAILS = 1_000
 
+# HAMCP-235 (owner decision, Josh, 2026-10-27, option a): what a comparison
+# cannot verify is stated once here, not repeated as a reason on every row.
+CAVEAT_STATEMENTS = {
+    "installation_identity_unverified":
+        "installation identity unverified: assumes both sides are from this installation",
+    "authority_continuity_unestablished":
+        "Core authority continuity unestablished: assumes the same Home Assistant Core served each capture",
+    "non_atomic_capture":
+        "captures are not atomic: a change and its reversion inside a capture interval can go unobserved",
+}
+
+
+def _caveat(code: str, sides: list[str]) -> dict[str, Any]:
+    return {"code": code, "statement": CAVEAT_STATEMENTS[code], "sides": sides}
+
 
 def _comparison_reasons(earlier: Baseline, later: Baseline) -> tuple[str, ...]:
     reasons: list[str] = []
@@ -38,6 +53,17 @@ def _comparison_reasons(earlier: Baseline, later: Baseline) -> tuple[str, ...]:
     return tuple(sorted(reasons))
 
 
+def _caveats(pairs: tuple[tuple[str, Baseline], ...], *, unverified_sides: tuple[str, ...] = ()) -> tuple[dict[str, Any], ...]:
+    installation = [side for side, item in pairs if not item.installation.established] + list(unverified_sides)
+    authority = [side for side, item in pairs
+                 if item.consistency.get("authority_drift") != "none_observed_at_capture_fences"]
+    atomic = [side for side, item in pairs if item.capture_non_atomic]
+    return tuple(_caveat(code, sides) for code, sides in (
+        ("installation_identity_unverified", installation),
+        ("authority_continuity_unestablished", authority),
+        ("non_atomic_capture", atomic)) if sides)
+
+
 def _installation_relation(earlier: Baseline, later: Baseline) -> tuple[bool, str | None]:
     if not earlier.installation.established or not later.installation.established:
         return False, "installation_identity_unestablished"
@@ -50,16 +76,15 @@ def _shared_unknown_reasons(
     earlier: AutomationRecord,
     later: AutomationRecord,
     *,
-    installation_comparable: bool,
-    installation_reason: str | None,
+    installation_mismatch: bool,
     fingerprint_contract_compatible: bool,
     inventory_scope_comparable: bool,
-    earlier_authority_continuous: bool,
-    later_authority_continuous: bool,
 ) -> list[str]:
     reasons: list[str] = []
-    if not installation_comparable:
-        reasons.append(installation_reason or "installation_identity_unestablished")
+    # HAMCP-235: an unestablished identity is a comparison-level caveat; only
+    # two established, different installations make a row incomparable.
+    if installation_mismatch:
+        reasons.append("installation_identity_mismatch")
     if not inventory_scope_comparable:
         reasons.append("inventory_scope_mismatch")
     if not earlier.identity_verified:
@@ -77,10 +102,6 @@ def _shared_unknown_reasons(
         reasons.append("earlier_configuration_coverage_incomplete")
     if not later.coverage.comparison_complete:
         reasons.append("later_configuration_coverage_incomplete")
-    if not earlier_authority_continuous:
-        reasons.append("earlier_authority_continuity_unestablished")
-    if not later_authority_continuous:
-        reasons.append("later_authority_continuity_unestablished")
     if not fingerprint_contract_compatible:
         reasons.append("fingerprint_contract_incompatible")
     if earlier.fingerprint_model != later.fingerprint_model:
@@ -96,11 +117,11 @@ def _separate_observations(
     earlier: AutomationRecord | None,
     later: AutomationRecord | None,
     *,
-    installation_comparable: bool,
+    installation_mismatch: bool,
     inventory_scope_comparable: bool,
 ) -> tuple[bool, bool]:
     if (
-        not installation_comparable
+        installation_mismatch
         or not inventory_scope_comparable
         or earlier is None
         or later is None
@@ -128,6 +149,7 @@ def compare_baselines(earlier: Baseline, later: Baseline) -> ComparisonReport:
 
     comparison_reasons = _comparison_reasons(earlier, later)
     installation_comparable, installation_reason = _installation_relation(earlier, later)
+    installation_mismatch = installation_reason == "installation_identity_mismatch"
     inventory_scope_comparable = earlier.inventory.scope == later.inventory.scope
     fingerprint_contract_compatible = bool(
         earlier.fingerprint_contract == later.fingerprint_contract
@@ -169,12 +191,9 @@ def compare_baselines(earlier: Baseline, later: Baseline) -> ComparisonReport:
             reasons = _shared_unknown_reasons(
                 old,
                 new,
-                installation_comparable=installation_comparable,
-                installation_reason=installation_reason,
+                installation_mismatch=installation_mismatch,
                 fingerprint_contract_compatible=fingerprint_contract_compatible,
                 inventory_scope_comparable=inventory_scope_comparable,
-                earlier_authority_continuous=earlier_authority_continuous,
-                later_authority_continuous=later_authority_continuous,
             )
             if reasons:
                 classification = Classification.UNKNOWN
@@ -183,8 +202,8 @@ def compare_baselines(earlier: Baseline, later: Baseline) -> ComparisonReport:
             else:
                 classification = Classification.CHANGED
         elif old is None and new is not None:
-            if not installation_comparable:
-                reasons.append(installation_reason or "installation_identity_unestablished")
+            if installation_mismatch:
+                reasons.append("installation_identity_mismatch")
             if not inventory_scope_comparable:
                 reasons.append("inventory_scope_mismatch")
             if not earlier_inventory_absence_authoritative:
@@ -193,8 +212,8 @@ def compare_baselines(earlier: Baseline, later: Baseline) -> ComparisonReport:
                 reasons.append("later_mapping_unverified")
             classification = Classification.UNKNOWN if reasons else Classification.ADDED
         elif old is not None and new is None:
-            if not installation_comparable:
-                reasons.append(installation_reason or "installation_identity_unestablished")
+            if installation_mismatch:
+                reasons.append("installation_identity_mismatch")
             if not inventory_scope_comparable:
                 reasons.append("inventory_scope_mismatch")
             if not later_inventory_absence_authoritative:
@@ -211,7 +230,7 @@ def compare_baselines(earlier: Baseline, later: Baseline) -> ComparisonReport:
             entity_changed, enabled_changed = False, False
         else:
             entity_changed, enabled_changed = _separate_observations(
-                old, new, installation_comparable=installation_comparable,
+                old, new, installation_mismatch=installation_mismatch,
                 inventory_scope_comparable=inventory_scope_comparable,
             )
         results.append(
@@ -255,6 +274,7 @@ def compare_baselines(earlier: Baseline, later: Baseline) -> ComparisonReport:
         fingerprint_contract_compatible=fingerprint_contract_compatible,
         records=tuple(results),
         limitations=limitations,
+        caveats=_caveats((("earlier", earlier), ("later", later))),
     )
 
 
@@ -278,6 +298,7 @@ def comparison_report_dict(report: ComparisonReport) -> dict[str, Any]:
             "later_inventory_absence_authoritative": report.later_inventory_absence_authoritative,
             "fingerprint_contract_compatible": report.fingerprint_contract_compatible,
         },
+        "caveats": [dict(item, sides=list(item["sides"])) for item in report.caveats],
         "counts": report.counts,
         "entity_id_change_count": sum(item.entity_id_changed for item in report.records),
         "enabled_state_change_count": sum(item.enabled_state_changed for item in report.records),
@@ -419,10 +440,8 @@ def compare_recorded_fingerprints(
         elif recorded is None:
             reasons.append("absent_from_recorded_fingerprints")
         else:
-            if not capture.installation.established:
-                reasons.append("capture_installation_unestablished")
-            if not authority_continuous:
-                reasons.append("capture_authority_continuity_unestablished")
+            # HAMCP-235: installation identity and authority continuity are
+            # comparison-level caveats, not row reasons.
             if not record.identity_verified:
                 reasons.append("capture_mapping_unverified")
             if record.configuration_status == "timed_out":
@@ -473,6 +492,7 @@ def compare_recorded_fingerprints(
             "recorded_side_installation_identity": "not_recorded",
             "recorded_side_inventory_authority": "not_recorded",
         },
+        "caveats": list(_caveats((("capture", capture),), unverified_sides=("recorded_fingerprints",))),
         "counts": counts,
         "limitations": [
             "unchanged_counts_full_digest_matches_only_prefix_match_is_counted_separately",

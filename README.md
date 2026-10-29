@@ -1,5 +1,26 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.45** makes automation baseline compare and resume
+usable on a real installation (HAMCP-235). On beta.40 (HAOS, 115
+automations), two identical captures compared as UNKNOWN 115 because their
+final fence failed, and a resume minutes later was refused with no detail.
+By owner decision (Josh, option a), `compare_automation_baselines` now
+classifies rows by digest and states installation identity, authority
+continuity and non-atomic capture once, in `caveats`; `UNKNOWN` is kept for
+incomparable rows, each with its reason (`timed_out` included). Resume
+compares only stable identity (installation anchor, configuration ids and
+their entities) and a refusal names its fixed categories
+(`details.resume_changes`); a base with no installation anchor is refused as
+`installation_anchor_missing` (owner decision D4). The final fence reads the
+identity first, records its failure reason and keeps a reserve sized for its
+identity reads. No new Core command, input
+schema or tool. The architect's live re-run of the owner's case is required
+for acceptance. Rollback is reinstalling beta.44. Read the [2.4.1-beta.45
+release notes](docs/V2_4_1_BETA45_RELEASE_NOTES.md) and [2.4.1-beta.45
+acceptance contract](docs/V2_4_1_BETA45_ACCEPTANCE.md).
+
+It builds on beta.44 and the releases below.
+
 Engineering **2.4.1-beta.44** itemizes withheld Core capabilities in
 `get_server_health` (HAMCP-242). `home_assistant_core_authority` now lists
 each held, quarantined or unavailable capability once, in

@@ -2,6 +2,28 @@
 
 Date: 2026-07-10
 
+## Baseline compare and resume usability (2.4.1-beta.45, HAMCP-235)
+
+`capture_automation_baseline` and `compare_automation_baselines` keep their
+routing, provider, policy, `risk=read`, writes `none`, input schemas and
+descriptors. No Core command, read or write is added; the final fence issues
+the same five reads, identity reads first. Output changes are additive:
+`caveats` on comparisons (installation identity, authority continuity,
+non-atomic capture, stated once instead of per-row `UNKNOWN` reasons, owner
+decision Josh option a), `timed_out` on timed-out rows from either capture,
+`details.resume_changes` (fixed categories) on resume refusals, and the
+diagnostics `final_fence` value `identity_only`, `final_fence_reason`,
+`first_fence_installation_id` and `final_fence_reserve_seconds`. Resume
+compares only the installation anchor, the configuration ids and their
+entities; a new authority generation is recorded as drift, not refused.
+Inherited rows keep their own capture's anchor. By owner decision D4 (Josh,
+2026-10-28) a base with no installation anchor (a beta.44-or-earlier capture
+whose final fence failed) is refused with the category
+`installation_anchor_missing` before any read, with nothing stored. The final
+fence's reserve covers its identity reads (twice their measured time, 5–15 s);
+configuration reads end where it starts. Identity drift, authority loss and
+access denial still refuse with nothing stored.
+
 ## Core authority withheld itemization (2.4.1-beta.44, HAMCP-242)
 
 `get_server_health` keeps its routing, input schema, `risk=read` and writes

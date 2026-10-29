@@ -156,6 +156,53 @@ class BaselineCaptureProvider:
                 or (row["configuration"]["status"] == "unreadable"
                     and outcomes.get(row["configuration_id"]) == "timeout")}
 
+    @staticmethod
+    def stable_states(fence):
+        """The fence's automation inventory without the volatile on/off state."""
+
+        projected = fence["states"]
+        return ({entity: (row["id"], row["id_withheld"]) for entity, row in projected["records"].items()},
+                projected["invalid_count"], projected["withheld_count"])
+
+    @staticmethod
+    def inherited_anchor(base):
+        """HAMCP-235: the installation anchor of a stored capture's rows, or None.
+
+        The base's established installation id, else the anchor its first
+        fence recorded. Captures stored by earlier releases whose final fence
+        failed recorded none (review 1, R1-M1); owner decision D4 (Josh,
+        2026-10-28) refuses resuming them.
+        """
+
+        prior = base["baseline"]
+        if prior["installation"]["status"] == "established":
+            return prior["installation"]["installation_id"]
+        return base["diagnostics"].get("first_fence_installation_id")
+
+    @staticmethod
+    def resume_changes(base, identity, records):
+        """HAMCP-235: the fixed categories of stable identity a resume found changed.
+
+        Only the installation anchor, the set of configuration ids and each
+        id's entity are compared; never the authority generation, an on/off
+        state or an unmapped count.
+        """
+
+        prior = base["baseline"]
+        anchor = BaselineCaptureProvider.inherited_anchor(base)
+        changes = set()
+        if anchor is not None and anchor != identity:
+            changes.add("installation_changed")
+        before = {row["configuration_id"]: row["entity_id"] for row in prior["records"]}
+        after = {row["configuration_id"]: row["entity_id"] for row in records}
+        if set(after) - set(before):
+            changes.add("automation_added")
+        if set(before) - set(after):
+            changes.add("automation_removed")
+        if any(before[key] != after[key] for key in set(before) & set(after)):
+            changes.add("mapping_changed")
+        return tuple(sorted(changes))
+
     async def collect(self, base=None):
         """Full capture, or with ``base`` (a stored report) a resume of its timeouts."""
 
@@ -168,9 +215,8 @@ class BaselineCaptureProvider:
                 raise c.CaptureError("authority_drift")
 
         async with self.client.capture(authority[1], authorize) as peer:
-            async def fence(label):
-                projected = {}
-                for kind in c.FENCE_READS:
+            async def fence(label, kinds, projected):
+                for kind in kinds:
                     authorize()
                     before = time.monotonic()
                     raw = await peer.read(kind)
@@ -178,12 +224,21 @@ class BaselineCaptureProvider:
                     del raw
                     sources.append({"kind": kind, "fence": label, "observed_at": now(),
                                     "provider": "direct_ha_api", "duration_ms": round((time.monotonic()-before)*1000, 3)})
-                if projected["devices"][1] != projected["entries"]:
-                    raise c.CaptureError("identity_unverified")
-                projected["identity"] = c.digest([c.IDENTITY_METHOD, *projected["devices"]])
+                if "identity" not in projected:
+                    if projected["devices"][1] != projected["entries"]:
+                        raise c.CaptureError("identity_unverified")
+                    projected["identity"] = c.digest([c.IDENTITY_METHOD, *projected["devices"]])
                 return projected
 
-            first = await fence("before")
+            fence_started = time.monotonic()
+            first = await fence("before", c.IDENTITY_READS, {})
+            # HAMCP-235 (review 1, R1-M2): the final fence shares the collection
+            # bound. Its reserve covers what must complete, the identity reads;
+            # configuration reads end when it starts (``window``).
+            reserve = min(c.FINAL_FENCE_RESERVE_MAX, max(
+                c.FINAL_FENCE_RESERVE_MIN, 2 * (time.monotonic() - fence_started)))
+            await fence("before", c.FENCE_READS[len(c.IDENTITY_READS):], first)
+            window = started + c.COLLECTION_SECONDS - reserve
             observed_at = now()
             states = first["states"]["records"]
             registry = first["registry"]["records"]
@@ -215,27 +270,25 @@ class BaselineCaptureProvider:
                     "enabled_state": {"state": state["state"], "collected_at": observed_at,
                                       "collection_time_status": "observed"}})
             pending = list(range(len(records)))
+            # The anchor of the rows a resume inherits is the base's own, never
+            # this capture's fences (review 1, R1-M1).
+            anchor = first["identity"] if base is None else self.inherited_anchor(base)
             if base is not None:
                 prior = base["baseline"]
                 prior_outcomes = base["diagnostics"]["record_outcomes"]
-                # Review 1 (M1): the authority generation restarts with each
-                # process, so it alone cannot prove the same Core; the base
-                # capture's Core version must match as well.
+                # Review 1 (M1): the base capture's Core version binds the resume.
                 if prior["authority"]["home_assistant_core"] != authority[1]:
-                    raise c.CaptureError("resume_core_changed")
-                # The inventory fence: the same installation, Core authority
-                # generation and ordered automation mapping, or no resume.
-                if (prior["installation"]["installation_id"] != first["identity"]
-                        or prior["authority"]["generation"] != authority[0]
-                        or prior["inventory"]["declared_count"] != len(states) + first["states"]["invalid_count"]
-                        or [(r["configuration_id"], r["entity_id"]) for r in prior["records"]]
-                        != [(r["configuration_id"], r["entity_id"]) for r in records]):
-                    raise c.CaptureError("resume_inventory_changed")
+                    raise c.CaptureError("resume_core_changed", resume_changes=("core_version_changed",))
+                changes = self.resume_changes(base, first["identity"], records)
+                if changes:
+                    raise c.CaptureError("resume_inventory_changed", resume_changes=changes)
                 retry = self.retry_ids(prior, prior_outcomes)
                 pending = [index for index, row in enumerate(records) if row["configuration_id"] in retry]
-                for index, row in enumerate(prior["records"]):
-                    if row["configuration_id"] not in retry:
-                        records[index] = copy.deepcopy(row)
+                kept = {row["configuration_id"]: row for row in prior["records"]
+                        if row["configuration_id"] not in retry}
+                for index, row in enumerate(records):
+                    if row["configuration_id"] in kept:
+                        records[index] = copy.deepcopy(kept[row["configuration_id"]])
                 outcomes.update({key: value for key, value in prior_outcomes.items() if key not in retry})
             position = 0
 
@@ -245,14 +298,20 @@ class BaselineCaptureProvider:
                     index, position = pending[position], position + 1
                     row = records[index]
                     config_id, config = row["configuration_id"], row["configuration"]
-                    if time.monotonic() - started >= c.COLLECTION_SECONDS - 10:
+                    if time.monotonic() >= window:
                         # HAMCP-228: never attempted before the bound; resume retries it.
                         outcomes[config_id] = "timeout"
                         config["status"] = "timed_out"
                         continue
                     try:
                         authorize()
-                        raw = await peer.configuration(config_id)
+                        try:
+                            # No configuration read outlasts the window, so the
+                            # identity reads keep their whole reserve.
+                            async with asyncio.timeout(max(0.0, window - time.monotonic())):
+                                raw = await peer.configuration(config_id)
+                        except TimeoutError:
+                            raise c.CaptureError("timeout") from None
                         value = await c.worker(self.projector.hash_configuration, config_id, raw)
                         del raw
                         authorize()
@@ -275,15 +334,23 @@ class BaselineCaptureProvider:
                     if not task.done():
                         task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
+            # HAMCP-235: the identity reads first, then the inventory reads; a
+            # failed inventory read keeps the verified identity, and the
+            # fixed reason of a failed final fence is recorded.
+            last, inventory_complete, fence_reason = {}, False, None
             try:
-                last = await fence("after")
+                await fence("after", c.IDENTITY_READS, last)
+                if first["identity"] != last["identity"]:
+                    raise c.CaptureError("identity_drift")
+                await fence("after", c.FENCE_READS[len(c.IDENTITY_READS):], last)
+                inventory_complete = True
                 authorize()
             except c.CaptureError as exc:
-                if exc.reason in {"authority_unavailable", "authority_drift", "access_denied", "identity_unverified"}:
+                if exc.reason in {"authority_unavailable", "authority_drift", "access_denied",
+                                  "identity_unverified", "identity_drift"}:
                     raise
-                last = None
-            if last and first["identity"] != last["identity"]:
-                raise c.CaptureError("identity_drift")
+                fence_reason = exc.reason
+            identity_verified = "identity" in last
             authorize()
             authority_metadata = self.authority_metadata(authority)
             requests, transport_bytes = peer.requests, peer.consumed
@@ -292,12 +359,16 @@ class BaselineCaptureProvider:
         capped = len(states) + first["states"]["invalid_count"] >= c.MAX_RECORDS
         # Registry-only observations are supplemental, not absence authority.
         extras = sorted(set(registry) - set(states))
-        identity_established = last is not None
-        inventory_drift = ("unknown" if last is None else
-                           "none_observed_at_capture_fences" if first["states"] == last["states"] else "detected")
+        identity_established = identity_verified
+        # HAMCP-235: the stable inventory only; an automation's on/off state
+        # is volatile and is not inventory drift.
+        inventory_drift = ("unknown" if not inventory_complete else
+                           "none_observed_at_capture_fences" if self.stable_states(first) == self.stable_states(last)
+                           else "detected")
         # Mapping changes also invalidate shared-record certainty, without turning
         # every unrelated registry mutation into an inventory change.
-        mapping_drift = bool(last and any(registry.get(e) != last["registry"]["records"].get(e) for e in states))
+        mapping_drift = bool(inventory_complete
+                             and any(registry.get(e) != last["registry"]["records"].get(e) for e in states))
         if mapping_drift:
             inventory_drift = "detected"
         authority_drift = "none_observed_at_capture_fences" if identity_established else "unknown"
@@ -310,7 +381,17 @@ class BaselineCaptureProvider:
                 inventory_drift = prior["consistency"]["inventory_drift"]
             if prior["consistency"]["authority_drift"] != "none_observed_at_capture_fences":
                 authority_drift = prior["consistency"]["authority_drift"]
-            identity_established = identity_established and prior["installation"]["status"] == "established"
+            # HAMCP-235: a new authority generation (a Core reconnect, registry
+            # refresh or Engineering restart) no longer refuses the resume;
+            # the resumed baseline records it as authority drift instead.
+            if prior["authority"]["generation"] != authority[0]:
+                authority_drift = "detected"
+            # HAMCP-235: the base's records are bracketed by its own anchor and
+            # this capture's fences; resume_changes refused a different anchor.
+            # The service refuses a base without one (D4); were one to reach
+            # here, its rows keep no anchor and stay unestablished, so no later
+            # resume can establish them.
+            identity_established = identity_established and anchor == first["identity"]
             resume = {"resumed_from": prior["baseline_id"], "resumed_count": len(pending)}
         if mapping_drift:
             for record in records:
@@ -345,5 +426,7 @@ class BaselineCaptureProvider:
             "unmapped_entities": unmapped[:16], "unmapped_count": len(unmapped),
             "registry_only_entities": extras[:16], "registry_only_count": len(extras),
             "registry_only_count_precision": "lower_bound", "record_outcomes": outcomes,
-            "final_fence": "complete" if last else "unavailable",
+            "final_fence": "complete" if inventory_complete else "identity_only" if identity_verified else "unavailable",
+            "final_fence_reason": fence_reason, "first_fence_installation_id": anchor,
+            "final_fence_reserve_seconds": round(reserve, 3),
             "credential_screen": storage_screen.summary(withheld)}}
