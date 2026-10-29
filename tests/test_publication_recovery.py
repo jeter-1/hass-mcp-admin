@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -29,7 +30,7 @@ def load(name, path):
 
 recovery = load("publication_recovery", ROOT / "scripts/publication_recovery.py")
 helpers = load("hamcp223_watchdog_test_helpers", ROOT / "tests/test_advertised_image_watchdog.py")
-Response, Opener = helpers.Response, helpers.Opener
+Response, Opener, git_fault = helpers.Response, helpers.Opener, helpers.git_fault
 
 REPO = "jeter-1/hass-mcp-admin"
 API = f"https://api.github.com/repos/{REPO}"
@@ -212,7 +213,7 @@ class VerdictTests(unittest.TestCase):
             self.assertEqual("command" in lines, name.startswith("dispatch"))
 
 
-class InspectionTests(unittest.TestCase):
+class InspectionFixture(unittest.TestCase):
     """End to end over a synthetic first-parent history and recorded remote state."""
 
     def setUp(self):
@@ -266,6 +267,8 @@ class InspectionTests(unittest.TestCase):
         state = recovery.inspect(self.root, REPO, self.reader, **kwargs)
         return state, recovery.verdict(state, kwargs.get("digest"))
 
+
+class InspectionTests(InspectionFixture):
     def test_unpublished_release_without_claim_prints_fresh_dispatch(self):
         state, (name, _, command) = self.inspect(version="1.0.0")
         self.assertEqual(name, "dispatch_fresh")
@@ -353,8 +356,8 @@ class InspectionTests(unittest.TestCase):
                                                    "status": "completed", "conclusion": "failure",
                                                    "head_sha": self.head, "path": recovery.WORKFLOW_PATH,
                                                    "triggering_actor": {"login": "jeter-1"}})
-        self.route("/actions/runs/77/attempts/2/jobs", {"jobs": [{"name": recovery.BUILD_JOB,
-                                                                  "conclusion": "success"}]})
+        self.route("/actions/runs/77/attempts/2/jobs", {"total_count": 1, "jobs": [
+            {"name": recovery.BUILD_JOB, "conclusion": "success"}]})
         state, (name, _, _) = self.inspect(version="1.0.0")
         self.assertEqual((state["claim_build"], name), ("success", "needs_digest"))
         index, children = helpers.index(("amd64", None), ("arm64", "v8"))
@@ -366,7 +369,7 @@ class InspectionTests(unittest.TestCase):
         self.assertEqual(name, "dispatch_digest")
         self.assertTrue(command.endswith(f"-f recovery_run_id=77 -f recovery_run_attempt=2 "
                                          f"-f recovery_source_digest={DIGEST} -f recovery_build_time={BUILD_TIME}"))
-        self.route("/actions/runs/77/attempts/2/jobs", {"jobs": [{"name": recovery.BUILD_JOB}] * 2})
+        self.route("/actions/runs/77/attempts/2/jobs", {"total_count": 2, "jobs": [{"name": recovery.BUILD_JOB}] * 2})
         self.opener.routes[("GET", API + "/actions/runs/77/attempts/2/jobs")].pop(0)
         self.assertEqual(recovery.inspect(self.root, REPO, self.reader, version="1.0.0")["claim_build"], "unknown")
 
@@ -417,6 +420,313 @@ class InspectionTests(unittest.TestCase):
         for forbidden in ('"POST"', '"PATCH"', '"PUT"', '"DELETE"', "/dispatches", "/rerun", "subprocess.",
                           "retried=False", "method="):
             self.assertNotIn(forbidden, source)
+
+
+
+# HAMCP-223 R2 failure-class sweep. Each ID is one row of the handoff table
+# "Failure paths: publication recovery helper"; every row has a case. Every
+# failure ends in exit 2 with a fixed category, or in a stop verdict, and never
+# prints dispatch inputs derived from incomplete data.
+HELPER_FAILURE_ROWS = {
+    "H1": "historical config blob read fails -> exit 2 git_unavailable, no command",
+    "H2": "historical valid config over the Git output bound -> exit 2 git_output_bound, no command",
+    "H3": "config tree-entry read fails -> exit 2",
+    "H4": "config or declaration path proven absent -> None / absent (unchanged)",
+    "H5": "non-regular config entry -> exit 2 config_not_regular_file",
+    "H6": "staged-declaration read fails -> exit 2, never 'not staged'",
+    "H7": "staged declaration present stops; absent permits fresh (unchanged)",
+    "H8": "config non-syntax parse failure -> exit 2 config_unprocessable",
+    "H9": "over-bound config -> exit 2 config_oversized (unchanged)",
+    "H10": "syntax-invalid config has no version (unchanged)",
+    "H11": "Engineering-tree diff fails -> exit 2, never drift or no drift",
+    "H12": "release walk cut by its bound -> exit 2 release_walk_truncated",
+    "H13": "first-parent walk or parent read fails -> exit 2 (unchanged)",
+    "H14": "named run's head unreadable or not local -> exit 2 run_head_*",
+    "H15": "named run unreadable or unrecognized -> run unknown -> stop",
+    "H16": "claim build-job listing incomplete or malformed -> build unknown -> stop",
+    "H17": "claim build conclusion unreadable -> build unknown -> stop",
+    "H18": "publish-run status unrecognized -> live runs unknown -> stop",
+    "H19": "registry manifest listing malformed -> unknown -> stop, never partial/absent",
+    "H20": "GitHub read failures -> unknown -> stop (unchanged)",
+    "H21": "local main unresolvable or unreadable -> exit 2",
+    "H22": "unexpected exception -> exit 2 unexpected_<type>, no command",
+}
+COMMAND = "gh workflow run"
+
+
+class HelperFailureClassTests(InspectionFixture):
+    """Only proven absence is None; every read or processing failure is exit 2 or a stop."""
+
+    def cli(self, *args):
+        original = recovery.watchdog.Reader
+        recovery.watchdog.Reader = lambda: self.reader
+        self.addCleanup(setattr, recovery.watchdog, "Reader", original)
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = recovery.main(["--repo-root", str(self.root), *(args or ("--version", "1.0.0"))], {})
+        return code, out.getvalue(), err.getvalue()
+
+    def assertExit2(self, category, *args):
+        code, out, err = self.cli(*args)
+        self.assertEqual(code, 2, out + err)
+        self.assertEqual(err.strip(), f"Recovery inspection failed: {category}")
+        self.assertNotIn(COMMAND, out + err)
+        self.assertNotIn("release_sha=", out + err)
+        self.assertTrue(all(method == "GET" for method, *_ in self.opener.requests))
+
+    def assertFreshControl(self, *args):
+        """Without the fault, the same history names the release and prints its command."""
+        code, out, _ = self.cli(*args)
+        self.assertEqual(code, 0)
+        self.assertIn(COMMAND, out)
+
+    def assertStop(self, **kwargs):
+        state, (name, _, command) = self.inspect(**kwargs)
+        self.assertEqual((name, command), ("stop", None))
+        return state
+
+    def advance(self, sha=None):
+        sha = sha or self.git("rev-parse", "HEAD")
+        self.git("update-ref", "refs/remotes/origin/main", sha)
+        self.opener.routes[("GET", API + "/git/ref/heads/main")] = [
+            Response(200, json.dumps({"object": {"sha": sha}}).encode())]
+        return sha
+
+    def config_oid(self, commit):
+        return self.git("rev-parse", f"{commit}:{recovery.CONFIG_PATH}")
+
+    def claim(self, jobs, run=None):
+        claim = {"schema": 1, "event": "workflow_dispatch", "release_sha": self.release, "version": "1.0.0",
+                 "workflow_sha": self.head, "run_id": 77, "run_attempt": 2}
+        self.opener.routes[("GET", API + "/git/ref/tags/engineering-publication-attempt/v1.0.0")] = [
+            Response(200, json.dumps({"object": {"type": "tag", "sha": "c" * 40}}).encode())]
+        self.route("/git/tags/" + "c" * 40, {"message": json.dumps(claim)})
+        self.route("/actions/runs/77/attempts/2", run or {
+            "id": 77, "run_attempt": 2, "event": "workflow_dispatch", "status": "completed",
+            "conclusion": "failure", "head_sha": self.head, "path": recovery.WORKFLOW_PATH,
+            "triggering_actor": {"login": "jeter-1"}})
+        self.opener.routes[("GET", API + "/actions/runs/77/attempts/2/jobs")] = [
+            Response(200, json.dumps(jobs).encode())]
+
+    # --- Git facts ---------------------------------------------------------------
+
+    def row_H1(self):
+        self.assertFreshControl()
+        older = self.config_oid(self.release + "^")
+        for outcome in (128, subprocess.TimeoutExpired("git", 60), OSError("synthetic")):
+            with self.subTest(outcome=type(outcome).__name__), git_fault(
+                    recovery.watchdog, lambda args: args == ("cat-file", "blob", older), outcome):
+                self.assertExit2("git_unavailable")
+
+    def row_H2(self):
+        # Codex's construction: a valid 50,000,151-byte 1.1.0 config, then only its comment trimmed.
+        path = self.root / recovery.CONFIG_PATH
+        body = yaml.safe_dump({**self.config, "version": "1.1.0"})
+        comment = "# " + "x" * 97 + "\n"
+        padding = 50_000_151 - len(body)
+        path.write_text(body + comment * (padding // len(comment)) + "#" * (padding % len(comment) - 1) + "\n")
+        self.assertEqual(path.stat().st_size, 50_000_151)
+        self.git("add", ".")
+        self.git("commit", "-qm", "1.1.0 with a long comment")
+        path.write_text(body)
+        self.git("commit", "-qam", "1.1.0, comment trimmed")
+        self.advance()
+        self.assertExit2("git_output_bound", "--version", "1.1.0")
+        self.assertEqual(recovery.version_at(self.root, "HEAD"), "1.1.0")
+
+    def row_H3(self):
+        release = self.release
+        with git_fault(recovery.watchdog, lambda args: "ls-tree" in args and recovery.CONFIG_PATH in args
+                       and release in args, 128):
+            self.assertExit2("git_unavailable")
+
+    def row_H4(self):
+        self.assertIsNone(recovery.blob(self.root, self.release, "absent/config.yaml"))
+        self.assertIsNone(recovery.blob(self.root, self.release, recovery.STAGED_DECLARATION))
+        self.assertFalse(recovery.present(self.root, self.release, recovery.STAGED_DECLARATION))
+        self.git("rm", "-q", recovery.CONFIG_PATH)
+        self.git("commit", "-qm", "Config removed")
+        self.assertIsNone(recovery.config_at(self.root, "HEAD"))
+        self.assertIsNone(recovery.version_at(self.root, "HEAD"))
+        self.git("reset", "-q", "--hard", self.head)
+        self.assertFreshControl()
+
+    def row_H5(self):
+        path = self.root / recovery.CONFIG_PATH
+        real = path.with_name("real.yaml")
+        real.write_text(path.read_text())
+        path.unlink()
+        path.symlink_to("real.yaml")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Symlinked config")
+        self.advance()
+        self.assertExit2("config_not_regular_file")
+
+    def row_H6(self):
+        for outcome in (128, b"garbage-without-a-tab\0"):
+            with self.subTest(outcome=outcome), git_fault(
+                    recovery.watchdog, lambda args: "ls-tree" in args and recovery.STAGED_DECLARATION in args,
+                    outcome):
+                self.assertExit2("git_unavailable" if outcome == 128 else "git_output_unexpected")
+
+    def row_H7(self):
+        self.assertFreshControl()
+        for extra in ({".release/next-version": "x\n"}, {".release/next-version/inner": "x\n"}):
+            with self.subTest(extra=extra):
+                self.git("reset", "-q", "--hard", self.head)
+                self.git("clean", "-qfdx")
+                self.advance(self.commit("1.0.0", extra))
+                self.assertTrue(self.assertStop(version="1.0.0")["staged"])
+
+    def row_H8(self):
+        path = self.root / recovery.CONFIG_PATH
+        path.write_text(path.read_text() + "build_date: 2026-13-45\n")
+        self.git("commit", "-qam", "Unprocessable at the same version")
+        self.advance()
+        self.assertExit2("config_unprocessable")
+        self.git("reset", "-q", "--hard", self.head)
+        self.advance(self.head)
+        original = yaml.safe_load
+
+        def parse(raw, *args, **kwargs):
+            if b"0.9.0" in raw:
+                raise MemoryError
+            return original(raw, *args, **kwargs)
+        with mock.patch.object(yaml, "safe_load", parse):
+            self.assertExit2("config_unprocessable")
+
+    def row_H9(self):
+        path = self.root / recovery.CONFIG_PATH
+        path.write_text(path.read_text() + "# padding\n" * (recovery.watchdog.BLOB_BOUND // 10 + 1))
+        self.git("commit", "-qam", "Over-bound at the same version")
+        self.config["description"] = "Trimmed"
+        self.advance(self.commit("1.0.0"))
+        self.assertExit2("config_oversized")
+
+    def row_H10(self):
+        path = self.root / recovery.CONFIG_PATH
+        path.write_text("version: [unterminated\n")
+        self.git("commit", "-qam", "Store-invalid")
+        self.assertIsNone(recovery.config_at(self.root, "HEAD"))
+        self.assertIsNone(recovery.version_at(self.root, "HEAD"))
+        self.assertEqual(recovery.release_commits(self.root, self.git("rev-parse", "HEAD"), "1.0.0"),
+                         [self.release])
+
+    def row_H11(self):
+        self.assertFreshControl()
+        for outcome in (128, subprocess.TimeoutExpired("git", 60)):
+            with self.subTest(outcome=outcome), git_fault(
+                    recovery.watchdog, lambda args: args[:2] == ("diff", "--quiet"), outcome):
+                self.assertExit2("git_unavailable")
+
+    def row_H12(self):
+        with self.assertRaisesRegex(recovery.RecoveryError, "release_walk_truncated"):
+            recovery.release_commits(self.root, self.head, "1.0.0", limit=1)
+        self.assertEqual(recovery.release_commits(self.root, self.head, "1.0.0", limit=2), [self.release])
+        with mock.patch.object(recovery.release_commits, "__defaults__", (1,)):
+            self.assertExit2("release_walk_truncated")
+
+    def row_H13(self):
+        for prefix in (("rev-list", "--first-parent"), ("rev-list", "--parents")):
+            with self.subTest(prefix=prefix), git_fault(
+                    recovery.watchdog, lambda args: args[:2] == prefix, 128):
+                self.assertExit2("git_unavailable")
+
+    def named_run(self, **fields):
+        document = {"id": 123, "run_attempt": 1, "event": "workflow_dispatch", "status": "completed",
+                    "conclusion": "failure", "head_sha": self.release, "path": recovery.WORKFLOW_PATH,
+                    "triggering_actor": {"login": "jeter-1"}, **fields}
+        self.opener.routes[("GET", API + "/actions/runs/123")] = [
+            Response(200, json.dumps(document).encode())]
+
+    def row_H14(self):
+        self.named_run(head_sha="d" * 40)
+        self.assertExit2("run_head_ref_not_found", "--run-id", "123")
+        release = self.release
+        for outcome, category in ((128, "run_head_git_unavailable"),
+                                  (b"not-a-sha\n", "run_head_git_output_unexpected")):
+            with self.subTest(outcome=outcome), git_fault(
+                    recovery.watchdog, lambda args: args[:1] == ("rev-parse",)
+                    and release + "^{commit}" in args, outcome):
+                self.named_run()
+                self.assertExit2(category, "--run-id", "123")
+
+    def row_H15(self):
+        for fields in ({"id": "123"}, {"triggering_actor": None}, {"status": "action_required"},
+                       {"status": None}, {"head_sha": "short"}, {"event": 7}, {"path": "../x\n"}):
+            with self.subTest(fields=fields):
+                self.named_run(**fields)
+                state = self.assertStop(run_id="123", version="1.0.0")
+                self.assertEqual(state["run"], "unknown")
+
+    def row_H16(self):
+        job = {"name": recovery.BUILD_JOB, "conclusion": "success"}
+        for jobs in ({"jobs": [job]}, {"total_count": 2, "jobs": [job]}, {"total_count": "1", "jobs": [job]},
+                     {"total_count": 1, "jobs": {}}, {"total_count": 2, "jobs": [job, 1]}, [job]):
+            with self.subTest(jobs=jobs):
+                self.claim(jobs)
+                self.assertEqual(self.assertStop(version="1.0.0")["claim_build"], "unknown")
+        self.claim({"total_count": 1, "jobs": [job]})
+        self.assertEqual(self.inspect(version="1.0.0")[1][0], "needs_digest")
+        self.claim({"total_count": 0, "jobs": []})
+        self.assertEqual(self.inspect(version="1.0.0")[0]["claim_build"], "not_started")
+
+    def row_H17(self):
+        for conclusion in (7, ["success"], "bad conclusion\n"):
+            with self.subTest(conclusion=conclusion):
+                self.claim({"total_count": 1, "jobs": [{"name": recovery.BUILD_JOB, "conclusion": conclusion}]})
+                self.assertEqual(self.assertStop(version="1.0.0")["claim_build"], "unknown")
+
+    def row_H18(self):
+        runs = API + "/actions/workflows/publish-rc-image.yml/runs"
+        for status in ("action_required", None, "Queued"):
+            with self.subTest(status=status):
+                self.opener.routes[("GET", runs)] = [Response(200, json.dumps(
+                    {"total_count": 1, "workflow_runs": [helpers.run(5, status, None, sha=self.head)]}).encode())]
+                self.assertEqual(self.assertStop(version="1.0.0")["live_runs"], "unknown")
+
+    def row_H19(self):
+        body, children = helpers.index(("amd64", None), ("arm64", "v8"))
+        document = json.loads(body)
+        for manifests in (None, {}, [1], document["manifests"] + [{"digest": "sha256:" + "e" * 64,
+                                                                   "platform": "linux/arm64"}]):
+            with self.subTest(manifests=manifests):
+                value = {k: v for k, v in dict(document, manifests=manifests).items() if v is not None}
+                self.opener.routes[("GET", MANIFESTS + "1.0.0")] = [
+                    Response(200, json.dumps(value).encode(), helpers.INDEX_TYPE)]
+                for digest, child in children.items():
+                    self.opener.routes[("GET", MANIFESTS + digest)] = [
+                        Response(200, child, helpers.MANIFEST_TYPE)]
+                self.assertEqual(self.assertStop(version="1.0.0")["registry_version"], "unknown")
+
+    def row_H20(self):
+        for route in ("/git/ref/tags/v1.0.0", "/releases/tags/v1.0.0", "/git/ref/heads/main"):
+            with self.subTest(route=route):
+                saved = self.opener.routes.get(("GET", API + route))
+                self.opener.routes[("GET", API + route)] = [Response(500)] * 10
+                self.assertStop(version="1.0.0")
+                self.opener.routes[("GET", API + route)] = saved
+
+    def row_H21(self):
+        self.assertExit2("ref_not_found", "--version", "1.0.0", "--main-ref", "absent")
+        for outcome in (128, subprocess.TimeoutExpired("git", 60)):
+            with self.subTest(outcome=outcome), git_fault(
+                    recovery.watchdog, lambda args: "refs/remotes/origin/main^{commit}" in args, outcome):
+                self.assertExit2("git_unavailable")
+
+    def row_H22(self):
+        for error in (MemoryError(), RecursionError(), KeyError("x")):
+            with self.subTest(error=type(error).__name__), mock.patch.object(
+                    recovery.watchdog, "registry_state", side_effect=error):
+                self.assertExit2(f"unexpected_{type(error).__name__}")
+
+    def test_every_table_row_has_a_case(self):
+        cases = {name.removeprefix("row_") for name in dir(self) if name.startswith("row_")}
+        self.assertEqual(cases, set(HELPER_FAILURE_ROWS))
+
+
+for _row in HELPER_FAILURE_ROWS:
+    setattr(HelperFailureClassTests, f"test_row_{_row}", lambda self, row=_row: getattr(self, f"row_{row}")())
 
 
 if __name__ == "__main__":

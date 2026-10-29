@@ -12,8 +12,10 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.parse
 
@@ -101,6 +103,43 @@ def index(*platforms, extra=()):
 def run(run_id, status="completed", conclusion="success", attempt=1, sha=None):
     return {"id": run_id, "run_attempt": attempt, "event": "workflow_run", "status": status,
             "conclusion": conclusion, "head_sha": sha}
+
+
+class GitFault:
+    """Stands in for one module's ``subprocess``: matching Git calls fail as configured.
+
+    ``outcome`` is an exit status, a raised exception, or stdout returned with status 0.
+    """
+
+    PIPE, DEVNULL, SubprocessError, CalledProcessError = (
+        subprocess.PIPE, subprocess.DEVNULL, subprocess.SubprocessError, subprocess.CalledProcessError)
+
+    def __init__(self, match, outcome):
+        self.match, self.outcome, self.hits = match, outcome, 0
+
+    def run(self, command, **kwargs):
+        if not self.match(tuple(command[3:])):  # after ``git -C <root>``
+            return subprocess.run(command, **kwargs)
+        self.hits += 1
+        if isinstance(self.outcome, BaseException):
+            raise self.outcome
+        if isinstance(self.outcome, int):
+            if kwargs.get("check") and self.outcome:
+                raise subprocess.CalledProcessError(self.outcome, command)
+            return subprocess.CompletedProcess(command, self.outcome, b"")
+        return subprocess.CompletedProcess(command, 0, self.outcome)
+
+
+@contextlib.contextmanager
+def git_fault(module, match, outcome):
+    fault, original = GitFault(match, outcome), module.subprocess
+    module.subprocess = fault
+    try:
+        yield fault
+    finally:
+        module.subprocess = original
+    if not fault.hits:
+        raise AssertionError("the injected Git failure was never reached")
 
 
 class WatchdogFixture(unittest.TestCase):
@@ -284,15 +323,18 @@ class RegistryOutcomeTests(WatchdogFixture):
         body, children = index(("amd64", None), ("arm64", None))
         bad_child = {d: b + b" " for d, b in children.items()}
         duplicate, _ = index(("amd64", None), ("amd64", None), ("arm64", None))
+        # Each case pins its own reason: the per-add-on guard would otherwise
+        # hide a check that stopped working behind a generic unknown.
         cases = {
-            "token_refused": None,
-            "single_manifest": (Response(200, json.dumps({"mediaType": MANIFEST_TYPE}).encode(), MANIFEST_TYPE), {}),
-            "digest_mismatch": (Response(200, body, INDEX_TYPE), bad_child),
-            "duplicate_platform": (Response(200, duplicate, INDEX_TYPE), {}),
-            "malformed_index": (Response(200, b"{", INDEX_TYPE), {}),
-            "forbidden": (Response(403), {}),
+            "token_refused": (None, "registry_401"),
+            "single_manifest": ((Response(200, json.dumps({"mediaType": MANIFEST_TYPE}).encode(), MANIFEST_TYPE),
+                                 {}), "image_is_not_a_multi_platform_index"),
+            "digest_mismatch": ((Response(200, body, INDEX_TYPE), bad_child), "platform_manifest_unverified"),
+            "duplicate_platform": ((Response(200, duplicate, INDEX_TYPE), {}), "ambiguous_platform_entry"),
+            "malformed_index": ((Response(200, b"{", INDEX_TYPE), {}), "registry_response_malformed"),
+            "forbidden": ((Response(403), {}), "registry_403"),
         }
-        for name, case in cases.items():
+        for name, (case, reason) in cases.items():
             with self.subTest(name=name):
                 self.opener.routes.clear()
                 if case is None:
@@ -300,7 +342,8 @@ class RegistryOutcomeTests(WatchdogFixture):
                 else:
                     self.registry(case[0], children=case[1])
                 self.runs()
-                self.assertEqual(self.check()["outcome"], "unknown")
+                addon = self.addon(self.check())
+                self.assertEqual((addon["outcome"], addon["reason"]), ("unknown", reason))
 
     def test_unmapped_arch_is_unknown_never_ok(self):
         self.commit(dict(self.config, arch=["amd64", "aarch64", "armv7"]), "Add armv7")
@@ -453,6 +496,423 @@ class StoreDiscoveryTests(WatchdogFixture):
         self.commit(dict(self.config, version="1.1.0"), "1.1.0")
         again = self.commit(self.config, "Back to 1.0.0")
         self.assertEqual(watchdog.release_commit(self.root, again, path, "1.0.0"), again)
+
+
+# HAMCP-223 R2 failure-class sweep. Each ID is one row of the handoff table
+# "Failure paths: watchdog and release-commit derivation"; every row has a case.
+WATCHDOG_FAILURE_ROWS = {
+    "W1": "parse: MemoryError on a valid store-visible config -> add-on and overall unknown",
+    "W2": "parse: RecursionError -> unknown",
+    "W3": "parse: YAML constructor ValueError (impossible date) -> unknown",
+    "W4": "parse: JSON non-syntax failure -> unknown",
+    "W5": "parse: YAML parser unavailable (ImportError) -> unknown",
+    "W6": "parse: YAML/JSON syntax or decoding error -> skipped (unchanged)",
+    "W7": "parse: non-mapping or missing store keys -> skipped (unchanged)",
+    "W8": "parse: over-bound config -> unknown (unchanged)",
+    "W9": "discovery: candidate blob read fails (status or timeout) -> add-on unknown",
+    "W10": "discovery: candidate blob over the Git output bound -> add-on unknown",
+    "W11": "discovery: tree listing fails -> report unknown (unchanged)",
+    "W12": "discovery: tree listing malformed -> report unknown, never a crash",
+    "W13": "discovery: non-regular candidate -> unknown (unchanged)",
+    "W14": "discovery: repository metadata missing -> unknown (unchanged)",
+    "W15": "ref: an earlier ref name's read fails -> unknown, never a later stale name",
+    "W16": "ref: success with non-SHA output -> unknown",
+    "W17": "ref: every name proven absent -> ref_not_found (unchanged)",
+    "D1": "release: first-parent walk fails -> release unknown, never a crash",
+    "D2": "release: historical tree read fails -> release unknown",
+    "D3": "release: historical tree read output unexpected -> release unknown",
+    "D4": "release: historical blob read fails -> release unknown (unchanged)",
+    "D5": "release: historical non-regular entry -> release unknown",
+    "D6": "release: historical non-syntax parse failure -> release unknown",
+    "D7": "release: historical over-bound config -> release unknown (unchanged)",
+    "D8": "release: walk cut by its bound -> release unknown (unchanged)",
+    "D9": "release: historical store-invalid config ends the run (unchanged)",
+    "G1": "registry: malformed manifest listing -> unknown, never all-missing",
+    "G2": "registry: transport, status or verification failure -> unknown (unchanged)",
+    "G3": "registry: tag 404 -> incomplete (unchanged)",
+    "G4": "inspection: unexpected exception (MemoryError) -> add-on and overall unknown",
+    "U1": "runs: matching run with a non-string head_sha -> unknown",
+    "U2": "runs: unrecognized or missing run status -> unknown, never not-live",
+    "U3": "runs: listing unavailable, malformed, inconsistent -> unknown (unchanged)",
+    "A1": "alert: missing or malformed report -> unknown, opens the issue (unchanged)",
+    "A2": "alert: issue API failure -> exit failure, issue never closed (unchanged)",
+}
+OTHER = "ghcr.io/example-owner/other-addon"
+
+
+class FailureClassTests(WatchdogFixture):
+    """Read, parse and processing failures are unknown; only proven store-invalid input is skipped."""
+
+    def second(self, extra="", path="other/config.yaml", raw=None):
+        other = dict(self.config, slug="other", image=OTHER)
+        self.write(path, raw if raw is not None else (
+            json.dumps(other) if path.endswith(".json") else yaml.safe_dump(other) + extra))
+        self.git("add", ".")
+        self.git("commit", "-qm", "Second add-on")
+        self.present(("amd64", None), ("arm64", None))
+        return self.git("rev-parse", f"HEAD:{path}")
+
+    def follow_up(self, config=None, message="Same version, edited"):
+        """A later commit at the same version; the release stays the original one."""
+        return self.commit(config or dict(self.config, description="Edited"), message)
+
+    def assertSecondUnknown(self, result, reason, path="other/config.yaml"):
+        self.assertEqual(result["outcome"], "unknown")
+        self.assertEqual(result["skipped"], [])
+        self.assertEqual([(a["path"], a["outcome"], a.get("reason")) for a in result["addons"]],
+                         [("addon/config.yaml", "ok", "all_platforms_present"), (path, "unknown", reason)])
+        self.assertFalse(any("other-addon" in url for _, url, *_ in self.opener.requests))
+
+    def assertAlertOpen(self, result):
+        """Unknown opens an absent issue and keeps an existing one open; it never closes."""
+        store = IssueStore()
+        api = watchdog.IssueAPI(watchdog.REPOSITORY, API_TOKEN, watchdog.Reader(
+            store, clock=lambda: 0.0, sleep=lambda s: None, jitter=lambda: 0.0, wall=lambda: 0.0))
+        self.assertEqual(watchdog.alert(result, api), (1, "opened"))
+        self.assertEqual([i["state"] for i in store.issues.values()], ["open"])
+        store = IssueStore()
+        api.reader = watchdog.Reader(store, clock=lambda: 0.0, sleep=lambda s: None,
+                                     jitter=lambda: 0.0, wall=lambda: 0.0)
+        self.assertEqual(watchdog.alert(report(), api), (1, "opened"))
+        self.assertEqual(watchdog.alert(result, api), (1, "updated"))
+        self.assertEqual([i["state"] for i in store.issues.values()], ["open"])
+        self.assertFalse(any(b'"closed"' in (data or b"") for *_, data in store.requests))
+
+    def assertReleaseUnknown(self, result=None):
+        addon = self.addon(result or self.check())
+        self.assertEqual((addon["outcome"], addon.get("release_sha"), addon.get("reason")),
+                         ("unknown", "unknown", "image_tag_absent+release_commit_unknown"))
+
+    def failing_parse(self, module_function, error):
+        """Patch a parser so only the second add-on's configuration fails."""
+        original = getattr(*module_function)
+
+        def parse(raw, *args, **kwargs):
+            if isinstance(raw, bytes) and b"other-addon" in raw:
+                raise error
+            return original(raw, *args, **kwargs)
+        return mock.patch.object(*module_function, parse)
+
+    # --- parse ---------------------------------------------------------------
+
+    def row_W1(self):
+        self.second()
+        with self.failing_parse((yaml, "safe_load"), MemoryError()):
+            result = self.check()
+        self.assertSecondUnknown(result, "config_unprocessable")
+        self.assertAlertOpen(result)
+
+    def row_W2(self):
+        self.second()
+        with self.failing_parse((yaml, "safe_load"), RecursionError()):
+            result = self.check()
+        self.assertSecondUnknown(result, "config_unprocessable")
+        self.assertAlertOpen(result)
+
+    def row_W3(self):
+        # PyYAML raises ValueError for an impossible date; Supervisor does not catch it either.
+        self.second(extra="build_date: 2026-13-45\n")
+        result = self.check()
+        self.assertSecondUnknown(result, "config_unprocessable")
+        self.assertAlertOpen(result)
+
+    def row_W4(self):
+        self.second(path="other/config.json")
+        with self.failing_parse((watchdog.json, "loads"), MemoryError()):
+            result = self.check()
+        self.assertSecondUnknown(result, "config_unprocessable", "other/config.json")
+        self.assertAlertOpen(result)
+
+    def row_W5(self):
+        with mock.patch.dict(sys.modules, {"yaml": None}):
+            result = self.check()
+        self.assertEqual((result["outcome"], self.addon(result)["reason"]),
+                         ("unknown", "config_parser_unavailable"))
+        self.assertEqual(result["skipped"], [])
+        self.assertAlertOpen(result)
+
+    def row_W6(self):
+        for path, raw in (("broken/config.yaml", "name: [unterminated\n"),
+                          ("broken/config.json", '{"name": '),
+                          ("badutf/config.yaml", b"name: \xc3\x28\n"),
+                          ("badutf/config.json", b'{"name": "\xc3\x28"}')):
+            target = self.root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw if isinstance(raw, bytes) else raw.encode())
+        self.git("add", ".")
+        self.git("commit", "-qm", "Store-invalid configs")
+        self.present(("amd64", None), ("arm64", None))
+        result = self.check()
+        self.assertEqual(result["outcome"], "ok")
+        self.assertEqual(sorted((s["path"], s["reason"]) for s in result["skipped"]),
+                         [(p, "config_unreadable") for p in ("badutf/config.json", "badutf/config.yaml",
+                                                             "broken/config.json", "broken/config.yaml")])
+
+    def row_W7(self):
+        self.write("partial/config.yml", {"name": "No version"})
+        self.write("list/config.yaml", "- not\n- a mapping\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Not store configs")
+        self.present(("amd64", None), ("arm64", None))
+        result = self.check()
+        self.assertEqual(result["outcome"], "ok")
+        self.assertEqual(sorted((s["path"], s["reason"]) for s in result["skipped"]),
+                         [("list/config.yaml", "not_a_store_config"),
+                          ("partial/config.yml", "not_a_store_config")])
+
+    def row_W8(self):
+        other = dict(self.config, slug="other", image=OTHER)
+        self.second(raw=yaml.safe_dump(other) + "# padding\n" * (watchdog.BLOB_BOUND // 10 + 1))
+        result = self.check()
+        self.assertSecondUnknown(result, "config_oversized")
+        self.assertAlertOpen(result)
+
+    # --- discovery and ref -----------------------------------------------------
+
+    def row_W9(self):
+        oid = self.second()
+        for outcome in (128, subprocess.TimeoutExpired("git", 60), OSError("synthetic")):
+            with self.subTest(outcome=type(outcome).__name__):
+                self.opener.requests.clear()
+                with git_fault(watchdog, lambda args: args == ("cat-file", "blob", oid), outcome):
+                    result = self.check()
+                self.assertSecondUnknown(result, "git_unavailable")
+        self.assertAlertOpen(result)
+
+    def row_W10(self):
+        oid = self.second()
+        with git_fault(watchdog, lambda args: args == ("cat-file", "blob", oid), b"x" * 50_000_001):
+            result = self.check()
+        self.assertSecondUnknown(result, "git_output_bound")
+        self.assertAlertOpen(result)
+
+    def row_W11(self):
+        with git_fault(watchdog, lambda args: args[:2] == ("ls-tree", "-r"), 128):
+            result = self.check()
+        self.assertEqual((result["outcome"], result["reason"], result["addons"]),
+                         ("unknown", "git_unavailable", []))
+        self.assertAlertOpen(result)
+
+    def row_W12(self):
+        for output in (b"no-tab-separator\0", b"100644 blob\tmissing-oid\0"):
+            with self.subTest(output=output), git_fault(
+                    watchdog, lambda args: args[:2] == ("ls-tree", "-r"), output):
+                result = self.check()
+            self.assertEqual((result["outcome"], result["reason"]), ("unknown", "git_output_unexpected"))
+        self.assertAlertOpen(result)
+
+    def row_W13(self):
+        (self.root / "linked").mkdir()
+        (self.root / "linked/config.yaml").symlink_to("../addon/config.yaml")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Symlink")
+        self.present(("amd64", None), ("arm64", None))
+        result = self.check()
+        self.assertEqual(result["outcome"], "unknown")
+        self.assertIn({"path": "linked/config.yaml", "outcome": "unknown",
+                       "reason": "config_not_regular_file"}, result["addons"])
+
+    def row_W14(self):
+        self.git("rm", "-q", "repository.yaml")
+        self.git("commit", "-qm", "No repository metadata")
+        result = self.check()
+        self.assertEqual((result["outcome"], result["reason"]), ("unknown", "repository_metadata_missing"))
+
+    def row_W15(self):
+        # refs/heads/main exists, so falling through would report a definite (possibly stale) ok.
+        self.present(("amd64", None), ("arm64", None))
+        self.assertEqual(self.check()["outcome"], "ok")
+        origin = lambda args: args[:1] == ("rev-parse",) and "refs/remotes/origin/main^{commit}" in args
+        for outcome in (128, subprocess.TimeoutExpired("git", 60)):
+            with self.subTest(outcome=outcome), git_fault(watchdog, origin, outcome):
+                result = self.check()
+            self.assertEqual((result["outcome"], result["reason"]), ("unknown", "git_unavailable"))
+        self.assertAlertOpen(result)
+
+    def row_W16(self):
+        self.present(("amd64", None), ("arm64", None))
+        origin = lambda args: args[:1] == ("rev-parse",) and "refs/remotes/origin/main^{commit}" in args
+        with git_fault(watchdog, origin, b"not-a-commit\n"):
+            result = self.check()
+        self.assertEqual((result["outcome"], result["reason"]), ("unknown", "git_output_unexpected"))
+
+    def row_W17(self):
+        result = self.check("does-not-exist")
+        self.assertEqual((result["outcome"], result["reason"]), ("unknown", "ref_not_found"))
+
+    # --- release-commit derivation -----------------------------------------------
+
+    def row_D1(self):
+        self.registry(Response(404))
+        with git_fault(watchdog, lambda args: args[:2] == ("rev-list", "--first-parent"), 128):
+            self.assertReleaseUnknown()
+
+    def row_D2(self):
+        self.follow_up()
+        self.registry(Response(404))
+        release = self.release
+        with git_fault(watchdog, lambda args: "ls-tree" in args and "-r" not in args and release in args, 128):
+            self.assertReleaseUnknown()
+
+    def row_D3(self):
+        self.follow_up()
+        self.registry(Response(404))
+        release = self.release
+        # A readable older-version blob: trusting a mislabelled entry would
+        # name the wrong release instead of failing.
+        older = self.git("rev-parse", f"{release}~1:addon/config.yaml").encode()
+        entry = b"100644 blob " + older + b"\t%s\0"
+        for output in (entry % b"somewhere/else", entry % b"addon/config.yaml" * 2):
+            with self.subTest(output=output), git_fault(
+                    watchdog, lambda args: "ls-tree" in args and "-r" not in args and release in args, output):
+                self.assertReleaseUnknown()
+
+    def row_D4(self):
+        oid = self.git("rev-parse", f"{self.release}:addon/config.yaml")
+        self.follow_up()
+        self.registry(Response(404))
+        with git_fault(watchdog, lambda args: args == ("cat-file", "blob", oid), 128):
+            self.assertReleaseUnknown()
+
+    def row_D5(self):
+        self.write("addon/real.yaml", self.config)
+        (self.root / "addon/config.yaml").unlink()
+        (self.root / "addon/config.yaml").symlink_to("real.yaml")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Symlinked config at the same version")
+        (self.root / "addon/config.yaml").unlink()
+        self.follow_up(message="Regular config again")
+        self.assertEqual(self.git("ls-tree", "HEAD", "addon/config.yaml").split()[0], "100644")
+        self.registry(Response(404))
+        self.assertReleaseUnknown()
+
+    def row_D6(self):
+        self.write("addon/config.yaml", yaml.safe_dump(self.config) + "build_date: 2026-13-45\n")
+        self.git("commit", "-qam", "Unprocessable at the same version")
+        self.follow_up()
+        self.registry(Response(404))
+        self.assertReleaseUnknown()
+
+    def row_D7(self):
+        self.write("addon/config.yaml", yaml.safe_dump(self.config)
+                   + "# padding\n" * (watchdog.BLOB_BOUND // 10 + 1))
+        self.git("commit", "-qam", "Over-bound at the same version")
+        self.follow_up()
+        self.registry(Response(404))
+        self.assertReleaseUnknown()
+
+    def row_D8(self):
+        self.assertIsNone(watchdog.release_commit(self.root, self.head, "addon/config.yaml", "1.0.0", limit=2))
+
+    def row_D9(self):
+        self.write("addon/config.yaml", "version: [unterminated\n")
+        self.git("commit", "-qam", "Store-invalid")
+        again = self.follow_up(message="Valid 1.0.0 again")
+        self.assertEqual(watchdog.release_commit(self.root, again, "addon/config.yaml", "1.0.0"), again)
+
+    # --- registry, inspection and runs -------------------------------------------
+
+    def row_G1(self):
+        body, children = index(("amd64", None), ("arm64", None))
+        document = json.loads(body)
+        malformed = {"manifests_missing": {"mediaType": INDEX_TYPE},
+                     "manifests_not_a_list": dict(document, manifests={}),
+                     "entry_not_an_object": dict(document, manifests=document["manifests"] + [1]),
+                     "platform_not_an_object": dict(document, manifests=document["manifests"] + [
+                         {"mediaType": MANIFEST_TYPE, "digest": "sha256:" + "b" * 64,
+                          "platform": "linux/arm64"}])}
+        for name, value in malformed.items():
+            with self.subTest(name=name):
+                self.opener.routes.clear()
+                self.registry(Response(200, json.dumps(value).encode(), INDEX_TYPE), children=children)
+                self.runs()
+                addon = self.addon(self.check())
+                self.assertEqual((addon["outcome"], addon["registry"], addon["reason"]),
+                                 ("unknown", "unknown", "registry_response_malformed"))
+        # OCI lets an entry omit its platform; that alone is not malformed.
+        self.opener.routes.clear()
+        extra = {"mediaType": MANIFEST_TYPE, "digest": "sha256:" + "c" * 64}
+        self.registry(Response(200, json.dumps(dict(document, manifests=document["manifests"] + [extra])).encode(),
+                               INDEX_TYPE), children=children)
+        self.assertEqual(self.check()["outcome"], "ok")
+
+    def row_G2(self):
+        self.registry(Response(500))
+        self.runs()
+        self.assertEqual(self.addon(self.check())["outcome"], "unknown")
+
+    def row_G3(self):
+        self.registry(Response(404))
+        self.runs(run(1, conclusion="failure"))
+        addon = self.addon(self.check())
+        self.assertEqual((addon["outcome"], addon["registry"], addon["reason"]),
+                         ("mismatch", "incomplete", "image_tag_absent"))
+
+    def row_G4(self):
+        self.second()
+        self.opener.add("GET", "https://ghcr.io/v2/example-owner/other-addon/manifests/1.0.0", MemoryError())
+        result = self.check()
+        self.assertEqual(result["outcome"], "unknown")
+        self.assertEqual([(a["path"], a["outcome"], a.get("reason")) for a in result["addons"]],
+                         [("addon/config.yaml", "ok", "all_platforms_present"),
+                          ("other/config.yaml", "unknown", "addon_inspection_failed:MemoryError")])
+        self.assertAlertOpen(result)
+
+    def listing(self, *runs):
+        self.opener.add("GET", "https://api.github.com/repos/jeter-1/hass-mcp-admin/actions/"
+                        "workflows/publish-rc-image.yml/runs",
+                        Response(200, json.dumps({"total_count": len(runs), "workflow_runs": list(runs)}).encode()))
+
+    def row_U1(self):
+        self.registry(Response(404))
+        self.listing(run(1, sha=None), run(2, sha=7))
+        addon = self.addon(self.check())
+        self.assertEqual((addon["outcome"], addon["reason"]),
+                         ("unknown", "image_tag_absent+runs_run_listing_malformed"))
+
+    def row_U2(self):
+        self.registry(Response(404))
+        for status in ("action_required", None, 3, "Queued"):
+            with self.subTest(status=status):
+                self.opener.routes.pop(("GET", "https://api.github.com/repos/jeter-1/hass-mcp-admin/"
+                                        "actions/workflows/publish-rc-image.yml/runs"), None)
+                self.listing(run(1, status=status, sha=self.release))
+                result = self.check()
+                self.assertEqual((self.addon(result)["outcome"], self.addon(result)["reason"]),
+                                 ("unknown", "image_tag_absent+runs_run_status_unrecognized"))
+        self.assertAlertOpen(result)
+
+    def row_U3(self):
+        self.registry(Response(404))
+        self.opener.add("GET", "https://api.github.com/repos/jeter-1/hass-mcp-admin/actions/"
+                        "workflows/publish-rc-image.yml/runs", Response(500))
+        self.assertIn("+runs_", self.addon(self.check())["reason"])
+
+    # --- alert -------------------------------------------------------------------
+
+    def row_A1(self):
+        for raw in (None, "", "{", json.dumps({"outcome": "fine"})):
+            with self.subTest(raw=raw):
+                self.assertEqual(watchdog.load_report(raw)["outcome"], "unknown")
+        self.assertAlertOpen(watchdog.load_report(""))
+
+    def row_A2(self):
+        store = IssueStore()
+        api = watchdog.IssueAPI(watchdog.REPOSITORY, API_TOKEN, watchdog.Reader(
+            store, clock=lambda: 0.0, sleep=lambda s: None, jitter=lambda: 0.0, wall=lambda: 0.0))
+        self.assertEqual(watchdog.alert(report(), api), (1, "opened"))
+        store.fail_writes = 500
+        with self.assertRaises(watchdog.retry.GitHubReadError):
+            watchdog.alert(report("ok"), api)
+        self.assertEqual([i["state"] for i in store.issues.values()], ["open"])
+
+    def test_every_table_row_has_a_case(self):
+        cases = {name.removeprefix("row_") for name in dir(self) if name.startswith("row_")}
+        self.assertEqual(cases, set(WATCHDOG_FAILURE_ROWS))
+
+
+for _row in WATCHDOG_FAILURE_ROWS:
+    setattr(FailureClassTests, f"test_row_{_row}", lambda self, row=_row: getattr(self, f"row_{row}")())
 
 
 class CommandLineTests(WatchdogFixture):

@@ -98,11 +98,27 @@ def dispatch_command(inputs, repository=REPOSITORY):
 
 # --- Git facts ---------------------------------------------------------------
 
+def present(root, commit, path):
+    """Whether ``path`` exists at ``commit``, as the publisher's ``git cat-file -e`` reads it.
+
+    Git proves absence; a read failure raises and is never "absent".
+    """
+    return watchdog.tree_entry(root, commit, path) is not None
+
+
 def blob(root, commit, path):
-    try:
-        return watchdog.git(root, "cat-file", "blob", f"{commit}:{path}")
-    except watchdog.WatchdogError:
+    """The file at ``path``, or None only when Git proves the path absent.
+
+    Read failures (``git_unavailable``, ``git_output_bound``, ...) and
+    non-regular entries raise, so they stop the inspection with exit 2.
+    """
+    entry = watchdog.tree_entry(root, commit, path)
+    if entry is None:
         return None
+    mode, kind, oid = entry
+    if kind != "blob" or mode not in watchdog.REGULAR_MODES:
+        raise watchdog.WatchdogError("config_not_regular_file")
+    return watchdog.git(root, "cat-file", "blob", oid)
 
 
 def config_at(root, commit):
@@ -110,7 +126,7 @@ def config_at(root, commit):
     try:
         config = watchdog.parse_config(raw, CONFIG_PATH) if raw is not None else None
     except watchdog.ConfigInvalid:
-        return None  # An over-bound config is not "no version": it propagates and stops.
+        return None  # Store-invalid only; an over-bound or unprocessable config propagates and stops.
     return config if isinstance(config, dict) else None
 
 
@@ -126,18 +142,20 @@ def parent(root, commit):
 
 def release_commits(root, main_sha, version, limit=RELEASE_WALK_LIMIT):
     """First-parent commits on main where the advertised version became ``version``."""
-    changed = watchdog.git(root, "rev-list", "--first-parent", f"--max-count={limit}",
-                           main_sha, "--", CONFIG_PATH).decode().split()
+    changed = watchdog.git(root, "rev-list", "--first-parent", f"--max-count={limit + 1}",
+                           main_sha, "--", CONFIG_PATH).decode("ascii", "replace").split()
+    if len(changed) > limit:
+        # A cut walk could hide another transition: never name a release from it.
+        raise RecoveryError("release_walk_truncated")
     return [commit for commit in changed if version_at(root, commit) == version
             and (parent(root, commit) is None or version_at(root, parent(root, commit)) != version)]
 
 
 def tree_drift(root, release, main_sha):
-    try:
-        watchdog.git(root, "diff", "--quiet", release, main_sha, "--", ENGINEERING_TREE)
-        return False
-    except watchdog.WatchdogError:
-        return True
+    """Status 1 proves drift and 0 proves none; any other failure raises."""
+    status, _ = watchdog.git_run(root, "diff", "--quiet", release, main_sha, "--", ENGINEERING_TREE,
+                                 statuses=(0, 1))
+    return status == 1
 
 
 # --- Remote facts --------------------------------------------------------------
@@ -164,12 +182,19 @@ class GitHub:
 
 
 def run_summary(run):
-    if not isinstance(run, dict) or type(run.get("id")) is not int:
+    """A run's fields, or "unknown" when any of them is unreadable or unrecognized."""
+    if not isinstance(run, dict) or type(run.get("id")) is not int \
+            or not isinstance(run.get("triggering_actor"), dict):
         return "unknown"
-    return {"id": run["id"], "attempt": run.get("run_attempt"), "event": watchdog.text(run.get("event")),
-            "status": watchdog.text(run.get("status")), "conclusion": watchdog.text(run.get("conclusion") or "none"),
-            "head_sha": watchdog.text(run.get("head_sha")), "path": watchdog.text(run.get("path")),
-            "actor": watchdog.text((run.get("triggering_actor") or {}).get("login"))}
+    summary = {"id": run["id"], "attempt": run.get("run_attempt"), "event": watchdog.text(run.get("event")),
+               "status": watchdog.text(run.get("status")),
+               "conclusion": watchdog.text(run.get("conclusion") or "none"),
+               "head_sha": watchdog.text(run.get("head_sha")), "path": watchdog.text(run.get("path")),
+               "actor": watchdog.text(run["triggering_actor"].get("login"))}
+    if "invalid" in summary.values() or summary["status"] not in watchdog.RUN_STATUSES \
+            or not watchdog.SHA_PATTERN.fullmatch(summary["head_sha"]):
+        return "unknown"
+    return summary
 
 
 def read_claim(api, version):
@@ -190,11 +215,18 @@ def read_claim(api, version):
 
 def build_conclusion(api, run_id, attempt):
     jobs = api.read(f"/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")
-    found = [job for job in (jobs.get("jobs") or []) if isinstance(job, dict)
-             and job.get("name") == BUILD_JOB] if isinstance(jobs, dict) else None
-    if found is None or len(found) > 1:
+    listing = jobs.get("jobs") if isinstance(jobs, dict) else None
+    # Only a complete, well-formed listing proves the build job never started.
+    if not isinstance(listing, list) or type(jobs.get("total_count")) is not int \
+            or jobs["total_count"] != len(listing) or not all(isinstance(job, dict) for job in listing):
         return "unknown"
-    return watchdog.text(found[0].get("conclusion") or "none") if found else "not_started"
+    found = [job for job in listing if job.get("name") == BUILD_JOB]
+    if len(found) > 1:
+        return "unknown"
+    if not found:
+        return "not_started"
+    conclusion = watchdog.text(found[0].get("conclusion") or "none")
+    return "unknown" if conclusion == "invalid" else conclusion
 
 
 def registry_presence(reader, image_path, reference, arch):
@@ -225,10 +257,15 @@ def inspect(root, repository=REPOSITORY, reader=None, token=None, run_id=None, v
         if not re.fullmatch(INPUT_PATTERNS["recovery_run_id"], str(run_id)):
             raise RecoveryError("invalid_run_id")
         facts["run"] = run = run_summary(api.read(f"/actions/runs/{run_id}"))
-        if run != "unknown" and watchdog.SHA_PATTERN.fullmatch(run["head_sha"]):
+        if run != "unknown":
             # The publisher refuses Engineering drift, so the run's own checkout
-            # advertises the version it published or recovered.
-            derived = version_at(root, run["head_sha"])
+            # advertises the version it published or recovered. An unreadable
+            # checkout stops: it never silently skips the cross-check.
+            try:
+                head = watchdog.resolve_ref(root, run["head_sha"])
+            except watchdog.WatchdogError as exc:
+                raise RecoveryError(f"run_head_{exc}") from None
+            derived = version_at(root, head)
             if version is not None and derived is not None and derived != version:
                 raise RecoveryError("run_version_differs_from_requested_version")
             version = version or derived
@@ -243,7 +280,7 @@ def inspect(root, repository=REPOSITORY, reader=None, token=None, run_id=None, v
     config = config_at(root, release) or {}
     facts["main_version"] = version_at(root, main_sha)
     facts["engineering_drift"] = tree_drift(root, release, main_sha)
-    facts["staged"] = any(blob(root, commit, STAGED_DECLARATION) is not None for commit in (release, main_sha))
+    facts["staged"] = any(present(root, commit, STAGED_DECLARATION) for commit in (release, main_sha))
     image = config.get("image")
     match = watchdog.IMAGE_PATTERN.fullmatch(image) if isinstance(image, str) else None
     arch = sorted(set(config.get("arch") or [])) if isinstance(config.get("arch"), list) else []
@@ -395,6 +432,9 @@ def main(argv=None, environ=os.environ):
         result = verdict(facts, args.digest, args.build_time)
     except (RecoveryError, watchdog.WatchdogError) as exc:
         print(f"Recovery inspection failed: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # Never a verdict or command from an unexpected failure.
+        print(f"Recovery inspection failed: unexpected_{watchdog.text(type(exc).__name__)}", file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps({"verdict": result[0], "reasons": result[1], "command": result[2], "facts": facts},

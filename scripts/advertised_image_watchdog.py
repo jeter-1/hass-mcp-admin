@@ -58,6 +58,8 @@ INDEX_TYPES = frozenset({"application/vnd.oci.image.index.v1+json",
 MANIFEST_TYPES = frozenset({"application/vnd.oci.image.manifest.v1+json",
                             "application/vnd.docker.distribution.manifest.v2+json"})
 LIVE_STATUSES = frozenset({"queued", "in_progress", "requested", "waiting", "pending"})
+RUN_STATUSES = LIVE_STATUSES | {"completed"}
+REGULAR_MODES = frozenset({"100644", "100755"})
 OUTCOMES = ("ok", "pending", "unknown", "mismatch")  # increasing severity
 RELEASE_WALK_LIMIT = 1000
 RUN_PAGES = 3
@@ -86,15 +88,22 @@ def text(value):
 
 # --- Git: what the store reads at one ref ----------------------------------
 
-def git(root, *args, stdin=None):
+def git_run(root, *args, stdin=None, statuses=(0,)):
+    """``(status, stdout)``. A status outside ``statuses`` is a read failure, never an answer."""
     try:
-        result = subprocess.run(["git", "-C", str(root), *args], input=stdin, check=True,
+        result = subprocess.run(["git", "-C", str(root), *args], input=stdin, check=False,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60)
     except (OSError, subprocess.SubprocessError) as exc:
         raise WatchdogError("git_unavailable") from exc
+    if result.returncode not in statuses:
+        raise WatchdogError("git_unavailable")
     if len(result.stdout) > 50_000_000:
         raise WatchdogError("git_output_bound")
-    return result.stdout
+    return result.returncode, result.stdout
+
+
+def git(root, *args, stdin=None):
+    return git_run(root, *args, stdin=stdin)[1]
 
 
 def resolve_ref(root, ref):
@@ -103,24 +112,44 @@ def resolve_ref(root, ref):
     names = [ref] if SHA_PATTERN.fullmatch(ref) else [
         f"refs/remotes/origin/{ref}", f"refs/heads/{ref}", f"refs/tags/{ref}"]
     for name in names:
-        try:
-            value = git(root, "rev-parse", "--verify", "--quiet", "--end-of-options",
-                        name + "^{commit}").decode().strip()
-        except WatchdogError:
+        # Only status 1 proves this name absent; any other failure must not fall
+        # through to a later, possibly stale, name.
+        status, value = git_run(root, "rev-parse", "--verify", "--quiet", "--end-of-options",
+                                name + "^{commit}", statuses=(0, 1))
+        if status == 1:
             continue
-        if SHA_PATTERN.fullmatch(value):
-            return value
+        value = value.decode("ascii", "replace").strip()
+        if not SHA_PATTERN.fullmatch(value):
+            raise WatchdogError("git_output_unexpected")
+        return value
     raise WatchdogError("ref_not_found")
 
 
-def tree_entries(root, commit):
+def tree_records(output):
     entries = []
-    for record in git(root, "ls-tree", "-r", "-z", "--full-tree", commit).split(b"\0"):
+    for record in output.split(b"\0"):
         if record:
-            meta, _, path = record.partition(b"\t")
-            mode, kind, oid = meta.decode().split()
-            entries.append((mode, kind, oid, path.decode("utf-8", "replace")))
+            meta, separator, path = record.partition(b"\t")
+            fields = meta.decode("ascii", "replace").split()
+            if not separator or len(fields) != 3:
+                raise WatchdogError("git_output_unexpected")
+            entries.append((*fields, path.decode("utf-8", "replace")))
     return entries
+
+
+def tree_entries(root, commit):
+    return tree_records(git(root, "ls-tree", "-r", "-z", "--full-tree", commit))
+
+
+def tree_entry(root, commit, path):
+    """``(mode, kind, oid)`` of ``path`` at ``commit``; None only when Git proves it absent."""
+    entries = tree_records(git(root, "--literal-pathspecs", "ls-tree", "-z", "--full-tree",
+                               commit, "--", path))
+    if not entries:
+        return None
+    if len(entries) != 1 or entries[0][3] != path:
+        raise WatchdogError("git_output_unexpected")
+    return tuple(entries[0][:3])
 
 
 def store_candidates(entries):
@@ -134,46 +163,64 @@ def store_candidates(entries):
 
 
 class ConfigInvalid(WatchdogError):
-    """The file does not parse, so Supervisor skips it too."""
+    """A syntax, decoding or parser-validation error, so Supervisor skips the file too."""
 
 
 def parse_config(raw, path):
-    # The bound is this watchdog's limit, not Supervisor's: exceeding it is
-    # uncertainty (``config_oversized``), never proof the store skips the file.
+    """The parsed configuration. Only ``ConfigInvalid`` proves the store skips it.
+
+    The bound is this watchdog's limit, not Supervisor's: exceeding it is
+    uncertainty (``config_oversized``). Resource, dependency and other
+    processing failures are uncertainty too, never proof of a skip.
+    """
     if len(raw) > BLOB_BOUND:
         raise WatchdogError("config_oversized")
+    if path.endswith(".json"):
+        invalid, load = (json.JSONDecodeError, UnicodeDecodeError), json.loads
+    else:
+        try:
+            import yaml  # Lazy: ``alert`` stays standard-library only.
+        except ImportError as exc:
+            raise WatchdogError("config_parser_unavailable") from exc
+        invalid, load = (yaml.YAMLError,), yaml.safe_load
     try:
-        if path.endswith(".json"):
-            return json.loads(raw)
-        import yaml  # Lazy: ``alert`` stays standard-library only.
-        return yaml.safe_load(raw)
-    except Exception as exc:  # Any parse failure: the store skips the file.
+        return load(raw)
+    except invalid as exc:
         raise ConfigInvalid("config_unreadable") from exc
+    except Exception as exc:
+        raise WatchdogError("config_unprocessable") from exc
 
 
 def config_version(root, commit, path, cache):
     """The ``version`` the store would read for ``path`` at ``commit`` (or None).
 
-    Git failures and over-bound configs raise: they are unknown, not absent.
+    None only for a proven absent path, a store-invalid file or a missing
+    ``version``. Git failures, non-regular entries and over-bound or
+    unprocessable configs raise: they are unknown, not absent.
     """
-    line = git(root, "cat-file", "--batch-check=%(objectname) %(objecttype)",
-               stdin=f"{commit}:{path}\n".encode()).decode().split()
-    if len(line) != 2 or line[1] != "blob":
+    entry = tree_entry(root, commit, path)
+    if entry is None:
         return None
-    if line[0] not in cache:
+    mode, kind, oid = entry
+    if kind != "blob" or mode not in REGULAR_MODES:
+        raise WatchdogError("config_not_regular_file")
+    if oid not in cache:
         try:
-            config = parse_config(git(root, "cat-file", "blob", line[0]), path)
-            cache[line[0]] = str(config["version"]) if isinstance(config, dict) else None
+            config = parse_config(git(root, "cat-file", "blob", oid), path)
+            cache[oid] = str(config["version"]) if isinstance(config, dict) else None
         except (ConfigInvalid, KeyError):
-            cache[line[0]] = None
-    return cache[line[0]]
+            cache[oid] = None
+    return cache[oid]
 
 
 def release_commit(root, head, path, version, limit=RELEASE_WALK_LIMIT):
     """Oldest first-parent ancestor in the contiguous run advertising ``version``."""
-    commits = git(root, "rev-list", "--first-parent", f"--max-count={limit + 1}",
-                  head).decode().split()
     cache, release = {}, None
+    try:
+        commits = git(root, "rev-list", "--first-parent", f"--max-count={limit + 1}",
+                      head).decode("ascii", "replace").split()
+    except WatchdogError:
+        return None
     for commit in commits[:limit]:
         try:
             advertised = config_version(root, commit, path, cache)
@@ -193,18 +240,17 @@ def advertised_addons(root, commit):
         raise WatchdogError("repository_metadata_missing")
     addons, skipped = [], []
     for mode, kind, oid, path in store_candidates(entries):
-        if kind != "blob" or mode not in {"100644", "100755"}:
+        if kind != "blob" or mode not in REGULAR_MODES:
             # A symlinked or unusual entry may resolve outside this tree.
             addons.append({"path": text(path), "outcome": "unknown", "reason": "config_not_regular_file"})
             continue
-        raw = git(root, "cat-file", "blob", oid)
         try:
-            config = parse_config(raw, path)
+            config = parse_config(git(root, "cat-file", "blob", oid), path)
         except ConfigInvalid as exc:
             skipped.append({"path": text(path), "reason": str(exc)})
             continue
         except WatchdogError as exc:
-            # Unprocessable here is not store-invisible: keep it as unknown.
+            # Unreadable or unprocessable here is not store-invisible: keep it as unknown.
             addons.append({"path": text(path), "outcome": "unknown", "reason": str(exc)})
             continue
         if not isinstance(config, dict) or any(key not in config for key in REQUIRED_KEYS):
@@ -275,8 +321,14 @@ def registry_state(reader, repository_path, tag, arch):
         index = json.loads(content)
         if kind not in INDEX_TYPES or index.get("mediaType", kind) not in INDEX_TYPES:
             return "unknown", [], "image_is_not_a_multi_platform_index"
-        matches = {name: [entry for entry in index.get("manifests") or []
-                          if isinstance(entry, dict) and isinstance(entry.get("platform"), dict)
+        entries = index.get("manifests")
+        # A malformed listing is unknown, never "every platform missing". An
+        # entry may omit ``platform`` (OCI), but a present one must be an object.
+        if not isinstance(entries, list) or not all(
+                isinstance(entry, dict) and isinstance(entry.get("platform", {}), dict) for entry in entries):
+            return "unknown", [], "registry_response_malformed"
+        matches = {name: [entry for entry in entries
+                          if isinstance(entry.get("platform"), dict)
                           and entry["platform"].get("os") == "linux"
                           and entry["platform"].get("architecture") == PLATFORMS[name][0]
                           and entry["platform"].get("variant") in PLATFORMS[name][1]]
@@ -321,9 +373,13 @@ def publish_runs(reader, repository, sha, token=None):
         if not isinstance(batch, list) or type(data.get("total_count")) is not int:
             raise WatchdogError("run_listing_malformed")
         for run in batch:
-            if not isinstance(run, dict) or type(run.get("id")) is not int:
+            if not isinstance(run, dict) or type(run.get("id")) is not int \
+                    or not isinstance(run.get("head_sha"), str):
                 raise WatchdogError("run_listing_malformed")
-            if run.get("head_sha") == sha:
+            if run["head_sha"] == sha:
+                if run.get("status") not in RUN_STATUSES:
+                    # An unrecognized status could be live: never read it as finished.
+                    raise WatchdogError("run_status_unrecognized")
                 runs.append({"id": run["id"], "attempt": run.get("run_attempt"),
                              "event": text(run.get("event")), "status": text(run.get("status")),
                              "conclusion": text(run.get("conclusion") or "none")})
@@ -375,6 +431,15 @@ def inspect_addon(root, commit, addon, reader, repository, token):
     return dict(result, outcome="pending" if live else "mismatch")
 
 
+def guarded_inspection(root, commit, addon, reader, repository, token):
+    """Any unexpected failure inspecting one add-on leaves that add-on unknown."""
+    try:
+        return inspect_addon(root, commit, addon, reader, repository, token)
+    except Exception as exc:
+        return {"path": addon["path"], "outcome": "unknown",
+                "reason": "addon_inspection_failed:" + text(type(exc).__name__)}
+
+
 def check(root, ref, repository=REPOSITORY, reader=None, token=None):
     if not REPOSITORY_PATTERN.fullmatch(repository):
         raise WatchdogError("invalid_repository")
@@ -386,7 +451,7 @@ def check(root, ref, repository=REPOSITORY, reader=None, token=None):
     except WatchdogError as exc:
         return dict(report, outcome="unknown", reason=str(exc), addons=[], skipped=[])
     reader = reader or Reader()
-    results = [inspect_addon(root, commit, addon, reader, repository, token) for addon in addons]
+    results = [guarded_inspection(root, commit, addon, reader, repository, token) for addon in addons]
     outcome = max((r["outcome"] for r in results), key=OUTCOMES.index, default="unknown")
     report.update(outcome=outcome, addons=results, skipped=skipped)
     if not results:
