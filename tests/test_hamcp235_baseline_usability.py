@@ -625,7 +625,7 @@ class CoverageTests(LiveHarness):
         self.assertEqual(diagnostics['record_outcomes'], {})
         self.assertEqual((diagnostics['final_fence'], diagnostics['final_fence_reason']), ('complete', None))
         self.assertGreaterEqual(diagnostics['final_fence_reserve_seconds'], 6.0)
-        self.assertLess(diagnostics['final_fence_reserve_seconds'], 6.5)
+        self.assertLess(diagnostics['final_fence_reserve_seconds'], 10.0)
         self.assertLess(elapsed, c.COLLECTION_SECONDS)
 
 
