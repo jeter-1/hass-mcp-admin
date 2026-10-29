@@ -888,6 +888,39 @@ option, role, fallback or delegated provider.
 - **HAMCP-069B profiles.** The two unsigned 069B profiles now name every read
   their gateway sends; no signed profile changes.
 
+The `2.4.1-beta.44` slice (HAMCP-242) adds no permission, role, route,
+provider, fallback, write path, input, tool or upstream call. It adds three
+fields to the public `home_assistant_core_authority` health block.
+
+- **Identifiers only.** Every value in a `withheld_capabilities` entry is a
+  fixed-vocabulary identifier from Engineering's own code: a compiled
+  capability profile id (the production evidence collector emits no other
+  id), a `CoreDisposition` value (`held`, `quarantined`, `unavailable`), the
+  coordinator's existing reason code, and Engineering static tool names from
+  `routes.STATIC_TOOL_CORE_REQUIREMENTS`. No Home Assistant observation text,
+  entity, session or endpoint value is read into them. The `get_server_health`
+  path serializes and size-bounds this block but does not run the shared
+  sanitizer over it; safety rests on that provenance and the bound below.
+  Adding a sanitizer to the health path is a separate item.
+- **Projection, not authority.** The list is built from the assessment the
+  coordinator already computes for the published generation. It changes no
+  selection, admission, reason code, lease, retirement, registry handling or
+  recovery, and persists nothing.
+- **Fail closed on inconsistency, inside the block.** If a disposition's
+  list length differs from its count, the total differs from
+  `withheld_count`, an id repeats, or `compatible_count + withheld_count`
+  differs from the generation's decisions, the Core-authority block is
+  refused with `projection_degraded: true` and `projection_reason_code`
+  `core_authority_projection_inconsistent`. It drops the disposition, every
+  count, the list and `count_semantics` rather than publish a contradiction
+  or substitute zeros, and keeps only partition-independent fields.
+  `get_server_health` still succeeds with every other section unchanged.
+  Only that one code is contained; any other coordinator error fails the
+  call as before. The guards never admit and change no decision, lease or
+  route.
+- **Bounded.** At most 64 entries, `withheld_capabilities_truncated` past
+  that, and the whole projection within `MAX_REPORT_BYTES` (32 768).
+
 The `2.4.1-beta.43` slice (HAMCP-234 step 2) adds no permission, role,
 route, provider, fallback, write path, input or tool. It **relaxes one
 journal rule**, by owner decision (Josh, 2026-10-27), from the beta.42 live

@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.4.1-beta.44 - Itemized withheld Core capabilities (HAMCP-242)
+
+Builds on 2.4.1-beta.43. `get_server_health` reported Core authority as
+counts only, so `unavailable_count` 3 and `withheld_count` 3 on Core
+2026.10.3 did not say which capabilities were blocked, why, or what they
+affected, and could be misread as six.
+
+- `home_assistant_core_authority.withheld_capabilities`: one entry per held,
+  quarantined or unavailable profile, `{capability_id, disposition,
+  reason_code, affected_tools}`, sorted by `capability_id`, at most 64, with
+  `withheld_capabilities_truncated`.
+- `affected_tools`: the Engineering static tools whose reviewed requirement
+  table names the profile (`routes.static_tools_requiring`), or `[]`.
+  Delegated `ha-mcp` reads are not listed.
+- `count_semantics`: `withheld_count = held_count + quarantined_count +
+  unavailable_count` (a total), and `compatible_count + withheld_count` is
+  the number of profiles evaluated.
+- Counts unchanged. A list that disagrees with the counts refuses only the
+  Core-authority block: it carries `projection_degraded: true` and
+  `projection_reason_code` `core_authority_projection_inconsistent`, drops
+  the disputed counts and list, and `get_server_health` still succeeds with
+  every other section unchanged.
+- No admission, reason code, lease, registry, recovery, tool, schema,
+  `list_capabilities` or `server_info` change. Nothing new is persisted or
+  called.
+- Rollback: reinstall 2.4.1-beta.43.
+
 ## 2.4.1-beta.43 - Journal user:pass@host as one token (HAMCP-234 step 2)
 
 Builds on 2.4.1-beta.42. One relaxation, proven by its live calibration:

@@ -204,6 +204,12 @@ async def get_server_health(
     Set check_ha=False to skip the live read-only Home Assistant probe.
     Set deep_storage_audit=True to discard the in-memory safety verdicts and
     re-validate every persisted plan record (slower; read-only).
+
+    home_assistant_core_authority carries projection_degraded and
+    projection_reason_code only when Engineering refuses an inconsistent Core
+    projection. The block then omits the partition counts, disposition,
+    withheld_capabilities, withheld_capabilities_truncated and
+    count_semantics, and the overall call still succeeds.
     """
     async def action():
         if not check_ha:
