@@ -422,8 +422,25 @@ discovered set with no test missing or repeated, every outcome succeeded (an
 import failure is a failing `_FailedTest`, never an omission), and run, attempt,
 commit and plan agree. Only then does `source_receipt` record the same receipt
 fields as before; `COMMAND` names the sharded aggregation, and the shard script
-and plan are bound files. GitHub's "re-run failed jobs" yields mixed-attempt
-manifests and therefore no receipt; use "re-run all jobs".
+and plan are bound files.
+
+Two rerun rules apply, and they differ (HAMCP-223):
+
+- **Pull-request CI, and any run whose unit shard or `validate_source` failed:
+  "Re-run all jobs" only.** "Re-run failed jobs" yields mixed-attempt shard
+  manifests, which `aggregate` refuses as `shard_manifest_count_mismatch`, so
+  no receipt is produced. That refusal is unchanged; beta.42 (run 40574215773,
+  a shard 10 timing flake rerun with failed jobs) was this case.
+- **Publication runs whose `validate_source` succeeded: "Re-run failed jobs"
+  is safe.** GitHub then reuses the earlier attempt's successful
+  `validate_source` and its receipt. `publication_validation.py decide` accepts
+  a receipt from an earlier or equal attempt of the same run, for the same
+  trigger commit, workflow, ref and event, with every other field exact. It
+  still refuses a different run ID, commit, workflow, ref or event, a receipt
+  attempt greater than the current one, any other altered field, and a failed,
+  skipped or cancelled complete-CI result. beta.32 (run 39891520683, attempt 2
+  refused as `validation_receipt_identity_mismatch`) is the case this fixes.
+  "Re-run all jobs" keeps working: it records and decides on the same attempt.
 
 Rebalance by editing measured seconds in `ci/unit-test-shards.json`; adding a
 shard also requires the matching matrix entry.
