@@ -20,6 +20,13 @@ Classes:
 - ``M*``: the compare-row reasons (a missing digest also claiming a
   fingerprint-model mismatch, per stored and per recorded comparison).
 
+``M6`` is expected to survive as an equivalent mutant. A validated record
+with a digest carries the contract's model (``validation.py``,
+``record_fingerprint_contract_mismatch``), so the per-row recorded check
+fires only when the caller's model differs from the contract's, and then the
+comparison-level ``fingerprint_model_mismatch`` is already on every row
+(row reasons are a sorted set).
+
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\
         python docs/evidence/hamcp248-mutations/run_mutations.py \\
