@@ -4,6 +4,7 @@ No network, GitHub credentials or registry access: a disposable Git repository
 supplies the store layout and a fake opener replays registry and API responses.
 """
 
+import contextlib
 import email.message
 import hashlib
 import importlib.util
@@ -411,9 +412,11 @@ class StoreDiscoveryTests(WatchdogFixture):
 
 class CommandLineTests(WatchdogFixture):
     def test_check_writes_one_line_report_and_outcome(self):
-        output = Path(self.temp.name) / "output"
-        self.assertEqual(watchdog.main(["check", "--repo-root", str(self.root), "--ref", "missing",
-                                        "--github-output", str(output)], {}), 0)
+        output, printed = Path(self.temp.name) / "output", io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            self.assertEqual(watchdog.main(["check", "--repo-root", str(self.root), "--ref", "missing",
+                                            "--github-output", str(output)], {}), 0)
+        self.assertIn("Watchdog outcome: unknown for ref missing", printed.getvalue())
         lines = output.read_text().splitlines()
         self.assertEqual(len(lines), 2)
         self.assertEqual(json.loads(lines[0].removeprefix("report="))["reason"], "ref_not_found")
@@ -578,8 +581,12 @@ class AlertTests(unittest.TestCase):
         watchdog.alert = lambda value, api, url: next(results)
         self.addCleanup(setattr, watchdog, "alert", original_alert)
         env = {"GH_TOKEN": API_TOKEN, "WATCHDOG_REPORT": json.dumps(report())}
-        self.assertEqual(watchdog.main(["alert"], env), 1)
-        self.assertEqual(watchdog.main(["alert"], env), 0)
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            self.assertEqual(watchdog.main(["alert"], env), 1)
+            self.assertEqual(watchdog.main(["alert"], env), 0)
+        self.assertEqual(printed.getvalue().splitlines(), ["Watchdog outcome mismatch; alert issue: opened.",
+                                                          "Watchdog outcome mismatch; alert issue: closed."])
         self.assertEqual(calls, [(watchdog.REPOSITORY, API_TOKEN)] * 2)
 
     def test_run_url_is_bounded(self):

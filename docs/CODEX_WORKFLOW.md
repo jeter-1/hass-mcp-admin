@@ -948,6 +948,13 @@ Use **Publish reviewed Engineering release** -> **Run workflow** on protected
 Omit digest-recovery fields for a permitted fresh recovery with no existing claim
 or artifacts. Ambiguous identities or partial publication remain stop conditions.
 
+To detect an advertised version whose image is missing, and to derive these
+inputs read-only, use the publication watchdog and
+`scripts/publication_recovery.py`. Both are described in
+[`PUBLICATION_RECOVERY_RUNBOOK.md`](PUBLICATION_RECOVERY_RUNBOOK.md)
+(HAMCP-223). The helper prints a command only. Dispatching it still needs
+Josh's authorization for that incident.
+
 #### Historical Beta 53 recovery example — not current dispatch inputs
 
 The following August 2026 incident predates the current handoff. It is retained
