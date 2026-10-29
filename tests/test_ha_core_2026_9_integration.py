@@ -57,6 +57,11 @@ from ha_mcp_engineering.ha_core_readmission.source import (  # noqa: E402
 from ha_mcp_engineering.f3.contracts import (  # noqa: E402
     AdapterCapabilityDescriptor,
 )
+from ha_mcp_engineering.ha_core_readmission.coordinator import COUNT_SEMANTICS  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.models import MAX_REPORT_BYTES  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.profiles import (  # noqa: E402
+    CORE_RUNTIME_CAPABILITY_PROFILES,
+)
 from ha_mcp_engineering.health import HealthRegistry  # noqa: E402
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     _CoreDispatchAuthorityGuard,
@@ -2617,10 +2622,44 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         runtime, _source = await self._runtime(_core_2026_9_snapshot())
         projection = runtime.health_projection()
         encoded = json.dumps(projection, sort_keys=True)
+        # HAMCP-242: the 4 096-byte budget still covers exactly the counts-only
+        # block it always covered; the itemized list is bounded by the runtime
+        # MAX_REPORT_BYTES report bound instead.
+        itemization = (
+            "withheld_capabilities",
+            "withheld_capabilities_truncated",
+            "count_semantics",
+        )
+        counts_only = {
+            key: value for key, value in projection.items() if key not in itemization
+        }
 
-        self.assertLessEqual(len(encoded.encode("utf-8")), 4_096)
+        self.assertLessEqual(
+            len(json.dumps(counts_only, sort_keys=True).encode("utf-8")), 4_096
+        )
+        self.assertLessEqual(len(encoded.encode("utf-8")), MAX_REPORT_BYTES)
         self.assertEqual(projection["compatible_count"], len(CORE_CAPABILITY_PROFILES))
         self.assertEqual(projection["fallback_count"], 0)
+        # The 2026.9 snapshot carries no evidence for the later runtime
+        # batches; each is itemized once, and the list agrees with the counts.
+        later = sorted(
+            {profile.capability_id for profile in CORE_RUNTIME_CAPABILITY_PROFILES}
+            - {profile.capability_id for profile in CORE_CAPABILITY_PROFILES}
+        )
+        self.assertEqual(projection["withheld_count"], len(later))
+        self.assertEqual(projection["unavailable_count"], len(later))
+        self.assertEqual(
+            [
+                (item["capability_id"], item["disposition"], item["reason_code"])
+                for item in projection["withheld_capabilities"]
+            ],
+            [
+                (capability, "unavailable", "capability_evidence_missing")
+                for capability in later
+            ],
+        )
+        self.assertIs(projection["withheld_capabilities_truncated"], False)
+        self.assertEqual(projection["count_semantics"], COUNT_SEMANTICS)
         self.assertNotIn("authority_profiles", projection)
         self.assertNotIn("compatible_capabilities", projection)
         self.assertNotIn("recent_events", projection)

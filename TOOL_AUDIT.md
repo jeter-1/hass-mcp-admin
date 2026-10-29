@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-## Baseline compare and resume usability (2.4.1-beta.44, HAMCP-235)
+## Baseline compare and resume usability (2.4.1-beta.45, HAMCP-235)
 
 `capture_automation_baseline` and `compare_automation_baselines` keep their
 routing, provider, policy, `risk=read`, writes `none`, input schemas and
@@ -17,12 +17,29 @@ diagnostics `final_fence` value `identity_only`, `final_fence_reason`,
 compares only the installation anchor, the configuration ids and their
 entities; a new authority generation is recorded as drift, not refused.
 Inherited rows keep their own capture's anchor. By owner decision D4 (Josh,
-2026-10-28) a base with no installation anchor (a beta.43-or-earlier capture
+2026-10-28) a base with no installation anchor (a beta.44-or-earlier capture
 whose final fence failed) is refused with the category
 `installation_anchor_missing` before any read, with nothing stored. The final
 fence's reserve covers its identity reads (twice their measured time, 5–15 s);
 configuration reads end where it starts. Identity drift, authority loss and
 access denial still refuse with nothing stored.
+
+## Core authority withheld itemization (2.4.1-beta.44, HAMCP-242)
+
+`get_server_health` keeps its routing, input schema, `risk=read` and writes
+`none`. Its `home_assistant_core_authority` block gains
+`withheld_capabilities` (one `{capability_id, disposition, reason_code,
+affected_tools}` entry per withheld profile, sorted, at most 64),
+`withheld_capabilities_truncated` and `count_semantics`. Every string value
+in a `withheld_capabilities` entry is a fixed-vocabulary identifier from
+Engineering's code; `affected_tools` names Engineering static tools from the
+reviewed requirement table only. The block's other fields include validated
+HA-observed versions, counters, timestamps and registry state, and are not
+covered by that list-only claim. The list derives from the published
+generation, with no new Core, Supervisor or upstream call and nothing
+persisted. A list that disagrees with the counts degrades only this block
+(`projection_degraded`, `core_authority_projection_inconsistent`); the call
+still succeeds. No tool is added, so the catalog count is the base's.
 
 ## Host journal one-token user:pass@host (2.4.1-beta.43, HAMCP-234 step 2)
 

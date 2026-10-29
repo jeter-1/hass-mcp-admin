@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.44** makes automation baseline compare and resume
+Engineering **2.4.1-beta.45** makes automation baseline compare and resume
 usable on a real installation (HAMCP-235). On beta.40 (HAOS, 115
 automations), two identical captures compared as UNKNOWN 115 because their
 final fence failed, and a resume minutes later was refused with no detail.
@@ -15,9 +15,25 @@ their entities) and a refusal names its fixed categories
 identity first, records its failure reason and keeps a reserve sized for its
 identity reads. No new Core command, input
 schema or tool. The architect's live re-run of the owner's case is required
-for acceptance. Rollback is reinstalling beta.43. Read the [2.4.1-beta.44
-release notes](docs/V2_4_1_BETA44_RELEASE_NOTES.md) and [2.4.1-beta.44
-acceptance contract](docs/V2_4_1_BETA44_ACCEPTANCE.md).
+for acceptance. Rollback is reinstalling beta.44. Read the [2.4.1-beta.45
+release notes](docs/V2_4_1_BETA45_RELEASE_NOTES.md) and [2.4.1-beta.45
+acceptance contract](docs/V2_4_1_BETA45_ACCEPTANCE.md).
+
+It builds on beta.44 and the releases below.
+
+Engineering **2.4.1-beta.44** itemizes withheld Core capabilities in
+`get_server_health` (HAMCP-242). `home_assistant_core_authority` now lists
+each held, quarantined or unavailable capability once, in
+`withheld_capabilities`: its id, disposition, reason code and the
+Engineering tools it affects, sorted, bounded at 64
+(`withheld_capabilities_truncated`). A fixed `count_semantics` states that
+`withheld_count` is held + quarantined + unavailable, a total rather than an
+additional set. The counts are unchanged and must agree with the list. On
+Core 2026.10.3 under registry sequence 14, the list names the three dormant
+November profiles (`positive_authority_missing`). No admission, registry,
+tool or schema changes. Rollback is reinstalling beta.43. Read the
+[2.4.1-beta.44 release notes](docs/V2_4_1_BETA44_RELEASE_NOTES.md) and
+[2.4.1-beta.44 acceptance contract](docs/V2_4_1_BETA44_ACCEPTANCE.md).
 
 It builds on beta.43 and the releases below.
 

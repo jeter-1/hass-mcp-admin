@@ -1,45 +1,22 @@
 # Engineering 2.4.1-beta.44 acceptance
 
-This contract covers HAMCP-235: automation baseline compare and resume made
-usable on the owner's installation, from the beta.40 live findings. It follows
+This contract covers HAMCP-242. `get_server_health` itemizes each withheld
+Core capability by name, disposition, reason and affected Engineering tools.
+It also states the count semantics. The counts are unchanged. It follows
 2.4.1-beta.43 and includes it.
 
 See also:
 - Release notes:
   [`V2_4_1_BETA44_RELEASE_NOTES.md`](V2_4_1_BETA44_RELEASE_NOTES.md).
-- The contracts this release extends:
-  [`AUTOMATION_BASELINE_CAPTURE.md`](AUTOMATION_BASELINE_CAPTURE.md),
-  [`AUTOMATION_AUDIT_BASELINE.md`](AUTOMATION_AUDIT_BASELINE.md#comparison-semantics)
-  and
-  [`HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md`](HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md).
-
-**Live findings (beta.40, 2026-10-27, HAOS, Core 2026.10.3, signed registry
-seq 14).** Two captures 4 s apart of 115 automations, identical digests,
-compared as UNKNOWN 115 / UNCHANGED 0. Every row carried
-`earlier_/later_authority_continuity_unestablished` and
-`installation_identity_unestablished`. Each header said installation
-`unestablished`, `final_fence: "unavailable"`, drift `unknown`; capture 2
-had `configuration_incomplete_count` 2. A resume two minutes later was
-refused as `resume_inventory_changed` with no detail.
-
-**Owner decision (Josh, option a).** The comparison classifies rows by
-digest: `UNCHANGED` / `CHANGED` / `PREFIX_MATCH`, and `ADDED` / `REMOVED`
-only where inventory authority allows. The installation identity and
-authority continuity caveat is stated once, at the comparison level.
-`UNKNOWN` is kept for rows whose digests are missing or incomparable.
-
-**Diagnosis (no STOP).** Establishing the identity and completing the final
-fence need no new Core command: both use the reads admitted under signed
-registry seq 14 (principal, config entries, device registry, states, entity
-registry). The HAOS anchor was valid; the identity was discarded only
-because the final fence, sharing the 45 s collection deadline with a fixed
-10 s reserve, failed and its failure was swallowed. The resume compared the
-null installation id of such a base, the authority generation and the
-declared count. See HAMCP-235 for the file-and-line diagnosis.
+- How to read the block:
+  [`CORE_AUTHORITY_DIAGNOSTICS.md`](CORE_AUTHORITY_DIAGNOSTICS.md).
+- The contract this release extends:
+  [`V2_4_1_BETA43_ACCEPTANCE.md`](V2_4_1_BETA43_ACCEPTANCE.md).
 
 **Release target.** `2.4.1-beta.44` is the next free beta after `main` at
-2.4.1-beta.43 (#320). If another release reaches `main` first, this change
-is restaged at the next free beta and these documents are renamed.
+2.4.1-beta.43 (#320). HAMCP-235 is in progress in parallel and may claim the
+same number. If another release reaches `main` first, this change is
+restaged at the next free beta and these documents are renamed.
 
 The contract separates four stages:
 1. source and offline acceptance;
@@ -52,120 +29,134 @@ It authorizes none of the later stages.
 ## 1. Source and offline acceptance
 
 Bind the following:
-- the HAMCP-235 scope (compare caveats and row classes, resume stable
-  identity fence and categories, final fence identity-first reads, reserve
-  and reason; no other change);
+- the HAMCP-242 scope: the three additive health fields, the consistency
+  checks and `routes.static_tools_requiring`, with no other runtime change;
 - `2.4.1-beta.44` materialized in all three version authorities, with exact
   acceptance and release-note resolution from `scripts/codex-context.py` and
   no staged declaration left over;
 - the PR head SHA;
 - the passing PR `validate` run for that exact head, with both Real HA jobs;
-- the Evidence tier log named in the PR;
-- the mutation evidence `docs/evidence/hamcp235-mutations/results.json`.
+- the Evidence tier log named in the PR.
 
 The review needs a security section covering:
-- **No new reads or writes.** No Core command, REST path, WebSocket type,
-  registry entry, provider, route or write is added. The final fence issues
-  the same five reads as before, identity reads first.
-- **Identity stays fail-closed.** Identity drift between the fences still
-  refuses the capture with nothing stored, now also when it is detected
-  before the inventory reads. Authority loss, access denial and an
-  unverifiable identity still refuse. Only an inventory read failure after
-  a verified identity yields `identity_only`.
-- **The resume fence.** Installation anchor, configuration id set and
-  id→entity mapping only. A base's anchor is its established id, else its
-  `first_fence_installation_id`. Inherited rows keep the provenance of the
-  capture they came from; the current fences' anchor is never evidence for
-  them (review 1, R1-M1). Owner decision D4 (Josh, 2026-10-28): a base with
-  neither is refused as `installation_anchor_missing`, on any installation,
-  before any Home Assistant read and with nothing stored. A new
-  authority generation is recorded as `authority_drift: "detected"`, never
-  hidden. The Core version still binds the resume.
-- **Categories.** `details.resume_changes` holds only the fixed
-  `RESUME_CHANGES` values, sorted, and only on `resume_inventory_changed` /
-  `resume_core_changed`. Never an identifier, count or Home Assistant text.
-- **Diagnostics.** `first_fence_installation_id` is the same opaque
-  `sha256:` digest as `installation.installation_id`, and goes through the
-  storage screen like every diagnostic. `final_fence_reason` is a fixed
-  `CaptureError` reason.
-- **Caveats never hide a defect.** Two established, different installations
-  still make every row `UNKNOWN` (`installation_identity_mismatch`) and
-  suppress rename and enabled-state claims. Pair ineligibility
-  (`same_baseline_id`, intervals not ordered) is unchanged.
-- **Screening unchanged.** Untrusted text still goes through the shared
-  `credentials.screen`; Home Assistant identifiers and names stay in
-  default mode with the final-envelope backstop. Nothing is persisted before
-  a refusal.
+- **Engineering identifiers only.** Every list value is a fixed-vocabulary
+  identifier from Engineering's own code: a compiled profile id,
+  `CoreDisposition`, a coordinator reason code or
+  `STATIC_TOOL_CORE_REQUIREMENTS`. No observation text, entity, session or
+  endpoint value is read into it. The health path serializes and
+  size-bounds the block (64 entries, 32 768 bytes); it does not run the
+  shared sanitizer over it, and this release adds none.
+- **No decision change.** `withheld_capability_entries` reads the assessment
+  `update_assessment` already builds; `update_assessment` itself is
+  unchanged from beta.43. Nothing touches selection, admission, reason
+  codes, leases, retirement, the registry or recovery.
+- **Refusal contained to the block.** Six consistency guards (three
+  per-disposition counts, the `withheld_count` total, a repeated id, and
+  `compatible_count + withheld_count` against the generation's decisions)
+  refuse only the Core-authority block with
+  `core_authority_projection_inconsistent`. `get_server_health` still
+  succeeds with every other section unchanged. The degraded block drops the
+  disputed values and invents none. Any other coordinator error still fails
+  the call. The guards never admit.
+- **No new reach.** No new Core, Supervisor or upstream call, no persisted
+  state, no tool, route, provider, write or fallback.
+- **Bound.** At most 64 entries, `withheld_capabilities_truncated` past
+  that, and the whole projection within `MAX_REPORT_BYTES`.
 
 Preserve the following:
 - stable v1.1.2;
-- the baseline schema and stored format (diagnostics are free-form);
-- every input schema, tool, descriptor and the catalog count;
-- routing, providers, policy, the Core gate and telemetry;
+- persisted formats (none change);
+- every input schema, tool and the catalog count;
+- `list_capabilities` and `server_info`;
+- routing, providers, policies, the Core gate and telemetry;
 - probe fingerprints, the signed Core capability profiles and both signed
-  registries;
+  registries (the registry stays at sequence 14);
 - every workflow and dependency. `config.yaml` changes only its version.
 
 ### Offline proof
 
-No test reaches a live system. Every value is synthetic.
+No test reaches a live system. Every value is synthetic, apart from the
+committed signed registry entry, which is read and re-signed with an
+ephemeral test key.
 
-- `tests/test_hamcp235_baseline_usability.py`, live-shaped first (115
-  automations, Core 2026.10.3, a final-fence principal read that times out):
-  - **Unestablished pair compares UNCHANGED.** Two captures 4 s apart whose
-    final fence failed: UNCHANGED 115, UNKNOWN 0, three caveats on both
-    sides, stated once and identical on every page; no caveat code in any
-    row reason.
-  - **A real change is CHANGED**, attention rows first.
-  - **Timed-out rows are UNKNOWN with `timed_out`**, on the later side, the
-    earlier side and at the scheduler bound; an unavailable (not timed-out)
-    row is UNKNOWN without it.
-  - **Recorded fingerprints** against an unestablished capture: UNCHANGED,
-    PREFIX_MATCH and UNKNOWN by row, the recorded side listed as unverified.
-  - **A fingerprint model mismatch** is UNKNOWN on every row.
-  - **An established pair** carries only `non_atomic_capture`.
-  - **Two established, different installations** are UNKNOWN per row
-    (`installation_identity_mismatch`).
-  - **Resume minutes later succeeds** with a new authority generation,
-    on/off toggles and an added unmapped automation: only the timed-out rows
-    are retried, the result is established with the base's anchor,
-    `authority_drift: "detected"`, and a fresh compare is UNCHANGED 115.
-  - **Each volatile input alone resumes**; **each category is refused
-    precisely** (`automation_added`, `automation_removed`,
-    `mapping_changed`, `installation_changed` with an unestablished base,
-    a replaced automation, `core_version_changed`), with no configuration
-    read and nothing stored.
-  - **An anchorless base is refused (D4):** `installation_anchor_missing`
-    on the same and on a different installation, with no read and nothing
-    stored; behind that gate, a chain of provider resumes of an anchorless
-    base never takes the current fences' anchor or becomes established.
-  - **Historical writer:** `tests/fixtures/hamcp235_beta43_resume`, written
-    by the exact beta.43 commit (`generate.py`, `provenance.json`): its
-    anchorless capture is refused twice, on the same and then on a
-    different installation, and the store's bytes are unchanged; its
-    established capture still resumes with its own anchor.
-  - **Final fence:** on/off state is not drift; a mapping change is;
-    `identity_only` with its reason; identity drift refuses with nothing
-    stored.
-  - **Reserve and window (R1-M2), under the client's own deadlines:** the
-    reserve is twice the measured identity reads, not the inventory reads,
-    within 5–15 s; no configuration read is scheduled after the window or
-    outlasts it; a slow final fence still records identity
-    (`complete`, or `identity_only` with its reason and reserve); the
-    paired 115-automation, 1 s-per-read fixture reads all 115 with none
-    timed out and the final fence complete, within 45 s.
-- Updated: `test_hamcp228_baseline_store`, `test_automation_baseline_capture`
-  and `test_automation_audit_baseline` (the per-row reasons replaced by the
-  caveats; the resume refusals carry their categories).
-- Unchanged and passing: HAMCP-132 (`test_pr294_*`), HAMCP-224
-  (`test_pr313_*`, `test_review2_ansi_residual`) and the HAMCP-225/226/228
-  suites.
-- Mutations: `docs/evidence/hamcp235-mutations/` (a global caveat as a
-  per-row UNKNOWN, a volatile input in the resume or capture fence, a
-  refusal without its category, the final fence weakened; review 1 adds an
-  inherited row taking the current anchor, an anchorless resume accepted,
-  the reserve reverted to its round-1 sizing and the window not bounding
-  in-flight reads).
+- `tests/test_hamcp242_core_authority_itemization.py`, live case first:
+  - **The beta.43 live case.** The committed sequence-14 entry for Core
+    2026.10.3 goes through the production `CoreRuntime`,
+    `CoreReleaseRegistry`, the gate, `HealthRegistry` and the
+    `run_structured` envelope, with evidence for all 29 runtime profiles.
+    Expected: `compatible_count` 26, `held_count` 0, `quarantined_count` 0,
+    `unavailable_count` 3, `withheld_count` 3. The list holds exactly three
+    `unavailable` / `positive_authority_missing` entries:
+    `core.config_entry_helper_options_operation`
+    (`create_helper_options_plan`), `core.script_trace_read`
+    (`get_script_trace`, `list_script_traces`) and
+    `core.typed_input_select_option_operation`
+    (`create_input_select_option_plan`). The block key order is the
+    beta.43 order with the three new keys inserted, and the three profiles
+    are still refused.
+  - **After sequence 15.** The same entry naming all 29 profiles: an empty
+    list and `compatible_count` 29.
+  - **No new reach.** Reading health makes no Core capture call and writes
+    no file.
+  - **Each disposition.** `held` (deny-only authority), `quarantined`
+    (changed capability contract), `unavailable` (missing authority and
+    missing evidence), a mixed case in one sorted list, and the
+    all-compatible empty list. Every case checks that each disposition's
+    entries equal its count.
+  - **Global refusal.** A Core version disagreement lists all 29 profiles
+    and stays within `MAX_REPORT_BYTES` (under 12 000 bytes).
+  - **Bound and order.** Sorting across dispositions; 64 entries not
+    truncated; 65 bounded to the first 64 with the flag set; the limit
+    equal to `MAX_CAPABILITIES`.
+  - **Consistency.** A disagreeing count, a duplicate id and an
+    unclassified (`verifying`) decision each refuse. A different
+    coordinator error code is not contained.
+  - **Refusal contained (R1-H1).** For each of the six guards, a fault is
+    injected into the live-case runtime and the public async
+    `get_server_health(check_ha=False)` is called. `success` stays true;
+    the block has exactly the degraded shape, with
+    `projection_degraded: true` and the reason code, and its kept fields
+    equal the nominal ones; every other section, the summary and the
+    warnings equal the nominal response; the published generation, every
+    runtime profile's route status and the three refusals are unchanged; and
+    the next call returns the nominal block. The unclassified decision is
+    injected into the published generation itself.
+  - **Nominal block unchanged by the correction.**
+    `docs/evidence/hamcp242/r1_nominal_identity.py` replays the live case
+    under a fixed clock with the reviewed `f5f83c4d` coordinator and with
+    this one. The public block is byte-identical (result
+    `r1_nominal_identity.json`).
+  - **`affected_tools`.** It matches a hand-pinned table for every runtime
+    profile, including the script-trace pair. It agrees with
+    `STATIC_TOOL_CORE_REQUIREMENTS` both ways and names only Engineering
+    static tools, never a delegated tool.
+- One existing test is updated deliberately:
+  `tests/test_ha_core_2026_9_integration.py`
+  `test_public_health_uses_bounded_core_projection`. Its 4 096-byte budget
+  still covers exactly the beta.43 counts-only block. The whole block is
+  checked against `MAX_REPORT_BYTES`. It now pins the 12 later-batch
+  profiles that a 2026.9 snapshot without their evidence itemizes as
+  `unavailable` / `capability_evidence_missing`.
+  `tests/test_governance_async_health.py` passes the projection through
+  unchanged and needs no edit.
+- Mutations (`docs/evidence/hamcp242/run_mutations.py`, result
+  `mutations.json`), run against the new suite and the updated 2026.9 test
+  over a 34-test baseline. A mutant counts as killed only when a named test
+  fails and no import or syntax error occurs. All 34 are killed, none
+  invalid:
+  - a disposition class omitted, with and without the consistency guards;
+  - `affected_tools` empty, missing an element, reversed, including
+    delegated tools, or absent;
+  - the list and counts disagreeing: an entry dropped or duplicated with the
+    guards removed, and each guard (per-class count, total, duplicate id,
+    partition) removed alone;
+  - a wrong disposition label, a dropped reason, no sort;
+  - the truncation flag never set or off by one, no bound, the limit 63;
+  - `count_semantics` missing;
+  - the refusal escaping the block (the whole call fails), every error code
+    contained, and a degraded block that keeps counts or the disposition,
+    invents an empty list, or lacks the indicator, the reason or the
+    generation.
 
 ## 2. Release CI and publication
 
@@ -184,10 +175,7 @@ artifact.**
 ## 3. Installed Engineering
 
 Installation is separately authorized. Every check after step 1 is
-read-only. Record each result in HAMCP-235.
-
-**The live re-run of the owner's case by the architect is REQUIRED after
-deployment (steps 4 to 6). beta.44 is not accepted without it.**
+read-only. Record each result in HAMCP-242.
 
 1. **The add-on starts after the update (first).** Confirm the Engineering
    add-on reaches `started` and its MCP endpoint answers. If it does not,
@@ -195,52 +183,45 @@ deployment (steps 4 to 6). beta.44 is not accepted without it.**
 2. **Installed-image binding.** Bind the running add-on to the published
    image index digest, the release tag and the protected `main` merge
    commit.
-3. **Served schema unchanged.** Re-read `tools/list` with a fresh client
-   session. The input schemas and the tool count equal beta.43's.
-4. **Two captures (required).** Run `capture_automation_baseline` twice, a
-   few seconds apart, with no automation edited between them. Record for
-   each: `installation.status`, `diagnostics.final_fence`,
-   `final_fence_reason`, `final_fence_reserve_seconds`,
-   `configuration_incomplete_count` and `consistency.inventory_drift`.
-   Expected: the capture completes; if `final_fence` is not `complete`, its
-   reason is recorded, and `identity_only` comes with an established
-   installation.
-5. **Compare shows UNCHANGED with the caveat (required).** Run
-   `compare_automation_baselines` on the two captures and page to the end.
-   Expected:
-   - every automation whose digests are present on both sides is
-     `UNCHANGED` (115 on the owner's installation at beta.40, less any row
-     incomplete in either capture);
-   - `caveats` lists each applicable caveat once, the same on every page,
-     and no row reason names `installation_identity_unestablished` or
-     `*_authority_continuity_unestablished`;
-   - each `UNKNOWN` row has a specific reason (`timed_out`, a missing
-     digest, `capture_configuration_not_readable`, …).
+3. **(a) On beta.44, before sequence 15 (required).** Call
+   `get_server_health` with `check_ha: false`.
+   Inspect `projection_degraded` first. If it is `true`, record
+   `projection_reason_code` and the retained block, and stop acceptance. Do
+   not read the missing counts or list as zero or empty, and do not use that
+   outcome to justify signing registry authority.
+   Otherwise, in `home_assistant_core_authority`, expect:
+   - `observed_core_version` `2026.10.3`;
+   - counts unchanged from beta.43: `compatible_count` 26, `held_count` 0,
+     `quarantined_count` 0, `unavailable_count` 3, `withheld_count` 3;
+   - `withheld_capabilities` lists exactly three entries, in this order,
+     each `disposition` `unavailable` and `reason_code`
+     `positive_authority_missing`:
+     - `core.config_entry_helper_options_operation`, `affected_tools`
+       `["create_helper_options_plan"]`;
+     - `core.script_trace_read`, `affected_tools`
+       `["get_script_trace", "list_script_traces"]`;
+     - `core.typed_input_select_option_operation`, `affected_tools`
+       `["create_input_select_option_plan"]`;
+   - `withheld_capabilities_truncated` `false`, and `count_semantics`
+     present.
 
-   If rows are `UNKNOWN` without a row-specific reason, stop and record
-   them.
-6. **A successful resume (required).** Resume (`resume_capture_id`) a
-   capture from step 4 that has a timed-out record, a few minutes later,
-   with no automation added, removed or re-mapped. Expected: the resume
-   succeeds, `resumed_from` names the base, and a compare of the result
-   with the other capture is `UNCHANGED` with the caveats. If neither step
-   4 capture has a timed-out record, the resume is refused as
-   `resume_not_needed`; record that the step could not be exercised and stop
-   for the architect's decision. A capture stored by beta.43 or earlier
-   whose final fence failed (such as the beta.40 capture from 2026-10-27)
-   recorded no installation anchor: resuming it is refused as
-   `resume_inventory_changed` with `resume_changes:
-   ["installation_anchor_missing"]` (owner decision D4). That refusal is
-   expected, may be recorded, and does not satisfy this step. A refusal must
-   name its category in `details.resume_changes`; record it.
-7. **A real change is still seen.** Optional, owner-authorized only: no
-   automation is edited for this acceptance. If an automation changed for
-   another reason between captures, record that it is `CHANGED`.
+   If the counts differ from beta.43, or the list disagrees with them, stop
+   and record the block. That is a defect in this release, not a reason to
+   sign.
+4. **(b) After signing sequence 15 and an add-on restart (required, when
+   that separately authorized signing happens).** Call `get_server_health`
+   again.
+   Inspect `projection_degraded` first. If it is `true`, record
+   `projection_reason_code` and the retained block, and stop acceptance. Do
+   not read the missing counts or list as zero or empty, and do not use that
+   outcome to justify signing registry authority.
+   Otherwise, expect: `withheld_capabilities` `[]`,
+   `withheld_capabilities_truncated` `false`, `compatible_count` 29,
+   `withheld_count` 0. Signing sequence 15 is not part of this release.
 
 ## 4. Not covered
 
-No new Core command, live canary, write, registry signing or Supervisor role
-change is part of this release. The tool descriptors are unchanged. A
-baseline written by a release before beta.44 whose final fence failed has no
-first-fence anchor: a resume of it is refused as `installation_anchor_missing`
-(owner decision D4); take a fresh capture instead. A non-HAOS Supervised host remains outside the evidence.
+Signing registry sequence 15 and enabling the three dormant profiles are
+separate tasks. Delegated `ha-mcp` tool names in `affected_tools`, a
+`list_capabilities` or `server_info` mirror of the list, and any change to
+admission, reason codes or recovery are out of scope.
