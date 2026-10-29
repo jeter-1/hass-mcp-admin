@@ -351,6 +351,51 @@ class StoreDiscoveryTests(WatchdogFixture):
                          [("broken/config.yaml", "config_unreadable"),
                           ("partial/config.yml", "not_a_store_config")])
 
+    def oversized(self, config):
+        # Comments keep the configuration identical while exceeding the watchdog's bound.
+        padding = "# padding\n" * (watchdog.BLOB_BOUND // 10 + 1)
+        return yaml.safe_dump(config) + padding
+
+    def test_oversized_second_config_is_unknown_and_keeps_the_alert_open(self):
+        other = dict(self.config, slug="other", image="ghcr.io/example-owner/other-addon")
+        self.write("other/config.yaml", self.oversized(other))
+        self.git("add", ".")
+        self.git("commit", "-qm", "Second, over-bound add-on")
+        self.present(("amd64", None), ("arm64", None))
+        result = self.check()
+        self.assertEqual(result["outcome"], "unknown")
+        self.assertEqual(result["skipped"], [])
+        self.assertEqual([(a["path"], a["outcome"], a.get("reason")) for a in result["addons"]],
+                         [("addon/config.yaml", "ok", "all_platforms_present"),
+                          ("other/config.yaml", "unknown", "config_oversized")])
+        self.assertFalse(any("other-addon" in url for _, url, *_ in self.opener.requests))
+        store = IssueStore()
+        api = watchdog.IssueAPI(watchdog.REPOSITORY, API_TOKEN, watchdog.Reader(
+            store, clock=lambda: 0.0, sleep=lambda s: None, jitter=lambda: 0.0, wall=lambda: 0.0))
+        url = "https://github.com/jeter-1/hass-mcp-admin/actions/runs/1"
+        self.assertEqual(watchdog.alert(report(), api, url), (1, "opened"))
+        self.assertEqual(watchdog.alert(result, api, url), (1, "updated"))
+        self.assertEqual([i["state"] for i in store.issues.values()], ["open"])
+        self.assertIn("config_oversized", next(iter(store.issues.values()))["body"])
+
+    def test_oversized_sole_config_is_unknown(self):
+        self.write("addon/config.yaml", self.oversized(self.config))
+        self.git("add", ".")
+        self.git("commit", "-qm", "Over-bound config")
+        report = self.check()
+        self.assertEqual((report["outcome"], self.addon(report)["reason"]), ("unknown", "config_oversized"))
+        self.assertEqual(self.opener.requests, [])
+
+    def test_oversized_history_leaves_the_release_commit_unknown(self):
+        self.write("addon/config.yaml", self.oversized(self.config))
+        self.git("add", ".")
+        self.git("commit", "-qm", "Over-bound at the same version")
+        self.commit(dict(self.config, description="Trimmed"), "Trimmed config")
+        self.registry(Response(404))
+        addon = self.addon(self.check())
+        self.assertEqual((addon["outcome"], addon["release_sha"]), ("unknown", "unknown"))
+        self.assertEqual(addon["reason"], "image_tag_absent+release_commit_unknown")
+
     def test_json_config_is_read_like_the_store(self):
         self.git("rm", "-q", "addon/config.yaml")
         self.write("addon/config.json", json.dumps(self.config))

@@ -305,6 +305,24 @@ class InspectionTests(unittest.TestCase):
         self.assertEqual((state["release_candidates"], state["release_sha"]), ([self.release], self.release))
         self.assertEqual(name, "roll_forward")
 
+    def test_over_bound_config_in_history_stops_instead_of_misattributing(self):
+        padding = "# padding\n" * (recovery.watchdog.BLOB_BOUND // 10 + 1)
+        path = self.root / recovery.CONFIG_PATH
+        path.write_text(path.read_text() + padding)
+        self.git("commit", "-qam", "Over-bound at the same version")
+        self.config["description"] = "Trimmed"
+        self.git("update-ref", "refs/remotes/origin/main", self.commit("1.0.0"))
+        with self.assertRaisesRegex(recovery.watchdog.WatchdogError, "config_oversized"):
+            recovery.inspect(self.root, REPO, self.reader, version="1.0.0")
+        original = recovery.watchdog.Reader
+        recovery.watchdog.Reader = lambda: self.reader
+        self.addCleanup(setattr, recovery.watchdog, "Reader", original)
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            self.assertEqual(recovery.main(["--repo-root", str(self.root), "--version", "1.0.0"], {}), 2)
+        self.assertIn("config_oversized", err.getvalue())
+        self.assertTrue(all(method == "GET" for method, *_ in self.opener.requests))
+
     def test_incomplete_version_index_is_partial_not_absent(self):
         index, children = helpers.index(("amd64", None))
         self.opener.routes[("GET", MANIFESTS + "1.0.0")] = [Response(200, index, helpers.INDEX_TYPE)]

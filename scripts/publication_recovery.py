@@ -109,8 +109,8 @@ def config_at(root, commit):
     raw = blob(root, commit, CONFIG_PATH)
     try:
         config = watchdog.parse_config(raw, CONFIG_PATH) if raw is not None else None
-    except watchdog.WatchdogError:
-        return None
+    except watchdog.ConfigInvalid:
+        return None  # An over-bound config is not "no version": it propagates and stops.
     return config if isinstance(config, dict) else None
 
 

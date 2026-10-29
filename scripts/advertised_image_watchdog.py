@@ -133,7 +133,13 @@ def store_candidates(entries):
             yield mode, kind, oid, path
 
 
+class ConfigInvalid(WatchdogError):
+    """The file does not parse, so Supervisor skips it too."""
+
+
 def parse_config(raw, path):
+    # The bound is this watchdog's limit, not Supervisor's: exceeding it is
+    # uncertainty (``config_oversized``), never proof the store skips the file.
     if len(raw) > BLOB_BOUND:
         raise WatchdogError("config_oversized")
     try:
@@ -142,11 +148,14 @@ def parse_config(raw, path):
         import yaml  # Lazy: ``alert`` stays standard-library only.
         return yaml.safe_load(raw)
     except Exception as exc:  # Any parse failure: the store skips the file.
-        raise WatchdogError("config_unreadable") from exc
+        raise ConfigInvalid("config_unreadable") from exc
 
 
 def config_version(root, commit, path, cache):
-    """The ``version`` the store would read for ``path`` at ``commit`` (or None)."""
+    """The ``version`` the store would read for ``path`` at ``commit`` (or None).
+
+    Git failures and over-bound configs raise: they are unknown, not absent.
+    """
     line = git(root, "cat-file", "--batch-check=%(objectname) %(objecttype)",
                stdin=f"{commit}:{path}\n".encode()).decode().split()
     if len(line) != 2 or line[1] != "blob":
@@ -155,7 +164,7 @@ def config_version(root, commit, path, cache):
         try:
             config = parse_config(git(root, "cat-file", "blob", line[0]), path)
             cache[line[0]] = str(config["version"]) if isinstance(config, dict) else None
-        except (WatchdogError, KeyError):
+        except (ConfigInvalid, KeyError):
             cache[line[0]] = None
     return cache[line[0]]
 
@@ -166,7 +175,11 @@ def release_commit(root, head, path, version, limit=RELEASE_WALK_LIMIT):
                   head).decode().split()
     cache, release = {}, None
     for commit in commits[:limit]:
-        if config_version(root, commit, path, cache) != version:
+        try:
+            advertised = config_version(root, commit, path, cache)
+        except WatchdogError:
+            return None
+        if advertised != version:
             return release
         release = commit
     # The whole history matched: a root commit is the release; a cut walk is not.
@@ -184,10 +197,15 @@ def advertised_addons(root, commit):
             # A symlinked or unusual entry may resolve outside this tree.
             addons.append({"path": text(path), "outcome": "unknown", "reason": "config_not_regular_file"})
             continue
+        raw = git(root, "cat-file", "blob", oid)
         try:
-            config = parse_config(git(root, "cat-file", "blob", oid), path)
-        except WatchdogError as exc:
+            config = parse_config(raw, path)
+        except ConfigInvalid as exc:
             skipped.append({"path": text(path), "reason": str(exc)})
+            continue
+        except WatchdogError as exc:
+            # Unprocessable here is not store-invisible: keep it as unknown.
+            addons.append({"path": text(path), "outcome": "unknown", "reason": str(exc)})
             continue
         if not isinstance(config, dict) or any(key not in config for key in REQUIRED_KEYS):
             skipped.append({"path": text(path), "reason": "not_a_store_config"})
