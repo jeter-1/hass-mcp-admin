@@ -3,6 +3,11 @@
 This is a GitHub job-output receipt, not a signature or a replacement for the
 complete CI aggregate. Historical release sources always run their own suite.
 No API, credentials, publishing, or recovery authority is introduced here.
+
+A "re-run failed jobs" attempt reuses the earlier attempt's successful
+validate_source job and therefore its receipt (HAMCP-223). The same run's
+receipt from an earlier or equal attempt is accepted; every other field,
+including run ID, commit, workflow and event, must still match exactly.
 """
 
 from __future__ import annotations
@@ -143,7 +148,13 @@ def decide(root, env, installed_lock, python_version=None):
         **bound, **source_identity(root, bound["trigger_sha"]),
     }
     receipt = decode(env.get("SOURCE_VALIDATION_RECEIPT"))
-    require(type(receipt.get("schema_version")) is int and receipt == expected,
+    # Only run_attempt may differ: GitHub reuses a successful job's outputs
+    # in a later failed-jobs attempt of the same run, never the reverse.
+    produced = receipt.get("run_attempt")
+    require(type(receipt.get("schema_version")) is int
+            and isinstance(produced, str) and re.fullmatch(r"[1-9][0-9]{0,19}", produced)
+            and int(produced) <= int(bound["run_attempt"])
+            and receipt == dict(expected, run_attempt=produced),
             "validation_receipt_identity_mismatch")
     require(installed_lock.is_file() and not installed_lock.is_symlink()
             and installed_lock.stat().st_size <= 2_000_000, "installed_lock_unavailable")

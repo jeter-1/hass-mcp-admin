@@ -65,8 +65,10 @@ class PublicationValidationReuseTests(unittest.TestCase):
         self.env["GITHUB_EVENT_NAME"] = "workflow_run"
         self.env["SOURCE_VALIDATION_RECEIPT"] = json.dumps(validation.record(self.root, self.env))
         self.assertEqual(self.decide(), "reuse_same_run")
-        with self.assertRaises(validation.Refusal):
-            self.decide(dict(self.env, GITHUB_RUN_ATTEMPT="2"))
+        later = dict(self.env, GITHUB_RUN_ATTEMPT="2")
+        later["SOURCE_VALIDATION_RECEIPT"] = json.dumps(validation.record(self.root, later))
+        with self.assertRaisesRegex(validation.Refusal, "validation_receipt_identity_mismatch"):
+            self.decide(later | {"GITHUB_RUN_ATTEMPT": "1"})
 
     def test_scheduled_run_records_but_never_authorizes_publication(self):
         # Nightly CI may bind its own receipt, but a schedule event is never a
@@ -131,11 +133,72 @@ class PublicationValidationReuseTests(unittest.TestCase):
         for key, value in {
             "GITHUB_REPOSITORY": "other/repo", "GITHUB_WORKFLOW_REF": "other/workflow",
             "GITHUB_SHA": "0" * 40, "GITHUB_WORKFLOW_SHA": "1" * 40,
-            "GITHUB_RUN_ID": "1002", "GITHUB_RUN_ATTEMPT": "2",
+            "GITHUB_RUN_ID": "1002", "GITHUB_RUN_ATTEMPT": "0",
             "GITHUB_EVENT_NAME": "pull_request", "DETECTED_RELEASE_SHA": "2" * 40,
         }.items():
             with self.subTest(key=key), self.assertRaises(validation.Refusal):
                 self.decide(dict(self.env, **{key: value}))
+
+    def beta32_failed_jobs_rerun(self):
+        # Run 39891520683 (2.4.1-beta.32): attempt 1 validate_source succeeded,
+        # an unrelated job failed, and "Re-run failed jobs" reused that
+        # receipt in attempt 2, which the exact-attempt check refused.
+        produced = dict(self.env, GITHUB_RUN_ID="39891520683", GITHUB_RUN_ATTEMPT="1",
+                        GITHUB_EVENT_NAME="workflow_run")
+        receipt = validation.record(self.root, produced)
+        return receipt, dict(produced, GITHUB_RUN_ATTEMPT="2",
+                             SOURCE_VALIDATION_RECEIPT=json.dumps(receipt))
+
+    def test_failed_jobs_rerun_reuses_earlier_attempt_receipt_of_same_run(self):
+        receipt, current = self.beta32_failed_jobs_rerun()
+        self.assertEqual(receipt["run_attempt"], "1")
+        self.assertEqual(self.decide(current), "reuse_same_run")
+        for attempt in ("3", "10", "100"):
+            with self.subTest(attempt=attempt):
+                self.assertEqual(self.decide(dict(current, GITHUB_RUN_ATTEMPT=attempt)),
+                                 "reuse_same_run")
+
+    def test_all_jobs_rerun_reuses_its_own_attempt_receipt(self):
+        _, current = self.beta32_failed_jobs_rerun()
+        current["SOURCE_VALIDATION_RECEIPT"] = json.dumps(validation.record(self.root, current))
+        self.assertEqual(self.decide(current), "reuse_same_run")
+
+    def test_rerun_never_accepts_another_run_commit_workflow_or_later_attempt(self):
+        receipt, current = self.beta32_failed_jobs_rerun()
+        other = "f" * 40
+        for name, env in {
+            "different_run": dict(current, GITHUB_RUN_ID="39891520684"),
+            "different_trigger_sha": dict(current, GITHUB_SHA=other, GITHUB_WORKFLOW_SHA=other),
+            "different_event": dict(current, GITHUB_EVENT_NAME="push"),
+            "earlier_current_attempt": dict(current, GITHUB_RUN_ATTEMPT="1") | {
+                "SOURCE_VALIDATION_RECEIPT": json.dumps(dict(receipt, run_attempt="2"))},
+        }.items():
+            with self.subTest(name=name), self.assertRaises(validation.Refusal):
+                self.decide(env)
+        for key, value in {
+            "run_id": "39891520684", "trigger_sha": other, "workflow_sha": other,
+            "source_sha": other, "event": "push", "repository": "other/repo",
+            "workflow_ref": validation.REPOSITORY + "/.github/workflows/ci.yml@refs/heads/main",
+            "status": "failure", "command": "altered", "python_version": "0.0.0",
+            "schema_version": 2, "source_tree": other,
+            "run_attempt": "3", "run_attempt ": "1",
+        }.items():
+            mutated = dict(receipt, **{key: value})
+            with self.subTest(key=key), self.assertRaisesRegex(
+                    validation.Refusal, "validation_receipt_identity_mismatch"):
+                self.decide(dict(current, SOURCE_VALIDATION_RECEIPT=json.dumps(mutated)))
+        for attempt in (None, "", "0", "01", "-1", "1.0", " 1", "1\n", 1, True, "1" * 21):
+            mutated = dict(receipt, run_attempt=attempt)
+            with self.subTest(attempt=attempt), self.assertRaisesRegex(
+                    validation.Refusal, "validation_receipt_identity_mismatch"):
+                self.decide(dict(current, SOURCE_VALIDATION_RECEIPT=json.dumps(mutated)))
+        missing = {key: value for key, value in receipt.items() if key != "run_attempt"}
+        for raw in (json.dumps(missing), None):
+            with self.subTest(raw=bool(raw)), self.assertRaises(validation.Refusal):
+                self.decide(dict(current, SOURCE_VALIDATION_RECEIPT=raw))
+        for result in ("failure", "cancelled", "skipped", None):
+            with self.subTest(result=result), self.assertRaisesRegex(validation.Refusal, "complete_ci"):
+                self.decide(dict(current, COMPLETE_CI_RESULT=result))
 
     def test_wrong_interpreter_and_installed_dependency_lock_are_refused(self):
         with self.assertRaises(validation.Refusal):

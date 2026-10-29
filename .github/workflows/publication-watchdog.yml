@@ -1,0 +1,75 @@
+name: Publication watchdog
+
+# HAMCP-223: read-only check that every add-on the Home Assistant store reads
+# from this repository advertises a version whose ghcr.io image exists for
+# every declared architecture. Registry reads are anonymous. On mismatch or
+# unknown it opens or updates one labeled issue and fails; an ok report for
+# main closes that issue. It never publishes, tags, dispatches or reruns.
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_run:
+    workflows: ["Publish reviewed Engineering release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or full commit SHA to inspect (default main)"
+        required: false
+        default: main
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: publication-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      report: ${{ steps.check.outputs.report }}
+      outcome: ${{ steps.check.outputs.outcome }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+          cache: pip
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.lock
+      - name: Install configuration parser
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+      - name: Check advertised images
+        id: check
+        env:
+          WATCHDOG_REF: ${{ inputs.ref || 'main' }}
+          # Read-only token for the publish-run listing; never sent to ghcr.io.
+          GH_TOKEN: ${{ github.token }}
+        run: python -I scripts/advertised_image_watchdog.py check --ref "$WATCHDOG_REF" --repository "$GITHUB_REPOSITORY" --github-output "$GITHUB_OUTPUT"
+
+  alert:
+    needs: check
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Open, update or close the watchdog issue
+        env:
+          WATCHDOG_REPORT: ${{ needs.check.outputs.report }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I scripts/advertised_image_watchdog.py alert --repository "$GITHUB_REPOSITORY"
