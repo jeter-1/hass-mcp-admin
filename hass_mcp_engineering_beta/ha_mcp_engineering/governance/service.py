@@ -44,6 +44,7 @@ from ..sanitization import (
     rescan_stored_plan,
     sanitize_untrusted_data,
 )
+from ..f3 import pre_dispatch_reasons
 from ..f3_dashboard.approval_projection import (
     build_dashboard_approval_projection,
     validate_dashboard_approval_projection,
@@ -9622,6 +9623,15 @@ class ChangeGovernanceService:
                 raise GovernanceError(
                     ErrorCode.EXECUTION_TASK_INVALID_STATE, details=details
                 )
+            if task.state == ExecutionTaskState.FAILED_PRE_DISPATCH:
+                # HAMCP-249: a re-apply of a refused plan names the refusal.
+                details[pre_dispatch_reasons.SUMMARY_KEY] = (
+                    self.f3_runtime.pre_dispatch_refusal(task)
+                    if self.f3_runtime is not None
+                    else pre_dispatch_reasons.legacy_f1_refusal(
+                        task.last_error, task.target
+                    )
+                )
             raise GovernanceError(
                 ErrorCode.DUPLICATE_APPLY_ATTEMPT,
                 self.duplicate_apply_message(facts),
@@ -9690,7 +9700,14 @@ class ChangeGovernanceService:
                 changes={
                     "completed_at": self._timestamp(),
                     "terminal_outcome": "failed_pre_dispatch",
-                    "last_error": {"failure_category": reason},
+                    "last_error": {
+                        "failure_category": reason,
+                        "failure_information": (
+                            pre_dispatch_reasons.legacy_f1_reason(
+                                reason, task.target
+                            )
+                        ),
+                    },
                     "legacy_projection": {
                         **task.legacy_projection,
                         "plan_status": (
@@ -9841,7 +9858,14 @@ class ChangeGovernanceService:
                 changes={
                     "completed_at": self._timestamp(),
                     "terminal_outcome": "failed_pre_dispatch",
-                    "last_error": {"error_code": error_code},
+                    "last_error": {
+                        "error_code": error_code,
+                        "failure_information": (
+                            pre_dispatch_reasons.legacy_f1_reason(
+                                error_code, task.target
+                            )
+                        ),
+                    },
                     "legacy_projection": legacy,
                 },
                 result_status="failure",

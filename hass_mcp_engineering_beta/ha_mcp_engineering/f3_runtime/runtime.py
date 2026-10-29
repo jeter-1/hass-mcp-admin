@@ -19,6 +19,7 @@ from ..errors import ErrorCode, GovernanceError
 from ..request_context import observe_provider_send
 from .health_scan import HealthScanFence
 from ..governance.task_storage import TaskHealthSnapshotSuperseded
+from ..f3 import pre_dispatch_reasons
 from ..f3.executor import (
     DispatchAuthorityRefused,
     PreIntentRetryRequired,
@@ -3656,6 +3657,7 @@ class F3RuntimeIntegration:
         def terminal_event(
             event_type: str, *, new_state: ExecutionTaskState,
             changes: dict[str, Any], result_status: str = "success",
+            error_code: str | None = None,
         ) -> None:
             if task.state in TERMINAL_TASK_STATES:
                 # Reconcile a known child fault without rewriting terminal
@@ -3669,7 +3671,7 @@ class F3RuntimeIntegration:
                 return
             self.service._record_task_event(
                 task, event_type, new_state=new_state, changes=changes,
-                result_status=result_status,
+                result_status=result_status, error_code=error_code,
             )
             # The terminal summary now stores every captured send time.
             for declaration in declarations:
@@ -3821,14 +3823,33 @@ class F3RuntimeIntegration:
                     )
                     return
                 if not completed and failed.dispatch_intent is None:
+                    # HAMCP-249 (reporting only): name the refusal on the
+                    # parent, its lifecycle event and the add-on log.  A task
+                    # already terminal keeps exactly what it stores.
+                    reason = pre_dispatch_reasons.child_reason(
+                        declarations[failed_index], failed
+                    ) or pre_dispatch_reasons.unknown_legacy(
+                        declarations[failed_index]
+                    )
+                    failed_changes: dict[str, Any] = {
+                        "completed_at": self.service._timestamp(),
+                        "terminal_outcome": "failed_pre_dispatch",
+                        "verification_summary": summary,
+                    }
+                    # The summary spreads the stored one, so recovery keeps a
+                    # persisted reason and never adds one to a legacy task.
+                    if not terminal_recovery:
+                        summary[pre_dispatch_reasons.SUMMARY_KEY] = reason
+                        failed_changes["last_error"] = {
+                            "error_code": reason["error_code"],
+                            "failure_category": reason["check"],
+                            "failure_information": reason,
+                        }
                     terminal_event(
                         "preflight_failed", new_state=ExecutionTaskState.FAILED_PRE_DISPATCH,
-                        changes={
-                            "completed_at": self.service._timestamp(),
-                            "terminal_outcome": "failed_pre_dispatch",
-                            "verification_summary": summary,
-                        },
+                        changes=failed_changes,
                         result_status="failure",
+                        error_code=reason["error_code"],
                     )
                     plan.status = PlanStatus.FAILED
                     plan.execution_outcome = "failed_pre_dispatch"
@@ -4247,6 +4268,9 @@ class F3RuntimeIntegration:
             ),
         }
         result.update(facts.public_fields())
+        refusal = self.pre_dispatch_refusal(task)
+        if refusal is not None:
+            result[pre_dispatch_reasons.SUMMARY_KEY] = refusal
         if facts.not_sent and facts.setter_not_sent:
             result.update(SETTER_NOT_SENT_FIELDS)
             result["execution_task"] = {
@@ -5653,9 +5677,15 @@ class F3RuntimeIntegration:
         value = self.service._public_task(task)
         facts = facts if facts is not None else self.dispatch_facts_for_task(task)
         if task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY:
+            refusal = self.pre_dispatch_refusal(task)
+            if refusal is not None:
+                value[pre_dispatch_reasons.SUMMARY_KEY] = refusal
             return self.public_task_facts(value, task, facts)
         rows = self._public_child_projection(task)
         value["f3_children"] = [item["detail"] for item in rows]
+        refusal = self.pre_dispatch_refusal(task, rows=rows)
+        if refusal is not None:
+            value[pre_dispatch_reasons.SUMMARY_KEY] = refusal
         # HAMCP-181: one shared projection for every dispatch field.  The
         # #253 values below are re-applied verbatim (value-identical rule).
         value.update(facts.public_fields())
@@ -5675,6 +5705,35 @@ class F3RuntimeIntegration:
                 "children": [item["summary"] for item in rows],
             }
         return dispatch_projection.qualify_counters(value, facts)
+
+    def pre_dispatch_refusal(
+        self, task: Any, *, rows: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any] | None:
+        """HAMCP-249: the parent's pre-dispatch refusal reason, or ``None``.
+
+        The persisted reason wins.  A task terminalized before reasons were
+        persisted is projected from its failed child's durable terminal
+        event codes, else reads ``unknown_legacy``; nothing is rewritten.
+        """
+
+        if task.state != ExecutionTaskState.FAILED_PRE_DISPATCH:
+            return None
+        stored = pre_dispatch_reasons.recorded(
+            task.verification_summary.get(pre_dispatch_reasons.SUMMARY_KEY)
+        )
+        if stored is not None:
+            return stored
+        if task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY:
+            return pre_dispatch_reasons.legacy_f1_refusal(task.last_error, task.target)
+        rows = rows if rows is not None else self._public_child_projection(task)
+        return next(
+            (
+                item["detail"]["pre_dispatch_reason"]
+                for item in rows
+                if item["detail"]["pre_dispatch_reason"] is not None
+            ),
+            pre_dispatch_reasons.unknown_legacy(),
+        )
 
     def _public_child_projection(self, task: Any) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -5708,6 +5767,10 @@ class F3RuntimeIntegration:
                         "selective_hold_keys": declaration[
                             "selective_hold_keys"
                         ],
+                        # HAMCP-249: derived from the durable terminal event.
+                        "pre_dispatch_reason": pre_dispatch_reasons.child_reason(
+                            declaration, record
+                        ),
                     },
                     "summary": {
                         "child_execution_id": declaration["child_id"],
