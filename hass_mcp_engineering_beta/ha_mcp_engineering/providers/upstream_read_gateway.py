@@ -1984,6 +1984,11 @@ class UpstreamReadGateway:
             + len(evaluation.quarantined)
         )
         reason_counts = evaluation.quarantine_reason_counts
+        optional_accounting_valid = (
+            len(policy.tools) + len(optional.accounted_names)
+            == len(catalog.tools)
+            and not evaluation.unreviewed
+        )
         self._replace_registered_tools(server, dynamic_tools)
         self._registered_names = set(dynamic_tools)
         self._exposed = dict(exposed)
@@ -2167,17 +2172,16 @@ class UpstreamReadGateway:
                     "reviewed_stock_catalog_fingerprint": (
                         policy.reviewed_stock_catalog_fingerprint
                     ),
+                    # HAMCP-198 supersedes HAMCP-162 D3: every advertised
+                    # tool must be a stock policy entry or a bound optional
+                    # reviewed tool. Any unaccounted or unreviewed advertised
+                    # tool keeps both flags false.
                     "reviewed_tool_accounting_valid": (
-                        len(policy.tools) == len(catalog.tools)
-                        and not evaluation.unreviewed
+                        optional_accounting_valid
                     ),
-                    # HAMCP-162: stock accounting above is unchanged; the
-                    # optional reviewed tools are accounted separately.
                     "optional_tools": dict(optional.tools),
                     "optional_reviewed_accounting_valid": (
-                        len(policy.tools) + len(optional.accounted_names)
-                        == len(catalog.tools)
-                        and not evaluation.unreviewed
+                        optional_accounting_valid
                     ),
                     "optional_sibling_drift": [
                         {"tool": tool, "reason": reason}

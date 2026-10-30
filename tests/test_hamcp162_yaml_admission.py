@@ -319,14 +319,12 @@ class AdmissionTests(Harness):
                         "ha_read_file": "prohibited_withheld",
                     })
                     self.assertTrue(health["optional_reviewed_accounting_valid"])
-                    # K9: 78 -> 81 (8.4.3) and 77 -> 80 (8.5.0). The stock
-                    # field keeps its meaning (design §5.2, D3): the three
-                    # optional names are outside the policy, so it reports
-                    # false exactly as it did before HAMCP-162; the optional
-                    # field above accounts for them.
+                    # K9: 78 -> 81 (8.4.3) and 77 -> 80 (8.5.0). HAMCP-198
+                    # supersedes D3: the three bound optional names are
+                    # reviewed tools, so the stock flag is true as well.
                     self.assertEqual(health["upstream_advertised_tool_count"], STOCK_UPSTREAM[version] + 3)
                     self.assertEqual(health["reviewed_policy_entry_count"], STOCK_UPSTREAM[version])
-                    self.assertFalse(health["reviewed_tool_accounting_valid"])
+                    self.assertTrue(health["reviewed_tool_accounting_valid"])
                     self.assertEqual(health["optional_sibling_drift"], [])
                     self.assertEqual(self.exposed(gateway), stock | {TOOL})
                     self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(self.exposed(gateway)), STOCK_PUBLIC + 1)
@@ -336,6 +334,25 @@ class AdmissionTests(Harness):
                     self.assertEqual(result["data"]["value"], {"purge_keep_days": 10})
                     self.assertEqual(transport.sent, [(TOOL, y.upstream_arguments("recorder"))])
                     self.assertEqual(transport.sent[0][1]["file"], "configuration.yaml")
+
+    async def test_unaccounted_advertised_tool_keeps_accounting_false(self):
+        # HAMCP-198: the optional model never masks an unreviewed tool. One
+        # extra advertised name that is neither a stock policy entry nor a
+        # bound optional tool keeps both flags false, with or without the
+        # reader, and the extra name is never exposed.
+        for version in VERSIONS:
+            for base in (captured(version), stock_catalog(version)):
+                extra = deepcopy(next(t for t in base if t.get("name") != TOOL))
+                extra["name"] = "ha_synthetic_unreviewed_read"
+                for mode in ("A", "B"):
+                    with self.subTest(version=version, mode=mode, tools=len(base)):
+                        gateway, transport = await self.gateway(version, base + [extra], mode=mode)
+                        health = gateway.health_snapshot()
+                        self.assertEqual(health["upstream_advertised_tool_count"], len(base) + 1)
+                        self.assertFalse(health["reviewed_tool_accounting_valid"])
+                        self.assertFalse(health["optional_reviewed_accounting_valid"])
+                        self.assertNotIn(extra["name"], self.exposed(gateway))
+                        self.assertEqual(transport.sent, [])
 
     async def test_repeated_captures_reproduce_the_binding(self):
         # A2, B, S and S2 are later captures of the same versions (D1).

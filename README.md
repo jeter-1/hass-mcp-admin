@@ -1,5 +1,17 @@
 # HA MCP Engineering Server
 
+Staged, not yet released: Engineering **2.4.1-beta.49** (HAMCP-198,
+HAMCP-120) explains the health warnings that stayed lit. Health names up to
+eight projection-failed plans as `{plan_id, category}` from a fixed
+vocabulary (no record contents; the count and warning are unchanged), and
+`reviewed_tool_accounting_valid` uses the HAMCP-162 optional reviewed-tool
+model (still false for any unaccounted tool). Manual-review counts are
+unchanged pending an acknowledgment-workflow decision. No approval,
+execution, tool, input schema or Home Assistant write change. Follows
+2.4.1-beta.48 (#328). Read the
+[2.4.1-beta.49 release notes](docs/V2_4_1_BETA49_RELEASE_NOTES.md) and
+[2.4.1-beta.49 acceptance contract](docs/V2_4_1_BETA49_ACCEPTANCE.md).
+
 Engineering **2.4.1-beta.47** makes every pre-dispatch refusal name its
 reason (HAMCP-249). A closed-vocabulary
 `pre_dispatch_refusal` (`error_code`, `check`, fixed `detail`, and the
