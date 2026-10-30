@@ -610,6 +610,83 @@ def _account_optional(
     return dataclass_replace(evaluation, unreviewed=tuple(remaining))
 
 
+_OPTIONAL_READER_STATES = frozenset({"admitted", "held"})
+_OPTIONAL_READER_STATE_PREFIXES = ("withheld:", "quarantined:")
+
+
+def _optional_state_recognized(name: str, state: Any, advertised: bool) -> bool:
+    """Whether one optional outcome is a recognized HAMCP-162 state.
+
+    ``optional_absent`` is recognized only for an unadvertised name; every
+    other state requires the name to be advertised.
+    """
+
+    if not isinstance(state, str):
+        return False
+    if state == "optional_absent":
+        return not advertised
+    if not advertised:
+        return False
+    if name in yaml_reader.SIBLING_TOOLS:
+        return state == "prohibited_withheld"
+    if name != yaml_reader.TOOL_NAME:
+        return False
+    return state in _OPTIONAL_READER_STATES or any(
+        state.startswith(prefix) and len(state) > len(prefix)
+        for prefix in _OPTIONAL_READER_STATE_PREFIXES
+    )
+
+
+def _reviewed_tool_accounting_valid(
+    tools: Any,
+    *,
+    policy: Any,
+    optional: Any,
+    evaluation: _CatalogEvaluation,
+    sibling_drift: tuple[tuple[str, str], ...],
+) -> bool:
+    """HAMCP-198: complete-name accounting under the optional model.
+
+    Diagnostic only; admission and routing never read it. True only when
+    every reviewed name (stock policy entry or bound optional name) is
+    advertised exactly once, nothing is missing or unreviewed, no optional
+    sibling drifted, and every optional tool is in a recognized state.
+    Counts are never compared, so a missing name balanced by a duplicate
+    stays false.
+    """
+
+    names = Counter(
+        item.get("name")
+        for item in tuple(tools)
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    )
+    reviewed = {entry.upstream_name for entry in policy.tools} | set(
+        optional.accounted_names
+    )
+    optional_states = tuple(optional.tools)
+    names_complete = reviewed <= set(names)
+    names_unique = all(count == 1 for count in names.values())
+    nothing_missing = not evaluation.missing
+    nothing_unreviewed = not evaluation.unreviewed and set(names) <= reviewed
+    no_sibling_drift = not sibling_drift
+    states_recognized = len(optional_states) == len(
+        yaml_reader.OPTIONAL_NAMES
+    ) and {name for name, _ in optional_states} == set(
+        yaml_reader.OPTIONAL_NAMES
+    ) and all(
+        _optional_state_recognized(name, state, name in names)
+        for name, state in optional_states
+    )
+    return (
+        names_complete
+        and names_unique
+        and nothing_missing
+        and nothing_unreviewed
+        and no_sibling_drift
+        and states_recognized
+    )
+
+
 def _optional_state(optional: Any, state: str) -> Any:
     """Return ``optional`` with the reader withheld under ``state``."""
 
@@ -1984,6 +2061,13 @@ class UpstreamReadGateway:
             + len(evaluation.quarantined)
         )
         reason_counts = evaluation.quarantine_reason_counts
+        reviewed_accounting_valid = _reviewed_tool_accounting_valid(
+            catalog.tools,
+            policy=policy,
+            optional=optional,
+            evaluation=evaluation,
+            sibling_drift=optional_sibling_drift_records,
+        )
         self._replace_registered_tools(server, dynamic_tools)
         self._registered_names = set(dynamic_tools)
         self._exposed = dict(exposed)
@@ -2167,12 +2251,13 @@ class UpstreamReadGateway:
                     "reviewed_stock_catalog_fingerprint": (
                         policy.reviewed_stock_catalog_fingerprint
                     ),
+                    # HAMCP-198 supersedes HAMCP-162 D3: complete-name
+                    # accounting over stock policy entries and bound
+                    # optional reviewed tools (see the helper).
                     "reviewed_tool_accounting_valid": (
-                        len(policy.tools) == len(catalog.tools)
-                        and not evaluation.unreviewed
+                        reviewed_accounting_valid
                     ),
-                    # HAMCP-162: stock accounting above is unchanged; the
-                    # optional reviewed tools are accounted separately.
+                    # HAMCP-162: the optional count check keeps its meaning.
                     "optional_tools": dict(optional.tools),
                     "optional_reviewed_accounting_valid": (
                         len(policy.tools) + len(optional.accounted_names)

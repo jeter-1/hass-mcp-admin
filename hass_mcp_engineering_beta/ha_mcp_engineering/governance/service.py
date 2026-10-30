@@ -119,6 +119,10 @@ from .physical_effects import (
     script_storage_key,
 )
 from . import configuration_rollback_eligibility as inverse_eligibility
+from .projection_diagnostics import (
+    PROJECTION_FAILURE_CATEGORY_MODEL,
+    projection_failure_identification,
+)
 from .policy import (
     POLICY_VERSION,
     configuration_operation_policy,
@@ -16550,6 +16554,9 @@ class ChangeGovernanceService:
             self._resolved_plans_with_projection_failures()
             if resolved_history is None else resolved_history
         )
+        failure_rows, failures_truncated = (
+            projection_failure_identification(projection_failures)
+        )
         plan_generation = (
             self.repository.generation if captured_plan_generation is None
             else captured_plan_generation
@@ -16724,6 +16731,13 @@ class ChangeGovernanceService:
                 if projection_failures
                 else None
             ),
+            # Diagnosis only: fixed categories name the failing check so a
+            # record can be retrieved and classified; never record contents.
+            "projection_failure_category_model": (
+                PROJECTION_FAILURE_CATEGORY_MODEL
+            ),
+            "projection_failures": failure_rows,
+            "projection_failures_truncated": failures_truncated,
             "historical_policy_snapshot_compatibility": (
                 self._historical_policy_projection_summary()
             ),

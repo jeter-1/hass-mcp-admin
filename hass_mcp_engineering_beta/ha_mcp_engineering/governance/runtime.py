@@ -16,6 +16,7 @@ from .historical_policy import (
     HISTORICAL_POLICY_PROJECTION_PROFILES,
 )
 from .operational_lifecycle import OperationalLifecycleGateway
+from .projection_diagnostics import PROJECTION_FAILURE_CATEGORY_MODEL
 from .resources import ConfigurationResourceGateway
 from .entity_metadata_disclosure import (
     read_runtime_dependency_snapshot,
@@ -356,6 +357,11 @@ class GovernanceRuntime:
                 },
                 "projection_failure_count": 0,
                 "projection_failure_warning": None,
+                "projection_failure_category_model": (
+                    PROJECTION_FAILURE_CATEGORY_MODEL
+                ),
+                "projection_failures": [],
+                "projection_failures_truncated": False,
                 "historical_policy_snapshot_compatibility": {
                     "model": HISTORICAL_POLICY_PROJECTION_MODEL,
                     "compatible_count": 0,
