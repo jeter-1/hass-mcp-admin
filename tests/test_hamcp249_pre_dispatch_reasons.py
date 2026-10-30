@@ -39,9 +39,12 @@ from ha_mcp_engineering.governance import normalize  # noqa: E402
 from ha_mcp_engineering.governance.task_models import (  # noqa: E402
     ExecutionTaskState,
 )
+from ha_mcp_engineering.logging_config import JsonFormatter  # noqa: E402
+from ha_mcp_engineering.tools import governance as governance_tools  # noqa: E402
 from tests.test_dev14_configuration_plans import (  # noqa: E402
     ConfigurationPlanTestCase,
     PROPOSED_AUTOMATION,
+    PROPOSED_SCRIPT,
 )
 from tests.test_f3_runtime_integration import (  # noqa: E402
     _ExactFakeConfigurationGateway,
@@ -51,6 +54,32 @@ from tests.test_f3_runtime_integration import (  # noqa: E402
 
 SECRETS = ("dev14-test-access-secret", "dev14-test-ha-token")
 UNTRUSTED_TEXT = "hamcp249-untrusted-provider-text dev14-test-ha-token"
+
+
+def _assert_logged_reason(test, record, reason):
+    """The add-on log line carries the persisted bounded reason (R1-M2):
+    in its context and in the serialized line, and nothing untrusted."""
+
+    context = record.safe_context
+    test.assertEqual(context["error_code"], reason["error_code"])
+    test.assertEqual(context["check"], reason["check"])
+    test.assertEqual(context["failure_information"], reason)
+    serialized = JsonFormatter().format(record)
+    payload = json.loads(serialized)
+    test.assertEqual(payload["context"]["failure_information"], reason)
+    test.assertEqual(payload["context"]["check"], reason["check"])
+    test.assertNotIn("hamcp249", serialized)
+    test.assertNotIn("Apply HVAC comfort", serialized)
+    for secret in SECRETS:
+        test.assertNotIn(secret, serialized)
+
+
+def _logged(logs, event, task_id):
+    return [
+        record for record in logs.records
+        if getattr(record, "event", None) == event
+        and getattr(record, "safe_context", {}).get("task_id") == task_id
+    ]
 
 
 class ReasonVocabularyTests(unittest.TestCase):
@@ -202,6 +231,30 @@ class ReasonVocabularyTests(unittest.TestCase):
         self.assertIsNone(reasons.recorded("lock_conflict"))
         # Only the reviewed fields are read back; anything else is dropped.
         self.assertEqual(reasons.recorded({**good, "payload": UNTRUSTED_TEXT}), good)
+
+    def test_log_reason_takes_only_reviewed_fields(self):
+        """R1-M2: the log and audit context take a built F3 or legacy F1
+        reason in its reviewed fields only, and nothing else."""
+
+        target = {"target_type": "automation", "target_id": "a1"}
+        legacy = reasons.legacy_f1_reason("stale_target_state", target)
+        self.assertEqual(reasons.log_reason(legacy), legacy)
+        built = reasons.unknown_legacy()
+        self.assertEqual(reasons.log_reason(built), built)
+        self.assertEqual(
+            reasons.log_reason({**legacy, "payload": UNTRUSTED_TEXT}), legacy
+        )
+        for value in (
+            None,
+            "stale_target_state",
+            {**legacy, "reason_model": "other"},
+            {**legacy, "error_code": "Free text: " + UNTRUSTED_TEXT},
+            {**legacy, "error_code": None},
+            {**legacy, "check": "free_text_check"},
+            {**legacy, "check": None},
+        ):
+            with self.subTest(value=value):
+                self.assertIsNone(reasons.log_reason(value))
 
     def test_legacy_f1_reasons(self):
         target = {"target_type": "automation", "target_id": "a1"}
@@ -557,12 +610,19 @@ class PreDispatchReasonSurfaceTests(ConfigurationPlanTestCase):
                 ]
                 self.assertEqual(len(logged), 1)
                 self.assertEqual(logged[0].safe_context["error_code"], case.code)
+                _assert_logged_reason(
+                    self, logged[0], task.last_error["failure_information"]
+                )
                 audited = [
                     entry for entry in self._audit_entries()
                     if entry.get("event") == "preflight_failed"
                 ]
                 self.assertEqual(len(audited), 1)
                 self.assertEqual(audited[0]["error_code"], case.code)
+                self.assertEqual(
+                    audited[0]["failure_information"],
+                    task.last_error["failure_information"],
+                )
                 artifacts = self.persisted_artifact_text()
                 self.assertNotIn("hamcp249-untrusted", artifacts)
                 # A repeated apply reports the same stored reason.
@@ -754,6 +814,263 @@ class PreDispatchReasonSurfaceTests(ConfigurationPlanTestCase):
         )
         self.assertEqual(public["pre_dispatch_refusal"]["diagnostic_codes"], [])
 
+    async def _two_operation_plan(self):
+        created = await self.service.create_configuration_plan(
+            title="HAMCP-249 partial sequence",
+            description="Verified first child; stale second child",
+            operations=[
+                {
+                    "operation_id": "first",
+                    "resource_type": "automation",
+                    "action": "update",
+                    "target_id": "apply_hvac_comfort",
+                    "depends_on": [],
+                    "proposed_config": {
+                        **copy.deepcopy(PROPOSED_AUTOMATION),
+                        "action": [
+                            {
+                                "action": "persistent_notification.create",
+                                "data": {"message": "First child"},
+                            }
+                        ],
+                    },
+                },
+                {
+                    "operation_id": "second",
+                    "resource_type": "script",
+                    "action": "update",
+                    "target_id": "set_hvac_comfort",
+                    "depends_on": ["first"],
+                    "proposed_config": copy.deepcopy(PROPOSED_SCRIPT),
+                },
+            ],
+        )
+        await self.approve(created)
+        return created
+
+    def _stale_second_preflight(self):
+        original = ConfigurationOperationAdapter.preflight
+        gateway = self.gateway
+
+        async def stale_second(adapter, operation, **kwargs):
+            if operation.target.target_id == "set_hvac_comfort":
+                key = ("script", "set_hvac_comfort")
+                gateway.configs[key] = {
+                    **gateway.configs[key], "description": UNTRUSTED_TEXT,
+                }
+            return await original(adapter, operation, **kwargs)
+
+        return patch.object(ConfigurationOperationAdapter, "preflight", stale_second)
+
+    def _assert_second_child_reason(self, reason, *, surface):
+        self.assertIsInstance(reason, dict, surface)
+        self.assertEqual(sorted(reason), sorted(reasons.REASON_FIELDS), surface)
+        self.assertEqual(reason["error_code"], "stale_target_state", surface)
+        self.assertEqual(reason["check"], "target_state", surface)
+        self.assertEqual(reason["reason_source"], "child_terminal_event", surface)
+        self.assertEqual(reason["normalized_outcome"], "preflight_rejected", surface)
+        self.assertEqual(reason["operation_id"], "second", surface)
+        self.assertEqual(reason["ordinal"], 1, surface)
+        self.assertEqual(reason["target_type"], "script", surface)
+        self.assertEqual(reason["target_id"], "set_hvac_comfort", surface)
+        text = json.dumps(reason, sort_keys=True)
+        self.assertNotIn("hamcp249", text, surface)
+        for secret in SECRETS:
+            self.assertNotIn(secret, text, surface)
+
+    async def test_later_child_refusal_after_a_completed_child_names_its_reason(self):
+        """R1-M1: the second child is refused before dispatch after the first
+        child was written and verified; the parent stays in the existing
+        manual-review state and every surface names the second child."""
+
+        created = await self._two_operation_plan()
+        with self.assertLogs(
+            "ha_mcp_engineering.governance", level=logging.INFO
+        ) as logs:
+            with self._stale_second_preflight():
+                result = await self.service.apply(
+                    created["plan_id"], created["plan_hash"]
+                )
+        # Existing partial-execution state, unchanged.
+        self.assertEqual(result["task_state"], "manual_review_required")
+        self.assertEqual(
+            [call for call in self.gateway.calls if call[0] == "write"],
+            [("write", "update", "automation", "apply_hvac_comfort")],
+        )
+        task = self.service.task_repository.get(result["task_id"])
+        self.assertEqual(task.state, ExecutionTaskState.MANUAL_REVIEW_REQUIRED)
+        self.assertEqual(task.terminal_outcome, "manual_review_required")
+        self.assertEqual(task.manual_review_reason, "f3_sequence_incomplete")
+        self.assertEqual(
+            task.verification_summary["completed_operation_ids"], ["first"]
+        )
+        self.assertEqual(
+            [
+                (child["operation_id"], child["normalized_outcome"],
+                 child["dispatch_count"])
+                for child in task.verification_summary["children"]
+            ],
+            [("first", "succeeded_verified", 1),
+             ("second", "preflight_rejected", 0)],
+        )
+        self.assertFalse(
+            any(event.event_type == "preflight_failed" for event in task.events)
+        )
+        reason = task.last_error["failure_information"]
+        # 1. child
+        public = self.service.get_execution_task(result["task_id"])
+        self.assertIsNone(public["f3_children"][0]["pre_dispatch_reason"])
+        self._assert_second_child_reason(
+            public["f3_children"][1]["pre_dispatch_reason"], surface="child"
+        )
+        self.assertEqual(public["f3_children"][1]["pre_dispatch_reason"], reason)
+        # 2. parent error and summary
+        self._assert_second_child_reason(reason, surface="last_error")
+        self.assertEqual(task.last_error["error_code"], "stale_target_state")
+        self.assertEqual(task.last_error["failure_category"], "target_state")
+        self.assertEqual(
+            task.verification_summary["pre_dispatch_refusal"], reason
+        )
+        self.assertEqual(public["pre_dispatch_refusal"], reason)
+        # 3. first apply details
+        self.assertEqual(result["pre_dispatch_refusal"], reason)
+        # 4. refusal event and log, child-identified, no state transition
+        [refusal_event] = [
+            event for event in task.events
+            if event.event_type == reasons.CHILD_PREFLIGHT_FAILED_EVENT
+        ]
+        self.assertEqual(refusal_event.state_before, refusal_event.state_after)
+        self.assertEqual(
+            refusal_event.changes["last_error"]["failure_information"], reason
+        )
+        [review_event] = [
+            event for event in task.events
+            if event.event_type == "manual_review_required"
+        ]
+        self.assertEqual(
+            review_event.state_after,
+            ExecutionTaskState.MANUAL_REVIEW_REQUIRED.value,
+        )
+        [logged] = _logged(
+            logs, reasons.CHILD_PREFLIGHT_FAILED_EVENT, result["task_id"]
+        )
+        _assert_logged_reason(self, logged, reason)
+        self.assertEqual(logged.safe_context["result_status"], "failure")
+        self.assertTrue(logged.safe_context["approval_consumed"])
+        [review_logged] = _logged(logs, "manual_review_required", result["task_id"])
+        _assert_logged_reason(self, review_logged, reason)
+        audited = [
+            entry for entry in self._audit_entries()
+            if entry.get("event") == reasons.CHILD_PREFLIGHT_FAILED_EVENT
+        ]
+        self.assertEqual(len(audited), 1)
+        self.assertEqual(audited[0]["failure_information"], reason)
+        self.assertNotIn("hamcp249-untrusted", self.persisted_artifact_text())
+        # 5. repeated apply: same reason, no further dispatch
+        with self.assertRaises(GovernanceError) as repeated:
+            await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(
+            repeated.exception.code, ErrorCode.DUPLICATE_APPLY_ATTEMPT
+        )
+        self.assertEqual(
+            repeated.exception.details["pre_dispatch_refusal"], reason
+        )
+        self.assertEqual(sum(call[0] == "write" for call in self.gateway.calls), 1)
+        # Terminal recovery reconciles without rewriting the stored history.
+        before = self.service.task_repository.get(result["task_id"]).to_dict()
+        await self._reconcile_terminal_projection(result["task_id"])
+        self.assertEqual(
+            self.service.task_repository.get(result["task_id"]).to_dict(), before
+        )
+
+    async def test_later_child_post_dispatch_failure_names_no_refusal(self):
+        """Negative R1-M1: a later child that failed after its dispatch ends
+        in the same manual review but is not reported as a pre-dispatch
+        refusal on any surface."""
+
+        created = await self._two_operation_plan()
+        self.gateway.fail_write_target = ("script", "set_hvac_comfort")
+        with self.assertLogs(
+            "ha_mcp_engineering.governance", level=logging.INFO
+        ) as logs:
+            result = await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+        self.assertEqual(result["task_state"], "manual_review_required")
+        self.assertNotIn("pre_dispatch_refusal", result)
+        task = self.service.task_repository.get(result["task_id"])
+        self.assertEqual(
+            [child["dispatch_count"] for child in task.verification_summary["children"]],
+            [1, 1],
+        )
+        self.assertNotIn("pre_dispatch_refusal", task.verification_summary)
+        self.assertFalse(
+            any(
+                event.event_type
+                in {reasons.CHILD_PREFLIGHT_FAILED_EVENT, "preflight_failed"}
+                for event in task.events
+            )
+        )
+        public = self.service.get_execution_task(result["task_id"])
+        self.assertNotIn("pre_dispatch_refusal", public)
+        self.assertEqual(
+            [child["pre_dispatch_reason"] for child in public["f3_children"]],
+            [None, None],
+        )
+        self.assertFalse(
+            any(
+                "failure_information" in getattr(record, "safe_context", {})
+                for record in logs.records
+            )
+        )
+        with self.assertRaises(GovernanceError) as repeated:
+            await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertNotIn("pre_dispatch_refusal", repeated.exception.details)
+        self.assertEqual(sum(call[0] == "write" for call in self.gateway.calls), 2)
+
+    async def test_later_child_refusal_is_evented_once_across_recovery(self):
+        """R1-M1: if the parent's terminal save is interrupted after the
+        child refusal event, recovery completes the same manual review and
+        does not record the refusal event again."""
+
+        created = await self._two_operation_plan()
+        record = self.service._record_task_event
+        interrupted = []
+
+        def interrupt_terminal_save(task, event_type, *args, **kwargs):
+            if event_type == "manual_review_required" and not interrupted:
+                interrupted.append(event_type)
+                raise RuntimeError("synthetic interruption")
+            return record(task, event_type, *args, **kwargs)
+
+        with self._stale_second_preflight(), patch.object(
+            self.service, "_record_task_event", interrupt_terminal_save
+        ):
+            with self.assertRaises(RuntimeError):
+                await self.service.apply(created["plan_id"], created["plan_hash"])
+        [task] = [
+            item for item in self.service.task_repository.list()
+            if item.plan_id == created["plan_id"]
+        ]
+        self.assertNotIn(task.state, {
+            ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
+            ExecutionTaskState.FAILED_PRE_DISPATCH,
+        })
+        await self.runtime.recover_once("test")
+        task = self.service.task_repository.get(task.task_id)
+        self.assertEqual(task.state, ExecutionTaskState.MANUAL_REVIEW_REQUIRED)
+        self.assertEqual(
+            [
+                event.event_type for event in task.events
+                if event.event_type == reasons.CHILD_PREFLIGHT_FAILED_EVENT
+            ],
+            [reasons.CHILD_PREFLIGHT_FAILED_EVENT],
+        )
+        self._assert_second_child_reason(
+            task.last_error["failure_information"], surface="recovered"
+        )
+        self.assertEqual(sum(call[0] == "write" for call in self.gateway.calls), 1)
+
     async def test_terminal_recovery_keeps_a_persisted_reason_verbatim(self):
         created = await self._plan(_wait_dict_automation())
         result = await self.service.apply(created["plan_id"], created["plan_hash"])
@@ -802,6 +1119,14 @@ class LegacyF1PreDispatchReasonTests(ConfigurationPlanTestCase):
             == "failed_pre_dispatch"
         ]
         self.assertIn("stale_target_state", terminal_logs)
+        [logged] = _logged(logs, "preflight_failed", task.task_id)
+        _assert_logged_reason(self, logged, information)
+        [event] = [
+            item for item in task.events if item.event_type == "preflight_failed"
+        ]
+        self.assertEqual(
+            event.changes["last_error"]["failure_information"], information
+        )
         with self.assertRaises(GovernanceError) as repeated:
             await self.service.apply(created["plan_id"], created["plan_hash"])
         self.assertEqual(
@@ -857,9 +1182,12 @@ class LegacyF1PreDispatchReasonTests(ConfigurationPlanTestCase):
             changes={"started_at": self.service._timestamp()},
         )
         task = self.service.task_repository.get(task.task_id)
-        self.service._manual_review_task(
-            task, "restart_reconciliation_unproven", plan
-        )
+        with self.assertLogs(
+            "ha_mcp_engineering.governance", level=logging.INFO
+        ) as logs:
+            self.service._manual_review_task(
+                task, "restart_reconciliation_unproven", plan
+            )
         stored = self.service.task_repository.get(task.task_id)
         self.assertEqual(stored.state, ExecutionTaskState.FAILED_PRE_DISPATCH)
         self.assertEqual(
@@ -872,7 +1200,86 @@ class LegacyF1PreDispatchReasonTests(ConfigurationPlanTestCase):
         self.assertEqual(information["target_id"], stored.target["target_id"])
         public = self.service.get_execution_task(task.task_id)
         self.assertEqual(public["last_error"]["failure_information"], information)
+        [logged] = _logged(logs, "preflight_failed", task.task_id)
+        _assert_logged_reason(self, logged, information)
         self.assertEqual(sum(call[0] == "write" for call in self.gateway.calls), 0)
+
+    async def _tool_apply(self, created):
+        with patch.object(
+            governance_tools.GOVERNANCE, "require", return_value=self.service
+        ):
+            return json.loads(
+                await governance_tools.apply_change_plan(
+                    created["plan_id"], created["plan_hash"]
+                )
+            )
+
+    async def test_first_f1_refusal_through_the_tool_names_its_reason(self):
+        """R1-M3: the first legacy F1 refusal returned by the public tool
+        carries the reason just persisted; a repeat keeps it."""
+
+        created = await self.create_automation_plan()
+        await self.approve(created)
+        key = ("automation", "apply_hvac_comfort")
+        self.gateway.configs[key] = {
+            **self.gateway.configs[key], "description": UNTRUSTED_TEXT,
+        }
+        envelope = await self._tool_apply(created)
+        self.assertFalse(envelope["success"])
+        # The original error is unchanged.
+        self.assertEqual(envelope["error_code"], "stale_target_state")
+        self.assertEqual(
+            envelope["message"], "Home Assistant state changed after planning."
+        )
+        self.assertEqual(envelope["details"]["resource_id"], "apply_hvac_comfort")
+        self.assertEqual(
+            envelope["details"]["operation_id"], "update_comfort_automation"
+        )
+        [task] = [
+            item for item in self.service.task_repository.list()
+            if item.plan_id == created["plan_id"]
+        ]
+        self.assertEqual(task.state, ExecutionTaskState.FAILED_PRE_DISPATCH)
+        information = task.last_error["failure_information"]
+        self.assertEqual(envelope["details"]["pre_dispatch_refusal"], information)
+        [event] = [
+            item for item in task.events if item.event_type == "preflight_failed"
+        ]
+        self.assertEqual(
+            event.changes["last_error"]["failure_information"], information
+        )
+        text = json.dumps(envelope)
+        self.assertNotIn("hamcp249", text)
+        for secret in SECRETS:
+            self.assertNotIn(secret, text)
+        repeated = await self._tool_apply(created)
+        self.assertEqual(repeated["error_code"], "duplicate_apply_attempt")
+        self.assertEqual(repeated["details"]["pre_dispatch_refusal"], information)
+        self.assertEqual(sum(call[0] == "write" for call in self.gateway.calls), 0)
+
+    async def test_post_dispatch_f1_error_through_the_tool_is_not_decorated(self):
+        """Negative R1-M3: an error after the write is not a pre-dispatch
+        refusal and carries no refusal reason."""
+
+        self.gateway.canonicalize_automation_action_alias = True
+        self.gateway.behavioral_mismatch_after_write_target = (
+            "automation", "apply_hvac_comfort",
+        )
+        created = await self.create_automation_plan()
+        await self.approve(created)
+        envelope = await self._tool_apply(created)
+        self.assertFalse(envelope["success"])
+        self.assertEqual(
+            envelope["error_code"],
+            ErrorCode.CONFIGURATION_PARTIAL_FAILURE.value,
+        )
+        self.assertNotIn("pre_dispatch_refusal", envelope.get("details") or {})
+        [task] = [
+            item for item in self.service.task_repository.list()
+            if item.plan_id == created["plan_id"]
+        ]
+        self.assertNotEqual(task.state, ExecutionTaskState.FAILED_PRE_DISPATCH)
+        self.assertEqual(sum(call[0] == "write" for call in self.gateway.calls), 1)
 
 
 if __name__ == "__main__":

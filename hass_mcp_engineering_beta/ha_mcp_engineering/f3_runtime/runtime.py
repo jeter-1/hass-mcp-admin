@@ -3658,6 +3658,7 @@ class F3RuntimeIntegration:
             event_type: str, *, new_state: ExecutionTaskState,
             changes: dict[str, Any], result_status: str = "success",
             error_code: str | None = None,
+            failure_information: dict[str, Any] | None = None,
         ) -> None:
             if task.state in TERMINAL_TASK_STATES:
                 # Reconcile a known child fault without rewriting terminal
@@ -3672,6 +3673,7 @@ class F3RuntimeIntegration:
             self.service._record_task_event(
                 task, event_type, new_state=new_state, changes=changes,
                 result_status=result_status, error_code=error_code,
+                failure_information=failure_information,
             )
             # The terminal summary now stores every captured send time.
             for declaration in declarations:
@@ -3850,6 +3852,7 @@ class F3RuntimeIntegration:
                         changes=failed_changes,
                         result_status="failure",
                         error_code=reason["error_code"],
+                        failure_information=reason,
                     )
                     plan.status = PlanStatus.FAILED
                     plan.execution_outcome = "failed_pre_dispatch"
@@ -3903,16 +3906,49 @@ class F3RuntimeIntegration:
                             changes={},
                         )
                         task = self.service._load_task(task.task_id)
+                    # HAMCP-249 (reporting only): a later child refused before
+                    # dispatch after an earlier child completed is named on
+                    # the parent, on its own child refusal event and log.
+                    # The parent stays manual_review_required; nothing about
+                    # the completed child or dispatch counts changes.
+                    reason = pre_dispatch_reasons.child_reason(
+                        declarations[failed_index], failed
+                    )
+                    manual_changes: dict[str, Any] = {
+                        "completed_at": self.service._timestamp(),
+                        "terminal_outcome": "manual_review_required",
+                        "manual_review_reason": "f3_sequence_incomplete",
+                        "verification_summary": {**summary, "status": "manual_review_required"},
+                    }
+                    if reason is not None and not terminal_recovery:
+                        last_error = {
+                            "error_code": reason["error_code"],
+                            "failure_category": reason["check"],
+                            "failure_information": reason,
+                        }
+                        manual_changes["verification_summary"][
+                            pre_dispatch_reasons.SUMMARY_KEY
+                        ] = reason
+                        manual_changes["last_error"] = last_error
+                        if not any(
+                            event.event_type == pre_dispatch_reasons.CHILD_PREFLIGHT_FAILED_EVENT
+                            for event in task.events
+                        ):
+                            self.service._record_task_event(
+                                task, pre_dispatch_reasons.CHILD_PREFLIGHT_FAILED_EVENT,
+                                changes={"last_error": last_error},
+                                result_status="failure",
+                                error_code=reason["error_code"],
+                                failure_information=reason,
+                            )
+                            task = self.service._load_task(task.task_id)
                     terminal_event(
                         "manual_review_required",
                         new_state=ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
-                        changes={
-                            "completed_at": self.service._timestamp(),
-                            "terminal_outcome": "manual_review_required",
-                            "manual_review_reason": "f3_sequence_incomplete",
-                            "verification_summary": {**summary, "status": "manual_review_required"},
-                        },
+                        changes=manual_changes,
                         result_status="partial",
+                        error_code=None if reason is None else reason["error_code"],
+                        failure_information=reason,
                     )
                     plan.status = PlanStatus.VERIFICATION_FAILED
                     plan.execution_outcome = "manual_review_required"
@@ -5714,16 +5750,21 @@ class F3RuntimeIntegration:
         The persisted reason wins.  A task terminalized before reasons were
         persisted is projected from its failed child's durable terminal
         event codes, else reads ``unknown_legacy``; nothing is rewritten.
+        An F3 ``manual_review_required`` parent names a reason only when a
+        later child was refused before dispatch after an earlier child
+        completed; any other manual review has none.
         """
 
-        if task.state != ExecutionTaskState.FAILED_PRE_DISPATCH:
+        f3 = task.legacy_projection.get("execution_authority") == F3_EXECUTION_AUTHORITY
+        partial = f3 and task.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED
+        if task.state != ExecutionTaskState.FAILED_PRE_DISPATCH and not partial:
             return None
         stored = pre_dispatch_reasons.recorded(
             task.verification_summary.get(pre_dispatch_reasons.SUMMARY_KEY)
         )
         if stored is not None:
             return stored
-        if task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY:
+        if not f3:
             return pre_dispatch_reasons.legacy_f1_refusal(task.last_error, task.target)
         rows = rows if rows is not None else self._public_child_projection(task)
         return next(
@@ -5732,7 +5773,7 @@ class F3RuntimeIntegration:
                 for item in rows
                 if item["detail"]["pre_dispatch_reason"] is not None
             ),
-            pre_dispatch_reasons.unknown_legacy(),
+            None if partial else pre_dispatch_reasons.unknown_legacy(),
         )
 
     def _public_child_projection(self, task: Any) -> list[dict[str, Any]]:

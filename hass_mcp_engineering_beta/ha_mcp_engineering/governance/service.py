@@ -2136,6 +2136,7 @@ class ChangeGovernanceService:
         result_status: str,
         *,
         error_code: str | None = None,
+        failure_information: dict[str, Any] | None = None,
     ) -> None:
         safe = {
             "event": event_type,
@@ -2172,6 +2173,12 @@ class ChangeGovernanceService:
             "fallback_occurred": False,
             "fallback": "none",
         }
+        # HAMCP-249: a refusal event names its bounded, fixed-vocabulary
+        # reason; only the reviewed reason fields are taken.
+        reason = pre_dispatch_reasons.log_reason(failure_information)
+        if reason is not None:
+            safe["check"] = reason["check"]
+            safe["failure_information"] = reason
         # HAMCP-181 S12: new entries derive the dispatch fields from the
         # shared projection; historical audit records are not rewritten.
         facts = self._dispatch_facts(task)
@@ -2200,6 +2207,7 @@ class ChangeGovernanceService:
         changes: dict[str, Any] | None = None,
         result_status: str = "success",
         error_code: str | None = None,
+        failure_information: dict[str, Any] | None = None,
     ) -> None:
         try:
             task.append_event(
@@ -2223,6 +2231,7 @@ class ChangeGovernanceService:
             event_type,
             result_status,
             error_code=error_code,
+            failure_information=failure_information,
         )
 
     def _create_task_for_plan(
@@ -9623,15 +9632,18 @@ class ChangeGovernanceService:
                 raise GovernanceError(
                     ErrorCode.EXECUTION_TASK_INVALID_STATE, details=details
                 )
-            if task.state == ExecutionTaskState.FAILED_PRE_DISPATCH:
-                # HAMCP-249: a re-apply of a refused plan names the refusal.
-                details[pre_dispatch_reasons.SUMMARY_KEY] = (
-                    self.f3_runtime.pre_dispatch_refusal(task)
-                    if self.f3_runtime is not None
-                    else pre_dispatch_reasons.legacy_f1_refusal(
-                        task.last_error, task.target
-                    )
+            # HAMCP-249: a re-apply of a refused plan names the refusal,
+            # including an F3 child refused after an earlier child completed.
+            if self.f3_runtime is not None:
+                refusal = self.f3_runtime.pre_dispatch_refusal(task)
+            elif task.state == ExecutionTaskState.FAILED_PRE_DISPATCH:
+                refusal = pre_dispatch_reasons.legacy_f1_refusal(
+                    task.last_error, task.target
                 )
+            else:
+                refusal = None
+            if refusal is not None:
+                details[pre_dispatch_reasons.SUMMARY_KEY] = refusal
             raise GovernanceError(
                 ErrorCode.DUPLICATE_APPLY_ATTEMPT,
                 self.duplicate_apply_message(facts),
@@ -9693,6 +9705,7 @@ class ChangeGovernanceService:
         }:
             # A contradictory pre-dispatch task cannot be promoted into a
             # dispatched history. Fail it before dispatch instead.
+            refusal = pre_dispatch_reasons.legacy_f1_reason(reason, task.target)
             self._record_task_event(
                 task,
                 "preflight_failed",
@@ -9702,11 +9715,7 @@ class ChangeGovernanceService:
                     "terminal_outcome": "failed_pre_dispatch",
                     "last_error": {
                         "failure_category": reason,
-                        "failure_information": (
-                            pre_dispatch_reasons.legacy_f1_reason(
-                                reason, task.target
-                            )
-                        ),
+                        "failure_information": refusal,
                     },
                     "legacy_projection": {
                         **task.legacy_projection,
@@ -9722,6 +9731,7 @@ class ChangeGovernanceService:
                 },
                 result_status="failure",
                 error_code=reason,
+                failure_information=refusal,
             )
             return
         self._record_task_event(
@@ -9851,6 +9861,9 @@ class ChangeGovernanceService:
         if not dispatched:
             if error_code is None:
                 return
+            refusal = pre_dispatch_reasons.legacy_f1_reason(
+                error_code, task.target
+            )
             self._record_task_event(
                 task,
                 "preflight_failed",
@@ -9860,16 +9873,13 @@ class ChangeGovernanceService:
                     "terminal_outcome": "failed_pre_dispatch",
                     "last_error": {
                         "error_code": error_code,
-                        "failure_information": (
-                            pre_dispatch_reasons.legacy_f1_reason(
-                                error_code, task.target
-                            )
-                        ),
+                        "failure_information": refusal,
                     },
                     "legacy_projection": legacy,
                 },
                 result_status="failure",
                 error_code=error_code,
+                failure_information=refusal,
             )
             return
         if plan.status in {
@@ -10176,11 +10186,27 @@ class ChangeGovernanceService:
                 if task is not None:
                     persisted_plan = self._load(plan.plan_id)
                     task = self._load_task(task.task_id)
+                    was_terminal = task.state in TERMINAL_TASK_STATES
                     self._project_task_after_apply(
                         task,
                         persisted_plan,
                         error_code=exc.code.value,
                     )
+                    task = self._load_task(task.task_id)
+                    if (
+                        not was_terminal
+                        and task.state == ExecutionTaskState.FAILED_PRE_DISPATCH
+                    ):
+                        # HAMCP-249: the first refusal names the reason this
+                        # call just persisted; the error itself is unchanged.
+                        exc.details = {
+                            pre_dispatch_reasons.SUMMARY_KEY: (
+                                pre_dispatch_reasons.legacy_f1_refusal(
+                                    task.last_error, task.target
+                                )
+                            ),
+                            **exc.details,
+                        }
                 raise
             finally:
                 self._active_task_ids_by_plan.pop(plan.plan_id, None)

@@ -42,6 +42,9 @@ SOURCE_PARENT_LAST_ERROR = "parent_last_error"
 LEGACY_F1_CHECK = "legacy_f1_apply"
 VERIFIER_DETAIL_PREFIX = "automation_verifier_"
 SUMMARY_KEY = "pre_dispatch_refusal"
+# The parent event naming a later child refused before dispatch after an
+# earlier child completed.  It never changes the parent state.
+CHILD_PREFLIGHT_FAILED_EVENT = "child_preflight_failed"
 MAX_IDENTIFIER_LENGTH = 160
 
 PRE_DISPATCH_OUTCOMES = frozenset(
@@ -341,6 +344,24 @@ def recorded(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict) or value.get("reason_model") != REASON_MODEL:
         return None
     if value.get("error_code") not in REASON_CODES:
+        return None
+    return {key: value.get(key) for key in REASON_FIELDS}
+
+
+def log_reason(value: Any) -> dict[str, Any] | None:
+    """A built F3 or legacy F1 reason in its reviewed fields, else ``None``.
+
+    The add-on log and audit context take only these fields.  Unlike
+    :func:`recorded`, a legacy F1 ``error_code`` may be any bounded
+    ``ErrorCode`` identifier; the check must still be a fixed one.
+    """
+
+    if not isinstance(value, dict) or value.get("reason_model") != REASON_MODEL:
+        return None
+    code = value.get("error_code")
+    if not isinstance(code, str) or EVIDENCE_PATTERN.fullmatch(code) is None:
+        return None
+    if value.get("check") not in _CHECK_DETAILS:
         return None
     return {key: value.get(key) for key in REASON_FIELDS}
 

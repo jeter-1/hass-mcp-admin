@@ -18,7 +18,12 @@ Classes:
 - ``P*``: persistence and legacy semantics (terminal recovery rewriting a
   stored task, a persisted reason not preferred, a legacy reason fabricated
   or a derivable one lost, an unreviewed stored shape accepted);
-- ``B*``: bounding and sanitization of identifiers and detail text.
+- ``B*``: bounding and sanitization of identifiers and detail text;
+- ``R*`` (round 1): a later child's refusal after an earlier child completed
+  not persisted, evented, logged or read back (R1-M1); the log and audit
+  context dropping or unbounding the reason while keeping the code (R1-M2);
+  the first legacy F1 error not decorated, decorated after dispatch, or
+  losing its original details (R1-M3).
 
 Runs (``results.json`` is the last, complete one):
 - Runs 1 and 2 were stopped. A 900 s per-mutant timeout masked S7 (the
@@ -35,6 +40,14 @@ Runs (``results.json`` is the last, complete one):
   0 timeouts.
 - Run 5 (complete, after the module moved to ``f3_runtime/``): baseline OK
   in 757 s; 29 of 29 killed, 0 survivors, 0 timeouts.
+- Round 1 corrections: S3, S9, S10, S11 and P6 re-anchored to the changed
+  source (same mutations) and R1-R16 added. A pre-screen of those 21
+  against the HAMCP-249 module found R3 (the child refusal event recorded
+  again on recovery) and R6 (a partial sequence without a refused child
+  reading ``unknown_legacy``) surviving; the interrupted-terminal-save
+  recovery test and the post-dispatch later-child negative were added.
+- Run 6 (complete): baseline OK in 787 s; 45 of 45 killed, 0 survivors,
+  0 timeouts.
 
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\
@@ -70,6 +83,7 @@ S = "a pre-dispatch refusal reason dropped at one reporting surface"
 C = "the refusal reason misclassified"
 P = "persistence or legacy semantics of the reason"
 B = "identifier bounding or sanitization"
+R = "a round-1 reporting surface dropped or over-applied"
 
 MUTATIONS = [
     m("S1-parent-summary-reason-dropped", S,
@@ -77,7 +91,10 @@ MUTATIONS = [
     m("S2-parent-last-error-dropped", S,
       (RT, 'failed_changes["last_error"] = {', "_dropped = {")),
     m("S3-preflight-failed-event-error-code-dropped", S,
-      (RT, 'error_code=reason["error_code"],', "error_code=None,")),
+      (RT, 'error_code=reason["error_code"],\n                        failure_information=reason,\n'
+           "                    )\n                    plan.status = PlanStatus.FAILED",
+       "error_code=None,\n                        failure_information=reason,\n"
+       "                    )\n                    plan.status = PlanStatus.FAILED")),
     m("S4-terminal-event-ignores-error-code", S,
       (RT, "result_status=result_status, error_code=error_code,", "result_status=result_status,")),
     m("S5-child-view-reason-dropped", S,
@@ -96,13 +113,69 @@ MUTATIONS = [
        "        refusal = self.pre_dispatch_refusal(task, rows=rows)\n        if refusal is not None:\n"
        "            pass")),
     m("S9-repeat-apply-details-reason-dropped", S,
-      (SV, "details[pre_dispatch_reasons.SUMMARY_KEY] = (", "_dropped = (")),
+      (SV, "                details[pre_dispatch_reasons.SUMMARY_KEY] = refusal",
+       "                pass")),
     m("S10-f1-manual-review-failure-information-dropped", S,
-      (SV, "pre_dispatch_reasons.legacy_f1_reason(\n                                reason, task.target\n"
-           "                            )", "None")),
+      (SV, "refusal = pre_dispatch_reasons.legacy_f1_reason(reason, task.target)", "refusal = None")),
     m("S11-f1-apply-failure-information-dropped", S,
-      (SV, "pre_dispatch_reasons.legacy_f1_reason(\n                                error_code, task.target\n"
-           "                            )", "None")),
+      (SV, "refusal = pre_dispatch_reasons.legacy_f1_reason(\n                error_code, task.target\n"
+           "            )", "refusal = None")),
+    # Round 1 (R1-M1..M3): the later-child refusal, the log/audit reason and
+    # the first legacy F1 error.
+    m("R1-later-child-reason-not-persisted", R,
+      (RT, "if reason is not None and not terminal_recovery:", "if False:")),
+    m("R2-child-preflight-failed-event-not-emitted", R,
+      (RT, "                        if not any(\n"
+           "                            event.event_type == pre_dispatch_reasons.CHILD_PREFLIGHT_FAILED_EVENT",
+       "                        if False and not any(\n"
+           "                            event.event_type == pre_dispatch_reasons.CHILD_PREFLIGHT_FAILED_EVENT")),
+    m("R3-child-preflight-failed-event-repeated", R,
+      (RT, "                        if not any(\n"
+           "                            event.event_type == pre_dispatch_reasons.CHILD_PREFLIGHT_FAILED_EVENT",
+       "                        if True or not any(\n"
+           "                            event.event_type == pre_dispatch_reasons.CHILD_PREFLIGHT_FAILED_EVENT")),
+    m("R4-manual-review-log-reason-dropped", R,
+      (RT, "                        result_status=\"partial\",\n"
+           "                        error_code=None if reason is None else reason[\"error_code\"],\n"
+           "                        failure_information=reason,",
+       "                        result_status=\"partial\",\n"
+           "                        error_code=None if reason is None else reason[\"error_code\"],")),
+    m("R5-partial-sequence-refusal-not-read", R,
+      (RT, "partial = f3 and task.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED", "partial = False")),
+    m("R6-partial-sequence-reads-unknown-legacy", R,
+      (RT, "None if partial else pre_dispatch_reasons.unknown_legacy(),",
+       "pre_dispatch_reasons.unknown_legacy(),")),
+    m("R7-log-failure-information-dropped-code-kept", R,
+      (SV, '            safe["failure_information"] = reason', "            pass")),
+    m("R8-log-check-dropped", R,
+      (SV, '            safe["check"] = reason["check"]', "            pass")),
+    m("R9-f3-preflight-failed-log-reason-dropped", R,
+      (RT, "                        failure_information=reason,\n"
+           "                    )\n                    plan.status = PlanStatus.FAILED",
+       "                    )\n                    plan.status = PlanStatus.FAILED")),
+    m("R10-f1-manual-review-log-reason-dropped", R,
+      (SV, "                error_code=reason,\n                failure_information=refusal,",
+       "                error_code=reason,")),
+    m("R11-f1-apply-log-reason-dropped", R,
+      (SV, "                error_code=error_code,\n                failure_information=refusal,",
+       "                error_code=error_code,")),
+    m("R12-log-reason-unprojected", R,
+      (PR, "    return {key: value.get(key) for key in REASON_FIELDS}\n\n\ndef unknown_legacy",
+       "    return value\n\n\ndef unknown_legacy")),
+    m("R13-log-reason-accepts-unreviewed-check", R,
+      (PR, '    if value.get("check") not in _CHECK_DETAILS:\n        return None',
+       "    if False:\n        return None")),
+    m("R14-first-f1-error-not-decorated", R,
+      (SV, "                        and task.state == ExecutionTaskState.FAILED_PRE_DISPATCH\n"
+           "                    ):",
+       "                        and False\n                    ):")),
+    m("R15-f1-error-decorated-regardless-of-state", R,
+      (SV, "                        not was_terminal\n"
+           "                        and task.state == ExecutionTaskState.FAILED_PRE_DISPATCH\n",
+       "                        True\n")),
+    m("R16-first-f1-error-original-details-dropped", R,
+      (SV, "                            ),\n                            **exc.details,\n",
+       "                            ),\n")),
     m("C1-classify-priority-reversed", C,
       (PR, "    for code, check in _REASONS:\n        if code in present:",
        "    for code, check in reversed(_REASONS):\n        if code in present:")),
@@ -132,8 +205,8 @@ MUTATIONS = [
       (PR, '    if value.get("error_code") not in REASON_CODES:\n        return None',
        '    if False:\n        return None')),
     m("P6-recorded-returns-unprojected-value", P,
-      (PR, "    return {key: value.get(key) for key in REASON_FIELDS}\n\n\ndef unknown_legacy",
-       "    return value\n\n\ndef unknown_legacy")),
+      (PR, "    return {key: value.get(key) for key in REASON_FIELDS}\n\n\ndef log_reason",
+       "    return value\n\n\ndef log_reason")),
     m("P7-legacy-f1-stored-reason-ignored", P,
       (PR, 'if isinstance(stored, dict) and stored.get("reason_model") == REASON_MODEL:', "if False:")),
     m("P8-legacy-f1-code-dropped", P,

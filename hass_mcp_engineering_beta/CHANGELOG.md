@@ -9,10 +9,16 @@ schema or Home Assistant write change.
   closed-vocabulary `error_code`, the refusing `check`, fixed `detail`,
   `verifier_rule`, bounded child, operation and target identifiers, and the
   stored diagnostic codes.
-- Reported on `f3_children[*].pre_dispatch_reason`, the task's
-  `verification_summary` and `last_error`, the `apply_change_plan` result,
-  repeat-apply details, the `preflight_failed` event and its add-on log
-  `error_code`; legacy F1 refusals gain `last_error.failure_information`.
+- Reported on `f3_children[*].pre_dispatch_reason` (derived on read from the
+  child's stored terminal codes), the task's `verification_summary` and
+  `last_error`, the `apply_change_plan` result, repeat-apply details, and the
+  `preflight_failed` event with its add-on log and audit `error_code`,
+  `check` and `failure_information`. Legacy F1 refusals gain
+  `last_error.failure_information`, the same log fields and the reason in
+  the first refusal error's details.
+- A later child refused after an earlier child completed keeps
+  `manual_review_required` and is named on every surface plus a new
+  non-transitioning `child_preflight_failed` event.
 - `configuration_not_verifiable` also stores the mismatch categories and the
   readback verifier rule (`automation_verifier_<rule>`).
 - Older tasks are projected from their child's stored terminal codes, else

@@ -5,8 +5,9 @@ reason (HAMCP-249). A closed-vocabulary
 `pre_dispatch_refusal` (`error_code`, `check`, fixed `detail`, and the
 readback verifier rule when that check refused) is reported on the F3 child
 view, the parent task's `last_error` and `verification_summary`, the
-`apply_change_plan` result, the `preflight_failed` event and its add-on log
-line. Older records read their child's stored codes or `unknown_legacy`;
+`apply_change_plan` result and errors, the refusal event and its add-on log
+and audit line, including a later child refused after an earlier one
+completed (which stays `manual_review_required`). Older records read their child's stored codes or `unknown_legacy`;
 nothing is rewritten. Reporting only: no preflight, tool, input schema or
 Home Assistant write change. Rollback is reinstalling beta.46. Read the
 [2.4.1-beta.47 release notes](docs/V2_4_1_BETA47_RELEASE_NOTES.md) and

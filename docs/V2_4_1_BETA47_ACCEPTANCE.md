@@ -44,12 +44,23 @@ The review needs a security section covering:
   configuration content is stored.
 - **Persistence.** Task storage stays append-only; terminal recovery keeps a
   stored task exactly as stored. A stored reason is accepted back only in
-  its reviewed shape.
+  its reviewed shape. The F3 child reason is derived on read from the
+  child's persisted terminal diagnostic codes (no child storage field); the
+  parent stores the reason object in `verification_summary` and
+  `last_error.failure_information`; the plan operation's
+  `failure_information` stays unset on the F3 path.
+- **Reporting only.** A later child refused after an earlier child
+  completed keeps `manual_review_required`; the `child_preflight_failed`
+  event does not change state. Only pre-dispatch refusals are decorated; a
+  post-dispatch failure carries no refusal reason.
 
 Required offline evidence:
 - `tests/test_hamcp249_pre_dispatch_reasons.py` (table of refusal paths,
-  every surface, sanitization, legacy `unknown_legacy` and derived reasons,
-  terminal recovery, legacy F1, positive apply);
+  every surface including the serialized add-on log line, sanitization,
+  legacy `unknown_legacy` and derived reasons, terminal recovery, legacy F1
+  apply and restart reconciliation, the first legacy F1 error through the
+  `apply_change_plan` tool, a later child refused after a completed child,
+  post-dispatch negatives, positive apply);
 - the existing F3 runtime, configuration execution and verification suites;
 - the complete repository suite in the Evidence tier.
 
@@ -71,8 +82,10 @@ Only through Josh's Ready action and the repository's head-bound workflow.
    - it applies and reads back exactly; or
    - it is refused with a named, actionable reason: non-null `error_code`
      and `check` on the apply result, `last_error`, the `preflight_failed`
-     event and the add-on log line, plus `verifier_rule` when the check is
-     `readback_verifiability`.
+     event (in its `last_error`) and the add-on log line (its `context`),
+     plus `verifier_rule` when the check is `readback_verifiability`. For a
+     multi-operation plan refused after an earlier operation completed, the
+     same holds for the `child_preflight_failed` event and its log line.
 3. The named reason is recorded in HAMCP-249. Whether that check is a
    legitimate safety check is Josh's decision; this release does not change
    it.

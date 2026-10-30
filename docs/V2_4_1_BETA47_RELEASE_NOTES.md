@@ -48,9 +48,38 @@ It is reported on:
   `last_error` = `{error_code, failure_category, failure_information}`;
 - the `apply_change_plan` result, and the `DUPLICATE_APPLY_ATTEMPT` details
   of a repeat apply;
-- the `preflight_failed` lifecycle event and its add-on log line
-  (`error_code` non-null);
-- legacy F1 pre-dispatch refusals: `last_error.failure_information`.
+- the `preflight_failed` lifecycle event and its add-on log line and audit
+  entry: non-null `error_code` and `check`, and `failure_information` (the
+  reason's reviewed fields only);
+- legacy F1 pre-dispatch refusals (apply and restart reconciliation):
+  `last_error.failure_information`, the `preflight_failed` log line and
+  audit entry as above, and the details of the first refusal error returned
+  by `apply_change_plan` (its code, message and other details unchanged).
+
+**A later child refused after an earlier child completed.** A multi-operation
+F3 plan whose first operation was written and verified and whose next
+operation was refused before its dispatch keeps its existing outcome:
+`manual_review_required` (`f3_sequence_incomplete`), the completed child, the
+consumed approval and every dispatch count are unchanged. The refused child's
+reason is now reported on the child view, the parent's `last_error` and
+`verification_summary`, the apply result and repeat-apply details, a new
+`child_preflight_failed` parent event (no state change; it names the child's
+operation, ordinal and target), and the add-on log and audit entries of that
+event and of `manual_review_required`. A failure after a later child's
+dispatch is not reported as a refusal.
+
+**Where the reason is stored.**
+
+- F3 child: derived on read from the child's persisted terminal diagnostic
+  codes. No field is added to the child execution-record storage schema.
+- F3 parent task: the reason object is stored in
+  `verification_summary.pre_dispatch_refusal` and
+  `last_error.failure_information` of the terminal event.
+- Plan operation: `failure_information` stays unset on the F3 path.
+- Legacy F1 task: stored in `last_error.failure_information`.
+- Log and audit: the reason's reviewed fields, through the existing
+  sanitizer; never Home Assistant payloads, exception messages or
+  configuration content.
 
 **Readback verifier detail.** A `configuration_not_verifiable` refusal also
 stores the comparison's mismatch categories and the verifier rule, so a
@@ -68,6 +97,9 @@ task and keeps a persisted one verbatim.
   at-most-once dispatch and every refusal behave as before.
 - The F3 execution-record schema and plan storage are not extended; the
   plan operation's `failure_information` stays unset on the F3 path.
+- The parent state machine is unchanged: `child_preflight_failed` records a
+  reason without a state transition, and a partial sequence still ends
+  `manual_review_required`, never `failed_pre_dispatch`.
 - Every field is additive. Static tools, the advertised catalog and input
   schemas are unchanged.
 
