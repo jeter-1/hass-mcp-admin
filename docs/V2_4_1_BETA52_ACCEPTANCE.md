@@ -7,7 +7,7 @@ It adds one tool, `create_scene_configuration_plan`, and one runtime-only
 Core capability profile, `core.scene_configuration_operation`. Neither the
 signed registry (sequence 14) nor the sequence-15 batch references that
 profile. The release activates nothing new; the tool switches on with the
-sequence-16 signing. It follows 2.4.1-beta.50 (HAMCP-106, HAMCP-255).
+sequence-16 signing. It follows 2.4.1-beta.51 (HAMCP-252).
 
 See also:
 - Release notes:
@@ -21,11 +21,9 @@ version authorities on the HAMCP-071 branch:
 - `ha_mcp_engineering/version.py` `SERVER_VERSION`;
 - `scripts/validate_addon_metadata.py` `BETA_VERSION`.
 
-`.release/` holds no staged declaration. 2.4.1-beta.51 is reserved by the
-open draft PR #331 (HAMCP-252). Until #331 merges, `scripts/release_transition.py`
-refuses beta.50 → beta.52 with "Unsupported Engineering release transition".
-That refusal is expected and is not passing evidence. This branch must
-merge `main` after #331 lands, so that the transition is beta.51 → beta.52.
+`.release/` holds no staged declaration. 2.4.1-beta.51 (HAMCP-252, #331)
+has merged, and this branch merged `main` after it. The transition that
+`scripts/release_transition.py` checks is therefore beta.51 → beta.52.
 
 The contract separates four stages:
 1. source and offline acceptance;
@@ -43,7 +41,7 @@ Bind the following:
 - `2.4.1-beta.52` in all three version authorities, with exact acceptance
   and release-note resolution from `scripts/codex-context.py`;
 - the PR head SHA;
-- the passing PR `validate` run for that exact head, after #331 has merged;
+- the passing PR `validate` run for that exact head;
 - the Evidence tier log named in the PR;
 - the runtime-only profile fingerprint, recomputed at the review head:
 
@@ -161,7 +159,7 @@ The offline proof consists of:
 
 ### Downgrade rule
 
-Rollback is reinstalling **2.4.1-beta.50**. Under sequence 14, beta.52
+Rollback is reinstalling **2.4.1-beta.51**. Under sequence 14, beta.52
 writes no new record shape, because the new family refuses before
 persistence. After a future signed sequence admits the profile, a downgrade
 below beta.52 must be re-evaluated before it is supported; that is not
@@ -170,8 +168,7 @@ covered here. Never clear F3 journals, task files or locks.
 ## 2. Release CI and publication
 
 Require exact-head CI before release acceptance. Pending or unavailable jobs
-are not passing evidence. Neither is the expected transition refusal while
-#331 is open.
+are not passing evidence.
 
 Publication needs Josh's Ready authorization and the protected merge
 handoff. Verify the following with the shipped verifiers:

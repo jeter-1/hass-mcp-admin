@@ -15,15 +15,24 @@ persistence until a signed Core registry sequence (planned 16) names
 `core.scene_configuration_operation`. Creating a scene is a follow-up
 (HAMCP-071 Part 3). No signed registry, signed profile, existing
 fingerprint or existing schema changes. Static tools 79; advertised catalog
-107 (108 with the optional YAML reader). 2.4.1-beta.51 is reserved by draft
-#331 (HAMCP-252), so CI refuses the beta.50 → beta.52 transition until that
-lands. Rollback is reinstalling beta.50. Read the
+107 (108 with the optional YAML reader). Rollback is reinstalling beta.51.
+Read the
 [2.4.1-beta.52 release notes](docs/V2_4_1_BETA52_RELEASE_NOTES.md) and
 [2.4.1-beta.52 acceptance contract](docs/V2_4_1_BETA52_ACCEPTANCE.md).
 
-It builds on beta.50 and the releases below.
+It builds on beta.51 and the releases below.
 
-Engineering **2.4.1-beta.50** (HAMCP-106,
+Engineering **2.4.1-beta.51** (HAMCP-252) lets the
+readback verifier compare a `sun` condition used as an action step
+(`after`/`before`/offsets, exact comparison only), which unblocks the A109
+camera automations. A verifier refusal also names its structural path and
+known field names in `pre_dispatch_refusal.verifier_location`; no values are
+stored. No other preflight decision, tool, input schema or Home Assistant
+write changes. Rollback is reinstalling beta.50. Read the
+[2.4.1-beta.51 release notes](docs/V2_4_1_BETA51_RELEASE_NOTES.md) and
+[2.4.1-beta.51 acceptance contract](docs/V2_4_1_BETA51_ACCEPTANCE.md).
+
+Staged, not yet released: Engineering **2.4.1-beta.50** (HAMCP-106,
 HAMCP-255) builds governed dashboard metadata inactive. The new tool
 `create_dashboard_metadata_plan` proposes title, icon, sidebar and
 admin-only changes to one existing storage dashboard. It sends one
@@ -55,7 +64,7 @@ or Home Assistant write change. Rollback is reinstalling beta.48. Read the
 [2.4.1-beta.49 release notes](docs/V2_4_1_BETA49_RELEASE_NOTES.md) and
 [2.4.1-beta.49 acceptance contract](docs/V2_4_1_BETA49_ACCEPTANCE.md).
 
-It builds on beta.48 and the releases below.
+It builds on beta.49, beta.48 and the releases below.
 
 Engineering **2.4.1-beta.48** lets a full automation baseline capture
 complete its final fence (HAMCP-248). On beta.45 every full capture ended

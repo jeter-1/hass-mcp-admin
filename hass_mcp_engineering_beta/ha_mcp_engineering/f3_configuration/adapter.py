@@ -29,6 +29,7 @@ from ..governance.entity_metadata import EntityMetadataUpdateErrorResult
 from ..governance.normalize import (
     AUTOMATION_NORMALIZATION_VERSION,
     automation_verification_detail_code,
+    automation_verification_location_codes,
     stable_hash,
 )
 from ..governance.resources import (
@@ -333,12 +334,20 @@ class ConfigurationOperationAdapter:
                 if operation.resource_type == "automation"
                 else None
             )
+            # HAMCP-252 (reporting only): the refusal's structural location
+            # and known field names, as bounded codes; never values.
+            location = (
+                automation_verification_location_codes(proposed)
+                if detail is not None
+                else ()
+            )
             return self._preflight_rejected(
                 operation,
                 (
                     "configuration_not_verifiable",
                     *comparison.mismatch_categories,
                     *(() if detail is None else (detail,)),
+                    *location,
                 ),
             )
 

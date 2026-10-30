@@ -1,0 +1,662 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp252_sun_condition_verification",
+   "test_hamcp249_pre_dispatch_reasons",
+   "test_trigger_condition_verification",
+   "test_beta34_automation_verification",
+   "test_hamcp135_configuration_execution",
+   "test_f3_configuration_lifecycle"
+  ],
+  "returncode": 0,
+  "tests": 111,
+  "seconds": 432.1,
+  "summary": "OK"
+ },
+ "mutation_count": 32,
+ "killed": 30,
+ "survived": [
+  "V10-sun-string-check-removed",
+  "L10-path-token-vocabulary-unchecked"
+ ],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "V1-sun-fields-not-admitted",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "allowed = allowed | AUTOMATION_SUN_CONDITION_FIELDS",
+     "allowed = allowed"
+    ]
+   ],
+   "log_path": "mutation-logs/V1-sun-fields-not-admitted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_changed_offset_values_never_compare_equal (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_changed_offset_values_never_compare_equal)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "V2-sun-fields-dropped-from-comparison",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "        _validate_simple_action(normalized, action_family)\n",
+     "        _validate_simple_action(normalized, action_family)\n        for _field in AUTOMATION_SUN_CONDITION_FIELDS:\n            normalized.pop(_field, None)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/V2-sun-fields-dropped-from-comparison.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_changed_offset_values_never_compare_equal (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_changed_offset_values_never_compare_equal)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "V3-sun-after-dropped-from-comparison",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "        _validate_simple_action(normalized, action_family)\n",
+     "        _validate_simple_action(normalized, action_family)\n        normalized.pop(\"after\", None)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/V3-sun-after-dropped-from-comparison.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_changed_or_missing_readback_values_never_compare_equal (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_changed_or_missing_readback_values_never_compare_equal)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "V4-sun-values-compared-case-insensitively",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "        _validate_simple_action(normalized, action_family)\n",
+     "        _validate_simple_action(normalized, action_family)\n        for _field in (\"after\", \"before\"):\n            if isinstance(normalized.get(_field), str):\n                normalized[_field] = normalized[_field].lower()\n"
+    ]
+   ],
+   "log_path": "mutation-logs/V4-sun-values-compared-case-insensitively.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_changed_or_missing_readback_values_never_compare_equal (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_changed_or_missing_readback_values_never_compare_equal)"
+   ],
+   "seconds": 2.9
+  },
+  {
+   "id": "V5-sun-fields-admitted-on-any-condition",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "if family == \"condition\" and value[family] == \"sun\":\n        # HAMCP-252: Home Assistant accepts",
+     "if family == \"condition\":\n        # HAMCP-252: Home Assistant accepts"
+    ]
+   ],
+   "log_path": "mutation-logs/V5-sun-fields-admitted-on-any-condition.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unsupported_neighbors_remain_refused_with_location (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_unsupported_neighbors_remain_refused_with_location)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "V6-sun-step-pass-through",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "allowed = allowed | AUTOMATION_SUN_CONDITION_FIELDS",
+     "allowed = allowed | AUTOMATION_SUN_CONDITION_FIELDS | set(value)"
+    ]
+   ],
+   "log_path": "mutation-logs/V6-sun-step-pass-through.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unsupported_neighbors_remain_refused_with_location (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_unsupported_neighbors_remain_refused_with_location)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "V7-sun-event-check-removed",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "                and value[field].lower() in AUTOMATION_SUN_EVENTS\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/V7-sun-event-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_invalid_sun_values_are_refused (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_invalid_sun_values_are_refused)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "V8-sun-event-case-sensitive",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "and value[field].lower() in AUTOMATION_SUN_EVENTS",
+     "and value[field] in AUTOMATION_SUN_EVENTS"
+    ]
+   ],
+   "log_path": "mutation-logs/V8-sun-event-case-sensitive.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_changed_or_missing_readback_values_never_compare_equal (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_changed_or_missing_readback_values_never_compare_equal)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "V9-sun-offset-check-removed",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "if field in value and not _valid_time_period(value[field]):",
+     "if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/V9-sun-offset-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_invalid_sun_values_are_refused (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_invalid_sun_values_are_refused)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "V10-sun-string-check-removed",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "                isinstance(value[field], str)\n                and value[field].lower()",
+     "                str(value[field]).lower()"
+    ]
+   ],
+   "log_path": "mutation-logs/V10-sun-string-check-removed.log",
+   "returncode": 0,
+   "killed": false,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [],
+   "seconds": 408.7
+  },
+  {
+   "id": "L1-locate-ignored",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "        if self.path is None:\n            self.path = path",
+     "        if False:\n            self.path = path"
+    ]
+   ],
+   "log_path": "mutation-logs/L1-locate-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_invalid_sun_values_are_refused (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_invalid_sun_values_are_refused)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "L2-outer-step-overrides-inner",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "        if self.path is None:\n            self.path = path",
+     "        if True:\n            self.path = path"
+    ]
+   ],
+   "log_path": "mutation-logs/L2-outer-step-overrides-inner.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_invalid_sun_values_are_refused (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_invalid_sun_values_are_refused)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "L3-adapter-location-not-stored",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+     "                    *location,\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/L3-adapter-location-not-stored.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unsupported_neighbor_refuses_before_approval_with_location (test_hamcp252_sun_condition_verification.SunConditionDispatchTests.test_unsupported_neighbor_refuses_before_approval_with_location)"
+   ],
+   "seconds": 3.7
+  },
+  {
+   "id": "L4-fields-not-recorded",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "self.fields = tuple(sorted(str(field) for field in fields))",
+     "self.fields = ()"
+    ]
+   ],
+   "log_path": "mutation-logs/L4-fields-not-recorded.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unsupported_neighbors_remain_refused_with_location (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_unsupported_neighbors_remain_refused_with_location)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "L5-unknown-field-names-leak",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "            field\n            if field in AUTOMATION_VERIFIER_KNOWN_FIELDS\n            else AUTOMATION_VERIFIER_UNRECOGNIZED_FIELD\n",
+     "            field\n"
+    ]
+   ],
+   "log_path": "mutation-logs/L5-unknown-field-names-leak.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unsupported_neighbors_remain_refused_with_location (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_unsupported_neighbors_remain_refused_with_location)"
+   ],
+   "seconds": 2.2
+  },
+  {
+   "id": "L6-field-cap-removed",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "for name in names[:MAX_AUTOMATION_VERIFIER_LOCATION_FIELDS]",
+     "for name in names"
+    ]
+   ],
+   "log_path": "mutation-logs/L6-field-cap-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_worst_case_location_never_displaces_the_refusal_codes (test_hamcp252_sun_condition_verification.SunConditionDispatchTests.test_worst_case_location_never_displaces_the_refusal_codes)"
+   ],
+   "seconds": 8.4
+  },
+  {
+   "id": "L7-fields-truncation-marker-dropped",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "        codes += (AUTOMATION_VERIFIER_FIELDS_TRUNCATED,)",
+     "        pass"
+    ]
+   ],
+   "log_path": "mutation-logs/L7-fields-truncation-marker-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_worst_case_location_never_displaces_the_refusal_codes (test_hamcp252_sun_condition_verification.SunConditionDispatchTests.test_worst_case_location_never_displaces_the_refusal_codes)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "L8-path-length-unbounded",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "        if len(candidate) > MAX_AUTOMATION_VERIFIER_CODE_LENGTH:\n            return code, AUTOMATION_VERIFIER_PATH_TRUNCATED",
+     "        if False:\n            return code, AUTOMATION_VERIFIER_PATH_TRUNCATED"
+    ]
+   ],
+   "log_path": "mutation-logs/L8-path-length-unbounded.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_worst_case_location_never_displaces_the_refusal_codes (test_hamcp252_sun_condition_verification.SunConditionDispatchTests.test_worst_case_location_never_displaces_the_refusal_codes)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "L9-path-truncation-marker-dropped",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "            return code, AUTOMATION_VERIFIER_PATH_TRUNCATED",
+     "            return (code,)"
+    ]
+   ],
+   "log_path": "mutation-logs/L9-path-truncation-marker-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_worst_case_location_never_displaces_the_refusal_codes (test_hamcp252_sun_condition_verification.SunConditionDispatchTests.test_worst_case_location_never_displaces_the_refusal_codes)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "L10-path-token-vocabulary-unchecked",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "        elif isinstance(token, str) and token in AUTOMATION_VERIFIER_PATH_TOKENS:",
+     "        elif isinstance(token, str):"
+    ]
+   ],
+   "log_path": "mutation-logs/L10-path-token-vocabulary-unchecked.log",
+   "returncode": 0,
+   "killed": false,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [],
+   "seconds": 399.0
+  },
+  {
+   "id": "L11-root-always-action",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "root = \"actions\" if \"actions\" in config else \"action\"",
+     "root = \"action\""
+    ]
+   ],
+   "log_path": "mutation-logs/L11-root-always-action.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_location_names_each_structural_position (test_hamcp252_sun_condition_verification.VerifierLocationTests.test_location_names_each_structural_position)"
+   ],
+   "seconds": 9.1
+  },
+  {
+   "id": "L12-else-branch-reported-as-then",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "path=(*path, \"else\"),",
+     "path=(*path, \"then\"),"
+    ]
+   ],
+   "log_path": "mutation-logs/L12-else-branch-reported-as-then.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_location_names_each_structural_position (test_hamcp252_sun_condition_verification.VerifierLocationTests.test_location_names_each_structural_position)"
+   ],
+   "seconds": 9.8
+  },
+  {
+   "id": "L13-repeat-key-omitted-from-path",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "path=(*path, \"repeat\", \"sequence\"),",
+     "path=(*path, \"sequence\"),"
+    ]
+   ],
+   "log_path": "mutation-logs/L13-repeat-key-omitted-from-path.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_location_names_each_structural_position (test_hamcp252_sun_condition_verification.VerifierLocationTests.test_location_names_each_structural_position)"
+   ],
+   "seconds": 8.8
+  },
+  {
+   "id": "L14-choose-index-omitted-from-path",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "choice_path = (*path, \"choose\", index)",
+     "choice_path = (*path, \"choose\")"
+    ]
+   ],
+   "log_path": "mutation-logs/L14-choose-index-omitted-from-path.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_invalid_sun_values_are_refused (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_invalid_sun_values_are_refused)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "L15-location-codes-dropped",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "    return _location_path_codes(exc.path) + _location_field_codes(exc.fields)",
+     "    return ()"
+    ]
+   ],
+   "log_path": "mutation-logs/L15-location-codes-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_invalid_sun_values_are_refused (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_invalid_sun_values_are_refused)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "D1-reason-location-dropped",
+   "class": "stored location decoded unsafely or not at all",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "\"verifier_location\": None if rule is None else verifier_location(codes),",
+     "\"verifier_location\": None,"
+    ]
+   ],
+   "log_path": "mutation-logs/D1-reason-location-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_unsupported_neighbor_refuses_before_approval_with_location (test_hamcp252_sun_condition_verification.SunConditionDispatchTests.test_unsupported_neighbor_refuses_before_approval_with_location)"
+   ],
+   "seconds": 3.9
+  },
+  {
+   "id": "D2-location-without-rule",
+   "class": "stored location decoded unsafely or not at all",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "\"verifier_location\": None if rule is None else verifier_location(codes),",
+     "\"verifier_location\": verifier_location(codes),"
+    ]
+   ],
+   "log_path": "mutation-logs/D2-location-without-rule.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_decoder_refuses_to_invent_a_location (test_hamcp252_sun_condition_verification.VerifierLocationReasonTests.test_decoder_refuses_to_invent_a_location)"
+   ],
+   "seconds": 8.8
+  },
+  {
+   "id": "D3-decoder-accepts-unknown-path-tokens",
+   "class": "stored location decoded unsafely or not at all",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "            (token in VERIFIER_PATH_TOKENS and token not in VERIFIER_PATH_ROOTS)\n            or _INDEX.fullmatch(token)\n",
+     "            True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/D3-decoder-accepts-unknown-path-tokens.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_decoder_refuses_to_invent_a_location (test_hamcp252_sun_condition_verification.VerifierLocationReasonTests.test_decoder_refuses_to_invent_a_location)"
+   ],
+   "seconds": 8.6
+  },
+  {
+   "id": "D4-decoder-accepts-several-paths",
+   "class": "stored location decoded unsafely or not at all",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    if len(paths) == 1:",
+     "    if paths:"
+    ]
+   ],
+   "log_path": "mutation-logs/D4-decoder-accepts-several-paths.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_decoder_refuses_to_invent_a_location (test_hamcp252_sun_condition_verification.VerifierLocationReasonTests.test_decoder_refuses_to_invent_a_location)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "D5-decoder-leaks-unknown-field-names",
+   "class": "stored location decoded unsafely or not at all",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "            name if name in VERIFIER_KNOWN_FIELDS else UNRECOGNIZED_FIELD\n",
+     "            name\n"
+    ]
+   ],
+   "log_path": "mutation-logs/D5-decoder-leaks-unknown-field-names.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_decoder_refuses_to_invent_a_location (test_hamcp252_sun_condition_verification.VerifierLocationReasonTests.test_decoder_refuses_to_invent_a_location)"
+   ],
+   "seconds": 8.3
+  },
+  {
+   "id": "D6-decoder-field-cap-removed",
+   "class": "stored location decoded unsafely or not at all",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "\"fields\": fields[:MAX_LOCATION_FIELDS],",
+     "\"fields\": fields,"
+    ]
+   ],
+   "log_path": "mutation-logs/D6-decoder-field-cap-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_decoder_refuses_to_invent_a_location (test_hamcp252_sun_condition_verification.VerifierLocationReasonTests.test_decoder_refuses_to_invent_a_location)"
+   ],
+   "seconds": 8.4
+  },
+  {
+   "id": "D7-decoder-path-truncation-ignored",
+   "class": "stored location decoded unsafely or not at all",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "\"path_truncated\": path is not None and VERIFIER_PATH_TRUNCATED in codes,",
+     "\"path_truncated\": False,"
+    ]
+   ],
+   "log_path": "mutation-logs/D7-decoder-path-truncation-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_worst_case_location_never_displaces_the_refusal_codes (test_hamcp252_sun_condition_verification.SunConditionDispatchTests.test_worst_case_location_never_displaces_the_refusal_codes)"
+   ],
+   "seconds": 8.5
+  }
+ ]
+}

@@ -1,15 +1,14 @@
 # Engineering 2.4.1-beta.52 release notes
 
 Engineering 2.4.1-beta.52 builds a governed edit of one existing UI-managed
-scene, **inactive** (HAMCP-071). It builds on 2.4.1-beta.50 (#330). It
+scene, **inactive** (HAMCP-071). It builds on 2.4.1-beta.51 (#331). It
 activates nothing new. It changes no signed registry, signed profile,
 existing fingerprint, existing input schema or existing plan family.
 
-**Version sequencing.** 2.4.1-beta.51 is reserved by the open draft PR #331
-(HAMCP-252). Until #331 lands, CI refuses this branch with "Unsupported
-Engineering release transition" (`scripts/release_transition.py`, which
-accepts only the next beta). That refusal is expected. It does not mean the
-change is defective, and it is not a passing check.
+**Version sequencing.** 2.4.1-beta.51 (HAMCP-252, #331) has merged, and
+this branch merged `main` after it. The release transition is therefore
+beta.51 → beta.52, the next beta that `scripts/release_transition.py`
+accepts.
 
 Acceptance: [`V2_4_1_BETA52_ACCEPTANCE.md`](V2_4_1_BETA52_ACCEPTANCE.md).
 Design and decisions:
@@ -127,5 +126,5 @@ and its `ci.yml` wiring are November work (design section 7).
 
 ## Rollback
 
-Reinstall 2.4.1-beta.50. Under sequence 14, beta.52 writes no new record
+Reinstall 2.4.1-beta.51. Under sequence 14, beta.52 writes no new record
 shape, because the new family refuses before persistence.

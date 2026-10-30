@@ -1,0 +1,63 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp252_sun_condition_verification",
+   "test_hamcp249_pre_dispatch_reasons",
+   "test_trigger_condition_verification",
+   "test_beta34_automation_verification",
+   "test_hamcp135_configuration_execution",
+   "test_f3_configuration_lifecycle"
+  ],
+  "returncode": 0,
+  "tests": 113,
+  "seconds": 424.4,
+  "summary": "OK"
+ },
+ "mutation_count": 2,
+ "killed": 2,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "V10-sun-string-check-removed",
+   "class": "sun-condition admission loosened, dropped or mis-scoped",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "                isinstance(value[field], str)\n                and value[field].lower()",
+     "                str(value[field]).lower()"
+    ]
+   ],
+   "log_path": "mutation-logs/V10-sun-string-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_non_string_values_that_render_as_sun_events_are_refused (test_hamcp252_sun_condition_verification.SunConditionComparisonTests.test_non_string_values_that_render_as_sun_events_are_refused)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "L10-path-token-vocabulary-unchecked",
+   "class": "refusal location removed, misplaced or unbounded",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "        elif isinstance(token, str) and token in AUTOMATION_VERIFIER_PATH_TOKENS:",
+     "        elif isinstance(token, str):"
+    ]
+   ],
+   "log_path": "mutation-logs/L10-path-token-vocabulary-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_path_encoder_refuses_tokens_outside_the_fixed_vocabulary (test_hamcp252_sun_condition_verification.VerifierLocationTests.test_path_encoder_refuses_tokens_outside_the_fixed_vocabulary)"
+   ],
+   "seconds": 9.6
+  }
+ ]
+}
