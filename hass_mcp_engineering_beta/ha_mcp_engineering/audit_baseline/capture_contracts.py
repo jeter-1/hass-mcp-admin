@@ -35,6 +35,8 @@ STRING_BYTES = 16_384
 COLLECTION_SECONDS = 45
 READ_SECONDS = 5
 CONCURRENCY = 4
+# HAMCP-248: keepalive frames one websocket read answers or skips before refusing.
+CONTROL_FRAMES = 4
 # The identity reads of a fence; the remaining fence reads are inventory.
 IDENTITY_READS = ("principal", "entries", "devices")
 # HAMCP-235 (review 1, R1-M2): the final fence's reserve covers what must
@@ -62,7 +64,10 @@ REASONS = frozenset({"invalid_arguments", "invalid_cursor", "snapshot_expired", 
     "source_unavailable", "malformed_response", "response_limit", "structural_limit", "timeout",
     "output_limit", "configuration_unavailable", "configuration_identity_mismatch", "redacted_identity",
     "store_full", "store_unavailable", "baseline_not_found", "baseline_damaged", "resume_inventory_changed",
-    "resume_not_needed", "resume_core_changed"})
+    "resume_not_needed", "resume_core_changed",
+    # HAMCP-248 (review 1, R1-M1): why a capture websocket read got no TEXT
+    # frame. Fixed and content-free; never a close code, payload or exception.
+    "connection_closed", "transport_error", "unexpected_frame", "protocol_error", "control_frame_limit"})
 
 
 # HAMCP-235: which stable component a refused resume found changed. Fixed,
@@ -103,7 +108,10 @@ class CaptureError(GovernanceError):
 
     @property
     def retryable(self) -> bool:
-        return self.reason in {"capacity_busy", "timeout", "source_unavailable", "store_unavailable"}
+        # HAMCP-248: a closed connection and a transport error keep the
+        # retryability of the ``source_unavailable`` they used to report.
+        return self.reason in {"capacity_busy", "timeout", "source_unavailable", "store_unavailable",
+                               "connection_closed", "transport_error"}
 
 
 def validate_arguments(arguments):

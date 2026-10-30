@@ -2,6 +2,19 @@
 
 Date: 2026-07-10
 
+## Baseline capture final fence (2.4.1-beta.48, HAMCP-248)
+
+`capture_automation_baseline` keeps its routing, provider, policy,
+`risk=read`, writes `none`, input schemas, descriptors and Core commands. Its
+websocket reads, including the handshake reads, answer a PING with a PONG
+echoing the peer's payload and skip an unsolicited PONG, at most four control
+frames per read (owner decision, Josh, 2026-10-29, replacing "Unexpected/control
+frames are refused, not automatically ponged"). Output change, additive: five
+fixed `details.reason` / `final_fence_reason` values, `connection_closed` and
+`transport_error` (retryable) and `unexpected_frame`, `protocol_error` and
+`control_frame_limit` (nonretryable), all `analysis_unavailable`, replacing
+`source_unavailable` or `malformed_response` for those websocket outcomes.
+
 ## Baseline compare and resume usability (2.4.1-beta.45, HAMCP-235)
 
 `capture_automation_baseline` and `compare_automation_baselines` keep their
