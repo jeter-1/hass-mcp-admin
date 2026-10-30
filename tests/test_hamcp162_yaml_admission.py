@@ -354,6 +354,33 @@ class AdmissionTests(Harness):
                         self.assertNotIn(extra["name"], self.exposed(gateway))
                         self.assertEqual(transport.sent, [])
 
+    async def test_count_and_review_are_each_required_for_accounting(self):
+        # HAMCP-198: the count and the unreviewed check each keep the flags
+        # false on their own. A missing stock tool or a duplicate stock name
+        # unbalances the count with nothing unreviewed; a missing stock tool
+        # plus one unreviewed name balances the count with one unreviewed.
+        for version in VERSIONS:
+            base = captured(version)
+            stock = [t for t in base if t.get("name") != TOOL]
+            extra = deepcopy(stock[0])
+            extra["name"] = "ha_synthetic_unreviewed_read"
+            missing = [t for t in base if t is not stock[0]]
+            shapes = {
+                "missing": (missing, 0),
+                "duplicate": (base + [deepcopy(stock[0])], 0),
+                "balanced_unreviewed": (missing + [extra], 1),
+            }
+            for shape, (tools, unreviewed) in shapes.items():
+                with self.subTest(version=version, shape=shape):
+                    gateway, transport = await self.gateway(version, tools)
+                    health = gateway.health_snapshot()
+                    self.assertEqual(health["upstream_advertised_tool_count"], len(tools))
+                    self.assertEqual(health["unreviewed_tool_count"], unreviewed)
+                    self.assertFalse(health["reviewed_tool_accounting_valid"])
+                    self.assertFalse(health["optional_reviewed_accounting_valid"])
+                    self.assertNotIn(extra["name"], self.exposed(gateway))
+                    self.assertEqual(transport.sent, [])
+
     async def test_repeated_captures_reproduce_the_binding(self):
         # A2, B, S and S2 are later captures of the same versions (D1).
         for version in VERSIONS:
