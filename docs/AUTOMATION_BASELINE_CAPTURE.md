@@ -130,8 +130,9 @@ withheld_records}` lists the first 16 stubs. Nothing is derived from a withheld
 value: a stub carries no digest of it (owner decision, 2026-10-22).
 
 Capture failures preserve the existing error codes and response envelope.
-Only `capacity_busy`, `timeout`, `source_unavailable` and (HAMCP-228)
-`store_unavailable` advertise `retryable=true`; all other declared capture reasons are nonretryable.
+Only `capacity_busy`, `timeout`, `source_unavailable`, (HAMCP-228)
+`store_unavailable` and (HAMCP-248) `connection_closed` and `transport_error`
+advertise `retryable=true`; all other declared capture reasons are nonretryable.
 Retryability guides a later caller decision. It never triggers an internal
 retry, fallback or automatic refresh, and repeating unchanged access, identity,
 configuration or limit failures is not a recovery strategy.
@@ -182,7 +183,39 @@ pure worker computation and closes transport before returning. There is no detac
 capture job, retry, redirect, fallback or automatic refresh. Parsing, projection,
 hashing, validation and page fitting run outside the event loop. The accepted auth
 payload bound is checked before JSON decoding; the connection's wire-frame ceiling
-remains 4 MiB. Unexpected/control frames are refused, not automatically ponged.
+remains 4 MiB.
+
+**Owner decision (Josh, 2026-10-29): replaces "Unexpected/control frames are
+refused, not automatically ponged".** (That rule came from the original beta.14
+capture, PR #228, commit `ed51a55d`, and was preserved by HAMCP-228.) HAMCP-248:
+the capture websocket is idle through collection, and the Supervisor websocket
+proxy (`heartbeat=30`) pings a client idle for 30 s, so on a full capture its PING
+waits for the final fence's first read. The bounded control-frame rule:
+
+- only control frames (PING, PONG) are handled; a PING is answered with a PONG
+  echoing only the peer-supplied payload, and an unsolicited PONG is skipped;
+- at most `CONTROL_FRAMES` (4) per read, each at most 125 bytes (the websocket
+  control-frame limit, enforced by aiohttp) and charged to the shared byte
+  budget; the fifth is refused (`control_frame_limit`) before it is answered;
+- no new Home Assistant application message, no reset of the read or collection
+  deadline, no background task and no retry.
+
+The rule applies to every capture websocket read, including the handshake reads
+before authentication completes; a PING queued during collection is answered
+after the final principal command is sent, before its result is accepted.
+
+Every other frame that is not TEXT is refused with a fixed, content-free reason
+for what was observed (HAMCP-248 review 1, R1-M1); no close code, close text,
+payload or exception text is read into it. A close (CLOSE, CLOSING or CLOSED,
+whose cause is not inferred) is `connection_closed`; a non-protocol ERROR or a
+failure sending the PONG is `transport_error`; a binary or other unexpected frame
+is `unexpected_frame`; a websocket protocol error (including a TEXT frame that is
+not UTF-8) is `protocol_error`; an oversize frame is `response_limit`.
+`connection_closed` and `transport_error` are retryable, like the
+`source_unavailable` they replaced; the others are not. `malformed_response` is
+only malformed text, body or envelope data. A timeout stays `timeout` and a
+cancellation propagates. A final fence failing this way records the reason in
+`diagnostics.final_fence_reason`.
 
 Reaching the record ceiling is explicitly partial even at exactly 1,000. Unmapped
 and registry-only ID previews retain at most 16 IDs each; counts and their precision
@@ -300,7 +333,11 @@ carry an identifier, count or Home Assistant text. Retried records are
 collected fresh; all others are copied verbatim from the base. The result is a
 new stored baseline with `resume: {resumed_from: <base baseline_id>,
 resumed_count}`; its capture interval starts at the base's start, and drift in
-the base is inherited. A new authority generation is recorded as
+the base is inherited. A capture taken between the base and its resume
+therefore overlaps the resume's interval, and comparing the two correctly
+yields `capture_intervals_not_ordered` (every row `UNKNOWN`): compare a resume
+with a capture that starts after the resume ends (or one that ended before
+the base started). A new authority generation is recorded as
 `authority_drift: "detected"`. A base that recorded its first-fence anchor and
 whose own final fence failed is established by the resume's verified fences.
 The rows a resume inherits keep the provenance of the capture they came from:

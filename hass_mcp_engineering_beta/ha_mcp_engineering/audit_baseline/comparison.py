@@ -104,7 +104,10 @@ def _shared_unknown_reasons(
         reasons.append("later_configuration_coverage_incomplete")
     if not fingerprint_contract_compatible:
         reasons.append("fingerprint_contract_incompatible")
-    if earlier.fingerprint_model != later.fingerprint_model:
+    # HAMCP-248: a record model describes its digest; with a digest missing
+    # the missing digest is the reason, not a model mismatch.
+    if (earlier.configuration_digest is not None and later.configuration_digest is not None
+            and earlier.fingerprint_model != later.fingerprint_model):
         reasons.append("record_fingerprint_model_mismatch")
     if earlier.configuration_digest is None:
         reasons.append("earlier_configuration_digest_missing")
@@ -450,7 +453,7 @@ def compare_recorded_fingerprints(
                 reasons.append("capture_configuration_not_readable")
             if not record.coverage.comparison_complete:
                 reasons.append("capture_configuration_coverage_incomplete")
-            if record.fingerprint_model != fingerprint_model:
+            if record.configuration_digest is not None and record.fingerprint_model != fingerprint_model:
                 reasons.append("fingerprint_model_mismatch")
             if record.configuration_digest is None:
                 reasons.append("capture_configuration_digest_missing")

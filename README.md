@@ -13,6 +13,24 @@ or Home Assistant write change. Follows
 [2.4.1-beta.49 release notes](docs/V2_4_1_BETA49_RELEASE_NOTES.md) and
 [2.4.1-beta.49 acceptance contract](docs/V2_4_1_BETA49_ACCEPTANCE.md).
 
+Engineering **2.4.1-beta.48** lets a full automation baseline capture
+complete its final fence (HAMCP-248). On beta.45 every full capture ended
+`final_fence: "unavailable"`, `malformed_response`, installation
+`unestablished`: the capture websocket idles through collection, the
+Supervisor proxy pings it after 30 s, and the unanswered PING was refused as a
+malformed frame. A read now answers a PING (at most four control frames, within
+its deadline and byte budget; owner decision replacing the "control frames are
+refused, not automatically ponged" rule); every other failure keeps its own
+fixed reason (`connection_closed`, `transport_error`, `unexpected_frame`,
+`protocol_error`, `control_frame_limit`, `response_limit`).
+A compare row with a missing digest no longer also claims a fingerprint-model
+mismatch. No budget, concurrency, resume, stored-format, tool or Home Assistant
+write change. Rollback is reinstalling beta.47. Read the [2.4.1-beta.48 release
+notes](docs/V2_4_1_BETA48_RELEASE_NOTES.md) and [2.4.1-beta.48 acceptance
+contract](docs/V2_4_1_BETA48_ACCEPTANCE.md).
+
+It builds on beta.47 and the releases below.
+
 Engineering **2.4.1-beta.47** makes every pre-dispatch refusal name its
 reason (HAMCP-249). A closed-vocabulary
 `pre_dispatch_refusal` (`error_code`, `check`, fixed `detail`, and the

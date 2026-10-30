@@ -17,6 +17,32 @@ tool, input schema, stored format or Home Assistant write change.
 - Manual-review counts are unchanged by Josh's decision; an acknowledgment
   workflow is tracked separately (HAMCP-253).
 
+## 2.4.1-beta.48 - A full baseline capture completes its final fence (HAMCP-248)
+
+Builds on 2.4.1-beta.47. No budget, concurrency, reserve, resume, D4,
+stored-format, tool or Home Assistant write change.
+
+- Root cause: the capture websocket idles through collection; the Supervisor
+  websocket proxy (`heartbeat=30`) pings it, and the final fence's first read
+  refused the queued PING as `malformed_response` (123 of 127 requests).
+- A capture websocket read, including a handshake read, answers a PING with
+  a PONG echoing its payload and skips an unsolicited PONG, at most
+  `CONTROL_FRAMES` (4) per read, within its deadline and charged to the byte
+  budget. No Home Assistant application message is sent. Owner decision
+  (Josh, 2026-10-29): replaces "Unexpected/control frames are refused, not
+  automatically ponged".
+- Every other non-TEXT frame has its own fixed reason (review 1, R1-M1), new
+  in the capture reason vocabulary: close `connection_closed`, transport error
+  `transport_error` (both retryable), binary or other frame
+  `unexpected_frame`, protocol error `protocol_error`, fifth keepalive frame
+  `control_frame_limit`; an oversize frame stays `response_limit`.
+  `malformed_response` is only malformed data.
+- An `UNKNOWN` compare row with a missing digest no longer also claims
+  `record_fingerprint_model_mismatch` (or, against recorded fingerprints, the
+  per-row `fingerprint_model_mismatch`).
+- Capture documentation: the keepalive handling, and that a resume must be
+  compared with a capture taken after it ends.
+
 ## 2.4.1-beta.47 - Every pre-dispatch refusal names its reason (HAMCP-249)
 
 Builds on 2.4.1-beta.46. Reporting only: no preflight, tool, input
