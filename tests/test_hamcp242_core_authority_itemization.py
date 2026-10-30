@@ -78,6 +78,7 @@ LIVE_CORE = "2026.10.3"
 INPUT_SELECT = "core.typed_input_select_option_operation"
 SCRIPT_TRACE = "core.script_trace_read"
 HELPER_OPTIONS = "core.config_entry_helper_options_operation"
+DASHBOARD_METADATA = "core.dashboard_metadata_operation"  # HAMCP-106
 MISSING = "positive_authority_missing"
 
 # The public block before HAMCP-242, in order; it must survive unchanged.
@@ -136,14 +137,21 @@ REFUSED_BLOCK_KEYS = (
 ENTRY_KEYS = ("capability_id", "disposition", "reason_code", "affected_tools")
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_.]*$")
 
-# The three profiles the signed sequence-14 2026.10.3 entry does not name,
-# with the tools routes.py maps to each (pinned by hand, not derived).
+# The four profiles the signed sequence-14 2026.10.3 entry does not name
+# (three HAMCP-232/145 plus HAMCP-106 dashboard metadata), with the tools
+# routes.py maps to each (pinned by hand, not derived).
 EXPECTED_LIVE_WITHHELD = [
     {
         "capability_id": HELPER_OPTIONS,
         "disposition": "unavailable",
         "reason_code": MISSING,
         "affected_tools": ["create_helper_options_plan"],
+    },
+    {
+        "capability_id": DASHBOARD_METADATA,
+        "disposition": "unavailable",
+        "reason_code": MISSING,
+        "affected_tools": ["create_dashboard_metadata_plan"],
     },
     {
         "capability_id": SCRIPT_TRACE,
@@ -207,11 +215,13 @@ EXPECTED_AFFECTED_TOOLS = {
         "create_reload_plan",
     ],
     "core.dashboard_configuration_read": [
+        "create_dashboard_metadata_plan",
         "create_dashboard_update_plan",
         "dashboard_integrity_analysis",
         "get_dashboard_config",
         "list_dashboards",
     ],
+    "core.dashboard_metadata_operation": ["create_dashboard_metadata_plan"],
     "core.dependency_helper_planning": [
         "automation_reliability_analysis",
         "change_impact_analysis",
@@ -278,7 +288,7 @@ def signed_sequence_14_entry(version: str = LIVE_CORE) -> dict:
 
 
 def sequence_15_entry() -> dict:
-    """Sequence 14 plus the three dormant November references (synthetic)."""
+    """Sequence 14 plus the four dormant November references (synthetic)."""
 
     entry = signed_sequence_14_entry()
     named = {item["capability_id"] for item in entry["capabilities"]}
@@ -402,8 +412,9 @@ class LiveCaseTests(_LiveCase):
                 "compatible_count": 26,
                 "held_count": 0,
                 "quarantined_count": 0,
-                "unavailable_count": 3,
-                "withheld_count": 3,
+                # +1 HAMCP-106 dashboard metadata (dormant November batch)
+                "unavailable_count": 4,
+                "withheld_count": 4,
             },
         )
         self.assertEqual(projection["withheld_capabilities"], EXPECTED_LIVE_WITHHELD)
@@ -418,13 +429,14 @@ class LiveCaseTests(_LiveCase):
         self.assertEqual(public, json.loads(json.dumps(projection)))
         self.assertEqual(tuple(public), PRE_242_KEYS[:15] + NEW_KEYS + PRE_242_KEYS[15:])
         assert_entries_are_identifiers(self, public["withheld_capabilities"])
-        # The three withheld profiles are still refused.
-        for capability in (INPUT_SELECT, SCRIPT_TRACE, HELPER_OPTIONS):
+        # The four withheld profiles are still refused.
+        for capability in (INPUT_SELECT, SCRIPT_TRACE, HELPER_OPTIONS, DASHBOARD_METADATA):
             self.assertIsNone(self.core.acquire((capability,)))
 
     async def test_after_sequence_15_the_list_is_empty_and_compatible_is_29(self):
         projection = await self.admit(sequence_15_entry())
-        self.assertEqual(projection["compatible_count"], 29)
+        # The name predates HAMCP-106, which adds a 30th profile.
+        self.assertEqual(projection["compatible_count"], 30)
         self.assertEqual(projection["withheld_count"], 0)
         self.assertEqual(projection["unavailable_count"], 0)
         self.assertEqual(projection["withheld_capabilities"], [])

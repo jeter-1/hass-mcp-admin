@@ -408,6 +408,11 @@ NON_IDENTIFIER_INPUTS: dict[str, frozenset[str]] = {
     "create_helper_options_plan": frozenset(
         {"changes[].set", "changes[].clear", "reason", "expiration_minutes"}
     ),
+    # HAMCP-106: url_path is the identifier; title and icon are
+    # schema-bounded metadata and the rest are booleans or bounded numbers.
+    "create_dashboard_metadata_plan": frozenset(
+        {"title", "icon", "show_in_sidebar", "require_admin", "expiration_minutes"}
+    ),
     "create_addon_restart_plan": frozenset({"expiration_minutes"}),
     "create_home_assistant_restart_plan": frozenset({"expiration_minutes"}),
     "create_change_plan": frozenset(
@@ -490,6 +495,7 @@ ORDINARY_ARGUMENTS: dict[str, dict] = {
         "changes": [{"entity_id": "sensor.porch_filtered", "set": {"precision": 1}}],
         "reason": "ordinary",
     },
+    "create_dashboard_metadata_plan": {"url_path": "main-operations", "title": "Main Operations"},
     "create_addon_restart_plan": {"addon_slug": "core_mosquitto"},
     "create_home_assistant_restart_plan": {},
     "create_change_plan": {
@@ -603,6 +609,10 @@ class IdentifierBoundaryEnumerationTests(unittest.IsolatedAsyncioTestCase):
             set(governance_tools.HELPER_OPTIONS_INPUT_SCHEMA["properties"]),
             set(inspect.signature(tools["create_helper_options_plan"]).parameters),
         )
+        self.assertEqual(
+            set(governance_tools.DASHBOARD_METADATA_INPUT_SCHEMA["properties"]),
+            set(inspect.signature(tools["create_dashboard_metadata_plan"]).parameters),
+        )
 
     def service(self, secret):
         service = Mock()
@@ -612,6 +622,10 @@ class IdentifierBoundaryEnumerationTests(unittest.IsolatedAsyncioTestCase):
     async def call(self, name, arguments, service):
         tool = self.tools()[name]
         with patch.object(governance_tools.GOVERNANCE, "require", return_value=service):
+            if name == "create_dashboard_metadata_plan":
+                # HAMCP-106: the served tool passes the raw argument object
+                # (field presence matters); the direct function refuses.
+                return await governance_tools.registered_dashboard_metadata_tool().run(arguments)
             return await tool(**arguments)
 
     async def test_every_identifier_input_is_screened_before_tool_work(self):

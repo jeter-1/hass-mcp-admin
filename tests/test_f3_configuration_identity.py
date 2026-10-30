@@ -44,6 +44,8 @@ from ha_mcp_engineering.governance.normalize import stable_hash
 # covered by tests/test_hamcp069b_entity_availability_exposure_*.py.
 # HAMCP-165 adds the label registry create and update children, with their
 # own gateway and coverage in tests/test_hamcp165_label_registry.py.
+# HAMCP-106 adds the dashboard metadata update child, with its own direct
+# provider (direct_home_assistant_dashboard_metadata) and HAMCP-106 coverage.
 ENTITY_METADATA_KEY = ("entity_registry_metadata", "update")
 ENTITY_AVAILABILITY_EXPOSURE_KEYS = {
     ("entity_registry_availability", "update"),
@@ -53,8 +55,12 @@ LABEL_REGISTRY_KEYS = {
     ("label_registry_entry", "create"),
     ("label_registry_entry", "update"),
 }
+DASHBOARD_METADATA_KEY = ("dashboard_metadata", "update")
 DIRECT_ENTITY_REGISTRY_KEYS = (
-    {ENTITY_METADATA_KEY} | ENTITY_AVAILABILITY_EXPOSURE_KEYS | LABEL_REGISTRY_KEYS
+    {ENTITY_METADATA_KEY}
+    | ENTITY_AVAILABILITY_EXPOSURE_KEYS
+    | LABEL_REGISTRY_KEYS
+    | {DASHBOARD_METADATA_KEY}
 )
 GATEWAY_IDENTITIES = {
     key: value
@@ -93,6 +99,7 @@ class CapabilityIdentityTests(unittest.IsolatedAsyncioTestCase):
                 "update_entity_assistant_exposure_configuration",
                 "create_label_registry_entry_configuration",
                 "update_label_registry_entry_configuration",
+                "update_dashboard_metadata_configuration",
             },
         )
         for (resource_type, action), identity in GATEWAY_IDENTITIES.items():

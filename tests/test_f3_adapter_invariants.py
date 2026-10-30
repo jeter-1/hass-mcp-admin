@@ -87,8 +87,8 @@ class F3AdapterIsolationTests(unittest.TestCase):
         # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
         # HAMCP-232/145: +4 inactive create_helper_options_plan,
         # create_input_select_option_plan, list_script_traces, get_script_trace.
-        self.assertEqual(len(local_tools) - len(CAPABILITIES), 52)
-        self.assertEqual(len(local_tools), 77)
+        self.assertEqual(len(local_tools) - len(CAPABILITIES), 53)
+        self.assertEqual(len(local_tools), 78)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(

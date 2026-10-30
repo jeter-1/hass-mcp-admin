@@ -408,6 +408,8 @@ class AvailabilityExposureDispatchAdmissionTests(AvailabilityExposureServiceTest
             [
                 # HAMCP-232: gated on its own runtime-only profile.
                 "config_entry_helper_options",
+                # HAMCP-106: gated on its own runtime-only profile.
+                "dashboard_metadata",
                 "entity_assistant_exposure", "entity_registry_availability",
                 "label_registry_entry",
             ],

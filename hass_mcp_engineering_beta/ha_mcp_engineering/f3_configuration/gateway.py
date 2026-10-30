@@ -75,6 +75,18 @@ class ExistingConfigurationGatewayBridge:
             target_id, current, proposed
         )
 
+    async def dashboard_metadata_preflight_evidence(
+        self,
+        target_id: str,
+        current: dict[str, Any] | None,
+        proposed: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Recheck a HAMCP-106 dashboard's bound metadata row and content."""
+
+        return await self._gateway.dashboard_metadata_preflight_evidence(
+            target_id, current, proposed
+        )
+
     async def label_preflight_evidence(
         self,
         target_id: str,

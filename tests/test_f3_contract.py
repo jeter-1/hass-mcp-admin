@@ -344,7 +344,7 @@ class F3ContractDeclarationTests(unittest.TestCase):
             },
         )
         # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
-        self.assertEqual(len(registered_tools(get_registered_server())), 77)
+        self.assertEqual(len(registered_tools(get_registered_server())), 78)
 
     def test_canonical_contract_has_only_standard_library_imports(self):
         contract = (

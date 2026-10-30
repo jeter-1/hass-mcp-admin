@@ -1,5 +1,47 @@
 # Changelog
 
+## 2.4.1-beta.50 - Governed dashboard metadata built inactive; whole Core-authority audit (HAMCP-106, HAMCP-255) (staged)
+
+Builds on 2.4.1-beta.49 (#329). Activates nothing new.
+
+- New tool `create_dashboard_metadata_plan` (static tools 77 -> 78). It
+  refuses `pending_signed_registry_admission` before any read, request or
+  persistence until a signed Core registry sequence names the runtime-only
+  profile `core.dashboard_metadata_operation`
+  (`sha256:62cd6c1453b0bc0b52c6e5f9775d1897294f31b62792dd9674a61b9e8a54cfaa`).
+  Under sequence 14, health itemizes 26 compatible and 4 withheld profiles.
+- Once admitted, one plan changes any of `title`, `icon`, `show_in_sidebar`
+  and `require_admin` on one existing storage dashboard:
+  - The write is one `lovelace/dashboards/update` by the listed
+    `dashboard_id`, carrying only the requested fields, at most once.
+  - The readback is `lovelace/dashboards/list`: the requested fields exact,
+    the unrequested fields unchanged and the content fingerprint unchanged.
+  - The content fingerprint comes from the admitted `get_dashboard_config`
+    read.
+  - Planning refuses `"lovelace"`, YAML dashboards, unknown or ambiguous
+    targets and invalid values before any dispatch, and refuses a no-op
+    with no plan.
+  - The policy is `standard_admin`, with fixed visibility disclosures.
+  - Drift is refused as `stale_target_state`.
+  - `rollback_change` creates a separately approved restore plan. A change
+    whose captured prior value the restore could not send is refused
+    before any plan (`dashboard_metadata_baseline_not_restorable`).
+  - The generic resource-write send boundary refuses a complete, valid
+    command before sending unless Core admits the profile and the call runs
+    inside the F3 dispatch window; a legacy apply without F3 refuses
+    `core_authority_unavailable`.
+  - There is no delegated provider and no fallback.
+- Dormant seq-15 `dashboard_metadata` evidence lane. `ci.yml` is unchanged;
+  its wiring is deferred to the November batch (`WORKFLOW_PENDING_LANES`).
+- HAMCP-255: the `home_assistant_core_authority_reconciled` audit event uses
+  `analysis_summary.model` `ha-core-authority-audit-v2`. It is columnar:
+  sorted disposition, reason-code and authority-source vocabularies, and per
+  capability the indexes of its values (plus its profile id only when that
+  differs from the compiled `<capability_id with _>_v1` convention).
+  `adapter_id` is dropped. The v1 list was 8972 characters on
+  beta.48, and `AuditLogger` (8192 bound, unchanged) stored a
+  `payload_truncated` stub. The failure event is unchanged.
+
 ## 2.4.1-beta.49 - Health warnings explained (HAMCP-198, HAMCP-120)
 
 Builds on 2.4.1-beta.48 (#328). Health reporting only: no approval, execution,

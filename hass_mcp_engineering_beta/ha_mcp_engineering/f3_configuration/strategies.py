@@ -23,6 +23,7 @@ from ..governance.entity_metadata import (
 )
 from ..governance import entity_availability_exposure as availability_exposure
 from ..governance import label_registry
+from ..governance import dashboard_metadata
 from ..governance.normalize import stable_hash
 from ..governance.resources import (
     configuration_write_config,
@@ -65,6 +66,10 @@ CAPABILITY_IDENTITIES = {
         (label_registry.LABEL_RESOURCE_TYPE, action): identity
         for action, identity in label_registry.CAPABILITY_IDENTITIES.items()
     },
+    (
+        dashboard_metadata.RESOURCE_TYPE,
+        dashboard_metadata.ACTION,
+    ): dashboard_metadata.CAPABILITY_IDENTITY,
 }
 
 
@@ -802,6 +807,139 @@ class LabelRegistryEntryConfigurationStrategy(ConfigurationStrategy):
         return ()
 
 
+class DashboardMetadataConfigurationStrategy(ConfigurationStrategy):
+    """One closed dashboard metadata update for one exact dashboard (HAMCP-106).
+
+    The plan records the full final state (metadata row plus the content
+    fingerprint); the single command sent is rebuilt from the plan's own
+    recorded current state and carries ``dashboard_id`` plus only the changed
+    fields.  Create, delete, content and resource commands are never built.
+    """
+
+    resource_type = dashboard_metadata.RESOURCE_TYPE
+    provider = dashboard_metadata.PROVIDER
+    provider_contract = dashboard_metadata.PROVIDER_CONTRACT
+    validation_contract = "dashboard_metadata_validation_v1"
+    requires_configuration_check = False
+
+    @property
+    def transport(self) -> str:
+        return "home_assistant_websocket"
+
+    @property
+    def allowed_argument_names(self) -> tuple[str, ...]:
+        return tuple(sorted({"type", "dashboard_id", *dashboard_metadata.FIELDS}))
+
+    def provider_operation(self, target_id: str) -> str:
+        del target_id
+        return dashboard_metadata.PROVIDER_OPERATIONS[self.action]
+
+    def _command(
+        self,
+        target_id: str,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if self.action != dashboard_metadata.ACTION:
+            raise ValueError("dashboard metadata is update-only")
+        return dashboard_metadata.write_command(
+            target_id, current_config, proposed_config
+        )
+
+    def provider_descriptor(
+        self,
+        target_id: str,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
+    ) -> ConfigurationProviderDescriptor:
+        command = self._command(target_id, proposed_config, current_config)
+        return ConfigurationProviderDescriptor(
+            provider=self.provider,
+            contract_model=self.provider_contract,
+            transport=self.transport,
+            operation=self.provider_operation(target_id),
+            argument_names=tuple(
+                sorted(command, key=lambda item: item.encode("utf-8"))
+            ),
+            arguments_hash=stable_hash(command),
+        )
+
+    def provider_payload(
+        self, target_id: str, proposed_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        raise NotImplementedError(
+            "dashboard metadata payloads require the planned current state"
+        )
+
+    def argument_names(
+        self, proposed_config: dict[str, Any]
+    ) -> tuple[str, ...]:
+        raise NotImplementedError(
+            "dashboard metadata argument names require the planned current state"
+        )
+
+    def dispatch_config(
+        self,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        target_id = proposed_config.get("url_path")
+        return self._command(target_id, proposed_config, current_config)
+
+    def already_reached(
+        self,
+        observed: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> bool:
+        # Exactly the planned final state, content included, is present.
+        if observed is None:
+            return False
+        try:
+            return dashboard_metadata.normalize_state(
+                observed
+            ) == dashboard_metadata.normalize_state(proposed_config)
+        except (TypeError, ValueError):
+            return False
+
+    async def preflight_evidence(
+        self,
+        gateway: Any,
+        target_id: str,
+        current_config: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> tuple[str, ...]:
+        check = getattr(gateway, "dashboard_metadata_preflight_evidence", None)
+        if check is None or current_config is None:
+            return ("dependency_evidence_unavailable",)
+        try:
+            return tuple(
+                await check(target_id, current_config, proposed_config)
+            )
+        except AuthorizationError:
+            return ("permission_failure",)
+        except Exception:
+            return ("dependency_evidence_unavailable",)
+
+    def read_error_code(self, exc: BaseException) -> str:
+        if isinstance(exc, AuthorizationError):
+            return "permission_failure"
+        return "resource_read_unavailable"
+
+    def observe_error_code(self, exc: BaseException) -> str:
+        if isinstance(exc, AuthorizationError):
+            return "readback_permission_failure"
+        return "readback_unavailable"
+
+    def dispatch_error_codes(self, exc: BaseException) -> tuple[str, ...]:
+        details = getattr(exc, "details", None)
+        if (
+            isinstance(details, dict)
+            and details.get("reason") == dashboard_metadata.UNAUTHORIZED_REASON
+        ):
+            return ("provider_permission_denied",)
+        return ()
+
+
 _STRATEGIES = {
     "automation": AutomationConfigurationStrategy,
     "script": ScriptConfigurationStrategy,
@@ -817,6 +955,7 @@ _STRATEGIES = {
         EntityAssistantExposureConfigurationStrategy
     ),
     label_registry.LABEL_RESOURCE_TYPE: LabelRegistryEntryConfigurationStrategy,
+    dashboard_metadata.RESOURCE_TYPE: DashboardMetadataConfigurationStrategy,
 }
 
 

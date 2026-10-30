@@ -5006,7 +5006,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
 
     def test_public_tool_schemas_are_bounded_and_catalog_is_51(self):
         tools = registered_tools(get_registered_server())
-        self.assertEqual(len(tools), 77)
+        self.assertEqual(len(tools), 78)
         reload_schema = tools["create_reload_plan"].parameters
         self.assertEqual(
             reload_schema["properties"]["reload_target"]["enum"],
