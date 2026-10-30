@@ -18,6 +18,15 @@ Classes:
   normalizer or the adapter;
 - ``D*``: the stored location decoded unsafely or not at all.
 
+Recorded runs (2026-10-30, copied tree under .artifacts/):
+- ``results.json``: full run, 30 of 32 killed. Survivors: V10 (a non-string
+  ``after``/``before`` that renders as a sun event) and L10 (path tokens
+  outside the fixed vocabulary), each a missing test, not dead code.
+- ``results-rerun.json``: ``--only V10 --only L10`` after adding
+  ``test_non_string_values_that_render_as_sun_events_are_refused`` and
+  ``test_path_encoder_refuses_tokens_outside_the_fixed_vocabulary``; both
+  killed. Net: 32 of 32 killed, no survivors.
+
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\
         python docs/evidence/hamcp252-mutations/run_mutations.py \\

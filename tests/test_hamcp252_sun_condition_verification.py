@@ -386,6 +386,17 @@ class SunConditionComparisonTests(unittest.TestCase):
                     ("automation_verifier_path_action_0_choose_0_sequence_0",),
                 )
 
+    def test_non_string_values_that_render_as_sun_events_are_refused(self):
+        class RendersAsSunEvent:
+            def __str__(self):
+                return "sunset"
+
+        for field in ("after", "before"):
+            with self.subTest(field=field):
+                config = wrap(in_choose({"condition": "sun", field: RendersAsSunEvent()}))
+                self.assertFalse(comparable(config))
+                self.assertEqual(automation_verification_detail_code(config), SUN_RULE)
+
     def test_readback_that_turns_unverifiable_is_a_mismatch(self):
         approved = replica_config()
         observed = deepcopy(approved)
@@ -493,6 +504,23 @@ class VerifierLocationTests(unittest.TestCase):
         decoded = reasons.verifier_location(tuple(sorted((SUN_RULE, *codes))))
         self.assertTrue(decoded["path_truncated"])
         self.assertTrue(decoded["path"].startswith("/action/1000/choose/1000/"))
+
+    def test_path_encoder_refuses_tokens_outside_the_fixed_vocabulary(self):
+        encode = normalize._location_path_codes
+        self.assertEqual(encode(("action", 0, "sequence")), ("automation_verifier_path_action_0_sequence",))
+        for path in (
+            ("action", 0, "bogus"),
+            ("action", 0, VALUE_MARKER),
+            ("weekday",),
+            ("action", True),
+            ("action", -1),
+            ("action", 0.0),
+            ["action", 0],
+            (),
+            None,
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(encode(path), ())
 
     def test_codes_are_bounded_and_carry_no_values(self):
         configs = []
