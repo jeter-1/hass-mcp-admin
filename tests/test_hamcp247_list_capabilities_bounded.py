@@ -32,6 +32,7 @@ import json
 import math
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -48,6 +49,7 @@ from ha_mcp_engineering.capabilities import (  # noqa: E402
     build_capability_view,
 )
 from ha_mcp_engineering.errors import InvalidRequestError  # noqa: E402
+from ha_mcp_engineering.health import HEALTH  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
@@ -181,6 +183,13 @@ class _LiveShapedCatalog(unittest.TestCase):
     def setUp(self):
         capabilities._DYNAMIC_UPSTREAM_CAPABILITIES = self.dynamic
         capabilities._UPSTREAM_READ_GATEWAY_SUMMARY = self.gateway
+        # HAMCP-248: Core admission is not evaluated here, whatever an
+        # earlier module in the same shard left configured.
+        governance = mock.patch.object(
+            HEALTH, "governance", SimpleNamespace(service=None)
+        )
+        governance.start()
+        self.addCleanup(governance.stop)
 
     @contextmanager
     def grown(self, factor=1.5):

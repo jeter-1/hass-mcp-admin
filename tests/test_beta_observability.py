@@ -63,6 +63,107 @@ from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 SECRET = "observability-test-access-secret"
 
 
+def preserve_create_application_state(test):
+    """Restore every process global that create_application() mutates.
+
+    HAMCP-248: create_application() configures module singletons in place.
+    Unrestored, a later module in the same unit shard sees this test's live
+    Core admission (HEALTH.governance) instead of its own state. The set is
+    what create_application() changes in a pristine process: the attributes
+    of each singleton it configures (container contents included), the
+    capability catalog's published gateway snapshot, the FastMCP server's
+    session manager, and the root logger's SDK diagnostic filter.
+    """
+
+    import logging
+
+    from ha_mcp_engineering import application, capabilities
+    from ha_mcp_engineering.audit_baseline.capture_runtime import (
+        AUTOMATION_BASELINE_CAPTURE,
+    )
+    from ha_mcp_engineering.backup_inventory.service import BACKUP_INVENTORY
+    from ha_mcp_engineering.configuration_definitions.service import (
+        CONFIGURATION_DEFINITIONS,
+    )
+    from ha_mcp_engineering.dashboard_analysis.runtime import DASHBOARD_ANALYSIS
+    from ha_mcp_engineering.entity_reconciliation.service import (
+        ENTITY_RECONCILIATION,
+    )
+    from ha_mcp_engineering.history_slices.service import HISTORY_SLICES
+    from ha_mcp_engineering.incident_logs.service import INCIDENT_LOGS
+    from ha_mcp_engineering.integration_inspection.runtime import (
+        INTEGRATION_INSPECTION,
+    )
+    from ha_mcp_engineering.recorder_settings.service import RECORDER_SETTINGS
+    from ha_mcp_engineering.script_traces import SCRIPT_TRACES
+
+    singletons = (
+        application.HEALTH,
+        application.GOVERNANCE,
+        application.CORE_READMISSION,
+        application.UPSTREAM_READ_GATEWAY,
+        application.UPSTREAM_DASHBOARD,
+        application.UPSTREAM_OPERATIONAL_BACKUP,
+        application.UPSTREAM_OPERATIONAL_LIFECYCLE,
+        application.DEPENDENCY_ANALYSIS,
+        application.RELIABILITY_ANALYSIS,
+        application.CHANGE_IMPACT_ANALYSIS,
+        application.CONFIGURATION_INTEGRITY_ANALYSIS,
+        application.INCIDENT_CORRELATION,
+        application.HANDOFF_GENERATION,
+        application.FAN_OPERATIONS,
+        application.POWER_OPERATIONS,
+        application.TRACE_SNAPSHOTS,
+        AUTOMATION_BASELINE_CAPTURE,
+        BACKUP_INVENTORY,
+        CONFIGURATION_DEFINITIONS,
+        DASHBOARD_ANALYSIS,
+        ENTITY_RECONCILIATION,
+        HISTORY_SLICES,
+        INCIDENT_LOGS,
+        INTEGRATION_INSPECTION,
+        RECORDER_SETTINGS,
+        SCRIPT_TRACES,
+        application.get_registered_server(),
+    )
+
+    def contents(value):
+        return value.copy() if isinstance(value, (dict, list, set)) else None
+
+    def refill(value, copied):
+        if isinstance(value, list):
+            value[:] = copied
+        else:
+            value.clear()
+            value.update(copied)
+
+    saved = [
+        (vars(item), {name: (value, contents(value)) for name, value in vars(item).items()})
+        for item in singletons
+    ]
+    published = (
+        capabilities._DYNAMIC_UPSTREAM_CAPABILITIES,
+        capabilities._UPSTREAM_READ_GATEWAY_SUMMARY,
+        contents(capabilities._UPSTREAM_READ_GATEWAY_SUMMARY),
+    )
+    root = logging.getLogger()
+    root_filters = list(root.filters)
+
+    def restore():
+        for state, values in saved:
+            state.clear()
+            for name, (value, copied) in values.items():
+                if copied is not None:
+                    refill(value, copied)
+                state[name] = value
+        capabilities._DYNAMIC_UPSTREAM_CAPABILITIES = published[0]
+        capabilities._UPSTREAM_READ_GATEWAY_SUMMARY = published[1]
+        refill(published[1], published[2])
+        root.filters[:] = root_filters
+
+    test.addCleanup(restore)
+
+
 class _RestResponse:
     def __init__(self, status, text):
         self.status = status
@@ -666,6 +767,9 @@ class OperationLatencyMetricTests(unittest.TestCase):
 
 
 class GatewayAndHealthTests(unittest.TestCase):
+    def setUp(self):
+        preserve_create_application_state(self)
+
     def test_successful_direct_entity_search_reconciles_provider_counters(self):
         METRICS.reset()
         before = METRICS.snapshot()["provider_routing"]
