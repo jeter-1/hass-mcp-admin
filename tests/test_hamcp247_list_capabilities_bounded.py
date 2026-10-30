@@ -181,6 +181,13 @@ class _LiveShapedCatalog(unittest.TestCase):
     def setUp(self):
         capabilities._DYNAMIC_UPSTREAM_CAPABILITIES = self.dynamic
         capabilities._UPSTREAM_READ_GATEWAY_SUMMARY = self.gateway
+        # HAMCP-198: the expectations are the catalog with no governance
+        # service.  A module that ran create_application earlier in the same
+        # process (test_beta_v2) leaves one configured, whose Core admission
+        # the real tool then projects; pin it so the result is order-free.
+        pinned = mock.patch.object(compatibility.HEALTH, "governance", None)
+        pinned.start()
+        self.addCleanup(pinned.stop)
 
     @contextmanager
     def grown(self, factor=1.5):
@@ -271,6 +278,39 @@ class SizeTests(_LiveShapedCatalog):
                     self.assertEqual(
                         data[section], build_capability_catalog()[section]
                     )
+
+
+class AmbientGovernanceTests(_LiveShapedCatalog):
+    """HAMCP-198: an earlier module's governance service cannot leak in."""
+
+    SNAPSHOT = {"status": "current", "generation": 1, "tools": {}}
+
+    def ambient(self):
+        service = mock.Mock(core_admission_snapshot=lambda: dict(self.SNAPSHOT))
+        return mock.Mock(service=service)
+
+    def test_the_tool_projects_a_configured_service_admission(self):
+        # Positive control: the pin hides nothing the tool would report.
+        with mock.patch.object(compatibility.HEALTH, "governance", self.ambient()):
+            data = self.assert_usable(_call(), {})
+        expected = build_capability_catalog(core_admission=dict(self.SNAPSHOT))
+        self.assertEqual(data["core_admission"], expected["core_admission"])
+        self.assertNotEqual(
+            data["core_admission"], build_capability_catalog()["core_admission"]
+        )
+
+    def test_the_fixture_pins_and_restores_an_ambient_service(self):
+        ambient = self.ambient()
+        probe = SummaryTests("test_the_unfiltered_call_is_a_bounded_summary")
+        probe.dynamic, probe.gateway = self.dynamic, self.gateway
+        with mock.patch.object(compatibility.HEALTH, "governance", ambient):
+            probe.setUp()
+            try:
+                self.assertIsNone(compatibility.HEALTH.governance)
+                probe.test_the_unfiltered_call_is_a_bounded_summary()
+            finally:
+                probe.doCleanups()
+            self.assertIs(compatibility.HEALTH.governance, ambient)
 
 
 class SummaryTests(_LiveShapedCatalog):
