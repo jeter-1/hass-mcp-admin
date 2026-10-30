@@ -73,6 +73,7 @@ class CoreCapabilityClass(str, Enum):
     TYPED_INPUT_SELECT_OPTION_OPERATION = "typed_input_select_option_operation"
     SCRIPT_TRACE_READ = "script_trace_read"
     DASHBOARD_METADATA_OPERATION = "dashboard_metadata_operation"
+    SCENE_CONFIGURATION_OPERATION = "scene_configuration_operation"
     UNCLASSIFIED = "unclassified"
 
     @property
@@ -90,6 +91,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.CONFIG_ENTRY_HELPER_OPTIONS_OPERATION,
             CoreCapabilityClass.TYPED_INPUT_SELECT_OPTION_OPERATION,
             CoreCapabilityClass.DASHBOARD_METADATA_OPERATION,
+            CoreCapabilityClass.SCENE_CONFIGURATION_OPERATION,
             CoreCapabilityClass.UNCLASSIFIED,
         }
 
@@ -117,6 +119,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.CONFIG_ENTRY_HELPER_OPTIONS_OPERATION,
             CoreCapabilityClass.TYPED_INPUT_SELECT_OPTION_OPERATION,
             CoreCapabilityClass.DASHBOARD_METADATA_OPERATION,
+            CoreCapabilityClass.SCENE_CONFIGURATION_OPERATION,
         }
 
 

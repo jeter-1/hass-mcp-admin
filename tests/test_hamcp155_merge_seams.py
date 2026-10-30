@@ -50,6 +50,7 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     HELPER_OPTIONS_PROFILE,
     INPUT_SELECT_PROFILE,
     LABEL_PROFILE,
+    SCENE_CONFIGURATION_PROFILE,
     SCRIPT_TRACE_PROFILE,
     f3_entry_admission_profiles,
 )
@@ -268,7 +269,9 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
              # HAMCP-232/145 November batch.
              HELPER_OPTIONS_PROFILE, INPUT_SELECT_PROFILE, SCRIPT_TRACE_PROFILE,
              # HAMCP-106.
-             DASHBOARD_METADATA_PROFILE},
+             DASHBOARD_METADATA_PROFILE,
+             # HAMCP-071 seq 16.
+             SCENE_CONFIGURATION_PROFILE},
         )
         expected = {
             "delete_automation_configuration": (CONFIGURATION_DELETE_PROFILE,),
@@ -281,6 +284,7 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
             "update_config_entry_helper_options_configuration": (HELPER_OPTIONS_PROFILE,),
             "set_exact_input_select_option": (INPUT_SELECT_PROFILE,),
             "update_dashboard_metadata_configuration": (DASHBOARD_METADATA_PROFILE,),
+            "update_scene_configuration_configuration": (SCENE_CONFIGURATION_PROFILE,),
             "set_exact_input_boolean_state": (),
         }
         for identity, profiles in expected.items():
@@ -297,6 +301,8 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
             "config_entry_helper_options": HELPER_OPTIONS_PROFILE,
             # HAMCP-106: dashboard metadata is admitted only by its own profile.
             "dashboard_metadata": DASHBOARD_METADATA_PROFILE,
+            # HAMCP-071: scene configuration is admitted only by its own profile.
+            "scene_configuration": SCENE_CONFIGURATION_PROFILE,
         })
 
 

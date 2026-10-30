@@ -57,6 +57,8 @@ TOOLS = {
     "helper_options_provider": "create_helper_options_plan",
     # HAMCP-106: the dormant dashboard metadata provider, same snapshot.
     "dashboard_metadata_provider": "create_dashboard_metadata_plan",
+    # HAMCP-071: the dormant scene configuration provider, same snapshot.
+    "scene_configuration_provider": "create_scene_configuration_plan",
 }
 # The script-trace provider backs a second tool, which must agree with the first.
 SECOND_SURFACES = {"get_script_trace": "script_trace_provider"}

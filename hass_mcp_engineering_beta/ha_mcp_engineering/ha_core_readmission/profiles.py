@@ -777,6 +777,70 @@ CORE_NOVEMBER_BATCH_PROFILES = (
         predispatch=("core_identity", "capability_contract", "target_fingerprint",
                      "session_fingerprint", "generation"),
     ),
+    # HAMCP-071 Part 2: governed edit of one existing UI-managed scene.  Josh
+    # 2026-10-30: Engineering-native direct Core provider, built inactive and
+    # signed with the November batch.  The one write is the scene config POST
+    # for the exact config id carrying the full proposed configuration without
+    # ``id``; the config GET plus the entity registry entry and the loaded
+    # scene are the authoritative readback.  Saving never activates the scene.
+    _contract(
+        "core.scene_configuration_operation",
+        CoreCapabilityClass.SCENE_CONFIGURATION_OPERATION,
+        "compiled-core-scene-configuration-operation-v1",
+        (
+            "rest_scene_config_get_by_config_id",
+            "rest_scene_config_post_by_config_id",
+            "websocket_entity_registry_list_and_get",
+            "scene_config_and_loaded_scene_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": (
+                "one_exact_existing_ui_managed_scene_by_config_id_with_"
+                "homeassistant_registry_entry"
+            ),
+            "routes": {
+                "read": "GET /api/config/scene/config/{config_id}",
+                "write": "POST /api/config/scene/config/{config_id}",
+            },
+            "commands": {
+                "read": [
+                    "config/entity_registry/get",
+                    "config/entity_registry/list",
+                ],
+            },
+            "arguments": {
+                "config_id": "exact_config_id_matching_the_registry_unique_id",
+                "fields": ["entities", "icon", "name"],
+                "name": "non_empty_string_max_255_exact_no_trim",
+                "icon": "prefix_colon_name_max_64_or_null_removes",
+                "entities": (
+                    "merge_patch_of_existing_entity_ids_to_bounded_snapshots_"
+                    "with_state"
+                ),
+                "body": "full_proposed_configuration_without_id",
+                "unrequested_fields": "sent_exactly_as_stored",
+            },
+            "dispatch": "at_most_once_scene_config_post_per_scene",
+            "never_sent": [
+                "DELETE /api/config/scene/config/{config_id}",
+                "scene.apply",
+                "scene.create",
+                "scene.delete",
+                "scene.reload",
+                "scene.turn_on",
+            ],
+            "side_effect": "core_post_write_hook_reloads_all_ui_scenes",
+            "readback": (
+                "stored_config_exact_plus_registry_identity_plus_loaded_scene_"
+                "consistent"
+            ),
+            "concurrency": "no_core_compare_and_swap_residual_window_disclosed",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
 )
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES

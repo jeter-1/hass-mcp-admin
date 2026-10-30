@@ -60,6 +60,11 @@ from .dashboard_metadata import (
     RESOURCE_TYPE as DASHBOARD_METADATA_RESOURCE_TYPE,
     DashboardMetadataGateway,
 )
+from . import scene_configuration
+from .scene_configuration import (
+    RESOURCE_TYPE as SCENE_CONFIGURATION_RESOURCE_TYPE,
+    SceneConfigurationGateway,
+)
 
 
 RESOURCE_NORMALIZATION_VERSION = 2
@@ -78,6 +83,7 @@ SUPPORTED_RESOURCE_TYPES = frozenset(
         LABEL_RESOURCE_TYPE,
         HELPER_OPTIONS_RESOURCE_TYPE,
         DASHBOARD_METADATA_RESOURCE_TYPE,
+        SCENE_CONFIGURATION_RESOURCE_TYPE,
     }
 )
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
@@ -230,6 +236,10 @@ def validate_resource(
         # HAMCP-106: the complete final metadata state, content bound.
         errors = dashboard_metadata.proposed_errors(resource_id, proposed_config)
         warnings = []
+    elif resource_type == SCENE_CONFIGURATION_RESOURCE_TYPE:
+        # HAMCP-071: the complete final scene state, stored config bound.
+        errors = scene_configuration.proposed_errors(resource_id, proposed_config)
+        warnings = []
     else:
         errors = _validate_resource_id(resource_type, resource_id)
         warnings: list[str] = []
@@ -324,6 +334,8 @@ def normalize_resource_config(
         return helper_options.canonical_copy(config)
     if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
         return dashboard_metadata.normalize_state(config)
+    if resource_type == SCENE_CONFIGURATION_RESOURCE_TYPE:
+        return scene_configuration.normalize_state(config)
     normalized = {
         key: value
         for key, value in config.items()
@@ -637,6 +649,8 @@ def resource_identity_matches(
         return config.get("label_id") == resource_id
     if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
         return config.get("url_path") == resource_id
+    if resource_type == SCENE_CONFIGURATION_RESOURCE_TYPE:
+        return config.get("config_id") == resource_id
     if resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
         # A visible options dict carries no identity; only the options
         # gateway reads it, bound to the plan's exact entry.
@@ -687,6 +701,11 @@ class ConfigurationResourceGateway:
         # update; never create, delete, content or resources).  The runtime
         # sets its ``content_reader``; absent, every read fails closed.
         self.dashboard_metadata = DashboardMetadataGateway(websocket_client)
+        # HAMCP-071: closed-vocabulary scene gateway (config GET, one config
+        # POST, registry and state reads; never activation, create, delete
+        # or reload).  The runtime sets its ``core_runtime``; absent, every
+        # write refuses before it is sent.
+        self.scene_configuration = SceneConfigurationGateway(self)
 
     async def get(
         self, resource_type: str, resource_id: str
@@ -704,6 +723,8 @@ class ConfigurationResourceGateway:
             return await self.label_registry.read_entry(resource_id)
         if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
             return await self.dashboard_metadata.read_state(resource_id)
+        if resource_type == SCENE_CONFIGURATION_RESOURCE_TYPE:
+            return await self.scene_configuration.read_state(resource_id)
         if resource_type in _CONFIG_ENDPOINTS:
             value = await self.rest_client.request(
                 "GET",
@@ -783,6 +804,8 @@ class ConfigurationResourceGateway:
             raise ValueError("entity availability and exposure are update-only")
         if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
             raise ValueError("dashboard metadata is update-only")
+        if resource_type == SCENE_CONFIGURATION_RESOURCE_TYPE:
+            raise ValueError("scene configuration is update-only")
         if resource_type == LABEL_RESOURCE_TYPE:
             # ``approved_config`` is the one closed command built by the
             # strategy; the provider re-checks its shape before sending.
@@ -947,6 +970,10 @@ class ConfigurationResourceGateway:
             # ``approved_config`` is the one closed command built by the
             # strategy; the provider re-checks its shape before sending.
             return await self.dashboard_metadata.write(resource_id, approved_config)
+        if resource_type == SCENE_CONFIGURATION_RESOURCE_TYPE:
+            # ``approved_config`` is the one closed POST built by the
+            # strategy; the provider re-checks its shape before sending.
+            return await self.scene_configuration.write(resource_id, approved_config)
         self._require_valid(resource_type, resource_id, approved_config)
         if resource_type in _CONFIG_ENDPOINTS:
             return await self._write_rest_configuration(
@@ -1163,6 +1190,42 @@ class ConfigurationResourceGateway:
             return ("stale_target_state",)
         return ()
 
+    async def scene_configuration_preflight_evidence(
+        self,
+        resource_id: str,
+        current: dict[str, Any] | None,
+        proposed: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Recheck the bound scene immediately before the one POST.
+
+        The target is judged from one fresh read: a scene that no longer
+        exists (POST would create it), or whose stored configuration,
+        registry entry or loaded state differs from the plan's bound state,
+        refuses ``stale_target_state`` and is never overwritten.  Nothing is
+        written; an empty tuple means the binding still holds.
+        """
+
+        if current is None or scene_configuration.state_errors(resource_id, current):
+            return ("plan_bindings_invalid",)
+        if scene_configuration.proposed_errors(resource_id, proposed):
+            return ("plan_bindings_invalid",)
+        try:
+            observed = await self.scene_configuration.read_state(resource_id)
+        except AuthorizationError:
+            return ("permission_failure",)
+        except scene_configuration.SceneConfigurationContractError:
+            return ("stale_target_state",)
+        except Exception:
+            return ("scene_configuration_unavailable",)
+        if observed is None:
+            return ("stale_target_state",)
+        if not scene_configuration.exactly_equal(
+            scene_configuration.normalize_state(observed),
+            scene_configuration.normalize_state(current),
+        ):
+            return ("stale_target_state",)
+        return ()
+
     async def validate(self) -> Any:
         """Run Home Assistant's bounded full configuration check."""
 
@@ -1309,6 +1372,10 @@ def _validate_resource_id(
     if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
         if not dashboard_metadata.url_path_valid(resource_id):
             return [f"{resource_type} resource_id must be a dashboard url_path"]
+        return []
+    if resource_type == SCENE_CONFIGURATION_RESOURCE_TYPE:
+        if not scene_configuration.config_id_valid(resource_id):
+            return [f"{resource_type} resource_id must be a scene config id"]
         return []
     if resource_type == "automation":
         valid, errors, _ = validate_automation(

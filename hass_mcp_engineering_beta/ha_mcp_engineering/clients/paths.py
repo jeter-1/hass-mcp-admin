@@ -56,6 +56,7 @@ ROUTE_TEMPLATES = frozenset({
     "/config/config_entries/options/flow",
     "/config/config_entries/options/flow/{}",
     "/config/core/check_config",
+    "/config/scene/config/{}",
     "/config/script/config/{}",
     "/core/logs",
     "/history/period/{}",
@@ -294,13 +295,18 @@ def _route_methods(route: Route) -> frozenset[str] | None:
 
     The transport refuses any other method before a credential or session
     exists. The options-flow routes are reached only by the helper-options
-    gateway.
+    gateway; the scene configuration route only by the scene configuration
+    gateway (HAMCP-071).
     """
 
     if route.template == "/config/config_entries/options/flow":
         return frozenset({"POST"})
     if route.template == "/config/config_entries/options/flow/{}":
         return frozenset({"DELETE", "POST"})
+    # HAMCP-071: only the scene configuration gateway reaches this route; a
+    # scene configuration DELETE is never reachable.
+    if route.template == "/config/scene/config/{}":
+        return frozenset({"GET", "POST"})
     return None
 
 

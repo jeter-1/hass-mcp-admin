@@ -48,7 +48,9 @@ SHIPPED_SIGNED_COUNT = 22
 NOVEMBER_DORMANT = frozenset({"core.config_entry_helper_options_operation",
                               "core.typed_input_select_option_operation", "core.script_trace_read",
                               # HAMCP-106 dashboard metadata (seq 15 signing batch).
-                              "core.dashboard_metadata_operation"})
+                              "core.dashboard_metadata_operation",
+                              # HAMCP-071 scene configuration (seq 16 signing batch).
+                              "core.scene_configuration_operation"})
 ENTITY_GET, ENTITY_UPDATE = "config/entity_registry/get", "config/entity_registry/update"
 LABEL_LIST = "config/label_registry/list"
 LABEL_CREATE, LABEL_UPDATE = "config/label_registry/create", "config/label_registry/update"
