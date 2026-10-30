@@ -97,6 +97,40 @@ logger = get_logger("core_authority")
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat(timespec="seconds") if value is not None else None
+
+
+# HAMCP-255 (closed by HAMCP-106): v1 listed six fields for every profile
+# and outgrew the 8192-character audit payload bound, so the logger stored a
+# truncated stub.  v2 groups profiles by (disposition, reason_code, authority_source)
+# and keeps each capability's profile id; the adapter id follows from the
+# admitted compiled profile.  Each profile's disposition and reason code
+# remain reconstructable from the record alone.
+RECONCILED_AUDIT_MODEL = "ha-core-authority-audit-v2"
+
+
+def _audit_disposition_groups(decisions: Any) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str, str | None], dict[str, str]] = {}
+    for item in decisions:
+        source = (
+            item.authority_source.value
+            if item.authority_source is not None
+            else None
+        )
+        key = (item.disposition.value, item.reason_code, source)
+        groups.setdefault(key, {})[item.capability_id] = item.profile_id
+    return [
+        {
+            "disposition": disposition,
+            "reason_code": reason_code,
+            "authority_source": source,
+            "profiles": dict(sorted(profiles.items())),
+        }
+        for (disposition, reason_code, source), profiles in sorted(
+            groups.items(), key=lambda entry: tuple(str(part) for part in entry[0])
+        )
+    ]
+
+
 _AUDIT_TRIGGERS = frozenset({
     "startup", "startup_retry", "periodic", "identity_or_connection_change",
     "mutation_pre_dispatch", "mutation_verification", "failure_retry",
@@ -1759,7 +1793,7 @@ class CoreRuntime:
             "event": "home_assistant_core_authority_reconciled",
             "result_status": "success" if admitted else "withheld",
             "analysis_summary": {
-                "model": "ha-core-authority-audit-v1",
+                "model": RECONCILED_AUDIT_MODEL,
                 "trigger": trigger if trigger in _AUDIT_TRIGGERS else "other",
                 "observed_core_version": observation.version,
                 "identity_agreement": observation.identity_agrees,
@@ -1767,21 +1801,7 @@ class CoreRuntime:
                 "disposition": generation.disposition.value,
                 "admitted_count": admitted,
                 "withheld_count": len(decisions) - admitted,
-                "capabilities": [
-                    {
-                        "capability_id": item.capability_id,
-                        "disposition": item.disposition.value,
-                        "reason_code": item.reason_code,
-                        "authority_source": (
-                            item.authority_source.value
-                            if item.authority_source is not None
-                            else None
-                        ),
-                        "profile_id": item.profile_id,
-                        "adapter_id": item.adapter_id,
-                    }
-                    for item in decisions
-                ],
+                "dispositions": _audit_disposition_groups(decisions),
                 "fallback_count": 0,
             },
         }
