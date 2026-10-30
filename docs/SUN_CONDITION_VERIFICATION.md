@@ -29,7 +29,27 @@ are never equated. Values are checked against Core's schema, so an unexpected
 form is refused rather than compared:
 - `after`/`before` must be strings whose lowercase is `sunrise` or
   `sunset`;
-- offsets must be valid time periods.
+- an offset needs `after` or `before` (Core's `AtLeastOne`); otherwise the
+  step is refused with `automation_verifier_invalid_automation_sun_condition`;
+- each offset must be one of the reviewed `cv.time_period` forms below;
+  otherwise the step is refused with
+  `automation_verifier_invalid_automation_sun_condition_offset`, located at
+  the step with the offending field.
+
+| Form | Admitted | Core path |
+| --- | --- | --- |
+| Clock string | `[+-]H:M` or `[+-]H:M:S[.f]`, ASCII digits only | `time_period_str` |
+| Seconds | an int or finite float (not a boolean), or an ASCII decimal string `[+-]D[.D]` | `time_period_seconds` |
+| Mapping | nonempty; keys only `days`, `hours`, `minutes`, `seconds`, `milliseconds`; each value a seconds-form number or decimal string | `time_period_dict` |
+
+Every admitted form must also build a Python `timedelta` without overflow.
+The admitted set is a reviewed subset of what Core accepts. Core's
+`int()`/`float()` coercion also takes surrounding whitespace, underscores,
+exponents, `inf`/`nan` and non-ASCII digits; the verifier refuses those so
+that only plain, unambiguous forms are compared. A refusal is fail-closed:
+it never admits a form Core rejects. Valid forms are compared exactly as
+written: `"00:30:00"`, `"0:30:00"`, `1800` and `{"minutes": 30}` are
+different values and a change between them on readback is a mismatch.
 
 Not admitted:
 - the fields on any other condition type;
@@ -46,7 +66,11 @@ durable diagnostic codes:
   from structural keys (`action`/`actions` root, `choose`, `default`,
   `then`, `else`, `repeat`, `parallel`, `sequence`) and list indices.
   It is at most 96 characters, truncated at whole tokens and marked with
-  `automation_verifier_truncated_path`.
+  `automation_verifier_truncated_path`. A refusal about the whole
+  configuration (unsupported keys, or both spellings of `action`,
+  `trigger` or `condition`) is `automation_verifier_path_root`, decoded as
+  the root pointer `""`. Every verifier refusal carries exactly one path
+  code; a refusal that names no position falls back to the root.
 - `automation_verifier_field_<name>`: at most four offending field names.
   A name appears only when it is in a fixed vocabulary of known Home
   Assistant step and condition fields; any other name becomes
@@ -84,7 +108,17 @@ Reviewed Home Assistant Core 2026.10.3 source:
   memory only.
 - [`helpers/config_validation.py:194`](https://github.com/home-assistant/core/blob/1f214b8461dd1fbbd66e10765c6905f49d3c1d86/homeassistant/helpers/config_validation.py#L194)
   `sun_event = All(Lower, Any(sunset, sunrise))`, and
-  [`:566`](https://github.com/home-assistant/core/blob/1f214b8461dd1fbbd66e10765c6905f49d3c1d86/homeassistant/helpers/config_validation.py#L566) `time_period`.
+  [`:566`](https://github.com/home-assistant/core/blob/1f214b8461dd1fbbd66e10765c6905f49d3c1d86/homeassistant/helpers/config_validation.py#L566)
+  `time_period = Any(time_period_str, time_period_seconds, timedelta, time_period_dict)`.
+  The parts are
+  [`time_period_str` (`:523`)](https://github.com/home-assistant/core/blob/1f214b8461dd1fbbd66e10765c6905f49d3c1d86/homeassistant/helpers/config_validation.py#L523):
+  optional sign, then `H:M` or `H:M:S` via `int`, `int`, `float`;
+  [`time_period_seconds` (`:558`)](https://github.com/home-assistant/core/blob/1f214b8461dd1fbbd66e10765c6905f49d3c1d86/homeassistant/helpers/config_validation.py#L558):
+  `timedelta(seconds=float(value))`; and
+  [`time_period_dict` (`:475`)](https://github.com/home-assistant/core/blob/1f214b8461dd1fbbd66e10765c6905f49d3c1d86/homeassistant/helpers/config_validation.py#L475):
+  `days`/`hours`/`minutes`/`seconds`/`milliseconds`, each `Coerce(float)`,
+  at least one. Lines 470-570 are identical in Core 2026.10.1
+  (`abe1fdd7cd6b4de1715c87b6fd87d92699514ef9`).
 - [`components/config/view.py:114`](https://github.com/home-assistant/core/blob/1f214b8461dd1fbbd66e10765c6905f49d3c1d86/homeassistant/components/config/view.py#L114):
   the config POST only validates. "We just validate, we don't store that
   data". Then [`:130`](https://github.com/home-assistant/core/blob/1f214b8461dd1fbbd66e10765c6905f49d3c1d86/homeassistant/components/config/view.py#L130) writes the posted
@@ -112,8 +146,23 @@ the offline F3 executor and gateway fixtures. It proves:
   on readback ends `verification_mismatch`.
 - **Variants are admitted.** The Part 1 variants and every supported nested
   position are admitted.
-- **Invalid values are refused.** Invalid sun values are refused with
-  `automation_verifier_invalid_automation_sun_condition`.
+- **Invalid values are refused.** Invalid sun events, and an offset without
+  an event, are refused with
+  `automation_verifier_invalid_automation_sun_condition`. Each malformed
+  offset (wrong type, bad string, bad mapping key or value, overflow,
+  non-finite) is refused with
+  `automation_verifier_invalid_automation_sun_condition_offset` at preflight
+  with no approval and no dispatch.
+- **Valid offsets compare exactly.** Each admitted offset form verifies;
+  a different representation, a changed value or a malformed readback is a
+  mismatch.
+- **Every refusal is located.** One case per verifier rule, pinned to the
+  normalizer's refusal literals, decodes to its expected JSON pointer, so a
+  new rule without a location fails. A whole-configuration refusal reports
+  `""` through the durable child reason.
+- **Real-body structure.** The replica's value-free structural fingerprint at
+  `/action/0/choose/2/sequence/0..5` and `/condition/1` equals the real
+  PR030c body's (`8b92ae0a…`). Only the digest is committed.
 - **Neighbors stay refused.** Unsupported neighbors are still refused with
   their location: the time condition's `after`/`before`/`weekday`,
   sun plus `weekday`/`zone`, and the sun fields on other condition types.

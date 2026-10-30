@@ -207,6 +207,7 @@ AUTOMATION_VERIFIER_DETAILS = frozenset(
         "invalid_automation_simple_action_option",
         "invalid_automation_simple_action_value",
         "invalid_automation_sun_condition",
+        "invalid_automation_sun_condition_offset",
         "invalid_automation_variables_action",
         "invalid_automation_wait_template",
         "invalid_automation_wait_trigger_action",
@@ -234,6 +235,7 @@ REASON_CODES = frozenset(REASON_CHECKS) | {UNCLASSIFIED, UNKNOWN_LEGACY}
 # restated so this module imports nothing from governance.  A test pins them
 # equal to the normalizer's vocabulary.
 VERIFIER_PATH_PREFIX = VERIFIER_DETAIL_PREFIX + "path_"
+VERIFIER_PATH_ROOT = VERIFIER_PATH_PREFIX + "root"
 VERIFIER_FIELD_PREFIX = VERIFIER_DETAIL_PREFIX + "field_"
 VERIFIER_PATH_TRUNCATED = VERIFIER_DETAIL_PREFIX + "truncated_path"
 VERIFIER_FIELDS_TRUNCATED = VERIFIER_DETAIL_PREFIX + "truncated_fields"
@@ -252,6 +254,7 @@ VERIFIER_KNOWN_FIELDS = frozenset(
     {
         "above",
         "action",
+        "actions",
         "after",
         "after_offset",
         "alias",
@@ -304,6 +307,8 @@ VERIFIER_KNOWN_FIELDS = frozenset(
         "target",
         "then",
         "timeout",
+        "trigger",
+        "triggers",
         "type",
         "until",
         "value_template",
@@ -383,16 +388,20 @@ def classify(codes: tuple[str, ...] | None) -> tuple[str, str, str | None]:
 def verifier_location(codes: tuple[str, ...] | None) -> dict[str, Any] | None:
     """Decode a verifier refusal's stored location codes, else ``None``.
 
-    The path holds only structural action-tree keys and list indices; a field
-    outside the fixed vocabulary reads as ``unrecognized_field``.  Values and
-    templates are never stored, so they can never be reported.
+    The path is a JSON pointer holding only structural action-tree keys and
+    list indices, or ``""`` (the document root) for a refusal about the whole
+    configuration; a field outside the fixed vocabulary reads as
+    ``unrecognized_field``.  Values and templates are never stored, so they
+    can never be reported.
     """
 
     if not codes:
         return None
     paths = [code[len(VERIFIER_PATH_PREFIX):] for code in codes if code.startswith(VERIFIER_PATH_PREFIX)]
     path = None
-    if len(paths) == 1:
+    if VERIFIER_PATH_ROOT in codes and len(paths) == 1:
+        path = ""
+    elif len(paths) == 1:
         tokens = paths[0].split("_")
         if tokens[0] in VERIFIER_PATH_ROOTS and all(
             (token in VERIFIER_PATH_TOKENS and token not in VERIFIER_PATH_ROOTS)

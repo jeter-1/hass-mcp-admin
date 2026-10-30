@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import hashlib
 import json
+import re
 from typing import Any
 
 
@@ -125,6 +127,20 @@ AUTOMATION_SUN_CONDITION_FIELDS = frozenset(
     {"after", "after_offset", "before", "before_offset"}
 )
 AUTOMATION_SUN_EVENTS = frozenset({"sunrise", "sunset"})
+# HAMCP-252: the sun offsets the verifier admits, a reviewed subset of Core's
+# cv.time_period (helpers/config_validation.py, identical in Core 2026.10.1
+# and 2026.10.3): time_period_str "[+|-]H:M[:S[.f]]", time_period_seconds
+# (a finite number or a decimal string) and time_period_dict (a nonempty
+# mapping of these units to finite numbers or decimal strings).  Anything
+# else, including forms Python's numeric parsing tolerates (whitespace,
+# underscores, exponents, non-ASCII digits, booleans), is refused.
+AUTOMATION_SUN_OFFSET_UNITS = frozenset(
+    {"days", "hours", "milliseconds", "minutes", "seconds"}
+)
+_SUN_OFFSET_CLOCK = re.compile(
+    r"[+-]?[0-9]+:[0-9]+(?::[0-9]+(?:\.[0-9]+)?)?", re.ASCII
+)
+_SUN_OFFSET_DECIMAL = re.compile(r"[+-]?[0-9]+(?:\.[0-9]+)?", re.ASCII)
 
 # HAMCP-252: a refusal's location, reported as bounded diagnostic codes.  The
 # path names only structural keys of the walked action tree and list indices;
@@ -132,6 +148,9 @@ AUTOMATION_SUN_EVENTS = frozenset({"sunrise", "sunset"})
 # script-step and condition field names.  Reporting only: nothing here changes
 # what the verifier accepts or refuses.
 AUTOMATION_VERIFIER_PATH_PREFIX = "automation_verifier_path_"
+# A refusal about the whole configuration is located at the document root
+# (JSON pointer ""), never left without a location.
+AUTOMATION_VERIFIER_PATH_ROOT = AUTOMATION_VERIFIER_PATH_PREFIX + "root"
 AUTOMATION_VERIFIER_FIELD_PREFIX = "automation_verifier_field_"
 AUTOMATION_VERIFIER_PATH_TRUNCATED = "automation_verifier_truncated_path"
 AUTOMATION_VERIFIER_FIELDS_TRUNCATED = "automation_verifier_truncated_fields"
@@ -153,6 +172,7 @@ AUTOMATION_VERIFIER_KNOWN_FIELDS = frozenset(
     {
         "above",
         "action",
+        "actions",
         "after",
         "after_offset",
         "alias",
@@ -205,6 +225,8 @@ AUTOMATION_VERIFIER_KNOWN_FIELDS = frozenset(
         "target",
         "then",
         "timeout",
+        "trigger",
+        "triggers",
         "type",
         "until",
         "value_template",
@@ -389,18 +411,19 @@ def _location_field_codes(fields: Any) -> tuple[str, ...]:
 def automation_verification_location_codes(config: Any) -> tuple[str, ...]:
     """HAMCP-252: where the verifier refused ``config``, as bounded codes.
 
-    Reporting only.  At most one path code naming structural keys and list
-    indices of the action tree, plus at most four field codes; a field outside
-    the fixed Home Assistant vocabulary reads as ``unrecognized_field``.  No
+    Reporting only.  Exactly one path code naming structural keys and list
+    indices of the action tree, or the document root for a refusal about the
+    whole configuration, plus at most four field codes; a field outside the
+    fixed Home Assistant vocabulary reads as ``unrecognized_field``.  No
     configuration value, template or free-form key text is ever emitted.
-    Empty when the verifier accepts ``config`` or the refusal has no location
-    inside the action tree.
+    Empty only when the verifier accepts ``config``.
     """
 
     exc = _verification_refusal(config)
     if exc is None:
         return ()
-    return _location_path_codes(exc.path) + _location_field_codes(exc.fields)
+    path = _location_path_codes(exc.path) or (AUTOMATION_VERIFIER_PATH_ROOT,)
+    return path + _location_field_codes(exc.fields)
 
 
 def _bounded_nonempty_string(value: Any) -> bool:
@@ -489,6 +512,58 @@ def _valid_time_period(value: Any) -> bool:
     ) or _bounded_nonempty_string(value)
 
 
+def _sun_offset_amount(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) or (
+        isinstance(value, str)
+        and len(value) <= MAX_AUTOMATION_ACTION_NAME_LENGTH
+        and _SUN_OFFSET_DECIMAL.fullmatch(value)
+    ):
+        # A non-finite amount fails when the caller builds the timedelta.
+        return float(value)
+    return None
+
+
+def _valid_sun_offset(value: Any) -> bool:
+    """HAMCP-252: whether a sun offset is a reviewed cv.time_period form.
+
+    Checks only; the raw value stays significant to exact comparison.
+    """
+
+    try:
+        if (
+            isinstance(value, str)
+            and len(value) <= MAX_AUTOMATION_ACTION_NAME_LENGTH
+            and _SUN_OFFSET_CLOCK.fullmatch(value)
+        ):
+            parts = value.lstrip("+-").split(":")
+            timedelta(
+                hours=int(parts[0]),
+                minutes=int(parts[1]),
+                seconds=float(parts[2]) if len(parts) == 3 else 0,
+            )
+            return True
+        if isinstance(value, dict):
+            if not value or not set(value) <= AUTOMATION_SUN_OFFSET_UNITS:
+                return False
+            amounts = {
+                unit: _sun_offset_amount(amount)
+                for unit, amount in value.items()
+            }
+            if any(amount is None for amount in amounts.values()):
+                return False
+            timedelta(**amounts)
+            return True
+        seconds = _sun_offset_amount(value)
+        if seconds is None:
+            return False
+        timedelta(seconds=seconds)
+        return True
+    except (OverflowError, ValueError):
+        return False
+
+
 def _validate_simple_action(
     value: dict[str, Any], family: str
 ) -> None:
@@ -529,12 +604,23 @@ def _validate_simple_action(
                 and value[field].lower() in AUTOMATION_SUN_EVENTS
             ):
                 raise AutomationVerificationNormalizationError(
-                    "invalid automation sun condition"
+                    "invalid automation sun condition", fields=(field,)
                 )
-        for field in ("after_offset", "before_offset"):
-            if field in value and not _valid_time_period(value[field]):
+        offsets = AUTOMATION_SUN_CONDITION_FIELDS.intersection(value) - {
+            "after",
+            "before",
+        }
+        if offsets and not {"after", "before"}.intersection(value):
+            # Core's AtLeastOne("before", "after"); a bare sun step stays
+            # admitted as before HAMCP-252.
+            raise AutomationVerificationNormalizationError(
+                "invalid automation sun condition", fields=("after", "before")
+            )
+        for field in sorted(offsets):
+            if not _valid_sun_offset(value[field]):
                 raise AutomationVerificationNormalizationError(
-                    "invalid automation sun condition"
+                    "invalid automation sun condition offset",
+                    fields=(field,),
                 )
     primary = value[family]
     if family in {
@@ -928,7 +1014,8 @@ def normalize_automation_for_verification(
         for alias, canonical in ALIASES.items():
             if alias in config and canonical in config:
                 raise AutomationVerificationNormalizationError(
-                    "ambiguous top-level automation aliases"
+                    "ambiguous top-level automation aliases",
+                    fields=(alias, canonical),
                 )
     normalized = normalize_automation(config)
     if normalized is None:

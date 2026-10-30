@@ -2,8 +2,8 @@
 
 Engineering 2.4.1-beta.50 lets the readback verifier compare a `sun`
 condition used as an action step, and makes a verifier refusal name where it
-refused (HAMCP-252). It is staged after 2.4.1-beta.49 (HAMCP-198/120, #329),
-which merges first. It adds no Home Assistant write, tool, input schema,
+refused (HAMCP-252). It builds on 2.4.1-beta.49 (HAMCP-198/120, #329). It
+adds no Home Assistant write, tool, input schema,
 route, provider, Core command or signed registry change.
 
 Acceptance: [`V2_4_1_BETA50_ACCEPTANCE.md`](V2_4_1_BETA50_ACCEPTANCE.md).
@@ -27,11 +27,16 @@ which is why an earlier synthetic probe passed.
 - **Sun steps.** `after`, `before`, `after_offset` and `before_offset` are
   admitted only on a `condition: sun` step and compared exactly. Values
   outside Core's sun schema are refused with
-  `automation_verifier_invalid_automation_sun_condition`. The fields stay
+  `automation_verifier_invalid_automation_sun_condition`; a malformed
+  `after_offset`/`before_offset` (outside Core's `cv.time_period` forms, or
+  outside the reviewed subset of them) is refused before dispatch with
+  `automation_verifier_invalid_automation_sun_condition_offset`. The fields stay
   refused on every other condition type, and unknown fields on a sun step
   stay refused.
-- **Refusal location.** A verifier refusal also stores bounded codes for its
-  structural path and offending field names. Names outside a fixed Home
+- **Refusal location.** Every verifier refusal also stores bounded codes for
+  its structural path and offending field names. A refusal about the whole
+  configuration (for example both `action` and `actions`) is located at the
+  root pointer `""`. Names outside a fixed Home
   Assistant field vocabulary are stored as `unrecognized_field`. The codes
   are decoded into `pre_dispatch_refusal.verifier_location` (`path`,
   `path_truncated`, `fields`, `fields_truncated`). That object is also

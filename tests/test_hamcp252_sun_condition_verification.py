@@ -13,7 +13,9 @@ entity ids, names and template text are synthetic.  No household
 configuration is committed.
 """
 
+import ast
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -57,10 +59,39 @@ SIMPLE_FIELDS_RULE = (
     "automation_verifier_unsupported_automation_simple_action_fields"
 )
 SUN_RULE = "automation_verifier_invalid_automation_sun_condition"
+OFFSET_RULE = "automation_verifier_invalid_automation_sun_condition_offset"
+ROOT_CODE = "automation_verifier_path_root"
 SUN_STEP = {"after": "sunset", "before": "sunrise", "condition": "sun"}
 SUN_PATH = ("action", 0, "choose", 2, "sequence", 2)
 VALUE_MARKER = "synthetic-hamcp252-value-marker"
 TEMPLATE = "{{ is_state('binary_sensor.synthetic_occupancy', 'on') }}"
+
+# Core cv.time_period (2026.10.1 and 2026.10.3, helpers/config_validation.py):
+# a [+-]H:M[:S] string, seconds as a number or decimal string, a timedelta, or
+# a nonempty mapping of days/hours/minutes/seconds/milliseconds.  The verifier
+# admits a reviewed subset; everything here refuses before dispatch.
+MALFORMED_OFFSETS = (
+    # Wrong type.
+    None, True, False, [], ["00:30"],
+    # Bad string.
+    "", "not-a-period", " 00:30", "00:30 ", "00:30:", "1:2:3:4", "00:xx",
+    "--00:30", "+-00:30", "1_0:00", "1e3", "inf", "nan", "-inf",
+    "\u0661:00", "\u0661\u0662", "1.", ".5", "00:30:07.", "0x10",
+    # Overflow and non-finite numbers.
+    float("nan"), float("inf"), float("-inf"), 10**30, 10**400, 1e300,
+    "999999999999:00", "9" * 30, "0" * 300 + ":30", "0" * 300,
+    # Bad mapping keys or values.
+    {}, {"unknown_field": 1}, {"minute": 1}, {"Minutes": 1},
+    {"minutes": None}, {"minutes": True}, {"minutes": "x"}, {"minutes": []},
+    {"minutes": {}}, {"minutes": float("nan")}, {"minutes": "inf"},
+    {"minutes": 1, "weeks": 1}, {"days": 10**9}, {"minutes": 10**400},
+)
+VALID_OFFSETS = (
+    "00:30", "-00:30:00", "+01:00", "00:00:07.5", "90", "-30.5",
+    90, -1800, 0.5, 0,
+    {"minutes": 30}, {"minutes": -30}, {"hours": 1, "minutes": "30"},
+    {"milliseconds": 500}, {"days": 0}, {"seconds": 1.5},
+)
 
 
 def replica_config():
@@ -168,6 +199,39 @@ def replica_config():
     }
 
 
+# Structural fingerprint of the real PR030c body (SHA-256 787b7b40... of its
+# compact sorted JSON; kept outside the repository): the key sets and nesting
+# at these pointers, with every scalar reduced to its JSON type name.  It
+# carries no values; only this digest is committed.
+REAL_BODY_POINTERS = (
+    *(f"/action/0/choose/2/sequence/{index}" for index in range(6)),
+    "/condition/1",
+)
+REAL_BODY_STRUCTURE_SHA256 = (
+    "8b92ae0ad3f1a94298771a3a88812c08b10f2298c6eb3fd29bb3ae371427fbd7"
+)
+
+
+def structure(value):
+    if isinstance(value, dict):
+        return {key: structure(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [structure(item) for item in value]
+    return "null" if value is None else type(value).__name__
+
+
+def structure_fingerprint(config):
+    def resolve(pointer):
+        value = config
+        for token in pointer.split("/")[1:]:
+            value = value[int(token)] if isinstance(value, list) else value[token]
+        return value
+
+    shape = {pointer: structure(resolve(pointer)) for pointer in REAL_BODY_POINTERS}
+    encoded = json.dumps(shape, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def at(config, path):
     value = config
     for token in path:
@@ -203,6 +267,23 @@ def comparable(config):
 
 
 class SunConditionComparisonTests(unittest.TestCase):
+    def test_replica_has_the_real_body_structure(self):
+        self.assertEqual(structure_fingerprint(replica_config()), REAL_BODY_STRUCTURE_SHA256)
+        # The fingerprint is value-free but not shape-blind.
+        for edit in (
+            lambda config: at(config, SUN_PATH).pop("before"),
+            lambda config: at(config, SUN_PATH).update(after_offset="00:10"),
+            lambda config: at(config, SUN_PATH[:-1])[0].update(continue_on_timeout="false"),
+            lambda config: config["condition"][1].update(before=None),
+        ):
+            config = replica_config()
+            edit(config)
+            self.assertNotEqual(structure_fingerprint(config), REAL_BODY_STRUCTURE_SHA256)
+        config = replica_config()
+        at(config, SUN_PATH)["after"] = "sunrise"
+        config["condition"][1]["before"] = VALUE_MARKER
+        self.assertEqual(structure_fingerprint(config), REAL_BODY_STRUCTURE_SHA256)
+
     def test_replica_verifies_exactly_without_changing_binding_or_shape(self):
         config = replica_config()
         before = deepcopy(config)
@@ -283,6 +364,7 @@ class SunConditionComparisonTests(unittest.TestCase):
             {"condition": "sun", "after": "sunrise", "after_offset": "-00:30:00"},
             {"condition": "sun", "before": "sunset", "before_offset": {"minutes": 30}},
             {"condition": "sun", "after": "sunset", "after_offset": 90},
+            {"condition": "sun", "after": "sunset", "before_offset": "01:00"},
             {
                 "condition": "sun",
                 "after": "sunset",
@@ -335,6 +417,66 @@ class SunConditionComparisonTests(unittest.TestCase):
                 self.assertTrue(result.normalization_valid)
                 self.assertFalse(result.semantic_match)
 
+    def test_malformed_offsets_are_refused_with_the_offset_rule(self):
+        for field in ("after_offset", "before_offset"):
+            for offset in MALFORMED_OFFSETS:
+                with self.subTest(field=field, offset=offset):
+                    config = wrap(in_choose({"condition": "sun", "after": "sunset", field: offset}))
+                    self.assertFalse(comparable(config))
+                    self.assertEqual(automation_verification_detail_code(config), OFFSET_RULE)
+                    self.assertEqual(
+                        automation_verification_location_codes(config),
+                        (
+                            "automation_verifier_path_action_0_choose_0_sequence_0",
+                            f"automation_verifier_field_{field}",
+                        ),
+                    )
+        # A non-string key is refused first by the whole-configuration key rule.
+        config = wrap(in_choose({"condition": "sun", "after": "sunset", "after_offset": {1: 1}}))
+        self.assertFalse(comparable(config))
+        self.assertEqual(
+            automation_verification_detail_code(config),
+            "automation_verifier_unsupported_automation_mapping_keys",
+        )
+        self.assertEqual(automation_verification_location_codes(config), (ROOT_CODE,))
+
+    def test_valid_offsets_are_admitted_and_compared_exactly(self):
+        for field in ("after_offset", "before_offset"):
+            for offset in VALID_OFFSETS:
+                with self.subTest(field=field, offset=offset):
+                    approved = wrap([{"condition": "sun", "before": "sunrise", field: deepcopy(offset)}])
+                    self.assertTrue(comparable(approved))
+                    for other in VALID_OFFSETS:
+                        observed = deepcopy(approved)
+                        observed["action"][0][field] = deepcopy(other)
+                        result = compare_resource_verification("automation", approved, observed)
+                        self.assertTrue(result.normalization_valid)
+                        self.assertEqual(
+                            result.semantic_match,
+                            json.dumps(other, sort_keys=True) == json.dumps(offset, sort_keys=True)
+                            and type(other) is type(offset),
+                            other,
+                        )
+
+    def test_equivalent_offset_representations_are_not_equal(self):
+        approved = wrap([{"condition": "sun", "after": "sunset", "after_offset": "00:30:00"}])
+        for offset in ("0:30:00", "00:30", "+00:30:00", 1800, 1800.0, "1800", {"minutes": 30}, {"seconds": 1800}):
+            with self.subTest(offset=offset):
+                observed = deepcopy(approved)
+                observed["action"][0]["after_offset"] = offset
+                result = compare_resource_verification("automation", approved, observed)
+                self.assertTrue(result.normalization_valid)
+                self.assertFalse(result.semantic_match)
+
+    def test_readback_with_a_malformed_offset_is_a_mismatch(self):
+        approved = wrap([{"condition": "sun", "after": "sunset", "after_offset": "00:30:00"}])
+        for offset in ("00:30:00 ", None, {"minute": 30}, "1e3"):
+            with self.subTest(offset=offset):
+                observed = deepcopy(approved)
+                observed["action"][0]["after_offset"] = offset
+                result = compare_resource_verification("automation", approved, observed)
+                self.assertFalse(result.normalization_valid and result.semantic_match)
+
     def test_unsupported_neighbors_remain_refused_with_location(self):
         cases = (
             ({"condition": "time", "after": "22:00:00"}, ["after"]),
@@ -364,26 +506,29 @@ class SunConditionComparisonTests(unittest.TestCase):
 
     def test_invalid_sun_values_are_refused(self):
         steps = (
-            {"condition": "sun", "after": "noon"},
-            {"condition": "sun", "after": " sunset"},
-            {"condition": "sun", "after": ""},
-            {"condition": "sun", "after": None},
-            {"condition": "sun", "after": 1},
-            {"condition": "sun", "after": ["sunset"]},
-            {"condition": "sun", "before": {"event": "sunrise"}},
-            {"condition": "sun", "after": "sunset", "after_offset": True},
-            {"condition": "sun", "after": "sunset", "after_offset": ""},
-            {"condition": "sun", "after": "sunset", "after_offset": None},
-            {"condition": "sun", "before": "sunrise", "before_offset": []},
+            ({"condition": "sun", "after": "noon"}, ("after",)),
+            ({"condition": "sun", "after": " sunset"}, ("after",)),
+            ({"condition": "sun", "after": ""}, ("after",)),
+            ({"condition": "sun", "after": None}, ("after",)),
+            ({"condition": "sun", "after": 1}, ("after",)),
+            ({"condition": "sun", "after": ["sunset"]}, ("after",)),
+            ({"condition": "sun", "before": {"event": "sunrise"}}, ("before",)),
+            ({"condition": "sun", "after": "sunset", "before": "noon"}, ("before",)),
+            # Core's AtLeastOne("before", "after"): an offset needs an event.
+            ({"condition": "sun", "after_offset": "00:30"}, ("after", "before")),
+            ({"condition": "sun", "before_offset": {"minutes": 1}}, ("after", "before")),
         )
-        for step in steps:
+        for step, fields in steps:
             with self.subTest(step=step):
                 config = wrap(in_choose(dict(step)))
                 self.assertFalse(comparable(config))
                 self.assertEqual(automation_verification_detail_code(config), SUN_RULE)
                 self.assertEqual(
                     automation_verification_location_codes(config),
-                    ("automation_verifier_path_action_0_choose_0_sequence_0",),
+                    (
+                        "automation_verifier_path_action_0_choose_0_sequence_0",
+                        *(f"automation_verifier_field_{name}" for name in fields),
+                    ),
                 )
 
     def test_non_string_values_that_render_as_sun_events_are_refused(self):
@@ -452,15 +597,47 @@ class VerifierLocationTests(unittest.TestCase):
                 self.assertIsNotNone(automation_verification_detail_code(config))
                 self.assertEqual(automation_verification_location_codes(config), codes)
 
-    def test_refusal_outside_the_action_tree_has_no_location(self):
-        for config in (
-            {"action": [], "actions": []},
-            {"action": [], 1: "x"},
-        ):
+    def test_refusal_about_the_whole_configuration_is_located_at_the_root(self):
+        cases = (
+            ({"action": [], "actions": []}, ("action", "actions")),
+            ({"trigger": [], "triggers": [], "action": []}, ("trigger", "triggers")),
+            ({"condition": [], "conditions": [], "action": []}, ("condition", "conditions")),
+            ({"action": [], 1: "x"}, ()),
+            ({"action": [{"action": "a.b", "data": {1: "x"}}]}, ()),
+            (["not a mapping"], ()),
+            ("not a mapping", ()),
+        )
+        for config, fields in cases:
             with self.subTest(config=repr(config)):
                 self.assertIsNotNone(automation_verification_detail_code(config))
-                self.assertEqual(automation_verification_location_codes(config), ())
+                self.assertEqual(
+                    automation_verification_location_codes(config),
+                    (ROOT_CODE, *(f"automation_verifier_field_{name}" for name in fields)),
+                )
+                reason = reasons.build_reason(
+                    codes=tuple(sorted((
+                        "configuration_not_verifiable",
+                        automation_verification_detail_code(config),
+                        *automation_verification_location_codes(config),
+                    ))),
+                    declaration={"operation_id": "op", "target_type": "automation", "target_id": "porch_light"},
+                    normalized_outcome="preflight_rejected",
+                )
+                self.assertEqual(reason["verifier_location"]["path"], "")
+                self.assertEqual(reason["verifier_location"]["fields"], sorted(fields))
+        # Only an accepted configuration has no location.
         self.assertEqual(automation_verification_location_codes(replica_config()), ())
+
+    def test_unlocated_refusal_falls_back_to_the_root(self):
+        original = normalize.AutomationVerificationNormalizationError.locate
+        try:
+            normalize.AutomationVerificationNormalizationError.locate = lambda self, path: None
+            codes = automation_verification_location_codes(
+                wrap(in_choose({"condition": "time", "after": "x"}))
+            )
+        finally:
+            normalize.AutomationVerificationNormalizationError.locate = original
+        self.assertEqual(codes, (ROOT_CODE, "automation_verifier_field_after"))
 
     def test_fields_are_vocabulary_only_and_capped(self):
         step = {
@@ -516,6 +693,7 @@ class VerifierLocationTests(unittest.TestCase):
             ("action", -1),
             ("action", 0.0),
             ["action", 0],
+            [],
             (),
             None,
         ):
@@ -624,6 +802,9 @@ class VerifierLocationReasonTests(unittest.TestCase):
             ((rule, "automation_verifier_path_action_01"), None),
             ((rule, "automation_verifier_path_action_0_action_1"), None),
             ((rule, "automation_verifier_path_action_0", "automation_verifier_path_action_1"), None),
+            ((rule, ROOT_CODE, "automation_verifier_path_action_0"), None),
+            ((rule, ROOT_CODE),
+             {"path": "", "path_truncated": False, "fields": [], "fields_truncated": False}),
             ((rule, "automation_verifier_field_secret_thing"),
              {"path": None, "path_truncated": False, "fields": ["unrecognized_field"], "fields_truncated": False}),
             ((rule, "automation_verifier_path_action_0", "automation_verifier_truncated_path"),
@@ -644,6 +825,108 @@ class VerifierLocationReasonTests(unittest.TestCase):
         stored = self.reason((SIMPLE_FIELDS_RULE, "configuration_not_verifiable"))
         stored.pop("verifier_location")
         self.assertIsNone(reasons.recorded(stored)["verifier_location"])
+
+
+def one_step(step):
+    return wrap([step])
+
+
+# One refused configuration per verifier rule, with the JSON pointer its
+# location must decode to.  The key set is pinned to every refusal literal in
+# the normalizer, so a new rule without a case here fails the test.
+REFUSAL_LOCATIONS = {
+    "ambiguous_automation_action_alias": (one_step({"service": "a.b", "action": "a.b"}), "/action/0"),
+    "ambiguous_automation_action_family": (one_step({"delay": 1, "wait_template": "x"}), "/action/0"),
+    "ambiguous_top_level_automation_aliases": ({"action": [], "actions": []}, ""),
+    "invalid_automation_action_alias": (one_step({"action": " x"}), "/action/0"),
+    "invalid_automation_action_alias_label": (one_step({"alias": "", "delay": 1}), "/action/0"),
+    "invalid_automation_action_mapping_field": (one_step({"action": "a.b", "data": []}), "/action/0"),
+    "invalid_automation_action_modifier": (one_step({"delay": 1, "enabled": "yes"}), "/action/0"),
+    "invalid_automation_action_timeout": (one_step({"wait_template": "x", "timeout": None}), "/action/0"),
+    "invalid_automation_choose_branch_alias": (
+        one_step({"choose": [{"alias": "", "conditions": [], "sequence": []}]}),
+        "/action/0/choose/0",
+    ),
+    "invalid_automation_condition_collection": (one_step({"condition": "and", "conditions": "x"}), "/action/0"),
+    "invalid_automation_delay_action": (one_step({"delay": None}), "/action/0"),
+    "invalid_automation_device_action_field": (one_step({"device_id": "", "domain": "x", "type": "t"}), "/action/0"),
+    "invalid_automation_repeat_collection": (one_step({"repeat": {"for_each": None, "sequence": []}}), "/action/0"),
+    "invalid_automation_repeat_count": (one_step({"repeat": {"count": 0, "sequence": []}}), "/action/0"),
+    "invalid_automation_response_variable": (one_step({"action": "a.b", "response_variable": ""}), "/action/0"),
+    "invalid_automation_simple_action_option": (
+        one_step({"wait_template": "x", "continue_on_timeout": "no"}),
+        "/action/0",
+    ),
+    "invalid_automation_simple_action_value": (one_step({"event": ""}), "/action/0"),
+    "invalid_automation_sun_condition": (one_step({"condition": "sun", "after": "noon"}), "/action/0"),
+    "invalid_automation_sun_condition_offset": (
+        one_step({"condition": "sun", "after": "sunset", "after_offset": "x"}),
+        "/action/0",
+    ),
+    "invalid_automation_variables_action": (one_step({"variables": []}), "/action/0"),
+    "invalid_automation_wait_template": (one_step({"wait_template": ""}), "/action/0"),
+    "invalid_automation_wait_trigger_action": (one_step({"wait_for_trigger": {}}), "/action/0"),
+    "orphan_automation_conditional_action": (
+        one_step({"repeat": {"count": 1, "sequence": []}, "else": []}),
+        "/action/0",
+    ),
+    "orphan_automation_default_action": (
+        one_step({"repeat": {"count": 1, "sequence": []}, "default": []}),
+        "/action/0",
+    ),
+    "unsupported_automation_action_family": (one_step({"and": []}), "/action/0"),
+    "unsupported_automation_action_sequence": ({"action": {"delay": 1}}, "/action"),
+    "unsupported_automation_action_step": (wrap(["x"]), "/action/0"),
+    "unsupported_automation_choose_action": (one_step({"choose": {}}), "/action/0"),
+    "unsupported_automation_choose_branch": (one_step({"choose": [{"sequence": []}]}), "/action/0/choose/0"),
+    "unsupported_automation_conditional_action": (one_step({"if": "x", "then": []}), "/action/0"),
+    "unsupported_automation_device_action_fields": (
+        one_step({"device_id": "d", "domain": "x", "type": "t", "weekday": 1}),
+        "/action/0",
+    ),
+    "unsupported_automation_mapping_keys": ({"action": [], 1: "x"}, ""),
+    "unsupported_automation_parallel_action": (one_step({"parallel": []}), "/action/0"),
+    "unsupported_automation_repeat_action": (one_step({"repeat": {"sequence": []}}), "/action/0/repeat"),
+    "unsupported_automation_sequence_action": (one_step({"sequence": []}), "/action/0"),
+    "unsupported_automation_service_action_fields": (one_step({"action": "a.b", "entity_id": "x"}), "/action/0"),
+    "unsupported_automation_simple_action_fields": (one_step({"condition": "time", "after": "x"}), "/action/0"),
+    "unsupported_automation_trigger_condition_ids": (one_step({"condition": "trigger", "id": 1}), "/action/0"),
+}
+
+
+class VerifierRefusalLocationCoverageTests(unittest.TestCase):
+    def test_every_refusal_rule_has_a_case(self):
+        tree = ast.parse(Path(normalize.__file__).read_text(encoding="utf-8"))
+        literals = {
+            node.args[0].value.replace(" ", "_").replace("-", "_")
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "AutomationVerificationNormalizationError"
+        }
+        self.assertEqual(set(REFUSAL_LOCATIONS), literals)
+        self.assertEqual(
+            {reasons.VERIFIER_DETAIL_PREFIX + slug for slug in REFUSAL_LOCATIONS},
+            reasons.AUTOMATION_VERIFIER_DETAILS,
+        )
+
+    def test_every_refusal_carries_a_structural_location(self):
+        for slug, (config, pointer) in sorted(REFUSAL_LOCATIONS.items()):
+            with self.subTest(rule=slug):
+                rule = reasons.VERIFIER_DETAIL_PREFIX + slug
+                self.assertEqual(automation_verification_detail_code(config), rule)
+                codes = automation_verification_location_codes(config)
+                paths = [code for code in codes if code.startswith(normalize.AUTOMATION_VERIFIER_PATH_PREFIX)]
+                self.assertEqual(len(paths), 1, codes)
+                for code in codes:
+                    self.assertRegex(code, EVIDENCE_PATTERN)
+                reason = reasons.build_reason(
+                    codes=tuple(sorted(("configuration_not_verifiable", rule, *codes))),
+                    declaration={"operation_id": "op", "target_type": "automation", "target_id": "porch_light"},
+                    normalized_outcome="preflight_rejected",
+                )
+                self.assertEqual(reason["verifier_rule"], rule)
+                self.assertEqual(reason["verifier_location"]["path"], pointer)
+                self.assertFalse(reason["verifier_location"]["path_truncated"])
 
 
 class SunConditionDispatchTests(unittest.IsolatedAsyncioTestCase):
@@ -725,6 +1008,69 @@ class SunConditionDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(VALUE_MARKER, json.dumps(reason))
         self.assertEqual(reason["verifier_location"]["path"], "/action/0/choose/2/sequence/2")
         self.assertEqual(reason["verifier_location"]["fields"], ["unrecognized_field", "weekday"])
+
+    async def test_malformed_offset_refuses_before_approval_with_location(self):
+        for offset in ("not-a-period", True, {"minute": 30}, {"minutes": "x"}, "00:30 "):
+            with self.subTest(offset=offset):
+                config = replica_config()
+                at(config, SUN_PATH)["after_offset"] = offset
+                preflight, first, _, gateway, approval = await self._run(config)
+                self.assertFalse(preflight.eligible)
+                self.assertEqual(
+                    preflight.diagnostic_codes,
+                    tuple(sorted((
+                        "automation_verification_structure",
+                        "automation_verifier_field_after_offset",
+                        "automation_verifier_path_action_0_choose_2_sequence_2",
+                        OFFSET_RULE,
+                        "configuration_not_verifiable",
+                    ))),
+                )
+                self.assertEqual(first.outcome, "preflight_rejected")
+                self.assertEqual(approval.consumptions, 0)
+                self.assertEqual(gateway.counters.dispatches, 0)
+                self.assertEqual(gateway.counters.simulated_mutations, 0)
+                reason = reasons.child_reason({"operation_id": "op"}, self.record)
+                self.assertEqual(reason["verifier_rule"], OFFSET_RULE)
+                self.assertEqual(reason["verifier_location"]["path"], "/action/0/choose/2/sequence/2")
+                self.assertEqual(reason["verifier_location"]["fields"], ["after_offset"])
+
+    async def test_valid_offset_verifies_and_changed_offset_is_a_mismatch(self):
+        for offset in ("-00:30:00", 90, {"minutes": 30}):
+            with self.subTest(offset=offset):
+                config = replica_config()
+                at(config, SUN_PATH)["before_offset"] = offset
+                preflight, first, _, gateway, approval = await self._run(config)
+                self.assertTrue(preflight.eligible)
+                self.assertEqual(first.outcome, "succeeded_verified")
+                self.assertEqual(gateway.counters.dispatches, 1)
+                self.assertEqual(at(gateway.states[("automation", "porch_light")], SUN_PATH)["before_offset"], offset)
+        for changed in ("-0:30:00", -1800, {"minutes": -30}, "bad"):
+            with self.subTest(changed=changed):
+                config = replica_config()
+                at(config, SUN_PATH)["before_offset"] = "-00:30:00"
+                _, first, _, gateway, approval = await self._run(
+                    config, mutate=lambda stored: at(stored, SUN_PATH).update(before_offset=changed)
+                )
+                self.assertEqual(first.outcome, "verification_mismatch")
+                self.assertEqual(gateway.counters.dispatches, 1)
+                self.assertEqual(approval.consumptions, 1)
+
+    async def test_whole_configuration_refusal_is_located_at_the_root(self):
+        config = replica_config()
+        config["actions"] = deepcopy(config["action"])
+        preflight, first, _, gateway, approval = await self._run(config)
+        self.assertFalse(preflight.eligible)
+        self.assertIn(ROOT_CODE, preflight.diagnostic_codes)
+        self.assertIn("automation_verifier_ambiguous_top_level_automation_aliases", preflight.diagnostic_codes)
+        self.assertEqual(first.outcome, "preflight_rejected")
+        self.assertEqual(approval.consumptions, 0)
+        self.assertEqual(gateway.counters.dispatches, 0)
+        reason = reasons.child_reason({"operation_id": "op"}, self.record)
+        self.assertEqual(
+            reason["verifier_location"],
+            {"path": "", "path_truncated": False, "fields": ["action", "actions"], "fields_truncated": False},
+        )
 
     async def test_worst_case_location_never_displaces_the_refusal_codes(self):
         # Truncated path, four fields and the fields marker: at most ten codes,
