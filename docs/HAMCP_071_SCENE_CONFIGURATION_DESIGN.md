@@ -420,9 +420,12 @@ The response contract has these values:
 - recovery: `read_only_no_redispatch`.
 
 The fingerprint above is computed from the source at this head
-(`CORE_RUNTIME_CAPABILITY_PROFILES`). **No test pins it yet.** A pin belongs
-with the seq-16 lane (section 7). The profile is also in the November
-dormant probe evidence (`ha_core_readmission/source.py`).
+(`CORE_RUNTIME_CAPABILITY_PROFILES`).
+`ProfileShapeTests.test_seq16_profile_shape_is_the_documented_shape` pins the whole
+profile mapping, including this fingerprint, so a change to the shape
+breaks a test before signing. The signed-registry entry itself belongs with
+the seq-16 lane (section 7). The profile is also in the November dormant
+probe evidence (`ha_core_readmission/source.py`).
 
 ## 7. Evidence lane and what remains for November
 
