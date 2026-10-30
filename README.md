@@ -10,6 +10,20 @@ write changes. Follows 2.4.1-beta.49 (#329). Read the
 [2.4.1-beta.50 release notes](docs/V2_4_1_BETA50_RELEASE_NOTES.md) and
 [2.4.1-beta.50 acceptance contract](docs/V2_4_1_BETA50_ACCEPTANCE.md).
 
+Engineering **2.4.1-beta.49** (HAMCP-198, HAMCP-120) explains the health
+warnings that stayed lit. Health names up to
+eight projection-failed plans as `{plan_id, category}` from a fixed
+vocabulary (no record contents; the count and warning are unchanged), and
+`reviewed_tool_accounting_valid` uses the HAMCP-162 optional reviewed-tool
+model, checked by name (false for any missing, duplicate, unreviewed or
+drifted tool). Manual-review counts are unchanged by decision
+(acknowledgment is HAMCP-253). No approval, execution, tool, input schema
+or Home Assistant write change. Rollback is reinstalling beta.48. Read the
+[2.4.1-beta.49 release notes](docs/V2_4_1_BETA49_RELEASE_NOTES.md) and
+[2.4.1-beta.49 acceptance contract](docs/V2_4_1_BETA49_ACCEPTANCE.md).
+
+It builds on beta.48 and the releases below.
+
 Engineering **2.4.1-beta.48** lets a full automation baseline capture
 complete its final fence (HAMCP-248). On beta.45 every full capture ended
 `final_fence: "unavailable"`, `malformed_response`, installation
