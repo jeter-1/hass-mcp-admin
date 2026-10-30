@@ -14,9 +14,13 @@ Classes:
 - ``K*``: keepalive handling on the capture websocket (a PING not answered,
   answered with another payload, refused again, not charged; an unsolicited
   PONG refused; the per-read bound removed, moved or reset);
-- ``R*``: a non-keepalive frame relabelled (a close, a local error or an
-  oversize frame reported as ``malformed_response``; a binary frame
-  accepted);
+- ``R*``: a non-keepalive frame relabelled. Review 1 (R1-M1) replaced the
+  mutants that enforced the former conflation: each now restores one former
+  label (a close or a transport error as ``source_unavailable``; an
+  unexpected frame, a protocol error or a keepalive flood as
+  ``malformed_response``), swaps two new reasons, interprets a close code,
+  or lets the PONG wrapper miss or over-catch;
+- ``C*``: the new reasons' public contract (vocabulary and retryability);
 - ``M*``: the compare-row reasons (a missing digest also claiming a
   fingerprint-model mismatch, per stored and per recorded comparison).
 
@@ -57,11 +61,12 @@ CP = f"{E}/audit_baseline/comparison.py"
 
 K = "keepalive handling on the capture websocket"
 R = "a non-keepalive frame relabelled"
+C = "a frame reason's public contract"
 M = "a compare-row reason that is not the true one"
 
 MUTATIONS = [
     m("K1-ping-not-answered", K,
-      (CL, "                    await self.websocket.pong(frame.data)", "                    pass")),
+      (CL, "                        await self.websocket.pong(frame.data)", "                        pass")),
     m("K2-ping-answered-with-another-payload", K,
       (CL, "await self.websocket.pong(frame.data)", 'await self.websocket.pong(b"")')),
     m("K3-keepalive-refused-again", K,
@@ -71,8 +76,8 @@ MUTATIONS = [
       (CL, "            if frame.type in (aiohttp.WSMsgType.PING, aiohttp.WSMsgType.PONG):",
        "            if frame.type in (aiohttp.WSMsgType.PING,):")),
     m("K5-unsolicited-pong-answered", K,
-      (CL, "                if frame.type == aiohttp.WSMsgType.PING:\n                    await",
-       "                if True:\n                    await")),
+      (CL, "                if frame.type == aiohttp.WSMsgType.PING:\n                    try:",
+       "                if True:\n                    try:")),
     m("K6-keepalive-bound-removed", K,
       (CL, "                if controls > c.CONTROL_FRAMES:", "                if False:")),
     m("K7-keepalive-bound-off-by-one", K,
@@ -84,12 +89,12 @@ MUTATIONS = [
       (CL, "                self.charge(len(frame.data))\n", "")),
     m("K10-keepalive-bound-raised", K,
       (CC, "CONTROL_FRAMES = 4", "CONTROL_FRAMES = 64")),
-    m("R1-close-reported-malformed", R,
-      (CL, "aiohttp.WSMsgType.CLOSED):\n                raise c.CaptureError(\"source_unavailable\")",
-       "aiohttp.WSMsgType.CLOSED):\n                raise c.CaptureError(\"malformed_response\")")),
-    m("R2-local-error-reported-malformed", R,
-      (CL, "WebSocketError):\n                    raise c.CaptureError(\"source_unavailable\")",
-       "WebSocketError):\n                    raise c.CaptureError(\"malformed_response\")")),
+    m("R1-close-reported-source-unavailable", R,
+      (CL, "aiohttp.WSMsgType.CLOSED):\n                raise c.CaptureError(\"connection_closed\")",
+       "aiohttp.WSMsgType.CLOSED):\n                raise c.CaptureError(\"source_unavailable\")")),
+    m("R2-transport-error-reported-source-unavailable", R,
+      (CL, "WebSocketError):\n                    raise c.CaptureError(\"transport_error\")",
+       "WebSocketError):\n                    raise c.CaptureError(\"source_unavailable\")")),
     m("R3-oversize-frame-reported-malformed", R,
       (CL, "MESSAGE_TOO_BIG:\n                    raise c.CaptureError(\"response_limit\")",
        "MESSAGE_TOO_BIG:\n                    raise c.CaptureError(\"malformed_response\")")),
@@ -100,6 +105,38 @@ MUTATIONS = [
       (CL, "            if frame.type == aiohttp.WSMsgType.TEXT:\n                return frame",
        "            if frame.type in (aiohttp.WSMsgType.TEXT, aiohttp.WSMsgType.BINARY):\n"
        "                return frame")),
+    m("R6-keepalive-flood-reported-malformed", R,
+      (CL, 'raise c.CaptureError("control_frame_limit")', 'raise c.CaptureError("malformed_response")')),
+    m("R7-protocol-error-reported-malformed", R,
+      (CL, 'raise c.CaptureError("protocol_error")', 'raise c.CaptureError("malformed_response")')),
+    m("R8-unexpected-frame-reported-malformed", R,
+      (CL, 'raise c.CaptureError("unexpected_frame")', 'raise c.CaptureError("malformed_response")')),
+    m("R9-close-reported-transport-error", R,
+      (CL, 'raise c.CaptureError("connection_closed")', 'raise c.CaptureError("transport_error")')),
+    m("R10-transport-error-reported-closed", R,
+      (CL, "WebSocketError):\n                    raise c.CaptureError(\"transport_error\")",
+       "WebSocketError):\n                    raise c.CaptureError(\"connection_closed\")")),
+    m("R11-close-code-interpreted", R,
+      (CL, "            if frame.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING,",
+       "            if frame.type == aiohttp.WSMsgType.CLOSE and frame.data == aiohttp.WSCloseCode.MESSAGE_TOO_BIG:\n"
+       "                raise c.CaptureError(\"response_limit\")\n"
+       "            if frame.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING,")),
+    m("R12-pong-failure-not-classified", R,
+      (CL, "                    except (aiohttp.ClientError, ConnectionError):",
+       "                    except ZeroDivisionError:")),
+    m("R13-pong-wrapper-swallows-timeout", R,
+      (CL, "                    except (aiohttp.ClientError, ConnectionError):",
+       "                    except (aiohttp.ClientError, OSError):")),
+    m("C1-closed-not-retryable", C,
+      (CC, '"store_unavailable",\n                               "connection_closed", "transport_error"}',
+       '"store_unavailable",\n                               "transport_error"}')),
+    m("C2-transport-error-not-retryable", C,
+      (CC, '"store_unavailable",\n                               "connection_closed", "transport_error"}',
+       '"store_unavailable",\n                               "connection_closed"}')),
+    m("C3-frame-limit-retryable", C,
+      (CC, '"connection_closed", "transport_error"}', '"connection_closed", "transport_error", "control_frame_limit"}')),
+    m("C4-reason-outside-vocabulary", C,
+      (CC, '"protocol_error", "control_frame_limit"})', '"protocol_error"})')),
     m("M1-stored-missing-digest-claims-model-mismatch", M,
       (CP, "    if (earlier.configuration_digest is not None and later.configuration_digest is not None\n"
            "            and earlier.fingerprint_model != later.fingerprint_model):",

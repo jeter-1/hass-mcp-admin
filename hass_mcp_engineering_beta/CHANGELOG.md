@@ -8,12 +8,18 @@ stored-format, tool or Home Assistant write change.
 - Root cause: the capture websocket idles through collection; the Supervisor
   websocket proxy (`heartbeat=30`) pings it, and the final fence's first read
   refused the queued PING as `malformed_response` (123 of 127 requests).
-- A capture websocket read answers a PING with its payload and skips an
-  unsolicited PONG, at most `CONTROL_FRAMES` (4) per read, within its
-  deadline and charged to the byte budget. No Home Assistant command is sent.
-- Every other non-TEXT frame keeps its own reason: close or transport error
-  `source_unavailable`, oversize frame `response_limit`, binary, protocol
-  error or keepalive flood `malformed_response`.
+- A capture websocket read, including a handshake read, answers a PING with
+  a PONG echoing its payload and skips an unsolicited PONG, at most
+  `CONTROL_FRAMES` (4) per read, within its deadline and charged to the byte
+  budget. No Home Assistant application message is sent. Owner decision
+  (Josh, 2026-10-29): replaces "Unexpected/control frames are refused, not
+  automatically ponged".
+- Every other non-TEXT frame has its own fixed reason (review 1, R1-M1), new
+  in the capture reason vocabulary: close `connection_closed`, transport error
+  `transport_error` (both retryable), binary or other frame
+  `unexpected_frame`, protocol error `protocol_error`, fifth keepalive frame
+  `control_frame_limit`; an oversize frame stays `response_limit`.
+  `malformed_response` is only malformed data.
 - An `UNKNOWN` compare row with a missing digest no longer also claims
   `record_fingerprint_model_mismatch` (or, against recorded fingerprints, the
   per-row `fingerprint_model_mismatch`).

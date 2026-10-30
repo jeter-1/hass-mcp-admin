@@ -47,29 +47,56 @@ completed.
 
 **Keepalive is answered.** A capture websocket read now handles keepalive
 frames:
-- A PING is answered with its own payload.
+- A PING is answered with a PONG that echoes the peer-supplied PING payload.
+  The payload is not inspected, so the echo is only as bounded as the
+  control frame: at most 125 bytes. It is not proof that the payload cannot
+  contain arbitrary text.
 - An unsolicited PONG is skipped.
-- At most four keepalive frames are handled per read.
-- The handling stays within that read's deadline, and each frame's bytes are
-  charged to the capture's byte budget.
+- Only control frames (PING and PONG) are handled, at most four per read; a
+  fifth is refused before it is answered.
+- The handling stays within that read's deadline and does not reset it, and
+  each frame's bytes are charged to the capture's shared byte budget.
+- No background task, retry or reconnect is added.
 
-No Home Assistant command is sent. This narrowly reverses the HAMCP-228
-choice "control frames are refused, not automatically ponged". Answering a
-PING is a websocket control reply on the same authenticated connection.
-Once the PING is answered, the proxy no longer closes the connection within
-a 45 s capture.
+**Owner decision (Josh, 2026-10-29): replaces "Unexpected/control frames are
+refused, not automatically ponged".** That rule came from the original
+beta.14 capture (PR #228, commit `ed51a55d`) and was preserved by HAMCP-228.
+The bounded rule above replaces it. A PONG is a websocket control frame: no
+new Home Assistant application-message type, command or REST request is
+added, and every other non-TEXT frame is still refused.
 
-**Each failure keeps its own reason.** A frame that is not TEXT and not
-keepalive is refused with the reason of what it is:
+The handling applies to every capture websocket read, including the
+handshake reads before authentication completes (`auth_required`,
+`auth_ok`): a PING that precedes `auth_required` is answered before the
+credential is sent, and a fifth one refuses the capture without sending it.
+A PONG authorizes no Home Assistant command. In the
+final fence, a PING queued during collection is answered **after** the
+final principal command is sent, before its result is accepted. Once the
+PING is answered, the proxy no longer closes the connection within a 45 s
+capture.
 
-| Frame | Reason |
-| --- | --- |
-| A close, or a transport error | `source_unavailable` |
-| A frame over the 4 MiB frame bound | `response_limit` |
-| A binary frame, a websocket protocol error, or more keepalive frames than the bound | `malformed_response` |
+**Each failure keeps its own reason** (review 1, R1-M1). A frame that is not
+TEXT and not handled keepalive is refused with a fixed, content-free reason
+for what was observed. No close code, close text, frame payload or exception
+text is read into it.
 
-A timeout stays `timeout`, and a cancellation propagates.
-`malformed_response` now covers only a response that is really malformed.
+| Observed | Reason | Retryable |
+| --- | --- | --- |
+| A close (CLOSE, CLOSING or CLOSED; the cause is not inferred, so an aborted connection is also this) | `connection_closed` | yes |
+| A transport error (a non-protocol ERROR, or a failure sending the PONG) | `transport_error` | yes |
+| A binary or other unexpected frame | `unexpected_frame` | no |
+| A websocket protocol error (including a TEXT frame that is not UTF-8) | `protocol_error` | no |
+| A fifth keepalive frame in one read | `control_frame_limit` | no |
+| A frame over the 4 MiB frame bound | `response_limit` | no |
+
+These five reasons are new in the closed capture reason vocabulary. They
+keep the public error code (`analysis_unavailable`) and the retryability of
+the reason each replaced: `source_unavailable` for a close or transport
+error, `malformed_response` for the rest. A timeout stays `timeout`, and a
+cancellation propagates. `malformed_response` now covers only malformed
+text, body or envelope data. The final fence records the new reasons in
+`diagnostics.final_fence_reason`. Identity and authority refusals are
+unchanged.
 
 **Compare rows name only their true reasons.** An `UNKNOWN` row whose
 digest is missing on either side no longer also claims

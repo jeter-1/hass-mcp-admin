@@ -11,11 +11,12 @@ import asyncio
 import json
 from pathlib import Path
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from aiohttp import web, WSCloseCode, WSMsgType, WSMessage, WebSocketError
+from aiohttp import web, ClientConnectionResetError, WSCloseCode, WSMsgType, WSMessage, WebSocketError
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
@@ -34,6 +35,11 @@ TOKEN = 'SYNTHETIC_HAMCP248_TOKEN'
 VERSION = '2026.9.4'
 KEEPALIVE = b'synthetic-keepalive'
 COUNT = 116
+# HAMCP-248 (review 1, R1-M1): each non-TEXT outcome of a capture websocket
+# read, with its fixed reason; ``malformed_response`` is malformed data only.
+FRAME_REASONS = {'close': 'connection_closed', 'transport': 'transport_error', 'binary': 'unexpected_frame',
+                 'protocol': 'protocol_error', 'keepalive_flood': 'control_frame_limit',
+                 'oversized': 'response_limit', 'silence': 'timeout', 'invalid_json': 'malformed_response'}
 # The authentication attempt, five reads per fence and one per configuration.
 FULL_REQUESTS = 1 + 2 * len(c.FENCE_READS) + COUNT
 
@@ -46,10 +52,12 @@ class FakeHomeAssistant:
     Supervisor proxy does 30 s into a full capture. It never pongs for the
     client (``autoping=False``), so every frame the client sends is recorded.
     ``respond`` may replace the reply to one command.
+    ``handshake`` PINGs are sent before ``auth_required``, before any
+    credential has been sent or accepted.
     """
 
     def __init__(self, data):
-        self.data, self.keepalive, self.respond = data, None, None
+        self.data, self.keepalive, self.respond, self.handshake = data, None, None, ()
         self.events, self.socket = [], None
         self.kinds = {command['type']: kind for kind, command in c.COMMANDS.items()}
 
@@ -57,9 +65,20 @@ class FakeHomeAssistant:
         if request.path == '/api/websocket':
             ws = self.socket = web.WebSocketResponse(autoping=False)
             await ws.prepare(request)
+            for payload in self.handshake:
+                self.events.append(('ping', payload))
+                await ws.ping(payload)
             await ws.send_json({'type': 'auth_required', 'ha_version': VERSION})
-            if await ws.receive_json() != {'type': 'auth', 'access_token': TOKEN}:
+            message = await ws.receive()
+            while message.type == WSMsgType.PONG:
+                self.events.append(('pong', message.data))
+                message = await ws.receive()
+            if message.type != WSMsgType.TEXT:
+                self.events.append(('frame', message.type))
+                return ws
+            if json.loads(message.data) != {'type': 'auth', 'access_token': TOKEN}:
                 raise AssertionError('unexpected authentication')
+            self.events.append(('auth', None))
             await ws.send_json({'type': 'auth_ok', 'ha_version': VERSION})
             async for message in ws:
                 if message.type == WSMsgType.PONG:
@@ -184,11 +203,20 @@ class FrameClassificationTests(LoopbackHarness):
         return None
 
     async def principal(self):
+        self.error = None
         async with self.client.capture(VERSION, self.authorize) as peer:
             try:
                 return await peer.read('principal'), peer
             except c.CaptureError as exc:
+                self.error = exc
                 return exc.reason, peer
+
+    def assert_content_free(self, error):
+        # The fixed reason only: no close text, frame payload or exception text.
+        self.assertEqual(error.details, {'reason': error.reason})
+        for text in (SECRET, 'synthetic'):
+            self.assertNotIn(text, str(error))
+            self.assertNotIn(text, repr(error.details))
 
     def reply(self, *frames):
         async def respond(request, ws, command):
@@ -201,8 +229,9 @@ class FrameClassificationTests(LoopbackHarness):
             return True
         self.home.respond = respond
 
-    def test_the_keepalive_bound_is_the_documented_one(self):
+    def test_the_keepalive_and_capture_bounds_are_the_documented_ones(self):
         self.assertEqual(c.CONTROL_FRAMES, 4)
+        self.assertEqual((c.COLLECTION_SECONDS, c.READ_SECONDS), (45, 5))
 
     async def test_keepalive_is_answered_and_the_read_succeeds(self):
         async def ping(request, ws):
@@ -242,47 +271,60 @@ class FrameClassificationTests(LoopbackHarness):
             await ws.ping(KEEPALIVE)
 
         async def close(request, ws):
-            await ws.close()
+            # The close code and text are not interpreted (review 1, R1-M1).
+            await ws.close(code=WSCloseCode.MESSAGE_TOO_BIG, message=SECRET.encode())
 
         async def drop(request, ws):
+            # An aborted TCP connection reaches the client as CLOSED; its
+            # cause is not inferred.
             request.transport.abort()
 
         async def binary(request, ws):
-            await ws.send_bytes(b'{"type":"result"}')
+            await ws.send_bytes(json.dumps({'type': 'result', 'data': SECRET}).encode())
 
         async def oversized(request, ws):
-            await ws.send_str(json.dumps({'type': 'result', 'pad': 'x' * 2048}))
+            await ws.send_str(json.dumps({'type': 'result', 'pad': SECRET * 64}))
 
         async def invalid_text(request, ws):
             # A TEXT frame that is not UTF-8: a websocket protocol violation.
-            await ws._writer.send_frame(b'\xff\xfe', WSMsgType.TEXT)
+            await ws._writer.send_frame(b'\xff\xfe' + SECRET.encode(), WSMsgType.TEXT)
 
         async def silence(request, ws):
             return None
 
         async def garbage(request, ws):
-            await ws.send_str('{"type":')
-        for label, frames, bounds, reason in (
-                ('server_close', (close,), {}, 'source_unavailable'),
-                ('transport_drop', (drop,), {}, 'source_unavailable'),
-                ('frame_size_bound', (oversized,), {'FRAME_BYTES': 1024}, 'response_limit'),
-                ('read_timeout', (silence,), {'READ_SECONDS': 0.2}, 'timeout'),
-                ('binary_frame', (binary,), {}, 'malformed_response'),
-                ('invalid_text_frame', (invalid_text,), {}, 'malformed_response'),
-                ('invalid_json', (garbage,), {}, 'malformed_response'),
-                ('keepalive_flood', (ping,) * (c.CONTROL_FRAMES + 1) + ('result',), {}, 'malformed_response')):
+            await ws.send_str('{"type":"' + SECRET)
+        cases = (
+            ('server_close', (close,), {}, FRAME_REASONS['close']),
+            ('transport_drop', (drop,), {}, FRAME_REASONS['close']),
+            ('frame_size_bound', (oversized,), {'FRAME_BYTES': 1024}, FRAME_REASONS['oversized']),
+            ('read_timeout', (silence,), {'READ_SECONDS': 0.2}, FRAME_REASONS['silence']),
+            ('binary_frame', (binary,), {}, FRAME_REASONS['binary']),
+            ('invalid_text_frame', (invalid_text,), {}, FRAME_REASONS['protocol']),
+            ('invalid_json', (garbage,), {}, FRAME_REASONS['invalid_json']),
+            ('keepalive_flood', (ping,) * (c.CONTROL_FRAMES + 1) + ('result',), {},
+             FRAME_REASONS['keepalive_flood']))
+        found = {}
+        for label, frames, bounds, reason in cases:
             with self.subTest(label):
                 self.home.events.clear()
                 self.reply(*frames)
                 with patch.multiple(c, **{'CONTROL_FRAMES': c.CONTROL_FRAMES, **bounds}):
                     reason_found, peer = await self.principal()
+                found[label] = reason_found
                 self.assertEqual(reason_found, reason)
+                self.assert_content_free(self.error)
                 self.assertEqual(peer.requests, 2)
                 self.assertTrue(peer.websocket.closed)
                 if label == 'keepalive_flood':
                     # Refused before the excess PING is answered.
                     await asyncio.sleep(0.05)
                     self.assertEqual(self.home.events.count(('pong', KEEPALIVE)), c.CONTROL_FRAMES)
+        # Only a malformed body is malformed_response; the transport and
+        # frame outcomes are each distinct.
+        self.assertEqual([label for label, reason in found.items() if reason == 'malformed_response'],
+                         ['invalid_json'])
+        self.assertEqual(len(set(found.values())), len(found) - 1)
 
     async def test_a_cancelled_read_is_cancelled_not_classified(self):
         async def silence(request, ws):
@@ -297,28 +339,174 @@ class FrameClassificationTests(LoopbackHarness):
                 await read
 
     async def test_local_frames_without_a_wire_form_keep_their_reason(self):
-        # CLOSING and a non-protocol ERROR are produced by aiohttp itself.
+        # CLOSING, CLOSED and a non-protocol ERROR are produced by aiohttp itself.
         class Socket:
-            def __init__(self, frame):
-                self.frame = frame
+            def __init__(self, *frames, pong=None):
+                self.frames, self.failure = list(frames), pong
 
             async def receive(self):
-                return self.frame
-        for frame, reason in (
-                (WSMessage(WSMsgType.CLOSING, None, None), 'source_unavailable'),
-                (WSMessage(WSMsgType.CLOSED, None, None), 'source_unavailable'),
-                (WSMessage(WSMsgType.ERROR, RuntimeError('synthetic'), None), 'source_unavailable'),
-                (WSMessage(WSMsgType.ERROR, WebSocketError(WSCloseCode.MESSAGE_TOO_BIG, 'x'), None),
-                 'response_limit'),
-                (WSMessage(WSMsgType.ERROR, WebSocketError(WSCloseCode.PROTOCOL_ERROR, 'x'), None),
-                 'malformed_response'),
-                (WSMessage(WSMsgType.CONTINUATION, b'', None), 'malformed_response')):
-            with self.subTest(frame.type):
+                return self.frames.pop(0)
+
+            async def pong(self, data):
+                raise self.failure
+        ping = WSMessage(WSMsgType.PING, KEEPALIVE, None)
+        for label, socket, reason in (
+                ('close_with_too_big_code', Socket(WSMessage(WSMsgType.CLOSE, WSCloseCode.MESSAGE_TOO_BIG,
+                                                             SECRET)), 'connection_closed'),
+                ('closing', Socket(WSMessage(WSMsgType.CLOSING, None, None)), 'connection_closed'),
+                ('closed', Socket(WSMessage(WSMsgType.CLOSED, None, None)), 'connection_closed'),
+                ('error_runtime', Socket(WSMessage(WSMsgType.ERROR, RuntimeError(SECRET), None)),
+                 'transport_error'),
+                ('error_reset', Socket(WSMessage(WSMsgType.ERROR, ClientConnectionResetError(SECRET), None)),
+                 'transport_error'),
+                ('pong_reset', Socket(ping, pong=ClientConnectionResetError(SECRET)), 'transport_error'),
+                ('pong_os_reset', Socket(ping, pong=ConnectionResetError(SECRET)), 'transport_error'),
+                ('error_too_big', Socket(WSMessage(WSMsgType.ERROR, WebSocketError(
+                    WSCloseCode.MESSAGE_TOO_BIG, SECRET), None)), 'response_limit'),
+                ('error_protocol', Socket(WSMessage(WSMsgType.ERROR, WebSocketError(
+                    WSCloseCode.PROTOCOL_ERROR, SECRET), None)), 'protocol_error'),
+                ('continuation', Socket(WSMessage(WSMsgType.CONTINUATION, SECRET.encode(), None)),
+                 'unexpected_frame')):
+            with self.subTest(label):
                 peer = BaselinePeer(self.client, VERSION, self.authorize)
-                peer.websocket = Socket(frame)
+                peer.websocket = socket
                 with self.assertRaises(c.CaptureError) as found:
                     await peer.receive(c.FRAME_BYTES)
                 self.assertEqual(found.exception.reason, reason)
+                self.assert_content_free(found.exception)
+
+    async def test_a_pong_that_times_out_or_is_cancelled_is_not_a_transport_error(self):
+        # The transport-error wrapper does not swallow a timeout or a cancellation.
+        class Socket:
+            def __init__(self, failure):
+                self.failure = failure
+
+            async def receive(self):
+                return WSMessage(WSMsgType.PING, KEEPALIVE, None)
+
+            async def pong(self, data):
+                raise self.failure
+        for failure in (TimeoutError(), asyncio.CancelledError()):
+            with self.subTest(type(failure).__name__):
+                peer = BaselinePeer(self.client, VERSION, self.authorize)
+                peer.websocket = Socket(failure)
+                with self.assertRaises(type(failure)):
+                    await peer.receive(c.FRAME_BYTES)
+
+    async def test_retryability_and_public_code_follow_the_former_reason(self):
+        for reason, former in (('connection_closed', 'source_unavailable'),
+                               ('transport_error', 'source_unavailable'),
+                               ('unexpected_frame', 'malformed_response'),
+                               ('protocol_error', 'malformed_response'),
+                               ('control_frame_limit', 'malformed_response')):
+            with self.subTest(reason):
+                error, previous = c.CaptureError(reason), c.CaptureError(former)
+                self.assertEqual(error.reason, reason)
+                self.assertEqual((error.code, error.retryable), (previous.code, previous.retryable))
+
+
+class HandshakeKeepaliveTests(LoopbackHarness):
+    """Bounded control handling also applies to the handshake reads, before authentication."""
+
+    async def test_a_pre_authentication_ping_is_answered_before_the_credential_is_sent(self):
+        self.home.data = fixture(3)
+        self.home.handshake = (KEEPALIVE,)
+        page, report = await self.stored_capture(self.loopback_service())
+        self.assertEqual(report['diagnostics']['final_fence'], 'complete')
+        self.assertEqual(self.home.events[:3], [('ping', KEEPALIVE), ('pong', KEEPALIVE), ('auth', None)])
+        self.assertEqual(self.home.events.count(('pong', KEEPALIVE)), 1)
+
+    async def test_a_pre_authentication_keepalive_flood_is_refused_before_the_credential(self):
+        self.home.data = fixture(3)
+        self.home.handshake = (KEEPALIVE,) * (c.CONTROL_FRAMES + 1)
+        with self.assertRaises(c.CaptureError) as found:
+            await self.loopback_service().capture(limit=100)
+        self.assertEqual(found.exception.reason, 'control_frame_limit')
+        await asyncio.sleep(0.05)
+        self.assertNotIn(('auth', None), self.home.events)
+        self.assertEqual(self.home.events.count(('pong', KEEPALIVE)), c.CONTROL_FRAMES)
+
+
+class FinalFenceFrameReasonTests(LoopbackHarness):
+    """A real final fence's frame outcome is the reason read back from the store."""
+
+    def inject(self, action):
+        principals = {'count': 0}
+
+        async def respond(request, ws, command):
+            if self.home.kinds[command['type']] != 'principal':
+                return False
+            principals['count'] += 1
+            if principals['count'] < 2:
+                return False
+            await action(request, ws, command)
+            return True
+        self.home.respond = respond
+
+    async def test_each_final_fence_outcome_is_stored_with_its_own_reason(self):
+        async def result(ws, command, **extra):
+            await ws.send_json({'id': command['id'], 'type': 'result', 'success': True,
+                                'result': {'is_admin': True}, **extra})
+
+        async def close(request, ws, command):
+            await ws.close(code=WSCloseCode.MESSAGE_TOO_BIG, message=SECRET.encode())
+
+        async def binary(request, ws, command):
+            await ws.send_bytes(SECRET.encode())
+
+        async def protocol(request, ws, command):
+            await ws._writer.send_frame(b'\xff\xfe' + SECRET.encode(), WSMsgType.TEXT)
+
+        async def keepalive_flood(request, ws, command):
+            for _ in range(c.CONTROL_FRAMES + 1):
+                await ws.ping(KEEPALIVE)
+            await result(ws, command)
+
+        async def oversized(request, ws, command):
+            await result(ws, command, pad=SECRET * 4096)
+
+        async def silence(request, ws, command):
+            return None
+
+        async def invalid_json(request, ws, command):
+            await ws.send_str('{"type":"' + SECRET)
+        self.home.data = fixture(3)
+        actions = {'close': close, 'binary': binary, 'protocol': protocol, 'keepalive_flood': keepalive_flood,
+                   'oversized': oversized, 'silence': silence, 'invalid_json': invalid_json}
+        stored = {}
+        for label, action in actions.items():
+            with self.subTest(label):
+                self.inject(action)
+                bounds = {'FRAME_BYTES': 65_536} if label == 'oversized' else {}
+                if label == 'silence':
+                    bounds['READ_SECONDS'] = 0.5
+                with patch.multiple(c, **{'COLLECTION_SECONDS': c.COLLECTION_SECONDS, **bounds}):
+                    page, report = await self.stored_capture(self.loopback_service())
+                diagnostics = report['diagnostics']
+                stored[label] = diagnostics['final_fence_reason']
+                self.assertEqual((diagnostics['final_fence'], diagnostics['final_fence_reason']),
+                                 ('unavailable', FRAME_REASONS[label]))
+                self.assertEqual(page['diagnostics']['final_fence_reason'], FRAME_REASONS[label])
+                self.assertEqual(report['baseline']['installation']['status'], 'unestablished')
+                self.assertNotIn(SECRET, json.dumps(report))
+                self.assertNotIn(TOKEN, json.dumps(report))
+                self.now += 700
+        self.assertEqual(len(set(stored.values())), len(actions))
+
+    async def test_a_cancelled_final_fence_is_cancelled_and_nothing_is_stored(self):
+        waiting = asyncio.Event()
+
+        async def silence(request, ws, command):
+            waiting.set()
+        self.home.data = fixture(3)
+        self.inject(silence)
+        service = self.loopback_service()
+        capture = asyncio.create_task(service.capture(limit=100))
+        await waiting.wait()
+        capture.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await capture
+        self.assertEqual(self.entries(service), [])
 
 
 class FinalFenceReasonTests(Harness):
@@ -338,9 +526,15 @@ class FinalFenceReasonTests(Harness):
 
     async def test_identity_and_inventory_read_failures_keep_their_reason(self):
         for kind, final, established in (('principal', 'unavailable', 'unestablished'),
-                                         ('states', 'identity_only', 'established')):
+                                         ('states', 'identity_only', 'established'),
+                                         ('registry', 'identity_only', 'established')):
+            # A fresh store per fence read: ten captures each, within its capacity.
+            directory = tempfile.TemporaryDirectory()
+            self.addCleanup(directory.cleanup)
+            self.governance = Path(directory.name)
             for reason in ('timeout', 'response_limit', 'source_unavailable', 'malformed_response',
-                           'structural_limit'):
+                           'structural_limit', 'connection_closed', 'transport_error', 'unexpected_frame',
+                           'protocol_error', 'control_frame_limit'):
                 with self.subTest(kind=kind, reason=reason):
                     page = await self.capture(self.failing(kind, reason))
                     diagnostics = page['diagnostics']
@@ -348,6 +542,15 @@ class FinalFenceReasonTests(Harness):
                                      (final, reason))
                     self.assertEqual(page['baseline_header']['installation']['status'], established)
                     self.now += 700
+
+    async def test_identity_and_authority_refusals_are_still_refused_not_recorded(self):
+        for reason in ('access_denied', 'authority_unavailable', 'authority_drift', 'identity_unverified',
+                       'identity_drift'):
+            with self.subTest(reason):
+                service = self.failing('principal', reason)
+                error = await self.reason(self.capture(service))
+                self.assertEqual(error.reason, reason)
+                self.assertEqual(self.entries(service), [])
 
 
 class CompareReasonTests(Harness):

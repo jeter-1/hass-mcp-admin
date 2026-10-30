@@ -54,6 +54,13 @@ ERROR_EXPECTATIONS = {
     'resume_inventory_changed': ('analysis_unavailable', False),
     'resume_not_needed': ('analysis_unavailable', False),
     'resume_core_changed': ('analysis_unavailable', False),
+    # HAMCP-248 (review 1, R1-M1): a capture websocket read's frame outcomes;
+    # a close and a transport error keep source_unavailable's retryability.
+    'connection_closed': ('analysis_unavailable', True),
+    'transport_error': ('analysis_unavailable', True),
+    'unexpected_frame': ('analysis_unavailable', False),
+    'protocol_error': ('analysis_unavailable', False),
+    'control_frame_limit': ('analysis_unavailable', False),
 }
 
 def make_store(case):

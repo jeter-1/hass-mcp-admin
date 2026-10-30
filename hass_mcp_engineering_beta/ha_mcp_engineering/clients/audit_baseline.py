@@ -96,7 +96,8 @@ class BaselinePeer:
         proxy's heartbeat PING is waiting when the final fence reads. A PING is
         answered with its own payload and an unsolicited PONG skipped, both
         within the read's deadline and byte budget; anything else that is not
-        TEXT is refused with the reason of what it is.
+        TEXT is refused with the fixed reason of what was observed (review 1,
+        R1-M1). A close is not interpreted: its code and text are not read.
         """
 
         controls = 0
@@ -107,19 +108,23 @@ class BaselinePeer:
             if frame.type in (aiohttp.WSMsgType.PING, aiohttp.WSMsgType.PONG):
                 controls += 1
                 if controls > c.CONTROL_FRAMES:
-                    raise c.CaptureError("malformed_response")
+                    raise c.CaptureError("control_frame_limit")
                 self.charge(len(frame.data))
                 if frame.type == aiohttp.WSMsgType.PING:
-                    await self.websocket.pong(frame.data)
+                    try:
+                        await self.websocket.pong(frame.data)
+                    except (aiohttp.ClientError, ConnectionError):
+                        raise c.CaptureError("transport_error") from None
                 continue
             if frame.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING, aiohttp.WSMsgType.CLOSED):
-                raise c.CaptureError("source_unavailable")
+                raise c.CaptureError("connection_closed")
             if frame.type == aiohttp.WSMsgType.ERROR:
                 if not isinstance(frame.data, aiohttp.WebSocketError):
-                    raise c.CaptureError("source_unavailable")
+                    raise c.CaptureError("transport_error")
                 if frame.data.code == aiohttp.WSCloseCode.MESSAGE_TOO_BIG:
                     raise c.CaptureError("response_limit")
-            raise c.CaptureError("malformed_response")
+                raise c.CaptureError("protocol_error")
+            raise c.CaptureError("unexpected_frame")
 
     async def receive(self, maximum):
         frame = await self.frame()

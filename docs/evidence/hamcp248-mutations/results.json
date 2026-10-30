@@ -10,12 +10,12 @@
    "test_automation_audit_baseline"
   ],
   "returncode": 0,
-  "tests": 185,
-  "seconds": 93.8,
+  "tests": 192,
+  "seconds": 94.5,
   "summary": "OK"
  },
- "mutation_count": 21,
- "killed": 20,
+ "mutation_count": 33,
+ "killed": 32,
  "survived": [
   "M6-recorded-model-mismatch-never-claimed"
  ],
@@ -27,8 +27,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
-     "                    await self.websocket.pong(frame.data)",
-     "                    pass"
+     "                        await self.websocket.pong(frame.data)",
+     "                        pass"
     ]
    ],
    "log_path": "mutation-logs/K1-ping-not-answered.log",
@@ -37,9 +37,9 @@
    "timed_out": false,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_each_failure_class_has_its_own_reason (test_hamcp248_final_fence.FrameClassificationTests.test_each_failure_class_has_its_own_reason)"
+    "ERROR test_a_pong_that_times_out_or_is_cancelled_is_not_a_transport_error (test_hamcp248_final_fence.FrameClassificationTests.test_a_pong_that_times_out_or_is_cancelled_is_not_a_transport_error)"
    ],
-   "seconds": 4.0
+   "seconds": 5.4
   },
   {
    "id": "K2-ping-answered-with-another-payload",
@@ -59,7 +59,7 @@
    "first_failures": [
     "FAIL test_each_failure_class_has_its_own_reason (test_hamcp248_final_fence.FrameClassificationTests.test_each_failure_class_has_its_own_reason)"
    ],
-   "seconds": 3.9
+   "seconds": 5.7
   },
   {
    "id": "K3-keepalive-refused-again",
@@ -77,9 +77,9 @@
    "timed_out": false,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_each_failure_class_has_its_own_reason (test_hamcp248_final_fence.FrameClassificationTests.test_each_failure_class_has_its_own_reason)"
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
    ],
-   "seconds": 3.8
+   "seconds": 2.9
   },
   {
    "id": "K4-unsolicited-pong-refused",
@@ -99,7 +99,7 @@
    "first_failures": [
     "FAIL test_keepalive_is_answered_and_the_read_succeeds (test_hamcp248_final_fence.FrameClassificationTests.test_keepalive_is_answered_and_the_read_succeeds)"
    ],
-   "seconds": 3.9
+   "seconds": 6.2
   },
   {
    "id": "K5-unsolicited-pong-answered",
@@ -107,8 +107,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
-     "                if frame.type == aiohttp.WSMsgType.PING:\n                    await",
-     "                if True:\n                    await"
+     "                if frame.type == aiohttp.WSMsgType.PING:\n                    try:",
+     "                if True:\n                    try:"
     ]
    ],
    "log_path": "mutation-logs/K5-unsolicited-pong-answered.log",
@@ -119,7 +119,7 @@
    "first_failures": [
     "FAIL test_keepalive_is_answered_and_the_read_succeeds (test_hamcp248_final_fence.FrameClassificationTests.test_keepalive_is_answered_and_the_read_succeeds)"
    ],
-   "seconds": 3.9
+   "seconds": 5.9
   },
   {
    "id": "K6-keepalive-bound-removed",
@@ -137,9 +137,9 @@
    "timed_out": false,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_each_failure_class_has_its_own_reason (test_hamcp248_final_fence.FrameClassificationTests.test_each_failure_class_has_its_own_reason)"
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
    ],
-   "seconds": 3.7
+   "seconds": 2.9
   },
   {
    "id": "K7-keepalive-bound-off-by-one",
@@ -159,7 +159,7 @@
    "first_failures": [
     "FAIL test_each_failure_class_has_its_own_reason (test_hamcp248_final_fence.FrameClassificationTests.test_each_failure_class_has_its_own_reason)"
    ],
-   "seconds": 3.7
+   "seconds": 5.6
   },
   {
    "id": "K8-keepalive-bound-reset-per-frame",
@@ -177,9 +177,9 @@
    "timed_out": false,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_each_failure_class_has_its_own_reason (test_hamcp248_final_fence.FrameClassificationTests.test_each_failure_class_has_its_own_reason)"
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
    ],
-   "seconds": 3.8
+   "seconds": 2.8
   },
   {
    "id": "K9-keepalive-bytes-not-charged",
@@ -199,7 +199,7 @@
    "first_failures": [
     "FAIL test_keepalive_bytes_are_charged_to_the_capture_budget (test_hamcp248_final_fence.FrameClassificationTests.test_keepalive_bytes_are_charged_to_the_capture_budget)"
    ],
-   "seconds": 3.9
+   "seconds": 5.7
   },
   {
    "id": "K10-keepalive-bound-raised",
@@ -217,41 +217,41 @@
    "timed_out": false,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_the_keepalive_bound_is_the_documented_one (test_hamcp248_final_fence.FrameClassificationTests.test_the_keepalive_bound_is_the_documented_one)"
+    "FAIL test_the_keepalive_and_capture_bounds_are_the_documented_ones (test_hamcp248_final_fence.FrameClassificationTests.test_the_keepalive_and_capture_bounds_are_the_documented_ones)"
    ],
-   "seconds": 4.0
+   "seconds": 5.8
   },
   {
-   "id": "R1-close-reported-malformed",
+   "id": "R1-close-reported-source-unavailable",
    "class": "a non-keepalive frame relabelled",
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
-     "aiohttp.WSMsgType.CLOSED):\n                raise c.CaptureError(\"source_unavailable\")",
-     "aiohttp.WSMsgType.CLOSED):\n                raise c.CaptureError(\"malformed_response\")"
+     "aiohttp.WSMsgType.CLOSED):\n                raise c.CaptureError(\"connection_closed\")",
+     "aiohttp.WSMsgType.CLOSED):\n                raise c.CaptureError(\"source_unavailable\")"
     ]
    ],
-   "log_path": "mutation-logs/R1-close-reported-malformed.log",
+   "log_path": "mutation-logs/R1-close-reported-source-unavailable.log",
    "returncode": 1,
    "killed": true,
    "timed_out": false,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_each_failure_class_has_its_own_reason (test_hamcp248_final_fence.FrameClassificationTests.test_each_failure_class_has_its_own_reason)"
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
    ],
-   "seconds": 3.5
+   "seconds": 2.6
   },
   {
-   "id": "R2-local-error-reported-malformed",
+   "id": "R2-transport-error-reported-source-unavailable",
    "class": "a non-keepalive frame relabelled",
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
-     "WebSocketError):\n                    raise c.CaptureError(\"source_unavailable\")",
-     "WebSocketError):\n                    raise c.CaptureError(\"malformed_response\")"
+     "WebSocketError):\n                    raise c.CaptureError(\"transport_error\")",
+     "WebSocketError):\n                    raise c.CaptureError(\"source_unavailable\")"
     ]
    ],
-   "log_path": "mutation-logs/R2-local-error-reported-malformed.log",
+   "log_path": "mutation-logs/R2-transport-error-reported-source-unavailable.log",
    "returncode": 1,
    "killed": true,
    "timed_out": false,
@@ -259,7 +259,7 @@
    "first_failures": [
     "FAIL test_local_frames_without_a_wire_form_keep_their_reason (test_hamcp248_final_fence.FrameClassificationTests.test_local_frames_without_a_wire_form_keep_their_reason)"
    ],
-   "seconds": 3.8
+   "seconds": 5.8
   },
   {
    "id": "R3-oversize-frame-reported-malformed",
@@ -277,9 +277,9 @@
    "timed_out": false,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "FAIL test_each_failure_class_has_its_own_reason (test_hamcp248_final_fence.FrameClassificationTests.test_each_failure_class_has_its_own_reason)"
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
    ],
-   "seconds": 3.3
+   "seconds": 2.9
   },
   {
    "id": "R4-error-frame-without-protocol-check",
@@ -299,7 +299,7 @@
    "first_failures": [
     "ERROR test_local_frames_without_a_wire_form_keep_their_reason (test_hamcp248_final_fence.FrameClassificationTests.test_local_frames_without_a_wire_form_keep_their_reason)"
    ],
-   "seconds": 3.7
+   "seconds": 5.8
   },
   {
    "id": "R5-binary-frame-accepted",
@@ -317,9 +317,249 @@
    "timed_out": false,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [
-    "ERROR test_each_failure_class_has_its_own_reason (test_hamcp248_final_fence.FrameClassificationTests.test_each_failure_class_has_its_own_reason)"
+    "ERROR test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
    ],
-   "seconds": 3.5
+   "seconds": 2.7
+  },
+  {
+   "id": "R6-keepalive-flood-reported-malformed",
+   "class": "a non-keepalive frame relabelled",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
+     "raise c.CaptureError(\"control_frame_limit\")",
+     "raise c.CaptureError(\"malformed_response\")"
+    ]
+   ],
+   "log_path": "mutation-logs/R6-keepalive-flood-reported-malformed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "R7-protocol-error-reported-malformed",
+   "class": "a non-keepalive frame relabelled",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
+     "raise c.CaptureError(\"protocol_error\")",
+     "raise c.CaptureError(\"malformed_response\")"
+    ]
+   ],
+   "log_path": "mutation-logs/R7-protocol-error-reported-malformed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "R8-unexpected-frame-reported-malformed",
+   "class": "a non-keepalive frame relabelled",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
+     "raise c.CaptureError(\"unexpected_frame\")",
+     "raise c.CaptureError(\"malformed_response\")"
+    ]
+   ],
+   "log_path": "mutation-logs/R8-unexpected-frame-reported-malformed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "R9-close-reported-transport-error",
+   "class": "a non-keepalive frame relabelled",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
+     "raise c.CaptureError(\"connection_closed\")",
+     "raise c.CaptureError(\"transport_error\")"
+    ]
+   ],
+   "log_path": "mutation-logs/R9-close-reported-transport-error.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "R10-transport-error-reported-closed",
+   "class": "a non-keepalive frame relabelled",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
+     "WebSocketError):\n                    raise c.CaptureError(\"transport_error\")",
+     "WebSocketError):\n                    raise c.CaptureError(\"connection_closed\")"
+    ]
+   ],
+   "log_path": "mutation-logs/R10-transport-error-reported-closed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_local_frames_without_a_wire_form_keep_their_reason (test_hamcp248_final_fence.FrameClassificationTests.test_local_frames_without_a_wire_form_keep_their_reason)"
+   ],
+   "seconds": 5.9
+  },
+  {
+   "id": "R11-close-code-interpreted",
+   "class": "a non-keepalive frame relabelled",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
+     "            if frame.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING,",
+     "            if frame.type == aiohttp.WSMsgType.CLOSE and frame.data == aiohttp.WSCloseCode.MESSAGE_TOO_BIG:\n                raise c.CaptureError(\"response_limit\")\n            if frame.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING,"
+    ]
+   ],
+   "log_path": "mutation-logs/R11-close-code-interpreted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "R12-pong-failure-not-classified",
+   "class": "a non-keepalive frame relabelled",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
+     "                    except (aiohttp.ClientError, ConnectionError):",
+     "                    except ZeroDivisionError:"
+    ]
+   ],
+   "log_path": "mutation-logs/R12-pong-failure-not-classified.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_local_frames_without_a_wire_form_keep_their_reason (test_hamcp248_final_fence.FrameClassificationTests.test_local_frames_without_a_wire_form_keep_their_reason)"
+   ],
+   "seconds": 6.5
+  },
+  {
+   "id": "R13-pong-wrapper-swallows-timeout",
+   "class": "a non-keepalive frame relabelled",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/clients/audit_baseline.py",
+     "                    except (aiohttp.ClientError, ConnectionError):",
+     "                    except (aiohttp.ClientError, OSError):"
+    ]
+   ],
+   "log_path": "mutation-logs/R13-pong-wrapper-swallows-timeout.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_a_pong_that_times_out_or_is_cancelled_is_not_a_transport_error (test_hamcp248_final_fence.FrameClassificationTests.test_a_pong_that_times_out_or_is_cancelled_is_not_a_transport_error)"
+   ],
+   "seconds": 6.9
+  },
+  {
+   "id": "C1-closed-not-retryable",
+   "class": "a frame reason's public contract",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+     "\"store_unavailable\",\n                               \"connection_closed\", \"transport_error\"}",
+     "\"store_unavailable\",\n                               \"transport_error\"}"
+    ]
+   ],
+   "log_path": "mutation-logs/C1-closed-not-retryable.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_retryability_and_public_code_follow_the_former_reason (test_hamcp248_final_fence.FrameClassificationTests.test_retryability_and_public_code_follow_the_former_reason)"
+   ],
+   "seconds": 7.3
+  },
+  {
+   "id": "C2-transport-error-not-retryable",
+   "class": "a frame reason's public contract",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+     "\"store_unavailable\",\n                               \"connection_closed\", \"transport_error\"}",
+     "\"store_unavailable\",\n                               \"connection_closed\"}"
+    ]
+   ],
+   "log_path": "mutation-logs/C2-transport-error-not-retryable.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_retryability_and_public_code_follow_the_former_reason (test_hamcp248_final_fence.FrameClassificationTests.test_retryability_and_public_code_follow_the_former_reason)"
+   ],
+   "seconds": 7.1
+  },
+  {
+   "id": "C3-frame-limit-retryable",
+   "class": "a frame reason's public contract",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+     "\"connection_closed\", \"transport_error\"}",
+     "\"connection_closed\", \"transport_error\", \"control_frame_limit\"}"
+    ]
+   ],
+   "log_path": "mutation-logs/C3-frame-limit-retryable.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_retryability_and_public_code_follow_the_former_reason (test_hamcp248_final_fence.FrameClassificationTests.test_retryability_and_public_code_follow_the_former_reason)"
+   ],
+   "seconds": 7.1
+  },
+  {
+   "id": "C4-reason-outside-vocabulary",
+   "class": "a frame reason's public contract",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
+     "\"protocol_error\", \"control_frame_limit\"})",
+     "\"protocol_error\"})"
+    ]
+   ],
+   "log_path": "mutation-logs/C4-reason-outside-vocabulary.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_final_fence_outcome_is_stored_with_its_own_reason (test_hamcp248_final_fence.FinalFenceFrameReasonTests.test_each_final_fence_outcome_is_stored_with_its_own_reason)"
+   ],
+   "seconds": 3.4
   },
   {
    "id": "M1-stored-missing-digest-claims-model-mismatch",
@@ -339,7 +579,7 @@
    "first_failures": [
     "FAIL test_a_missing_digest_names_only_the_true_reasons (test_hamcp248_final_fence.CompareReasonTests.test_a_missing_digest_names_only_the_true_reasons)"
    ],
-   "seconds": 2.4
+   "seconds": 2.6
   },
   {
    "id": "M2-stored-missing-earlier-digest-claims-model-mismatch",
@@ -359,7 +599,7 @@
    "first_failures": [
     "FAIL test_a_missing_digest_names_only_the_true_reasons (test_hamcp248_final_fence.CompareReasonTests.test_a_missing_digest_names_only_the_true_reasons)"
    ],
-   "seconds": 2.3
+   "seconds": 2.6
   },
   {
    "id": "M3-stored-missing-later-digest-claims-model-mismatch",
@@ -379,7 +619,7 @@
    "first_failures": [
     "FAIL test_a_missing_digest_names_only_the_true_reasons (test_hamcp248_final_fence.CompareReasonTests.test_a_missing_digest_names_only_the_true_reasons)"
    ],
-   "seconds": 2.4
+   "seconds": 2.6
   },
   {
    "id": "M4-stored-model-mismatch-never-claimed",
@@ -399,7 +639,7 @@
    "first_failures": [
     "FAIL test_a_missing_digest_names_only_the_true_reasons (test_hamcp248_final_fence.CompareReasonTests.test_a_missing_digest_names_only_the_true_reasons)"
    ],
-   "seconds": 2.3
+   "seconds": 2.5
   },
   {
    "id": "M5-recorded-missing-digest-claims-model-mismatch",
@@ -419,7 +659,7 @@
    "first_failures": [
     "FAIL test_recorded_compare_row_with_a_missing_capture_digest (test_hamcp248_final_fence.CompareReasonTests.test_recorded_compare_row_with_a_missing_capture_digest)"
    ],
-   "seconds": 2.5
+   "seconds": 2.7
   },
   {
    "id": "M6-recorded-model-mismatch-never-claimed",
@@ -437,7 +677,7 @@
    "timed_out": false,
    "killed_by_import_or_syntax_error": false,
    "first_failures": [],
-   "seconds": 89.5
+   "seconds": 99.0
   }
  ]
 }

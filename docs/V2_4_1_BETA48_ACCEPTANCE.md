@@ -45,27 +45,42 @@ Bind the following:
 The review needs a security section covering the following.
 
 **No new reachability.**
-- No Core command, REST path, websocket message type, registry entry,
-  provider, route, write or fallback is added.
-- The only new frame the capture sends is a websocket PONG that echoes the
-  peer's PING payload (at most 125 bytes, by the websocket protocol). It
-  goes on the already-authenticated capture connection.
+- No Core command, REST path, new Home Assistant application-message type,
+  registry entry, provider, route, write or fallback is added.
+- The only new frame the capture sends is a websocket PONG control frame.
+  It echoes only the peer-supplied PING payload, which is not inspected:
+  the echo is bounded by the control-frame limit (125 bytes), not proven
+  free of arbitrary text.
+- The bounded control handling applies to every capture websocket read,
+  including the handshake reads before authentication completes. A PING
+  that precedes `auth_required` is answered before the credential is sent;
+  a fifth refuses the capture without sending it. A PONG authorizes no Home
+  Assistant command.
 
 **Bounded.**
-- At most four keepalive frames are handled per read, inside that read's
-  deadline.
-- Their bytes are charged to the capture byte budget.
-- The frame size bound and `TOTAL_BYTES` are unchanged.
+- Control frames (PING, PONG) only, at most four per read, inside that
+  read's deadline, which they do not reset; the fifth is refused before it
+  is answered.
+- Their bytes are charged to the shared capture byte budget.
+- No background task, retry or reconnect. The frame size bound,
+  `TOTAL_BYTES`, the 45 s collection bound and the 5 s read bound are
+  unchanged.
 
 **Fail-closed.**
-- Every other non-TEXT frame is still refused, now with its own reason.
+- Every other non-TEXT frame is still refused, now with its own fixed,
+  content-free reason (`connection_closed`, `transport_error`,
+  `unexpected_frame`, `protocol_error`, `control_frame_limit`,
+  `response_limit`). Public error codes and retryability are those of the
+  reason each replaced.
 - Identity drift, authority loss, access denial and an unverifiable identity
   still refuse the capture with nothing stored.
 
-**Reversal.** The HAMCP-228 line "control frames are refused, not
-automatically ponged" is narrowly reversed for PING and PONG only. The
-reviewer should confirm that answering a PING cannot carry Home Assistant
-data or change what is read.
+**Owner decision (Josh, 2026-10-29): replaces "Unexpected/control frames
+are refused, not automatically ponged".** That rule came from the original
+beta.14 capture (PR #228, commit `ed51a55d`) and was preserved by
+HAMCP-228. The bounded control-frame rule above replaces it for PING and
+PONG only. The reviewer should confirm that answering a PING sends no Home
+Assistant data and does not change what is read.
 
 ### Offline proof
 
@@ -77,27 +92,49 @@ No test reaches a live system. Every value is synthetic.
   116 configurations are collected. Expected:
   - the final fence is `complete` and the installation `established`;
   - five after-fence reads and 127 requests;
-  - the PING is answered with its payload before the final fence's
-    principal command, and the client sends nothing else.
+  - the PING is answered with its payload **after** the final fence's
+    principal command is sent, before its result is accepted, and the
+    client sends nothing else (the exact event order is asserted).
 
   Against the pre-fix client, this test fails with `unavailable` /
   `malformed_response`, the live result.
 - **The resume path is unchanged** over the real transport. Only the
   missing record is read, and both fences complete.
-- **Each frame class has its own reason:**
-  - a server close or transport drop is `source_unavailable`;
+- **Each frame class has its own reason** (review 1, R1-M1), injected one
+  at a time and checked to be distinct:
+  - a server close (with any close code) or an aborted connection is
+    `connection_closed`; a local CLOSING or CLOSED is too;
+  - a non-protocol ERROR, or a failure sending the PONG, is
+    `transport_error`; a timeout or cancellation while sending it is not;
+  - a binary or CONTINUATION frame is `unexpected_frame`;
+  - a websocket protocol error, including a TEXT frame that is not UTF-8,
+    is `protocol_error`;
+  - a fifth keepalive frame is `control_frame_limit`, refused before it
+    is answered;
   - an over-bound frame is `response_limit`;
   - a silent read is `timeout`;
-  - a binary frame, invalid UTF-8, invalid JSON or a keepalive flood is
-    `malformed_response`;
-  - a cancellation propagates;
-  - a local CLOSING, CLOSED or non-protocol ERROR is `source_unavailable`.
-- **The keepalive bound** (4) and its byte charge.
+  - invalid JSON, the only `malformed_response`;
+  - a cancellation propagates.
+
+  No reason reflects close text, a frame payload or exception text. The new
+  reasons keep their former public error code and retryability.
+- **Final-fence read-back.** A real loopback full capture whose final
+  principal read gets each injected outcome stores `unavailable` with that
+  reason (distinct per outcome), the installation `unestablished`, and no
+  synthetic secret. A cancelled final fence propagates with nothing stored.
+- **Handshake keepalive.** A PING before `auth_required` is answered
+  before the credential is sent (exact event order), and a pre-auth flood
+  is `control_frame_limit` with no credential sent.
+- **The keepalive bound** (4), its byte charge, and the 45 s and 5 s
+  bounds.
 - **Final-fence reasons.** A failed final principal read is `unavailable`
-  with its own reason, and a failed final states read is `identity_only`
-  with the installation established. Each reason is checked: `timeout`,
-  `response_limit`, `source_unavailable`, `malformed_response` and
-  `structural_limit`.
+  with its own reason, and a failed final states or registry read is
+  `identity_only` with the installation established. Each reason is
+  checked: `timeout`, `response_limit`, `source_unavailable`,
+  `malformed_response`, `structural_limit` and the five new frame reasons.
+  Identity and authority refusals (`access_denied`, `authority_unavailable`,
+  `authority_drift`, `identity_unverified`, `identity_drift`) still refuse
+  the capture with nothing stored.
 - **Compare rows.** A missing earlier or later digest gives only the
   missing-digest, unreadable and coverage reasons, never
   `record_fingerprint_model_mismatch`. Two digests of different models
