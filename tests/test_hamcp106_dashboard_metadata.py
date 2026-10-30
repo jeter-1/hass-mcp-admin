@@ -740,6 +740,62 @@ class AdmittedResourceWriteTests(_ResourceWriteAuthority, _Base):
         self.assertIn(contract.RESOURCE_TYPE, DORMANT_PROFILE_RESOURCE_TYPES)
 
 
+class RuntimeCompositionTests(unittest.TestCase):
+    """The production composition hands the Core runtime to the write boundary."""
+
+    def configured_gateway(self, core_runtime):
+        import dataclasses
+        import shutil
+        import tempfile
+
+        from ha_mcp_engineering.audit import AuditLogger
+        from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
+        from ha_mcp_engineering.governance.runtime import GovernanceRuntime
+        from tests.test_readonly_upstream_gateway import settings
+
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        configured = dataclasses.replace(
+            settings(),
+            audit_path=str(root / "audit.jsonl"),
+            governance_path=str(root / "governance"),
+        )
+        runtime = GovernanceRuntime()
+        runtime.configure(
+            configured,
+            AuditLogger(configured.audit_path, "hamcp106-synthetic-audit"),
+            HomeAssistantRestClient(configured),
+            object(),
+            core_runtime=core_runtime,
+        )
+        self.assertIsNone(runtime.storage_error)
+        gateway = runtime.service.dashboard_metadata_gateway
+        return gateway
+
+    def test_configured_write_boundary_consults_the_given_core_runtime(self):
+        class Core:
+            def __init__(self, available):
+                self.available = available
+                self.asked = []
+
+            def route_status(self, profiles):
+                self.asked.append(tuple(profiles))
+                return {"available": self.available}
+
+        admitting = Core(True)
+        gateway = self.configured_gateway(admitting)
+        self.assertIs(gateway.core_runtime, admitting)
+        # Admitted, but outside an F3 call window.
+        self.assertEqual(gateway.write_refusal(), contract.F3_CONTEXT_REQUIRED_REASON)
+        self.assertEqual(admitting.asked, [(contract.PROFILE,)])
+        withheld = Core(False)
+        self.assertEqual(
+            self.configured_gateway(withheld).write_refusal(),
+            "pending_signed_registry_admission",
+        )
+        self.assertEqual(withheld.asked, [(contract.PROFILE,)])
+
+
 class ApplyBoundaryTests(_Base):
     async def test_stale_state_for_each_field_is_refused_before_dispatch(self):
         external = {

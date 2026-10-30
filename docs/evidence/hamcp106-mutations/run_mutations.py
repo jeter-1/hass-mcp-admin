@@ -38,8 +38,16 @@ Mutant classes:
   entry admission dropped, pending-admission tool entry dropped, content-read
   profile dropped from F3 and static tool requirements, runtime content
   reader accepting another dashboard's fingerprint;
-- ``H*`` HAMCP-255 audit groups: reason_code dropped from the grouping key,
-  profiles or groups unsorted, a group dropped, adapter ids re-added.
+- ``H*`` HAMCP-255 columnar audit record: reason-code index collapsed,
+  profiles or vocabularies unsorted, the last profile dropped, withheld
+  profiles dropped, adapter ids re-added, an unconventional profile id never
+  written, every profile id written;
+- ``G*`` (review round 1, R1-H1) generic resource-write gate: refusal not
+  enforced, F3 context unchecked, admission unchecked, authorizer presence
+  unchecked, the no-F3 apply inventory entry dropped, the runtime's Core
+  wiring dropped;
+- ``M*`` (review round 1, R1-M2) unrestorable baseline: planned anyway, or
+  checked for unchanged fields too.
 
 Usage (from the worktree root):
     systemd-run --user --unit hamcp106-mut --property=MemoryMax=3G \\
@@ -67,6 +75,8 @@ MODULES = [
     'tests.test_hamcp181_health_core_admission',
     'tests.test_hamcp191_batch3',
     'tests.test_f3_configuration_identity',
+    # Review round 1 (R1-M3): the shared final persistence boundary.
+    'tests.test_hamcp165_review1_corrections',
 ]
 C = 'governance/dashboard_metadata.py'
 P = 'governance/dashboard_metadata_planning.py'
@@ -308,29 +318,51 @@ M = [
  ('F6_content_reader_target_unchecked',
   [(GR, '        if not isinstance(data, dict) or data.get("url_path") != url_path:',
         '        if not isinstance(data, dict):')]),
- # ---- H: HAMCP-255 reconciliation audit groups.
- ('H1_group_key_drops_reason_code',
-  [(CR, '    groups: dict[tuple[str, str, str | None], dict[str, str]] = {}\n',
-        '    groups: dict[tuple[str, str, str | None], dict[str, str]] = {}\n    reasons: dict = {}\n'),
-   (CR, '        key = (item.disposition.value, item.reason_code, source)\n',
-        '        key = (item.disposition.value, reasons.setdefault((item.disposition.value, source), item.reason_code), source)\n')]),
+ # ---- H: HAMCP-255 columnar reconciliation audit record.
+ ('H1_reason_index_collapsed',
+  [(CR, '            reasons.index(reason),\n', '            0,\n')]),
  ('H2_profiles_unsorted',
-  [(CR, '            "profiles": dict(sorted(profiles.items())),', '            "profiles": dict(profiles),')]),
- ('H3_groups_unsorted',
-  [(CR, '        for (disposition, reason_code, source), profiles in sorted(\n'
-        '            groups.items(), key=lambda entry: tuple(str(part) for part in entry[0])\n        )',
-        '        for (disposition, reason_code, source), profiles in reversed(list(\n'
-        '            groups.items()))')]),
- ('H4_last_group_dropped',
-  [(CR, '        )\n    ]\n\n\n_AUDIT_TRIGGERS', '        )\n    ][:-1]\n\n\n_AUDIT_TRIGGERS')]),
- ('H5_withheld_groups_dropped',
-  [(CR, '            groups.items(), key=lambda entry: tuple(str(part) for part in entry[0])\n        )\n    ]',
-        '            groups.items(), key=lambda entry: tuple(str(part) for part in entry[0])\n        )\n'
-        '        if disposition.startswith("admitted")\n    ]')]),
+  [(CR, '    for capability_id, disposition, reason, source, profile_id in sorted(\n'
+        '        rows, key=lambda row: row[0]\n    ):',
+        '    for capability_id, disposition, reason, source, profile_id in (\n'
+        '        rows\n    ):')]),
+ ('H3_vocabularies_unsorted',
+  [(CR, '        return sorted({row[column] for row in rows}, key=lambda value: str(value))',
+        '        return list(dict.fromkeys(row[column] for row in rows))')]),
+ ('H4_last_profile_dropped',
+  [(CR, '        "profiles": profiles,\n    }', '        "profiles": dict(list(profiles.items())[:-1]),\n    }')]),
+ ('H5_withheld_profiles_dropped',
+  [(CR, '        profiles[capability_id] = entry\n',
+        '        if disposition.startswith("admitted"):\n            profiles[capability_id] = entry\n')]),
  ('H6_adapter_ids_readded',
   [(CR, '                "dispositions": _audit_disposition_groups(decisions),\n',
         '                "dispositions": _audit_disposition_groups(decisions),\n'
         '                "adapters": {item.capability_id: item.adapter_id for item in decisions},\n')]),
+ ('H7_unconventional_profile_id_dropped',
+  [(CR, '        if profile_id != _conventional_profile_id(capability_id):\n', '        if False:\n')]),
+ ('H8_every_profile_id_written',
+  [(CR, '        if profile_id != _conventional_profile_id(capability_id):\n', '        if True:\n')]),
+ # ---- G: review round 1, R1-H1 generic resource-write gate.
+ ('G1_write_refusal_not_enforced',
+  [(C, '        refusal = self.write_refusal()\n        if refusal is not None:\n',
+       '        refusal = self.write_refusal()\n        if False:\n')]),
+ ('G2_write_f3_context_unchecked',
+  [(C, '            return F3_CONTEXT_REQUIRED_REASON\n', '            pass\n')]),
+ ('G3_write_admission_unchecked',
+  [(C, '        if not admitted:\n            return PENDING_ADMISSION_REASON\n',
+       '        if False:\n            return PENDING_ADMISSION_REASON\n')]),
+ ('G4_write_authorizer_presence_unchecked',
+  [(C, '            or telemetry.core_dispatch_authorizer is None\n', '')]),
+ ('G5_no_f3_inventory_entry_dropped',
+  [(S, '        # HAMCP-106 R1-H1.\n        dashboard_metadata_contract.RESOURCE_TYPE,\n', '')]),
+ ('G6_runtime_core_wiring_dropped',
+  [(GR, '            resource_gateway.dashboard_metadata.core_runtime = core_runtime\n', '')]),
+ # ---- M: review round 1, R1-M2 unrestorable baseline.
+ ('M1_unrestorable_baseline_planned',
+  [(P, '    if unrestorable and not restore:\n', '    if False:\n')]),
+ ('M2_unchanged_fields_checked_too',
+  [(P, '        name for name in changed\n        if not contract.requested_value_valid',
+       '        name for name in contract.FIELDS\n        if not contract.requested_value_valid')]),
 ]
 
 only = set(sys.argv[1:])
