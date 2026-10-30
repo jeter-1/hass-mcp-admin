@@ -151,6 +151,27 @@ class ReconstructionTests(unittest.TestCase):
             self.assertEqual(list(group["profiles"]), sorted(group["profiles"]))
             self.assertTrue(group["profiles"])
 
+    def test_grouping_does_not_depend_on_decision_order(self):
+        runtime, _event = _reconcile()
+        decisions = list(runtime._coordinator.current_generation.decisions)
+        expected = _event_for(decisions)["analysis_summary"]["dispositions"]
+        self.assertGreater(len(expected), 1)
+        for order in (decisions[::-1], decisions[1::2] + decisions[::2]):
+            with self.subTest(first=order[0].capability_id):
+                self.assertEqual(
+                    _event_for(order)["analysis_summary"]["dispositions"], expected
+                )
+        keys = [
+            (g["disposition"], g["reason_code"], g["authority_source"])
+            for g in expected
+        ]
+        self.assertEqual(
+            keys, sorted(keys, key=lambda key: tuple(str(p) for p in key))
+        )
+        for order in (decisions, decisions[::-1]):
+            for group in _event_for(order)["analysis_summary"]["dispositions"]:
+                self.assertEqual(list(group["profiles"]), sorted(group["profiles"]))
+
     def test_today_record_is_stored_whole_by_the_audit_logger(self):
         _runtime, event = _reconcile()
         with tempfile.TemporaryDirectory() as directory:

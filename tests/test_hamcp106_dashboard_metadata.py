@@ -753,6 +753,7 @@ class RollbackTests(_Base):
             await self.service.rollback_change(created["plan_id"])
         self.assertEqual(raised.exception.code, ErrorCode.ROLLBACK_NOT_AVAILABLE)
         self.assertIs(raised.exception.details["plan_created"], False)
+        self.assertEqual(raised.exception.details["reason_code"], "forward_not_verified")
 
     async def test_rollback_already_restored_is_refused(self):
         created, _result = await self.applied(url_path=ACCEPTANCE, title="New")
@@ -760,6 +761,269 @@ class RollbackTests(_Base):
         with self.assertRaises(GovernanceError) as raised:
             await self.service.rollback_change(created["plan_id"])
         self.assertEqual(raised.exception.code, ErrorCode.ROLLBACK_NOT_AVAILABLE)
+
+
+
+class ContractBoundaryTests(_Base):
+    """Provider-boundary rechecks below the planner (mutation survivors)."""
+
+    def test_command_shape_is_closed_at_the_provider_boundary(self):
+        valid = {"type": UPDATE_COMMAND, "dashboard_id": "map", "title": "x"}
+        self.assertEqual(contract.command_errors(valid), [])
+        for command in (
+            {**valid, "type": LIST_COMMAND},
+            {**valid, "type": "lovelace/config/save"},
+            {"type": UPDATE_COMMAND, "dashboard_id": "map", "url_path": "x"},
+            {"type": UPDATE_COMMAND, "dashboard_id": "map", "mode": "yaml"},
+            {**valid, "config": {}},
+        ):
+            with self.subTest(command=command):
+                self.assertNotEqual(contract.command_errors(command), [])
+
+    async def test_gateway_never_sends_outside_the_vocabulary(self):
+        self.assertEqual(
+            contract.ALLOWED_COMMANDS, frozenset({LIST_COMMAND, UPDATE_COMMAND})
+        )
+        gateway = self.resource_gateway.dashboard_metadata
+        for command_type in contract.NEVER_SENT_COMMANDS:
+            with self.subTest(command_type=command_type):
+                with self.assertRaises(contract.DashboardMetadataContractError):
+                    await gateway._send({"type": command_type})
+        self.assertEqual(self.ws.commands, [])
+
+    async def test_title_and_icon_bounds(self):
+        whitespace = ("   ", "\t", "\n ")
+        for title in whitespace:
+            with self.subTest(title=title):
+                with self.assertRaises(GovernanceError) as raised:
+                    await self.create(url_path="map", title=title)
+                self.assert_refused(raised, planning.INVALID_VALUE)
+        longest = "T" * contract.MAX_TITLE_LENGTH
+        _created, result = await self.applied(url_path="map", title=longest)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertEqual(self.ws.row("map")["title"], longest)
+        # Pattern-valid but longer than the reviewed icon bound.
+        icon = "mdi:" + "a" * (contract.MAX_ICON_LENGTH - 3)
+        self.assertIsNotNone(contract.ICON_PATTERN.fullmatch(icon))
+        self.assertFalse(contract.requested_value_valid("icon", icon))
+        self.assertTrue(contract.requested_value_valid("icon", icon[:-1]))
+        writes = len(self.ws.writes())
+        with self.assertRaises(GovernanceError) as raised:
+            await self.create(url_path="map", icon=icon)
+        self.assertEqual(raised.exception.details.get("reason_code"),
+                         planning.INVALID_VALUE)
+        self.assertEqual(len(self.ws.writes()), writes)
+
+    async def test_duplicate_dashboard_id_is_ambiguous(self):
+        self.ws.dashboards.append({**self.ws.row("map"), "url_path": "map-copy"})
+        with self.assertRaises(GovernanceError) as raised:
+            await self.create(url_path="map", title="x")
+        self.assert_refused(raised, "dashboard_metadata_target_ambiguous")
+
+    async def test_unauthorized_write_reports_permission_denied(self):
+        created = await self.approved(url_path=ACCEPTANCE, title="Requested")
+        self.ws.failures[UPDATE_COMMAND] = AuthorizationError(
+            "synthetic", details={"provider_response_received": True}
+        )
+        result = await self.apply(created)
+        self.assertIn("provider_permission_denied", self.child_codes(result["task_id"]))
+
+
+    async def test_content_reader_binds_the_answer_to_the_target(self):
+        from types import SimpleNamespace
+
+        from ha_mcp_engineering.governance.runtime import (
+            _dashboard_content_fingerprint_reader,
+        )
+
+        digest = "a" * 64
+
+        class Provider:
+            def __init__(self, data):
+                self.data = data
+                self.calls = []
+
+            async def get_dashboard_config(self, **arguments):
+                self.calls.append(arguments)
+                return SimpleNamespace(data=self.data)
+
+        provider = Provider({"url_path": "map", "engineering_config_hash": digest})
+        read = _dashboard_content_fingerprint_reader(provider, 60_000)
+        self.assertEqual(await read("map"), digest)
+        self.assertEqual(provider.calls, [
+            {"url_path": "map", "force_reload": True, "response_limit": 60_000}
+        ])
+        for data in (
+            {"url_path": "energy", "engineering_config_hash": digest},
+            {"engineering_config_hash": digest},
+            {"url_path": "map"},
+            None,
+        ):
+            with self.subTest(data=data):
+                read = _dashboard_content_fingerprint_reader(Provider(data), 60_000)
+                with self.assertRaises(ValueError):
+                    await read("map")
+
+
+class PreflightLayerTests(_Base):
+    """The gateway and strategy preflight, independent of the adapter's first read."""
+
+    async def bound(self) -> tuple[dict, dict]:
+        current = await self.resource_gateway.dashboard_metadata.read_state(ACCEPTANCE)
+        return current, {**current, "title": "Engineering Acceptance 106"}
+
+    async def test_gateway_preflight_holds_only_for_the_bound_state(self):
+        check = self.resource_gateway.dashboard_metadata_preflight_evidence
+        current, proposed = await self.bound()
+        self.assertEqual(await check(ACCEPTANCE, current, proposed), ())
+        changes = (
+            lambda: self.ws.set_external(ACCEPTANCE, title="Elsewhere"),
+            lambda: self.ws.set_external(ACCEPTANCE, require_admin=False),
+            lambda: self.ws.content.__setitem__(ACCEPTANCE, {"views": [{"title": "x"}]}),
+            lambda: self.ws.dashboards.remove(self.ws.row(ACCEPTANCE)),
+        )
+        for index, change in enumerate(changes):
+            with self.subTest(change=index):
+                await self.restart_fixture()
+                check = self.resource_gateway.dashboard_metadata_preflight_evidence
+                current, proposed = await self.bound()
+                change()
+                self.assertEqual(
+                    await check(ACCEPTANCE, current, proposed), ("stale_target_state",)
+                )
+        self.assertEqual(self.ws.writes(), [])
+
+    async def restart_fixture(self) -> None:
+        await self.asyncTearDown()
+        await self.asyncSetUp()
+
+    async def test_strategy_passes_the_gateway_verdict_through(self):
+        from ha_mcp_engineering.f3_configuration.strategies import (
+            DashboardMetadataConfigurationStrategy,
+        )
+
+        strategy = DashboardMetadataConfigurationStrategy(contract.ACTION)
+        current, proposed = await self.bound()
+
+        class Stale:
+            async def dashboard_metadata_preflight_evidence(self, *_args):
+                return ("stale_target_state",)
+
+        class Denied:
+            async def dashboard_metadata_preflight_evidence(self, *_args):
+                raise AuthorizationError("synthetic")
+
+        cases = (
+            (Stale(), current, ("stale_target_state",)),
+            (Denied(), current, ("permission_failure",)),
+            (object(), current, ("dependency_evidence_unavailable",)),
+            (Stale(), None, ("dependency_evidence_unavailable",)),
+        )
+        for gateway, bound_state, expected in cases:
+            with self.subTest(gateway=type(gateway).__name__, bound=bound_state is not None):
+                self.assertEqual(
+                    await strategy.preflight_evidence(
+                        gateway, ACCEPTANCE, bound_state, proposed
+                    ),
+                    expected,
+                )
+
+
+class PlanTruthTests(_Base):
+    """Disclosure flags, policy prohibition, rollback status and admission routes."""
+
+    async def test_requested_unchanged_and_unrequested_fields_are_distinguished(self):
+        created = await self.create(url_path="map", title="New", icon="mdi:map")
+        disclosure = self.disclosure(created)
+        self.assertEqual(
+            [(row["field"], row["requested"], row["changed"])
+             for row in disclosure["fields"]],
+            [
+                ("title", True, True),
+                ("icon", True, False),
+                ("show_in_sidebar", False, False),
+                ("require_admin", False, False),
+            ],
+        )
+        plan = self.service._load(created["plan_id"])
+        self.assertEqual(
+            plan.dry_run_results["dashboard_metadata"]["content"],
+            planning.CONTENT_DISCLOSURE,
+        )
+        self.assertTrue(planning.CONTENT_DISCLOSURE)
+
+    async def test_multi_operation_dashboard_metadata_plan_is_prohibited(self):
+        from copy import deepcopy
+
+        from ha_mcp_engineering.governance.models import ApprovalPolicyClass
+        from ha_mcp_engineering.governance.policy import (
+            DASHBOARD_METADATA_INCOMPLETE,
+            _dashboard_metadata_operation_policy,
+            evaluate_change_policy,
+        )
+
+        first = self.service._load((await self.create(url_path="map", title="A"))["plan_id"])
+        second = self.service._load(
+            (await self.create(url_path=ACCEPTANCE, title="B"))["plan_id"]
+        )
+        self.assertEqual(
+            evaluate_change_policy(first).policy_class, ApprovalPolicyClass.STANDARD_ADMIN
+        )
+        mixed = deepcopy(first)
+        mixed.operations = [first.operations[0], second.operations[0]]
+        # Each child is complete on its own; only the plan-level rule refuses.
+        for operation in mixed.operations:
+            self.assertEqual(
+                _dashboard_metadata_operation_policy(operation).policy_class,
+                ApprovalPolicyClass.STANDARD_ADMIN,
+            )
+        decision = evaluate_change_policy(mixed)
+        self.assertEqual(decision.policy_class, ApprovalPolicyClass.PROHIBITED)
+        self.assertIn(DASHBOARD_METADATA_INCOMPLETE, decision.reason_codes)
+
+    async def test_rollback_availability_tracks_the_verified_forward(self):
+        created, result = await self.applied(url_path=ACCEPTANCE, title="New")
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        plan = self.service._load(created["plan_id"])
+        self.assertIs(plan.rollback.available, True)
+        self.assertEqual(plan.rollback.status, "available_pending_current_state_check")
+
+    async def test_rollback_of_a_forward_that_found_the_target_reached(self):
+        created = await self.approved(url_path=ACCEPTANCE, title="New")
+        self.ws.set_external(ACCEPTANCE, title="New")
+        result = await self.apply(created)
+        self.assertEqual(
+            result["execution_task"]["terminal_outcome"],
+            "desired_state_already_present_not_dispatched",
+        )
+        self.assertEqual(self.ws.writes(), [])
+        plan = self.service._load(created["plan_id"])
+        self.assertIs(plan.rollback.available, False)
+        plans = len(self.repository.list())
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.rollback_change(created["plan_id"])
+        self.assertEqual(raised.exception.code, ErrorCode.ROLLBACK_NOT_AVAILABLE)
+        self.assertEqual(raised.exception.details["reason_code"], "forward_not_dispatched")
+        self.assertEqual(len(self.repository.list()), plans)
+
+    def test_tool_and_dispatch_require_the_unsigned_profile_and_content_read(self):
+        from types import SimpleNamespace
+
+        from ha_mcp_engineering.ha_core_readmission import routes
+
+        self.assertEqual(
+            routes.PENDING_ADMISSION_TOOLS[routes.DASHBOARD_METADATA_TOOL],
+            (contract.RESOURCE_TYPE, contract.PROFILE),
+        )
+        prepared = SimpleNamespace(
+            capability_id=contract.CAPABILITY_IDENTITY,
+            operation=contract.CAPABILITY_IDENTITY,
+        )
+        self.assertEqual(
+            set(routes.f3_requirements(prepared)),
+            {"core.f3_mutation_verification", contract.PROFILE,
+             "core.dashboard_configuration_read"},
+        )
 
 
 if __name__ == "__main__":
