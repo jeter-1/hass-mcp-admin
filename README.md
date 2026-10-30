@@ -1,5 +1,15 @@
 # HA MCP Engineering Server
 
+Staged, not yet released: Engineering **2.4.1-beta.50** (HAMCP-252) lets the
+readback verifier compare a `sun` condition used as an action step
+(`after`/`before`/offsets, exact comparison only), which unblocks the A109
+camera automations. A verifier refusal also names its structural path and
+known field names in `pre_dispatch_refusal.verifier_location`; no values are
+stored. No other preflight decision, tool, input schema or Home Assistant
+write changes. Follows 2.4.1-beta.49 (#329). Read the
+[2.4.1-beta.50 release notes](docs/V2_4_1_BETA50_RELEASE_NOTES.md) and
+[2.4.1-beta.50 acceptance contract](docs/V2_4_1_BETA50_ACCEPTANCE.md).
+
 Engineering **2.4.1-beta.48** lets a full automation baseline capture
 complete its final fence (HAMCP-248). On beta.45 every full capture ended
 `final_fence: "unavailable"`, `malformed_response`, installation

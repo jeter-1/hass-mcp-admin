@@ -206,6 +206,7 @@ AUTOMATION_VERIFIER_DETAILS = frozenset(
         "invalid_automation_response_variable",
         "invalid_automation_simple_action_option",
         "invalid_automation_simple_action_value",
+        "invalid_automation_sun_condition",
         "invalid_automation_variables_action",
         "invalid_automation_wait_template",
         "invalid_automation_wait_trigger_action",
@@ -228,6 +229,94 @@ AUTOMATION_VERIFIER_DETAILS = frozenset(
     )
 )
 REASON_CODES = frozenset(REASON_CHECKS) | {UNCLASSIFIED, UNKNOWN_LEGACY}
+
+# HAMCP-252: the verifier refusal's location codes (governance/normalize.py),
+# restated so this module imports nothing from governance.  A test pins them
+# equal to the normalizer's vocabulary.
+VERIFIER_PATH_PREFIX = VERIFIER_DETAIL_PREFIX + "path_"
+VERIFIER_FIELD_PREFIX = VERIFIER_DETAIL_PREFIX + "field_"
+VERIFIER_PATH_TRUNCATED = VERIFIER_DETAIL_PREFIX + "truncated_path"
+VERIFIER_FIELDS_TRUNCATED = VERIFIER_DETAIL_PREFIX + "truncated_fields"
+UNRECOGNIZED_FIELD = "unrecognized_field"
+VERIFIER_PATH_ROOTS = frozenset({"action", "actions"})
+VERIFIER_PATH_TOKENS = VERIFIER_PATH_ROOTS | {
+    "choose",
+    "default",
+    "else",
+    "parallel",
+    "repeat",
+    "sequence",
+    "then",
+}
+VERIFIER_KNOWN_FIELDS = frozenset(
+    {
+        "above",
+        "action",
+        "after",
+        "after_offset",
+        "alias",
+        "and",
+        "area_id",
+        "attribute",
+        "before",
+        "before_offset",
+        "below",
+        "choose",
+        "condition",
+        "conditions",
+        "continue_on_error",
+        "continue_on_timeout",
+        "count",
+        "data",
+        "data_template",
+        "default",
+        "delay",
+        "device_id",
+        "domain",
+        "else",
+        "enabled",
+        "entity_id",
+        "error",
+        "event",
+        "event_data",
+        "event_data_template",
+        "floor_id",
+        "for",
+        "for_each",
+        "id",
+        "if",
+        "label_id",
+        "match",
+        "metadata",
+        "not",
+        "options",
+        "or",
+        "parallel",
+        "repeat",
+        "response_variable",
+        "scene",
+        "sequence",
+        "service",
+        "set_conversation_response",
+        "state",
+        "stop",
+        "subtype",
+        "target",
+        "then",
+        "timeout",
+        "type",
+        "until",
+        "value_template",
+        "variables",
+        "wait_for_trigger",
+        "wait_template",
+        "weekday",
+        "while",
+        "zone",
+    }
+)
+MAX_LOCATION_FIELDS = 4
+_INDEX = re.compile(r"^(0|[1-9][0-9]{0,5})$")
 REASON_FIELDS = (
     "reason_model",
     "reason_schema_version",
@@ -235,6 +324,7 @@ REASON_FIELDS = (
     "check",
     "detail",
     "verifier_rule",
+    "verifier_location",
     "reason_source",
     "normalized_outcome",
     "child_execution_id",
@@ -290,6 +380,48 @@ def classify(codes: tuple[str, ...] | None) -> tuple[str, str, str | None]:
     return UNCLASSIFIED, "adapter_preflight", rule
 
 
+def verifier_location(codes: tuple[str, ...] | None) -> dict[str, Any] | None:
+    """Decode a verifier refusal's stored location codes, else ``None``.
+
+    The path holds only structural action-tree keys and list indices; a field
+    outside the fixed vocabulary reads as ``unrecognized_field``.  Values and
+    templates are never stored, so they can never be reported.
+    """
+
+    if not codes:
+        return None
+    paths = [code[len(VERIFIER_PATH_PREFIX):] for code in codes if code.startswith(VERIFIER_PATH_PREFIX)]
+    path = None
+    if len(paths) == 1:
+        tokens = paths[0].split("_")
+        if tokens[0] in VERIFIER_PATH_ROOTS and all(
+            (token in VERIFIER_PATH_TOKENS and token not in VERIFIER_PATH_ROOTS)
+            or _INDEX.fullmatch(token)
+            for token in tokens[1:]
+        ):
+            path = "/" + "/".join(tokens)
+    fields = sorted(
+        {
+            name if name in VERIFIER_KNOWN_FIELDS else UNRECOGNIZED_FIELD
+            for name in (
+                code[len(VERIFIER_FIELD_PREFIX):]
+                for code in codes
+                if code.startswith(VERIFIER_FIELD_PREFIX)
+            )
+        }
+    )
+    if path is None and not fields:
+        return None
+    return {
+        "path": path,
+        "path_truncated": path is not None and VERIFIER_PATH_TRUNCATED in codes,
+        "fields": fields[:MAX_LOCATION_FIELDS],
+        "fields_truncated": (
+            VERIFIER_FIELDS_TRUNCATED in codes or len(fields) > MAX_LOCATION_FIELDS
+        ),
+    }
+
+
 def build_reason(
     *,
     codes: tuple[str, ...] | None,
@@ -308,6 +440,7 @@ def build_reason(
         "check": check,
         "detail": detail,
         "verifier_rule": rule,
+        "verifier_location": None if rule is None else verifier_location(codes),
         "reason_source": (
             SOURCE_UNKNOWN_LEGACY if error_code == UNKNOWN_LEGACY else SOURCE_CHILD_EVENT
         ),
