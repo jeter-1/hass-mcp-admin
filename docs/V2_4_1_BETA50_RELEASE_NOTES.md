@@ -73,13 +73,18 @@ On beta.48, the `home_assistant_core_authority_reconciled` audit event was
 survived.
 
 The event's `analysis_summary` now uses model `ha-core-authority-audit-v2`:
-- Profiles are grouped by disposition, reason code and authority source.
-  Each group maps a capability id to its profile id.
+- The record is columnar. `dispositions` lists the sorted disposition,
+  reason-code and authority-source values once, and maps each capability
+  id to the indexes of its three values.
+- A profile id is written only when it differs from the compiled
+  convention (the capability id with dots as underscores, plus `_v1`).
 - `adapter_id` is dropped.
 - Counts and the other fields are kept.
 
 Each profile's disposition and reason code can be reconstructed from the
-record. Twice today's profile count fits in 75% of the bound. The logger's
+record. Today's record is 1947 characters. Twice today's profile count
+fits in 75% of the bound (6144), even when no two profiles share an outcome
+(5807). The logger's
 bound and its assertion are unchanged. The failure event is unchanged.
 
 ## Counts

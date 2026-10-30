@@ -656,15 +656,19 @@ provider.
 
 The `2.4.1-beta.50` audit correction (HAMCP-255) changes the shape of one
 audit record and nothing else. The `home_assistant_core_authority_reconciled`
-event's `analysis_summary` (model `ha-core-authority-audit-v2`) groups
-profiles by `(disposition, reason_code, authority_source)`, each group
-mapping capability id to profile id. That is enough to reconstruct every
-profile's admitted or withheld disposition and reason code. `adapter_id` is
+event's `analysis_summary` (model `ha-core-authority-audit-v2`) is columnar.
+`dispositions` holds sorted `disposition`, `reason_code` and
+`authority_source` vocabularies, and `profiles` maps each capability id to
+the indexes of its three values. A fourth element carries the profile id only
+when it differs from the compiled convention (the capability id with dots as
+underscores, plus `_v1`). That is enough to reconstruct every profile's
+admitted or withheld disposition, reason code and profile id. `adapter_id` is
 dropped, and the failure event is unchanged. `AuditLogger` keeps its 8192
 bound and its assertion. Before this change, the v1 per-profile list
 (8972 characters on beta.48) was replaced by a `payload_truncated` stub at
-every startup. The record now fits whole, and tests hold twice today's
-profile count to 75% of the bound.
+every startup. The record now fits whole (1947 characters today), and
+tests hold twice today's profile count to 75% of the bound (6144), both with
+the real outcomes (3647) and with no two profiles sharing an outcome (5807).
 
 The `2.4.1-beta.41` November Core batch (HAMCP-232, HAMCP-145) adds two
 governed write plan families and two script-trace reads, all built

@@ -28,9 +28,11 @@ Builds on 2.4.1-beta.49 (#329). Activates nothing new.
 - Dormant seq-15 `dashboard_metadata` evidence lane. `ci.yml` is unchanged;
   its wiring is deferred to the November batch (`WORKFLOW_PENDING_LANES`).
 - HAMCP-255: the `home_assistant_core_authority_reconciled` audit event uses
-  `analysis_summary.model` `ha-core-authority-audit-v2`. Profiles are grouped
-  by disposition, reason code and authority source (capability id → profile
-  id), and `adapter_id` is dropped. The v1 list was 8972 characters on
+  `analysis_summary.model` `ha-core-authority-audit-v2`. It is columnar:
+  sorted disposition, reason-code and authority-source vocabularies, and per
+  capability the indexes of its values (plus its profile id only when that
+  differs from the compiled `<capability_id with _>_v1` convention).
+  `adapter_id` is dropped. The v1 list was 8972 characters on
   beta.48, and `AuditLogger` (8192 bound, unchanged) stored a
   `payload_truncated` stub. The failure event is unchanged.
 

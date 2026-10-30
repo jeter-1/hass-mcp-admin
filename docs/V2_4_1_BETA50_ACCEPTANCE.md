@@ -77,7 +77,7 @@ The review needs a security section covering the following items.
 
 **HAMCP-255, as a distinct item:**
 - **What changes.** The `home_assistant_core_authority_reconciled` audit
-  record changes shape to `ha-core-authority-audit-v2` (grouped profiles,
+  record changes shape to `ha-core-authority-audit-v2` (columnar profiles,
   `adapter_id` dropped).
 - **What it must preserve.** Every profile's disposition and reason code
   must stay reconstructable. The `AuditLogger` bound (8192) and its

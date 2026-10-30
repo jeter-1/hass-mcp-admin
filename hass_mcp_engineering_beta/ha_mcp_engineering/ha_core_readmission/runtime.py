@@ -101,34 +101,56 @@ def _iso(value: datetime | None) -> str | None:
 
 # HAMCP-255 (closed by HAMCP-106): v1 listed six fields for every profile
 # and outgrew the 8192-character audit payload bound, so the logger stored a
-# truncated stub.  v2 groups profiles by (disposition, reason_code, authority_source)
-# and keeps each capability's profile id; the adapter id follows from the
-# admitted compiled profile.  Each profile's disposition and reason code
-# remain reconstructable from the record alone.
+# truncated stub.  v2 is columnar: sorted ``disposition``, ``reason_code`` and
+# ``authority_source`` vocabularies, and per capability the indexes of its
+# three values.  A fourth element carries the profile id only when it differs
+# from the compiled convention (``capability_id`` with dots as underscores,
+# plus ``_v1``); the adapter id follows from the admitted compiled profile.
+# Each profile's disposition and reason code remain reconstructable from the
+# record alone, even when no two profiles share an outcome.
 RECONCILED_AUDIT_MODEL = "ha-core-authority-audit-v2"
 
 
-def _audit_disposition_groups(decisions: Any) -> list[dict[str, Any]]:
-    groups: dict[tuple[str, str, str | None], dict[str, str]] = {}
-    for item in decisions:
-        source = (
+def _conventional_profile_id(capability_id: str) -> str:
+    return capability_id.replace(".", "_") + "_v1"
+
+
+def _audit_disposition_groups(decisions: Any) -> dict[str, Any]:
+    rows = [
+        (
+            item.capability_id,
+            item.disposition.value,
+            item.reason_code,
             item.authority_source.value
             if item.authority_source is not None
-            else None
+            else None,
+            item.profile_id,
         )
-        key = (item.disposition.value, item.reason_code, source)
-        groups.setdefault(key, {})[item.capability_id] = item.profile_id
-    return [
-        {
-            "disposition": disposition,
-            "reason_code": reason_code,
-            "authority_source": source,
-            "profiles": dict(sorted(profiles.items())),
-        }
-        for (disposition, reason_code, source), profiles in sorted(
-            groups.items(), key=lambda entry: tuple(str(part) for part in entry[0])
-        )
+        for item in decisions
     ]
+
+    def vocabulary(column: int) -> list[Any]:
+        return sorted({row[column] for row in rows}, key=lambda value: str(value))
+
+    dispositions, reasons, sources = vocabulary(1), vocabulary(2), vocabulary(3)
+    profiles: dict[str, list[Any]] = {}
+    for capability_id, disposition, reason, source, profile_id in sorted(
+        rows, key=lambda row: row[0]
+    ):
+        entry: list[Any] = [
+            dispositions.index(disposition),
+            reasons.index(reason),
+            sources.index(source),
+        ]
+        if profile_id != _conventional_profile_id(capability_id):
+            entry.append(profile_id)
+        profiles[capability_id] = entry
+    return {
+        "disposition": dispositions,
+        "reason_code": reasons,
+        "authority_source": sources,
+        "profiles": profiles,
+    }
 
 
 _AUDIT_TRIGGERS = frozenset({

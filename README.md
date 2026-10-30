@@ -10,7 +10,7 @@ It refuses `pending_signed_registry_admission` before any Home Assistant
 request or persistence until a signed Core registry sequence (planned 15)
 names `core.dashboard_metadata_operation`. Dashboard content, YAML
 dashboards and the default Overview are never changed. The Core-authority
-reconciliation audit record now groups profiles (`ha-core-authority-audit-v2`),
+reconciliation audit record is now columnar (`ha-core-authority-audit-v2`),
 so the audit logger stores it whole instead of a truncated stub. No signed
 registry, signed profile, existing fingerprint or existing schema change.
 Static tools 78; advertised catalog 106 (107 with the optional YAML reader).
