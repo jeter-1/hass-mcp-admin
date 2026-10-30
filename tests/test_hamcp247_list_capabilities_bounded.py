@@ -282,6 +282,39 @@ class SizeTests(_LiveShapedCatalog):
                     )
 
 
+class AmbientGovernanceTests(_LiveShapedCatalog):
+    """HAMCP-198: an earlier module's governance service cannot leak in."""
+
+    SNAPSHOT = {"status": "current", "generation": 1, "tools": {}}
+
+    def ambient(self):
+        service = mock.Mock(core_admission_snapshot=lambda: dict(self.SNAPSHOT))
+        return mock.Mock(service=service)
+
+    def test_the_tool_projects_a_configured_service_admission(self):
+        # Positive control: the pin hides nothing the tool would report.
+        with mock.patch.object(compatibility.HEALTH, "governance", self.ambient()):
+            data = self.assert_usable(_call(), {})
+        expected = build_capability_catalog(core_admission=dict(self.SNAPSHOT))
+        self.assertEqual(data["core_admission"], expected["core_admission"])
+        self.assertNotEqual(
+            data["core_admission"], build_capability_catalog()["core_admission"]
+        )
+
+    def test_the_fixture_pins_and_restores_an_ambient_service(self):
+        ambient = self.ambient()
+        probe = SummaryTests("test_the_unfiltered_call_is_a_bounded_summary")
+        probe.dynamic, probe.gateway = self.dynamic, self.gateway
+        with mock.patch.object(compatibility.HEALTH, "governance", ambient):
+            probe.setUp()
+            try:
+                self.assertIsNone(compatibility.HEALTH.governance.service)
+                probe.test_the_unfiltered_call_is_a_bounded_summary()
+            finally:
+                probe.doCleanups()
+            self.assertIs(compatibility.HEALTH.governance, ambient)
+
+
 class SummaryTests(_LiveShapedCatalog):
     def test_the_unfiltered_call_is_a_bounded_summary(self):
         data = self.assert_usable(_call(), {})

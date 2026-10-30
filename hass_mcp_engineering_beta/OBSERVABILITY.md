@@ -1,5 +1,70 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.4.1-beta.49 health warning classification (HAMCP-198, HAMCP-120)
+
+**Projection-failure identification.** `get_server_health.governance` adds
+three fields next to the unchanged `projection_failure_count` and
+`projection_failure_warning`:
+
+- `projection_failures`: at most eight rows `{plan_id, category}`, ordered
+  by plan ID;
+- `projection_failures_truncated`: true when more than eight plans fail;
+- `projection_failure_category_model`:
+  `hamcp198-projection-failure-category-v1`.
+
+`category` names the first failing check, in this order, from a fixed
+vocabulary:
+
+1. `policy_subject_hash_not_reproducible`
+2. `policy_decision_hash_not_reproducible`
+3. `approval_policy_binding_mismatch`
+4. `historical_profile_approval_mismatch` (a reviewed historical profile
+   rejected only by its approval bundle)
+5. `approval_authority_version_mismatch`, `approval_principal_mismatch`,
+   `approval_sequence_inconsistent`
+6. `current_policy_decision_drift` (stored `f2-v3` decision differs from
+   current evaluation)
+7. `superseded_policy_decision_drift` (stored `f2-v1`/`f2-v2` decision that
+   its own evaluator does not reproduce and no reviewed profile matches)
+8. `policy_snapshot_binding_mismatch` (the snapshot reproduces; a later
+   binding such as the safety-critical projection does not)
+9. `category_unavailable` (the record could not be examined)
+
+Rows carry only the plan ID and the category: no configuration, hash,
+reason code, exception text or other record content. Only the listed plans
+are examined. Diagnosis never changes a projection outcome: the plan stays
+`projection_failed`, its reads still fail closed, the warning stays lit, and
+nothing is admitted, rewritten, approved or dispatched.
+
+**Reviewed-tool accounting.** `upstream_read_gateway.reviewed_tool_accounting_valid`
+now uses the HAMCP-162 optional reviewed-tool model, superseding design
+decision D3, and decides by names, not counts. It is true only when all of
+these hold:
+- every reviewed name (each stock policy entry and each bound optional
+  reviewed tool) is advertised, and no advertised name occurs twice;
+- nothing is missing and nothing is unreviewed (including a malformed
+  catalog entry);
+- neither prohibited optional sibling has drifted
+  (`optional_sibling_drift` is empty);
+- every optional tool has a recognized state: `optional_absent` only when
+  not advertised; for an advertised reader `admitted`, `held`,
+  `withheld:<reason>` or `quarantined:<reason>`; for an advertised sibling
+  `prohibited_withheld`.
+
+A missing tool balanced by a duplicate therefore keeps it false.
+`optional_reviewed_accounting_valid` keeps its HAMCP-162 meaning (the policy
+plus bound optional names equal the advertised count, and nothing is
+unreviewed), so it can be true where the reviewed flag is false. Neither
+flag gates admission, routing or exposure. `reviewed_policy_entry_count` and
+`reviewed_accounted_tool_count` keep their stock meaning.
+
+**Manual review is not reclassified.** `tasks_manual_review` and
+`manual_review_terminalization_count` count terminal `manual_review_required`
+tasks. No stored field or supported operator action distinguishes an open
+case from a reviewed historical one, so health keeps counting them. By
+Josh's decision the warning stays lit; an operator acknowledgment workflow
+is tracked separately (HAMCP-253).
+
 ## Source-only Alarmo inspection
 
 Fixed-cardinality inspection read, partial, refusal, timeout, response-byte and

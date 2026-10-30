@@ -1,0 +1,842 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp198_projection_diagnostics",
+   "test_hamcp162_yaml_admission",
+   "test_terminal_history_projection",
+   "test_beta34_historical_policy_projection",
+   "test_governance_async_health"
+  ],
+  "returncode": 0,
+  "tests": 128,
+  "seconds": 96.2,
+  "summary": "OK"
+ },
+ "mutation_count": 41,
+ "killed": 41,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "C1-missing-decision-gets-hash-category",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "        return \"category_unavailable\"\n    if not persisted",
+     "        return \"policy_decision_hash_not_reproducible\"\n    if not persisted"
+    ]
+   ],
+   "log_path": "mutation-logs/C1-missing-decision-gets-hash-category.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unexaminable_records_are_category_unavailable (test_hamcp198_projection_diagnostics.CategoryTests.test_unexaminable_records_are_category_unavailable)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "C2-integrity-check-removed",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    if not persisted_policy_snapshot_integrity_matches(plan):",
+     "    if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/C2-integrity-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_decision_hash_not_reproducible (test_hamcp198_projection_diagnostics.CategoryTests.test_decision_hash_not_reproducible)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "C3-subject-decision-hash-swapped",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "        if not hmac.compare_digest(",
+     "        if hmac.compare_digest("
+    ]
+   ],
+   "log_path": "mutation-logs/C3-subject-decision-hash-swapped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_decision_hash_not_reproducible (test_hamcp198_projection_diagnostics.CategoryTests.test_decision_hash_not_reproducible)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "C4-approval-hash-binding-unchecked",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "        approval.policy_decision_hash != decision.policy_decision_hash\n        or ",
+     "        "
+    ]
+   ],
+   "log_path": "mutation-logs/C4-approval-hash-binding-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_approval_policy_binding_mismatch (test_hamcp198_projection_diagnostics.CategoryTests.test_approval_policy_binding_mismatch)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "C5-approval-class-binding-unchecked",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "        or approval.policy_class != decision.policy_class.value\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/C5-approval-class-binding-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_approval_policy_binding_mismatch (test_hamcp198_projection_diagnostics.CategoryTests.test_approval_policy_binding_mismatch)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "C6-historical-approval-only-check-removed",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    if historical_policy_projection_has_only_approval_mismatch(plan):",
+     "    if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/C6-historical-approval-only-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_historical_profile_rejected_only_by_approval (test_hamcp198_projection_diagnostics.CategoryTests.test_historical_profile_rejected_only_by_approval)"
+   ],
+   "seconds": 2.5
+  },
+  {
+   "id": "C7-approval-codes-before-snapshot-checks",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    decision = plan.policy_decision\n",
+     "    if error_code in _APPROVAL_CATEGORIES:\n        return _APPROVAL_CATEGORIES[error_code]\n    decision = plan.policy_decision\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C7-approval-codes-before-snapshot-checks.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_historical_profile_rejected_only_by_approval (test_hamcp198_projection_diagnostics.CategoryTests.test_historical_profile_rejected_only_by_approval)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "C8-approval-principal-sequence-swapped",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    ErrorCode.APPROVAL_PRINCIPAL_MISMATCH: \"approval_principal_mismatch\",",
+     "    ErrorCode.APPROVAL_PRINCIPAL_MISMATCH: \"approval_sequence_inconsistent\","
+    ]
+   ],
+   "log_path": "mutation-logs/C8-approval-principal-sequence-swapped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_approval_codes_map_to_their_own_categories (test_hamcp198_projection_diagnostics.CategoryTests.test_approval_codes_map_to_their_own_categories)"
+   ],
+   "seconds": 2.3
+  },
+  {
+   "id": "C9-non-snapshot-code-guard-removed",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    if error_code is not ErrorCode.POLICY_SNAPSHOT_MISMATCH:",
+     "    if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/C9-non-snapshot-code-guard-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unexaminable_records_are_category_unavailable (test_hamcp198_projection_diagnostics.CategoryTests.test_unexaminable_records_are_category_unavailable)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "C10-current-drift-check-removed",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "        if not policy_snapshot_matches(plan):",
+     "        if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/C10-current-drift-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_current_policy_decision_drift (test_hamcp198_projection_diagnostics.CategoryTests.test_current_policy_decision_drift)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "C11-superseded-drift-check-removed",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    elif not persisted_historical_policy_snapshot_matches(plan):",
+     "    elif False:"
+    ]
+   ],
+   "log_path": "mutation-logs/C11-superseded-drift-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_superseded_policy_decision_drift (test_hamcp198_projection_diagnostics.CategoryTests.test_superseded_policy_decision_drift)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "C12-policy-version-test-inverted",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    if decision.policy_version == POLICY_VERSION:",
+     "    if decision.policy_version != POLICY_VERSION:"
+    ]
+   ],
+   "log_path": "mutation-logs/C12-policy-version-test-inverted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_current_policy_decision_drift (test_hamcp198_projection_diagnostics.CategoryTests.test_current_policy_decision_drift)"
+   ],
+   "seconds": 2.4
+  },
+  {
+   "id": "C13-exception-fallback-removed",
+   "class": "a projection failure misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    except Exception:",
+     "    except ZeroDivisionError:"
+    ]
+   ],
+   "log_path": "mutation-logs/C13-exception-fallback-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_unexaminable_records_are_category_unavailable (test_hamcp198_projection_diagnostics.CategoryTests.test_unexaminable_records_are_category_unavailable)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "B1-row-limit-nine",
+   "class": "health identification unbounded, unsorted or leaking",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "MAX_HEALTH_PROJECTION_FAILURES = 8",
+     "MAX_HEALTH_PROJECTION_FAILURES = 9"
+    ]
+   ],
+   "log_path": "mutation-logs/B1-row-limit-nine.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_vocabulary_is_fixed_and_bounded (test_hamcp198_projection_diagnostics.CategoryTests.test_vocabulary_is_fixed_and_bounded)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "B2-truncated-at-exactly-eight",
+   "class": "health identification unbounded, unsorted or leaking",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    return rows, len(ordered) > MAX_HEALTH_PROJECTION_FAILURES",
+     "    return rows, len(ordered) >= MAX_HEALTH_PROJECTION_FAILURES"
+    ]
+   ],
+   "log_path": "mutation-logs/B2-truncated-at-exactly-eight.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_exactly_eight_failures_are_not_truncated (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_exactly_eight_failures_are_not_truncated)"
+   ],
+   "seconds": 3.3
+  },
+  {
+   "id": "B3-truncation-never-reported",
+   "class": "health identification unbounded, unsorted or leaking",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    return rows, len(ordered) > MAX_HEALTH_PROJECTION_FAILURES",
+     "    return rows, False"
+    ]
+   ],
+   "log_path": "mutation-logs/B3-truncation-never-reported.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_more_than_eight_failures_are_truncated_and_sorted (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_more_than_eight_failures_are_truncated_and_sorted)"
+   ],
+   "seconds": 3.9
+  },
+  {
+   "id": "B4-rows-unbounded",
+   "class": "health identification unbounded, unsorted or leaking",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "        for plan, error_code in ordered[:MAX_HEALTH_PROJECTION_FAILURES]",
+     "        for plan, error_code in ordered"
+    ]
+   ],
+   "log_path": "mutation-logs/B4-rows-unbounded.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_more_than_eight_failures_are_truncated_and_sorted (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_more_than_eight_failures_are_truncated_and_sorted)"
+   ],
+   "seconds": 4.1
+  },
+  {
+   "id": "B5-rows-reverse-sorted",
+   "class": "health identification unbounded, unsorted or leaking",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "    ordered = sorted(failures, key=lambda item: item[0].plan_id)",
+     "    ordered = sorted(failures, key=lambda item: item[0].plan_id, reverse=True)"
+    ]
+   ],
+   "log_path": "mutation-logs/B5-rows-reverse-sorted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_more_than_eight_failures_are_truncated_and_sorted (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_more_than_eight_failures_are_truncated_and_sorted)"
+   ],
+   "seconds": 4.0
+  },
+  {
+   "id": "B6-row-echoes-error-code",
+   "class": "health identification unbounded, unsorted or leaking",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "            \"category\": projection_failure_category(plan, error_code),\n",
+     "            \"category\": projection_failure_category(plan, error_code),\n            \"error_code\": error_code.value,\n"
+    ]
+   ],
+   "log_path": "mutation-logs/B6-row-echoes-error-code.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_current_policy_drift_is_identified_end_to_end (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_current_policy_drift_is_identified_end_to_end)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "B7-row-echoes-policy-subject",
+   "class": "health identification unbounded, unsorted or leaking",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "            \"category\": projection_failure_category(plan, error_code),\n",
+     "            \"category\": projection_failure_category(plan, error_code),\n            \"summary\": str(plan.config),\n"
+    ]
+   ],
+   "log_path": "mutation-logs/B7-row-echoes-policy-subject.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_current_policy_drift_is_identified_end_to_end (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_current_policy_drift_is_identified_end_to_end)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "H1-health-rows-dropped",
+   "class": "a health field dropped or constant",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            \"projection_failures\": failure_rows,",
+     "            \"projection_failures\": [],"
+    ]
+   ],
+   "log_path": "mutation-logs/H1-health-rows-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_current_policy_drift_is_identified_end_to_end (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_current_policy_drift_is_identified_end_to_end)"
+   ],
+   "seconds": 2.8
+  },
+  {
+   "id": "H2-health-truncation-constant",
+   "class": "a health field dropped or constant",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            \"projection_failures_truncated\": failures_truncated,",
+     "            \"projection_failures_truncated\": False,"
+    ]
+   ],
+   "log_path": "mutation-logs/H2-health-truncation-constant.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_more_than_eight_failures_are_truncated_and_sorted (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_more_than_eight_failures_are_truncated_and_sorted)"
+   ],
+   "seconds": 4.1
+  },
+  {
+   "id": "H3-health-category-model-dropped",
+   "class": "a health field dropped or constant",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            \"projection_failure_category_model\": (\n                PROJECTION_FAILURE_CATEGORY_MODEL\n            ),\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/H3-health-category-model-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_no_failures_reports_empty_bounded_fields (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_no_failures_reports_empty_bounded_fields)"
+   ],
+   "seconds": 4.4
+  },
+  {
+   "id": "H4-runtime-default-rows-dropped",
+   "class": "a health field dropped or constant",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/runtime.py",
+     "                \"projection_failures\": [],\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/H4-runtime-default-rows-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_unconfigured_default_shape_has_the_fields (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_unconfigured_default_shape_has_the_fields)"
+   ],
+   "seconds": 5.0
+  },
+  {
+   "id": "H5-runtime-default-truncated-true",
+   "class": "a health field dropped or constant",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/runtime.py",
+     "                \"projection_failures_truncated\": False,",
+     "                \"projection_failures_truncated\": True,"
+    ]
+   ],
+   "log_path": "mutation-logs/H5-runtime-default-truncated-true.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unconfigured_default_shape_has_the_fields (test_hamcp198_projection_diagnostics.HealthIdentificationTests.test_unconfigured_default_shape_has_the_fields)"
+   ],
+   "seconds": 5.1
+  },
+  {
+   "id": "G0-reviewed-flag-count-model",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "        reviewed_accounting_valid = _reviewed_tool_accounting_valid(\n            catalog.tools,\n            policy=policy,\n            optional=optional,\n            evaluation=evaluation,\n            sibling_drift=optional_sibling_drift_records,\n        )\n",
+     "        reviewed_accounting_valid = (\n            len(policy.tools) + len(optional.accounted_names)\n            == len(catalog.tools)\n            and not evaluation.unreviewed\n        )\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G0-reviewed-flag-count-model.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_each_real_gap_reports_false_and_gates_nothing (test_hamcp162_yaml_admission.ReviewedAccountingGatewayTests.test_each_real_gap_reports_false_and_gates_nothing)"
+   ],
+   "seconds": 70.5
+  },
+  {
+   "id": "G1-names-complete-check-removed",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    names_complete = reviewed <= set(names)\n",
+     "    names_complete = True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G1-names-complete-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_names_complete_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_names_complete_check)"
+   ],
+   "seconds": 5.2
+  },
+  {
+   "id": "G2-names-unique-check-removed",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    names_unique = all(count == 1 for count in names.values())\n",
+     "    names_unique = True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G2-names-unique-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_names_unique_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_names_unique_check)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "G3-missing-check-removed",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    nothing_missing = not evaluation.missing\n",
+     "    nothing_missing = True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G3-missing-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_missing_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_missing_check)"
+   ],
+   "seconds": 5.2
+  },
+  {
+   "id": "G4-unreviewed-check-removed",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    nothing_unreviewed = not evaluation.unreviewed and set(names) <= reviewed\n",
+     "    nothing_unreviewed = True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G4-unreviewed-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unreviewed_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_unreviewed_check)"
+   ],
+   "seconds": 5.7
+  },
+  {
+   "id": "G5-unreviewed-record-ignored",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    nothing_unreviewed = not evaluation.unreviewed and set(names) <= reviewed\n",
+     "    nothing_unreviewed = set(names) <= reviewed\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G5-unreviewed-record-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unreviewed_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_unreviewed_check)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "G6-unreviewed-names-ignored",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    nothing_unreviewed = not evaluation.unreviewed and set(names) <= reviewed\n",
+     "    nothing_unreviewed = not evaluation.unreviewed\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G6-unreviewed-names-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unreviewed_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_unreviewed_check)"
+   ],
+   "seconds": 5.2
+  },
+  {
+   "id": "G7-sibling-drift-check-removed",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    no_sibling_drift = not sibling_drift\n",
+     "    no_sibling_drift = True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G7-sibling-drift-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_sibling_drift_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_sibling_drift_check)"
+   ],
+   "seconds": 5.1
+  },
+  {
+   "id": "G8-recognized-state-check-removed",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    states_recognized = len(optional_states) == len(\n        yaml_reader.OPTIONAL_NAMES\n    ) and {name for name, _ in optional_states} == set(\n        yaml_reader.OPTIONAL_NAMES\n    ) and all(\n        _optional_state_recognized(name, state, name in names)\n        for name, state in optional_states\n    )\n",
+     "    states_recognized = True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G8-recognized-state-check-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recognized_state_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_recognized_state_check)"
+   ],
+   "seconds": 5.1
+  },
+  {
+   "id": "G9-optional-state-count-unchecked",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    states_recognized = len(optional_states) == len(\n        yaml_reader.OPTIONAL_NAMES\n    ) and {",
+     "    states_recognized = {"
+    ]
+   ],
+   "log_path": "mutation-logs/G9-optional-state-count-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recognized_state_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_recognized_state_check)"
+   ],
+   "seconds": 5.0
+  },
+  {
+   "id": "G10-optional-name-set-unchecked",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    ) and {name for name, _ in optional_states} == set(\n        yaml_reader.OPTIONAL_NAMES\n    ) and all(",
+     "    ) and all("
+    ]
+   ],
+   "log_path": "mutation-logs/G10-optional-name-set-unchecked.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recognized_state_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_recognized_state_check)"
+   ],
+   "seconds": 5.0
+  },
+  {
+   "id": "G11-absent-accepted-while-advertised",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    if state == \"optional_absent\":\n        return not advertised\n",
+     "    if state == \"optional_absent\":\n        return True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G11-absent-accepted-while-advertised.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recognized_state_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_recognized_state_check)"
+   ],
+   "seconds": 5.1
+  },
+  {
+   "id": "G12-unadvertised-state-accepted",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    if not advertised:\n        return False\n    if name in yaml_reader.SIBLING_TOOLS:",
+     "    if name in yaml_reader.SIBLING_TOOLS:"
+    ]
+   ],
+   "log_path": "mutation-logs/G12-unadvertised-state-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recognized_state_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_recognized_state_check)"
+   ],
+   "seconds": 5.0
+  },
+  {
+   "id": "G13-sibling-any-state-accepted",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "        return state == \"prohibited_withheld\"\n",
+     "        return True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G13-sibling-any-state-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recognized_state_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_recognized_state_check)"
+   ],
+   "seconds": 5.0
+  },
+  {
+   "id": "G14-empty-withheld-reason-accepted",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "        state.startswith(prefix) and len(state) > len(prefix)\n",
+     "        state.startswith(prefix)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/G14-empty-withheld-reason-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recognized_state_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_recognized_state_check)"
+   ],
+   "seconds": 5.1
+  },
+  {
+   "id": "G15-unknown-reader-state-accepted",
+   "class": "accounting flag masking an unaccounted or unreviewed tool",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "    return state in _OPTIONAL_READER_STATES or any(",
+     "    return True or any("
+    ]
+   ],
+   "log_path": "mutation-logs/G15-unknown-reader-state-accepted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recognized_state_check (test_hamcp162_yaml_admission.AccountingCheckTests.test_recognized_state_check)"
+   ],
+   "seconds": 5.0
+  }
+ ]
+}

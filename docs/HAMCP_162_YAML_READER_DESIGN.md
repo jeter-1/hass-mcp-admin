@@ -1312,6 +1312,16 @@ catalog; the 80-tool catalog makes it false today. Optional names are
 accounted in a new `optional_reviewed_accounting_valid` field, leaving the
 stock field's meaning unchanged (D3).
 
+> **Superseded (HAMCP-198, 2026-10-29).** Josh's direction to clear the
+> permanently false flag supersedes the D3 clause "stock
+> `reviewed_tool_accounting_valid` meaning unchanged". From 2.4.1-beta.49 the
+> flag uses the optional model by complete names: every reviewed name
+> advertised exactly once, nothing missing or unreviewed, no sibling drift,
+> every optional state recognized. `optional_reviewed_accounting_valid` keeps
+> the count-based meaning above. D3's
+> classification of `ha_list_files`/`ha_read_file` as reviewed `prohibited`
+> optional names is unchanged. See `hass_mcp_engineering_beta/OBSERVABILITY.md`.
+
 ### 5.3 Drift quarantines only this tool
 
 **Drift in `ha_config_get_yaml`.** Any of the following quarantines only the
@@ -1932,7 +1942,7 @@ authorizes implementation, capture, release or deployment before that.
 |---|---|---|
 | D1 | Disposable offline capture (HAMCP-187 §10.1 method, internal network, no live HA) of 8.4.3 and 8.5.0 with `ENABLE_BETA_FEATURES=true`, `HAMCP_ENABLE_FILESYSTEM_TOOLS=true`, YAML editing off, and the committed artifact plus provenance. The capture records the **complete** runtime descriptor of all three tools (R4) and is repeated once per version to prove the fingerprint is stable | **Authorized.** Runs after final approval of this design; not run in this batch |
 | D2 | Admission mechanism: (a) optional reviewed tools with per-version explicit dispositions in the adapter module, or (b) a new `yaml_reader` provider surface, or (c) ordinary policy entries | **(a)**, which must follow HAMCP-184's fail-closed rule with an explicit disposition for every registry version and no default. Revision 2 adds the complete-descriptor binding (R4) and the generation and lease contract (R5) |
-| D3 | Classify `ha_list_files`/`ha_read_file` as reviewed `prohibited` optional names, with optional accounting in a new field (stock `reviewed_tool_accounting_valid` meaning unchanged) | **Accepted** |
+| D3 | Classify `ha_list_files`/`ha_read_file` as reviewed `prohibited` optional names, with optional accounting in a new field (stock `reviewed_tool_accounting_valid` meaning unchanged) | **Accepted**; the "meaning unchanged" clause is superseded by HAMCP-198 (2026-10-29, §5.2 note) |
 | D4 | Readable set | **`configuration.yaml` only** (narrowed from revision 1's `configuration.yaml` + `packages/`) |
 | D5 | Packages | **Removed from the first release entirely**: no `packages/*.yaml` glob and no single package files. Production does not use HA packages (not enabled by default; Josh is unaware of any). This resolves R3 by scope removal. A future option is recorded in §12 and not designed now |
 | D5a | Component extra directories (F11) | **Assumed default (empty), never changed.** Engineering never addresses them regardless |

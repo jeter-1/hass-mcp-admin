@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.4.1-beta.49 - Health warnings explained (HAMCP-198, HAMCP-120)
+
+Builds on 2.4.1-beta.48 (#328). Health reporting only: no approval, execution,
+tool, input schema, stored format or Home Assistant write change.
+
+- `governance` adds `projection_failures` (at most eight
+  `{plan_id, category}` rows), `projection_failures_truncated` and
+  `projection_failure_category_model`; the category is the first failing
+  check from a fixed vocabulary. Count and warning are unchanged.
+- `upstream_read_gateway.reviewed_tool_accounting_valid` uses the HAMCP-162
+  optional reviewed-tool model (supersedes design D3) and decides by names:
+  false for a missing, duplicate or unreviewed tool (including a missing tool
+  balanced by a duplicate), optional sibling drift, or an unrecognized
+  optional state. `optional_reviewed_accounting_valid` keeps its meaning.
+- Manual-review counts are unchanged by Josh's decision; an acknowledgment
+  workflow is tracked separately (HAMCP-253).
+
 ## 2.4.1-beta.48 - A full baseline capture completes its final fence (HAMCP-248)
 
 Builds on 2.4.1-beta.47. No budget, concurrency, reserve, resume, D4,
