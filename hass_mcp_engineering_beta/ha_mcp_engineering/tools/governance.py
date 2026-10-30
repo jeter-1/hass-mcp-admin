@@ -11,6 +11,7 @@ from ..errors import ErrorCode, GovernanceError
 from ..request_context import current_telemetry
 
 from ..governance import GOVERNANCE
+from ..governance import dashboard_metadata as dashboard_metadata_contract
 from ..governance import helper_options as helper_options_contract
 from ..governance.label_registry import (
     COLOR_HEX_PATTERN,
@@ -91,6 +92,7 @@ IDENTIFIER_INPUTS: dict[str, tuple[str, ...]] = {
     ),
     "create_input_select_option_plan": ("entity_id",),
     "create_helper_options_plan": ("changes[].entity_id",),
+    "create_dashboard_metadata_plan": ("url_path",),
     "create_addon_restart_plan": ("addon_slug",),
     "create_home_assistant_restart_plan": (),
     "create_change_plan": ("operation", "automation_id"),
@@ -1544,6 +1546,127 @@ def registered_helper_options_tool():
     return tool
 
 
+#: The closed published input schema (HAMCP-106).  The planner re-validates
+#: every value before any Home Assistant read; the title is stored exactly.
+DASHBOARD_METADATA_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "title": "create_dashboard_metadata_planArguments",
+    "additionalProperties": False,
+    "required": ["url_path"],
+    "minProperties": 2,
+    "properties": {
+        "url_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": dashboard_metadata_contract.URL_PATH_PATTERN.pattern,
+            "not": {"const": dashboard_metadata_contract.DEFAULT_DASHBOARD_URL_PATH},
+        },
+        "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": dashboard_metadata_contract.MAX_TITLE_LENGTH,
+        },
+        "icon": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "maxLength": dashboard_metadata_contract.MAX_ICON_LENGTH,
+                    "pattern": dashboard_metadata_contract.ICON_PATTERN.pattern,
+                },
+                {"type": "null"},
+            ]
+        },
+        "show_in_sidebar": {"type": "boolean"},
+        "require_admin": {"type": "boolean"},
+        "expiration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "default": 120,
+        },
+    },
+}
+
+
+async def _dashboard_metadata_plan(arguments: Any) -> str:
+    return await run_structured(
+        "create_dashboard_metadata_plan",
+        "Created one governed dashboard metadata proposal without dispatching it.",
+        _screened(
+            "create_dashboard_metadata_plan",
+            arguments,
+            lambda: GOVERNANCE.require().create_dashboard_metadata_plan(arguments),
+        ),
+        metadata={
+            "resource_type": dashboard_metadata_contract.RESOURCE_TYPE,
+            "provider": dashboard_metadata_contract.PROVIDER,
+            "fallback": "none",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_dashboard_metadata_plan(
+    url_path: str,
+    title: str | None = None,
+    icon: str | None = None,
+    show_in_sidebar: bool | None = None,
+    require_admin: bool | None = None,
+    expiration_minutes: int = 120,
+) -> str:
+    """Propose a title, icon, sidebar or require_admin change to one dashboard.
+
+    Names one existing storage-mode dashboard by exact url_path (not the
+    default "lovelace" dashboard, not a YAML dashboard) and any of title
+    (stored exactly as given), icon ("prefix:name", or null to clear),
+    show_in_sidebar and require_admin. Fields not given are never sent and
+    never changed; views and cards are never sent. Planning binds the
+    dashboard's metadata and content fingerprint and creates no plan when
+    nothing would change. The plan shows each field before and after and
+    the visibility consequence. External administrator approval and
+    apply_change_plan are required; dispatch re-reads the dashboard and
+    refuses if anything changed, sends one update, and verifies the
+    requested fields, the unrequested fields and the content by readback.
+    rollback_change plans a separately approved restore. Until a signed
+    registry admits this capability the tool refuses with
+    pending_signed_registry_admission.
+    """
+    del url_path, title, icon, show_in_sidebar, require_admin
+    del expiration_minutes
+    raise RuntimeError("dashboard metadata planning receives raw arguments")
+
+
+class DashboardMetadataPlanTool(Tool):
+    """Pass the exact raw argument object to the closed planner validation.
+
+    Field presence matters (an omitted field is never sent, ``icon: null``
+    clears the icon), so defaults are never materialized.
+    """
+
+    async def run(self, arguments, context=None, convert_result=False):
+        rendered = await _dashboard_metadata_plan(arguments)
+        return (
+            self.fn_metadata.convert_result(rendered)
+            if convert_result
+            else rendered
+        )
+
+
+def registered_dashboard_metadata_tool():
+    tool = DashboardMetadataPlanTool.from_function(
+        create_dashboard_metadata_plan,
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    tool.parameters = DASHBOARD_METADATA_INPUT_SCHEMA
+    return tool
+
+
 GOVERNANCE_TOOLS = (
     create_backup_plan,
     create_reload_plan,
@@ -1554,6 +1677,7 @@ GOVERNANCE_TOOLS = (
     create_configuration_delete_plan,
     create_input_select_option_plan,
     create_helper_options_plan,
+    create_dashboard_metadata_plan,
     create_addon_restart_plan,
     create_home_assistant_restart_plan,
     create_change_plan,

@@ -111,6 +111,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "create_label_plan",
                           "create_configuration_delete_plan",
                           "create_helper_options_plan",
+                          "create_dashboard_metadata_plan",
                           "create_input_select_option_plan",
                           "list_script_traces", "get_script_trace",
                           "capture_automation_trace",

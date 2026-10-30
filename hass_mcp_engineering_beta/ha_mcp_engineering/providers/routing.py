@@ -198,6 +198,9 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
         ProviderCapability.OPERATIONAL_ADMINISTRATION
     ),
     "create_helper_options_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
+    "create_dashboard_metadata_plan": (
+        ProviderCapability.OPERATIONAL_ADMINISTRATION
+    ),
     "create_input_select_option_plan": (
         ProviderCapability.OPERATIONAL_ADMINISTRATION
     ),

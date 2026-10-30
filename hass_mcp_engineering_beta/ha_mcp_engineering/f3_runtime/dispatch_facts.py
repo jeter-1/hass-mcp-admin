@@ -137,6 +137,9 @@ _P3_TARGET_TYPES = frozenset(
         "entity_assistant_exposure",
         # HAMCP-165: label create and update are ``require_admin`` too.
         "label_registry_entry",
+        # HAMCP-106: ``lovelace/dashboards/update`` is ``require_admin``
+        # before its handler (Core 2026.10 helpers/collection.py).
+        "dashboard_metadata",
     }
 )
 # V9 applies to every code-owned entity registry write identity.
@@ -146,6 +149,8 @@ ALREADY_PRESENT_CAPABILITY_IDENTITIES = frozenset(
         "update_entity_registry_availability_configuration",
         "update_entity_assistant_exposure_configuration",
         "update_label_registry_entry_configuration",
+        # HAMCP-106: a dashboard already showing the planned metadata.
+        "update_dashboard_metadata_configuration",
     }
 )
 _VERIFIED_NO_DISPATCH_CLASS = "verified_no_dispatch"

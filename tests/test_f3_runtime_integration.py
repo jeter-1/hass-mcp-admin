@@ -25,6 +25,7 @@ from ha_mcp_engineering.f3_runtime.registry import (  # noqa: E402
     AVAILABILITY_EXPOSURE_REGISTRATIONS,
     CONFIGURATION_DELETE_REGISTRATIONS,
     CONFIGURATION_REGISTRATIONS,
+    DASHBOARD_METADATA_REGISTRATION,
     DASHBOARD_REGISTRATION,
     ENTITY_METADATA_REGISTRATION,
     HELPER_OPTIONS_REGISTRATION,
@@ -1048,24 +1049,28 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
                     HELPER_OPTIONS_REGISTRATION,
                     INPUT_SELECT_REGISTRATION,
                     DASHBOARD_REGISTRATION,
+                    # HAMCP-106: the dormant dashboard metadata identity.
+                    DASHBOARD_METADATA_REGISTRATION,
                 )
             },
         )
         # HAMCP-155: the two delete identities are registered but each adapter
         # refuses until a signed registry admits the delete profile.
-        # +2 HAMCP-165 label identities, +2 HAMCP-232/145 dormant identities
-        self.assertEqual(len(identities), 23)
+        # +2 HAMCP-165 label identities, +2 HAMCP-232/145 dormant identities,
+        # +1 HAMCP-106 dormant dashboard metadata identity
+        self.assertEqual(len(identities), 24)
+        # One full dashboard update; HAMCP-106 adds only the metadata update.
         self.assertEqual(
-            [item for item in identities if "dashboard" in item],
-            ["update_existing_dashboard"],
+            sorted(item for item in identities if "dashboard" in item),
+            ["update_dashboard_metadata_configuration", "update_existing_dashboard"],
         )
 
     def test_ready_health_is_bounded_and_reports_one_dashboard_capability(self):
         health = self.runtime.health()
         self.assertEqual(health["status"], "ready")
         self.assertTrue(health["execution_ready"])
-        # +2 HAMCP-165, +2 HAMCP-155, +2 HAMCP-232/145
-        self.assertEqual(health["activated_capability_count"], 23)
+        # +2 HAMCP-165, +2 HAMCP-155, +2 HAMCP-232/145, +1 HAMCP-106
+        self.assertEqual(health["activated_capability_count"], 24)
         self.assertEqual(health["dashboard_capability_count"], 1)
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(health["recovery_cadence_seconds"], 30)

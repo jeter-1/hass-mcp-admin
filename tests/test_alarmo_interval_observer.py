@@ -2320,8 +2320,15 @@ class WorkflowBindingTests(unittest.TestCase):
                          ["REAL_HA_HELPER_OPTIONS_RESULT", "REAL_HA_INPUT_SELECT_OPTION_RESULT",
                           "REAL_HA_SCRIPT_TRACES_RESULT"])
         import seq15_contract_acceptance as seq15
-        self.assertEqual(sorted(lane["output_env"] for lane in seq15.LANES.values()),
+        # HAMCP-106: the dashboard-metadata lane's workflow entries are deferred to the
+        # November seq-15 batch; pinned exactly so wiring it forces this list to shrink.
+        self.assertEqual(seq15.WORKFLOW_PENDING_LANES, frozenset({"dashboard_metadata"}))
+        self.assertTrue(seq15.WORKFLOW_PENDING_LANES <= set(seq15.LANES))
+        wired = [lane for key, lane in seq15.LANES.items() if key not in seq15.WORKFLOW_PENDING_LANES]
+        self.assertEqual(sorted(lane["output_env"] for lane in wired),
                          sorted(re.findall(r"printf '([A-Z_]+)=", stage["run"])))
+        for key in seq15.WORKFLOW_PENDING_LANES:
+            self.assertNotIn(seq15.LANES[key]["output_env"], CI.read_text(encoding="utf-8"))
         upload = self.step(SEQ15_UPLOAD)
         self.assertEqual(upload["uses"], self.step(SEQ13_UPLOAD)["uses"])
         self.assertEqual(upload["with"]["name"], "seq15-contracts-core-${{ matrix.ha_version }}"

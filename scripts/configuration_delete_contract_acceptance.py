@@ -59,7 +59,9 @@ DORMANT = frozenset({CAPABILITY, "core.entity_registry_availability_operation",
                      "core.entity_assistant_exposure_operation", "core.label_registry_operation",
                      # HAMCP-232/145 November batch (seq 15+).
                      "core.config_entry_helper_options_operation",
-                     "core.typed_input_select_option_operation", "core.script_trace_read"})
+                     "core.typed_input_select_option_operation", "core.script_trace_read",
+                     # HAMCP-106 dashboard metadata (seq 15 signing batch).
+                     "core.dashboard_metadata_operation"})
 SHIPPED_SIGNED_COUNT = 22
 AUTHORITY_TRANSITION = [SHIPPED_SIGNED_COUNT, SHIPPED_SIGNED_COUNT + 1]
 REGISTRY_LIST = "config/entity_registry/list"
