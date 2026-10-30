@@ -538,11 +538,15 @@ def _valid_sun_offset(value: Any) -> bool:
             and _SUN_OFFSET_CLOCK.fullmatch(value)
         ):
             parts = value.lstrip("+-").split(":")
-            timedelta(
+            offset = timedelta(
                 hours=int(parts[0]),
                 minutes=int(parts[1]),
                 seconds=float(parts[2]) if len(parts) == 3 else 0,
             )
+            if value.startswith("-"):
+                # Core's time_period_str negates the duration; timedelta's
+                # negative bound is narrower, so the negation can overflow.
+                offset = -offset
             return True
         if isinstance(value, dict):
             if not value or not set(value) <= AUTOMATION_SUN_OFFSET_UNITS:

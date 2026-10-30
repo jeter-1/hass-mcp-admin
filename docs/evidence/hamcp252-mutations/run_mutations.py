@@ -29,6 +29,9 @@ Recorded runs (2026-10-30, copied tree under .artifacts/):
 - ``results-round1.json`` (Codex round-1 corrections): the 32 earlier
   mutants (V9, L15 and D4 retargeted at the changed lines) plus V11-V23,
   L16-L18 and D8-D9, all against the round-1 tests.
+- ``results-round2.json`` (Codex round-2 R2-L1): the 50 round-1 mutants
+  plus V24 (a negative clock offset's sign not applied, so the narrower
+  negative timedelta bound goes unchecked), against the round-2 tests.
 
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\
@@ -134,6 +137,9 @@ MUTATIONS = [
        "        and _SUN_OFFSET_DECIMAL")),
     m("V23-sun-event-field-not-reported", V,
       (NZ, '"invalid automation sun condition", fields=(field,)', '"invalid automation sun condition"')),
+    # Round 2 (Codex R2-L1): a negative clock offset is checked after negation.
+    m("V24-offset-sign-not-applied", V,
+      (NZ, "                offset = -offset\n", "                pass\n")),
     m("L1-locate-ignored", L,
       (NZ, "        if self.path is None:\n            self.path = path",
        "        if False:\n            self.path = path")),

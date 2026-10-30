@@ -92,6 +92,11 @@ VALID_OFFSETS = (
     {"minutes": 30}, {"minutes": -30}, {"hours": 1, "minutes": "30"},
     {"milliseconds": 500}, {"days": 0}, {"seconds": 1.5},
 )
+# Codex R2-L1: Core's time_period_str negates a "-H:M" duration, and
+# timedelta's negative bound (-999999999 days) is narrower than its positive
+# one (999999999 days 23:59:59.999999), so the sign decides the boundary.
+LARGEST_CLOCK_OFFSETS = ("23999999999:00", "+23999999999:00", "-23999999976:00")
+NEGATIVE_OVERFLOW_OFFSETS = ("-23999999999:00", "-23999999976:01")
 
 
 def replica_config():
@@ -439,6 +444,43 @@ class SunConditionComparisonTests(unittest.TestCase):
             "automation_verifier_unsupported_automation_mapping_keys",
         )
         self.assertEqual(automation_verification_location_codes(config), (ROOT_CODE,))
+
+    def test_negative_clock_overflow_is_refused_with_the_offset_rule(self):
+        for field in ("after_offset", "before_offset"):
+            for offset in NEGATIVE_OVERFLOW_OFFSETS:
+                with self.subTest(field=field, offset=offset):
+                    config = wrap(in_choose({"condition": "sun", "after": "sunset", field: offset}))
+                    self.assertFalse(comparable(config))
+                    self.assertEqual(automation_verification_detail_code(config), OFFSET_RULE)
+                    self.assertEqual(
+                        automation_verification_location_codes(config),
+                        (
+                            "automation_verifier_path_action_0_choose_0_sequence_0",
+                            f"automation_verifier_field_{field}",
+                        ),
+                    )
+
+    def test_largest_clock_offsets_and_ordinary_negatives_are_admitted_exactly(self):
+        for field in ("after_offset", "before_offset"):
+            for offset in (*LARGEST_CLOCK_OFFSETS, "-01:00:00"):
+                with self.subTest(field=field, offset=offset):
+                    approved = wrap([{"condition": "sun", "before": "sunrise", field: offset}])
+                    self.assertTrue(comparable(approved))
+                    self.assertIsNone(automation_verification_detail_code(approved))
+                    same = compare_resource_verification("automation", approved, deepcopy(approved))
+                    self.assertTrue(same.normalization_valid)
+                    self.assertTrue(same.semantic_match)
+                    # The raw value is compared: a sign or a digit changed,
+                    # or the same duration written differently, mismatches.
+                    for other in ("01:00:00", "-1:00:00", "-01:00", "-01:00:01", -3600, {"hours": -1},
+                                  *LARGEST_CLOCK_OFFSETS):
+                        if other == offset:
+                            continue
+                        observed = deepcopy(approved)
+                        observed["action"][0][field] = other
+                        result = compare_resource_verification("automation", approved, observed)
+                        self.assertTrue(result.normalization_valid, other)
+                        self.assertFalse(result.semantic_match, other)
 
     def test_valid_offsets_are_admitted_and_compared_exactly(self):
         for field in ("after_offset", "before_offset"):
@@ -1034,6 +1076,47 @@ class SunConditionDispatchTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(reason["verifier_rule"], OFFSET_RULE)
                 self.assertEqual(reason["verifier_location"]["path"], "/action/0/choose/2/sequence/2")
                 self.assertEqual(reason["verifier_location"]["fields"], ["after_offset"])
+
+    async def test_negative_clock_overflow_refuses_before_approval_with_location(self):
+        for field in ("after_offset", "before_offset"):
+            for offset in NEGATIVE_OVERFLOW_OFFSETS:
+                with self.subTest(field=field, offset=offset):
+                    config = replica_config()
+                    at(config, SUN_PATH)[field] = offset
+                    preflight, first, _, gateway, approval = await self._run(config)
+                    self.assertFalse(preflight.eligible)
+                    self.assertEqual(
+                        preflight.diagnostic_codes,
+                        tuple(sorted((
+                            "automation_verification_structure",
+                            f"automation_verifier_field_{field}",
+                            "automation_verifier_path_action_0_choose_2_sequence_2",
+                            OFFSET_RULE,
+                            "configuration_not_verifiable",
+                        ))),
+                    )
+                    self.assertEqual(first.outcome, "preflight_rejected")
+                    self.assertEqual(approval.consumptions, 0)
+                    self.assertEqual(gateway.counters.dispatches, 0)
+                    self.assertEqual(gateway.counters.simulated_mutations, 0)
+                    reason = reasons.child_reason({"operation_id": "op"}, self.record)
+                    self.assertEqual(reason["verifier_rule"], OFFSET_RULE)
+                    self.assertEqual(reason["verifier_location"]["path"], "/action/0/choose/2/sequence/2")
+                    self.assertEqual(reason["verifier_location"]["fields"], [field])
+                    self.assertNotIn(offset, json.dumps(reason))
+
+    async def test_largest_clock_offsets_verify_exactly(self):
+        for field in ("after_offset", "before_offset"):
+            for offset in (*LARGEST_CLOCK_OFFSETS, "-01:00:00"):
+                with self.subTest(field=field, offset=offset):
+                    config = replica_config()
+                    at(config, SUN_PATH)[field] = offset
+                    preflight, first, _, gateway, approval = await self._run(config)
+                    self.assertTrue(preflight.eligible)
+                    self.assertEqual(first.outcome, "succeeded_verified")
+                    self.assertEqual(approval.consumptions, 1)
+                    self.assertEqual(gateway.counters.dispatches, 1)
+                    self.assertEqual(at(gateway.states[("automation", "porch_light")], SUN_PATH)[field], offset)
 
     async def test_valid_offset_verifies_and_changed_offset_is_a_mismatch(self):
         for offset in ("-00:30:00", 90, {"minutes": 30}):

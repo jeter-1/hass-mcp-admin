@@ -10,6 +10,8 @@ Assistant write change.
   Values outside Core's sun schema are refused with
   `automation_verifier_invalid_automation_sun_condition`, and a malformed
   offset with `automation_verifier_invalid_automation_sun_condition_offset`.
+  A negative clock offset is checked after its sign is applied, as Core does,
+  so one beyond the negative duration bound is refused too.
   The fields stay refused on other condition types, as do unknown fields.
 - Every verifier refusal also stores bounded location codes
   (`automation_verifier_path_*`, `automation_verifier_field_*`; unknown names

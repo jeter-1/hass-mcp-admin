@@ -30,7 +30,9 @@ which is why an earlier synthetic probe passed.
   `automation_verifier_invalid_automation_sun_condition`; a malformed
   `after_offset`/`before_offset` (outside Core's `cv.time_period` forms, or
   outside the reviewed subset of them) is refused before dispatch with
-  `automation_verifier_invalid_automation_sun_condition_offset`. The fields stay
+  `automation_verifier_invalid_automation_sun_condition_offset`. A negative
+  clock offset is checked after its sign is applied, as Core does, so one
+  beyond the negative duration bound is refused. The fields stay
   refused on every other condition type, and unknown fields on a sun step
   stay refused.
 - **Refusal location.** Every verifier refusal also stores bounded codes for
