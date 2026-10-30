@@ -335,6 +335,9 @@ class AccountingCheckTests(unittest.TestCase):
                 without_sibling, replaced("ha_read_file", "prohibited_withheld")),
             "optional_name_dropped": (None, [(n, s) for n, s in live if n != "ha_read_file"]),
             "unknown_optional_name": (None, live + [("ha_synthetic_optional", "optional_absent")]),
+            "optional_name_substituted": (None, [
+                ("ha_synthetic_optional", "optional_absent") if n == "ha_read_file" else (n, s)
+                for n, s in live]),
             "duplicate_optional_name": (None, live + [("ha_list_files", "prohibited_withheld")]),
         }
         for label, (tools, states) in cases.items():
