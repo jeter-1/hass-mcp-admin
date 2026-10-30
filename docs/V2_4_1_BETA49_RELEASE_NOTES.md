@@ -65,8 +65,9 @@ exposure.
   refusal behave as before. Every field is additive. Static tools, the
   advertised catalog and input schemas are unchanged.
 - `governance_health` timing on the 200-plan test fixture with two failures:
-  medians 156–170 ms before, 142–152 ms after (no slowdown; diagnosis
-  examines at most eight plans).
+  medians 156–164 ms before (two retained runs), 142–152 ms after (three
+  runs); no slowdown, as diagnosis examines at most eight plans. Fixture
+  timing, not live latency.
 
 ## Rollback
 
