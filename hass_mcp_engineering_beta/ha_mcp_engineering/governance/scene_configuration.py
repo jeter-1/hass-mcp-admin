@@ -53,8 +53,6 @@ PROFILE = "core.scene_configuration_operation"
 PROVIDER = "direct_home_assistant_scene_configuration"
 PROVIDER_CONTRACT = "direct-ha-exact-scene-configuration-v1"
 PROVIDER_OPERATIONS = {"update": "update_scene_configuration"}
-CONFIG_ROUTE = "/config/scene/config/{}"
-STATE_ROUTE = "/states/{}"
 REGISTRY_LIST_COMMAND = "config/entity_registry/list"
 REGISTRY_GET_COMMAND = "config/entity_registry/get"
 ALLOWED_COMMANDS = frozenset({REGISTRY_LIST_COMMAND, REGISTRY_GET_COMMAND})
@@ -132,7 +130,10 @@ def provider_evidence() -> dict[str, Any]:
         "transport": "home_assistant_rest",
         "readback_transport": "home_assistant_rest_scene_config_get",
         "argument_constraints": {
-            "routes": {"read": f"GET {CONFIG_ROUTE}", "write": f"POST {CONFIG_ROUTE}"},
+            "routes": {
+                "read": "GET /config/scene/config/{}",
+                "write": "POST /config/scene/config/{}",
+            },
             "target": "exact_existing_ui_managed_scene_config_id",
             "body": "full_proposed_configuration_without_id",
             "fields": list(FIELDS),
@@ -458,7 +459,7 @@ class SceneConfigurationGateway:
             raise ValueError("scene_configuration resource_id must be a config id")
         value = await self.rest_client.request(
             "GET",
-            rest_path(CONFIG_ROUTE, config_id),
+            rest_path("/config/scene/config/{}", config_id),
             expected_statuses=frozenset({404}),
         )
         if isinstance(value, ExpectedHttpStatus) and value.status == 404:
@@ -543,7 +544,7 @@ class SceneConfigurationGateway:
         validate_entity_id(entity_id)
         value = await self.rest_client.request(
             "GET",
-            rest_path(STATE_ROUTE, entity_id, kinds=("entity_id",)),
+            rest_path("/states/{}", entity_id, kinds=("entity_id",)),
             expected_statuses=frozenset({404}),
         )
         if isinstance(value, ExpectedHttpStatus) and value.status == 404:
@@ -704,7 +705,7 @@ class SceneConfigurationGateway:
                 call_not_sent=True,
             )
         try:
-            path = rest_path(CONFIG_ROUTE, config_id)
+            path = rest_path("/config/scene/config/{}", config_id)
         except UnsafeRequestPathError as exc:
             raise ConfigurationMutationNotDispatchedError(
                 details={
@@ -771,7 +772,6 @@ __all__ = [
     "ACTION",
     "CAPABILITY_IDENTITIES",
     "CAPABILITY_IDENTITY",
-    "CONFIG_ROUTE",
     "FIELDS",
     "NEVER_SENT",
     "PENDING_ADMISSION_REASON",
