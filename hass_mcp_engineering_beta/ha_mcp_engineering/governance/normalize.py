@@ -197,6 +197,31 @@ class AutomationVerificationNormalizationError(ValueError):
         )
 
 
+AUTOMATION_VERIFIER_DETAIL_PREFIX = "automation_verifier_"
+
+
+def automation_verification_detail_code(config: Any) -> str | None:
+    """HAMCP-249: name the verifier rule that refused ``config``.
+
+    Reporting only.  Every refusal message in this module is a fixed literal,
+    so the returned identifier comes from a closed set and never carries
+    configuration content.  ``None`` when the verifier accepts ``config`` or
+    refuses it through an exception without a reviewed message.
+    """
+
+    try:
+        normalize_automation_for_verification(config)
+    except AutomationVerificationNormalizationError as exc:
+        slug = str(exc).replace("-", "_").replace(" ", "_")
+        code = AUTOMATION_VERIFIER_DETAIL_PREFIX + slug
+        if len(code) <= 96 and code.replace("_", "a").isalpha() and code.islower():
+            return code
+        return None
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
 def _bounded_nonempty_string(value: Any) -> bool:
     return bool(
         isinstance(value, str)

@@ -51,6 +51,9 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_hamcp189_expired_pre_intent_deadline.py",
     "tests/test_hamcp189_expired_unclaimed_declaration.py",
     "tests/test_hamcp192_observing_fix.py",
+    # HAMCP-249: pre-dispatch refusal reasons (executor faults, lock errors,
+    # and the restated execution-record bounds pinned to f3/models.py).
+    "tests/test_hamcp249_pre_dispatch_reasons.py",
     # HAMCP-145: input_select option lock-mode coverage.
     "tests/test_hamcp145_input_select_option.py",
     "tests/test_f3_tokenless_lock_recovery.py",

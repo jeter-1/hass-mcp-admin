@@ -26,6 +26,30 @@ stored-format, tool or Home Assistant write change.
 - Capture documentation: the keepalive handling, and that a resume must be
   compared with a capture taken after it ends.
 
+## 2.4.1-beta.47 - Every pre-dispatch refusal names its reason (HAMCP-249)
+
+Builds on 2.4.1-beta.46. Reporting only: no preflight, tool, input
+schema or Home Assistant write change.
+
+- New `pre_dispatch_refusal` (model `f3_pre_dispatch_reason`): a
+  closed-vocabulary `error_code`, the refusing `check`, fixed `detail`,
+  `verifier_rule`, bounded child, operation and target identifiers, and the
+  stored diagnostic codes.
+- Reported on `f3_children[*].pre_dispatch_reason` (derived on read from the
+  child's stored terminal codes), the task's `verification_summary` and
+  `last_error`, the `apply_change_plan` result, repeat-apply details, and the
+  `preflight_failed` event with its add-on log and audit `error_code`,
+  `check` and `failure_information`. Legacy F1 refusals gain
+  `last_error.failure_information`, the same log fields and the reason in
+  the first refusal error's details.
+- A later child refused after an earlier child completed keeps
+  `manual_review_required` and is named on every surface plus a new
+  non-transitioning `child_preflight_failed` event.
+- `configuration_not_verifiable` also stores the mismatch categories and the
+  readback verifier rule (`automation_verifier_<rule>`).
+- Older tasks are projected from their child's stored terminal codes, else
+  `unknown_legacy`; terminal recovery never rewrites a stored task.
+
 ## 2.4.1-beta.46 - list_capabilities returns data within the response cap (HAMCP-247)
 
 Builds on 2.4.1-beta.45. On beta.44 the unfiltered call (96,902 characters)

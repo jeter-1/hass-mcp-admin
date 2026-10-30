@@ -1,0 +1,923 @@
+{
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp249_pre_dispatch_reasons",
+   "test_f3_runtime_integration",
+   "test_hamcp135_configuration_execution",
+   "test_trigger_condition_verification",
+   "test_hamcp181_dispatch_facts",
+   "test_f3_orphan_child_recovery"
+  ],
+  "returncode": 0,
+  "tests": 239,
+  "seconds": 787.4,
+  "summary": "OK"
+ },
+ "mutation_count": 45,
+ "killed": 45,
+ "survived": [],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "S1-parent-summary-reason-dropped",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "summary[pre_dispatch_reasons.SUMMARY_KEY] = reason",
+     "pass"
+    ]
+   ],
+   "log_path": "mutation-logs/S1-parent-summary-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_e10_expired_unclaimed_child_names_plan_expiry (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_e10_expired_unclaimed_child_names_plan_expiry)"
+   ],
+   "seconds": 5.5
+  },
+  {
+   "id": "S2-parent-last-error-dropped",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "failed_changes[\"last_error\"] = {",
+     "_dropped = {"
+    ]
+   ],
+   "log_path": "mutation-logs/S2-parent-last-error-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_e10_expired_unclaimed_child_names_plan_expiry (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_e10_expired_unclaimed_child_names_plan_expiry)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "S3-preflight-failed-event-error-code-dropped",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "error_code=reason[\"error_code\"],\n                        failure_information=reason,\n                    )\n                    plan.status = PlanStatus.FAILED",
+     "error_code=None,\n                        failure_information=reason,\n                    )\n                    plan.status = PlanStatus.FAILED"
+    ]
+   ],
+   "log_path": "mutation-logs/S3-preflight-failed-event-error-code-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_e10_expired_unclaimed_child_names_plan_expiry (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_e10_expired_unclaimed_child_names_plan_expiry)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "S4-terminal-event-ignores-error-code",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "result_status=result_status, error_code=error_code,",
+     "result_status=result_status,"
+    ]
+   ],
+   "log_path": "mutation-logs/S4-terminal-event-ignores-error-code.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_e10_expired_unclaimed_child_names_plan_expiry (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_e10_expired_unclaimed_child_names_plan_expiry)"
+   ],
+   "seconds": 5.2
+  },
+  {
+   "id": "S5-child-view-reason-dropped",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "\"pre_dispatch_reason\": pre_dispatch_reasons.child_reason(",
+     "\"pre_dispatch_reason\": None and pre_dispatch_reasons.child_reason("
+    ]
+   ],
+   "log_path": "mutation-logs/S5-child-view-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_e10_expired_unclaimed_child_names_plan_expiry (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_e10_expired_unclaimed_child_names_plan_expiry)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "S6-apply-result-reason-dropped",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "            result[pre_dispatch_reasons.SUMMARY_KEY] = refusal",
+     "            pass"
+    ]
+   ],
+   "log_path": "mutation-logs/S6-apply-result-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
+   ],
+   "seconds": 5.8
+  },
+  {
+   "id": "S7-f1-task-view-reason-dropped",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "            refusal = self.pre_dispatch_refusal(task)\n            if refusal is not None:\n                value[pre_dispatch_reasons.SUMMARY_KEY] = refusal",
+     "            refusal = self.pre_dispatch_refusal(task)\n            if refusal is not None:\n                pass"
+    ]
+   ],
+   "log_path": "mutation-logs/S7-f1-task-view-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_f1_refusal_reads_back_through_the_f3_task_view (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_refusal_reads_back_through_the_f3_task_view)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "S8-f3-task-view-reason-dropped",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "        refusal = self.pre_dispatch_refusal(task, rows=rows)\n        if refusal is not None:\n            value[pre_dispatch_reasons.SUMMARY_KEY] = refusal",
+     "        refusal = self.pre_dispatch_refusal(task, rows=rows)\n        if refusal is not None:\n            pass"
+    ]
+   ],
+   "log_path": "mutation-logs/S8-f3-task-view-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
+   ],
+   "seconds": 6.3
+  },
+  {
+   "id": "S9-repeat-apply-details-reason-dropped",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                details[pre_dispatch_reasons.SUMMARY_KEY] = refusal",
+     "                pass"
+    ]
+   ],
+   "log_path": "mutation-logs/S9-repeat-apply-details-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_f1_stale_target_refusal_names_its_reason (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_stale_target_refusal_names_its_reason)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "S10-f1-manual-review-failure-information-dropped",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "refusal = pre_dispatch_reasons.legacy_f1_reason(reason, task.target)",
+     "refusal = None"
+    ]
+   ],
+   "log_path": "mutation-logs/S10-f1-manual-review-failure-information-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_l1_contradictory_pre_dispatch_task_names_its_reason (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_l1_contradictory_pre_dispatch_task_names_its_reason)"
+   ],
+   "seconds": 4.0
+  },
+  {
+   "id": "S11-f1-apply-failure-information-dropped",
+   "class": "a pre-dispatch refusal reason dropped at one reporting surface",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "refusal = pre_dispatch_reasons.legacy_f1_reason(\n                error_code, task.target\n            )",
+     "refusal = None"
+    ]
+   ],
+   "log_path": "mutation-logs/S11-f1-apply-failure-information-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_f1_refusal_reads_back_through_the_f3_task_view (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_refusal_reads_back_through_the_f3_task_view)"
+   ],
+   "seconds": 2.7
+  },
+  {
+   "id": "R1-later-child-reason-not-persisted",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "if reason is not None and not terminal_recovery:",
+     "if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/R1-later-child-reason-not-persisted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_later_child_refusal_after_a_completed_child_names_its_reason (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_later_child_refusal_after_a_completed_child_names_its_reason)"
+   ],
+   "seconds": 19.3
+  },
+  {
+   "id": "R2-child-preflight-failed-event-not-emitted",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "                        if not any(\n                            event.event_type == pre_dispatch_reasons.CHILD_PREFLIGHT_FAILED_EVENT",
+     "                        if False and not any(\n                            event.event_type == pre_dispatch_reasons.CHILD_PREFLIGHT_FAILED_EVENT"
+    ]
+   ],
+   "log_path": "mutation-logs/R2-child-preflight-failed-event-not-emitted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_later_child_refusal_after_a_completed_child_names_its_reason (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_later_child_refusal_after_a_completed_child_names_its_reason)"
+   ],
+   "seconds": 20.0
+  },
+  {
+   "id": "R3-child-preflight-failed-event-repeated",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "                        if not any(\n                            event.event_type == pre_dispatch_reasons.CHILD_PREFLIGHT_FAILED_EVENT",
+     "                        if True or not any(\n                            event.event_type == pre_dispatch_reasons.CHILD_PREFLIGHT_FAILED_EVENT"
+    ]
+   ],
+   "log_path": "mutation-logs/R3-child-preflight-failed-event-repeated.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_later_child_refusal_is_evented_once_across_recovery (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_later_child_refusal_is_evented_once_across_recovery)"
+   ],
+   "seconds": 20.7
+  },
+  {
+   "id": "R4-manual-review-log-reason-dropped",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "                        result_status=\"partial\",\n                        error_code=None if reason is None else reason[\"error_code\"],\n                        failure_information=reason,",
+     "                        result_status=\"partial\",\n                        error_code=None if reason is None else reason[\"error_code\"],"
+    ]
+   ],
+   "log_path": "mutation-logs/R4-manual-review-log-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_later_child_refusal_after_a_completed_child_names_its_reason (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_later_child_refusal_after_a_completed_child_names_its_reason)"
+   ],
+   "seconds": 20.4
+  },
+  {
+   "id": "R5-partial-sequence-refusal-not-read",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "partial = f3 and task.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED",
+     "partial = False"
+    ]
+   ],
+   "log_path": "mutation-logs/R5-partial-sequence-refusal-not-read.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_later_child_refusal_after_a_completed_child_names_its_reason (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_later_child_refusal_after_a_completed_child_names_its_reason)"
+   ],
+   "seconds": 19.3
+  },
+  {
+   "id": "R6-partial-sequence-reads-unknown-legacy",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "None if partial else pre_dispatch_reasons.unknown_legacy(),",
+     "pre_dispatch_reasons.unknown_legacy(),"
+    ]
+   ],
+   "log_path": "mutation-logs/R6-partial-sequence-reads-unknown-legacy.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_later_child_post_dispatch_failure_names_no_refusal (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_later_child_post_dispatch_failure_names_no_refusal)"
+   ],
+   "seconds": 18.4
+  },
+  {
+   "id": "R7-log-failure-information-dropped-code-kept",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            safe[\"failure_information\"] = reason",
+     "            pass"
+    ]
+   ],
+   "log_path": "mutation-logs/R7-log-failure-information-dropped-code-kept.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_f1_stale_target_refusal_names_its_reason (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_stale_target_refusal_names_its_reason)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "R8-log-check-dropped",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            safe[\"check\"] = reason[\"check\"]",
+     "            pass"
+    ]
+   ],
+   "log_path": "mutation-logs/R8-log-check-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_f1_stale_target_refusal_names_its_reason (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_stale_target_refusal_names_its_reason)"
+   ],
+   "seconds": 3.1
+  },
+  {
+   "id": "R9-f3-preflight-failed-log-reason-dropped",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "                        failure_information=reason,\n                    )\n                    plan.status = PlanStatus.FAILED",
+     "                    )\n                    plan.status = PlanStatus.FAILED"
+    ]
+   ],
+   "log_path": "mutation-logs/R9-f3-preflight-failed-log-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
+   ],
+   "seconds": 6.4
+  },
+  {
+   "id": "R10-f1-manual-review-log-reason-dropped",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                error_code=reason,\n                failure_information=refusal,",
+     "                error_code=reason,"
+    ]
+   ],
+   "log_path": "mutation-logs/R10-f1-manual-review-log-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_l1_contradictory_pre_dispatch_task_names_its_reason (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_l1_contradictory_pre_dispatch_task_names_its_reason)"
+   ],
+   "seconds": 4.1
+  },
+  {
+   "id": "R11-f1-apply-log-reason-dropped",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                error_code=error_code,\n                failure_information=refusal,",
+     "                error_code=error_code,"
+    ]
+   ],
+   "log_path": "mutation-logs/R11-f1-apply-log-reason-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_f1_stale_target_refusal_names_its_reason (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_stale_target_refusal_names_its_reason)"
+   ],
+   "seconds": 3.2
+  },
+  {
+   "id": "R12-log-reason-unprojected",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    return {key: value.get(key) for key in REASON_FIELDS}\n\n\ndef unknown_legacy",
+     "    return value\n\n\ndef unknown_legacy"
+    ]
+   ],
+   "log_path": "mutation-logs/R12-log-reason-unprojected.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_log_reason_takes_only_reviewed_fields (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_log_reason_takes_only_reviewed_fields)"
+   ],
+   "seconds": 27.5
+  },
+  {
+   "id": "R13-log-reason-accepts-unreviewed-check",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    if value.get(\"check\") not in _CHECK_DETAILS:\n        return None",
+     "    if False:\n        return None"
+    ]
+   ],
+   "log_path": "mutation-logs/R13-log-reason-accepts-unreviewed-check.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_log_reason_takes_only_reviewed_fields (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_log_reason_takes_only_reviewed_fields)"
+   ],
+   "seconds": 27.7
+  },
+  {
+   "id": "R14-first-f1-error-not-decorated",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        and task.state == ExecutionTaskState.FAILED_PRE_DISPATCH\n                    ):",
+     "                        and False\n                    ):"
+    ]
+   ],
+   "log_path": "mutation-logs/R14-first-f1-error-not-decorated.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_first_f1_refusal_through_the_tool_names_its_reason (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_first_f1_refusal_through_the_tool_names_its_reason)"
+   ],
+   "seconds": 3.8
+  },
+  {
+   "id": "R15-f1-error-decorated-regardless-of-state",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        not was_terminal\n                        and task.state == ExecutionTaskState.FAILED_PRE_DISPATCH\n",
+     "                        True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R15-f1-error-decorated-regardless-of-state.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_post_dispatch_f1_error_through_the_tool_is_not_decorated (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_post_dispatch_f1_error_through_the_tool_is_not_decorated)"
+   ],
+   "seconds": 5.3
+  },
+  {
+   "id": "R16-first-f1-error-original-details-dropped",
+   "class": "a round-1 reporting surface dropped or over-applied",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                            ),\n                            **exc.details,\n",
+     "                            ),\n"
+    ]
+   ],
+   "log_path": "mutation-logs/R16-first-f1-error-original-details-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_first_f1_refusal_through_the_tool_names_its_reason (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_first_f1_refusal_through_the_tool_names_its_reason)"
+   ],
+   "seconds": 3.7
+  },
+  {
+   "id": "C1-classify-priority-reversed",
+   "class": "the refusal reason misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    for code, check in _REASONS:\n        if code in present:",
+     "    for code, check in reversed(_REASONS):\n        if code in present:"
+    ]
+   ],
+   "log_path": "mutation-logs/C1-classify-priority-reversed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_earlier_vocabulary_code_always_names_the_reason (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_the_earlier_vocabulary_code_always_names_the_reason)"
+   ],
+   "seconds": 24.4
+  },
+  {
+   "id": "C2-verifier-rule-never-selected",
+   "class": "the refusal reason misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "if code in AUTOMATION_VERIFIER_DETAILS),",
+     "if False),"
+    ]
+   ],
+   "log_path": "mutation-logs/C2-verifier-rule-never-selected.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
+   ],
+   "seconds": 8.6
+  },
+  {
+   "id": "C3-verifier-rule-not-in-detail",
+   "class": "the refusal reason misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    if rule is not None:\n        detail +=",
+     "    if False:\n        detail +="
+    ]
+   ],
+   "log_path": "mutation-logs/C3-verifier-rule-not-in-detail.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
+   ],
+   "seconds": 8.5
+  },
+  {
+   "id": "C4-adapter-verifier-rule-code-dropped",
+   "class": "the refusal reason misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+     "*(() if detail is None else (detail,)),",
+     "*(),"
+    ]
+   ],
+   "log_path": "mutation-logs/C4-adapter-verifier-rule-code-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
+   ],
+   "seconds": 8.1
+  },
+  {
+   "id": "C5-adapter-mismatch-categories-dropped",
+   "class": "the refusal reason misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+     "*comparison.mismatch_categories,",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/C5-adapter-mismatch-categories-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
+   ],
+   "seconds": 7.9
+  },
+  {
+   "id": "C6-verifier-detail-code-outside-closed-set",
+   "class": "the refusal reason misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py",
+     "code = AUTOMATION_VERIFIER_DETAIL_PREFIX + slug",
+     "code = AUTOMATION_VERIFIER_DETAIL_PREFIX + slug + \"_x\""
+    ]
+   ],
+   "log_path": "mutation-logs/C6-verifier-detail-code-outside-closed-set.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_every_refusal_path_names_its_reason_on_every_surface (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_every_refusal_path_names_its_reason_on_every_surface)"
+   ],
+   "seconds": 8.6
+  },
+  {
+   "id": "C7-unclassified-code-reported-as-unknown-legacy",
+   "class": "the refusal reason misclassified",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "return UNCLASSIFIED, \"adapter_preflight\", rule",
+     "return UNKNOWN_LEGACY, UNKNOWN_LEGACY, rule"
+    ]
+   ],
+   "log_path": "mutation-logs/C7-unclassified-code-reported-as-unknown-legacy.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unknown_and_missing_codes_never_fabricate_a_reason (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_unknown_and_missing_codes_never_fabricate_a_reason)"
+   ],
+   "seconds": 25.3
+  },
+  {
+   "id": "P1-terminal-recovery-rewrites-stored-task",
+   "class": "persistence or legacy semantics of the reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "if not terminal_recovery:\n                        summary[pre_dispatch_reasons.SUMMARY_KEY]",
+     "if True:\n                        summary[pre_dispatch_reasons.SUMMARY_KEY]"
+    ]
+   ],
+   "log_path": "mutation-logs/P1-terminal-recovery-rewrites-stored-task.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_legacy_reasonless_task_reads_the_durable_child_reason (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_legacy_reasonless_task_reads_the_durable_child_reason)"
+   ],
+   "seconds": 21.6
+  },
+  {
+   "id": "P2-persisted-reason-not-preferred",
+   "class": "persistence or legacy semantics of the reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "        if stored is not None:\n            return stored",
+     "        if False:\n            return stored"
+    ]
+   ],
+   "log_path": "mutation-logs/P2-persisted-reason-not-preferred.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_the_persisted_reason_wins_over_the_derived_one (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_the_persisted_reason_wins_over_the_derived_one)"
+   ],
+   "seconds": 24.6
+  },
+  {
+   "id": "P3-legacy-f3-derived-reason-lost",
+   "class": "persistence or legacy semantics of the reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+     "                for item in rows\n                if item[",
+     "                for item in rows[:0]\n                if item["
+    ]
+   ],
+   "log_path": "mutation-logs/P3-legacy-f3-derived-reason-lost.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_legacy_reasonless_task_reads_the_durable_child_reason (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_legacy_reasonless_task_reads_the_durable_child_reason)"
+   ],
+   "seconds": 21.6
+  },
+  {
+   "id": "P4-missing-codes-fabricate-a-reason",
+   "class": "persistence or legacy semantics of the reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    if not codes:\n        return UNKNOWN_LEGACY, UNKNOWN_LEGACY, None",
+     "    if not codes:\n        return UNCLASSIFIED, \"adapter_preflight\", None"
+    ]
+   ],
+   "log_path": "mutation-logs/P4-missing-codes-fabricate-a-reason.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_legacy_task_without_any_codes_reads_unknown_legacy (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_legacy_task_without_any_codes_reads_unknown_legacy)"
+   ],
+   "seconds": 21.2
+  },
+  {
+   "id": "P5-recorded-accepts-unreviewed-error-code",
+   "class": "persistence or legacy semantics of the reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    if value.get(\"error_code\") not in REASON_CODES:\n        return None",
+     "    if False:\n        return None"
+    ]
+   ],
+   "log_path": "mutation-logs/P5-recorded-accepts-unreviewed-error-code.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recorded_rejects_foreign_or_out_of_vocabulary_values (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_recorded_rejects_foreign_or_out_of_vocabulary_values)"
+   ],
+   "seconds": 24.3
+  },
+  {
+   "id": "P6-recorded-returns-unprojected-value",
+   "class": "persistence or legacy semantics of the reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    return {key: value.get(key) for key in REASON_FIELDS}\n\n\ndef log_reason",
+     "    return value\n\n\ndef log_reason"
+    ]
+   ],
+   "log_path": "mutation-logs/P6-recorded-returns-unprojected-value.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_recorded_rejects_foreign_or_out_of_vocabulary_values (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_recorded_rejects_foreign_or_out_of_vocabulary_values)"
+   ],
+   "seconds": 24.0
+  },
+  {
+   "id": "P7-legacy-f1-stored-reason-ignored",
+   "class": "persistence or legacy semantics of the reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "if isinstance(stored, dict) and stored.get(\"reason_model\") == REASON_MODEL:",
+     "if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/P7-legacy-f1-stored-reason-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_legacy_f1_reasons (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_legacy_f1_reasons)"
+   ],
+   "seconds": 24.3
+  },
+  {
+   "id": "P8-legacy-f1-code-dropped",
+   "class": "persistence or legacy semantics of the reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    if known:\n        reason.update(",
+     "    if False:\n        reason.update("
+    ]
+   ],
+   "log_path": "mutation-logs/P8-legacy-f1-code-dropped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_f1_refusal_reads_back_through_the_f3_task_view (test_hamcp249_pre_dispatch_reasons.LegacyF1PreDispatchReasonTests.test_f1_refusal_reads_back_through_the_f3_task_view)"
+   ],
+   "seconds": 2.6
+  },
+  {
+   "id": "P9-dispatched-child-reported-as-refusal",
+   "class": "persistence or legacy semantics of the reason",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "        and record.dispatch_intent is None\n        and not record.dispatch_count\n        and record.normalized_outcome in PRE_DISPATCH_OUTCOMES\n",
+     "\n"
+    ]
+   ],
+   "log_path": "mutation-logs/P9-dispatched-child-reported-as-refusal.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_later_child_post_dispatch_failure_names_no_refusal (test_hamcp249_pre_dispatch_reasons.PreDispatchReasonSurfaceTests.test_later_child_post_dispatch_failure_names_no_refusal)"
+   ],
+   "seconds": 16.1
+  },
+  {
+   "id": "B1-identifier-control-characters-kept",
+   "class": "identifier bounding or sanitization",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    if any(ord(char) < 0x21 or ord(char) > 0x7E for char in value):\n        return None",
+     "    if False:\n        return None"
+    ]
+   ],
+   "log_path": "mutation-logs/B1-identifier-control-characters-kept.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_identifiers_drop_untrusted_text (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_identifiers_drop_untrusted_text)"
+   ],
+   "seconds": 23.7
+  },
+  {
+   "id": "B2-identifier-length-unbounded",
+   "class": "identifier bounding or sanitization",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/pre_dispatch_reasons.py",
+     "    return value[:MAX_IDENTIFIER_LENGTH]",
+     "    return value"
+    ]
+   ],
+   "log_path": "mutation-logs/B2-identifier-length-unbounded.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_identifiers_drop_untrusted_text (test_hamcp249_pre_dispatch_reasons.ReasonVocabularyTests.test_identifiers_drop_untrusted_text)"
+   ],
+   "seconds": 23.8
+  }
+ ]
+}
