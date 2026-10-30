@@ -55,7 +55,9 @@ The review needs a security section covering the following items.
   before any read, validation read or storage:
   - the tool;
   - the generic `create_configuration_plan`;
-  - the resource-write route.
+  - the resource-write route (at its send boundary, before sending:
+    `pending_signed_registry_admission` while unadmitted, and
+    `active_f3_execution_required` outside the F3 dispatch window).
 
   F3 dispatch admission is checked again.
 - **Closed vocabulary.** The gateway sends only `lovelace/dashboards/list`

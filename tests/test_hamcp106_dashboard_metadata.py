@@ -9,6 +9,7 @@ rollback and disclosure.  No live Home Assistant.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 import sys
@@ -26,8 +27,16 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     HomeAssistantApiError,
 )
 from ha_mcp_engineering.governance import dashboard_metadata as contract  # noqa: E402
+from ha_mcp_engineering.governance.resources import (  # noqa: E402
+    ConfigurationMutationNotDispatchedError,
+)
+from ha_mcp_engineering.f3_runtime.runtime import _core_call_window  # noqa: E402
+from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.governance import (  # noqa: E402
     dashboard_metadata_planning as planning,
+)
+from ha_mcp_engineering.governance.task_models import (  # noqa: E402
+    ExecutionTaskState,
 )
 
 from tests.hamcp106_fixtures import (  # noqa: E402
@@ -497,6 +506,240 @@ class GenericRouteTests(_Base):
         self.assertEqual(metadata(self.ws.row(ACCEPTANCE)), ORIGINAL[ACCEPTANCE])
 
 
+class IsolatedControlTests(_Base):
+    """R1-M3: each check refuses on its own, with no other layer behind it."""
+
+    async def test_generic_builder_refuses_a_complete_valid_admitted_operation(self):
+        # P3: Core admits the profile, the proposed state is complete and
+        # valid, and ``_before_persist`` is a no-op.  Only the generic
+        # resource-type allow-list stands between this input and a plan.
+        row = self.ws.row(ACCEPTANCE)
+        current = contract.state_from_row(row, content_hash(row.get("config")))
+        self.assertEqual(contract.state_errors(ACCEPTANCE, current), [])
+        proposed = {**current, "title": "Synthetic review title"}
+        self.assertEqual(contract.proposed_errors(ACCEPTANCE, proposed), [])
+        operation = {**raw_operation()[0], "proposed_config": proposed}
+        commands, reads = list(self.ws.commands), list(self.ws.content_reads)
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service._create_configuration_plan(
+                title="t", description="d", operations=[operation],
+                _before_persist=lambda: None,
+            )
+        self.assertEqual(raised.exception.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        self.assertEqual(raised.exception.details, {
+            "validation_errors": [
+                "dashboard_metadata_1: resource_type must be automation, "
+                "script, or helper"
+            ],
+        })
+        self.assertEqual(self.ws.commands, commands)
+        self.assertEqual(self.ws.content_reads, reads)
+        self.assertEqual(self.repository.list(), [])
+
+    async def test_verified_child_under_an_unverified_task_creates_no_restore(self):
+        # R4: the child record dispatched once and verified exactly; only the
+        # parent task says the forward did not finish verified.
+        created, result = await self.applied(url_path=ACCEPTANCE, title="New")
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        repository = self.service.task_repository
+        task = repository.get_for_plan(created["plan_id"])
+        records = [
+            self.service.f3_runtime.children.get(item["child_id"])
+            for item in self.service.f3_runtime.children.declarations_for_task(
+                task.task_id
+            )
+        ]
+        self.assertEqual(
+            [(r.normalized_outcome, r.dispatch_count) for r in records],
+            [("succeeded_verified", 1)],
+        )
+        unverified = replace(
+            task,
+            state=ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
+            terminal_outcome="manual_review_required",
+        )
+        repository.get_for_plan = lambda plan_id: unverified
+        plans, writes = len(self.repository.list()), len(self.ws.writes())
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.rollback_change(created["plan_id"])
+        self.assertEqual(raised.exception.code, ErrorCode.ROLLBACK_NOT_AVAILABLE)
+        self.assertEqual(raised.exception.details["reason_code"], "forward_not_verified")
+        self.assertIs(raised.exception.details["plan_created"], False)
+        self.assertEqual(len(self.repository.list()), plans)
+        self.assertEqual(len(self.ws.writes()), writes)
+
+    async def test_final_persistence_check_refuses_without_the_lease_check(self):
+        # A4: admission is withdrawn after the last earlier check, and the
+        # lease's own ``_before_persist`` check is neutralized.  The final
+        # persistence-boundary re-check alone must refuse.  (The shared
+        # boundary is also killed for labels by test_hamcp165_review1_corrections.)
+        service = self.service
+        real_lease = service._dashboard_metadata_planning_lease
+
+        class LeaseWithoutCheck:
+            def __init__(self, inner):
+                self.inner = inner
+
+            async def __aenter__(self):
+                await self.inner.__aenter__()
+                return self
+
+            async def __aexit__(self, *exc):
+                # Release the real lease, but drop its exit re-check: the
+                # body's own exception (if any) propagates unchanged.
+                try:
+                    await self.inner.__aexit__(*exc)
+                except GovernanceError:
+                    pass
+                return False
+
+            def require_current(self):
+                return None
+
+        service._dashboard_metadata_planning_lease = (
+            lambda target_id: LeaseWithoutCheck(real_lease(target_id))
+        )
+        real_bind = service._bind_new_plan_policy
+
+        def bind_then_withdraw(plan):
+            real_bind(plan)
+            self.core.withdraw()
+
+        service._bind_new_plan_policy = bind_then_withdraw
+        with self.assertRaises(GovernanceError) as raised:
+            await self.create(url_path=ACCEPTANCE, title="New")
+        self.assertEqual(raised.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+        self.assertEqual(raised.exception.details, {
+            "reason": "pending_signed_registry_admission",
+            "reason_code": "pending_signed_registry_admission",
+            "resource_type": "dashboard_metadata",
+            "core_capability": "core.dashboard_metadata_operation",
+            "plan_created": False,
+            "provider_dispatch_occurred": False,
+        })
+        self.assertEqual(self.repository.list(), [])
+        self.assertEqual(self.ws.writes(), [])
+
+
+def valid_update_command(title: str = "Synthetic review title") -> dict:
+    """A complete, closed, otherwise valid metadata update (R1-H1)."""
+
+    return {
+        "type": UPDATE_COMMAND,
+        "dashboard_id": core_dashboard_id(ACCEPTANCE),
+        "title": title,
+    }
+
+
+def store_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+class _ResourceWriteAuthority:
+    """R1-H1: a valid command is not authority at the resource boundary."""
+
+    async def assert_resource_write_refused(self, reason_code: str) -> None:
+        before = store_bytes(self.root)
+        self.ws.commands.clear()
+        self.ws.content_reads.clear()
+        with self.assertRaises(ConfigurationMutationNotDispatchedError) as raised:
+            await self.resource_gateway.write(
+                "update", contract.RESOURCE_TYPE, ACCEPTANCE, valid_update_command()
+            )
+        error = raised.exception
+        self.assertEqual(error.details["reason_code"], reason_code, error.details)
+        self.assertEqual(error.details["reason"], reason_code)
+        self.assertIs(error.details["provider_dispatch_occurred"], False)
+        self.assertIs(error.call_not_sent, True)
+        self.assertEqual(self.ws.commands, [])
+        self.assertEqual(self.ws.content_reads, [])
+        self.assertEqual(store_bytes(self.root), before)
+        self.assertEqual(self.repository.list(), [])
+        self.assertEqual(metadata(self.ws.row(ACCEPTANCE)), ORIGINAL[ACCEPTANCE])
+
+
+class InactiveResourceWriteTests(_ResourceWriteAuthority, _Base):
+    core_admits = False
+
+    async def test_valid_complete_command_refuses_pending_admission(self):
+        await self.assert_resource_write_refused("pending_signed_registry_admission")
+
+    async def test_refused_even_inside_an_authorizing_call_window(self):
+        # An admitting dispatch window does not stand in for Core admission.
+        async with _core_call_window(lambda: True):
+            await self.assert_resource_write_refused(
+                "pending_signed_registry_admission"
+            )
+
+    async def test_no_core_runtime_refuses_pending_admission(self):
+        self.resource_gateway.dashboard_metadata.core_runtime = None
+        async with _core_call_window(lambda: True):
+            await self.assert_resource_write_refused(
+                "pending_signed_registry_admission"
+            )
+
+
+class AdmittedResourceWriteTests(_ResourceWriteAuthority, _Base):
+    async def test_admitted_without_f3_context_refuses(self):
+        await self.assert_resource_write_refused("active_f3_execution_required")
+
+    async def test_admitted_request_without_dispatch_authorizer_refuses(self):
+        telemetry, token = begin_request()
+        try:
+            self.assertIsNone(telemetry.core_dispatch_authorizer)
+            await self.assert_resource_write_refused("active_f3_execution_required")
+        finally:
+            end_request(token)
+
+    async def test_admitted_with_a_refusing_dispatch_window_refuses(self):
+        async with _core_call_window(lambda: False):
+            await self.assert_resource_write_refused("active_f3_execution_required")
+
+    async def test_admitted_with_f3_context_sends_exactly_once(self):
+        # Positive control: admission and an authorizing F3 call window.
+        async with _core_call_window(lambda: True):
+            result = await self.resource_gateway.write(
+                "update", contract.RESOURCE_TYPE, ACCEPTANCE, valid_update_command()
+            )
+        self.assertEqual(
+            result, {"core_response": {"dashboard_id": core_dashboard_id(ACCEPTANCE)}}
+        )
+        self.assertEqual(self.ws.writes(), [valid_update_command()])
+        self.assertEqual(self.ws.row(ACCEPTANCE)["title"], "Synthetic review title")
+
+    async def test_retained_approved_plan_without_f3_refuses_before_any_read(self):
+        created = await self.approved(url_path=ACCEPTANCE, title="Retained")
+        self.service.f3_runtime = None
+        before = store_bytes(self.root)
+        self.ws.commands.clear()
+        self.ws.content_reads.clear()
+        with self.assertRaises(GovernanceError) as raised:
+            await self.apply(created)
+        error = raised.exception
+        self.assertEqual(error.code, ErrorCode.PROVIDER_UNAVAILABLE)
+        self.assertEqual(error.details["reason_code"], "core_authority_unavailable")
+        self.assertEqual(error.details["resource_types"], [contract.RESOURCE_TYPE])
+        self.assertEqual(error.details["required_action"], "active_f3_execution_required")
+        self.assertIs(error.details["execution_state_persisted"], False)
+        self.assertIs(error.details["provider_dispatch_occurred"], False)
+        self.assertEqual(self.ws.commands, [])
+        self.assertEqual(self.ws.content_reads, [])
+        self.assertEqual(store_bytes(self.root), before)
+        self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
+        self.assertEqual(metadata(self.ws.row(ACCEPTANCE)), ORIGINAL[ACCEPTANCE])
+
+    def test_metadata_is_in_the_no_f3_refusal_inventory(self):
+        from ha_mcp_engineering.governance.service import (
+            DORMANT_PROFILE_RESOURCE_TYPES,
+        )
+
+        self.assertIn(contract.RESOURCE_TYPE, DORMANT_PROFILE_RESOURCE_TYPES)
+
+
 class ApplyBoundaryTests(_Base):
     async def test_stale_state_for_each_field_is_refused_before_dispatch(self):
         external = {
@@ -762,6 +1005,74 @@ class RollbackTests(_Base):
             await self.service.rollback_change(created["plan_id"])
         self.assertEqual(raised.exception.code, ErrorCode.ROLLBACK_NOT_AVAILABLE)
 
+
+
+
+class UnrestorableBaselineTests(_Base):
+    """R1-M2: a changed field's captured value must be restorable."""
+
+    async def assert_unrestorable(self, fields: list[str], **arguments) -> None:
+        with self.assertRaises(GovernanceError) as raised:
+            await self.create(url_path=ACCEPTANCE, **arguments)
+        self.assert_refused(raised, "dashboard_metadata_baseline_not_restorable")
+        self.assertEqual(raised.exception.details.get("fields"), fields)
+
+    async def test_empty_prior_title_is_refused(self):
+        self.ws.set_external(ACCEPTANCE, title="")
+        await self.assert_unrestorable(["title"], title="Nonempty")
+
+    async def test_whitespace_prior_title_is_refused(self):
+        self.ws.set_external(ACCEPTANCE, title="   ")
+        await self.assert_unrestorable(["title"], title="Nonempty")
+
+    async def test_core_valid_long_prior_icon_is_refused(self):
+        # Core's cv.icon only needs a colon; the write contract allows 64.
+        self.ws.set_external(ACCEPTANCE, icon="mdi:" + "a" * 65)
+        await self.assert_unrestorable(["icon"], icon=None)
+        await self.assert_unrestorable(["icon"], icon="mdi:test-tube")
+
+    async def test_core_valid_off_pattern_prior_icon_is_refused(self):
+        self.ws.set_external(ACCEPTANCE, icon="mdi:Upper_Case")
+        await self.assert_unrestorable(["icon"], icon="mdi:test-tube")
+
+    async def test_every_unrestorable_changed_field_is_named(self):
+        self.ws.set_external(ACCEPTANCE, title="", icon="mdi:" + "a" * 65)
+        await self.assert_unrestorable(
+            ["title", "icon"], title="Nonempty", icon=None
+        )
+
+    async def test_unchanged_out_of_subset_field_keeps_its_existing_refusal(self):
+        # Unchanged: never restored, so not this refusal.  The existing
+        # final-state rule still refuses a title outside the reviewed subset.
+        self.ws.set_external(ACCEPTANCE, title="")
+        with self.assertRaises(GovernanceError) as raised:
+            await self.create(url_path=ACCEPTANCE, show_in_sidebar=True)
+        self.assert_refused(raised, "dashboard_metadata_invalid_value")
+
+    async def test_ordinary_baseline_is_planned_and_restored_exactly(self):
+        created, result = await self.applied(
+            url_path=ACCEPTANCE, title="Ordinary", icon=None
+        )
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        rollback = await self.service.rollback_change(created["plan_id"])
+        reverse = {"plan_id": rollback["rollback_plan_id"],
+                   "plan_hash": rollback["plan_hash"]}
+        await self.approve(reverse)
+        restored = await self.apply(reverse)
+        self.assertEqual(restored["task_state"], "succeeded_verified", restored)
+        self.assertEqual(metadata(self.ws.row(ACCEPTANCE)), ORIGINAL[ACCEPTANCE])
+
+    async def test_all_six_live_fixtures_remain_changeable(self):
+        for url_path, title, icon, sidebar, admin in LIVE_DASHBOARDS:
+            for field, value in (
+                ("title", title + " 106"),
+                ("icon", None),
+                ("show_in_sidebar", not sidebar),
+                ("require_admin", not admin),
+            ):
+                with self.subTest(url_path=url_path, field=field):
+                    created = await self.create(url_path=url_path, **{field: value})
+                    self.assertEqual(created["status"], "awaiting_approval", created)
 
 
 class ContractBoundaryTests(_Base):

@@ -23,9 +23,14 @@ dashboard. The plan is approved externally and applied with
   request does not go through ha-mcp and has no fallback.
 - **Inactive.** It needs the new runtime-only Core profile
   `core.dashboard_metadata_operation`, which signed sequence 14 does not
-  name. Every entry point therefore refuses
-  `pending_signed_registry_admission` before any Home Assistant request or
-  persistence. Health under sequence 14 lists 26 compatible and 4 withheld
+  name. Every entry point therefore refuses before any Home Assistant
+  request or persistence. The tool and `create_configuration_plan` refuse
+  `pending_signed_registry_admission`. The generic resource-write route
+  refuses a complete, valid command at the send boundary, before it is
+  sent: `pending_signed_registry_admission` while the profile is not
+  admitted, and `active_f3_execution_required` outside the F3 dispatch
+  window. A legacy apply without the F3 runtime refuses
+  `core_authority_unavailable`. Health under sequence 14 lists 26 compatible and 4 withheld
   profiles, including this one. The profile joins the sequence-15 signing
   batch.
 - **Planning.** Planning refuses, before any dispatch:
@@ -33,7 +38,9 @@ dashboard. The plan is approved externally and applied with
   - a YAML dashboard;
   - `"lovelace"`;
   - an ambiguous target;
-  - an invalid value.
+  - an invalid value;
+  - a change to a field whose current value could not be restored exactly
+    (`dashboard_metadata_baseline_not_restorable`).
 
   The title is non-empty, at most 255 characters, and stored exactly
   (`"Map "` keeps its trailing space). The icon is `prefix:name`, or `null`
@@ -57,6 +64,11 @@ dashboard. The plan is approved externally and applied with
   verification failure.
 - **Rollback.** `rollback_change` creates a separate governed plan that
   restores the changed fields.
+- **Limitation.** Core can store a title or icon that the closed write
+  contract cannot send: an empty or whitespace title, or an icon over 64
+  characters or outside `prefix:name`. Changing such a field is refused
+  before any plan, because the restore could never write the prior value
+  back. None of the six recorded dashboard fixtures (`LIVE_DASHBOARDS`) is affected.
 - **Not in scope:** dashboard content, creating or deleting dashboards,
   `url_path` or `mode` changes, YAML dashboards, resources and themes. The
   existing dashboard update plan and its schema are unchanged.

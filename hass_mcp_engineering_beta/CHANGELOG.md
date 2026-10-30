@@ -23,7 +23,13 @@ Builds on 2.4.1-beta.49 (#329). Activates nothing new.
     with no plan.
   - The policy is `standard_admin`, with fixed visibility disclosures.
   - Drift is refused as `stale_target_state`.
-  - `rollback_change` creates a separately approved restore plan.
+  - `rollback_change` creates a separately approved restore plan. A change
+    whose captured prior value the restore could not send is refused
+    before any plan (`dashboard_metadata_baseline_not_restorable`).
+  - The generic resource-write send boundary refuses a complete, valid
+    command before sending unless Core admits the profile and the call runs
+    inside the F3 dispatch window; a legacy apply without F3 refuses
+    `core_authority_unavailable`.
   - There is no delegated provider and no fallback.
 - Dormant seq-15 `dashboard_metadata` evidence lane. `ci.yml` is unchanged;
   its wiring is deferred to the November batch (`WORKFLOW_PENDING_LANES`).

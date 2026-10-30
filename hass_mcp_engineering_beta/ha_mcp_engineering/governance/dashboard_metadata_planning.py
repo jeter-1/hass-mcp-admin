@@ -28,6 +28,9 @@ ALLOWED_INPUT_FIELDS = frozenset({"url_path", *contract.FIELDS, "expiration_minu
 INVALID_VALUE = "dashboard_metadata_invalid_value"
 FIELD_NOT_SUPPORTED = "dashboard_metadata_field_not_supported"
 NO_CHANGE = "dashboard_metadata_no_change"
+# R1-M2: Core can store a value (an empty title, a long icon) that the closed
+# write contract cannot send, so changing that field could never be restored.
+BASELINE_NOT_RESTORABLE = "dashboard_metadata_baseline_not_restorable"
 POLICY_TRIGGER = "dashboard_metadata_policy"
 DISCLOSURE_MODEL = "dashboard_metadata_disclosure_v1"
 OPERATION_ID = "dashboard_metadata_1"
@@ -285,6 +288,14 @@ async def prepare(
             already_satisfied=True,
             fields=list(request.requested),
         )
+    unrestorable = [
+        name for name in changed
+        if not contract.requested_value_valid(name, current[name])
+    ]
+    if unrestorable and not restore:
+        # Refused before any plan exists: the restore plan would have to send
+        # the captured value, which the closed write contract never sends.
+        raise Refusal(BASELINE_NOT_RESTORABLE, fields=unrestorable)
     if contract.proposed_errors(request.url_path, proposed):
         raise Refusal(INVALID_VALUE, field="proposed_state")
     statements = consequence_statements(current, proposed)

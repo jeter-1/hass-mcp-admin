@@ -182,6 +182,9 @@ class GovernanceRuntime:
             resource_gateway.availability_exposure_snapshot_reader = (
                 read_runtime_dependency_snapshot
             )
+            # HAMCP-106 R1-H1: the metadata write refuses unless this Core
+            # runtime currently admits its profile.
+            resource_gateway.dashboard_metadata.core_runtime = core_runtime
             if dashboard_provider is not None:
                 # HAMCP-106: the content fingerprint is the existing admitted
                 # get_dashboard_config read; the configuration itself is

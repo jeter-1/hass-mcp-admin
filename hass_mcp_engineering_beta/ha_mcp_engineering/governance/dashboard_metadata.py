@@ -26,7 +26,7 @@ import re
 from typing import Any, Awaitable, Callable
 
 from ..errors import AuthorizationError, HomeAssistantApiError
-from ..request_context import mark_provider_send
+from ..request_context import current_telemetry, mark_provider_send
 from .entity_metadata import (
     EntityMetadataProviderError,
     EntityMetadataUpdateErrorResult,
@@ -64,6 +64,8 @@ NOT_FOUND_REASON = "dashboard_metadata_target_not_found_rejected"
 # non-mutation proof, so the dispatch stays uncertain and readback decides.
 ERROR_RESULT_REASON = "dashboard_metadata_write_error_result"
 PENDING_ADMISSION_REASON = "pending_signed_registry_admission"
+# R1-H1: an admitted profile still needs the F3 dispatch window's authority.
+F3_CONTEXT_REQUIRED_REASON = "active_f3_execution_required"
 PENDING_ADMISSION_TEXT = (
     "Dashboard metadata edits are implemented but inactive: pending signed "
     "registry admission (planned: the November Core signing batch). No plan "
@@ -350,6 +352,36 @@ class DashboardMetadataGateway:
         # over the admitted ``get_dashboard_config`` read.  Absent means the
         # content cannot be proven unchanged, which fails closed.
         self.content_reader: ContentReader | None = None
+        # Set by the governance runtime.  Absent means the profile cannot be
+        # shown admitted, so every write refuses before it is sent.
+        self.core_runtime: Any = None
+
+    def write_refusal(self) -> str | None:
+        """Why a write may not be sent now, or ``None`` when it may.
+
+        R1-H1: a closed, valid command is not authority.  The write needs
+        current Core admission of the metadata profile and the request-bound
+        dispatch authority that only the F3 dispatch window installs.
+        """
+
+        core = self.core_runtime
+        try:
+            admitted = (
+                core is not None
+                and core.route_status((PROFILE,)).get("available") is True
+            )
+        except Exception:
+            admitted = False
+        if not admitted:
+            return PENDING_ADMISSION_REASON
+        telemetry = current_telemetry()
+        if (
+            telemetry is None
+            or telemetry.core_dispatch_authorizer is None
+            or not telemetry.authorize_core_dispatch()
+        ):
+            return F3_CONTEXT_REQUIRED_REASON
+        return None
 
     async def _send(self, command: dict[str, Any]) -> Any:
         if command.get("type") not in ALLOWED_COMMANDS:
@@ -418,6 +450,18 @@ class DashboardMetadataGateway:
                     "operation": operation,
                     "resource_id": url_path if url_path_valid(url_path) else None,
                     "reason": "closed_payload_violation",
+                },
+                call_not_sent=True,
+            )
+        refusal = self.write_refusal()
+        if refusal is not None:
+            raise ConfigurationMutationNotDispatchedError(
+                details={
+                    "operation": operation,
+                    "resource_id": url_path,
+                    "reason": refusal,
+                    "reason_code": refusal,
+                    "provider_dispatch_occurred": False,
                 },
                 call_not_sent=True,
             )

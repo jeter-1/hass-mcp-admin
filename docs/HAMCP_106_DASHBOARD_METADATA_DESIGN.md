@@ -83,7 +83,14 @@ Planning refuses before any dispatch, and creates no plan, when:
 - a value is invalid (`dashboard_metadata_invalid_value`), a field is not
   supported, or no field is requested;
 - the request changes nothing. The result is a truthful no-change refusal
-  (`dashboard_metadata_no_change`, `already_satisfied`) with no plan.
+  (`dashboard_metadata_no_change`, `already_satisfied`) with no plan;
+- a field the request changes has a current value that the closed write
+  contract cannot send back (`dashboard_metadata_baseline_not_restorable`,
+  with the `fields` named). Core can store an empty or whitespace title, or
+  an icon longer than 64 characters or outside `prefix:name`, but the
+  restore plan could never write it, so the change would have no exact
+  rollback. Unchanged fields are not checked here; the existing final-state
+  check still applies to them (review round 1, R1-M2).
 
 ## 3. Fingerprint, disclosure and policy
 
@@ -143,13 +150,29 @@ and `mark_provider_send()` at the send boundary.
   - the current state no longer equals the forward result
     (`dashboard_metadata_rollback_baseline_drift`).
 
+  Planning has already refused any change whose captured prior value the
+  restore could not send (section 2), so every planned change has an exact
+  restore.
+
 ## 5. Inactive mechanism
 
 - The profile is in `CORE_NOVEMBER_BATCH_PROFILES` and is not in signed
   sequence 14, so no Core release selects it.
-- The tool, `create_configuration_plan` and the resource-write routes
-  refuse `pending_signed_registry_admission` first, before any read,
-  validation read or persistence.
+- The tool and `create_configuration_plan` refuse
+  `pending_signed_registry_admission` first, before any read, validation
+  read or persistence.
+- The generic resource-write route rejects a malformed command before any
+  request. A complete, valid command is refused at the send boundary
+  (`DashboardMetadataGateway.write`) before it is sent, with
+  `call_not_sent`, no Home Assistant request and nothing persisted:
+  `pending_signed_registry_admission` unless Core currently admits the
+  profile, and `active_f3_execution_required` unless the call runs inside
+  the F3 dispatch window that installs the request's Core dispatch
+  authority (review round 1, R1-H1).
+- A legacy apply without the F3 runtime refuses `core_authority_unavailable`
+  (`active_f3_execution_required`) before any request, because
+  `dashboard_metadata` is in the no-F3 refusal inventory
+  (`DORMANT_PROFILE_RESOURCE_TYPES`).
 - F3 dispatch admission is also checked (`UNSIGNED_PROFILE_REQUIREMENTS`).
 - The service refusal is `PROVIDER_UNAVAILABLE` with details:
   - `reason` and `reason_code`: `pending_signed_registry_admission`;
@@ -214,3 +237,8 @@ Remaining for the November seq-15 batch (protected; not authorized here):
 - Generic disclosure only; affected users are not counted (decision 3).
 - Residual concurrency window between the final read and the write
   (section 3). The readback detects it, and it is never redispatched.
+- A field whose current value Core accepted but the closed write contract
+  cannot send (an empty or whitespace title, an icon over 64 characters or
+  outside `prefix:name`) cannot be changed by this tool, because its change
+  could not be restored exactly (`dashboard_metadata_baseline_not_restorable`).
+  None of the six recorded dashboard fixtures (`LIVE_DASHBOARDS`) is affected.

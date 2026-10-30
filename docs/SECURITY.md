@@ -624,10 +624,14 @@ provider.
   matches the `url_path`. The write is reachable only through an externally
   approved plan dispatched by the F3 runtime, for the Core capability
   profile `core.dashboard_metadata_operation`, admitted by a signed
-  registry. Signed sequence 14 does not reference that profile. The tool,
-  `create_configuration_plan` and the resource-write routes refuse
-  `pending_signed_registry_admission` before any read or storage, and F3
-  dispatch admission is checked again.
+  registry. Signed sequence 14 does not reference that profile. The tool and
+  `create_configuration_plan` refuse `pending_signed_registry_admission`
+  before any read or storage, and F3 dispatch admission is checked again.
+  The generic resource-write send boundary refuses a complete, valid
+  command before sending it unless Core currently admits the profile
+  (`pending_signed_registry_admission`) and the call runs inside the F3
+  dispatch window (`active_f3_execution_required`). A legacy apply without
+  F3 refuses `core_authority_unavailable`.
 - **Closed vocabulary.** The gateway sends only `lovelace/dashboards/list`
   and `lovelace/dashboards/update`, and raises on anything else before I/O.
   The profile's never-sent list includes `lovelace/config/save` and

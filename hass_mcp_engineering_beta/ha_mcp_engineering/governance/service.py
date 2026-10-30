@@ -244,7 +244,12 @@ from .semantic_projection import (
 # HAMCP-165: resource types admitted only by an unsigned (dormant) Core
 # profile; see ``f3_runtime.runtime.UNSIGNED_PROFILE_REQUIREMENTS``.
 DORMANT_PROFILE_RESOURCE_TYPES = frozenset(
-    {label_registry.LABEL_RESOURCE_TYPE, *entity_availability_exposure.RESOURCE_TYPES}
+    {
+        label_registry.LABEL_RESOURCE_TYPE,
+        *entity_availability_exposure.RESOURCE_TYPES,
+        # HAMCP-106 R1-H1.
+        dashboard_metadata_contract.RESOURCE_TYPE,
+    }
 )
 
 

@@ -686,6 +686,7 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
             # The production composition (governance/runtime.py), one service per authority.
             resource_gateway.entity_metadata_consumer_evidence = runtime_consumer_evidence()
             resource_gateway.availability_exposure_snapshot_reader = read_runtime_dependency_snapshot
+            resource_gateway.dashboard_metadata.core_runtime = runtime
             resource_gateway.dashboard_metadata.content_reader = _dashboard_content_fingerprint_reader(
                 DashboardContentRead(engineering_ws, content_seen), configured.response_size_limit)
             audit_secret = "seq15-" + lane["key"] + "-disposable-audit"

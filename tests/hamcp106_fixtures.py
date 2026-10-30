@@ -223,6 +223,8 @@ class DashboardServiceTestCase(LabelServiceTestCase):
         self.core = DashboardAdmittingCore(
             DashboardAdmittingCore.GATED if self.core_admits else ()
         )
+        # The production composition (governance/runtime.py).
+        gateway.dashboard_metadata.core_runtime = self.core
         await self.restart_runtime()
 
     async def create(self, **arguments: Any) -> dict[str, Any]:  # type: ignore[override]
