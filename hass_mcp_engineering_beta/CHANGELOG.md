@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.4.1-beta.49 - Health warnings explained (HAMCP-198, HAMCP-120) (staged)
+## 2.4.1-beta.49 - Health warnings explained (HAMCP-198, HAMCP-120)
 
-Follows 2.4.1-beta.48 (#328). Health reporting only: no approval, execution,
+Builds on 2.4.1-beta.48 (#328). Health reporting only: no approval, execution,
 tool, input schema, stored format or Home Assistant write change.
 
 - `governance` adds `projection_failures` (at most eight

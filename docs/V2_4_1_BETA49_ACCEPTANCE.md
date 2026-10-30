@@ -1,18 +1,18 @@
 # Engineering 2.4.1-beta.49 acceptance
 
-Beta 49 stages HAMCP-198 and HAMCP-120. Engineering continues to advertise
-2.4.1-beta.47 on this branch; `.release/next-version` declares
-`2.4.1-beta.49` and is not materialized.
+This contract covers HAMCP-198 and HAMCP-120, the health warnings that
+stayed lit. It follows 2.4.1-beta.48 and includes it.
 
 See also:
 - Release notes:
   [`V2_4_1_BETA49_RELEASE_NOTES.md`](V2_4_1_BETA49_RELEASE_NOTES.md).
 
-**Release target.** `2.4.1-beta.49` is materialized by one owner-authorized
-run of `scripts/promote_next_release.py --apply` on a base that carries
-2.4.1-beta.48 (HAMCP-248, #328). Merge `origin/main` in first (never
-rebase) and rerun Evidence. If another release merges first, restage at the
-next free version and rename these documents.
+**Release target.** `2.4.1-beta.49` is the next free beta after
+2.4.1-beta.48 (#328, HAMCP-248). This branch merged `main` at beta.48 and
+then materialized beta.49 with `scripts/promote_next_release.py --apply`;
+`--validate-transition 2.4.1-beta.48 2.4.1-beta.49` passes. If another
+release reaches `main` first, this change is restaged at the next free beta
+and these documents are renamed.
 
 The contract separates four stages:
 1. source and offline acceptance;
