@@ -16,8 +16,17 @@ Classes:
 - ``B*``: the health identification unbounded or mis-truncated, unsorted, or
   echoing more than ``{plan_id, category}``;
 - ``H*``: the health or unconfigured-runtime fields dropped or constant;
-- ``G*``: the gateway accounting flag reverted to the stock-only model, or
-  true for an unaccounted or unreviewed advertised tool.
+- ``G*`` (rewritten for review round 1, R1-M1): ``G0`` reverts the flag to
+  the HAMCP-162 count formula; ``G1``-``G8`` remove one check each of
+  ``_reviewed_tool_accounting_valid`` (name completeness, uniqueness,
+  missing, unreviewed, sibling drift, recognized state; ``G5``/``G6`` drop
+  each half of the unreviewed check); ``G9``-``G15`` weaken the
+  recognized-state check (optional name count or set, ``optional_absent``
+  while advertised, a state for an unadvertised name, any sibling state, an
+  empty withheld reason, an unknown reader state). The ``missing`` check and
+  the name half of ``unreviewed`` are fail-closed cross-checks that a
+  consistent catalog evaluation also trips through name completeness, so
+  only their direct single-check negatives kill them.
 
 Runs (``results.json`` is the last, complete one):
 - Run 1 (complete): baseline OK in 83 s; 26 of 29 killed. G1, G3 and G4
@@ -27,6 +36,12 @@ Runs (``results.json`` is the last, complete one):
   of G1, G3 and G4 killed all three.
 - Run 2 (complete): baseline OK in 81 s (117 tests); 29 of 29 killed,
   0 survivors, 0 timeouts.
+- Run 3 (complete, after R1-M1, on the beta.49-materialized tree): the old
+  G1-G4 replaced by G0-G15. A pre-run review found G10 killable only by a
+  same-length substituted optional name, so that negative was added first.
+  Baseline OK in 96 s (128 tests); 41 of 41 killed, 0 survivors, 0
+  timeouts, 0 import or syntax kills. Each of G1-G8 is first killed by the
+  single-check test for that check.
 
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\
