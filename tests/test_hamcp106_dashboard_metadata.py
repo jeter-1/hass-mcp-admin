@@ -68,6 +68,16 @@ def metadata(row: dict) -> dict:
     }
 
 
+def raw_operation() -> list[dict]:
+    return [{
+        "operation_id": "dashboard_metadata_1",
+        "resource_type": contract.RESOURCE_TYPE,
+        "action": contract.ACTION,
+        "target_id": ACCEPTANCE,
+        "proposed_config": {"title": "x"},
+    }]
+
+
 class _Base(DashboardServiceTestCase):
     def assert_refused(self, raised, reason_code: str, code=None) -> None:
         error = raised.exception
@@ -444,6 +454,47 @@ class InactiveTests(_Base):
         self.assertEqual(self.ws.content_reads, [])
         self.assertEqual(self.repository.list(), [])
         self.assertEqual(self.core.planning_leases, [])
+
+
+    async def test_generic_builder_refuses_a_raw_operation_first(self):
+        # The lowest builder refuses the dormant resource type before it
+        # validates or reads anything.
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service._create_configuration_plan(
+                title="t", description="d", operations=raw_operation(),
+                _before_persist=lambda: None,
+            )
+        self.assertEqual(raised.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+        self.assertEqual(
+            raised.exception.details["reason_code"], "pending_signed_registry_admission"
+        )
+        self.assertEqual(self.ws.commands, [])
+        self.assertEqual(self.ws.content_reads, [])
+        self.assertEqual(self.repository.list(), [])
+
+
+class GenericRouteTests(_Base):
+    async def test_generic_configuration_plan_cannot_carry_dashboard_metadata(self):
+        for before_persist in (None, lambda: None):
+            with self.subTest(before_persist=before_persist):
+                with self.assertRaises(GovernanceError) as raised:
+                    await self.service._create_configuration_plan(
+                        title="t", description="d", operations=raw_operation(),
+                        _before_persist=before_persist,
+                    )
+                self.assertEqual(
+                    raised.exception.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED
+                )
+        self.assertEqual(self.repository.list(), [])
+        self.assertEqual(self.ws.writes(), [])
+
+    async def test_generic_resource_write_cannot_reach_dashboard_metadata(self):
+        with self.assertRaises(Exception):
+            await self.resource_gateway.write(
+                "update", contract.RESOURCE_TYPE, ACCEPTANCE, {"title": "x"}
+            )
+        self.assertEqual(self.ws.writes(), [])
+        self.assertEqual(metadata(self.ws.row(ACCEPTANCE)), ORIGINAL[ACCEPTANCE])
 
 
 class ApplyBoundaryTests(_Base):

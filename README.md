@@ -1,5 +1,25 @@
 # HA MCP Engineering Server
 
+Staged, not yet released: Engineering **2.4.1-beta.50** (HAMCP-106,
+HAMCP-255) builds governed dashboard metadata inactive. The new tool
+`create_dashboard_metadata_plan` proposes title, icon, sidebar and
+admin-only changes to one existing storage dashboard. It sends one
+`lovelace/dashboards/update` by id, carrying only the requested fields, and
+verifies the result by exact readback with the dashboard content unchanged.
+It refuses `pending_signed_registry_admission` before any Home Assistant
+request or persistence until a signed Core registry sequence (planned 15)
+names `core.dashboard_metadata_operation`. Dashboard content, YAML
+dashboards and the default Overview are never changed. The Core-authority
+reconciliation audit record now groups profiles (`ha-core-authority-audit-v2`),
+so the audit logger stores it whole instead of a truncated stub. No signed
+registry, signed profile, existing fingerprint or existing schema change.
+Static tools 78; advertised catalog 106 (107 with the optional YAML reader).
+Rollback is reinstalling beta.49. Read the
+[2.4.1-beta.50 release notes](docs/V2_4_1_BETA50_RELEASE_NOTES.md) and
+[2.4.1-beta.50 acceptance contract](docs/V2_4_1_BETA50_ACCEPTANCE.md).
+
+It builds on beta.49 and the releases below.
+
 Engineering **2.4.1-beta.49** (HAMCP-198, HAMCP-120) explains the health
 warnings that stayed lit. Health names up to
 eight projection-failed plans as `{plan_id, category}` from a fixed

@@ -613,6 +613,59 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.50` slice (HAMCP-106) adds governed storage-dashboard
+metadata, **unreachable at release**. It switches on with the sequence-15
+signing. It adds no permission, add-on option, role, fallback or delegated
+provider.
+
+- **New write path.** `lovelace/dashboards/update` with `dashboard_id` and
+  only the requested fields among `title`, `icon`, `show_in_sidebar` and
+  `require_admin`. The `dashboard_id` is taken from the one listed row that
+  matches the `url_path`. The write is reachable only through an externally
+  approved plan dispatched by the F3 runtime, for the Core capability
+  profile `core.dashboard_metadata_operation`, admitted by a signed
+  registry. Signed sequence 14 does not reference that profile. The tool,
+  `create_configuration_plan` and the resource-write routes refuse
+  `pending_signed_registry_admission` before any read or storage, and F3
+  dispatch admission is checked again.
+- **Closed vocabulary.** The gateway sends only `lovelace/dashboards/list`
+  and `lovelace/dashboards/update`, and raises on anything else before I/O.
+  The profile's never-sent list includes `lovelace/config/save` and
+  `delete`, dashboard create and delete, the resource commands,
+  `frontend/update_panel` and `frontend/set_user_data`. Dashboard content is
+  read only through the existing admitted `get_dashboard_config` read, to
+  fingerprint it.
+- **Target.** One existing storage dashboard. `"lovelace"`, YAML
+  dashboards, unknown and ambiguous targets are refused while planning.
+  Core's update has no create path.
+- **Approval and verification.**
+  - All four fields are `standard_admin` (owner decision), physical
+    consequence none, with fixed visibility disclosures. Lowering
+    `require_admin` is disclosed as widening visibility only, not device
+    control.
+  - A multi-operation plan containing a dashboard-metadata operation, or an
+    incomplete operation, is `PROHIBITED`.
+  - Drift of the metadata row or the content fingerprint is refused
+    immediately before the write.
+  - The exact readback must show the requested fields as requested, the
+    unrequested fields unchanged and the content fingerprint unchanged.
+  - A response for another id is indeterminate and is decided by readback.
+    It is never redispatched.
+- **Untrusted titles.** Planning screens titles. Credential-shaped text is
+  refused, and the plan description never repeats a title.
+
+The `2.4.1-beta.50` audit correction (HAMCP-255) changes the shape of one
+audit record and nothing else. The `home_assistant_core_authority_reconciled`
+event's `analysis_summary` (model `ha-core-authority-audit-v2`) groups
+profiles by `(disposition, reason_code, authority_source)`, each group
+mapping capability id to profile id. That is enough to reconstruct every
+profile's admitted or withheld disposition and reason code. `adapter_id` is
+dropped, and the failure event is unchanged. `AuditLogger` keeps its 8192
+bound and its assertion. Before this change, the v1 per-profile list
+(8972 characters on beta.48) was replaced by a `payload_truncated` stub at
+every startup. The record now fits whole, and tests hold twice today's
+profile count to 75% of the bound.
+
 The `2.4.1-beta.41` November Core batch (HAMCP-232, HAMCP-145) adds two
 governed write plan families and two script-trace reads, all built
 inactive. It adds three runtime-only Core capability profiles, none of them
