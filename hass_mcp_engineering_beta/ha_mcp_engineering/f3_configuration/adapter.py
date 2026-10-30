@@ -28,6 +28,7 @@ from ..governance.config_validation import normalize_configuration_validation
 from ..governance.entity_metadata import EntityMetadataUpdateErrorResult
 from ..governance.normalize import (
     AUTOMATION_NORMALIZATION_VERSION,
+    automation_verification_detail_code,
     stable_hash,
 )
 from ..governance.resources import (
@@ -325,8 +326,20 @@ class ConfigurationOperationAdapter:
         )
         if not comparison.normalization_valid or not comparison.semantic_match:
             self._increment("validation_failures")
+            # HAMCP-249 (reporting only): keep the verifier's closed category
+            # and fixed-literal rule so the refusal names the exact check.
+            detail = (
+                automation_verification_detail_code(proposed)
+                if operation.resource_type == "automation"
+                else None
+            )
             return self._preflight_rejected(
-                operation, ("configuration_not_verifiable",)
+                operation,
+                (
+                    "configuration_not_verifiable",
+                    *comparison.mismatch_categories,
+                    *(() if detail is None else (detail,)),
+                ),
             )
 
         # This is the final authoritative mutable-state decision.  The shared
