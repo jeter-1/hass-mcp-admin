@@ -522,12 +522,32 @@ class PreDispatchReasonSurfaceTests(ConfigurationPlanTestCase):
         )
         if getattr(case, "rule", None):
             self.assertIn("Verifier rule: invalid automation wait trigger action.", reason["detail"])
-            # The comparison's closed mismatch category is kept with the rule.
+            # The comparison's closed mismatch category is kept with the rule,
+            # and HAMCP-252 adds the refusal's structural location.
             self.assertEqual(
                 sorted(reason["diagnostic_codes"]),
-                sorted((case.code, case.rule, "automation_verification_structure")),
+                sorted(
+                    (
+                        case.code,
+                        case.rule,
+                        "automation_verification_structure",
+                        "automation_verifier_path_action_0",
+                    )
+                ),
                 surface,
             )
+            self.assertEqual(
+                reason["verifier_location"],
+                {
+                    "path": "/action/0",
+                    "path_truncated": False,
+                    "fields": [],
+                    "fields_truncated": False,
+                },
+                surface,
+            )
+        else:
+            self.assertIsNone(reason["verifier_location"], surface)
         if case.outcome is not None:
             self.assertEqual(reason["normalized_outcome"], case.outcome)
         text = json.dumps(reason, sort_keys=True)

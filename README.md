@@ -1,5 +1,15 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.51** (HAMCP-252) lets the
+readback verifier compare a `sun` condition used as an action step
+(`after`/`before`/offsets, exact comparison only), which unblocks the A109
+camera automations. A verifier refusal also names its structural path and
+known field names in `pre_dispatch_refusal.verifier_location`; no values are
+stored. No other preflight decision, tool, input schema or Home Assistant
+write changes. Rollback is reinstalling beta.50. Read the
+[2.4.1-beta.51 release notes](docs/V2_4_1_BETA51_RELEASE_NOTES.md) and
+[2.4.1-beta.51 acceptance contract](docs/V2_4_1_BETA51_ACCEPTANCE.md).
+
 Staged, not yet released: Engineering **2.4.1-beta.50** (HAMCP-106,
 HAMCP-255) builds governed dashboard metadata inactive. The new tool
 `create_dashboard_metadata_plan` proposes title, icon, sidebar and
@@ -32,7 +42,7 @@ or Home Assistant write change. Rollback is reinstalling beta.48. Read the
 [2.4.1-beta.49 release notes](docs/V2_4_1_BETA49_RELEASE_NOTES.md) and
 [2.4.1-beta.49 acceptance contract](docs/V2_4_1_BETA49_ACCEPTANCE.md).
 
-It builds on beta.48 and the releases below.
+It builds on beta.49, beta.48 and the releases below.
 
 Engineering **2.4.1-beta.48** lets a full automation baseline capture
 complete its final fence (HAMCP-248). On beta.45 every full capture ended

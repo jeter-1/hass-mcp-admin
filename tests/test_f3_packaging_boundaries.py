@@ -54,6 +54,9 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     # HAMCP-249: pre-dispatch refusal reasons (executor faults, lock errors,
     # and the restated execution-record bounds pinned to f3/models.py).
     "tests/test_hamcp249_pre_dispatch_reasons.py",
+    # HAMCP-252: sun condition steps through the durable executor (exact
+    # readback, mismatch, and pre-approval refusal with its location).
+    "tests/test_hamcp252_sun_condition_verification.py",
     # HAMCP-145: input_select option lock-mode coverage.
     "tests/test_hamcp145_input_select_option.py",
     "tests/test_f3_tokenless_lock_recovery.py",

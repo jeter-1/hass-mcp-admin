@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.4.1-beta.51 - Sun condition steps verify exactly; verifier refusals name their location (HAMCP-252)
+
+Builds on 2.4.1-beta.50 (#330). No tool, input schema, dispatch or Home
+Assistant write change.
+
+- A `condition: sun` action step's `after`, `before`, `after_offset` and
+  `before_offset` are admitted by the readback verifier and compared exactly.
+  Values outside Core's sun schema are refused with
+  `automation_verifier_invalid_automation_sun_condition`, and a malformed
+  offset with `automation_verifier_invalid_automation_sun_condition_offset`.
+  A negative clock offset is checked after its sign is applied, as Core does,
+  so one beyond the negative duration bound is refused too.
+  The fields stay refused on other condition types, as do unknown fields.
+- Every verifier refusal also stores bounded location codes
+  (`automation_verifier_path_*`, `automation_verifier_field_*`; unknown names
+  become `unrecognized_field`; a whole-configuration refusal is located at
+  the root). They are decoded into `pre_dispatch_refusal.verifier_location`.
+  Values are never stored.
+
 ## 2.4.1-beta.50 - Governed dashboard metadata built inactive; whole Core-authority audit (HAMCP-106, HAMCP-255) (staged)
 
 Builds on 2.4.1-beta.49 (#329). Activates nothing new.
