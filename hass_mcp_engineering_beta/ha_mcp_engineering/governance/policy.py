@@ -48,6 +48,10 @@ from .label_registry_planning import (
     MAX_CHILDREN as LABEL_MAX_CHILDREN,
     POLICY_TRIGGER as LABEL_POLICY_TRIGGER,
 )
+from . import dashboard_metadata as dashboard_metadata_contract
+from .dashboard_metadata_planning import (
+    POLICY_TRIGGER as DASHBOARD_METADATA_POLICY_TRIGGER,
+)
 from .configuration_delete import (
     ACTION as CONFIGURATION_DELETE_ACTION,
     INTENT_KEY as CONFIGURATION_DELETE_INTENT_KEY,
@@ -895,6 +899,70 @@ def _label_operation_policy(
     )
 
 
+DASHBOARD_METADATA_INCOMPLETE = "dashboard_metadata_execution_contract_incomplete"
+
+
+def _dashboard_metadata_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one dashboard metadata update (HAMCP-106).
+
+    Title, icon, sidebar visibility and ``require_admin`` are dashboard
+    metadata with no device effect; Josh's 2026-10-30 decision makes every
+    complete child standard_admin, with the visibility consequence disclosed.
+    Any gap in the bound contract is prohibited.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (DASHBOARD_METADATA_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") == DASHBOARD_METADATA_POLICY_TRIGGER
+    ]
+    current, proposed = operation.current_config, operation.proposed_config
+    if (
+        operation.action != dashboard_metadata_contract.ACTION
+        or operation.helper_type is not None
+        or dashboard_metadata_contract.state_errors(operation.target_id, current)
+        or dashboard_metadata_contract.proposed_errors(
+            operation.target_id, proposed
+        )
+        or any(
+            current[key] != proposed[key]
+            for key in ("url_path", "id", "mode", "content_fingerprint")
+        )
+        or not dashboard_metadata_contract.changed_fields(current, proposed)
+        or not isinstance(operation.current_state_fingerprint, str)
+        or len(operation.current_state_fingerprint) != 64
+        or not isinstance(operation.proposed_config_hash, str)
+        or len(operation.proposed_config_hash) != 64
+        or operation.risk.apply_allowed is not True
+        or operation.risk.level is not RiskLevel.LOW
+        or len(markers_found) != 1
+    ):
+        return incomplete
+    marker = markers_found[0]
+    if (
+        marker.get("policy") != "standard"
+        or marker.get("physical_consequence") != PhysicalConsequence.NONE.value
+        or marker.get("basis") != ""
+        or marker.get("field") != operation.operation_id
+    ):
+        return incomplete
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.STANDARD_ADMIN,
+        RiskDelta.LOW,
+        PhysicalConsequence.NONE,
+        ("dashboard_metadata_standard_policy", "supported_configuration_change"),
+    )
+
+
 def _label_plan_complete(operations) -> bool:
     """Design §7: label children first, then entity assignment children.
 
@@ -1239,6 +1307,8 @@ def configuration_operation_policy(
         return _entity_metadata_operation_policy(operation)
     if operation.resource_type == LABEL_RESOURCE_TYPE:
         return _label_operation_policy(operation)
+    if operation.resource_type == dashboard_metadata_contract.RESOURCE_TYPE:
+        return _dashboard_metadata_operation_policy(operation)
     if operation.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
         return _availability_exposure_operation_policy(operation)
     if operation.resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
@@ -1694,6 +1764,19 @@ def _single_plan_policy(
                     RiskDelta.CRITICAL,
                     PhysicalConsequence.UNKNOWN,
                     (CONFIGURATION_DELETE_INCOMPLETE,),
+                ),
+            )
+        if len(plan.operations) != 1 and any(
+            op.resource_type == dashboard_metadata_contract.RESOURCE_TYPE
+            for op in plan.operations
+        ):
+            # HAMCP-106: a dashboard metadata update is always alone.
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.PROHIBITED,
+                    RiskDelta.CRITICAL,
+                    PhysicalConsequence.UNKNOWN,
+                    (DASHBOARD_METADATA_INCOMPLETE,),
                 ),
             )
         if any(

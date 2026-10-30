@@ -58,6 +58,9 @@ def resource_lock_key(resource_type: str, target_id: str) -> str:
     elif resource_type == "config_entry_helper_options":
         # HAMCP-232: one exclusive identity per config entry.
         prefix = "config_entry"
+    elif resource_type == "dashboard_metadata":
+        # HAMCP-106: one exclusive identity per dashboard url_path.
+        prefix = "dashboard_metadata"
     else:
         raise ValueError("configuration resource type has no lock identity")
     key = f"{prefix}:{target_id.lower()}"
@@ -216,6 +219,8 @@ def operation_lock_requests(
         "label_registry_entry": "reload:label_registry_entry",
         # HAMCP-232: the options submit reloads only its own entry.
         "config_entry_helper_options": "reload:config_entry_helper_options",
+        # HAMCP-106: a metadata update needs no reload; uniform lock graph.
+        "dashboard_metadata": "reload:dashboard_metadata",
     }.get(operation.resource_type)
     if reload_key is None:
         raise ValueError("configuration resource type has no reload lock")

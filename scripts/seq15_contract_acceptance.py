@@ -1,4 +1,4 @@
-"""HAMCP-232/145 exact-Core evidence lanes for the seq-15 signing batch (design §6.4).
+"""HAMCP-232/145/106 exact-Core evidence lanes for the seq-15 signing batch (design §6.4).
 
 Defined, not wired: the disposable Alarmo-slot harness calls these lanes only
 when ``REAL_HA_SEQ15_LANES`` is ``enabled`` and the slot's Core is exactly
@@ -25,6 +25,7 @@ import re
 import secrets
 import sys
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
@@ -35,6 +36,10 @@ if str(ROOT / "scripts") not in sys.path:
 from entity_metadata_contract_acceptance import (  # noqa: E402
     REFERENCE_KEYS, RawRefusal, RawWebSocket, engineering_source, load_receipt, receipt_bytes)
 from seq13_contract_acceptance import NOVEMBER_DORMANT  # noqa: E402
+from ha_mcp_engineering.governance.dashboard_metadata import (  # noqa: E402
+    DEFAULT_DASHBOARD_URL_PATH, FIELDS as DASHBOARD_FIELDS, LIST_COMMAND as DASHBOARD_LIST,
+    NEVER_SENT_COMMANDS as DASHBOARD_NEVER_SENT, UPDATE_COMMAND as DASHBOARD_UPDATE)
+from ha_mcp_engineering.governance.dashboard_metadata_planning import NO_CHANGE as DASHBOARD_NO_CHANGE  # noqa: E402
 from ha_mcp_engineering.governance.helper_options import NEVER_SENT as HELPER_NEVER_SENT  # noqa: E402
 from ha_mcp_engineering.governance.input_select_option import NEVER_SENT_SERVICES  # noqa: E402
 from ha_mcp_engineering.script_traces import NEVER_SENT_COMMANDS  # noqa: E402
@@ -46,7 +51,8 @@ TARGET_CORE = "2026.10.3"
 HELPER_OPTIONS = "core.config_entry_helper_options_operation"
 INPUT_SELECT = "core.typed_input_select_option_operation"
 SCRIPT_TRACE = "core.script_trace_read"
-SEQ15_DORMANT = frozenset({HELPER_OPTIONS, INPUT_SELECT, SCRIPT_TRACE})
+DASHBOARD_METADATA = "core.dashboard_metadata_operation"
+SEQ15_DORMANT = frozenset({HELPER_OPTIONS, INPUT_SELECT, SCRIPT_TRACE, DASHBOARD_METADATA})
 assert SEQ15_DORMANT == NOVEMBER_DORMANT
 # The seq-14 signed 2026.10.3 entry (upstream-trust/ha-core-release-registry.json).
 PREDECESSOR_COUNT = 26
@@ -64,9 +70,11 @@ ENTITY_GET, REGISTRY_LIST = "config/entity_registry/get", "config/entity_registr
 CONFIG_ENTRY_GET = "config_entries/get_single"
 SELECT_OPTION = "call_service:input_select.select_option"
 TRACE_LIST, TRACE_GET = "trace/list", "trace/get"
+# The admitted get_dashboard_config read's own Core command (ha-mcp sends it with force).
+LOVELACE_CONFIG = "lovelace/config"
 # Only these count as Home Assistant writes in a lane's Engineering clients.
-WRITE_REQUESTS = frozenset({OPTIONS_SUBMIT, SELECT_OPTION})
-FIXTURE_ABSENCE = ("config_entries", "entities", "input_select", "script")
+WRITE_REQUESTS = frozenset({OPTIONS_SUBMIT, SELECT_OPTION, DASHBOARD_UPDATE})
+FIXTURE_ABSENCE = ("config_entries", "entities", "input_select", "script", "dashboard")
 TRACE_SECRET_KEY = "seq15_probe"
 LONG_VALUE = 5_000
 
@@ -118,7 +126,30 @@ LANES = {
         predecessor_probe={"script_id": "seq15_absent"},
         # The trace service refuses on its own Core status before any request.
         predecessor_reason="authority_unavailable"),
+    "dashboard_metadata": _lane(
+        "dashboard_metadata", capability=DASHBOARD_METADATA,
+        adapter="compiled-core-dashboard-metadata-operation-v1",
+        tool="create_dashboard_metadata_plan", output_env="REAL_HA_DASHBOARD_METADATA_RESULT",
+        # The list read and the one update, plus the content-fingerprint read (DashboardContentRead).
+        reviewed={DASHBOARD_LIST, DASHBOARD_UPDATE, LOVELACE_CONFIG},
+        required={DASHBOARD_LIST, DASHBOARD_UPDATE, LOVELACE_CONFIG},
+        never_sent=DASHBOARD_NEVER_SENT,
+        scenarios=("title", "icon", "icon_clear", "show_in_sidebar", "require_admin", "all_fields", "rollback",
+                   "no_change", "default_dashboard", "content_unchanged", "stale_state", "content_drift"),
+        predecessor_probe={"url_path": "seq15-absent", "title": "x"},
+        predecessor_reason=PENDING),
 }
+# HAMCP-106: lanes defined here whose evidence path and upload entry are not yet in
+# .github/workflows/ci.yml (protected; deferred to the November seq-15 batch). Enabling
+# REAL_HA_SEQ15_LANES needs that workflow edit anyway, and until it lands this lane's
+# output_env is unset, so a run fails closed instead of producing evidence.
+WORKFLOW_PENDING_LANES = frozenset({"dashboard_metadata"})
+DASHBOARD_EDITS = ("title", "icon", "icon_clear", "show_in_sidebar", "require_admin", "all_fields")
+# Stored exactly: the trailing space must survive the update and the readback.
+DASHBOARD_TITLE = "Seq15 Map "
+DASHBOARD_DEFAULT_REFUSED = "dashboard_metadata_default_dashboard_refused"
+DASHBOARD_CONFIG = {"title": "Seq15", "views": [{"title": "Seq15", "path": "seq15", "cards": [
+    {"type": "markdown", "content": "Seq15 synthetic dashboard"}]}]}
 # Closed loopback routes the lane's raw client may use for setup, raw drift and cleanup only.
 RAW_ROUTE = re.compile(
     r"/config/config_entries/(?:flow|flow/[0-9A-Za-z]{1,64}|entry/[0-9A-Za-z]{1,64}"
@@ -253,8 +284,38 @@ def _script_trace_checks(name, value):
         assert value["reason"] == "invalid_arguments" and value["ha_commands"] == 0
 
 
+def _dashboard_metadata_checks(name, value):
+    if name in {*DASHBOARD_EDITS, "rollback"}:
+        _governed_success(value, 1)
+        assert value["write_types"] == [DASHBOARD_UPDATE] and value["expected"] != value["baseline"]
+        # One update by the exact dashboard id carrying exactly the requested fields, each a real change.
+        assert value["sent_fields"] == [value["requested_fields"]] and value["dashboard_ids_exact"] is True
+        assert value["requested_fields"] == sorted(
+            field for field in DASHBOARD_FIELDS if value["expected"][field] != value["baseline"][field])
+    if name == "title":
+        assert value["readback"]["title"] == DASHBOARD_TITLE
+    if name == "icon_clear":
+        assert value["expected"]["icon"] is None and value["icon_key_absent"] is True
+    if name == "all_fields":
+        assert value["requested_fields"] == sorted(DASHBOARD_FIELDS)
+    if name == "rollback":
+        # The reverse plan restores exactly the forward plan's changed fields.
+        assert value["status"] == "rollback_plan_created" and value["expected"] == value["prior"]
+        assert value["requested_fields"] == sorted(DASHBOARD_FIELDS)
+    if name == "no_change":
+        _refused(value, DASHBOARD_NO_CHANGE)
+    if name == "default_dashboard":
+        _refused(value, DASHBOARD_DEFAULT_REFUSED, commands=0)
+        assert value["error_code"] == "invalid_request"
+    if name == "content_unchanged":
+        assert value["raw_config_unchanged"] is True and value["fingerprints_match"] is True
+        assert type(value["fingerprint_reads"]) is int and value["fingerprint_reads"] >= 1
+    if name in {"stale_state", "content_drift"}:
+        _stale(value)
+
+
 CHECKS = {"helper_options": _helper_options_checks, "input_select_option": _input_select_checks,
-          "script_traces": _script_trace_checks}
+          "script_traces": _script_trace_checks, "dashboard_metadata": _dashboard_metadata_checks}
 
 
 def verify_result(lane_key, result, *, core_version, support_slot):
@@ -389,6 +450,32 @@ class LaneRaw(RawWebSocket):
         await self.submit_options(form, {**suggested_values(form), **changes})
 
 
+class DashboardContentRead:
+    """Harness stand-in for the admitted ha-mcp ``get_dashboard_config`` read.
+
+    The exact upstream starts only after the seq-15 lanes, so the lane sends
+    ha-mcp's own read command (``lovelace/config`` with ``force``) through
+    Engineering's observed client and hashes the complete raw configuration
+    with Engineering's ``engineering_config_hash``. The production reader
+    (``governance.runtime._dashboard_content_fingerprint_reader``) consumes it
+    unchanged. Read-only: no other command is reachable from here.
+    """
+
+    def __init__(self, websocket, seen):
+        self.websocket = websocket
+        self.seen = seen
+
+    async def get_dashboard_config(self, *, url_path, force_reload, response_limit):
+        from ha_mcp_engineering.providers.upstream_dashboard import _engineering_config_hash
+        config = await self.websocket.command({"type": LOVELACE_CONFIG, "url_path": url_path,
+                                               "force": force_reload is True})
+        if not isinstance(config, dict):
+            raise ValueError("Dashboard content read is not a configuration")
+        value = _engineering_config_hash(config)
+        self.seen.append(value)
+        return SimpleNamespace(data={"url_path": url_path, "engineering_config_hash": value})
+
+
 class ObservedWebSocket:
     """Engineering's real client, observed; every write and command type counted."""
 
@@ -448,6 +535,8 @@ async def cleanup_fixtures(raw, owned, *, attempts=50, delay=0.1):
         await raw.ok({"type": "input_select/delete", "input_select_id": owned["input_select"]})
     if owned.get("script"):
         await raw.rest("DELETE", "/config/script/config/" + owned["script"])
+    if owned.get("dashboard"):
+        await raw.ok({"type": "lovelace/dashboards/delete", "dashboard_id": owned["dashboard"]})
     entries = set(owned.get("config_entries", []))
 
     async def config_entries_absent():
@@ -464,8 +553,12 @@ async def cleanup_fixtures(raw, owned, *, attempts=50, delay=0.1):
         return not owned.get("script") or (
             await raw.status("GET", "/config/script/config/" + owned["script"]))[0] == 404
 
+    async def dashboard_absent():
+        return not owned.get("dashboard") or owned["dashboard"] not in {
+            item.get("id") for item in await raw.ok({"type": DASHBOARD_LIST})}
+
     checks = {"config_entries": config_entries_absent, "entities": entities_absent,
-              "input_select": input_select_absent, "script": script_absent}
+              "input_select": input_select_absent, "script": script_absent, "dashboard": dashboard_absent}
     absence = {}
     for name in FIXTURE_ABSENCE:
         for _ in range(attempts):
@@ -514,6 +607,7 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
         read_runtime_dependency_snapshot, runtime_consumer_evidence)
     from ha_mcp_engineering.governance.input_select_option import InputSelectGateway
     from ha_mcp_engineering.governance.resources import ConfigurationResourceGateway
+    from ha_mcp_engineering.governance.runtime import _dashboard_content_fingerprint_reader
     from ha_mcp_engineering.governance.service import ChangeGovernanceService
     from ha_mcp_engineering.governance.storage import ChangePlanRepository
     from ha_mcp_engineering.request_context import begin_request, end_request
@@ -584,12 +678,17 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
         rest = ObservedRest(HomeAssistantRestClient(configured), log)
         raw = LaneRaw(configured)
         service = None
+        # Every content fingerprint Engineering bound or rechecked, in order.
+        content_seen = []
 
         def compose(runtime):
             resource_gateway = ConfigurationResourceGateway(rest, engineering_ws)
             # The production composition (governance/runtime.py), one service per authority.
             resource_gateway.entity_metadata_consumer_evidence = runtime_consumer_evidence()
             resource_gateway.availability_exposure_snapshot_reader = read_runtime_dependency_snapshot
+            resource_gateway.dashboard_metadata.core_runtime = runtime
+            resource_gateway.dashboard_metadata.content_reader = _dashboard_content_fingerprint_reader(
+                DashboardContentRead(engineering_ws, content_seen), configured.response_size_limit)
             audit_secret = "seq15-" + lane["key"] + "-disposable-audit"
             input_select_gateway = InputSelectGateway(rest, engineering_ws)
             composed = ChangeGovernanceService(
@@ -600,7 +699,8 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
                 entity_availability_exposure_gateway=resource_gateway.availability_exposure,
                 label_registry_gateway=resource_gateway.label_registry,
                 input_select_gateway=input_select_gateway,
-                helper_options_gateway=resource_gateway.helper_options)
+                helper_options_gateway=resource_gateway.helper_options,
+                dashboard_metadata_gateway=resource_gateway.dashboard_metadata)
 
             async def provider_identity():
                 return {"slug": "seq15_disposable_lane",
@@ -791,7 +891,8 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
                        "apply_created": apply_created, "rollback": rollback,
                        "refused_rollback": refused_rollback, "routed": routed, "traces": traces,
                        "owner_request": owner_request, "end_request": end_request,
-                       "lane_secret": lane_secret, "GovernanceError": GovernanceError}
+                       "lane_secret": lane_secret, "GovernanceError": GovernanceError,
+                       "content_seen": content_seen}
             with patch.object(dependency_package, "DEPENDENCY_ANALYSIS", dependency_runtime):
                 scenarios = await SCENARIOS[lane["key"]](context)
             assert all(runtime.health_snapshot()[name] == 0 for name in (
@@ -1068,5 +1169,95 @@ async def _script_trace_scenarios(c):
     return scenarios
 
 
+async def _dashboard_metadata_scenarios(c):
+    from ha_mcp_engineering.providers.upstream_dashboard import _engineering_config_hash
+    stage, owned, raw, runtime, log = c["stage"], c["owned"], c["raw"], c["runtime"], c["log"]
+    stage[0] = "fixture_setup"
+    # Harness-only setup through the raw client; Engineering never creates or saves a dashboard.
+    url_path = "seq15-" + secrets.token_hex(4)
+    created = await raw.ok({"type": "lovelace/dashboards/create", "url_path": url_path, "title": "Seq15 Board",
+                            "icon": "mdi:view-dashboard", "show_in_sidebar": True, "require_admin": False})
+    owned["dashboard"] = created["id"]  # owned before any further command
+    await raw.ok({"type": "lovelace/config/save", "url_path": url_path, "config": DASHBOARD_CONFIG})
+
+    async def row():
+        (found,) = [item for item in await raw.ok({"type": DASHBOARD_LIST}) if item.get("url_path") == url_path]
+        return found
+
+    async def fields():
+        found = await row()
+        return {name: found.get(name) for name in DASHBOARD_FIELDS}
+
+    async def content():
+        return await raw.ok({"type": LOVELACE_CONFIG, "url_path": url_path, "force": True})
+
+    def sent_since(start):
+        updates = [payload for payload in log.payloads[start:] if payload.get("type") == DASHBOARD_UPDATE]
+        return {"sent_fields": [sorted(set(payload) - {"type", "dashboard_id"}) for payload in updates],
+                "dashboard_ids_exact": bool(updates) and all(
+                    payload.get("dashboard_id") == owned["dashboard"] for payload in updates)}
+    content_before = await content()
+    scenarios = {}
+
+    stage[0] = "default_dashboard"
+    scenarios["default_dashboard"] = await c["refused_plan"](runtime, {
+        "url_path": DEFAULT_DASHBOARD_URL_PATH, "title": "Seq15"})
+    stage[0] = "no_change"
+    scenarios["no_change"] = await c["refused_plan"](runtime, {"url_path": url_path, "title": "Seq15 Board"})
+
+    async def edit(name, change):
+        stage[0] = name
+        baseline, start, observed = await fields(), len(log.payloads), {}
+        value = await c["governed"](runtime, {"url_path": url_path, **change}, observed=observed)
+        found = await row()
+        scenarios[name] = {**value, **sent_since(start), "baseline": baseline, "expected": {**baseline, **change},
+                           "readback": {field: found.get(field) for field in DASHBOARD_FIELDS},
+                           "requested_fields": sorted(change), "icon_key_absent": "icon" not in found}
+        return observed["plan"]
+    await edit("title", {"title": DASHBOARD_TITLE})
+    await edit("icon", {"icon": "mdi:map-marker"})
+    await edit("icon_clear", {"icon": None})
+    await edit("show_in_sidebar", {"show_in_sidebar": False})
+    await edit("require_admin", {"require_admin": True})
+    prior = await fields()
+    forward = await edit("all_fields", {"title": "Seq15 Floor", "icon": "mdi:floor-plan",
+                                        "show_in_sidebar": True, "require_admin": False})
+
+    stage[0] = "rollback"
+    baseline, start = await fields(), len(log.payloads)
+    created, reverse = await c["rollback"](forward["plan_id"])
+    value = await c["apply_created"](reverse)
+    # For the reverse plan the requested fields are the ones it restores.
+    scenarios["rollback"] = {**value, **sent_since(start), "status": created["status"], "baseline": baseline,
+                             "prior": prior, "expected": prior, "readback": await fields(),
+                             "requested_fields": sorted(created.get("restored_fields") or [])}
+
+    stage[0] = "content_unchanged"
+    # Views and cards are never sent: every bound fingerprint is the seeded content's.
+    content_after = await content()
+    scenarios["content_unchanged"] = {
+        "result": "PASS", "raw_config_unchanged": content_after == content_before,
+        "fingerprint_reads": len(c["content_seen"]),
+        "fingerprints_match": set(c["content_seen"]) == {_engineering_config_hash(content_before)}}
+
+    stage[0] = "stale_state"
+
+    async def title_drift():
+        await raw.ok({"type": DASHBOARD_UPDATE, "dashboard_id": owned["dashboard"], "title": "Seq15 Drift"})
+    value = await c["governed"](runtime, {"url_path": url_path, "title": "Seq15 Stale"}, between=title_drift)
+    scenarios["stale_state"] = {**value, "drift_retained": (await row())["title"] == "Seq15 Drift"}
+
+    stage[0] = "content_drift"
+    drifted = {**DASHBOARD_CONFIG, "title": "Seq15 Drift"}
+
+    async def content_change():
+        await raw.ok({"type": "lovelace/config/save", "url_path": url_path, "config": drifted})
+    value = await c["governed"](runtime, {"url_path": url_path, "show_in_sidebar": True}, between=content_change)
+    after = await row()
+    scenarios["content_drift"] = {**value, "drift_retained": await content() == drifted
+                                  and after["show_in_sidebar"] is False and after["title"] == "Seq15 Drift"}
+    return scenarios
+
+
 SCENARIOS = {"helper_options": _helper_options_scenarios, "input_select_option": _input_select_scenarios,
-             "script_traces": _script_trace_scenarios}
+             "script_traces": _script_trace_scenarios, "dashboard_metadata": _dashboard_metadata_scenarios}

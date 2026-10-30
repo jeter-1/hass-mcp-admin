@@ -27,6 +27,7 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 import tests.test_core_2026_10_device_registry as october  # noqa: E402
 import tests.test_hamcp155_configuration_delete_admission as delete_admission  # noqa: E402
 from ha_mcp_engineering.governance import configuration_delete, label_registry  # noqa: E402
+from ha_mcp_engineering.governance import dashboard_metadata as dashboard_metadata_contract  # noqa: E402
 from ha_mcp_engineering.governance import helper_options as helper_options_contract  # noqa: E402
 from ha_mcp_engineering.governance import input_select_option as input_select_contract  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import SCRIPT_TRACE_PROFILE  # noqa: E402
@@ -67,6 +68,11 @@ PROVIDERS = {
     "helper_options_provider": (
         (helper_options_contract.PROFILE,),
         helper_options_contract.PENDING_ADMISSION_REASON,
+    ),
+    # HAMCP-106: the dormant dashboard metadata provider joins the snapshot.
+    "dashboard_metadata_provider": (
+        (dashboard_metadata_contract.PROFILE,),
+        dashboard_metadata_contract.PENDING_ADMISSION_REASON,
     ),
 }
 # The script-trace provider backs two tools (list_script_traces and

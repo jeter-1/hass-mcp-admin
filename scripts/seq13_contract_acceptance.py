@@ -46,7 +46,9 @@ SEQ13_DORMANT = frozenset({LABEL, AVAILABILITY, EXPOSURE, DELETE})
 SHIPPED_SIGNED_COUNT = 22
 # HAMCP-232/145 November batch: compiled, never in a predecessor (seq 15+).
 NOVEMBER_DORMANT = frozenset({"core.config_entry_helper_options_operation",
-                              "core.typed_input_select_option_operation", "core.script_trace_read"})
+                              "core.typed_input_select_option_operation", "core.script_trace_read",
+                              # HAMCP-106 dashboard metadata (seq 15 signing batch).
+                              "core.dashboard_metadata_operation"})
 ENTITY_GET, ENTITY_UPDATE = "config/entity_registry/get", "config/entity_registry/update"
 LABEL_LIST = "config/label_registry/list"
 LABEL_CREATE, LABEL_UPDATE = "config/label_registry/create", "config/label_registry/update"

@@ -109,6 +109,15 @@ HELPER_OPTIONS_PROVIDER_MODEL = (
     "compiled-core-config-entry-helper-options-operation-v1"
 )
 
+# HAMCP-106: the exact metadata update of one storage-mode dashboard.
+# Admitted only by the dormant ``core.dashboard_metadata_operation`` profile.
+DASHBOARD_METADATA_REGISTRATION = (
+    "update_dashboard_metadata_configuration",
+    "dashboard_metadata",
+    "update",
+)
+DASHBOARD_METADATA_PROVIDER_MODEL = "direct-ha-exact-dashboard-metadata-v1"
+
 OPERATIONAL_REGISTRATIONS = (
     ("create_full_home_assistant_backup", "create_full_backup", "backup"),
     (
@@ -311,6 +320,30 @@ class ClosedAdapterRegistry:
                 required_protocol="direct-home-assistant-api-v1",
             )
         )
+        capability, target, action = DASHBOARD_METADATA_REGISTRATION
+        entries.append(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="configuration_operation",
+                operation_family="configuration",
+                plan_operation="configuration_plan",
+                target_type=target,
+                action=action,
+                provider_model=DASHBOARD_METADATA_PROVIDER_MODEL,
+                resource_lock_model="f3-configuration-lock-set-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="exact_registry_readback",
+                recovery_model="exact_configuration_readback",
+                rollback_declaration="separate_governed_reverse_update_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+        )
         entries.extend(
             AdapterRegistration(
                 capability_id=capability,
@@ -425,6 +458,7 @@ class ClosedAdapterRegistry:
                 *LABEL_REGISTRATIONS,
                 *CONFIGURATION_DELETE_REGISTRATIONS,
                 HELPER_OPTIONS_REGISTRATION,
+                DASHBOARD_METADATA_REGISTRATION,
                 DASHBOARD_REGISTRATION,
             )
         }
@@ -444,6 +478,7 @@ class ClosedAdapterRegistry:
                 *(item[0] for item in LABEL_REGISTRATIONS),
                 *(item[0] for item in CONFIGURATION_DELETE_REGISTRATIONS),
                 HELPER_OPTIONS_REGISTRATION[0],
+                DASHBOARD_METADATA_REGISTRATION[0],
             }
             if (
                 (
@@ -491,6 +526,15 @@ class ClosedAdapterRegistry:
                         or entry.provider_model != HELPER_OPTIONS_PROVIDER_MODEL
                     )
                 )
+                or (
+                    entry.target_type == "dashboard_metadata"
+                    and (
+                        entry.capability_id != DASHBOARD_METADATA_REGISTRATION[0]
+                        or entry.action != "update"
+                        or entry.provider_model
+                        != DASHBOARD_METADATA_PROVIDER_MODEL
+                    )
+                )
                 or not entry.resource_lock_model
                 or not entry.provider_dependency_lock_model
                 or entry.target_type not in {
@@ -499,6 +543,7 @@ class ClosedAdapterRegistry:
                     "dashboard", "entity_registry_metadata",
                     "entity_registry_availability", "entity_assistant_exposure",
                     "label_registry_entry", "config_entry_helper_options",
+                    "dashboard_metadata",
                 }
             ):
                 raise AdapterRegistryError("F3 route admission binding is invalid")

@@ -44,6 +44,7 @@ from ha_mcp_engineering.governance import (  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     AVAILABILITY_PROFILE,
     CONFIGURATION_DELETE_PROFILE,
+    DASHBOARD_METADATA_PROFILE,
     EXPOSURE_PROFILE,
     F3_ENTRY_ADMISSION_PROFILES,
     HELPER_OPTIONS_PROFILE,
@@ -265,7 +266,9 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
             F3_ENTRY_ADMISSION_PROFILES,
             {CONFIGURATION_DELETE_PROFILE, LABEL_PROFILE, AVAILABILITY_PROFILE, EXPOSURE_PROFILE,
              # HAMCP-232/145 November batch.
-             HELPER_OPTIONS_PROFILE, INPUT_SELECT_PROFILE, SCRIPT_TRACE_PROFILE},
+             HELPER_OPTIONS_PROFILE, INPUT_SELECT_PROFILE, SCRIPT_TRACE_PROFILE,
+             # HAMCP-106.
+             DASHBOARD_METADATA_PROFILE},
         )
         expected = {
             "delete_automation_configuration": (CONFIGURATION_DELETE_PROFILE,),
@@ -277,6 +280,7 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
             "update_automation_configuration": (),
             "update_config_entry_helper_options_configuration": (HELPER_OPTIONS_PROFILE,),
             "set_exact_input_select_option": (INPUT_SELECT_PROFILE,),
+            "update_dashboard_metadata_configuration": (DASHBOARD_METADATA_PROFILE,),
             "set_exact_input_boolean_state": (),
         }
         for identity, profiles in expected.items():
@@ -291,6 +295,8 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
             "entity_assistant_exposure": EXPOSURE_PROFILE,
             # HAMCP-232: helper options edits are admitted only by their own profile.
             "config_entry_helper_options": HELPER_OPTIONS_PROFILE,
+            # HAMCP-106: dashboard metadata is admitted only by its own profile.
+            "dashboard_metadata": DASHBOARD_METADATA_PROFILE,
         })
 
 

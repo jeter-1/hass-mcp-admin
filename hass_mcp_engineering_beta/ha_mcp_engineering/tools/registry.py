@@ -40,6 +40,7 @@ _PROPOSAL_TOOLS = {
     "create_configuration_delete_plan",
     "create_input_select_option_plan",
     "create_helper_options_plan",
+    "create_dashboard_metadata_plan",
     "create_addon_restart_plan",
     "create_home_assistant_restart_plan",
     "create_change_plan",
@@ -160,6 +161,7 @@ from .incident_logs import registered_tool as incident_logs_tool
 from .history_slices import registered_tool as history_slices_tool
 from .governance import (
     registered_configuration_delete_tool,
+    registered_dashboard_metadata_tool,
     registered_entity_availability_exposure_tool,
     registered_entity_metadata_tool,
     registered_helper_options_tool,
@@ -185,6 +187,9 @@ _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_core_log_history": core_log_to
                     ),
                     "create_helper_options_plan": (
                         registered_helper_options_tool()
+                    ),
+                    "create_dashboard_metadata_plan": (
+                        registered_dashboard_metadata_tool()
                     )})
 
 from .audit_baseline import registered_tool as baseline_capture_tool

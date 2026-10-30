@@ -38,6 +38,29 @@ from .task_storage import (
 )
 
 
+def _dashboard_content_fingerprint_reader(provider: Any, response_limit: int):
+    """HAMCP-106: an async ``url_path -> engineering_config_hash`` reader.
+
+    The read is the existing admitted ``get_dashboard_config``; a result for
+    any other dashboard, or without a full fingerprint, is not a proof that
+    the content is unchanged, so it fails closed.
+    """
+
+    async def read(url_path: str) -> str:
+        result = await provider.get_dashboard_config(
+            url_path=url_path, force_reload=True, response_limit=response_limit
+        )
+        data = getattr(result, "data", None)
+        if not isinstance(data, dict) or data.get("url_path") != url_path:
+            raise ValueError("dashboard content read did not match the target")
+        value = data.get("engineering_config_hash")
+        if not isinstance(value, str):
+            raise ValueError("dashboard content fingerprint is missing")
+        return value
+
+    return read
+
+
 class _RuntimeGovernanceGateway:
     """Expose both immutable v1 and bounded v2 governance contracts."""
 
@@ -159,6 +182,19 @@ class GovernanceRuntime:
             resource_gateway.availability_exposure_snapshot_reader = (
                 read_runtime_dependency_snapshot
             )
+            # HAMCP-106 R1-H1: the metadata write refuses unless this Core
+            # runtime currently admits its profile.
+            resource_gateway.dashboard_metadata.core_runtime = core_runtime
+            if dashboard_provider is not None:
+                # HAMCP-106: the content fingerprint is the existing admitted
+                # get_dashboard_config read; the configuration itself is
+                # discarded here.  Without the provider every metadata read
+                # fails closed.
+                resource_gateway.dashboard_metadata.content_reader = (
+                    _dashboard_content_fingerprint_reader(
+                        dashboard_provider, settings.response_size_limit
+                    )
+                )
             helper_state_gateway = HelperStateGateway(
                 rest_client, websocket_client
             )
@@ -202,6 +238,9 @@ class GovernanceRuntime:
                 # HAMCP-232: refused before any read until a signed registry
                 # admits core.config_entry_helper_options_operation.
                 helper_options_gateway=resource_gateway.helper_options,
+                # HAMCP-106: refused before any read until a signed registry
+                # admits core.dashboard_metadata_operation.
+                dashboard_metadata_gateway=resource_gateway.dashboard_metadata,
             )
             from ..f3_runtime.runtime import F3RuntimeIntegration
 

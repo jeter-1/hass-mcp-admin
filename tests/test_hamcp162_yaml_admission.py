@@ -20,6 +20,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import inspect
+import itertools
 import json
 from pathlib import Path
 import sys
@@ -76,7 +77,7 @@ TOOL = y.TOOL_NAME
 OPTIONAL = (TOOL,) + y.SIBLING_TOOLS
 SESSION = "synthetic-ha-mcp-session"
 STOCK_UPSTREAM = {"8.4.3": 78, "8.5.0": 77}  # K9 stock reviewed catalogs
-STOCK_PUBLIC = 105
+STOCK_PUBLIC = 106
 
 
 def captured(version, label="A"):
@@ -165,6 +166,10 @@ class Harness(unittest.IsolatedAsyncioTestCase):
         self.now = datetime(2026, 8, 27, 12, tzinfo=timezone.utc)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
+        # One fresh cache file per registry.  Keying it on id(raw) let a
+        # reused address hand a later registry an earlier cache, which
+        # reports "idempotent" instead of "accepted".
+        self.cache_serial = itertools.count()
 
     def signed_registry(self, revoked=()):
         revocations = []
@@ -184,7 +189,7 @@ class Harness(unittest.IsolatedAsyncioTestCase):
 
         return signed.SignedReleaseRegistry(
             enabled=True, public_key=self.ha_signer.public_key_base64,
-            cache_path=Path(self.temporary.name) / f"cache-{len(revoked)}-{id(raw)}.json",
+            cache_path=Path(self.temporary.name) / f"cache-{len(revoked)}-{next(self.cache_serial)}.json",
             fetcher=fetcher, now=lambda: self.now,
         )
 
@@ -500,7 +505,7 @@ class AdmissionTests(Harness):
         return self.exposed(gateway)
 
     async def test_stock_catalog_is_optional_absent_with_87_public_tools(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 77)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 78)
         for version in VERSIONS:
             for mode in ("A", "B"):
                 with self.subTest(version=version, mode=mode):

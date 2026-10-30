@@ -146,6 +146,19 @@ _F3_HELPER_OPTIONS_OPERATIONS = frozenset(
         ),
     }
 )
+# HAMCP-106: the dashboard metadata update binds only its own dormant
+# runtime profile; its content fingerprint uses the signed dashboard read.
+DASHBOARD_METADATA_PROFILE = "core.dashboard_metadata_operation"
+DASHBOARD_METADATA_TOOL = "create_dashboard_metadata_plan"
+DASHBOARD_METADATA_RESOURCE_TYPE = "dashboard_metadata"
+_F3_DASHBOARD_METADATA_OPERATIONS = frozenset(
+    {
+        (
+            "update_dashboard_metadata_configuration",
+            "update_dashboard_metadata_configuration",
+        ),
+    }
+)
 INPUT_SELECT_PROFILE = "core.typed_input_select_option_operation"
 INPUT_SELECT_TOOL = "create_input_select_option_plan"
 _F3_INPUT_SELECT_OPERATIONS = frozenset(
@@ -270,6 +283,11 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     INPUT_SELECT_TOOL: (
         "core.dependency_helper_planning",
         INPUT_SELECT_PROFILE,
+    ),
+    # HAMCP-106: runtime-only; planning also reads the content fingerprint.
+    DASHBOARD_METADATA_TOOL: (
+        "core.dashboard_configuration_read",
+        DASHBOARD_METADATA_PROFILE,
     ),
     "list_script_traces": (SCRIPT_TRACE_PROFILE,),
     "get_script_trace": (SCRIPT_TRACE_PROFILE,),
@@ -661,6 +679,10 @@ PENDING_ADMISSION_TOOLS: Mapping[str, tuple[str, str]] = MappingProxyType(
         ),
         HELPER_OPTIONS_TOOL: (HELPER_OPTIONS_RESOURCE_TYPE, HELPER_OPTIONS_PROFILE),
         INPUT_SELECT_TOOL: (INPUT_SELECT_TARGET_TYPE, INPUT_SELECT_PROFILE),
+        DASHBOARD_METADATA_TOOL: (
+            DASHBOARD_METADATA_RESOURCE_TYPE,
+            DASHBOARD_METADATA_PROFILE,
+        ),
         "list_script_traces": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         "get_script_trace": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
     }
@@ -703,6 +725,8 @@ def static_tool_target(
         return helper_options_target(arguments)
     if tool_name == INPUT_SELECT_TOOL:
         return input_select_target(arguments)
+    if tool_name == DASHBOARD_METADATA_TOOL:
+        return dashboard_metadata_target(arguments)
     if tool_name != "create_entity_metadata_plan":
         return None
     entity_id = arguments.get("entity_id") if isinstance(arguments, dict) else None
@@ -857,6 +881,29 @@ def input_select_target(arguments: Any) -> dict[str, str]:
     }
 
 
+def dashboard_metadata_target(arguments: Any) -> dict[str, str]:
+    """Bind the 106 planner lease to its one exact dashboard url_path."""
+
+    # Imported at call time: governance composes this package at load.
+    from ..governance.dashboard_metadata_planning import (
+        DashboardMetadataRefusal,
+        validate_request,
+    )
+
+    try:
+        request = validate_request(arguments)
+    except DashboardMetadataRefusal as refusal:
+        field = refusal.details.get("field")
+        raise StaticToolTargetRefused(
+            refusal.reason_code,
+            field if isinstance(field, str) else "url_path",
+        ) from None
+    return {
+        "target_type": DASHBOARD_METADATA_RESOURCE_TYPE,
+        "target_id": request.lease_target_id,
+    }
+
+
 def f3_requirements(prepared: Any) -> tuple[str, ...]:
     """Map an existing typed F3 operation to its complete Core authority set."""
 
@@ -894,6 +941,11 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         values.add(HELPER_OPTIONS_PROFILE)
     elif identity in _F3_INPUT_SELECT_OPERATIONS:
         values.add(INPUT_SELECT_PROFILE)
+    elif identity in _F3_DASHBOARD_METADATA_OPERATIONS:
+        # Never the signed dashboard write contract; the content fingerprint
+        # readback uses the signed dashboard configuration read.
+        values.add(DASHBOARD_METADATA_PROFILE)
+        values.add("core.dashboard_configuration_read")
     elif identity in _F3_ENTITY_METADATA_OPERATIONS:
         # Never the signed governed_configuration_operation contract: that
         # evidence did not cover the entity registry write adapter.
@@ -917,6 +969,7 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         LABEL_PROFILE,
         HELPER_OPTIONS_PROFILE,
         INPUT_SELECT_PROFILE,
+        DASHBOARD_METADATA_PROFILE,
         # Read-only and never an F3 identity, so it never matches here; listed
         # so the entry set stays exactly "compiled minus shipped".
         SCRIPT_TRACE_PROFILE,
@@ -997,6 +1050,10 @@ __all__ = [
     "INPUT_SELECT_TARGET_TYPE",
     "INPUT_SELECT_TOOL",
     "input_select_target",
+    "DASHBOARD_METADATA_PROFILE",
+    "DASHBOARD_METADATA_RESOURCE_TYPE",
+    "DASHBOARD_METADATA_TOOL",
+    "dashboard_metadata_target",
     "PENDING_ADMISSION_TOOLS",
     "SCRIPT_TRACE_PROFILE",
     "SCRIPT_TRACE_RESOURCE_TYPE",

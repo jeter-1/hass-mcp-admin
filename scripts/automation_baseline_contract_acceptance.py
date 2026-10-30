@@ -194,7 +194,8 @@ async def _run_disposable(configured, *, expected_image, core_version):
                                        'core.label_registry_operation',
                                        'core.config_entry_helper_options_operation',
                                        'core.typed_input_select_option_operation',
-                                       'core.script_trace_read'}]
+                                       'core.script_trace_read',
+                                       'core.dashboard_metadata_operation'}]
     old = [r for r in refs if r['capability_id'] != c.CAPABILITY]
     assert len(old)==20 and len(refs)==21
     key=Ed25519PrivateKey.generate(); now=datetime.now(timezone.utc)

@@ -214,6 +214,8 @@ from . import configuration_delete
 from . import configuration_delete_planning
 from . import helper_options as helper_options_contract
 from . import helper_options_planning
+from . import dashboard_metadata as dashboard_metadata_contract
+from . import dashboard_metadata_planning
 from .entity_metadata_disclosure import read_runtime_dependency_snapshot
 from . import input_select_option as input_select_contract
 from ..ha_core_readmission.routes import SCRIPT_TRACE_PROFILE
@@ -242,7 +244,12 @@ from .semantic_projection import (
 # HAMCP-165: resource types admitted only by an unsigned (dormant) Core
 # profile; see ``f3_runtime.runtime.UNSIGNED_PROFILE_REQUIREMENTS``.
 DORMANT_PROFILE_RESOURCE_TYPES = frozenset(
-    {label_registry.LABEL_RESOURCE_TYPE, *entity_availability_exposure.RESOURCE_TYPES}
+    {
+        label_registry.LABEL_RESOURCE_TYPE,
+        *entity_availability_exposure.RESOURCE_TYPES,
+        # HAMCP-106 R1-H1.
+        dashboard_metadata_contract.RESOURCE_TYPE,
+    }
 )
 
 
@@ -716,6 +723,7 @@ class ChangeGovernanceService:
         configuration_delete_gateway: Any | None = None,
         input_select_gateway: Any | None = None,
         helper_options_gateway: Any | None = None,
+        dashboard_metadata_gateway: Any | None = None,
         input_select_dependency_risk_reader: Callable[..., Awaitable[
             dict[str, Any]
         ]] | None = None,
@@ -753,6 +761,9 @@ class ChangeGovernanceService:
         # HAMCP-232: options-flow reads and the one submit, inactive until a
         # signed registry admits core.config_entry_helper_options_operation.
         self.helper_options_gateway = helper_options_gateway
+        # HAMCP-106: the dashboard list and the one metadata update, inactive
+        # until a signed registry admits core.dashboard_metadata_operation.
+        self.dashboard_metadata_gateway = dashboard_metadata_gateway
         self.input_select_dependency_risk_reader = (
             input_select_dependency_risk_reader
             or read_input_select_dependency_risk
@@ -6077,6 +6088,7 @@ class ChangeGovernanceService:
         label_context: Any | None,
         availability_exposure_context: Any | None,
         helper_options_context: Any | None = None,
+        dashboard_metadata_context: Any | None = None,
     ) -> bool:
         """HAMCP-165 review1 M1: admission first in the lowest builder.
 
@@ -6108,13 +6120,25 @@ class ChangeGovernanceService:
             helper_options_context is not None
             or helper_options_contract.RESOURCE_TYPE in resource_types
         )
+        # HAMCP-106: the dashboard metadata resource type, prepared or raw.
+        dashboard_metadata = (
+            dashboard_metadata_context is not None
+            or dashboard_metadata_contract.RESOURCE_TYPE in resource_types
+        )
         if helper_options:
             self._helper_options_core()
+        if dashboard_metadata:
+            self._dashboard_metadata_core()
         if label:
             self._label_core()
         for resource_type in sorted(availability_exposure):
             self._availability_exposure_core(resource_type)
-        return label or bool(availability_exposure) or helper_options
+        return (
+            label
+            or bool(availability_exposure)
+            or helper_options
+            or dashboard_metadata
+        )
 
     async def create_helper_options_plan(
         self,
@@ -6246,6 +6270,138 @@ class ChangeGovernanceService:
             expiration_minutes=prepared.request.expiration_minutes,
             caller_context=caller_context,
             _helper_options_context=prepared,
+            _before_persist=_before_persist,
+        )
+
+    async def create_dashboard_metadata_plan(
+        self,
+        arguments: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Plan one governed dashboard metadata update (HAMCP-106).
+
+        Admission of the runtime-only ``core.dashboard_metadata_operation``
+        profile is enforced first, before input validation, any read and any
+        persistence; unadmitted planning reads nothing and stores nothing.
+        Input is then validated before any Home Assistant read; planning
+        reads the dashboard list and the content fingerprint inside the
+        exact-target Core lease.  A request that changes nothing is refused
+        with a truthful no-change reason.  Nothing is dispatched.
+        """
+
+        self._dashboard_metadata_core()
+        try:
+            request = dashboard_metadata_planning.validate_request(arguments)
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self._entity_metadata_refusal_error(exc, {}) from None
+        lease = self._dashboard_metadata_planning_lease(request.lease_target_id)
+        async with lease:
+            try:
+                if self.dashboard_metadata_gateway is None:
+                    raise dashboard_metadata_planning.Refusal(
+                        "dashboard_metadata_provider_unavailable",
+                        kind="unavailable",
+                    )
+                prepared = await dashboard_metadata_planning.prepare(
+                    self.dashboard_metadata_gateway, request
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self._entity_metadata_refusal_error(
+                    exc, {"url_path": request.url_path}
+                ) from None
+            lease.require_current()
+            return await self._create_dashboard_metadata_plan(
+                prepared,
+                caller_context=caller_context,
+                _before_persist=lease.require_current,
+            )
+
+    def _dashboard_metadata_core(self) -> Any:
+        """Return Core only if a signed registry admits the metadata profile."""
+
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status(
+                    (dashboard_metadata_contract.PROFILE,)
+                ).get("available")
+                is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": dashboard_metadata_contract.PENDING_ADMISSION_REASON,
+                    "reason_code": (
+                        dashboard_metadata_contract.PENDING_ADMISSION_REASON
+                    ),
+                    "resource_type": dashboard_metadata_contract.RESOURCE_TYPE,
+                    "core_capability": dashboard_metadata_contract.PROFILE,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _dashboard_metadata_planning_lease(self, target_id: str) -> Any:
+        """Hold exact-target Core authority across one metadata planning."""
+
+        from ..f3_runtime.runtime import _rollback_planning_lease
+
+        core = self._dashboard_metadata_core()
+        return _rollback_planning_lease(
+            core,
+            ("core.dashboard_configuration_read", dashboard_metadata_contract.PROFILE),
+            target={
+                "target_type": dashboard_metadata_contract.RESOURCE_TYPE,
+                "target_id": target_id,
+            },
+        )
+
+    async def _create_dashboard_metadata_plan(
+        self,
+        prepared: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+        _before_persist: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        # Every metadata persistence path re-checks admission and must hold a
+        # current Core lease; neither ever depends on the caller alone.
+        self._dashboard_metadata_core()
+        if _before_persist is None or len(prepared.items) != 1:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        item = prepared.items[0]
+        verb = (
+            "Restore"
+            if isinstance(caller_context, dict)
+            and "rollback_source_plan_id" in caller_context
+            else "Update"
+        )
+        # The untrusted title is never copied into the plan title or
+        # description; it is reviewed as data in the field disclosure.
+        return await self._create_configuration_plan(
+            title=f"{verb} dashboard metadata of {item.url_path}"[:160],
+            description=(
+                f"{verb} dashboard {item.url_path}: "
+                + ", ".join(item.changed)
+                + ". Unrequested fields and content are never sent."
+            )[:2000],
+            operations=[
+                {
+                    "operation_id": item.operation_id,
+                    "resource_type": dashboard_metadata_contract.RESOURCE_TYPE,
+                    "action": dashboard_metadata_contract.ACTION,
+                    "target_id": item.url_path,
+                    "proposed_config": deepcopy(item.proposed),
+                }
+            ],
+            expiration_minutes=prepared.request.expiration_minutes,
+            caller_context=caller_context,
+            _dashboard_metadata_context=prepared,
             _before_persist=_before_persist,
         )
 
@@ -6417,6 +6573,7 @@ class ChangeGovernanceService:
         _label_context: Any | None = None,
         _configuration_delete_context: Any | None = None,
         _helper_options_context: Any | None = None,
+        _dashboard_metadata_context: Any | None = None,
         _before_persist: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         """Internal builder; only F3's inverse route supplies durable context.
@@ -6441,6 +6598,10 @@ class ChangeGovernanceService:
         ``create_helper_options_plan`` and its F3 restore route (HAMCP-232):
         exactly the prepared options children, update-only.  Without it the
         options resource type is refused, so no generic caller reaches it.
+        ``_dashboard_metadata_context`` is supplied only by
+        ``create_dashboard_metadata_plan`` and its F3 restore route
+        (HAMCP-106): exactly the one prepared update.  Without it the
+        dashboard metadata resource type is refused.
         """
 
         dormant_profiles = self._require_dormant_profile_admission(
@@ -6448,6 +6609,7 @@ class ChangeGovernanceService:
             label_context=_label_context,
             availability_exposure_context=_availability_exposure_context,
             helper_options_context=_helper_options_context,
+            dashboard_metadata_context=_dashboard_metadata_context,
         )
         if dormant_profiles and _before_persist is None:
             # Every dormant-profile persistence holds a current Core lease.
@@ -6465,6 +6627,7 @@ class ChangeGovernanceService:
                     _label_context,
                     _configuration_delete_context,
                     _helper_options_context,
+                    _dashboard_metadata_context,
                 )
             )
             > 1
@@ -6475,6 +6638,10 @@ class ChangeGovernanceService:
             )
             or (
                 _helper_options_context is not None
+                and _rollback_context is not None
+            )
+            or (
+                _dashboard_metadata_context is not None
                 and _rollback_context is not None
             )
         ):
@@ -6522,6 +6689,24 @@ class ChangeGovernanceService:
                     "validation_errors": [
                         "helper options plans contain exactly the prepared "
                         "operations"
+                    ]
+                },
+            )
+        if _dashboard_metadata_context is not None and (
+            _before_persist is None
+            or [
+                item.get("operation_id") if isinstance(item, dict) else None
+                for item in (operations if isinstance(operations, list) else [])
+            ]
+            != [item.operation_id for item in _dashboard_metadata_context.items]
+            or len(_dashboard_metadata_context.items) != 1
+        ):
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={
+                    "validation_errors": [
+                        "dashboard metadata plans contain exactly the prepared "
+                        "operation"
                     ]
                 },
             )
@@ -6685,6 +6870,8 @@ class ChangeGovernanceService:
                 if _configuration_delete_context is not None
                 else {helper_options_contract.RESOURCE_TYPE}
                 if _helper_options_context is not None
+                else {dashboard_metadata_contract.RESOURCE_TYPE}
+                if _dashboard_metadata_context is not None
                 else SUPPORTED_CONFIGURATION_RESOURCES
                 if _entity_metadata_context is None
                 else {ENTITY_METADATA_RESOURCE_TYPE}
@@ -6701,6 +6888,7 @@ class ChangeGovernanceService:
                 _entity_metadata_context is not None
                 or _availability_exposure_context is not None
                 or _helper_options_context is not None
+                or _dashboard_metadata_context is not None
                 or (
                     _label_context is not None
                     and resource_type == ENTITY_METADATA_RESOURCE_TYPE
@@ -6817,6 +7005,21 @@ class ChangeGovernanceService:
                 ):
                     errors.append("options operation does not match its preparation")
                 valid, warnings = not errors, []
+            elif _dashboard_metadata_context is not None:
+                metadata_item = _dashboard_metadata_context.item(operation_id)
+                errors = dashboard_metadata_contract.proposed_errors(
+                    target_id, proposed_config
+                )
+                if (
+                    depends_on
+                    or metadata_item.url_path != target_id
+                    or proposed_config != metadata_item.proposed
+                ):
+                    errors.append(
+                        "dashboard metadata operation does not match its "
+                        "preparation"
+                    )
+                valid, warnings = not errors, []
             elif _configuration_delete_context is not None:
                 delete_item = _configuration_delete_context.item(operation_id)
                 errors = configuration_delete.intent_errors(
@@ -6878,6 +7081,12 @@ class ChangeGovernanceService:
                 current = _availability_exposure_context.item(
                     operation_id
                 ).current
+            elif _dashboard_metadata_context is not None:
+                # The exact metadata row and content fingerprint read inside
+                # the planning lease.
+                current = deepcopy(
+                    _dashboard_metadata_context.item(operation_id).current
+                )
             elif _helper_options_context is not None:
                 # The visible options baseline read inside the planning lease.
                 current = deepcopy(
@@ -6953,6 +7162,17 @@ class ChangeGovernanceService:
                         ),
                     }
                     risk = helper_options_planning.risk_assessment(
+                        operation_id, item.classification
+                    )
+                elif _dashboard_metadata_context is not None:
+                    item = _dashboard_metadata_context.item(operation_id)
+                    diff = {
+                        "has_changes": True,
+                        "dashboard_metadata": (
+                            dashboard_metadata_planning.projection(item)
+                        ),
+                    }
+                    risk = dashboard_metadata_planning.risk_assessment(
                         operation_id, item.classification
                     )
                 elif _configuration_delete_context is not None:
@@ -7229,6 +7449,10 @@ class ChangeGovernanceService:
             plan.dry_run_results["config_entry_helper_options"] = deepcopy(
                 _helper_options_context.plan_disclosure
             )
+        if _dashboard_metadata_context is not None:
+            plan.dry_run_results["dashboard_metadata"] = deepcopy(
+                _dashboard_metadata_context.plan_disclosure
+            )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
         if dormant_profiles:
@@ -7238,6 +7462,7 @@ class ChangeGovernanceService:
                 label_context=_label_context,
                 availability_exposure_context=_availability_exposure_context,
                 helper_options_context=_helper_options_context,
+                dashboard_metadata_context=_dashboard_metadata_context,
             )
         if _before_persist is not None:
             _before_persist()  # HAMCP-189 R1: F3 rollback lease, after last read
@@ -15706,6 +15931,9 @@ class ChangeGovernanceService:
         operational["helper_options_provider"] = (
             self._helper_options_provider_health_snapshot(admission)
         )
+        operational["dashboard_metadata_provider"] = (
+            self._dashboard_metadata_provider_health_snapshot(admission)
+        )
         for operation, operation_health in operational["operations"].items():
             operation_health["active_reconciliations"] = (
                 self._active_lifecycle_reconciliations
@@ -15913,6 +16141,12 @@ class ChangeGovernanceService:
             "create_helper_options_plan",
             (helper_options_contract.PROFILE,),
             helper_options_contract.PENDING_ADMISSION_REASON,
+        ),
+        (
+            "dashboard_metadata_provider",
+            "create_dashboard_metadata_plan",
+            (dashboard_metadata_contract.PROFILE,),
+            dashboard_metadata_contract.PENDING_ADMISSION_REASON,
         ),
     )
     _CORE_ADMISSION_READ_ATTEMPTS = 3
@@ -16137,6 +16371,30 @@ class ChangeGovernanceService:
                 "helper_options_provider", admission
             ),
             "domains": list(helper_options_contract.DOMAINS),
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _dashboard_metadata_provider_health_snapshot(
+        self, admission: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Report the dormant HAMCP-106 provider without a Core call."""
+
+        configured = self.dashboard_metadata_gateway is not None
+        return {
+            "provider": dashboard_metadata_contract.PROVIDER,
+            "provider_contract": dashboard_metadata_contract.PROVIDER_CONTRACT,
+            "provider_contract_status": "code_owned_exact",
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capability": dashboard_metadata_contract.PROFILE,
+            "core_admission": self._health_core_admission(
+                "dashboard_metadata_provider", admission
+            ),
+            "fields": list(dashboard_metadata_contract.FIELDS),
             "fallback": "none",
             "fallback_count": 0,
             "fallback_policy": "none",

@@ -2,6 +2,27 @@
 
 Date: 2026-07-10
 
+## Dashboard metadata, inactive (2.4.1-beta.50, HAMCP-106)
+
+`create_dashboard_metadata_plan` is a native governed planning tool:
+`engineering_native`, operation class `proposal`, risk
+`dashboard_metadata_write`, provider `direct_home_assistant_dashboard_metadata`
+(`direct-ha-exact-dashboard-metadata-v1`), policy `standard_admin`, fallback
+none, external approval required. It requires
+`core.dashboard_configuration_read` and the new runtime-only profile
+`core.dashboard_metadata_operation`. The signed registry (sequence 14) does
+not name that profile, so the tool refuses
+`pending_signed_registry_admission` before any read, request or persistence.
+
+Once admitted, one plan sends one `lovelace/dashboards/update` by
+`dashboard_id`, carrying only the requested `title`, `icon`,
+`show_in_sidebar` and `require_admin`. It verifies through
+`lovelace/dashboards/list` with the content fingerprint unchanged. Rollback
+is a separately approved restore plan. Storage dashboards only;
+`"lovelace"` is refused. The catalog is 78 static + 28 delegated = 106
+(107 with the optional YAML reader). See
+[HAMCP_106_DASHBOARD_METADATA_DESIGN.md](docs/HAMCP_106_DASHBOARD_METADATA_DESIGN.md).
+
 ## Baseline capture final fence (2.4.1-beta.48, HAMCP-248)
 
 `capture_automation_baseline` keeps its routing, provider, policy,

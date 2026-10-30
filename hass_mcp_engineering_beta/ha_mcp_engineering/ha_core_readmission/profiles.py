@@ -725,6 +725,58 @@ CORE_NOVEMBER_BATCH_PROFILES = (
             "write": "none",
         },
     ),
+    # HAMCP-106 Part 2: governed storage-dashboard metadata.  Josh
+    # 2026-10-30: Engineering-native direct Core provider, built inactive and
+    # signed with the November batch.  The one write is
+    # ``lovelace/dashboards/update`` by ``dashboard_id`` carrying only the
+    # requested fields; ``lovelace/dashboards/list`` is the authoritative
+    # metadata readback.  Dashboard content is never written; its fingerprint
+    # comes from the existing admitted ``get_dashboard_config`` read.
+    _contract(
+        "core.dashboard_metadata_operation",
+        CoreCapabilityClass.DASHBOARD_METADATA_OPERATION,
+        "compiled-core-dashboard-metadata-operation-v1",
+        (
+            "websocket_lovelace_dashboards_list",
+            "websocket_lovelace_dashboards_update_by_id",
+            "dashboards_list_metadata_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "one_exact_existing_storage_dashboard_by_id_not_lovelace",
+            "commands": {
+                "read": "lovelace/dashboards/list",
+                "write": "lovelace/dashboards/update",
+            },
+            "arguments": {
+                "dashboard_id": "exact_id_of_the_one_listed_row_matching_url_path",
+                "fields": ["icon", "require_admin", "show_in_sidebar", "title"],
+                "title": "non_empty_string_max_255_exact_no_trim",
+                "icon": "prefix_colon_name_max_64_or_null_clears",
+                "show_in_sidebar": "boolean",
+                "require_admin": "boolean",
+                "unrequested_fields": "never_sent",
+            },
+            "dispatch": "at_most_once_lovelace_dashboards_update_per_dashboard",
+            "never_sent": [
+                "frontend/set_user_data",
+                "frontend/update_panel",
+                "lovelace/config/delete",
+                "lovelace/config/save",
+                "lovelace/dashboards/create",
+                "lovelace/dashboards/delete",
+                "lovelace/resources/create",
+                "lovelace/resources/delete",
+                "lovelace/resources/update",
+            ],
+            "readback": "dashboards_list_row_exact_requested_and_unrequested_plus_content_fingerprint_unchanged",
+            "content_fingerprint": "existing_admitted_get_dashboard_config_engineering_config_hash",
+            "concurrency": "no_core_compare_and_swap_residual_window_disclosed",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
 )
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES

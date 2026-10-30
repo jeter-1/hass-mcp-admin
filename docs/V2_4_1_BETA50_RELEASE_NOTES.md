@@ -1,60 +1,112 @@
 # Engineering 2.4.1-beta.50 release notes
 
-Engineering 2.4.1-beta.50 lets the readback verifier compare a `sun`
-condition used as an action step, and makes a verifier refusal name where it
-refused (HAMCP-252). It builds on 2.4.1-beta.49 (HAMCP-198/120, #329). It
-adds no Home Assistant write, tool, input schema,
-route, provider, Core command or signed registry change.
+Engineering 2.4.1-beta.50 builds governed dashboard metadata **inactive**
+(HAMCP-106). It also makes the Core-authority reconciliation audit record fit
+whole (HAMCP-255). It follows 2.4.1-beta.49 and includes it. It activates
+nothing new. It changes no signed registry, signed profile, existing
+fingerprint, existing input schema or existing plan family.
 
 Acceptance: [`V2_4_1_BETA50_ACCEPTANCE.md`](V2_4_1_BETA50_ACCEPTANCE.md).
-Core authority: [`SUN_CONDITION_VERIFICATION.md`](SUN_CONDITION_VERIFICATION.md).
+Design and owner decisions:
+[`HAMCP_106_DASHBOARD_METADATA_DESIGN.md`](HAMCP_106_DASHBOARD_METADATA_DESIGN.md).
 
-## Why
+## Governed dashboard metadata (HAMCP-106)
 
-The PR030c replay of the A109 camera automations was refused before
-dispatch:
-- outcome `configuration_not_verifiable`;
-- rule `automation_verifier_unsupported_automation_simple_action_fields`.
+New tool: `create_dashboard_metadata_plan`. It proposes a change to the
+`title`, `icon`, `show_in_sidebar` or `require_admin` of one existing storage
+dashboard. The plan is approved externally and applied with
+`apply_change_plan`.
 
-The refused construct is a standalone sun condition step,
-`{"condition": "sun", "after": "sunset", "before": "sunrise"}`, inside a
-`choose` branch sequence. The condition-step allowlist lacked the sun
-fields. The same condition in a `conditions` list was already verifiable,
-which is why an earlier synthetic probe passed.
+- **Route (Josh, 2026-10-30).** Engineering-native, direct to Core. The one
+  write is `lovelace/dashboards/update` by `dashboard_id`, carrying only the
+  requested fields. The readback is `lovelace/dashboards/list`. The
+  request does not go through ha-mcp and has no fallback.
+- **Inactive.** It needs the new runtime-only Core profile
+  `core.dashboard_metadata_operation`, which signed sequence 14 does not
+  name. Every entry point therefore refuses before any Home Assistant
+  request or persistence. The tool and `create_configuration_plan` refuse
+  `pending_signed_registry_admission`. The generic resource-write route
+  refuses a complete, valid command at the send boundary, before it is
+  sent: `pending_signed_registry_admission` while the profile is not
+  admitted, and `active_f3_execution_required` outside the F3 dispatch
+  window. A legacy apply without the F3 runtime refuses
+  `core_authority_unavailable`. Health under sequence 14 lists 26 compatible and 4 withheld
+  profiles, including this one. The profile joins the sequence-15 signing
+  batch.
+- **Planning.** Planning refuses, before any dispatch:
+  - an unknown `url_path`;
+  - a YAML dashboard;
+  - `"lovelace"`;
+  - an ambiguous target;
+  - an invalid value;
+  - a change to a field whose current value could not be restored exactly
+    (`dashboard_metadata_baseline_not_restorable`).
 
-## The change
+  The title is non-empty, at most 255 characters, and stored exactly
+  (`"Map "` keeps its trailing space). The icon is `prefix:name`, or `null`
+  to clear it. A request that changes nothing returns a no-change result
+  and creates no plan. Each changed field is disclosed before and after.
+  `require_admin` and `show_in_sidebar` changes carry fixed visibility
+  texts. Disclosure is generic; it does not count users.
+- **Policy.** `standard_admin` for every field, physical consequence none.
+- **Fingerprint.** The plan binds the metadata row and the dashboard content
+  fingerprint. The content fingerprint comes from the admitted
+  `get_dashboard_config` read. If that read is unavailable, the request
+  fails closed.
+- **Apply.**
+  - The fingerprint is checked immediately before dispatch, and a stale
+    state is refused as `stale_target_state`.
+  - Dispatch happens at most once, with durable intent, no redispatch and
+    truthful attribution.
+  - An ambiguous Core answer is decided by the readback.
+- **Verification.** The requested fields must be exact, the unrequested
+  fields unchanged and the content unchanged. Any mismatch is a
+  verification failure.
+- **Rollback.** `rollback_change` creates a separate governed plan that
+  restores the changed fields.
+- **Limitation.** Core can store a title or icon that the closed write
+  contract cannot send: an empty or whitespace title, or an icon over 64
+  characters or outside `prefix:name`. Changing such a field is refused
+  before any plan, because the restore could never write the prior value
+  back. None of the six recorded dashboard fixtures (`LIVE_DASHBOARDS`) is affected.
+- **Not in scope:** dashboard content, creating or deleting dashboards,
+  `url_path` or `mode` changes, YAML dashboards, resources and themes. The
+  existing dashboard update plan and its schema are unchanged.
 
-- **Sun steps.** `after`, `before`, `after_offset` and `before_offset` are
-  admitted only on a `condition: sun` step and compared exactly. Values
-  outside Core's sun schema are refused with
-  `automation_verifier_invalid_automation_sun_condition`; a malformed
-  `after_offset`/`before_offset` (outside Core's `cv.time_period` forms, or
-  outside the reviewed subset of them) is refused before dispatch with
-  `automation_verifier_invalid_automation_sun_condition_offset`. A negative
-  clock offset is checked after its sign is applied, as Core does, so one
-  beyond the negative duration bound is refused. The fields stay
-  refused on every other condition type, and unknown fields on a sun step
-  stay refused.
-- **Refusal location.** Every verifier refusal also stores bounded codes for
-  its structural path and offending field names. A refusal about the whole
-  configuration (for example both `action` and `actions`) is located at the
-  root pointer `""`. Names outside a fixed Home
-  Assistant field vocabulary are stored as `unrecognized_field`. The codes
-  are decoded into `pre_dispatch_refusal.verifier_location` (`path`,
-  `path_truncated`, `fields`, `fields_truncated`). That object is also
-  reported on `last_error.failure_information`, the apply result, the event
-  and the log line. No value or template is stored.
+The dormant seq-15 `dashboard_metadata` evidence lane is defined. Its
+`ci.yml` wiring is deferred to the November batch, because `ci.yml` is
+protected (design section 7).
 
-## Not changed
+## Whole Core-authority audit record (HAMCP-255)
 
-- Every other preflight decision, plus approval binding, stale-state checks,
-  locks, dispatch, at-most-once execution and other adapters.
-- Comparison stays exact. There is no wildcard, ignore-list or equivalence
-  rule.
-- Every field is additive. Stored records keep their shape; older refusals
-  read `verifier_location: null`.
+On beta.48, the `home_assistant_core_authority_reconciled` audit event was
+8972 characters. `AuditLogger` (bound 8192) therefore stored a
+`payload_truncated` stub at every startup. No per-profile disposition
+survived.
+
+The event's `analysis_summary` now uses model `ha-core-authority-audit-v2`:
+- The record is columnar. `dispositions` lists the sorted disposition,
+  reason-code and authority-source values once, and maps each capability
+  id to the indexes of its three values.
+- A profile id is written only when it differs from the compiled
+  convention (the capability id with dots as underscores, plus `_v1`).
+- `adapter_id` is dropped.
+- Counts and the other fields are kept.
+
+Each profile's disposition and reason code can be reconstructed from the
+record. Today's record is 1947 characters. Twice today's profile count
+fits in 75% of the bound (6144), even when no two profiles share an outcome
+(5807). The logger's
+bound and its assertion are unchanged. The failure event is unchanged.
+
+## Counts
+
+Static tools 77 → 78. The advertised catalog is 106, or 107 with the
+optional YAML reader admitted. Runtime Core profiles 29 → 30.
 
 ## Rollback
 
-Reinstall 2.4.1-beta.49. A sun condition step is refused again before
-dispatch. The added field and codes are ignored by the older reader.
+Reinstall 2.4.1-beta.49. Under sequence 14, beta.50 writes no new record
+shape: the new family refuses before persistence. No code parses the audit
+summary model, so an older version returns stored v2 audit records as they
+are; new records revert to v1, which is truncated again.

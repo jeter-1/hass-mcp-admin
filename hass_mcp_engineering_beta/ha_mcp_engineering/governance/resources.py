@@ -55,6 +55,11 @@ from . import label_registry
 from .label_registry import LABEL_RESOURCE_TYPE, LabelRegistryGateway
 from . import helper_options
 from .helper_options import RESOURCE_TYPE as HELPER_OPTIONS_RESOURCE_TYPE
+from . import dashboard_metadata
+from .dashboard_metadata import (
+    RESOURCE_TYPE as DASHBOARD_METADATA_RESOURCE_TYPE,
+    DashboardMetadataGateway,
+)
 
 
 RESOURCE_NORMALIZATION_VERSION = 2
@@ -72,6 +77,7 @@ SUPPORTED_RESOURCE_TYPES = frozenset(
         *AVAILABILITY_EXPOSURE_RESOURCE_TYPES,
         LABEL_RESOURCE_TYPE,
         HELPER_OPTIONS_RESOURCE_TYPE,
+        DASHBOARD_METADATA_RESOURCE_TYPE,
     }
 )
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
@@ -220,6 +226,10 @@ def validate_resource(
         # HAMCP-232: only the closed options intent built by the planner.
         errors = helper_options.intent_errors(resource_id, proposed_config)
         warnings = []
+    elif resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
+        # HAMCP-106: the complete final metadata state, content bound.
+        errors = dashboard_metadata.proposed_errors(resource_id, proposed_config)
+        warnings = []
     else:
         errors = _validate_resource_id(resource_type, resource_id)
         warnings: list[str] = []
@@ -312,6 +322,8 @@ def normalize_resource_config(
         # A visible options baseline or the closed intent, both compared
         # exactly as Core stores JSON.
         return helper_options.canonical_copy(config)
+    if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
+        return dashboard_metadata.normalize_state(config)
     normalized = {
         key: value
         for key, value in config.items()
@@ -623,6 +635,8 @@ def resource_identity_matches(
         return config.get("entity_id") == resource_id
     if resource_type == LABEL_RESOURCE_TYPE:
         return config.get("label_id") == resource_id
+    if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
+        return config.get("url_path") == resource_id
     if resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
         # A visible options dict carries no identity; only the options
         # gateway reads it, bound to the plan's exact entry.
@@ -669,6 +683,10 @@ class ConfigurationResourceGateway:
         # HAMCP-232: the only options-flow sender (open, abort, one submit);
         # the generic get/create/update refuse the options resource type.
         self.helper_options = helper_options.HelperOptionsResourceGateway(self)
+        # HAMCP-106: closed-vocabulary dashboard metadata gateway (list, one
+        # update; never create, delete, content or resources).  The runtime
+        # sets its ``content_reader``; absent, every read fails closed.
+        self.dashboard_metadata = DashboardMetadataGateway(websocket_client)
 
     async def get(
         self, resource_type: str, resource_id: str
@@ -684,6 +702,8 @@ class ConfigurationResourceGateway:
             return await self.availability_exposure.read_entry(resource_id)
         if resource_type == LABEL_RESOURCE_TYPE:
             return await self.label_registry.read_entry(resource_id)
+        if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
+            return await self.dashboard_metadata.read_state(resource_id)
         if resource_type in _CONFIG_ENDPOINTS:
             value = await self.rest_client.request(
                 "GET",
@@ -761,6 +781,8 @@ class ConfigurationResourceGateway:
             raise ValueError("entity registry metadata is update-only")
         if resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
             raise ValueError("entity availability and exposure are update-only")
+        if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
+            raise ValueError("dashboard metadata is update-only")
         if resource_type == LABEL_RESOURCE_TYPE:
             # ``approved_config`` is the one closed command built by the
             # strategy; the provider re-checks its shape before sending.
@@ -921,6 +943,10 @@ class ConfigurationResourceGateway:
             return await self.label_registry.write(
                 "update", resource_id, approved_config
             )
+        if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
+            # ``approved_config`` is the one closed command built by the
+            # strategy; the provider re-checks its shape before sending.
+            return await self.dashboard_metadata.write(resource_id, approved_config)
         self._require_valid(resource_type, resource_id, approved_config)
         if resource_type in _CONFIG_ENDPOINTS:
             return await self._write_rest_configuration(
@@ -1105,6 +1131,38 @@ class ConfigurationResourceGateway:
             return (label_registry.NAMESPACE_CHANGED,)
         return ()
 
+    async def dashboard_metadata_preflight_evidence(
+        self,
+        resource_id: str,
+        current: dict[str, Any] | None,
+        proposed: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Recheck the bound metadata row and content immediately before dispatch.
+
+        The target is judged from one fresh read: any field, identity or
+        content fingerprint that differs from the plan's bound state refuses
+        ``stale_target_state`` and is never overwritten.  Nothing is written;
+        an empty tuple means the binding still holds.
+        """
+
+        if current is None or dashboard_metadata.state_errors(resource_id, current):
+            return ("plan_bindings_invalid",)
+        if dashboard_metadata.proposed_errors(resource_id, proposed):
+            return ("plan_bindings_invalid",)
+        try:
+            observed = await self.dashboard_metadata.read_state(resource_id)
+        except AuthorizationError:
+            return ("permission_failure",)
+        except Exception:
+            return ("dashboard_metadata_unavailable",)
+        if observed is None:
+            return ("stale_target_state",)
+        if dashboard_metadata.normalize_state(observed) != (
+            dashboard_metadata.normalize_state(current)
+        ):
+            return ("stale_target_state",)
+        return ()
+
     async def validate(self) -> Any:
         """Run Home Assistant's bounded full configuration check."""
 
@@ -1247,6 +1305,10 @@ def _validate_resource_id(
             helper_options.ENTRY_ID_PATTERN.fullmatch(resource_id)
         ):
             return [f"{resource_type} resource_id must be a config entry id"]
+        return []
+    if resource_type == DASHBOARD_METADATA_RESOURCE_TYPE:
+        if not dashboard_metadata.url_path_valid(resource_id):
+            return [f"{resource_type} resource_id must be a dashboard url_path"]
         return []
     if resource_type == "automation":
         valid, errors, _ = validate_automation(

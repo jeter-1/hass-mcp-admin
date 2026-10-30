@@ -1,4 +1,4 @@
-"""Offline controls for the HAMCP-232/145 seq-15 lane receipts, not Core execution.
+"""Offline controls for the HAMCP-232/145/106 seq-15 lane receipts, not Core execution.
 
 The lanes are defined but dormant: they run only inside the disposable Real HA
 job for the exact 2026.10.3 candidate slot when ``REAL_HA_SEQ15_LANES`` is
@@ -31,6 +31,7 @@ FINGERPRINTS = {
     "helper_options": ["sha256:ce2765dc5caf616ae199fdccf64ce6ec68e1386bb0949099d1896bcb50dd98d8"],
     "input_select_option": ["sha256:e2240555fb35042e47e7ee7afb7f5552977d019a27058fb2c2c5802674fee38d"],
     "script_traces": ["sha256:749904fe40b13db4289301d24b958836fc72c810829611729d8c26080f06ca03"],
+    "dashboard_metadata": ["sha256:62cd6c1453b0bc0b52c6e5f9775d1897294f31b62792dd9674a61b9e8a54cfaa"],
 }
 
 
@@ -96,8 +97,37 @@ def script_trace_scenarios():
     }
 
 
+DASHBOARD_START = {"title": "Seq15 Board", "icon": "mdi:view-dashboard", "show_in_sidebar": True,
+                   "require_admin": False}
+DASHBOARD_CHANGES = (("title", {"title": seq15.DASHBOARD_TITLE}), ("icon", {"icon": "mdi:map-marker"}),
+                     ("icon_clear", {"icon": None}), ("show_in_sidebar", {"show_in_sidebar": False}),
+                     ("require_admin", {"require_admin": True}),
+                     ("all_fields", {"title": "Seq15 Floor", "icon": "mdi:floor-plan", "show_in_sidebar": True,
+                                     "require_admin": False}))
+
+
+def dashboard_scenarios():
+    def update(baseline, expected, fields):
+        return {**governed(seq15.DASHBOARD_UPDATE, expected=expected), "baseline": dict(baseline),
+                "sent_fields": [sorted(fields)], "dashboard_ids_exact": True, "requested_fields": sorted(fields),
+                "icon_key_absent": expected["icon"] is None}
+    scenarios, current = {}, dict(DASHBOARD_START)
+    for name, change in DASHBOARD_CHANGES:
+        prior = current
+        scenarios[name], current = update(current, {**current, **change}, change), {**current, **change}
+    scenarios["rollback"] = {**update(current, prior, seq15.DASHBOARD_FIELDS), "status": "rollback_plan_created",
+                             "prior": dict(prior)}
+    scenarios["rollback"].pop("icon_key_absent")
+    return {**scenarios,
+            "no_change": refused(seq15.DASHBOARD_NO_CHANGE, error_code="invalid_request", commands=3),
+            "default_dashboard": refused(seq15.DASHBOARD_DEFAULT_REFUSED, error_code="invalid_request", commands=0),
+            "content_unchanged": {"result": "PASS", "raw_config_unchanged": True, "fingerprints_match": True,
+                                  "fingerprint_reads": 21},
+            "stale_state": stale(), "content_drift": stale()}
+
+
 SCENARIOS = {"helper_options": helper_scenarios, "input_select_option": input_select_scenarios,
-             "script_traces": script_trace_scenarios}
+             "script_traces": script_trace_scenarios, "dashboard_metadata": dashboard_scenarios}
 
 
 def complete_receipt(lane_key, core_version=CORE):
@@ -125,7 +155,8 @@ def complete_receipt(lane_key, core_version=CORE):
 
 class LaneDefinitionTests(unittest.TestCase):
     def test_lanes_bind_the_dormant_seq15_profiles_from_source(self):
-        self.assertEqual(sorted(seq15.LANES), ["helper_options", "input_select_option", "script_traces"])
+        self.assertEqual(sorted(seq15.LANES),
+                         ["dashboard_metadata", "helper_options", "input_select_option", "script_traces"])
         fingerprints = {key: [r["contract_fingerprint"] for r in seq15.source_profiles(lane)]
                         for key, lane in seq15.LANES.items()}
         self.assertEqual(fingerprints, FINGERPRINTS)
@@ -136,6 +167,10 @@ class LaneDefinitionTests(unittest.TestCase):
         self.assertEqual(seq15.LANES["helper_options"]["tool"], "create_helper_options_plan")
         self.assertEqual(seq15.LANES["input_select_option"]["tool"], "create_input_select_option_plan")
         self.assertEqual(seq15.LANES["script_traces"]["tool"], "list_script_traces")
+        self.assertEqual(seq15.LANES["dashboard_metadata"]["tool"], "create_dashboard_metadata_plan")
+        self.assertEqual(seq15.LANES["dashboard_metadata"]["adapters"],
+                         ("compiled-core-dashboard-metadata-operation-v1",))
+        self.assertEqual(seq15.LANES["dashboard_metadata"]["output_env"], "REAL_HA_DASHBOARD_METADATA_RESULT")
 
     def test_adapter_drift_is_refused(self):
         lane = {**seq15.LANES["helper_options"], "adapters": ("compiled-core-other-v1",)}
@@ -195,12 +230,22 @@ class LaneDefinitionTests(unittest.TestCase):
                 self.assertEqual(reviewed & seq15.WRITE_REQUESTS,
                                  {"helper_options": {seq15.OPTIONS_SUBMIT},
                                   "input_select_option": {seq15.SELECT_OPTION},
-                                  "script_traces": set()}[key])
+                                  "script_traces": set(),
+                                  "dashboard_metadata": {seq15.DASHBOARD_UPDATE}}[key])
         self.assertIn("call_service", seq15.LANES["helper_options"]["never_sent"])
         self.assertIn("POST /config/config_entries/flow", seq15.LANES["helper_options"]["never_sent"])
         self.assertIn("call_service:input_select.set_options", seq15.LANES["input_select_option"]["never_sent"])
         self.assertIn("input_select/update", seq15.LANES["input_select_option"]["never_sent"])
         self.assertIn("trace/debug/continue", seq15.LANES["script_traces"]["never_sent"])
+        dashboard = seq15.LANES["dashboard_metadata"]
+        # One list, the content-fingerprint read and the one update; no create, save, delete or resource command.
+        self.assertEqual(dashboard["reviewed_commands"], {"lovelace/dashboards/list", "lovelace/config",
+                                                          "lovelace/dashboards/update"})
+        self.assertEqual(dashboard["required_commands"], dashboard["reviewed_commands"])
+        for command in ("lovelace/config/save", "lovelace/config/delete", "lovelace/dashboards/create",
+                        "lovelace/dashboards/delete", "lovelace/resources/update", "frontend/set_user_data"):
+            self.assertIn(command, dashboard["never_sent"])
+        self.assertEqual(dashboard["predecessor_reason"], seq15.PENDING)
 
 
 class RouteNamingTests(unittest.TestCase):
@@ -451,6 +496,55 @@ class ReceiptTests(unittest.TestCase):
         }
         self.assert_scenarios_refuse("script_traces", mutations)
 
+    def test_refuses_missing_extra_or_weakened_dashboard_scenarios(self):
+        edits = {name + "_" + label: (lambda name, change: lambda s: change(s[name]))(name, change)
+                 for name in (*seq15.DASHBOARD_EDITS, "rollback") for label, change in {
+                     "unverified": lambda v: v.update(task_state="manual_review_required"),
+                     "redispatched": lambda v: v.update(dispatch_counts=[2]),
+                     "readback_mismatch": lambda v: v["readback"].update(title="Seq15 Other"),
+                     "no_change": lambda v: v.update(expected=v["baseline"], readback=v["baseline"]),
+                     "wrong_write": lambda v: v.update(write_types=["lovelace/config/save"]),
+                     "two_updates": lambda v: v["sent_fields"].append(v["requested_fields"]),
+                     "extra_field_sent": lambda v: v["sent_fields"][0].append("url_path"),
+                     "field_unsent": lambda v: v["sent_fields"][0].pop(),
+                     "requested_unchanged_field": lambda v: v["requested_fields"].append("zz_mode"),
+                     "other_dashboard": lambda v: v.update(dashboard_ids_exact=False),
+                     "scenario_failed": lambda v: v.update(result="FAIL"),
+                 }.items()}
+        mutations = {
+            **self.missing("dashboard_metadata"), **edits,
+            "extra": lambda s: s.update(views={"result": "PASS"}),
+            "title_trimmed": lambda s: [s["title"][key].update(title="Seq15 Map")
+                                        for key in ("expected", "readback")],
+            "icon_clear_key_retained": lambda s: s["icon_clear"].update(icon_key_absent=False),
+            "icon_clear_empty_string": lambda s: [s["icon_clear"][key].update(icon="")
+                                                  for key in ("expected", "readback")],
+            "all_fields_partial": lambda s: s["all_fields"]["sent_fields"][0].remove("icon"),
+            "rollback_not_prior": lambda s: s["rollback"].update(prior={**s["rollback"]["prior"], "title": "x"}),
+            "rollback_refused": lambda s: s["rollback"].update(status="rollback_refused"),
+            "rollback_partial": lambda s: s["rollback"].update(requested_fields=["title"]),
+            "no_change_planned": lambda s: s["no_change"].update(plan_created=True),
+            "no_change_wrote": lambda s: s["no_change"].update(ha_writes=1),
+            "no_change_wrong_reason": lambda s: s["no_change"].update(reason_code="stale_target_state"),
+            "default_read_ha": lambda s: s["default_dashboard"].update(ha_commands=1),
+            "default_planned": lambda s: s["default_dashboard"].update(plan_created=True),
+            "default_wrong_error": lambda s: s["default_dashboard"].update(error_code="validation_failed"),
+            "default_wrong_reason": lambda s: s["default_dashboard"].update(reason_code=seq15.DASHBOARD_NO_CHANGE),
+            "content_changed": lambda s: s["content_unchanged"].update(raw_config_unchanged=False),
+            "content_fingerprint_differs": lambda s: s["content_unchanged"].update(fingerprints_match=False),
+            "content_never_read": lambda s: s["content_unchanged"].update(fingerprint_reads=0),
+            "content_reads_untyped": lambda s: s["content_unchanged"].update(fingerprint_reads=True),
+            **{name + "_" + label: (lambda name, change: lambda s: change(s[name]))(name, change)
+               for name in ("stale_state", "content_drift") for label, change in {
+                   "dispatched": lambda v: v.update(dispatch_counts=[1]),
+                   "succeeded": lambda v: v.update(task_state="succeeded_verified"),
+                   "wrote": lambda v: v.update(ha_writes=1),
+                   "other_diagnostic": lambda v: v.update(diagnostic_codes=["dispatch_unknown"]),
+                   "overwrote": lambda v: v.update(drift_retained=False),
+               }.items()},
+        }
+        self.assert_scenarios_refuse("dashboard_metadata", mutations)
+
     def missing(self, lane_key):
         return {"missing_" + name: (lambda name: lambda s: s.pop(name))(name)
                 for name in seq15.LANES[lane_key]["scenarios"]}
@@ -470,13 +564,15 @@ class FixturePeer:
     ENTRIES = ["01JSEQ15SOURCE000000000000", "01JSEQ15FILTER000000000000"]
     SELECT = "seq15_select_0a1b2c3d"
     SCRIPT = "seq15_0a1b2c3d"
+    DASHBOARD = "seq15_ab12cd34"
 
     def __init__(self, retain=()):
         self.retain = set(retain)
-        self.owned = {"config_entries": list(self.ENTRIES), "input_select": self.SELECT, "script": self.SCRIPT}
+        self.owned = {"config_entries": list(self.ENTRIES), "input_select": self.SELECT, "script": self.SCRIPT,
+                      "dashboard": self.DASHBOARD}
         self.state = {"config_entries": set(self.ENTRIES),
                       "entities": {"sensor." + e.lower(): e for e in self.ENTRIES},
-                      "input_select": {self.SELECT}, "script": {self.SCRIPT}}
+                      "input_select": {self.SELECT}, "script": {self.SCRIPT}, "dashboard": {self.DASHBOARD}}
         self.commands = []
         self.deleted_entries = []
 
@@ -502,6 +598,14 @@ class FixturePeer:
                 {"entity_id": "sensor.unrelated", "config_entry_id": "01JUNRELATED0000000000000"}]
         if kind == "input_select/list":
             return [{"id": item} for item in sorted(self.state["input_select"]) + ["unrelated"]]
+        if kind == "lovelace/dashboards/delete":
+            assert payload == {"type": kind, "dashboard_id": self.DASHBOARD}
+            if "dashboard" not in self.retain:
+                self.state["dashboard"].discard(self.DASHBOARD)
+            return None
+        if kind == seq15.DASHBOARD_LIST:
+            return [{"id": item, "url_path": item.replace("_", "-")}
+                    for item in sorted(self.state["dashboard"]) + ["map"]]
         raise AssertionError("Unexpected synthetic command")
 
     async def rest(self, method, path, body=None):
@@ -519,13 +623,14 @@ class FixturePeer:
 class FixtureCleanupTests(unittest.IsolatedAsyncioTestCase):
     COMPLETE = dict.fromkeys(seq15.FIXTURE_ABSENCE, True)
     READS = {"config_entries": "config_entries/get", "entities": seq15.REGISTRY_LIST,
-             "input_select": "input_select/list", "script": "GET script"}
+             "input_select": "input_select/list", "script": "GET script", "dashboard": seq15.DASHBOARD_LIST}
 
     async def test_complete_cleanup_reads_back_every_owned_type(self):
         peer = FixturePeer()
         absence = await seq15.cleanup_fixtures(peer, peer.owned, attempts=2, delay=0)
         self.assertEqual(absence, self.COMPLETE)
-        self.assertEqual(set(peer.commands) - {"DELETE config_entry", "input_select/delete", "DELETE script"},
+        self.assertEqual(set(peer.commands) - {"DELETE config_entry", "input_select/delete", "DELETE script",
+                                               "lovelace/dashboards/delete"},
                          set(self.READS.values()))
         self.assertTrue(all(not items for items in peer.state.values()))
         # Dependents first: filter and statistics entries go before their template source.
@@ -547,6 +652,8 @@ class FixtureCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("DELETE config_entry", peer.commands)
         self.assertNotIn("input_select/delete", peer.commands)
         self.assertNotIn("input_select/list", peer.commands)
+        self.assertNotIn("lovelace/dashboards/delete", peer.commands)
+        self.assertNotIn(seq15.DASHBOARD_LIST, peer.commands)
 
     async def test_nothing_owned_claims_nothing(self):
         peer = FixturePeer()
@@ -572,6 +679,46 @@ class FixtureCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(select.index('owned["input_select"] = created["id"]'), select.index("for _ in range(100):"))
         script = inspect.getsource(seq15._script_trace_scenarios)
         self.assertLess(script.index('owned["script"] = key'), script.index('await raw.rest("POST"'))
+        dashboard = inspect.getsource(seq15._dashboard_metadata_scenarios)
+        self.assertLess(dashboard.index('owned["dashboard"] = created["id"]'),
+                        dashboard.index('"lovelace/config/save"'))
+        # Fixture setup is harness-only: Engineering's planner never reaches create, save or delete.
+        self.assertEqual(dashboard.count('raw.ok({"type": "lovelace/dashboards/create"'), 1)
+
+
+class DashboardContentReadTests(unittest.IsolatedAsyncioTestCase):
+    """The harness stand-in for the admitted content read, through the production reader."""
+
+    class Socket:
+        def __init__(self, value):
+            self.value, self.sent = value, []
+
+        async def command(self, payload):
+            self.sent.append(dict(payload))
+            return copy.deepcopy(self.value)
+
+    async def test_reads_the_forced_config_and_binds_engineering_config_hash(self):
+        from ha_mcp_engineering.governance.runtime import _dashboard_content_fingerprint_reader
+        from ha_mcp_engineering.providers.upstream_dashboard import _engineering_config_hash
+        config, seen = {"title": "Seq15 ", "views": [{"cards": []}]}, []
+        socket = self.Socket(config)
+        read = _dashboard_content_fingerprint_reader(seq15.DashboardContentRead(socket, seen), 60_000)
+        value = await read("seq15-ab12cd34")
+        self.assertEqual(socket.sent, [{"type": "lovelace/config", "url_path": "seq15-ab12cd34", "force": True}])
+        self.assertEqual(value, _engineering_config_hash(config))
+        self.assertEqual(seen, [value])
+        changed = await _dashboard_content_fingerprint_reader(seq15.DashboardContentRead(
+            self.Socket({**config, "title": "Seq15"}), seen), 60_000)("seq15-ab12cd34")
+        self.assertNotEqual(changed, value)
+
+    async def test_a_non_configuration_result_fails_closed(self):
+        from ha_mcp_engineering.governance.runtime import _dashboard_content_fingerprint_reader
+        for value in (None, [], "config"):
+            seen = []
+            read = _dashboard_content_fingerprint_reader(seq15.DashboardContentRead(self.Socket(value), seen), 1)
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                await read("seq15-ab12cd34")
+            self.assertEqual(seen, [])
 
 
 class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
@@ -679,7 +826,8 @@ class DormancyTests(unittest.IsolatedAsyncioTestCase):
 
 class LaneGuardTests(unittest.IsolatedAsyncioTestCase):
     HIDDEN = ("HA_CONTRACT_LANE", "REAL_HA_ALARMO_IMAGE_RESULT", "REAL_HA_HELPER_OPTIONS_RESULT",
-              "REAL_HA_INPUT_SELECT_OPTION_RESULT", "REAL_HA_SCRIPT_TRACES_RESULT")
+              "REAL_HA_INPUT_SELECT_OPTION_RESULT", "REAL_HA_SCRIPT_TRACES_RESULT",
+              "REAL_HA_DASHBOARD_METADATA_RESULT")
 
     async def test_lane_refuses_unextended_slot_wrong_image_or_remote_host_before_any_client(self):
         binding = alarmo.slot_binding(CORE)
