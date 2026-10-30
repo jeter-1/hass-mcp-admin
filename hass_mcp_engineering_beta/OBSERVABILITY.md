@@ -38,18 +38,32 @@ nothing is admitted, rewritten, approved or dispatched.
 
 **Reviewed-tool accounting.** `upstream_read_gateway.reviewed_tool_accounting_valid`
 now uses the HAMCP-162 optional reviewed-tool model, superseding design
-decision D3: it is true only when every advertised tool is a stock policy
-entry or a bound optional reviewed tool, and no advertised tool is
-unreviewed. It equals `optional_reviewed_accounting_valid`. Any unaccounted
-or unreviewed advertised tool keeps both false. `reviewed_policy_entry_count`
-and `reviewed_accounted_tool_count` keep their stock meaning.
+decision D3, and decides by names, not counts. It is true only when all of
+these hold:
+- every reviewed name (each stock policy entry and each bound optional
+  reviewed tool) is advertised, and no advertised name occurs twice;
+- nothing is missing and nothing is unreviewed (including a malformed
+  catalog entry);
+- neither prohibited optional sibling has drifted
+  (`optional_sibling_drift` is empty);
+- every optional tool has a recognized state: `optional_absent` only when
+  not advertised; for an advertised reader `admitted`, `held`,
+  `withheld:<reason>` or `quarantined:<reason>`; for an advertised sibling
+  `prohibited_withheld`.
+
+A missing tool balanced by a duplicate therefore keeps it false.
+`optional_reviewed_accounting_valid` keeps its HAMCP-162 meaning (the policy
+plus bound optional names equal the advertised count, and nothing is
+unreviewed), so it can be true where the reviewed flag is false. Neither
+flag gates admission, routing or exposure. `reviewed_policy_entry_count` and
+`reviewed_accounted_tool_count` keep their stock meaning.
 
 **Manual review is not reclassified.** `tasks_manual_review` and
 `manual_review_terminalization_count` count terminal `manual_review_required`
 tasks. No stored field or supported operator action distinguishes an open
-case from a reviewed historical one, so health keeps counting them. Clearing
-them needs an operator acknowledgment workflow, which is an open design
-decision.
+case from a reviewed historical one, so health keeps counting them. By
+Josh's decision the warning stays lit; an operator acknowledgment workflow
+is tracked separately (HAMCP-253).
 
 ## Source-only Alarmo inspection
 

@@ -1315,8 +1315,10 @@ stock field's meaning unchanged (D3).
 > **Superseded (HAMCP-198, 2026-10-29).** Josh's direction to clear the
 > permanently false flag supersedes the D3 clause "stock
 > `reviewed_tool_accounting_valid` meaning unchanged". From 2.4.1-beta.49 the
-> flag uses the optional model and equals `optional_reviewed_accounting_valid`;
-> an unaccounted or unreviewed advertised tool keeps it false. D3's
+> flag uses the optional model by complete names: every reviewed name
+> advertised exactly once, nothing missing or unreviewed, no sibling drift,
+> every optional state recognized. `optional_reviewed_accounting_valid` keeps
+> the count-based meaning above. D3's
 > classification of `ha_list_files`/`ha_read_file` as reviewed `prohibited`
 > optional names is unchanged. See `hass_mcp_engineering_beta/OBSERVABILITY.md`.
 

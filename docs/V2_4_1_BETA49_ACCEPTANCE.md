@@ -33,7 +33,8 @@ Bind:
   document resolution and no staged declaration left over;
 - the PR head SHA, its passing `validate` run, and the Evidence tier log
   named in the PR;
-- the mutation evidence under `docs/evidence/hamcp198-mutations/`.
+- the mutation evidence under `docs/evidence/hamcp198-mutations/`,
+  including one check-removal mutant per accounting check.
 
 The review needs a security section covering:
 - **No new reachability.** No Home Assistant write, service call, reload,
@@ -43,16 +44,22 @@ The review needs a security section covering:
   come from a fixed tuple; no record content, hash, reason code or exception
   text.
 - **No masked tool.** `reviewed_tool_accounting_valid` is true only when
-  every advertised tool is a stock policy entry or a bound optional reviewed
-  tool and none is unreviewed.
+  every reviewed name (stock policy entry or bound optional reviewed tool)
+  is advertised exactly once, nothing is missing or unreviewed, no optional
+  sibling has drifted and every optional tool is in a recognized state. It is
+  diagnostic only: admission, routing and exposure never read it.
 - **Persistence.** No stored record or format changes.
 
 Required offline evidence:
 - `tests/test_hamcp198_projection_diagnostics.py` (every category, ordering,
   bound and truncation, no record contents, only listed plans examined,
   positive controls, unconfigured default shape);
-- `tests/test_hamcp162_yaml_admission.py` (true with the optional model; false
-  with an unaccounted advertised tool, with and without the reader);
+- `tests/test_hamcp162_yaml_admission.py` (true for the exact 80/77/3 and
+  stock shapes; false, in both admission modes, for a missing tool balanced
+  by a duplicate, each sibling's drift, an unknown optional state, a missing
+  read or non-read tool, a duplicate and an unreviewed extra, with health,
+  exposure and dispatch unchanged when the flag is forced true; one
+  single-check negative per helper check);
 - the existing historical-projection and governance-health suites;
 - the complete repository suite in the Evidence tier.
 
@@ -81,5 +88,5 @@ Only through Josh's Ready action and the repository's head-bound workflow.
    test) or an immutable historical record (bounded historical profile,
    `authorization_effect: none_projection_only`, keyed to the exact stored
    shape) in a later release.
-5. Josh decides whether a manual-review acknowledgment workflow is wanted
-   (HAMCP-120).
+5. Manual review: Josh decided the warning stays lit (HAMCP-120); an
+   acknowledgment workflow is tracked separately as HAMCP-253.

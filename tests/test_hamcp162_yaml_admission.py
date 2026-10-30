@@ -24,6 +24,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -45,8 +46,10 @@ from ha_mcp_engineering.ha_mcp_readmission.models import (  # noqa: E402
 from ha_mcp_engineering.providers import upstream_yaml_reader as y  # noqa: E402
 from ha_mcp_engineering.providers.upstream_fan import FanProvider  # noqa: E402
 from ha_mcp_engineering.providers.upstream_power import PowerProvider  # noqa: E402
+from ha_mcp_engineering.providers import upstream_read_gateway as gw  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
+    _reviewed_tool_accounting_valid,
 )
 from ha_mcp_engineering.tools.registry import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_COUNT,
@@ -220,6 +223,210 @@ class Harness(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(set(y.SIBLING_TOOLS) & names)
         self.assertEqual(names, stock)
         self.assertEqual(transport.sent, [])
+
+
+# ---------------------------------------------------------------------------
+# HAMCP-198 R1-M1: complete-name reviewed-tool accounting.
+
+
+def _named(tools, name):
+    return next(item for item in tools if item.get("name") == name)
+
+
+def _with_description(tools, name, suffix=" synthetic drift"):
+    tools = deepcopy(tools)
+    _named(tools, name)["description"] += suffix
+    return tools
+
+
+def _with_optional_states(optional, states):
+    return replace(optional, tools=tuple(states))
+
+
+class AccountingCheckTests(unittest.TestCase):
+    """Each check alone keeps ``reviewed_tool_accounting_valid`` false.
+
+    Every negative violates exactly one check of the helper and leaves the
+    others satisfied, so removing that check is visible here first.
+    """
+
+    def setUp(self):
+        self.release = load_reviewed_upstream_release_registry().by_version["8.5.0"]
+        self.tools = captured("8.5.0")
+
+    def valid(self, tools=None, *, missing=(), unreviewed=(), drift=(), states=None):
+        tools = self.tools if tools is None else tools
+        optional = y.evaluate_optional(tools, self.release)
+        if states is not None:
+            optional = _with_optional_states(optional, states)
+        return _reviewed_tool_accounting_valid(
+            tools, policy=self.release.policy, optional=optional,
+            evaluation=SimpleNamespace(missing=tuple(missing), unreviewed=tuple(unreviewed)),
+            sibling_drift=tuple(drift),
+        )
+
+    def live_states(self):
+        return list(y.evaluate_optional(self.tools, self.release).tools)
+
+    def test_live_and_stock_shapes_pass_every_check(self):
+        # 80 advertised = 77 policy + 3 optional; reader admitted, both
+        # siblings prohibited_withheld.
+        self.assertEqual(len(self.tools), 80)
+        self.assertEqual(len(self.release.policy.tools), 77)
+        self.assertEqual(dict(self.live_states()), {
+            TOOL: "admitted", "ha_list_files": "prohibited_withheld",
+            "ha_read_file": "prohibited_withheld",
+        })
+        self.assertTrue(self.valid())
+        self.assertTrue(self.valid(stock_catalog("8.5.0")))
+
+    def test_recognized_withheld_reader_states_stay_valid(self):
+        for state in ("held", "withheld:core_unavailable", "quarantined:optional_descriptor_changed"):
+            with self.subTest(state=state):
+                states = [(n, state if n == TOOL else s) for n, s in self.live_states()]
+                self.assertTrue(self.valid(states=states))
+
+    def test_names_complete_check(self):
+        # A non-read policy entry is never recorded as missing, so only the
+        # complete-name check sees its absence.
+        self.assertFalse(self.release.policy.by_name["ha_bulk_control"].is_read_route)
+        tools = [t for t in self.tools if t.get("name") != "ha_bulk_control"]
+        self.assertFalse(self.valid(tools))
+
+    def test_names_unique_check(self):
+        for name in ("ha_get_app", "ha_list_files"):
+            with self.subTest(duplicate=name):
+                self.assertFalse(self.valid(self.tools + [deepcopy(_named(self.tools, name))]))
+
+    def test_missing_check(self):
+        self.assertFalse(self.valid(missing=("ha_get_state",)))
+
+    def test_unreviewed_check(self):
+        with self.subTest(part="evaluation_record"):
+            # A malformed entry has no name; only the evaluation records it.
+            self.assertFalse(self.valid(self.tools + ["synthetic-malformed"],
+                                        unreviewed=("[INVALID_NAME]",)))
+        with self.subTest(part="names"):
+            extra = deepcopy(_named(self.tools, "ha_get_app"))
+            extra["name"] = "ha_synthetic_unreviewed_read"
+            self.assertFalse(self.valid(self.tools + [extra]))
+
+    def test_sibling_drift_check(self):
+        for sibling in y.SIBLING_TOOLS:
+            with self.subTest(sibling=sibling):
+                self.assertFalse(self.valid(drift=((sibling, "optional_descriptor_fields_changed"),)))
+
+    def test_recognized_state_check(self):
+        live = self.live_states()
+        without_sibling = [t for t in self.tools if t.get("name") != "ha_read_file"]
+
+        def replaced(name, state):
+            return [(n, state if n == name else s) for n, s in live]
+
+        cases = {
+            "reader_unknown": (None, replaced(TOOL, "synthetic_unknown")),
+            "reader_not_a_string": (None, replaced(TOOL, None)),
+            "reader_withheld_without_reason": (None, replaced(TOOL, "withheld:")),
+            "reader_quarantined_without_reason": (None, replaced(TOOL, "quarantined:")),
+            "reader_absent_while_advertised": (None, replaced(TOOL, "optional_absent")),
+            "sibling_unknown": (None, replaced("ha_list_files", "synthetic_unknown")),
+            "sibling_admitted": (None, replaced("ha_list_files", "admitted")),
+            "sibling_withheld_while_unadvertised": (
+                without_sibling, replaced("ha_read_file", "prohibited_withheld")),
+            "optional_name_dropped": (None, [(n, s) for n, s in live if n != "ha_read_file"]),
+            "unknown_optional_name": (None, live + [("ha_synthetic_optional", "optional_absent")]),
+            "duplicate_optional_name": (None, live + [("ha_list_files", "prohibited_withheld")]),
+        }
+        for label, (tools, states) in cases.items():
+            with self.subTest(case=label):
+                self.assertFalse(self.valid(tools, states=states))
+
+
+class ReviewedAccountingGatewayTests(Harness):
+    """The reviewed flag is false for each real gap and gates nothing."""
+
+    def gap_shapes(self, version):
+        base = captured(version)
+        state = _named(base, "ha_get_state")
+        app = _named(base, "ha_get_app")
+        extra = deepcopy(app)
+        extra["name"] = "ha_synthetic_unreviewed_read"
+        without_state = [t for t in base if t is not state]
+        # shape -> (tools, optional_reviewed_accounting_valid). The HAMCP-162
+        # optional flag keeps its count-based meaning, so it stays true for
+        # the balanced and drift shapes.
+        return {
+            "balanced_missing_duplicate": (without_state + [deepcopy(app)], True),
+            "missing_read": (without_state, False),
+            "missing_non_read": ([t for t in base if t.get("name") != "ha_bulk_control"], False),
+            "duplicate": (base + [deepcopy(app)], False),
+            "unreviewed_extra": (base + [extra], False),
+            "drift_ha_list_files": (_with_description(base, "ha_list_files"), True),
+            "drift_ha_read_file": (_with_description(base, "ha_read_file"), True),
+        }
+
+    def comparable(self, gateway):
+        # Everything except the flag and the two wall-clock stamps.
+        health = dict(gateway.health_snapshot())
+        for field in ("reviewed_tool_accounting_valid", "last_catalog_refresh_at",
+                      "last_discovery_attempt_at"):
+            health.pop(field)
+        return health, self.exposed(gateway)
+
+    async def test_each_real_gap_reports_false_and_gates_nothing(self):
+        for version in VERSIONS:
+            for shape, (tools, optional_valid) in self.gap_shapes(version).items():
+                for mode in ("A", "B"):
+                    with self.subTest(version=version, shape=shape, mode=mode):
+                        gateway, transport = await self.gateway(version, deepcopy(tools), mode=mode)
+                        health = gateway.health_snapshot()
+                        self.assertEqual(health["upstream_advertised_tool_count"], len(tools))
+                        self.assertFalse(health["reviewed_tool_accounting_valid"])
+                        self.assertIs(health["optional_reviewed_accounting_valid"], optional_valid)
+                        self.assertNotIn("ha_synthetic_unreviewed_read", self.exposed(gateway))
+                        self.assertFalse(set(y.SIBLING_TOOLS) & self.exposed(gateway))
+                        self.assertEqual(transport.sent, [])
+                        # The same catalog with the flag forced true publishes
+                        # the same health, exposure, admission and counters.
+                        with patch.object(gw, "_reviewed_tool_accounting_valid", return_value=True):
+                            forced, forced_transport = await self.gateway(version, deepcopy(tools), mode=mode)
+                        self.assertTrue(forced.health_snapshot()["reviewed_tool_accounting_valid"])
+                        self.assertEqual(self.comparable(forced), self.comparable(gateway))
+                        self.assertEqual(forced_transport.sent, [])
+
+    async def test_sibling_drift_keeps_the_reader_callable(self):
+        for mode in ("A", "B"):
+            with self.subTest(mode=mode):
+                live, _ = await self.gateway("8.5.0", mode=mode)
+                gateway, transport = await self.gateway(
+                    "8.5.0", _with_description(captured("8.5.0"), "ha_list_files"), mode=mode)
+                health = gateway.health_snapshot()
+                self.assertFalse(health["reviewed_tool_accounting_valid"])
+                self.assertEqual([item["tool"] for item in health["optional_sibling_drift"]], ["ha_list_files"])
+                self.assertEqual(self.exposed(gateway), self.exposed(live))
+                self.assertEqual(health["admission_status"], live.health_snapshot()["admission_status"])
+                result = await call(gateway, TOOL, {"yaml_path": "recorder"})
+                self.assertTrue(result["success"], result)
+                self.assertEqual(transport.sent, [(TOOL, y.upstream_arguments("recorder"))])
+
+    async def test_unknown_optional_state_reports_false(self):
+        # Fault injection: no normal producer of an unknown state exists.
+        original = gw.evaluate_optional
+        for name in OPTIONAL:
+            def unknown(*args, _name=name, **kwargs):
+                optional = original(*args, **kwargs)
+                return _with_optional_states(optional, [
+                    (n, "synthetic_unknown" if n == _name else s) for n, s in optional.tools])
+
+            for mode in ("A", "B"):
+                with self.subTest(tool=name, mode=mode):
+                    with patch.object(gw, "evaluate_optional", unknown):
+                        gateway, transport = await self.gateway("8.5.0", mode=mode)
+                    health = gateway.health_snapshot()
+                    self.assertEqual(health["optional_tools"][name], "synthetic_unknown")
+                    self.assertFalse(health["reviewed_tool_accounting_valid"])
+                    self.assertFalse(set(y.SIBLING_TOOLS) & self.exposed(gateway))
+                    self.assertEqual(transport.sent, [])
 
 
 # ---------------------------------------------------------------------------

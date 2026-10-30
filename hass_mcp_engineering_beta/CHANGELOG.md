@@ -10,10 +10,12 @@ tool, input schema, stored format or Home Assistant write change.
   `projection_failure_category_model`; the category is the first failing
   check from a fixed vocabulary. Count and warning are unchanged.
 - `upstream_read_gateway.reviewed_tool_accounting_valid` uses the HAMCP-162
-  optional reviewed-tool model (supersedes design D3); it stays false for an
-  unaccounted or unreviewed advertised tool.
-- Manual-review counts are unchanged; an acknowledgment workflow is an open
-  design decision.
+  optional reviewed-tool model (supersedes design D3) and decides by names:
+  false for a missing, duplicate or unreviewed tool (including a missing tool
+  balanced by a duplicate), optional sibling drift, or an unrecognized
+  optional state. `optional_reviewed_accounting_valid` keeps its meaning.
+- Manual-review counts are unchanged by Josh's decision; an acknowledgment
+  workflow is tracked separately (HAMCP-253).
 
 ## 2.4.1-beta.47 - Every pre-dispatch refusal names its reason (HAMCP-249)
 
