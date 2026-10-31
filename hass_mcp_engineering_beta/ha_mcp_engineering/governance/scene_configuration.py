@@ -44,7 +44,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import math
 import re
@@ -101,6 +101,15 @@ DISPATCH_INTENT = "dispatch_intent_recorded"
 RELOAD_BASELINE_UNAVAILABLE_REASON = "scene_configuration_reload_baseline_unavailable"
 STORED_CONFIGURATION_VERIFIED = "scene_stored_configuration_verified"
 RELOAD_UNVERIFIED = "scene_post_save_reload_unverified"
+# HAMCP-071 R2-H1: the plan's final configuration is already stored, but no
+# save by this plan exists whose reload could prove the loaded scene.
+ALREADY_STORED = "scene_desired_configuration_already_stored"
+# HAMCP-071 R2-H1: the loaded-scene components a reload visibly changes.
+# Core reads scenes.yaml once per reload and builds every scene's name,
+# icon, member list and snapshots from that one parse
+# (homeassistant/scene.py:182-211, 308-328 at 2026.10.1/2026.10.3); the
+# member snapshots themselves are never observable.
+VISIBLE_COMPONENTS = ("name", "icon", "entities")
 CONSUMER_INDEX_NOT_CURRENT = "dependency_index_not_current"
 PENDING_ADMISSION_TEXT = (
     "Scene configuration edits are implemented but inactive: pending signed "
@@ -180,7 +189,57 @@ class _ReloadBaseline:
     entity_id: str
     last_changed: str
     state: Any
+    # R2-H1: the loaded visible components just before the POST and the
+    # ones the POST stores; evidence names each component a post-save
+    # reload visibly moved from ``before`` to ``target``.
+    before: dict[str, Any]
+    target: dict[str, Any]
     observed: bool = False
+    evidence: set[str] = field(default_factory=set)
+
+
+def configured_visible(config: Any) -> dict[str, Any] | None:
+    """The reload-visible components a scene configuration declares."""
+
+    if type(config) is not dict or type(config.get("entities")) is not dict:
+        return None
+    return {
+        "name": config.get("name"),
+        "icon": config.get("icon"),
+        "entities": sorted(str(key) for key in config["entities"]),
+    }
+
+
+def loaded_visible(
+    detail: dict[str, Any] | None, state: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """The loaded scene's visible components: registry name/icon, members."""
+
+    if type(detail) is not dict or type(state) is not dict:
+        return None
+    attributes = state.get("attributes")
+    if type(attributes) is not dict:
+        return None
+    members = attributes.get("entity_id")
+    if type(members) is not list:
+        return None
+    return {
+        "name": detail.get("original_name"),
+        "icon": detail.get("original_icon"),
+        "entities": sorted(str(item) for item in members),
+    }
+
+
+def planned_visible_changes(current: Any, proposed: Any) -> frozenset[str]:
+    """Visible components the plan changes; only these can carry evidence."""
+
+    before = configured_visible(current)
+    after = configured_visible(proposed)
+    if before is None or after is None:
+        return frozenset()
+    return frozenset(
+        key for key in VISIBLE_COMPONENTS if before[key] != after[key]
+    )
 
 
 class SceneConfigurationContractError(ValueError):
@@ -720,13 +779,13 @@ class SceneConfigurationGateway:
         entity_id: str,
         registry_entry_id: str,
         config: dict[str, Any],
-    ) -> tuple[bool, dict[str, Any] | None]:
+    ) -> tuple[bool, dict[str, Any] | None, dict[str, Any] | None]:
         """Whether the loaded scene's identity, name, icon and members match.
 
         The re-added entity updates the registry ``original_name`` and
         ``original_icon``; its state lists the member entity_ids and the id.
-        The member snapshots are not observable, so this alone is not proof
-        that a save reload landed (R1-H1); see ``reload_observed``.
+        The member snapshots are not observable, so a match is never proof
+        that a save reload landed (R1-H1, R2-H1); see ``reload_evidence``.
         """
 
         # The state is read first so every poll can observe the reload.
@@ -741,27 +800,37 @@ class SceneConfigurationGateway:
             or detail.get("original_name") != config["name"]
             or detail.get("original_icon") != config.get("icon")
         ):
-            return False, state
+            return False, state, detail
         attributes = state.get("attributes") if state is not None else None
         if type(attributes) is not dict or attributes.get("id") != config_id:
-            return False, state
+            return False, state, detail
         members = attributes.get("entity_id")
         return type(members) is list and sorted(
             str(item) for item in members
-        ) == sorted(config["entities"]), state
+        ) == sorted(config["entities"]), state, detail
 
     def _observe_reload(
-        self, config_id: str, entity_id: str, state: dict[str, Any] | None
+        self,
+        config_id: str,
+        entity_id: str,
+        state: dict[str, Any] | None,
+        detail: dict[str, Any] | None,
     ) -> bool:
-        """Latch the post-save reload; ``True`` while no evidence is pending.
+        """Latch post-save reload evidence; ``True`` while none is pending.
 
         Core's reload re-adds the scene state with a new ``last_changed`` and
         the restored state value; an activation changes the state value
-        instead, so it is never taken for a reload.
+        instead, so it is never taken for a reload.  A re-add alone does not
+        say which file the reload read (an external reload may race the
+        save), so R2-H1 evidence additionally requires a visible component
+        the POST changes to have moved, in that same poll, from its pre-POST
+        loaded value to the saved one.  The file held the old value until
+        this save, so only a reload that read the file after it loads the
+        new one.
         """
 
         baseline = self._reload_baselines.get(config_id)
-        if baseline is None or baseline.observed:
+        if baseline is None:
             return True
         if (
             baseline.entity_id == entity_id
@@ -771,17 +840,23 @@ class SceneConfigurationGateway:
             and exactly_equal(state.get("state"), baseline.state)
         ):
             baseline.observed = True
+            loaded = loaded_visible(detail, state)
+            if loaded is not None:
+                baseline.evidence.update(
+                    key
+                    for key in VISIBLE_COMPONENTS
+                    if baseline.before[key] != baseline.target[key]
+                    and loaded[key] == baseline.target[key]
+                )
         return baseline.observed
 
-    def reload_observed(self, config_id: str, operation_id: str) -> bool:
-        """The save of ``operation_id`` was followed by a loaded-scene reload."""
+    def reload_evidence(self, config_id: str, operation_id: str) -> frozenset[str]:
+        """Visible components a reload after ``operation_id``'s save loaded."""
 
         baseline = self._reload_baselines.get(config_id)
-        return (
-            baseline is not None
-            and baseline.operation_id == operation_id
-            and baseline.observed
-        )
+        if baseline is None or baseline.operation_id != operation_id:
+            return frozenset()
+        return frozenset(baseline.evidence)
 
     async def read_state(self, config_id: str) -> dict[str, Any] | None:
         """The exact governed state, or ``None`` when no such scene exists."""
@@ -812,10 +887,10 @@ class SceneConfigurationGateway:
         for attempt in range(LOADED_POLL_ATTEMPTS):
             if attempt:
                 await asyncio.sleep(LOADED_POLL_INTERVAL_SECONDS)
-            loaded, state = await self._loaded_matches(
+            loaded, state, detail = await self._loaded_matches(
                 config_id, entity_id, entry_id, config
             )
-            reloaded = self._observe_reload(config_id, entity_id, state)
+            reloaded = self._observe_reload(config_id, entity_id, state, detail)
             if loaded and reloaded:
                 break
         # Re-read last: a configuration that changed while the loaded scene
@@ -877,13 +952,21 @@ class SceneConfigurationGateway:
         slot = _WRITE_PERMIT.get()
         slot.consumed = True  # type: ignore[union-attr]
         permit = slot.permit  # type: ignore[union-attr]
-        # R1-H1: the scene state just before the POST; the save reload is
-        # proven only against it.  Without it nothing is sent.
+        # R1-H1/R2-H1: the loaded scene just before the POST; the save
+        # reload is proven only against it.  Without it nothing is sent.
         try:
             baseline_state = await self.read_entity_state(permit.entity_id)
+            baseline_detail = await self.registry_detail(permit.entity_id)
         except Exception:
-            baseline_state = None
-        if baseline_state is None or type(baseline_state.get("last_changed")) is not str:
+            baseline_state = baseline_detail = None
+        before = loaded_visible(baseline_detail, baseline_state)
+        target = configured_visible(command["body"])
+        if (
+            baseline_state is None
+            or type(baseline_state.get("last_changed")) is not str
+            or before is None
+            or target is None
+        ):
             raise ConfigurationMutationNotDispatchedError(
                 details={
                     "operation": operation,
@@ -899,6 +982,8 @@ class SceneConfigurationGateway:
             entity_id=permit.entity_id,
             last_changed=baseline_state["last_changed"],
             state=json.loads(canonical(baseline_state.get("state"))),
+            before=before,
+            target=target,
         )
         try:
             mark_provider_send()  # OD-6(ii): the exact send boundary
@@ -955,6 +1040,7 @@ class SceneConfigurationGateway:
 
 __all__ = [
     "ACTION",
+    "ALREADY_STORED",
     "CAPABILITY_IDENTITIES",
     "CAPABILITY_IDENTITY",
     "FIELDS",

@@ -356,6 +356,9 @@ class ConfigurationOperationAdapter:
         # before it commits durable intent through ``before_dispatch``.
         state, state_code = await self._authoritative_state(operation)
         if state_code == "desired_state_already_reached":
+            gap = self.strategy.already_reached_gap(state)
+            if gap:
+                return self._preflight_rejected(operation, gap)
             return self._preflight_already_reached(
                 operation, state, required_locks, validation_status
             )

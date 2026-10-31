@@ -89,14 +89,25 @@ The review needs a security section covering the following items:
   - The planning caller cannot approve.
 - **Verification.**
   - The fingerprint is checked immediately before the write.
-  - The readback must show the stored configuration exactly, the registry
-    identity unchanged and the loaded scene consistent with the stored
-    configuration, with post-save reload evidence observed within the
-    bounded window (10 × 0.5 s).
-  - Without that evidence the result is changed but unverified: the task
-    stays observing and then requires manual review. It is never
+  - The readback must show the stored configuration exactly and the
+    registry identity unchanged.
+  - The loaded scene is verified only with positive evidence that Home
+    Assistant reloaded it after this plan's save, observed within the
+    bounded window (10 × 0.5 s). The evidence is a visible transition: the
+    scene is re-added (`last_changed` moves while its state value stays the
+    same), and a planned name, icon or member-list change moves from its
+    loaded value captured just before the POST to the saved value. A loaded
+    scene that merely matches the plan is never proof.
+  - Without that evidence the result is changed but unverified: the stored
+    configuration is verified and the loaded scene is not. The task stays
+    observing and then requires manual review. It is never
     `succeeded_verified` from pre-save state, and a late reload alone is
     never a verification mismatch. Recovery is read-only.
+  - With the evidence, a loaded scene that differs from the stored
+    configuration is a verification failure.
+  - An edit that changes only member snapshots is never verified as
+    loaded, because Core does not expose snapshots. A plan whose
+    configuration is already stored is refused without dispatch.
   - Comparisons are type-exact.
   - An indeterminate send is decided by readback and never redispatched.
 - **Rollback.** A separately approved restore plan of the exact prior
@@ -139,7 +150,7 @@ No test reaches a live system. Every fixture is synthetic:
 - the YAML scene `scene.synthetic_yaml_scene` (`1700000000009`).
 
 The offline proof consists of:
-- `tests/test_hamcp071_scene_configuration.py` (112 tests) with
+- `tests/test_hamcp071_scene_configuration.py` (175 tests) with
   `tests/hamcp071_fixtures.py`. These use the real service, the F3 runtime
   and the scene gateway, and cover:
   - positive edits of the name, the icon (including removal) and members
@@ -153,6 +164,10 @@ The offline proof consists of:
   - stale state at apply;
   - 4xx, 5xx and lost responses, decided truthfully;
   - readback mismatches;
+  - the post-save reload rule: the Codex R1 and R2 repros, coincidental
+    matches, late and unrelated reloads, a genuine reload with a matching
+    or a differing loaded scene, already-stored targets, and guard tests
+    that fail if any path verifies without evidence;
   - rollback and its refusals;
   - the contract boundaries.
 - `tests/test_hamcp242_core_authority_itemization.py`. It pins sequence 14
@@ -162,11 +177,15 @@ The offline proof consists of:
   sequence 16.
 - Pin updates across the suite: tool counts, F3 identities and registry
   size, capability metadata, and dormant lane sets.
-- Mutations: `docs/evidence/hamcp071-mutations/` (`results.json` and
-  `README.md`). 81 of 82 mutants are killed against a 219-test baseline.
-  The one survivor, A3 (the persistence-entry recheck), is equivalent,
-  and its isolated control A3A4, which removes both persistence gates,
-  is killed.
+- Mutations: `docs/evidence/hamcp071-mutations/` (`README.md`,
+  `r2-results.json` and `r2-rerun-results.json`). The R2 full run
+  replays all 113 earlier mutants plus 10 new evidence-check removals
+  (`E1`–`E10`): 119 of 123 are killed against a 278-test baseline. The
+  three non-equivalent survivors (G8, H10 and H13) each got an isolated
+  test, and the rerun kills all three against a 282-test baseline. So 122
+  of 123 are killed. The one survivor, A3 (the persistence-entry
+  recheck), is equivalent, and its isolated control A3A4, which removes
+  both persistence gates, is killed.
 
 ### Downgrade rule
 
@@ -250,10 +269,13 @@ evidence, not here. **The scene is never activated** at any step: no
    - the loaded scene matches the intended fields exactly: the registry
      `original_name` or `original_icon`, the state attribute `id` and the
      member list;
-   - the task is `succeeded_verified` with post-save reload evidence. If it
-     stays observing (`scene_post_save_reload_unverified`), record that the
-     result is changed but unverified, inspect read-only, and do not
-     reverify or resend;
+   - the task is `succeeded_verified` only with post-save reload evidence
+     (the planned name or icon moved from its pre-save loaded value to the
+     saved value). If it stays observing
+     (`scene_post_save_reload_unverified`), record that the result is
+     changed but unverified, inspect read-only, and do not reverify or
+     resend. A loaded scene that already shows the new value is not
+     evidence on its own;
    - bounded no-activation evidence: the audit and the task record no
      scene service (`scene.turn_on`, `scene.apply`, `scene.create`,
      `scene.reload`, `scene.delete`) and only the one config POST, and the

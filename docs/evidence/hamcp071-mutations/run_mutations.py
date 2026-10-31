@@ -55,6 +55,16 @@ Mutant classes:
   reader and its gap; ``H23``-``H31`` (D4) the mode-helper rule (each
   domain, planner, floor, substring and widened match, statement, members
   before the edit).
+- ``E*`` (HAMCP-071 R2-H1) post-save reload evidence on every verified
+  path: evidence without a planned visible difference or without the saved
+  value loaded, the registry baseline unchecked, the strategy ignoring the
+  plan's changed components or counting unchanged ones, the already-stored
+  gap ignored by the adapter or empty for scenes, the gateway evidence
+  bridge dropped, a loaded difference hidden as unverified instead of a
+  mismatch, and evidence taken from the re-add alone.  R2 also re-anchored
+  T10, H8, H11, H12, H14, H15 and H16 to the evidence code: H14 now drops
+  the plan-change intersection and H15 treats a missing check as full
+  evidence.
 
 Usage (from the worktree root):
     systemd-run --user --unit hamcp071-mut --property=MemoryMax=3G \\
@@ -89,6 +99,8 @@ ST = 'f3_configuration/strategies.py'
 RU = 'f3_runtime/runtime.py'
 S = 'governance/service.py'
 GR = 'governance/runtime.py'
+AD = 'f3_configuration/adapter.py'
+GW = 'f3_configuration/gateway.py'
 
 _PRE = ('        if not scene_configuration.exactly_equal(\n'
         '            scene_configuration.normalize_state(observed),\n'
@@ -179,8 +191,8 @@ M = [
  ('T10_loaded_members_unchecked',
   [(C, '        return type(members) is list and sorted(\n'
        '            str(item) for item in members\n'
-       '        ) == sorted(config["entities"]), state\n',
-       '        return type(members) is list, state\n')]),
+       '        ) == sorted(config["entities"]), state, detail\n',
+       '        return type(members) is list, state, detail\n')]),
  # ---- V: requested values.
  ('V1_whitespace_name_allowed',
   [(C, 'isinstance(value, str) and bool(value.strip()) and len(value) <= MAX_NAME_LENGTH',
@@ -414,27 +426,31 @@ M = [
        '            raise SceneConfigurationContractError(PENDING_ADMISSION_REASON)\n')]),
  ('H8_reload_latch_always_true',
   [(C, '        baseline = self._reload_baselines.get(config_id)\n'
-       '        if baseline is None or baseline.observed:\n            return True\n',
+       '        if baseline is None:\n            return True\n',
        '        return True\n')]),
  ('H9_activation_taken_as_reload',
   [(C, '            and exactly_equal(state.get("state"), baseline.state)\n', '')]),
  ('H10_last_changed_unchecked',
   [(C, '            and state["last_changed"] != baseline.last_changed\n', '')]),
  ('H11_reload_evidence_any_operation',
-  [(C, '            and baseline.operation_id == operation_id\n', '')]),
+  [(C, '        if baseline is None or baseline.operation_id != operation_id:\n',
+       '        if baseline is None:\n')]),
  ('H12_reload_baseline_check_removed',
-  [(C, '        if baseline_state is None or type(baseline_state.get("last_changed")) is not str:\n',
-       '        if baseline_state is None and False:\n')]),
+  [(C, '        if (\n            baseline_state is None\n'
+       '            or type(baseline_state.get("last_changed")) is not str\n'
+       '            or before is None\n            or target is None\n        ):\n',
+       '        if False:\n')]),
  ('H13_poll_stops_before_reload',
   [(C, '            if loaded and reloaded:\n', '            if loaded:\n')]),
  ('H14_unobserved_reload_verified',
-  [(ST, '            and check(operation.target.target_id, operation.operation_id) is True\n', '')]),
+  [(ST, '        if type(evidence) is frozenset and changed & evidence:\n',
+        '        if type(evidence) is frozenset:\n')]),
  ('H15_missing_reload_check_verified',
-  [(ST, '            check is not None\n            and observed.get("loaded_matches_config") is True\n',
-        '            observed.get("loaded_matches_config") is True\n')]),
+  [(ST, '            if check is not None\n            else None\n',
+        '            if check is not None\n            else frozenset({"name", "icon", "entities"})\n')]),
  ('H16_runtime_reload_passthrough_dropped',
-  [(RU, '    def scene_configuration_reload_observed(self, target_id, operation_id):\n',
-        '    def _scene_configuration_reload_observed_unused(self, target_id, operation_id):\n')]),
+  [(RU, '    def scene_configuration_reload_evidence(self, target_id, operation_id):\n',
+        '    def _scene_configuration_reload_evidence_unused(self, target_id, operation_id):\n')]),
  ('H17_switch_reason_dropped_in_planner',
   [(P, '        reasons.update(_member_rule_reasons(entity_id))\n    return sorted(reasons)\n\n\ndef classify',
        '        reasons.update(_member_rule_reasons(entity_id) - {SWITCH_REASON})\n    return sorted(reasons)\n\n\ndef classify')]),
@@ -479,6 +495,38 @@ M = [
  ('H31_mode_helper_disclosure_after_edit_only',
   [(P, '    mode_helpers = mode_helper_members(members)\n',
        '    mode_helpers = mode_helper_members(config["entities"])\n')]),
+ # ---- E (HAMCP-071 R2-H1): post-save reload evidence, per path.
+ ('E1_evidence_without_a_planned_difference',
+  [(C, '                    if baseline.before[key] != baseline.target[key]\n'
+       '                    and loaded[key] == baseline.target[key]\n',
+       '                    if loaded[key] == baseline.target[key]\n')]),
+ ('E2_evidence_without_the_saved_value_loaded',
+  [(C, '                    if baseline.before[key] != baseline.target[key]\n'
+       '                    and loaded[key] == baseline.target[key]\n',
+       '                    if baseline.before[key] != baseline.target[key]\n')]),
+ ('E3_registry_baseline_unchecked',
+  [(C, '            or before is None\n            or target is None\n', '            or target is None\n')]),
+ ('E4_strategy_ignores_planned_changes',
+  [(ST, '        if type(evidence) is frozenset and changed & evidence:\n',
+        '        if type(evidence) is frozenset and evidence:\n')]),
+ ('E5_planned_changes_include_unchanged',
+  [(C, '        key for key in VISIBLE_COMPONENTS if before[key] != after[key]\n',
+       '        key for key in VISIBLE_COMPONENTS\n')]),
+ ('E6_already_reached_gap_ignored_by_adapter',
+  [(AD, '            if gap:\n                return self._preflight_rejected(operation, gap)\n', '')]),
+ ('E7_scene_already_reached_gap_empty',
+  [(ST, '        del observed\n        return (\n            scene_configuration.ALREADY_STORED,\n',
+        '        del observed\n        return ()\n        return (\n            scene_configuration.ALREADY_STORED,\n')]),
+ ('E8_gateway_evidence_bridge_dropped',
+  [(GW, '    def scene_configuration_reload_evidence(\n',
+        '    def _scene_configuration_reload_evidence_unused(\n')]),
+ ('E9_loaded_difference_hidden_as_unverified',
+  [(ST, '        if type(evidence) is frozenset and changed & evidence:\n',
+        '        if (type(evidence) is frozenset and changed & evidence\n'
+        '                and observed.get("loaded_matches_config") is True):\n')]),
+ ('E10_evidence_from_the_stale_latch',
+  [(C, '            baseline.observed = True\n            loaded = loaded_visible(detail, state)\n',
+       '            baseline.observed = True\n            loaded = dict(baseline.target)\n')]),
 ]
 
 args = sys.argv[1:]

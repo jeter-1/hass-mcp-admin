@@ -1459,9 +1459,9 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
-    def scene_configuration_reload_observed(self, target_id, operation_id):
-        # HAMCP-071 R1-H1: read-only in-memory evidence; nothing is sent.
-        return self.delegate.scene_configuration_reload_observed(
+    def scene_configuration_reload_evidence(self, target_id, operation_id):
+        # HAMCP-071 R2-H1: read-only in-memory evidence; nothing is sent.
+        return self.delegate.scene_configuration_reload_evidence(
             target_id, operation_id
         )
 

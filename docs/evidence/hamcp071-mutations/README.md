@@ -28,7 +28,9 @@ TMPDIR and HOME, and the logs. Each run was a `systemd-run --user` unit
 | `pre-r1-results.json` | final before the Codex R1 corrections: round 0 with the round-1 rows and the round-1 baseline | 219 OK | 82 | **81** |
 | `results.json` | R1 full run: all 82 replayed plus 22 new `H*` guard removals, after the R1 corrections | 246 OK | 104 | 99 |
 | `r1-rerun-results.json` | the 5 R1 survivors plus the H14 control, after the new R1 isolation tests | 247 OK | 6 | 5 |
-| `d4-results.json` | D4 full run: all 104 replayed plus 9 new D4 `H23`–`H31` mutants, after the D4 change | 258 OK | 113 | **112** |
+| `d4-results.json` | D4 full run: all 104 replayed plus 9 new D4 `H23`–`H31` mutants, after the D4 change | 258 OK | 113 | 112 |
+| `r2-results.json` | R2 full run: all 113 replayed (7 re-anchored) plus 10 new `E1`–`E10` evidence-check removals, after the R2-H1 correction | 278 OK | 123 | 119 |
+| `r2-rerun-results.json` | the 4 R2 survivors (A3 included as the equivalent control), after the new R2 isolation tests | 282 OK | 4 | 3 |
 
 No mutant timed out and none had an import error in any round.
 
@@ -107,6 +109,56 @@ trees. Each new mutant is killed:
 
 No mutant timed out and none had an import error.
 
+## Codex R2 corrections (round 4)
+
+R2-H1: a loaded scene that matched the plan could be reported verified
+from a reload before the save, or with no save at all. The correction
+requires positive post-save evidence: in one poll the scene is re-added
+(`last_changed` moves, state value unchanged) and a planned name, icon or
+member-list change moves from its pre-POST loaded value to the saved
+value. The strategy needs that evidence to intersect the plan's visible
+changes; an already-stored configuration is refused before dispatch
+through the new `already_reached_gap` hook.
+
+T10, H8, H11, H12, H14, H15 and H16 were re-anchored onto the new code
+(H12 now removes the whole state-and-registry baseline check; H14 drops the
+intersection with the planned changes; H15 treats a missing check as full
+evidence; H16 renames the evidence passthrough). The new `E` mutants each
+remove one part of the evidence rule, and each is killed in
+`r2-results.json`:
+
+| Mutant | What it does | Killing tests (examples) |
+|---|---|---|
+| E1 | latches evidence without a planned difference (B equal to T) | the delayed-reload tests (exact evidence sets), the Codex R2 unrelated-reload tests, `test_a_genuine_reload_of_a_snapshot_only_edit_is_never_verified` |
+| E2 | latches evidence without the saved value loaded | the Codex R2 unrelated-reload tests (name, icon, member set) |
+| E3 | sends without a readable registry baseline | `test_an_unreadable_registry_baseline_sends_nothing` |
+| E4 | the strategy ignores the planned changes | `test_strategy_without_reload_evidence_is_unverified` (wrong components) |
+| E5 | counts unchanged components as planned | `test_strategy_without_reload_evidence_is_unverified` (current equal to proposed) |
+| E6 | the adapter ignores `already_reached_gap` | the coincidental-match tests, `test_codex_r2_externally_stored_unloaded_snapshot_is_not_verified`, `test_guard_already_stored_needs_evidence` |
+| E7 | the scene `already_reached_gap` is empty | the same tests |
+| E8 | drops the gateway evidence bridge | the delayed-reload and positive tests (no edit verifies) |
+| E9 | turns a loaded difference with evidence into "unverified" | `test_a_genuine_post_save_reload_with_a_different_loaded_scene_fails` |
+| E10 | takes the loaded value from the latch, not the poll | the Codex R2 unrelated-reload tests |
+
+Three earlier mutants survived the R2 full run, because the R2 change
+removed the paths that used to kill them. Each now has an isolated test,
+confirmed in `r2-rerun-results.json`:
+
+| Survivor | What the mutant does | Why it survived | Killing test |
+|---|---|---|---|
+| G8 | drops scenes from the strict rollback-projection branch | it was killed only by the already-reached apply, which R2 now refuses before dispatch | `test_rollback_projection_needs_a_verified_task_and_one_dispatch`: a verified child under a manual-review task, or with no dispatch, projects no rollback |
+| H10 | stops checking that `last_changed` moved | a visible transition implies a re-add in the suite's Core model | `test_a_member_attribute_rewrite_is_not_reload_evidence` (a state write keeps `last_changed`) and `test_a_registry_name_without_a_re_add_is_not_reload_evidence` |
+| H13 | stops the poll on a loaded match without evidence | the old member-edit control matched before the reload; R2 member edits no longer do | `test_a_reload_between_one_polls_reads_verifies_at_the_next_poll`: the reload lands between one poll's state and registry reads |
+
+Every mutant that removes an R2 evidence check maps to one verified path:
+- `verify` through `observation_gap`: E1, E2, E4, E5, E8, E9, E10, H8, H10,
+  H11, H13, H14, H15, H16 and T10;
+- the reload baseline before the POST: E3 and H12;
+- `_preflight_already_reached`: E6 and E7;
+- the rollback projection: G8.
+
+All are killed. No mutant timed out and none had an import error.
+
 ## Remaining survivor (1): equivalent
 
 - **A3: the persistence-entry recheck is removed.** Equivalent.
@@ -120,7 +172,8 @@ No mutant timed out and none had an import error.
   checks and is killed in round 1 (2 failures).
 - **A4 alone** (only the generic-builder check removed) was killed in
   round 0.
-- A3 survives again in both R1 runs and the D4 run, for the same reason.
+- A3 survives again in both R1 runs, the D4 run and both R2 runs, for the
+  same reason.
 
 ## Usage
 
@@ -134,5 +187,6 @@ With no ids, the runner runs the baseline and then every mutant, and writes
 `results.json`. With ids, it runs only those mutants (pass `baseline` to
 include it) and writes `results-partial.json`; the R1 rerun's copy is
 `r1-rerun-results.json`. `--out NAME.json` overrides the output file (the
-D4 run used `--out d4-results.json`). The R1 and D4 units also set
+D4 run used `--out d4-results.json`; the R2 runs used `--out r2-results.json`
+and `--out r2-rerun-results.json`). The R1, D4 and R2 units also set
 `TMPDIR=<worktree>/.artifacts/tmp`.

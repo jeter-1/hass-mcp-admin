@@ -17,11 +17,18 @@ Builds on 2.4.1-beta.51 (#331). Activates nothing new.
   - The write is one `POST /api/config/scene/config/{config_id}` with the
     full proposed configuration and no `id`, at most once. Unrequested keys
     and `metadata` are sent exactly as stored.
-  - The readback checks that the stored configuration is exact, the
-    registry identity is unchanged and the loaded scene is consistent, with
-    post-save reload evidence observed within the bounded window. Without
-    it the result is changed but unverified (observing, then manual review,
-    never verified). Comparisons are type-exact (canonical JSON).
+  - The readback checks that the stored configuration is exact and the
+    registry identity is unchanged. The loaded scene is verified only with
+    positive evidence of a reload after this plan's save, observed within
+    the bounded window: the scene is re-added with its state value
+    unchanged, and a planned name, icon or member-list change moves from
+    its pre-save loaded value to the saved value. A loaded scene that
+    merely matches is never proof. Without the evidence the result is
+    changed but unverified (observing, then manual review, never
+    verified). With it, a differing loaded scene is a verification
+    failure. A snapshot-only edit is never verified as loaded, and an
+    already-stored configuration is refused without dispatch.
+    Comparisons are type-exact (canonical JSON).
   - Saving never activates the scene. Nothing sends `scene.turn_on`,
     `scene.apply`, `scene.create`, `scene.reload`, `scene.delete` or the
     scene-config DELETE (which the route allowlist does not admit).

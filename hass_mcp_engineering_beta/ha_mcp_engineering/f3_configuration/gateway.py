@@ -99,12 +99,12 @@ class ExistingConfigurationGatewayBridge:
             target_id, current, proposed
         )
 
-    def scene_configuration_reload_observed(
+    def scene_configuration_reload_evidence(
         self, target_id: str, operation_id: str
-    ) -> bool:
-        """HAMCP-071 R1-H1: this operation's save reload was observed."""
+    ) -> frozenset[str]:
+        """HAMCP-071 R2-H1: components a reload after this save loaded."""
 
-        return self._gateway.scene_configuration.reload_observed(
+        return self._gateway.scene_configuration.reload_evidence(
             target_id, operation_id
         )
 

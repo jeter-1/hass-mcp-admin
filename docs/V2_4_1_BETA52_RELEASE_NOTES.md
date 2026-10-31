@@ -88,7 +88,9 @@ scene, by `config_id`. The plan is approved externally and applied with
     being detected, and a concurrent deletion can make the save recreate the
     scene. Verification proves only this plan's stored result. Josh accepted
     this race with this disclosure;
-  - verification needs post-save reload evidence, and recovery is
+  - verification needs positive evidence of a reload after this plan's
+    save; a loaded scene that merely matches is never proof, a
+    snapshot-only edit is never verified as loaded, and recovery is
     read-only.
 - **Policy.** If any member before or after the edit is a protected object
   under the OD-4 `object_protection` rules, the plan is `elevated_admin`,
@@ -122,13 +124,25 @@ scene, by `config_id`. The plan is approved externally and applied with
   The write is dispatched at most once, with durable intent, no redispatch
   and truthful attribution. A 5xx or lost response is decided by the
   readback.
-- **Verification.** The stored configuration must be exact, the registry
-  identity unchanged and the loaded scene consistent with the stored
-  configuration, with genuine evidence that Home Assistant reloaded the
-  scene after the save, observed within the bounded window (10 × 0.5 s).
-  Without that evidence the result is changed but unverified: the task stays
-  observing and then requires manual review, never verified and never
-  redispatched. Comparisons are type-exact.
+- **Verification.** The stored configuration must be exact and the
+  registry identity unchanged. The loaded scene counts as verified only with
+  positive evidence that Home Assistant reloaded it after this plan's save.
+  Within the bounded window (10 × 0.5 s), the scene must be re-added
+  (`last_changed` moves while its state value stays the same), and a planned
+  name, icon or member-list change must move from its pre-save loaded value
+  to the saved value. A loaded scene that merely matches the plan is never
+  proof.
+  - Without that evidence the result is changed but unverified: the stored
+    configuration is verified and the loaded scene is not. The task stays
+    observing and then requires manual review. It is never verified and
+    never redispatched.
+  - With the evidence, a loaded scene that differs from the stored
+    configuration is a verification failure.
+  - An edit that changes only member snapshots is never verified as loaded,
+    because Core does not expose snapshots.
+  - A plan whose configuration is already stored is refused without
+    dispatch.
+  - Comparisons are type-exact.
 - **Rollback.** `rollback_change` creates a separate governed plan that
   restores the exact prior configuration. It needs its own approval, and it
   does not activate the scene either.

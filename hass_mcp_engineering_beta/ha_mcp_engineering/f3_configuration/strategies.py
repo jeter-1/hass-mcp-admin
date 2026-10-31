@@ -230,6 +230,18 @@ class ConfigurationStrategy(ABC):
         del observed, proposed_config
         return False
 
+    def already_reached_gap(
+        self, observed: dict[str, Any] | None
+    ) -> tuple[str, ...]:
+        """Codes that keep an already-reached state from verifying; ``()``: none.
+
+        A non-empty gap turns ``desired_state_already_reached`` into a
+        preflight rejection: nothing is dispatched and nothing is verified.
+        """
+
+        del observed
+        return ()
+
     async def preflight_evidence(
         self,
         gateway: Any,
@@ -1058,6 +1070,21 @@ class SceneConfigurationConfigurationStrategy(ConfigurationStrategy):
         except (TypeError, ValueError):
             return False
 
+    def already_reached_gap(
+        self, observed: dict[str, Any] | None
+    ) -> tuple[str, ...]:
+        """HAMCP-071 R2-H1: an already-stored plan never verifies the scene.
+
+        Without a save by this plan no reload can be shown to postdate it,
+        and a loaded snapshot that happens to match is never proof.
+        """
+
+        del observed
+        return (
+            scene_configuration.ALREADY_STORED,
+            scene_configuration.RELOAD_UNVERIFIED,
+        )
+
     def dispatch_scope(
         self, operation: Any, provider_config: dict[str, Any]
     ) -> AbstractContextManager[Any]:
@@ -1079,13 +1106,18 @@ class SceneConfigurationConfigurationStrategy(ConfigurationStrategy):
     async def observation_gap(
         self, gateway: Any, operation: Any, observed: dict[str, Any] | None
     ) -> tuple[str, ...]:
-        """HAMCP-071 R1-H1: a stored match without the save reload is unverified.
+        """HAMCP-071 R1-H1/R2-H1: a stored match without post-save reload
+        evidence is unverified.
 
         The stored configuration can equal the plan while the loaded scene
-        still holds the previous member snapshots, which no read exposes.
-        Only a reload observed after this operation's own POST proves the
-        loaded scene; until then the readback is incomplete evidence, never
-        verified and never a mismatch.
+        still holds the previous member snapshots, which no read exposes, and
+        a loaded scene that matches the plan may predate this save.  Only
+        positive evidence of a reload after this operation's own POST -- a
+        component the plan changes visibly moving from its pre-POST loaded
+        value to the saved one -- lets the loaded scene be compared.  Without
+        it the readback is incomplete evidence, never verified and never a
+        mismatch.  With it, the exact readback (``loaded_matches_config``
+        included) decides between verified and mismatch.
         """
 
         proposed = operation.proposed_config()
@@ -1098,12 +1130,17 @@ class SceneConfigurationConfigurationStrategy(ConfigurationStrategy):
             observed.get("config"), proposed.get("config")
         ):
             return ()
-        check = getattr(gateway, "scene_configuration_reload_observed", None)
-        if (
-            check is not None
-            and observed.get("loaded_matches_config") is True
-            and check(operation.target.target_id, operation.operation_id) is True
-        ):
+        changed = scene_configuration.planned_visible_changes(
+            (operation.current_config() or {}).get("config"),
+            proposed.get("config"),
+        )
+        check = getattr(gateway, "scene_configuration_reload_evidence", None)
+        evidence = (
+            check(operation.target.target_id, operation.operation_id)
+            if check is not None
+            else None
+        )
+        if type(evidence) is frozenset and changed & evidence:
             return ()
         return (
             scene_configuration.STORED_CONFIGURATION_VERIFIED,

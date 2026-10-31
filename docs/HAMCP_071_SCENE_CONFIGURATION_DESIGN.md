@@ -137,6 +137,12 @@ an admin.
 - **Loaded scene.** Its `unique_id` is the config id
   (`homeassistant/scene.py:356`). Its state attributes are `entity_id`, the
   member list, and `id`, the config id (`:364-366`).
+- **One parse per reload.** `reload_config` (`:182-211`) and
+  `_process_scenes_config` (`:308-328`) build each scene's name, icon,
+  member list and snapshots from one YAML parse, so they load together.
+  Only the name and icon (through the registry's `original_name` and
+  `original_icon`), the member list (`entity_id`) and `id` are observable
+  (`:362-367`). Member snapshots are not observable.
 - **Activation.** `async_reproduce_state` (`helpers/state.py:27`) reproduces
   every domain in parallel (`asyncio.gather`, `:66`). Stored member order is
   therefore not an activation order.
@@ -275,9 +281,13 @@ Planning refuses before any dispatch, and creates no plan, when:
     with every domain in parallel, so stored order is not an activation
     ordering guarantee before or after this save."
   - The metadata text: metadata is never changed.
-  - The loaded-scene text: verification needs post-save reload evidence;
-    otherwise the task stays observing and then needs manual review, never
-    verified, and recovery is read-only (section 4).
+  - The loaded-scene text: verification needs positive evidence that a
+    planned name, icon or member-list change moved from its pre-save
+    loaded value to the saved value; a loaded scene that merely matches
+    is never proof; a snapshot-only edit is never verified as loaded; an
+    already-stored configuration is refused without dispatch; otherwise
+    the task stays observing and then needs manual review, never verified,
+    and recovery is read-only (section 4).
   - The rollback, untrusted-text and consumer texts.
 
   The plan-level disclosure records:
@@ -365,21 +375,42 @@ identity.
   - A lost response is never redispatched.
   - `{"result": "ok"}` is not success by itself; the readback decides it.
 - **Reload baseline.** Immediately before the POST the write reads the
-  scene state (`GET /api/states/{entity_id}`). If it cannot be read, the
-  POST is not sent (`scene_configuration_reload_baseline_unavailable`).
-- **Readback (R1-H1).** The stored configuration must equal the proposed
-  configuration exactly, and the registry identity must be unchanged. The
-  loaded scene must be consistent with the stored configuration *and* there
-  must be genuine post-save reload evidence: during the bounded poll (10 ×
-  0.5 s) the scene state is re-added, so `last_changed` differs from the
-  pre-POST baseline while the state value (the last activation time) is
-  unchanged. An activation changes the state value and is never evidence.
-  Each poll reads the state first, so name- and icon-only edits also
-  observe it. Pre-save state is never evidence.
-  - Evidence observed in the window: `succeeded_verified`.
-  - Not observed (the reload was prevented, failed or landed after the
-    window): the stored configuration is verified but the loaded scene is
-    not. The task stays `observing` with
+  scene state (`GET /api/states/{entity_id}`) and the registry entry. The
+  baseline holds `last_changed`, the state value and the loaded visible
+  identity B: `original_name`, `original_icon` and the sorted member list.
+  The target T is the visible identity of the POST body. If either cannot
+  be read or built, the POST is not sent
+  (`scene_configuration_reload_baseline_unavailable`).
+- **Readback (R1-H1, R2-H1).** The stored configuration must equal the
+  proposed configuration exactly, and the registry identity must be
+  unchanged. The loaded scene is verified only with *positive* evidence of
+  a reload after this plan's save. Evidence for a component k (name, icon
+  or member list) is latched at one poll of the bounded window (10 ×
+  0.5 s) when:
+  - `last_changed` differs from the pre-POST baseline while the state
+    value (the last activation time) is unchanged, so the scene was
+    re-added and not activated;
+  - B[k] differs from T[k]; and
+  - the loaded value of k at that same poll equals T[k].
+
+  The strategy requires the evidence to intersect the plan's own visible
+  changes (current against proposed configuration). Because Core loads
+  every component from one parse, a loaded value moving from B to T after
+  the POST proves that this save's file was loaded. A loaded scene that
+  merely matches the plan is never proof: a reload before the save
+  (B already equals T, or the old value is reloaded), an activation, or a
+  coincidental match without a visible transition is never evidence.
+  - Evidence observed, loaded scene consistent: `succeeded_verified`.
+  - Evidence observed, loaded scene different from the stored
+    configuration: a verification failure (`failed_post_dispatch`,
+    `verification_mismatch`, `exact_readback_not_verified`). Recovery is
+    read-only.
+  - A snapshot-only edit has no visible change, so it can never be
+    verified as loaded. It ends changed but unverified. This is disclosed.
+  - Not observed (the reload was prevented, failed, landed after the
+    window, or showed no planned visible change): the stored
+    configuration is verified but the loaded scene is not. The task stays
+    `observing` with
     `scene_post_save_reload_unverified` and
     `scene_stored_configuration_verified`; after the evidence deadline it
     is `manual_review_required` (`f3_sequence_incomplete`). It is never
@@ -391,6 +422,22 @@ identity.
     verification mismatch record.
   - A stored-configuration or registry mismatch is a verification failure,
     and recovery is read-only.
+- **Already stored.** When preflight finds the desired configuration
+  already stored, nothing this plan sent could have produced a reload, so
+  the scene strategy's `already_reached_gap` refuses the plan before
+  dispatch (`preflight_rejected`,
+  `scene_desired_configuration_already_stored` and
+  `scene_post_save_reload_unverified`). It is never `succeeded_verified`.
+- **Every verified path (R2-H1).** In the F3 configuration adapter only
+  two functions produce `succeeded_verified`: `verify`, which `_observe`
+  reaches only when `observation_gap` is empty (first apply,
+  re-observation and rollback plans), and `_preflight_already_reached`,
+  which scenes never reach because `already_reached_gap` runs first. A
+  scene's `observation_gap` is empty only with the evidence above. A
+  rollback plan is itself a scene edit and needs its own evidence, and it
+  requires the forward edit to be exactly verified. Task states aggregate
+  child outcomes. `PostSaveReloadRuleTests` pins the producer set with an
+  AST check and patches the evidence to empty on every edit shape.
 - **Rollback.** `rollback_change` creates a separate governed plan
   (`hamcp071-scene-configuration-restore-v1`). It restores the exact
   captured prior configuration, needs its own approval and does not activate
@@ -512,7 +559,7 @@ The response contract has these values:
 - never sent: `DELETE /api/config/scene/config/{config_id}`, `scene.apply`,
   `scene.create`, `scene.delete`, `scene.reload` and `scene.turn_on`;
 - side effect: `core_post_write_hook_reloads_all_ui_scenes`;
-- readback: `stored_config_exact_plus_registry_identity_plus_loaded_scene_consistent_plus_post_save_reload_observed`;
+- readback: `stored_config_exact_plus_registry_identity_plus_loaded_scene_consistent_plus_post_save_reload_observed` (the pinned string is unchanged; since R2-H1, "observed" means the positive visible-transition evidence in section 4);
 - unverified: `stored_config_verified_loaded_scene_unverified_observing_then_manual_review_never_verified`;
 - concurrency: `no_core_compare_and_swap_upsert_concurrent_edit_overwritten_undetected_concurrent_delete_recreated_disclosed`;
 - recovery: `read_only_no_redispatch`.
@@ -549,7 +596,7 @@ Remaining for the November sequence-16 batch (not authorized here):
 
 ## 8. Offline proof
 
-`tests/test_hamcp071_scene_configuration.py` has 151 tests and uses the
+`tests/test_hamcp071_scene_configuration.py` has 175 tests and uses the
 synthetic fixtures in `tests/hamcp071_fixtures.py`:
 - `scene.synthetic_lounge_dim`, config id `1700000000001`;
 - `scene.synthetic_leaving`, config id `1700000000002`;
@@ -570,15 +617,24 @@ cover:
 - R1: the F3 write permit and withdrawn-admission reads
   (`AdmittedResourceWriteTests`), the switch rule (`SwitchMemberTests`),
   post-save reload evidence (`LoadedSceneReloadEvidenceTests`: prevented,
-  failed, delayed inside and outside the window, name and icon edits, an
-  activation that is not evidence), the declared request set
+  failed, delayed inside and outside the window, name, icon and member-list
+  edits, an activation that is not evidence), the declared request set
   (`ReachableRequestSetTests`) and the upsert-race disclosure
   (`DisclosureTests.test_the_upsert_race_is_disclosed_and_never_claimed_detected`);
 - D4: the mode-helper rule (`ModeHelperMemberTests`): an `input_boolean`
   or `input_select` member elevates, before or after the edit or unchanged;
   a light-only scene and `input_number`/`input_text` members stay
   standard; the policy floor refuses a basis without the D4 reason; an
-  elevated plan applies after elevated approval and never activates.
+  elevated plan applies after elevated approval and never activates;
+- R2: the post-save reload rule (`PostSaveReloadRuleTests`): the Codex R2
+  repros (an unrelated reload before the save, then a failed reload, for
+  snapshot, name, icon and member edits; an externally stored and unloaded
+  configuration), coincidental matches, a late reload, a genuine reload
+  with a different loaded scene, an unreadable registry baseline, guard
+  tests that patch the evidence to empty on every edit shape, the AST
+  check of the verified producers, and isolated tests for a state write or
+  registry change without a re-add, a reload between one poll's reads, and
+  the strict rollback projection.
 
 The new tests found and fixed **two runtime defects**:
 1. **Invalid policy reason codes.** The policy emitted
@@ -619,6 +675,15 @@ Mutation evidence is in `docs/evidence/hamcp071-mutations/`; see
   before-edit members): 112 of 113 killed, against a baseline of 258 tests
   (`d4-results.json`). H17–H19 were re-anchored onto the shared member
   rule.
+- **R2 full run:** all 113 replayed (T10, H8, H11, H12, H14, H15 and H16
+  re-anchored onto the evidence rule) plus 10 new `E1`–`E10` evidence-check
+  removals: 119 of 123 killed, against a baseline of 278 tests
+  (`r2-results.json`).
+- **R2 isolation:** G8, H10 and H13 lost their old killing paths with the
+  R2 change and each got an isolated test; the rerun kills all three
+  against a baseline of 282 tests (`r2-rerun-results.json`). So 122 of
+  123 are killed, and every mutant that removes an R2 evidence check is
+  killed.
 - **Survivor:** A3, which removes the persistence-entry recheck. It is
   equivalent: the generic builder repeats the same gate as its first
   statement, and nothing yields between the two checks. The combined
@@ -646,8 +711,13 @@ Known limitations:
   repeated.
 - **Reload evidence is in memory.** An Engineering restart after the save,
   or a reload that lands after the bounded window, leaves the result
-  unverified (observing, then manual review). A scene reload by anything
-  else just before the save cannot be told apart from this save's reload.
+  unverified (observing, then manual review). A reload by anything else
+  before the save cannot produce evidence, because the loaded value would
+  still be the pre-save value.
+- **Snapshot-only edits are never verified as loaded.** Core does not
+  expose member snapshots, so an edit that changes only snapshots (for
+  example a brightness) ends changed but unverified, then manual review.
+  Josh can decide later whether that is acceptable.
 - **Consumers are cached.** The consumer disclosure uses only the cached
   dependency index and discloses a gap when it is missing or not current.
 - **Global reload.** The save reloads every UI and YAML scene and removes
